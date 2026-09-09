@@ -124,7 +124,8 @@ _NOT_FOUND = "NOT FOUND"
 #: rows this mapping wrote (the recall measurement reads them back through it). Public
 #: because it is a join key, not an internal detail.
 ZAFRAN_ANSWER_KEY = "zafran-2026-09-02"
-_PEOPLE_ANSWER_KEY = "person-depth-2026-09-03"
+#: The same join key for the ten-person depth answer key (the R3 per-person recall reads it back).
+PEOPLE_ANSWER_KEY = "person-depth-2026-09-03"
 _ZAFRAN_OBSERVED_DEFAULT = "2026-09-02"
 #: The person-depth run date (``.context/arv2-person-depth/PERSON-DEPTH-REPORT.md``).
 _PEOPLE_OBSERVED_DEFAULT = "2026-09-03"
@@ -660,7 +661,7 @@ def map_people_rows(payload: Mapping[str, Any], roster: Sequence[Mapping[str, An
             row_id = f"{person_key}-{position:03d}"
             markers: dict[str, JsonValue] = {
                 "source_row_id": row_id,
-                "answer_key": _PEOPLE_ANSWER_KEY,
+                "answer_key": PEOPLE_ANSWER_KEY,
             }
             company_domain = domains.get(str(person_key))
             if company_domain:

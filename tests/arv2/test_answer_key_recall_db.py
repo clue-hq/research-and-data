@@ -13,7 +13,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.answer_key_recall import match_claims, zafran_keys
+from clue_api.arv2.answer_key_recall import match_claims, people_keys, zafran_keys
 from clue_core import EntityId, EntityType, RunId
 from clue_research.claimstore import WorkspaceScope, claims_for_runs
 
@@ -77,6 +77,37 @@ def test_the_r2_run_is_graded_against_all_66_zafran_keys() -> None:
             assert 0.0 <= report.recall() <= 1.0
             assert sum(hits for hits, _ in report.by_section().values()) == (
                 report.exact + report.partial
+            )
+
+    run_async(scenario())
+
+
+def test_the_loaded_people_answer_key_is_122_keys_over_the_ten_people() -> None:
+    """The person-depth key is read back per contact — one bundle each, in row order."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            grouped = await people_keys(conn, workspace_id=WORKSPACE)
+            if not grouped:
+                pytest.skip(
+                    "this database has no loaded person-depth answer key; "
+                    "run scripts/load_arv2_answer_key.py against it first"
+                )
+            assert len(grouped) == 10
+            assert sum(len(keys) for keys in grouped.values()) == 122
+            for keys in grouped.values():
+                assert all(key.field_key.startswith("contact.") for key in keys)
+                assert all(key.source_row_id is not None for key in keys)
+                # Grouped per contact, and each bundle ordered by the answer key's own row ids so
+                # two runs of the measurement read alike.
+                assert [key.source_row_id for key in keys] == sorted(
+                    str(key.source_row_id) for key in keys
+                )
+                assert all("|" not in alt for key in keys for alt in key.alternatives)
+            # Every row id is prefixed with its own person, so no bundle carries another's rows.
+            assert all(
+                len({str(key.source_row_id).rsplit("-", 1)[0] for key in keys}) == 1
+                for keys in grouped.values()
             )
 
     run_async(scenario())

@@ -32,14 +32,21 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_store import AnnotationRow
 from clue_api.arv2.account_research_tools import (
     ACCOUNT_TOOL_NAMES,
+    PERSON_TOOL_NAMES,
     ToolRuntime,
     build_account_tools,
+    build_person_tools,
 )
-from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkPeople, AiArkPerson
+from clue_api.arv2.ai_ark_client import (
+    AiArkCompany,
+    AiArkEmailExport,
+    AiArkPeople,
+    AiArkPerson,
+)
 from clue_api.arv2.ats_client import AtsBoard, BoardFetchFailed, BoardPostings, JobPosting
 from clue_api.arv2.calls import CallCost
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
-from clue_api.arv2.errors import ProviderHalted
+from clue_api.arv2.errors import ProviderHalted, ProviderTransportError
 from clue_api.arv2.exa_client import (
     ExaContentsResult,
     ExaDeepResult,
@@ -81,9 +88,11 @@ from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
+    IdentityBinding,
     ResearchMode,
     ReuseScope,
     RunId,
+    UseClass,
 )
 
 # -- the job under research ----------------------------------------------------------------------
@@ -108,6 +117,20 @@ SCOPE = JobScope(
     today=date(2026, 9, 8),
 )
 
+#: The one person a person job researches, at the account above. The lock's employment history is
+#: the job's own context — never evidence — exactly as ``JobScope`` documents it.
+CONTACT_ID = EntityId(uuid4())
+
+PERSON_SCOPE = replace(
+    SCOPE,
+    subject_kind="person",
+    contact_id=CONTACT_ID,
+    person_name="Nick Fisher",
+    person_title="VP of Marketing",
+    person_linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+    employment_history=("VP Product Marketing @ Sysdig (2021–2024)",),
+)
+
 CATALOG = FieldCatalog(
     account=(
         FieldSpec("account.named_customers", "Customers the company names.", {"type": "array"}),
@@ -125,6 +148,107 @@ CATALOG = FieldCatalog(
             },
         ),
     )
+)
+
+
+_STR_LIST: Mapping[str, Any] = {"type": "array", "items": {"type": "string"}}
+#: The registry's own shape for the two appearance-shaped facets: a list of ``{title, url?, date?,
+#: venue?}`` objects with ``title`` required.
+_APPEARANCES: Mapping[str, Any] = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+            "url": {"type": "string"},
+            "date": {"type": "string"},
+            "title": {"type": "string"},
+            "venue": {"type": "string"},
+        },
+    },
+}
+
+#: The person-side menu as ``read_person_catalog`` serves it, with each field's **real** registry
+#: schema and ``use_class_hint`` (read out of ``field_definition`` on 2026-09-09). A person job
+#: writes contact fields and the work email, and no ``account.*`` key at all.
+PERSON_CATALOG = FieldCatalog(
+    contact=(
+        FieldSpec("contact.current_title", "Current professional title.", {"type": "string"}),
+        FieldSpec("contact.headline", "LinkedIn headline.", {"type": "string"}),
+        FieldSpec(
+            "contact.reports_to",
+            "Who this person reports to.",
+            {
+                "type": "object",
+                "required": ["contact_id"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "contact_id": {"type": "string"},
+                },
+            },
+        ),
+        FieldSpec("core.work_email", "Professional email address.", {"type": "string"}),
+    ),
+    facet=(
+        FieldSpec(
+            "contact.facet.hobby",
+            "Hobbies the person states publicly.",
+            _STR_LIST,
+            use_class_hint="personal-public-non-sensitive",
+        ),
+        FieldSpec(
+            "contact.facet.publications",
+            "Articles, books and bylines they published.",
+            _APPEARANCES,
+            use_class_hint="professional-public",
+        ),
+        FieldSpec(
+            "contact.facet.voice_quote",
+            "Something the person said, verbatim.",
+            {
+                "type": "object",
+                "required": ["text"],
+                "properties": {
+                    "text": {"type": "string"},
+                    "media_url": {"type": "string"},
+                    "source_title": {"type": "string"},
+                    "media_timestamp": {"type": "string"},
+                },
+            },
+            use_class_hint="professional-public",
+        ),
+        FieldSpec(
+            "contact.facet.hooks",
+            "Grounded outreach hooks.",
+            _STR_LIST,
+            use_class_hint="professional-public",
+        ),
+        FieldSpec(
+            "contact.facet.openers",
+            "The openers the research supports.",
+            _STR_LIST,
+            use_class_hint="professional-public",
+        ),
+        FieldSpec(
+            "contact.facet.excluded_lookalike",
+            "A same-name person met and discarded.",
+            {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "discarded_media": {"type": "string"},
+                },
+            },
+            use_class_hint="professional-public",
+        ),
+        FieldSpec(
+            "contact.facet.public_appearances",
+            "Podcasts, talks and panels the person appeared in.",
+            _APPEARANCES,
+            use_class_hint="professional-public",
+        ),
+    ),
 )
 
 
@@ -226,10 +350,63 @@ class FakeExa:
         )
 
 
+def _ark_person(
+    *,
+    linkedin_url: str = "https://www.linkedin.com/in/nick",
+    current_company: str = "Probook",
+    current_company_domain: str | None = "probook.ai",
+    headline: str = "Demand gen",
+) -> AiArkPerson:
+    return AiArkPerson(
+        full_name="Nick Fisher",
+        title="VP Marketing",
+        headline=headline,
+        linkedin_url=linkedin_url,
+        location={"country": "US"},
+        current_company=current_company,
+        current_company_domain=current_company_domain,
+        department={"name": "marketing"},
+        ark_id="ark-1",
+        raw={"profile": {"title": "VP Marketing", "headline": headline}},
+    )
+
+
+def _email_export(*, found: bool = True) -> AiArkEmailExport:
+    return AiArkEmailExport(
+        address="nick@probook.ai" if found else None,
+        status="VALID" if found else "INVALID",
+        domain_type="not_catchall",
+        sub_status=None,
+        mx_record="probook-ai.mail.protection.outlook.com",
+        mx_provider="Outlook",
+        mx_found=True,
+        mx_google=False,
+        free=False,
+        generic=False,
+        found=found,
+        checked_at="2026-09-09T00:00:00Z",
+        verdict="verified_smtp" if found else "not_found",
+        full_name="Nick Fisher",
+        title="VP of Marketing",
+        current_company="Probook",
+        certifications=(),
+        raw_email_block={"status": "VALID"},
+        cost=_cost(provider="ai_ark", operation="v1/people/export/single"),
+    )
+
+
 class FakeAiArk:
     def __init__(self) -> None:
         self.company_calls: list[str] = []
         self.people_calls: list[tuple[tuple[str, ...], str, int]] = []
+        self.export_calls: list[str] = []
+        #: What ``people_by_name`` answers. Settable, so a person test can put the same-name
+        #: stranger and the real subject in one page the way the provider does.
+        self.people: tuple[AiArkPerson, ...] = (_ark_person(),)
+        self.export: AiArkEmailExport = _email_export()
+        #: What the export hop raises instead of answering — a transport failure with its retries
+        #: spent, which is the shape that used to cost the record's own claims.
+        self.raise_on_export: Exception | None = None
         self.company: AiArkCompany | None = AiArkCompany(
             name="Probook",
             domain="probook.ai",
@@ -273,29 +450,68 @@ class FakeAiArk:
         self, name_variants: Sequence[str], domain: str, *, size: int = 3
     ) -> AiArkPeople:
         self.people_calls.append((tuple(name_variants), domain, size))
-        return AiArkPeople(
-            people=(
-                AiArkPerson(
-                    full_name="Nick Fisher",
-                    title="VP Marketing",
-                    headline="Demand gen",
-                    linkedin_url="https://www.linkedin.com/in/nick",
-                    location={"country": "US"},
-                    current_company="Probook",
-                    current_company_domain="probook.ai",
-                    department={"name": "marketing"},
-                    ark_id="ark-1",
-                    raw={},
-                ),
-            ),
-            cost=_cost(provider="ai_ark", operation="v1/people"),
-        )
+        return AiArkPeople(people=self.people, cost=_cost(provider="ai_ark", operation="v1/people"))
+
+    def export_email(self, linkedin_url: str) -> AiArkEmailExport:
+        self.export_calls.append(linkedin_url)
+        if self.raise_on_export is not None:
+            raise self.raise_on_export
+        return self.export
+
+
+def _structured(field_key: str, value: Any, *, priority: int = 2, span: str, url: str) -> Any:
+    return StructuredClaim(
+        field_key=field_key,
+        value=value,
+        evidence_span=span,
+        source_url=url,
+        source_kind="personal_primary",
+        confidence="high",
+        use_class="professional-public",
+        outreach_safe=True,
+        priority=priority,
+        media_timestamp=None,
+        evidence_verbatim="EXACT",
+        schema_valid=True,
+    )
 
 
 class FakeStructuring:
     def __init__(self) -> None:
         self.account_calls: list[dict[str, Any]] = []
+        self.person_calls: list[dict[str, Any]] = []
         self.raise_with: Exception | None = None
+        #: What a broad ``structure_person`` answers: one contact facet on the person's own words.
+        self.person_output = StructuredOutput(
+            claims=(
+                _structured(
+                    "contact.facet.hobby",
+                    ["ultramarathons"],
+                    span="I run ultramarathons at the weekend",
+                    url="https://nickfisher.dev/about",
+                ),
+            ),
+            proposed=(),
+            negatives=(),
+            model="m",
+            mode="broad",
+        )
+        #: What the one-question pass answers. A test blanks its claims to prove the refusal.
+        self.insight_output = StructuredOutput(
+            claims=(
+                _structured(
+                    "contact.facet.publications",
+                    [{"title": "The Pipeline Book"}],
+                    priority=3,
+                    span="I wrote The Pipeline Book",
+                    url="https://nickfisher.dev/book",
+                ),
+            ),
+            proposed=(),
+            negatives=(),
+            model="m",
+            mode="unique_insight",
+        )
         self.output = StructuredOutput(
             claims=(
                 StructuredClaim(
@@ -357,6 +573,29 @@ class FakeStructuring:
         if self.raise_with is not None:
             raise self.raise_with
         return self.output
+
+    def structure_person(
+        self,
+        subject: Any,
+        bundle: str,
+        catalog: FieldCatalog,
+        *,
+        mode: str = "broad",
+        sources: Any = None,
+        notes: str | None = None,
+    ) -> StructuredOutput:
+        self.person_calls.append(
+            {
+                "subject": subject,
+                "bundle": bundle,
+                "mode": mode,
+                "sources": list(sources or []),
+                "notes": notes,
+            }
+        )
+        if self.raise_with is not None:
+            raise self.raise_with
+        return self.insight_output if mode == "unique_insight" else self.person_output
 
 
 class FakeMedia:
@@ -477,18 +716,22 @@ class MemoryConnFactory:
 
 def _runtime(
     scope: JobScope = SCOPE,
+    *,
+    settings: Settings | None = None,
 ) -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
     clients = FakeClients()
     writer = FakeWriter()
     conn_factory = MemoryConnFactory()
     runtime = ToolRuntime(
         scope=scope,
-        settings=Settings(),
+        settings=settings or Settings(),
         clients=clients,  # type: ignore[arg-type]
         conn_factory=conn_factory,
         artifacts=FakeArtifacts(),
         writer=writer,  # type: ignore[arg-type]
-        catalog=CATALOG,
+        # The job's subject decides its menu, exactly as the driver composes it: an account job
+        # writes account fields, a person job writes contact fields and the work email.
+        catalog=PERSON_CATALOG if scope.subject_kind == "person" else CATALOG,
         media_budget=MediaBudget(9000),
         transport_factory=lambda: ScriptedTransport([]),
         now=lambda: datetime(2026, 9, 8, tzinfo=UTC),
@@ -497,7 +740,13 @@ def _runtime(
 
 
 def _tools(runtime: ToolRuntime) -> dict[str, Any]:
-    return {tool.name: tool for tool in build_account_tools(runtime)}
+    """The toolbelt this job actually runs on — the subject decides which of the two it is."""
+    built = (
+        build_person_tools(runtime)
+        if runtime.scope.subject_kind == "person"
+        else build_account_tools(runtime)
+    )
+    return {tool.name: tool for tool in built}
 
 
 def _call(runtime: ToolRuntime, name: str, **args: Any) -> Mapping[str, Any]:
@@ -1059,11 +1308,12 @@ def test_write_each_isolates_every_draft_in_its_own_transaction() -> None:
 
     results = _run(runtime.write_each(drafts))
 
-    assert isinstance(results[0], WriteReceipt)
-    assert results[1] == tools.WriteFailure(
+    assert [draft for draft, _ in results] == drafts, "each result names the draft it belongs to"
+    assert isinstance(results[0][1], WriteReceipt)
+    assert results[1][1] == tools.WriteFailure(
         field_key="account.gtm_tooling_stack", error="cannot write account.gtm_tooling_stack"
     )
-    assert isinstance(results[2], WriteReceipt)
+    assert isinstance(results[2][1], WriteReceipt)
     assert conn_factory.opened == 3, "one transaction per draft"
 
 
@@ -1726,6 +1976,55 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     ]
 
 
+def test_finalize_admits_the_candidate_rationale_and_influence_and_writes_them() -> None:
+    """``CommitteeCandidate`` forbids extra keys, so the two optional ones have to be declared for
+    the agent to be able to send them at all — and the mapper carries them onto the claim the
+    contact page's "why they matter" reads."""
+    runtime, _, writer, _ = _runtime()
+    args = _finalize_args()
+    args["committee_candidates"] = [
+        {
+            **args["committee_candidates"][0],
+            "rationale": "owns the ABM programme and the agency budget",
+            "influence": "High",
+        }
+    ]
+
+    accepted = _call(runtime, "finalize_research", **args)
+
+    assert accepted["accepted"] is True
+    [candidate] = [d for d in writer.drafts if d.field_key == "account.committee_candidate"]
+    assert candidate.value_json["rationale"] == "owns the ABM programme and the agency budget"
+    assert candidate.value_json["influence"] == "High"
+    assert runtime.finalization is not None
+    seated = runtime.finalization["committee_candidates"][0]
+    assert seated["rationale"] and seated["influence"] == "High", (
+        "the committee step reads the finalization, so the why must survive into it"
+    )
+
+
+def test_finalize_refuses_an_influence_that_is_not_one_of_the_three_bands() -> None:
+    runtime, _, writer, _ = _runtime()
+    args = _finalize_args()
+    args["committee_candidates"] = [{**args["committee_candidates"][0], "influence": "quite a lot"}]
+
+    refused = _call(runtime, "finalize_research", **args)
+
+    assert refused["code"] == "invalid_arguments"
+    assert writer.drafts == []
+
+
+def test_a_candidate_with_no_rationale_is_unchanged_and_writes_neither_key() -> None:
+    """The account agent's behaviour with the two keys absent is exactly what it was."""
+    runtime, _, writer, _ = _runtime()
+
+    _call(runtime, "finalize_research", **_finalize_args())
+
+    [candidate] = [d for d in writer.drafts if d.field_key == "account.committee_candidate"]
+    assert "rationale" not in candidate.value_json
+    assert "influence" not in candidate.value_json
+
+
 def test_a_verdict_on_a_gate_the_icp_never_named_is_refused_and_names_the_admitted_keys() -> None:
     """Verdicts are keyed to the ICP's hard gates, so receipts compare across accounts."""
     gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
@@ -1943,3 +2242,1137 @@ def test_a_halt_met_inside_one_hop_also_latches_the_wire_provider() -> None:
 
     assert refused["code"] == "provider_halted:openrouter"
     assert clients.structuring_client.account_calls == []
+
+
+# ================================================================================================
+# The person toolbelt
+# ================================================================================================
+#
+# One job, one person. Every claim it writes lands on the contact entity, not on the account, and
+# the five tools that differ from the account belt are the ones asserted here: ``lookup_person``
+# (the employer lock and the email export), ``structure_material``'s person branch,
+# ``unique_insight``, the per-person media cap, and the person finalization.
+
+
+def _contact_claim(
+    field_key: str,
+    *,
+    url: str | None = "https://nickfisher.dev/about",
+    span: str | None = "I run ultramarathons at the weekend",
+    markers: Mapping[str, Any] | None = None,
+) -> Claim:
+    return Claim(
+        entity_id=CONTACT_ID,
+        entity_type=EntityType.CONTACT,
+        field_key=field_key,
+        value_json=["ultramarathons"],
+        source_tier=4,
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(RUN_ID),
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        confidence=0.6,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id="ws-1",
+        source_url=url,
+        evidence_span=span,
+        source_key="structuring",
+        # The substrate requires both on a ``contact.facet.*`` claim, and the claim path stamps
+        # them for every contact claim (Task 3) — so a hand-built one carries them too.
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+        write_markers=dict(markers) if markers else None,
+    )
+
+
+PERSON_SOURCES = [
+    {
+        "url": "https://nickfisher.dev/about",
+        "kind": "page",
+        "text": "I run ultramarathons at the weekend, and I wrote The Pipeline Book. " * 3,
+    }
+]
+
+
+# -- the shape of the toolbelt --------------------------------------------------------------------
+
+
+def test_the_eleven_person_tools_are_built_in_the_manual_order_with_descriptions() -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+
+    built = build_person_tools(runtime)
+
+    assert tuple(tool.name for tool in built) == PERSON_TOOL_NAMES
+    assert all(tool.description for tool in built)
+    assert len(PERSON_TOOL_NAMES) == 11
+    # The four account-only tools the manual says are deliberately absent.
+    assert not {
+        "read_account_state",
+        "read_ats_board",
+        "lookup_company",
+        "lookup_people",
+    } & set(PERSON_TOOL_NAMES)
+
+
+# -- read_person_state ----------------------------------------------------------------------------
+
+
+def test_read_person_state_reports_the_person_claims_the_open_fields_and_the_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [_contact_claim("contact.facet.hobby")])
+
+    state = _call(runtime, "read_person_state")
+
+    assert [claim["field_key"] for claim in state["claims"]] == ["contact.facet.hobby"]
+    assert "contact.facet.hooks" in state["open_fields"]
+    assert "contact.facet.hobby" not in state["open_fields"]
+    assert state["account"]["domain"] == "probook.ai"
+    assert state["icp"].startswith("# icp")
+    assert state["lock"]["person_name"] == "Nick Fisher"
+    assert state["lock"]["employment_history"] == ["VP Product Marketing @ Sysdig (2021–2024)"]
+
+
+def test_read_person_state_serves_the_lock_section_on_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    state = _call(runtime, "read_person_state", section="lock")
+
+    assert set(state) == {"lock"}
+    assert state["lock"]["person_title"] == "VP of Marketing"
+    assert state["lock"]["person_linkedin_url"] == "https://www.linkedin.com/in/nicholastfisher"
+
+
+def test_a_person_job_has_no_read_account_state() -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    assert "read_account_state" not in _tools(runtime)
+
+
+# -- lookup_person --------------------------------------------------------------------------------
+
+
+def _lock_record() -> AiArkPerson:
+    return _ark_person(linkedin_url="https://www.linkedin.com/in/nicholastfisher")
+
+
+def _lock_record_with(*, headline: str) -> AiArkPerson:
+    return _ark_person(
+        linkedin_url="https://www.linkedin.com/in/nicholastfisher", headline=headline
+    )
+
+
+def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_verdict() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(runtime, "lookup_person", linkedin_url="https://linkedin.com/in/NicholasTFisher/")
+
+    assert clients.ai_ark_client.people_calls == [(("Nick Fisher",), "probook.ai", 3)]
+    assert clients.ai_ark_client.export_calls == ["https://linkedin.com/in/NicholasTFisher/"], (
+        "the export is asked for the URL the agent named"
+    )
+    assert found["person"]["current_company_domain"] == "probook.ai"
+    assert found["email"]["verdict"] == "verified_smtp"
+    assert found["email_export_empty"] is False
+    assert found["write_failures"] == []
+    written = {draft.field_key for draft in writer.drafts}
+    assert written == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+        "core.work_email",
+    }
+    assert all(draft.entity_id == CONTACT_ID for draft in writer.drafts), (
+        "every claim a person job writes lands on the contact"
+    )
+
+
+def test_lookup_person_refuses_a_url_the_committee_step_did_not_confirm() -> None:
+    """The lock is the JOB's URL, not the model's argument.
+
+    A same-name colleague at the same company clears both provider-side locks — the record carries
+    the URL the call asked for, and the employer is this account — so the only thing that keeps
+    the research on the confirmed person is comparing the argument to the confirmed URL first. The
+    check is before the provider hop, so a mismatched call costs nothing.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    refused = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nick-fisher-2"
+    )
+
+    assert refused["code"] == "subject_lock_failed"
+    assert "nicholastfisher" in refused["detail"] and "nick-fisher-2" in refused["detail"]
+    assert clients.ai_ark_client.people_calls == [], "nothing is bought for the wrong person"
+    assert clients.ai_ark_client.export_calls == []
+    assert writer.drafts == []
+
+
+def test_lookup_person_refuses_a_job_that_carries_no_confirmed_linkedin_url() -> None:
+    """No confirmed URL is no anchor, so the lookup is refused rather than run unlocked.
+
+    A member confirmed on a team page that linked nothing has nothing for lock 1 to compare, and
+    the two provider-side locks do not stand on their own: lock 2 matches whatever candidate
+    carries the URL the *model* typed, and lock 3 passes for every colleague at this account. The
+    refusal is before the hop, so it costs nothing, and it names the skip the dossier asks for.
+    """
+    runtime, clients, writer, _ = _runtime(replace(PERSON_SCOPE, person_linkedin_url=""))
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    refused = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert refused["code"] == "subject_lock_failed"
+    assert "no confirmed LinkedIn URL for Nick Fisher" in refused["detail"]
+    assert "not_found" in refused["detail"]
+    assert clients.ai_ark_client.people_calls == [], "no provider record is bought unlocked"
+    assert clients.ai_ark_client.export_calls == []
+    assert writer.drafts == []
+
+
+def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() -> None:
+    """The record's fields are written before the export is bought, so a transport failure on the
+    second call costs only the email — not the title, headline and location this call already had.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+    clients.ai_ark_client.raise_on_export = ProviderTransportError("ai_ark", 3, "connection reset")
+
+    failed = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert failed["code"] == "tool_error:ProviderTransportError"
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+    }, "the record's own claims survive the failed second hop"
+
+
+def test_lookup_person_reports_what_the_compliance_floor_did_to_this_calls_drafts() -> None:
+    """An empty ``written`` slot must be readable: "the record said nothing" and "the floor removed
+    it" are different facts, and only the compliance rows tell them apart."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _lock_record_with(headline="Demand gen — write to nick.fisher@gmail.com"),
+    )
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert [row["field_key"] for row in found["compliance"]] == ["contact.headline"]
+    assert found["compliance"][0]["rule"] == "personal_contact_detail"
+    assert "contact.headline" not in {draft.field_key for draft in writer.drafts}
+    assert "contact.headline" not in {row["field_key"] for row in found["written"]}
+
+
+def test_lookup_person_reports_no_compliance_rows_when_the_floor_did_nothing() -> None:
+    runtime, clients, _, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert found["compliance"] == [], (
+        "a provider record carries no page quote by design and rule 6 exempts it"
+    )
+
+
+def test_lookup_person_refuses_subject_lock_failed_naming_the_candidate_companies() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _ark_person(
+            linkedin_url="https://www.linkedin.com/in/nick-fisher-plumbing",
+            current_company="Fisher Plumbing",
+            current_company_domain="fisherplumbing.co.uk",
+        ),
+    )
+
+    refused = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert refused["code"] == "subject_lock_failed"
+    assert "Fisher Plumbing" in refused["detail"]
+    assert clients.ai_ark_client.export_calls == [], "no export is bought for the wrong person"
+    assert writer.drafts == []
+
+
+def test_lookup_person_refuses_subject_lock_failed_when_the_employer_is_not_the_account() -> None:
+    """The record is the right LinkedIn URL, but the provider says they have moved on."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _ark_person(
+            linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+            current_company="Sysdig",
+            current_company_domain="sysdig.com",
+        ),
+    )
+
+    refused = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert refused["code"] == "subject_lock_failed"
+    assert "sysdig.com" in refused["detail"] and "probook.ai" in refused["detail"]
+    assert clients.ai_ark_client.export_calls == []
+    assert writer.drafts == []
+
+
+def test_lookup_person_proceeds_when_the_record_cannot_state_the_employer_and_marks_it() -> None:
+    """The live Cogent failure: an unstated employer is unknown, not a different company.
+
+    The identity is already anchored on the URL the committee confirmed, so an employer the record
+    does not state cannot contradict it. Refusing there cost three confirmed members their whole
+    lookup — no provider claims, no email — over a name the record spelled two ways.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _ark_person(
+            linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+            current_company="Probook",
+            current_company_domain=None,
+        ),
+    )
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert "code" not in found, "an unstated employer is a marker, never a refusal"
+    assert found["employer_verified"] is False
+    assert clients.ai_ark_client.export_calls != [], "the email is still bought"
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+        "core.work_email",
+    }
+    assert all(draft.markers["employer_unverified"] is True for draft in writer.drafts), (
+        "every claim this lookup wrote says the employer was not corroborated"
+    )
+
+
+def test_lookup_person_marks_nothing_when_the_employer_is_the_account() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert found["employer_verified"] is True
+    assert all("employer_unverified" not in draft.markers for draft in writer.drafts)
+
+
+def test_lookup_person_reports_an_empty_email_export_as_a_result_never_a_refusal() -> None:
+    """``email_export_empty`` is a finding about the mailbox, not a verdict on the person."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+    clients.ai_ark_client.export = _email_export(found=False)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert "code" not in found, "an empty export is a result field, never a refusal envelope"
+    assert found["email_export_empty"] is True and found["email"] is None
+    assert "core.work_email" not in {draft.field_key for draft in writer.drafts}
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+    }
+
+
+def test_lookup_person_reports_a_write_failure_and_still_lands_the_rest() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+    writer.raise_on = {"contact.headline"}
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert found["write_failures"] == [
+        {"field_key": "contact.headline", "error": "cannot write contact.headline"}
+    ]
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.current_location",
+        "core.work_email",
+    }
+
+
+# -- structure_material, the person branch ---------------------------------------------------------
+
+
+def test_structure_material_on_a_person_job_writes_contact_scoped_drafts() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+        sources=PERSON_SOURCES,
+        notes="my own read: he is a runner",
+    )
+
+    assert [row["field_key"] for row in structured["written"]] == ["contact.facet.hobby"]
+    assert clients.structuring_client.account_calls == [], (
+        "a person job never structures an account"
+    )
+    [call] = clients.structuring_client.person_calls
+    assert call["subject"].name == "Nick Fisher"
+    assert call["subject"].company == "Probook", "the account name, from the scope"
+    assert call["subject"].linkedin_url == "https://www.linkedin.com/in/nicholastfisher"
+    assert call["notes"] == "my own read: he is a runner"
+    hobby = writer.drafts[0]
+    assert hobby.entity_id == CONTACT_ID and hobby.entity_type is EntityType.CONTACT
+    assert hobby.use_class is not None and hobby.identity_binding is not None
+
+
+def test_structure_material_reports_what_the_compliance_floor_removed() -> None:
+    """The floor sits between the structuring pass and the store, so a claim it drops leaves an
+    empty ``written`` that reads exactly like "the pass found nothing". The rows say which."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.structuring_client.person_output = replace(
+        clients.structuring_client.person_output,
+        claims=(
+            _structured(
+                "contact.facet.hobby",
+                ["ultramarathons"],
+                span="He was diagnosed with cancer in 2019. I run ultramarathons at the weekend",
+                url="https://nickfisher.dev/about",
+            ),
+        ),
+    )
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        sources=PERSON_SOURCES,
+    )
+
+    assert [(row["action"], row["rule"]) for row in structured["compliance"]] == [
+        ("redacted", "health")
+    ]
+    assert "diagnosed" not in writer.drafts[0].evidence_span
+
+
+def test_structure_material_on_an_account_job_reports_no_compliance_rows() -> None:
+    """The floor is about a person; an account job's claims never meet it, so the key is empty
+    rather than absent — one shape for both subjects."""
+    runtime, _, _, _ = _runtime()
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+    )
+
+    assert structured["compliance"] == []
+
+
+def test_structure_material_on_a_person_job_takes_the_intent_sweep_mode_too() -> None:
+    runtime, clients, _, _ = _runtime(PERSON_SCOPE)
+
+    _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        sources=PERSON_SOURCES,
+        mode="intent_sweep",
+    )
+
+    assert clients.structuring_client.person_calls[0]["mode"] == "intent_sweep"
+
+
+def test_structure_material_refuses_an_account_subject_on_a_person_job() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+
+    refused = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=PERSON_SOURCES,
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert "a person job structures its person" in refused["detail"]
+    assert clients.structuring_client.person_calls == [] and writer.drafts == []
+
+
+def test_structure_material_keeps_the_sources_for_the_unique_insight_pass() -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+
+    _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        sources=PERSON_SOURCES,
+    )
+
+    assert [block.url for block in runtime.person_sources] == ["https://nickfisher.dev/about"]
+
+
+# -- unique_insight -------------------------------------------------------------------------------
+
+
+def _structure_once(runtime: ToolRuntime) -> None:
+    _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        sources=PERSON_SOURCES,
+    )
+
+
+def test_unique_insight_writes_one_priority_one_claim_carrying_the_marker() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    insight = clients.structuring_client.person_calls[-1]
+    assert insight["mode"] == "unique_insight"
+    assert [block.url for block in insight["sources"]] == ["https://nickfisher.dev/about"], (
+        "the one-question pass reads the material the job has already structured"
+    )
+    written = [draft for draft in writer.drafts if draft.field_key == "contact.facet.publications"]
+    assert len(written) == 1
+    assert written[0].signal_priority == 1, "the fact the outreach opens with"
+    assert written[0].markers["unique_insight"] is True
+    assert written[0].entity_id == CONTACT_ID
+    assert found["written"][0]["field_key"] == "contact.facet.publications"
+
+
+def test_unique_insight_drops_a_row_written_to_an_outreach_field_and_names_the_key() -> None:
+    """``contact.facet.hooks`` is the argument the finalization builds from facts, not a fact.
+
+    The live run answered there, so the insight landed as an unquoted line in the field the openers
+    are drawn from. The row is dropped, and the result names the key — otherwise a dropped row and
+    a thin public footprint are the same empty ``written``.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.hooks",
+                ["he cares about pipeline hygiene"],
+                span="I wrote The Pipeline Book",
+                url="https://nickfisher.dev/book",
+            ),
+        ),
+    )
+    before = {draft.field_key for draft in writer.drafts}
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert found["written"] == []
+    assert found["dropped_off_target"] == ["contact.facet.hooks"]
+    assert found["dropped_rows"] == 1
+    assert {draft.field_key for draft in writer.drafts} == before, "nothing reached the store"
+
+
+def test_unique_insight_writes_a_fact_facet_at_priority_one_with_the_marker() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.hobby",
+                ["ultramarathons"],
+                priority=3,
+                span="I run ultramarathons at the weekend",
+                url="https://nickfisher.dev/about",
+            ),
+        ),
+    )
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    written = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "contact.facet.hobby" and draft.markers.get("unique_insight")
+    ]
+    assert len(written) == 1
+    assert written[0].signal_priority == 1
+    assert found["dropped_off_target"] == []
+
+
+def test_unique_insight_says_when_the_floor_took_the_one_claim_it_found() -> None:
+    """The insight is at most one claim: without the rows, "the floor removed it" and "there was
+    nothing distinctive" are the same empty answer, and the agent would record the wrong finding."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.publications",
+                [{"title": "The Pipeline Book"}],
+                span="Call the author on +1 (415) 555-0132 for a copy",
+                url="https://nickfisher.dev/book",
+            ),
+        ),
+    )
+    before = len(writer.drafts)
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert found["written"] == []
+    assert [(row["action"], row["rule"]) for row in found["compliance"]] == [
+        ("dropped", "personal_contact_detail")
+    ]
+    assert len(writer.drafts) == before, "the dropped draft never reached the store"
+
+
+def test_unique_insight_refuses_insight_not_found_naming_the_channels_checked() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output, claims=()
+    )
+    before = len(writer.drafts)
+
+    refused = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert refused["code"] == "insight_not_found"
+    assert "page" in refused["detail"], "the source kinds seen are the channels checked"
+    assert refused["reaction"].startswith('Record "thin public footprint"')
+    assert len(writer.drafts) == before, "an empty answer writes nothing"
+
+
+def test_unique_insight_before_any_material_is_structured_is_refused_invalid_arguments() -> None:
+    runtime, clients, _, _ = _runtime(PERSON_SCOPE)
+
+    refused = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert refused["code"] == "invalid_arguments"
+    assert "structure_material" in refused["detail"]
+    assert clients.structuring_client.person_calls == [], "no material, no call, no spend"
+
+
+def test_unique_insight_keeps_at_most_one_row_whatever_the_reply_holds() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            *clients.structuring_client.insight_output.claims,
+            _structured(
+                "contact.facet.hobby",
+                ["sourdough"],
+                span="I bake sourdough",
+                url="https://nickfisher.dev/about",
+            ),
+        ),
+    )
+
+    _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    insight_drafts = [draft for draft in writer.drafts if draft.markers.get("unique_insight")]
+    assert [draft.field_key for draft in insight_drafts] == ["contact.facet.publications"]
+
+
+# -- read_media_feeds, the per-person cap ----------------------------------------------------------
+
+
+def test_read_media_feeds_writes_the_appearance_on_the_contact_for_a_person_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+    _stub_podcast(monkeypatch, tmp_path)
+
+    found = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        person_role="VP of Marketing",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert found["speaker_verified"] is True
+    assert [draft.field_key for draft in writer.drafts] == ["contact.facet.public_appearances"]
+    appearance = writer.drafts[0]
+    assert appearance.entity_id == CONTACT_ID
+    assert appearance.value_json == [
+        {"title": "Nick Fisher on ABM", "url": "https://media.test/42.mp3"}
+    ]
+    assert appearance.markers["speaker_verified"] is True
+    assert appearance.markers["media_kind"] == "podcast"
+
+
+def test_read_media_feeds_refuses_media_cap_reached_at_the_configured_number(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE, settings=Settings(arv2_person_media_max_items=2))
+    _stub_claims(
+        monkeypatch,
+        [
+            _contact_claim("contact.facet.public_appearances"),
+            _contact_claim("contact.facet.public_appearances"),
+        ],
+    )
+    _stub_podcast(monkeypatch, tmp_path)
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert refused["code"] == "media_cap_reached"
+    assert "2" in refused["detail"]
+    assert writer.drafts == []
+
+
+def test_a_person_media_cap_of_zero_refuses_before_any_provider_is_touched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, clients, writer, _ = _runtime(
+        PERSON_SCOPE, settings=Settings(arv2_person_media_max_items=0)
+    )
+    _stub_claims(monkeypatch, [])
+
+    refused = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert refused["code"] == "media_cap_reached"
+    assert writer.drafts == [] and clients.callers == []
+
+
+def test_the_account_media_index_claim_is_untouched_by_the_person_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An account job counts nothing and still writes ``account.media_layer_index``."""
+    runtime, _, writer, _ = _runtime(settings=Settings(arv2_person_media_max_items=0))
+    _stub_podcast(monkeypatch, tmp_path)
+
+    _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert [draft.field_key for draft in writer.drafts] == ["account.media_layer_index"]
+
+
+# -- research_deep, the person lock ----------------------------------------------------------------
+
+
+def test_research_deep_on_a_person_job_locks_the_system_prompt_to_the_person() -> None:
+    runtime, clients, _, _ = _runtime(PERSON_SCOPE)
+
+    _call(
+        runtime,
+        "research_deep",
+        charter=CHARTER,
+        same_name_exclusions=["Nick Fisher the plumber"],
+    )
+
+    system_prompt = clients.exa_client.deep_calls[-1]["system_prompt"]
+    assert "You research exactly ONE person" in system_prompt
+    assert "Nick Fisher" in system_prompt and "VP of Marketing" in system_prompt
+    assert "https://www.linkedin.com/in/nicholastfisher" in system_prompt
+    assert "VP Product Marketing @ Sysdig (2021–2024)" in system_prompt
+    assert "Nick Fisher the plumber" in system_prompt
+    assert "EVIDENCE LAW" in system_prompt
+    assert "Founded 2021." in clients.exa_client.deep_calls[-1]["query"]
+
+
+# -- finalize_research, the person receipt ---------------------------------------------------------
+
+
+def _person_finalize_args(**overrides: Any) -> dict[str, Any]:
+    return {
+        "summary": "Nick Fisher runs marketing at Probook and writes about pipeline.",
+        "openers": [
+            {
+                "text": "Saw you wrote The Pipeline Book.",
+                "hook": "his own book",
+                "quote": "I wrote The Pipeline Book",
+                "url": "https://nickfisher.dev/book",
+            },
+            {
+                "text": "Your ultramarathon posts are something else.",
+                "hook": "ultramarathons",
+                "quote": "I run ultramarathons at the weekend",
+                "url": "https://nickfisher.dev/about",
+            },
+            {
+                "text": "You must be busy with the new team.",
+                "hook": "hiring",
+                "quote": "",
+                "url": None,
+            },
+        ],
+        "hooks": ["his own book", "ultramarathons"],
+        "not_found": ["alma mater (checked alumni pages and LinkedIn)"],
+        "same_name_log": [
+            {
+                "name_or_url": "https://www.linkedin.com/in/nick-fisher-plumbing",
+                "why_excluded": "a plumber in Leeds; no Probook role in his history",
+            }
+        ],
+        "gaps": ["no podcast appearance found"],
+        **overrides,
+    }
+
+
+def test_person_finalize_writes_the_openers_hooks_and_lookalikes_and_drops_the_quoteless_opener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["accepted"] is True
+    openers = [d for d in writer.drafts if d.field_key == "contact.facet.openers"]
+    assert [d.value_json for d in openers] == [
+        ["Saw you wrote The Pipeline Book."],
+        ["Your ultramarathon posts are something else."],
+    ], "one claim per opener, so each carries its own quote and URL"
+    assert openers[0].evidence_span == "I wrote The Pipeline Book"
+    assert openers[0].source_url == "https://nickfisher.dev/book"
+    assert accepted["openers_written"] == 2
+    assert accepted["openers_dropped"] == ["You must be busy with the new team."]
+
+    hooks = [d for d in writer.drafts if d.field_key == "contact.facet.hooks"]
+    assert [d.value_json for d in hooks] == [["his own book", "ultramarathons"]]
+
+    lookalikes = [d for d in writer.drafts if d.field_key == "contact.facet.excluded_lookalike"]
+    assert [d.value_json for d in lookalikes] == [
+        {
+            "title": "https://www.linkedin.com/in/nick-fisher-plumbing",
+            "reason": "a plumber in Leeds; no Probook role in his history",
+        }
+    ]
+    assert all(d.entity_id == CONTACT_ID for d in writer.drafts)
+
+    receipt = runtime.finalization
+    assert receipt is not None
+    assert receipt["summary"].startswith("Nick Fisher runs marketing")
+    assert receipt["hooks_written"] == 1
+    assert receipt["not_found"] == ["alma mater (checked alumni pages and LinkedIn)"]
+    assert receipt["gaps"] == ["no podcast appearance found"]
+    assert receipt["insight_found"] is False
+    assert receipt["reports_to_written"] is False
+
+
+def test_a_person_finalization_has_no_fit_verdicts_and_no_committee_candidates() -> None:
+    """Constitution rule 11: those belong to the account job, not to this one."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+
+    refused = _call(
+        runtime,
+        "finalize_research",
+        **_person_finalize_args(
+            fit_verdicts=[{"gate": "stage", "verdict": "pass", "rationale": "Series A"}]
+        ),
+    )
+
+    assert refused["code"] == "invalid_arguments"
+    assert writer.drafts == [] and runtime.finalization is None
+
+
+def test_person_finalize_records_the_unique_insight_it_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(
+        monkeypatch,
+        [_contact_claim("contact.facet.publications", markers={"unique_insight": True})],
+    )
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["insight_found"] is True
+    assert runtime.finalization is not None and runtime.finalization["insight_found"] is True
+
+
+def test_person_finalize_writes_reports_to_when_it_carries_a_quote_and_a_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+    manager = str(uuid4())
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **_person_finalize_args(
+            reports_to={
+                "name": "Dana Reyes",
+                "contact_id": manager,
+                "quote": "I report to Dana Reyes, our CMO",
+                "url": "https://podcast.test/42",
+            }
+        ),
+    )
+
+    assert accepted["reports_to_written"] is True
+    (claim,) = [d for d in writer.drafts if d.field_key == "contact.reports_to"]
+    assert claim.value_json == {"name": "Dana Reyes", "contact_id": manager}
+    assert claim.evidence_span == "I report to Dana Reyes, our CMO"
+    assert claim.source_url == "https://podcast.test/42"
+
+
+def test_person_finalize_skips_reports_to_with_no_quote_and_says_why(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **_person_finalize_args(
+            reports_to={"name": "Dana Reyes", "contact_id": str(uuid4()), "url": "https://x.test"}
+        ),
+    )
+
+    assert accepted["reports_to_written"] is False
+    assert "quote" in accepted["reports_to_skipped"]
+    assert [d for d in writer.drafts if d.field_key == "contact.reports_to"] == []
+
+
+def test_person_finalize_resolves_the_reports_to_contact_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``contact_id`` is the field's required key, so a name the store can resolve is resolved."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+    manager = uuid4()
+
+    async def _find(conn: Any, **kwargs: Any) -> Any:
+        assert kwargs["name"] == "Dana Reyes"
+        assert kwargs["account_id"] == ACCOUNT_ID and kwargs["workspace_id"] == "ws-1"
+        return manager
+
+    monkeypatch.setattr(tools, "find_contact_by_name", _find)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **_person_finalize_args(
+            reports_to={
+                "name": "Dana Reyes",
+                "quote": "I report to Dana Reyes",
+                "url": "https://podcast.test/42",
+            }
+        ),
+    )
+
+    assert accepted["reports_to_written"] is True
+    (claim,) = [d for d in writer.drafts if d.field_key == "contact.reports_to"]
+    assert claim.value_json == {"name": "Dana Reyes", "contact_id": str(manager)}
+
+
+def test_person_finalize_skips_reports_to_when_no_contact_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    async def _find(conn: Any, **kwargs: Any) -> Any:
+        return None
+
+    monkeypatch.setattr(tools, "find_contact_by_name", _find)
+
+    accepted = _call(
+        runtime,
+        "finalize_research",
+        **_person_finalize_args(
+            reports_to={
+                "name": "Dana Reyes",
+                "quote": "I report to Dana Reyes",
+                "url": "https://podcast.test/42",
+            }
+        ),
+    )
+
+    assert accepted["reports_to_written"] is False
+    assert "Dana Reyes" in accepted["reports_to_skipped"]
+    assert [d for d in writer.drafts if d.field_key == "contact.reports_to"] == []
+
+
+def test_a_person_job_finalizes_only_once_and_closes_the_other_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+    _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert (
+        _call(runtime, "finalize_research", **_person_finalize_args())["code"]
+        == "finalization_already_proposed"
+    )
+    assert (
+        _call(runtime, "unique_insight", subject="Nick Fisher")["code"]
+        == "finalization_already_proposed"
+    )
+
+
+# -- the coded compliance pass (Task 5) ------------------------------------------------------
+
+
+def _person_draft(**overrides: Any) -> ClaimDraft:
+    base: dict[str, Any] = {
+        "entity_id": CONTACT_ID,
+        "entity_type": EntityType.CONTACT,
+        "field_key": "contact.facet.hobby",
+        "value_json": "He runs ultras. He coaches his daughter's team on Sundays.",
+        "extraction_method": ExtractionMethod.LLM_SYNTHESIS,
+        "run_id": RunId(RUN_ID),
+        "research_mode": ResearchMode.CONTACT_PROFILING,
+        "workspace_id": "ws-1",
+        "source_url": "https://nickfisher.dev/about",
+        "evidence_span": "I run ultras.",
+    }
+    base.update(overrides)
+    return ClaimDraft(**base)
+
+
+def test_a_person_job_runs_the_floor_on_every_write_and_the_log_reaches_the_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pass sits at the write path, so no tool can reach the store around it."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    _run(runtime.write_each([_person_draft()]))
+
+    [written] = writer.drafts
+    assert written.value_json == "He runs ultras.", "the sentence about a child is gone"
+    assert written.markers["redacted"] == "minors"
+    assert runtime.compliance_log[0] == {
+        "action": "redacted",
+        "field_key": "contact.facet.hobby",
+        "rule": "minors",
+        "detail": "the matching sentence was removed",
+    }
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["compliance_log"] == runtime.compliance_log
+    assert accepted["compliance_log"][0]["rule"] == "minors"
+    assert runtime.finalization is not None
+    assert runtime.finalization["compliance_log"][0]["rule"] == "minors"
+
+
+def test_the_one_transaction_write_path_runs_the_floor_too() -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+
+    _run(runtime.write([_person_draft(value_json="Reach him on +1 (415) 555-0132.")]))
+
+    assert writer.drafts == [], "a personal contact detail never reaches the gate"
+    assert [row["rule"] for row in runtime.compliance_log] == ["personal_contact_detail"]
+
+
+def test_write_each_pairs_its_results_with_the_drafts_the_floor_left() -> None:
+    """The batch out is not the batch in, so the caller is handed the draft each result is about."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+
+    results = _run(
+        runtime.write_each(
+            [
+                _person_draft(value_json="Reach him on +1 (415) 555-0132."),
+                _person_draft(field_key="contact.headline", value_json="VP Marketing at Probook."),
+            ]
+        )
+    )
+
+    assert [draft.field_key for draft, _ in results] == ["contact.headline"]
+    assert [draft.field_key for draft in writer.drafts] == ["contact.headline"]
+    assert [row["rule"] for row in runtime.compliance_log] == ["personal_contact_detail"]
+
+
+def test_an_account_job_never_runs_the_compliance_pass() -> None:
+    """The floor is about a person; an account claim has no subject it could be personal about."""
+    runtime, _, writer, _ = _runtime()
+
+    _run(
+        runtime.write_each(
+            [
+                _person_draft(
+                    entity_id=ACCOUNT_ID,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="account.gtm_tooling_stack",
+                    value_json="Support answers on +1 (415) 555-0132. Their kids use it too.",
+                )
+            ]
+        )
+    )
+
+    assert [draft.value_json for draft in writer.drafts] == [
+        "Support answers on +1 (415) 555-0132. Their kids use it too."
+    ]
+    assert runtime.compliance_log == []
+
+
+# -- the refusal-code guard ------------------------------------------------------------------
+
+
+def test_a_person_tool_emitting_a_code_outside_the_person_set_is_a_tool_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A code the person manual carries no row for is a programming error, never a crash.
+
+    The envelope's ``reaction`` is the manual's row; a code outside the person set would hand the
+    model a reaction its own manual never states, so the assertion fires and the failure law turns
+    it into a ``tool_error`` like any other unexpected exception.
+    """
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+
+    async def _boom(runtime: Any, args: Any) -> Mapping[str, Any]:
+        raise tools.RefusalError("company_not_found", "a code no person manual row covers")
+
+    monkeypatch.setattr(tools, "_fetch_page", _boom)
+
+    refused = _call(runtime, "fetch_page", url="https://nickfisher.dev/about")
+
+    assert refused["code"] == "tool_error:AssertionError"
+    assert refused["recoverable"] is True

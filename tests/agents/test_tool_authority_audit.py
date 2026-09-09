@@ -86,10 +86,17 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # carrying both pins AND the conversation surface's promoted-profile pin moving with it. O6 —
     # the slice that teaches the Head of ABM this launch — owns that bump. Today the launch is a
     # human act through `scripts/launch_arv2_account_research.py`, so nothing is gated on it.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 122
+    # ARV2 Track R, R3 adds `launch_arv2_person_research` (122 -> 123), UNGRANTED on exactly the
+    # same terms: it is the person-shaped twin of the launch above (SPEND, admitted only from a
+    # captured user action), and if anything the more personal of the two — it researches named
+    # people. Today it is a human act through `scripts/launch_arv2_person_research.py`, and the
+    # committee step reaches the same rows in code without going through the toolbelt at all.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 123
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == ()
     assert c6_roles_for_tool("launch_arv2_account_research@1") == ()
+    assert c6_roles_for_tool("launch_arv2_person_research@1") == ()
     assert c6_roles_for_tool("read_arv2_account_research_run@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
@@ -110,14 +117,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",
     }
-    assert AD_ASSETS_LANE <= set(design_grants)
+    assert set(design_grants) >= AD_ASSETS_LANE
     assert all(design_grants[name] == () for name in AD_ASSETS_LANE)
     # Clone-fidelity F4.3 / ruling R-F1: the second ungranted design write, and for a different
     # reason from the ad-assets lane's. That lane is machine-invoked and merely unplanned by any
     # model; this one is HUMAN-ONLY by ruling — clearing a published ABM page's robots meta is an
     # explicit act of the person, so no role may hold the tool that can do it.
     HUMAN_ONLY_DESIGN = {"design_set_web_noindex"}
-    assert HUMAN_ONLY_DESIGN <= set(design_grants)
+    assert set(design_grants) >= HUMAN_ONLY_DESIGN
     assert all(design_grants[name] == () for name in HUMAN_ONLY_DESIGN)
     assert all(
         roles == (AgentRole.DESIGN,)

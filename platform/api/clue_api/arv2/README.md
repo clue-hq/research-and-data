@@ -666,19 +666,21 @@ Two things worth knowing before touching it:
 One `arv2_account_research` fleet task is **one account**: its own lease, its own job row, its own
 failure. An account that goes wrong takes only itself down, and the rest of the run keeps moving.
 
-### The module map (nine modules)
+### The module map (eleven modules)
 
 | module | what it owns |
 | --- | --- |
-| `account_research_catalog.py` | the sha-pinned `arv2-account/v1` catalog (profile, prompt, three skills), the resource bundle, and the system prompt built from it |
-| `account_research_refusals.py` | the refusal codes and the envelope the model receives; each code's `reaction` sentence is the manual's row, word for word |
+| `account_research_catalog.py` | the sha-pinned `arv2-account/v1` and `arv2-person/v1` catalogs (profile, prompt, three skills each), the resource bundle, and the system prompt built from it |
+| `account_research_refusals.py` | the refusal codes and the envelope the model receives; each code's `reaction` sentence is the manual's row, word for word — `REFUSAL_CODES` for the account driver, `PERSON_REFUSAL_CODES` for the person driver |
 | `account_research_store.py` | one function per run/job transition, plus the annotation writer and the readers the driver composes from |
 | `provider_ledger.py` | the buffered raw/ledger sinks: `ProviderCaller` writes them from the worker thread, the async side drains raw bodies to artifacts and rows to `provider_call_ledger` right after the hop |
 | `account_research_claims.py` | the deterministic claim mappers (provider record → typed draft) and the prose-claim carry-across |
 | `account_research_tools.py` | the twelve governed tools and the `ToolRuntime` behind them (halt latch, provider semaphore, the drain, the lenient claim write) |
 | `account_research_agent.py` | the `create_agent` loop and its cap-to-finalize middlewares |
-| `account_research_driver.py` | the fleet handler: compose under the launch's pins, run the agent, settle the receipt |
-| `account_research_launch.py` | **seam 1** — the launch function, its typed refusals, the `Arv2LaunchService` seam, and the two toolbelt tools |
+| `account_research_driver.py` | the fleet handler: compose under the launch's pins, run the agent, settle the receipt — and, for an account job, fan its confirmed committee out |
+| `committee_step.py` | R3: one account job's confirmed candidates become contact entities, their three committee claims and one person job each, inside the settling transaction |
+| `account_research_launch.py` | **seam 1** — the account launch, the on-demand person launch, their typed refusals, the `Arv2LaunchService` seam, and the three toolbelt tools |
+| `fleet_task.py` | the fleet identity of one research task (work id, dedup prefix, priority), shared by the enqueuer and the handler so neither has to import the other |
 
 ### The failure law
 
@@ -936,6 +938,16 @@ By section — Probook `core` 5/13, `account` 7/9, `account.resonance` 0/2; Zafr
 `account` 13/26, `account.resonance` 1/11. That is the number the post-close re-run is measured
 against.
 
+**R3 — the same measurement, per person.** `--people` also grades every person the answer key
+covers who has claims in the graded runs: `people_keys` reads the loaded person-depth key back
+grouped by contact (122 keys over ten people), each person is matched to their contact entity by
+folded LinkedIn URL, and the run's claims on that contact are graded by exactly the account rules.
+Each one writes `recall-<slug>.md` (`recall-nick-fisher.md`) and lands in `recall.json` under
+`people`; the report carries `subject_kind: person` and `insight_found`, which is read off the
+rows — any claim the job wrote carrying the `unique_insight` marker — never off what the agent
+said it did. `--run-ids <a>,<b>` adds run ids to `--run-id` for every read, because a committee
+person is researched inside their account's run while an on-demand person launch is its own run.
+
 ### Configuration
 
 - `CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED` — the lane switch. Off: no fleet handler, no launch service,
@@ -968,3 +980,289 @@ sources), and the onboarding status, on `/frontend/v1/brand-context/...`. Only `
 `confirmed` versions are listed (no status chip — founder ruling 2026-09-08); the `design` folder
 is the brand kit's. The store's `list_documents` stays status-blind for the page's own reasons; this
 read filters.
+
+## R3 — the committee step and the person agent
+
+R2 researched an account and named its buying committee. R3 turns that finding into people the
+platform can research, address and govern: a confirmed candidate becomes a contact entity with a
+committee seat and a job of its own, and that job runs a second agent — the person agent — under
+the same lane, the same fleet kind and the same failure law. Live acceptance is
+`.context/arv2-r3-acceptance/acceptance.md`.
+
+### A job row says what it researches
+
+Migration `60e51eba0123` gives `arv2_research_job` three columns. `subject_type` is `account` (the
+R2 job, and the value every existing row takes) or `person`; `subject_entity_id` is the contact a
+person job researches and is `NULL` for an account job, held biconditional by the CHECK
+`arv2_research_job_subject` so neither half can exist without the other; `profile_sha256` is the
+agent profile *this job* was pinned to, because a person job is queued later than its run and may
+run a different profile than the launch signed off on. The account a person job belongs to stays in
+`account_entity_id`, so a person job is scoped, indexed and joined exactly like its siblings.
+Uniqueness moved from the account to the subject: the expression index
+`arv2_research_job_subject_once (run_id, subject_type, COALESCE(subject_entity_id,
+account_entity_id))` still allows one account job per run and now also one job per person per run.
+`downgrade()` refuses while any `person` row exists rather than dropping the column out from under
+it.
+
+There is **one fleet kind** for both subjects (`arv2_account_research`, work id = job id, dedup
+prefix `arv2-account-research:`, priority −100, all three in `fleet_task.py`). The handler
+dispatches on `job.subject_type`: `_compose` builds the account composition or `_compose_person`,
+which pins the **job's** profile digest, loads the person catalog and the person tools, reads
+`ARV2_PERSON_AGENT_MODEL` (falling back to the account model with a logged
+`arv2.person_model_fallback` when the env line is unset), renders the account-then-person
+already-established block, and settles a person-shaped receipt. That avoids a second fleet enum and
+a second handler; the cost, recorded when it was ruled, is that person jobs compete for the same
+per-kind worker slots as account jobs.
+
+### The person catalog and its pin
+
+`platform/agents/catalog/entity-research/arv2-person/v1/` holds five files — `profile.md`,
+`prompt.md`, `dossier.md`, `audit.md`, `manual.md` — read through the same generic catalog root as
+the account agent's. `profile.md` is the lane's **second pin**: `arv2_person_profile_sha256()` is
+`4049f29f…` today, it is stamped on every person job at launch, and the driver refuses to compose
+(`_ProfilePinMismatch`, "relaunch") when the catalog on disk no longer digests to the job's copy.
+`manual.md` names every refusal code the person tools can emit, and `PERSON_REFUSAL_CODES` is
+asserted against every person tool's refusals, so a tool can never hand this agent a reaction its
+own manual does not carry.
+
+### The person toolbelt (eleven tools)
+
+`build_person_tools` binds eleven tools to one person job's runtime. Seven bodies are the account
+job's, unchanged — `fetch_page`, `search_web`, `read_media_feeds`, `research_deep`,
+`structure_material`, `write_claims`, `verify_links` — because they read the subject off the job's
+scope rather than off the call, which is what lets one body serve both agents without a second copy
+to drift. Four are this belt's own: `read_person_state` (the account reader plus the identity
+lock), `lookup_person`, `unique_insight` and the person `finalize_research` (which writes openers
+one claim per opener, hooks, `excluded_lookalike`, and `contact.reports_to` only when the agent
+cites a posting or the person's own words).
+
+`lookup_person` is the provider hop, and it holds three locks in order, none of them a scored
+match. **(1) The argument against the job:** the URL the record is matched on must be the one the
+committee step confirmed (`scope.person_linkedin_url`), not merely the one the model typed — the
+check runs before the hop, so a mismatched call also costs nothing. A job carrying **no** confirmed
+URL is refused `subject_lock_failed` right there, before the hop: the two provider-side locks do
+not stand without an anchor (lock 2 would match whatever candidate carries the URL the model typed,
+and lock 3 passes for every colleague at this account), so all three run only for URL-anchored
+jobs. The person dossier's rung 2 already tells the agent to skip the call and say so in
+`not_found` in that case. **(2) The LinkedIn URL:** the
+name-scoped search returns up to three candidates and the one this job is about is the one whose
+`linkedin_url` folds equal to that URL; no match is `subject_lock_failed`, and the refusal names
+the companies the other candidates work for so they can be logged as lookalikes. **(3) The
+employer, as corroboration only:** `AiArkClient._current_company_domain` resolves the record's
+current employer by a ladder — fold-equal LinkedIn **company URLs** first, folded-name
+**containment by whole word** second (`"cogent"` inside `"cogent security"` is the same employer
+written short; `"box"` inside `"dropbox"` is not, and character containment would hand a mover the
+old employer's domain and clear this very lock with it), otherwise unknown. A *different* resolvable company is `subject_lock_failed`
+naming both domains; an employer the record simply cannot state lets the lookup **proceed**, with
+every claim it writes carrying the marker `employer_unverified` and the result carrying
+`employer_verified: false`. That third rung is the live L1 fix: the old code demanded the two
+blocks spell the employer identically (`"Cogent"` vs `"Cogent Security"`), read the unstated domain
+as a contradiction, and cost three confirmed members their whole lookup. Only past all three locks
+is the email export bought, and the record's own claims are written **before** the export hop so a
+transport failure there cannot lose the title, headline, location, badges and career history. An
+export that finds nothing is a result (`email_export_empty`), never a refusal.
+
+### `unique_insight`
+
+The one-question pass — what a generic enrichment tool would never surface about this person — is a
+**second reading of material this job already structured**, so it takes no sources of its own; with
+nothing structured yet it refuses `invalid_arguments` naming the call to make instead. Its answer
+may land only on a **fact** facet (`UNIQUE_INSIGHT_TARGET_KEYS`: `hobby`, `publications`,
+`conference_talk`, `other_roles`, `voice_quote`, `recent_award`, `alma_mater`, `stated_interests`,
+`self_summary`, `education_highschool`, `certifications`). A row on `contact.facet.hooks` or any
+other outreach field is dropped, named in `dropped_off_target` and never written — the live L2
+defect, where the insight landed on a derived outreach list. At most one row survives, the filter
+runs before the cap (so an admissible second row is still the answer when the first was off
+target), it is written at **priority 1**, and it carries the marker `unique_insight`. There is no
+new field and no new column: "this job found an insight" is read off the marker on the row, never
+off what the agent said it did.
+
+### The media cap
+
+`CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS` (default 3) caps how many media items one person job may buy.
+`read_media_feeds` counts the cap off the `contact.facet.public_appearances` claims **this job has
+actually written**, not off a counter in memory, so a resumed job cannot re-buy what it already
+has, and it checks before any source is chosen so a cap of zero costs nothing at all. Over the cap
+is the refusal `media_cap_reached`, naming the count and the cap.
+
+### The compliance pass
+
+`person_compliance.apply_person_floor(drafts, *, purge_unevidenced)` is a **pure** function — drafts
+in, surviving drafts and a log out, no settings, no database, no clock — wired at
+`ToolRuntime.write`/`write_each` for person scopes only, so no person claim reaches the store
+without passing it. The prompt tells the agent the floor; this module is the decision. Seven rules,
+in order:
+
+| # | rule | effect |
+| --- | --- | --- |
+| 1 | personal contact details — a phone, a private email or a home address, on any field but the professional `core.work_email` export | the draft is **dropped whole** |
+| 2 | references to minors, even self-published | the matching **sentence is redacted**; a value that is wholly the match is dropped |
+| 3 | the sensitivity floor (health, faith, politics, sexual orientation, trade-union, criminal) | same — redact the sentence, drop a wholly-matching value |
+| 4 | origin, nationality, migration | recorded as biography: marker `origin_biography`, `outreach_safe=false` |
+| 5 | a self-announced wedding or birth | marker `self_announced_milestone`, `outreach_safe=false` |
+| 6 | no evidence span **or** no source URL | marker `unevidenced`; dropped only when the purge flag is on |
+| 7 | an opener or a hook that itself meets the floor, or that rests on a sentence rule 4/5 made biography-only | the hook is **dropped** |
+
+Redaction is by **sentence**, never by word: half a sentence with a hole in it is both unreadable
+and still capable of implying what was removed. Nothing disappears silently — every drop, redaction
+and marking is one row in the log (`action`, `field_key`, `reason`, `detail`), and the log rides
+the person job's receipt as `compliance_log`, so a screen can say *something was removed and why*
+without showing what it was; the per-call rows also come back on the `lookup_person`,
+`unique_insight` and `structure_material` results as `compliance`. The pass never raises: a value
+shape it cannot read is logged `unreadable_value` and passed through, because a compliance pass
+that crashed the write path would cost a job every claim it had. Rule 6's purge is
+`CLUE_UNEVIDENCED_ROW_PURGE_ENABLED` (default `false`) and **exempts two shapes**: a provider record
+(`ExtractionMethod.API`) is evidenced by the record itself, which is not a page a human can open,
+and `contact.facet.hooks` carries neither quote nor URL by design — without the exemption, turning
+the purge on would delete the lane's whole deterministic spine.
+
+The phone rule is narrower than "nine to fifteen digits": a match must carry a **phone signal** —
+a leading `+`, a parenthesised area code, a dash/dot-separated tail, the UK 5+6 grouping, or one of
+`tel`/`phone`/`mobile`/`cell`/`whatsapp`/`call me` in the sentence the candidate sits in. Live
+(defect C1b) the looser scan merged whitespace-separated years and dates into long digit runs and
+dropped four talk lists and a career history whole.
+
+### The committee step
+
+`committee_step.run_committee_step` runs inside the **settling transaction** of the account job
+that made the finding. Each confirmed `account.committee_candidate` becomes a contact entity under
+the account (reused when the LinkedIn URL already resolves to one), three claims keyed to that
+contact — `contact.persona`, `contact.role_on_committee` (carrying the candidate's optional
+`rationale` and `influence`) and `contact.current_title` — and one person job. Four rules shape it:
+a **vacant seat is not a person** (no contact, no claims, no job — and neither is a named candidate
+with no confirming URL); one member is **one savepoint**, so a member that cannot be written is a
+recorded `CommitteeSkip` rather than an error that would cost the account job the `finish_job` row
+it just wrote; the person job row is the member's **latch** (its id is derived from run + contact,
+so a re-settled job writes nothing twice and still reports the member as work to offer); and the
+step **queues nothing** — the driver offers the tasks once the settling transaction has committed,
+rows first, offer second. Skip reasons are `vacant_seat`, `unconfirmed`, `committee_cap`,
+`ambiguous_name` (two people of that name already under this account — refused, never guessed) and
+`member_not_written`.
+
+### The two launch paths
+
+**Account fan-out** is the path above: `launch_arv2_account_research` starts an account job, and
+its committee step queues one person job per confirmed member inside the same run. **On demand**,
+`launch_arv2_person_research` researches contacts that already exist — a contact id or a LinkedIn
+URL, mixed freely — and creates nobody: resolving a person is an identity act with its own
+evidence, so a name the workspace does not hold is a typed refusal. It also **seats** each named
+person: `seat_person_on_committee` writes `contact.persona` (from `--persona`, default `user`) and
+`contact.role_on_committee` with the rationale "launched on demand by `<user>`", through the
+committee step's own `committee_member_claims`, and never re-seats a contact who already holds a
+live persona claim. Those two claims are written as `ExtractionMethod.HUMAN` — tier 1, no URL
+required — because they are a human's own statement, not model synthesis; stamping them
+`LLM_SYNTHESIS` would have tripped the writer's `source_missing` marker on a claim that is honestly
+unevidenced-by-URL. `persona` is part of the run digest, so the same people at a different seat is
+a different run rather than a silent replay. This is the W2 walk fix: without a seat a person was
+researched at full cost and then invisible on their own account's contact list. The tool
+`launch_arv2_person_research@1` is registered UNGRANTED in `C6_AGENT_TOOL_AUTHORITY`, like its two
+R2 neighbours.
+
+### The repair script
+
+`scripts/arv2_repair_person_lookups.py` re-runs the **deterministic** lookup for person jobs that
+already finished — the repair for the people L1 cost. For each `--job-ids` it rebuilds the job's own
+scope exactly as the driver does (the shared `person_scope_for`), calls the same two AI Ark
+endpoints `lookup_person` calls, and writes the same claims under the same scope, through the same
+lenient writer and the same compliance floor, with ledger rows stamped to the job that paid for
+them; every claim carries `repaired: "lookup_person"`. **It never calls a model** — structurally:
+the clients object it composes offers AI Ark and raises `NotImplementedError` from the rest. It is
+**idempotent by default** (a contact already carrying the lookup's own non-repaired `ai_ark:person`
+claims reports `skipped_already_looked_up`; `--force` overrides), `--persona` seats a finished
+person who holds no seat, `--dry-run` reads and prints without a provider call or a write, and an
+account job or a `not_started` job is refused on stderr with exit 2 before any spend.
+
+### The committee the screens read
+
+`contact_eligibility.Arv2CommitteeReferenceSource` is **first** in the default reference chain, and
+its one applicability question is whether any live contact under this account holds a
+`contact.persona` claim. When one does, this source is the authority for the account and hands the
+resolver every live claim of every seated contact; when none does it returns `None`, which leaves
+the legacy sources in charge of an account only the old lane ever researched. The coverage read was
+removed from `display/gather.committee_members` (founder ruling 2026-09-09 — ARV2's own rows are
+the only truth for the accounts screens), and six legacy expectations were retired with dated
+reasons. `project_run_id` is deliberately unused: an ARV2 committee claim is a fact about a person
+at an account, not a per-project-run artifact, so **every project targeting the account reads the
+same seated people**.
+
+**Two membership rules, on purpose (founder ruling 2026-09-10, after the rebase onto D4-b).** The
+*pages* seat a contact on the D4-b rule — any contact under the account holding at least one live
+claim (`display/gather.committee_members`, persona-ranked). The *governed chain* seats a contact on
+R3's stricter rule — a live persona claim plus a role claim, because a governed member needs both
+claim ids. They agree on live data: R3 creates contacts only through the committee step and the
+on-demand launch, and both seat the person with those two claims before anything else is written.
+Neither rule is to be bent toward the other. Everything below the source — product-exact filtering, the strong-binding
+rule, the merge, the use-decision gate, the sort — is the shared governance, so an ARV2 answer is
+governed exactly like a coverage-sourced one.
+
+### The two migrations and the two shape changes
+
+`60e51eba0123` is the job-subject migration above. `7c4f1a2b9d63` (its child) swaps one
+**field-registry** row found wrong by the acceptance walk, exactly, in the `320e975d4c46` pattern:
+`contact.facet.career_history` moves its flat `start`/`end` under the nested `date: {start, end}`
+the read surface's `current_position_start` and the answer key both use — W3, which left every
+mapped person's tenure empty. A row that is neither shape raises (naming the field) rather than
+matching nothing in silence, and existing claims are not rewritten.
+
+The walk's other shape finding, W1 — `core.work_email` written as a bare string while the contact
+header's email chip reads `value["address"]` + `value["status"]` — is carried by **D4-b's**
+migration `7332ac974920`, which landed first on the integration branch: `str`/`{"type":"string"}` →
+`object`/`{address, status, checked_at?}` with the registry's closed vocabulary
+`claimstore.packs.WORK_EMAIL_STATUSES` (`verified_smtp` | `catch_all_valid` | `invalid` |
+`unknown` | `unverified`). R3's export mapper (`email_export_claim`) writes that shape; a found
+export is always one of the two usable verdicts. The two flag-off old-lane writers of the field
+(`frontend_read/contact_email_lookup.py`, `contact_channel_enrichment.py`) are D4-b's, and write
+the verdict shape with `unverified`. The R3 and D4-b migration chains meet at the join
+`57e06d696d49`, the single head.
+
+### Configuration (R3's additions)
+
+- `CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS` (default `3`) — the per-person media item cap above.
+- `ARV2_PERSON_AGENT_MODEL` (`x-ai/grok-4.6`) / `ARV2_PERSON_AGENT_MODEL_EFFORT` (empty) — the
+  person lane's model, in the consolidated agent-model block. Unset is not a refusal: the driver
+  falls back to the account model and logs `arv2.person_model_fallback` once at composition.
+- `CLUE_UNEVIDENCED_ROW_PURGE_ENABLED` (default `false`) — compliance rule 6's purge.
+- The lane switch and the stop policy are R2's, unchanged; person jobs read the same three
+  `CLUE_ARV2_ACCOUNT_MAX_*` ceilings.
+
+### Running it
+
+```bash
+set -a; source .env; set +a
+
+# fan-out path: one account job whose committee queues its own person jobs
+uv run python scripts/launch_arv2_account_research.py \
+    --workspace ws_arv2_answer_key --project prj_arv2_answer_key \
+    --accounts zafran.io --effort full --committee-cap 5
+
+# on-demand path: contacts that already exist, seated as they are launched
+uv run python scripts/launch_arv2_person_research.py \
+    --workspace ws_arv2_answer_key --project prj_arv2_answer_key \
+    --contacts https://www.linkedin.com/in/dana-reyes,<contact-uuid> \
+    --persona champion --directive "open with the podcast"
+
+# repair a finished person job's deterministic lookup (no model, idempotent)
+uv run python scripts/arv2_repair_person_lookups.py --job-ids <job-uuid> --persona user --dry-run
+
+# recall, per person as well as per account
+uv run python scripts/arv2_answer_key_recall.py --people \
+    --run-id <account-run> --run-ids <person-run>,<second-person-run> \
+    --out .context/arv2-r3-acceptance/recall
+```
+
+`--people` grades every person the answer key covers who has claims in the graded runs:
+`people_keys` reads the loaded person-depth key back grouped by contact (122 keys over ten people),
+each person is matched to their contact entity by folded LinkedIn URL, and their claims are graded
+by exactly the account rules. Each writes `recall-<slug>.md` and lands in `recall.json` under
+`people`, carrying `subject_kind: person` and `insight_found` — read off the `unique_insight`
+marker on the rows, never off what the agent said. `--run-ids` is additive to `--run-id` because a
+committee person is researched inside their account's run while an on-demand launch is its own run.
+
+### Known residual (R3)
+
+The leaf-value recall grader understates a person run. Almost every missed key grades `field_only`
+— the field is found but the free-text value does not leaf-match the answer key's phrasing — because
+person facets are prose (a hobby, a quote, a talk) and exact leaf agreement is the wrong grader for
+them. Field-found coverage was ≈ 0.9 on every person researched live. A semantic or containment
+mode for facet text is the follow-up; until it exists, the R3 recall number is not the number the
+master plan's exit gate means.

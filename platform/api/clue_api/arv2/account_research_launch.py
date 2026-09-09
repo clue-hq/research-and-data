@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -36,12 +36,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
+    ARV2_PERSON_PROFILE_REF,
     arv2_account_profile_sha256,
+    arv2_person_profile_sha256,
 )
-from clue_api.arv2.account_research_driver import (
-    ARV2_ACCOUNT_DEDUP_PREFIX,
-    ARV2_ACCOUNT_TASK_PRIORITY,
-    arv2_account_work_id,
+from clue_api.arv2.account_research_claims import (
+    PERSONA_FIELD,
+    JobScope,
+    committee_member_claims,
 )
 from clue_api.arv2.account_research_store import (
     JobRow,
@@ -49,20 +51,29 @@ from clue_api.arv2.account_research_store import (
     create_job,
     create_run,
     list_jobs,
+    read_person_catalog,
     read_run,
 )
+from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.errors import Arv2Error
+from clue_api.arv2.fleet_task import (
+    ARV2_ACCOUNT_DEDUP_PREFIX,
+    ARV2_ACCOUNT_TASK_PRIORITY,
+    arv2_account_work_id,
+)
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.structuring_client import FieldCatalog
 from clue_config import Settings
-from clue_core import EntityId, ProjectPhase, ProjectRunId
+from clue_core import EntityId, ExtractionMethod, Persona, ProjectPhase, ProjectRunId
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkQueue
 from clue_obs import get_logger
+from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.claimstore.run_lineage import record_run_lineage
 from clue_research.durable.project_run import ensure_project_run, get_project_run
-from clue_research.identity import get_account
+from clue_research.identity import get_account, get_contact
 from clue_research.membership import ensure_project_account
-from clue_spine import list_project_product_sets
+from clue_spine import current_project_product_set, get_project, list_project_product_sets
 from clue_storage import StorageBackend, read_verified_artifact
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -89,16 +100,23 @@ __all__ = [
     "Arv2LaunchService",
     "Arv2RunView",
     "DbArv2LaunchService",
+    "Arv2PersonLaunchRequest",
+    "seat_person_on_committee",
     "LaunchArv2AccountResearchInput",
     "LaunchArv2AccountResearchOutput",
     "LaunchArv2AccountResearchTool",
+    "LaunchArv2PersonResearchInput",
+    "LaunchArv2PersonResearchOutput",
+    "LaunchArv2PersonResearchTool",
     "QueuedJob",
     "ReadArv2AccountResearchRunInput",
     "ReadArv2AccountResearchRunOutput",
     "ReadArv2AccountResearchRunTool",
+    "arv2_job_id",
     "build_arv2_launch_tools",
     "enqueue_launched_jobs",
     "launch_arv2_account_research",
+    "launch_arv2_person_research",
 ]
 
 #: The document kind and status a launch will research against. Anything else is a refusal: a
@@ -108,9 +126,22 @@ _ICP_KIND = "icp-definition"
 _ICP_STATUS = "confirmed"
 
 #: Deterministic id namespaces. The run id is the digest of the signed-off request, the job id is
-#: the run plus the account — so a relaunch of the same request lands on exactly the same rows.
+#: the run plus the subject — so a relaunch of the same request lands on exactly the same rows.
 _RUN_NS = uuid5(NAMESPACE_URL, "arv2-account-research:run")
 _JOB_NS = uuid5(NAMESPACE_URL, "arv2-account-research:job")
+
+
+def arv2_job_id(run_id: UUID, subject_id: UUID) -> UUID:
+    """One job's deterministic id: its run plus the entity it researches.
+
+    The three writers of a job row all key it this way — the account launch (run + account), the
+    person launch and the committee step (run + contact) — so re-launching a request, or
+    re-settling the account job that resolved a committee, lands on the row that is already there
+    instead of a second one. An account and a contact are different entities, so an account job and
+    a person job under the same run can never collide.
+    """
+    return uuid5(_JOB_NS, f"{run_id}:{subject_id}")
+
 
 #: The run row's effort dial. Kept as a closed literal (and CHECK-ed in the migration) so a typo
 #: cannot silently become a research posture nobody defined.
@@ -154,6 +185,8 @@ class Arv2LaunchRefused(Arv2Error):
     Codes: ``lane_disabled``, ``account_not_found:<id>``, ``account_not_in_workspace:<id>``,
     ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``, ``icp_digest_mismatch``,
     ``icp_front_matter_invalid``, ``product_selection_version_unknown``, ``project_not_found``.
+    The person launch adds ``no_contacts``, ``contact_not_found:<id>``, ``contact_merged:<id>``,
+    ``contact_without_account`` and ``product_set_not_confirmed``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -294,7 +327,7 @@ async def launch_arv2_account_research(
             account_entity_id=account_id,
             added_via="manual",
         )
-        job_id = uuid5(_JOB_NS, f"{run_id}:{account_id}")
+        job_id = arv2_job_id(run_id, account_id)
         job_ids.append(job_id)
         await create_job(
             conn,
@@ -302,6 +335,11 @@ async def launch_arv2_account_research(
             run_id=run_id,
             workspace_id=request.workspace_id,
             account_entity_id=account_id,
+            # The launch queues account subjects only; committee members are queued later, by the
+            # committee step, once this job has resolved them. The job carries its own copy of the
+            # profile pin so replay never has to infer it from the run.
+            subject_type="account",
+            profile_sha256=profile_sha256,
         )
 
     log.info(
@@ -431,11 +469,27 @@ async def _pinned_icp(
             "the ICP artifact's bytes are not the ones this request approved: stored "
             f"{row['artifact_sha256']}, requested {request.icp_artifact_sha256}",
         )
+    return await _icp_pins(conn, storage, workspace_id=request.workspace_id, row=row)
+
+
+async def _icp_pins(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    row: Mapping[str, Any],
+) -> _PinnedIcp:
+    """Read one ICP document's body and take the run's pins — its brand, key and version — off it.
+
+    Shared by both launches: the account launch resolves the document from the artifact ref its
+    request named, the person launch from the project's brand, and from there the pins are read the
+    same way — out of the document itself, never out of a caller's argument.
+    """
     _, body = await read_verified_artifact(
         conn,
         storage,
-        storage_key=request.icp_artifact_key,
-        workspace_id=request.workspace_id,
+        storage_key=str(row["artifact_key"]),
+        workspace_id=workspace_id,
     )
     try:
         front, _ = parse_front_matter(body.decode("utf-8"))
@@ -512,6 +566,403 @@ def _request_sha256(request: Arv2LaunchRequest, *, profile_sha256: str) -> str:
 
 
 # =================================================================================================
+# the person launch: research these named people, now, because a human asked
+# =================================================================================================
+
+
+#: The project's brand's newest confirmed ICP. The account launch is handed the artifact ref a
+#: human approved; an on-demand person launch has no such ref to be handed, so it pins what the
+#: brand has confirmed *now* — and records that key and digest on its run, exactly like the other.
+_CONFIRMED_ICP_FOR_BRAND = text(
+    """
+    SELECT document_id, brand_id, kind, status, artifact_key, artifact_sha256, path
+    FROM brand_knowledge_document
+    WHERE workspace_id = :workspace_id AND brand_id = :brand_id
+      AND kind = 'icp-definition' AND status = 'confirmed' AND artifact_key IS NOT NULL
+    ORDER BY version DESC, path
+    LIMIT 1
+    """
+)
+
+
+@dataclass(frozen=True)
+class Arv2PersonLaunchRequest:
+    """One human's request to research these named people, whoever resolved them.
+
+    It carries contacts, not candidates: the people are already entities of this workspace — found
+    by a committee step, imported, or picked out of the account's contact list — and this launch
+    researches them. It never creates a person, because creating one is an identity act with its
+    own evidence, and a launch that could invent people would be a launch that could research
+    someone who does not exist.
+    """
+
+    workspace_id: str
+    project_id: str
+    contact_entity_ids: tuple[UUID, ...]
+    requested_by_user_id: str
+    directive_text: str = ""
+    project_run_id: UUID | None = None
+    #: The seat the requesting human puts every named contact in. It is part of the request
+    #: because a person launched on demand is otherwise **nobody**: the account's contact list is
+    #: read from the committee claims (``contact_eligibility.Arv2CommitteeReferenceSource``), so a
+    #: person with no ``contact.persona`` claim is researched at cost and then invisible on their
+    #: own account's screen (walk finding W2, 2026-09-09). ``user`` is the default because it is
+    #: the seat that assumes the least — the person who would operate the product — and the
+    #: vocabulary is the platform's closed one, so a launch can never invent a role.
+    persona: Persona = Persona.USER
+
+
+async def launch_arv2_person_research(
+    conn: AsyncConnection,
+    request: Arv2PersonLaunchRequest,
+    *,
+    settings: Settings,
+    storage: StorageBackend,
+    profile_sha256: str,
+    now: Callable[[], datetime] = _utcnow,
+) -> Arv2LaunchReceipt:
+    """Validate the request and write a run of its own with one person job per contact.
+
+    A run of its own, rather than a job hung off an existing account run, because a run row *is*
+    the authorization record: this research was authorized by a different human act, against
+    whatever the project has confirmed at this moment, and pinning it to an older run would claim
+    an approval nobody gave. ``effort`` is ``full`` (a human named these people one by one — there
+    is no cheap pass to run on them) and the committee cap is simply how many they named.
+
+    **It queues nothing**, for the reason :class:`Arv2LaunchReceipt` gives: rows first, offer
+    second, through :func:`enqueue_launched_jobs` once this transaction has committed.
+    """
+    if not settings.arv2_account_research_enabled:
+        raise Arv2LaunchRefused(
+            "lane_disabled", "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is false on this deployment"
+        )
+    if not request.contact_entity_ids:
+        raise Arv2LaunchRefused("no_contacts", "a person launch must name at least one contact")
+
+    project = await get_project(conn, request.project_id)
+    if project is None or project.workspace_id != request.workspace_id:
+        raise Arv2LaunchRefused(
+            "project_not_found",
+            f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}",
+        )
+    accounts = await _check_contacts(conn, request)
+    icp_row, icp = await _current_confirmed_icp(
+        conn, storage, workspace_id=request.workspace_id, brand_id=str(project.brand_id)
+    )
+    product_set = await current_project_product_set(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
+    )
+    if product_set is None:
+        raise Arv2LaunchRefused(
+            "product_set_not_confirmed",
+            f"project {request.project_id!r} has no confirmed product set; confirm one before "
+            "researching anybody",
+        )
+
+    project_run_id = request.project_run_id or uuid5(
+        NAMESPACE_URL,
+        f"arv2-project-run:{request.project_id}:{icp.icp_key}:{icp.icp_version}",
+    )
+    await ensure_project_run(
+        conn,
+        project_run_id=ProjectRunId(project_run_id),
+        project_id=request.project_id,
+        workspace_id=request.workspace_id,
+        icp_key=icp.icp_key,
+        icp_version=icp.icp_version,
+        phase=ProjectPhase.DEEP,
+    )
+    if await get_project_run(conn, ProjectRunId(project_run_id)) is None:  # pragma: no cover
+        # Guarded by the project read above; kept because ``ensure_project_run`` writes nothing at
+        # all for an unknown project and says nothing about it, and a run with no project run would
+        # strand every job under it.
+        raise Arv2LaunchRefused(
+            "project_not_found",
+            f"project {request.project_id!r} has no project run to research under",
+        )
+
+    artifact_key = str(icp_row["artifact_key"])
+    artifact_sha256 = str(icp_row["artifact_sha256"])
+    request_sha = _person_request_sha256(
+        request,
+        profile_sha256=profile_sha256,
+        icp_artifact_sha256=artifact_sha256,
+        product_selection_version=product_set.selection_version,
+    )
+    run_id = uuid5(_RUN_NS, request_sha)
+    inserted = await create_run(
+        conn,
+        RunRow(
+            run_id=run_id,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            brand_id=icp.brand_id,
+            project_run_id=project_run_id,
+            icp_artifact_key=artifact_key,
+            icp_artifact_sha256=artifact_sha256,
+            icp_key=icp.icp_key,
+            icp_version=icp.icp_version,
+            product_selection_version=product_set.selection_version,
+            effort="full",
+            committee_cap=len(request.contact_entity_ids),
+            directive_text=request.directive_text,
+            profile_ref=ARV2_PERSON_PROFILE_REF,
+            profile_sha256=profile_sha256,
+            requested_by_user_id=request.requested_by_user_id,
+            request_sha256=request_sha,
+            created_at=now(),
+        ),
+    )
+    await record_run_lineage(
+        conn,
+        run_id=run_id,
+        workspace_id=request.workspace_id,
+        kind="entity_research",
+        project_id=request.project_id,
+        project_run_id=project_run_id,
+    )
+
+    catalog = await read_person_catalog(conn)
+    writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
+    job_ids: list[UUID] = []
+    seated: list[UUID] = []
+    for contact_id in request.contact_entity_ids:
+        place = accounts[contact_id]
+        await ensure_project_account(
+            conn,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            account_entity_id=place.account_id,
+            added_via="manual",
+        )
+        job_id = arv2_job_id(run_id, contact_id)
+        job_ids.append(job_id)
+        await create_job(
+            conn,
+            job_id=job_id,
+            run_id=run_id,
+            workspace_id=request.workspace_id,
+            # The account is the person's own — a person job stays scoped and joined like its
+            # account sibling, and the driver composes their employer's context from it.
+            account_entity_id=place.account_id,
+            subject_type="person",
+            subject_entity_id=contact_id,
+            profile_sha256=profile_sha256,
+        )
+        if await seat_person_on_committee(
+            conn,
+            scope=JobScope(
+                workspace_id=request.workspace_id,
+                project_id=request.project_id,
+                project_run_id=project_run_id,
+                run_id=run_id,
+                job_id=job_id,
+                account_id=EntityId(place.account_id),
+                account_name=place.account_name,
+                account_domain=place.account_domain,
+                # The prompt half of a scope is honestly empty here: a launch runs no model, and
+                # the job's own composition reads the ICP body and the persona map when it runs.
+                icp_markdown="",
+                persona_markdown="",
+                already_established="",
+                effort="full",
+                committee_cap=len(request.contact_entity_ids),
+                today=now().date(),
+                subject_kind="person",
+                contact_id=EntityId(contact_id),
+                person_name=place.person_name,
+            ),
+            persona=request.persona,
+            requested_by_user_id=request.requested_by_user_id,
+            writer=writer,
+            catalog=catalog,
+        ):
+            seated.append(contact_id)
+
+    log.info(
+        "arv2.person_research_launched",
+        run_id=str(run_id),
+        project_id=request.project_id,
+        people=len(job_ids),
+        seated=len(seated),
+        persona=str(request.persona),
+        replayed=not inserted,
+    )
+    return Arv2LaunchReceipt(
+        run_id=run_id,
+        job_ids=tuple(job_ids),
+        replayed=not inserted,
+        project_run_id=project_run_id,
+        to_enqueue=tuple(
+            QueuedJob(job_id=job_id, run_id=run_id, workspace_id=request.workspace_id)
+            for job_id in job_ids
+        ),
+    )
+
+
+async def seat_person_on_committee(
+    conn: AsyncConnection,
+    *,
+    scope: JobScope,
+    persona: Persona,
+    requested_by_user_id: str,
+    writer: LenientClaimWriter,
+    catalog: FieldCatalog,
+) -> bool:
+    """Give one person the committee seat the human who launched them named. True when it wrote.
+
+    The account's contact list is not a table of contacts: it is whoever holds a
+    ``contact.persona`` claim under the account (the ARV2 committee source in
+    ``contact_eligibility`` — founder ruling 2026-09-09: ARV2's own rows are the only truth for
+    the accounts screens). The
+    committee step writes that claim when an account job confirms a member; a person launched on
+    demand had nobody to write it, so they were researched and then invisible on the very screen
+    the research was for (walk finding W2).
+
+    The seat is written through the same helper the committee step uses, from a synthetic
+    candidate: the human named this person and this seat, so ``rationale`` says exactly that and
+    ``confirmed_by`` is absent — there is no page to cite, and citing the launch as if it were
+    evidence would be worse than admitting there is none. Writing no URL is not a refusal and is
+    not marked ``source_missing`` either: :attr:`~clue_core.ExtractionMethod.HUMAN` is not one of
+    the writer's URL-requiring methods (``claim_writer._URL_REQUIRED``), because a human statement
+    is not citing a page — and it is tier 1 rather than the model's tier 4.
+
+    A person who **already** holds a live persona claim is left alone. Re-seating them would let a
+    launch overwrite the committee's own assessment ("champion", read off a page that says so) with
+    a default nobody chose, and the launch's job is to research the person, not to re-decide who
+    they are.
+    """
+    contact_id = scope.person_subject_id
+    if contact_id is None:  # pragma: no cover - JobScope.__post_init__ already refuses this
+        raise ValueError("seating a person needs a person scope")
+    live = await claims_for(
+        conn, contact_id, scope=WorkspaceScope.for_workspace(scope.workspace_id)
+    )
+    if any(str(claim.field_key) == PERSONA_FIELD for claim in live):
+        return False
+    candidate = {
+        "name": scope.person_name,
+        "persona": str(persona),
+        "rationale": f"launched on demand by {requested_by_user_id}",
+        "confirmed_by": None,
+    }
+    for draft in committee_member_claims(
+        candidate,
+        scope=scope,
+        contact_id=contact_id,
+        catalog=catalog,
+        method=ExtractionMethod.HUMAN,
+    ):
+        await writer.write(conn, draft)
+    return True
+
+
+@dataclass(frozen=True)
+class _ContactPlace:
+    """Where one named contact sits: their employer, and the two names the seat claim needs."""
+
+    account_id: UUID
+    account_name: str
+    account_domain: str
+    person_name: str
+
+
+async def _check_contacts(
+    conn: AsyncConnection, request: Arv2PersonLaunchRequest
+) -> dict[UUID, _ContactPlace]:
+    """Every named contact must exist here; returns each one's place. Refused by id, not in bulk.
+
+    A contact of another workspace is ``contact_not_found``, not "forbidden": the caller learns
+    nothing about a tenant it may not see, and the fix is the same either way — name a contact this
+    workspace holds.
+    """
+    accounts: dict[UUID, _ContactPlace] = {}
+    for contact_id in request.contact_entity_ids:
+        contact = await get_contact(conn, EntityId(contact_id))
+        if contact is None or contact.workspace_id != request.workspace_id:
+            raise Arv2LaunchRefused(
+                f"contact_not_found:{contact_id}",
+                f"no contact {contact_id} in workspace {request.workspace_id!r}; resolve the "
+                "person before researching them",
+            )
+        if contact.merged_into is not None:
+            raise Arv2LaunchRefused(
+                f"contact_merged:{contact_id}",
+                f"contact {contact_id} was merged into {contact.merged_into}; research the "
+                "surviving person instead, or their claims land on a row nothing reads",
+            )
+        account = await get_account(conn, contact.account_entity_id)
+        if account is None or account.workspace_id != request.workspace_id:  # pragma: no cover
+            # The composite FK should make this unrepresentable; reading it is cheaper than
+            # trusting it, because the job row asserts this account and the driver composes it.
+            raise Arv2LaunchRefused(
+                "contact_without_account",
+                f"contact {contact_id} names account {contact.account_entity_id}, which this "
+                "workspace does not hold; a person is researched at their employer",
+            )
+        accounts[contact_id] = _ContactPlace(
+            account_id=UUID(str(contact.account_entity_id)),
+            account_name=account.canonical_name,
+            account_domain=account.primary_domain or "",
+            person_name=contact.full_name or "",
+        )
+    return accounts
+
+
+async def _current_confirmed_icp(
+    conn: AsyncConnection, storage: StorageBackend, *, workspace_id: str, brand_id: str
+) -> tuple[Mapping[str, Any], _PinnedIcp]:
+    """The brand's newest confirmed ICP document and the pins read out of its body."""
+    row = (
+        (
+            await conn.execute(
+                _CONFIRMED_ICP_FOR_BRAND,
+                {"workspace_id": workspace_id, "brand_id": brand_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise Arv2LaunchRefused(
+            "icp_artifact_not_found",
+            f"brand {brand_id!r} has no confirmed {_ICP_KIND} document to research against",
+        )
+    return row, await _icp_pins(conn, storage, workspace_id=workspace_id, row=row)
+
+
+def _person_request_sha256(
+    request: Arv2PersonLaunchRequest,
+    *,
+    profile_sha256: str,
+    icp_artifact_sha256: str,
+    product_selection_version: int,
+) -> str:
+    """The digest of what was asked for — and therefore the person run's identity.
+
+    The ``"subject": "person"`` discriminator is what keeps a person run distinct from an account
+    run of the same project, and the resolved ICP digest and selection version are inside it
+    because they are what this research will be pinned to: asking again after the ICP has moved is
+    a different request, and must be a different run rather than a quiet replay of the old one.
+    """
+    payload = {
+        "subject": "person",
+        "workspace_id": request.workspace_id,
+        "project_id": request.project_id,
+        "contact_entity_ids": sorted(str(value) for value in request.contact_entity_ids),
+        # The seat is part of what was asked for: the same people at a different persona is a
+        # different request, and replaying the old run would silently ignore the correction.
+        "persona": str(request.persona),
+        "icp_artifact_sha256": icp_artifact_sha256,
+        "product_selection_version": product_selection_version,
+        "directive_text": request.directive_text,
+        "profile_sha256": profile_sha256,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+# =================================================================================================
 # the service seam + its production implementation
 # =================================================================================================
 
@@ -520,6 +971,8 @@ class Arv2LaunchService(Protocol):
     """What the toolbelt tools call. One transaction per call is the implementation's business."""
 
     async def launch(self, request: Arv2LaunchRequest) -> Arv2LaunchReceipt: ...
+
+    async def launch_person(self, request: Arv2PersonLaunchRequest) -> Arv2LaunchReceipt: ...
 
     async def read_run(self, *, workspace_id: str, run_id: UUID) -> Arv2RunView | None: ...
 
@@ -561,6 +1014,23 @@ class DbArv2LaunchService:
         await enqueue_launched_jobs(self._queue, receipt)
         return receipt
 
+    async def launch_person(self, request: Arv2PersonLaunchRequest) -> Arv2LaunchReceipt:
+        # The person profile's digest, read at launch time for the same reason the account launch
+        # reads its own: the run records the bytes that existed when the human asked, and the
+        # driver refuses a job whose profile has moved since.
+        profile_sha256 = arv2_person_profile_sha256()
+        async with self._conn_factory() as conn:
+            receipt = await launch_arv2_person_research(
+                conn,
+                request,
+                settings=self._settings,
+                storage=self._storage,
+                profile_sha256=profile_sha256,
+                now=self._now,
+            )
+        await enqueue_launched_jobs(self._queue, receipt)
+        return receipt
+
     async def read_run(self, *, workspace_id: str, run_id: UUID) -> Arv2RunView | None:
         async with self._conn_factory() as conn:
             run = await read_run(conn, run_id=run_id)
@@ -588,6 +1058,22 @@ class LaunchArv2AccountResearchInput(ToolInput):
 
 
 class LaunchArv2AccountResearchOutput(ToolOutput):
+    run_id: str
+    job_ids: tuple[str, ...]
+    replayed: bool
+
+
+class LaunchArv2PersonResearchInput(ToolInput):
+    project_id: str
+    contact_entity_ids: tuple[str, ...] = Field(min_length=1, max_length=50)
+    directive_text: str = ""
+    #: The committee seat every named person is given, from the platform's closed vocabulary. It
+    #: is what makes them visible on their account's contact list at all (W2), and it is only
+    #: written for a person who does not already hold a seat.
+    persona: Persona = Persona.USER
+
+
+class LaunchArv2PersonResearchOutput(ToolOutput):
     run_id: str
     job_ids: tuple[str, ...]
     replayed: bool
@@ -627,6 +1113,20 @@ def _trusted_action(ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
                 message=(
                     "launching account research requires the captured user action that approved "
                     "this exact account set"
+                ),
+            ),
+        )
+    return ()
+
+
+def _trusted_person_action(ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
+    if ctx.action_ref is None:
+        return (
+            PreconditionFailure(
+                reason_code="launch_action_ref_missing",
+                message=(
+                    "launching person research requires the captured user action that approved "
+                    "researching these exact people"
                 ),
             ),
         )
@@ -724,6 +1224,83 @@ class LaunchArv2AccountResearchTool(Tool):
         )
 
 
+class LaunchArv2PersonResearchTool(Tool):
+    name = "launch_arv2_person_research"
+    version = "1"
+    model_description = (
+        "Launch (or exactly replay) ARV2 person research on named contacts of this workspace: one "
+        "governed research job per person on the shared fleet, under a run of its own pinned to "
+        "the project's currently confirmed ICP and product selection. Call only when the current "
+        "user action explicitly approves researching these exact people. It researches existing "
+        "contacts and never creates a person; a successful result means the jobs were enqueued or "
+        "replayed, never that research has completed. ``persona`` is the committee seat each "
+        "named person is given if they do not already hold one — it is what puts them on the "
+        "account's contact list — and defaults to ``user``."
+    )
+    input_model = LaunchArv2PersonResearchInput
+    output_model = LaunchArv2PersonResearchOutput
+    effect_class = ToolEffectClass.SPEND
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "workspace + project + contact set + resolved ICP digest + product-set version + "
+            "profile digest"
+        ),
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "contact_entity_ids", "persona")
+    )
+    #: No Stage-0 pin, for the same reason the account launch has none (standing rule item 5).
+    pin_requirements = ()
+
+    def __init__(self, service: Arv2LaunchService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> tuple[PreconditionFailure, ...]:
+        del inputs
+        return _not_composed() if self._service is None else _trusted_person_action(ctx)
+
+    def estimate(self, inputs: ToolInput) -> ToolEstimate:
+        assert isinstance(inputs, LaunchArv2PersonResearchInput)
+        return ToolEstimate(
+            cost_cents=Decimal(0),
+            detail={
+                "basis": "arv2_person_research_per_person_ceilings",
+                "people": len(inputs.contact_entity_ids),
+            },
+        )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, LaunchArv2PersonResearchInput)
+        assert self._service is not None and ctx.action_ref is not None
+        request = Arv2PersonLaunchRequest(
+            # The tenant and the requesting human are AMBIENT authority, never model-authored.
+            workspace_id=ctx.workspace_id,
+            project_id=inputs.project_id,
+            contact_entity_ids=tuple(UUID(value) for value in inputs.contact_entity_ids),
+            requested_by_user_id=ctx.actor_id or ctx.actor,
+            directive_text=inputs.directive_text,
+            persona=inputs.persona,
+        )
+        try:
+            receipt = await self._service.launch_person(request)
+        except Arv2LaunchRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        return ToolResult(
+            tool=self.name,
+            version=self.version,
+            references={
+                "run_id": str(receipt.run_id),
+                "job_ids": [str(job_id) for job_id in receipt.job_ids],
+                "replayed": receipt.replayed,
+            },
+            replayed=receipt.replayed,
+        )
+
+
 class ReadArv2AccountResearchRunTool(Tool):
     name = "read_arv2_account_research_run"
     version = "1"
@@ -788,12 +1365,16 @@ class ReadArv2AccountResearchRunTool(Tool):
         return ToolResult(tool=self.name, version=self.version, references=references)
 
 
-def build_arv2_launch_tools(service: Arv2LaunchService | None) -> tuple[Tool, Tool]:
-    """The lane's two toolbelt surfaces. Registered always; composed only behind the flag.
+def build_arv2_launch_tools(service: Arv2LaunchService | None) -> tuple[Tool, ...]:
+    """The lane's three toolbelt surfaces. Registered always; composed only behind the flag.
 
-    Registering an uncomposed pair is deliberate: the platform's write surface stays complete (the
-    authority audit sees every tool), and an agent that reaches for the launch on a deployment
+    Registering them uncomposed is deliberate: the platform's write surface stays complete (the
+    authority audit sees every tool), and an agent that reaches for a launch on a deployment
     without the lane gets the named ``arv2_account_research_not_composed`` refusal rather than an
     ``UnknownTool`` it cannot explain to the human.
     """
-    return (LaunchArv2AccountResearchTool(service), ReadArv2AccountResearchRunTool(service))
+    return (
+        LaunchArv2AccountResearchTool(service),
+        LaunchArv2PersonResearchTool(service),
+        ReadArv2AccountResearchRunTool(service),
+    )

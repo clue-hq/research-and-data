@@ -1,0 +1,20 @@
+2026-09-09 20:57:59 [info     ] storage.backend.configured     backend=fs fs_root=/Users/aryankeshri/conductor/workspaces/research-and-data/san-salvador/.artifacts
+2026-09-09 20:57:59 [info     ] arv2.account_research_launched accounts=1 project_id=prj_arv2_answer_key replayed=False run_id=ba43bd2f-7699-5de3-b2bc-badc9607ee17
+2026-09-09 20:57:59 [info     ] arv2.account_research_enqueued accepted=1 offered=1 run_id=ba43bd2f-7699-5de3-b2bc-badc9607ee17
+{
+  "accounts": {
+    "zafran.io": "74d83176-f407-4d35-a9c2-25ad0a8bbf91"
+  },
+  "committee_cap": 5,
+  "effort": "full",
+  "enqueued": 1,
+  "icp_artifact_sha256": "d52f8e36fdcb00a8a9717b060da38dd315f24c28417561a857faf60f785433d9",
+  "icp_document": "audience/icp-clue-abm-buyers.md",
+  "job_ids": [
+    "c216f775-afc3-516d-bf05-bf2acb65918d"
+  ],
+  "product_selection_version": 1,
+  "project_run_id": "0a2f18b6-1509-514a-8003-16397100c06b",
+  "replayed": false,
+  "run_id": "ba43bd2f-7699-5de3-b2bc-badc9607ee17"
+}

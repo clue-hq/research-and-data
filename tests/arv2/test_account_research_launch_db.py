@@ -9,6 +9,7 @@ rule item 5 allows — account rows, an ICP artifact ref, and a product-selectio
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -22,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
+    ARV2_PERSON_PROFILE_REF,
     arv2_account_profile_sha256,
+    arv2_person_profile_sha256,
 )
 from clue_api.arv2.account_research_driver import (
     ARV2_ACCOUNT_DEDUP_PREFIX,
@@ -31,17 +34,22 @@ from clue_api.arv2.account_research_driver import (
 from clue_api.arv2.account_research_launch import (
     Arv2LaunchRefused,
     Arv2LaunchRequest,
+    Arv2PersonLaunchRequest,
     DbArv2LaunchService,
     enqueue_launched_jobs,
     launch_arv2_account_research,
+    launch_arv2_person_research,
 )
 from clue_api.arv2.account_research_store import list_jobs, read_run
+from clue_api.arv2.display.gather import committee_members
 from clue_auth.store import create_platform_user
 from clue_config import Settings
-from clue_core import EntityId
+from clue_core import EntityId, ExtractionMethod, Persona
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import WorkId
-from clue_research.identity import insert_account_entity
+from clue_research.claimstore import WorkspaceScope, claims_for, load_core_pack
+from clue_research.identity import insert_account_entity, insert_contact_entity
+from clue_research.profiling import load_committee_pack, load_deep_profiling_pack
 from clue_spine import confirm_project_product_set, create_product
 from clue_storage import artifact_key, content_address
 from clue_storage.artifacts import record_artifact
@@ -308,6 +316,10 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
             }
             assert {job.job_id for job in jobs} == set(receipt.job_ids)
             assert all(job.status == "not_started" for job in jobs)
+            # R3: the launch queues account subjects, each carrying its own copy of the run's pin.
+            assert all(job.subject_type == "account" for job in jobs)
+            assert all(job.subject_entity_id is None for job in jobs)
+            assert all(job.profile_sha256 == arv2_account_profile_sha256() for job in jobs)
 
             lineage = (
                 (
@@ -636,5 +648,310 @@ def test_the_service_offers_the_tasks_only_after_the_launch_transaction_closes(
             ]
             assert len(receipt.job_ids) == 2
             assert len(queue.calls) == 2
+
+    run_async(scenario())
+
+
+# -- the person launch (R3 task 6) -----------------------------------------------------------------
+
+
+def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path: Any) -> None:
+    """A human named these people, so the run is theirs: person profile, full effort, cap = them.
+
+    It resolves its own pins — the brand's currently confirmed ICP and the project's current
+    product set — because there is no approved artifact ref to be handed one on-demand, and it
+    records both on the run exactly like the account launch does.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            dana = await insert_contact_entity(
+                conn,
+                account_entity_id=fixture.accounts[0],
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+            sam = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[1], full_name="Sam Okafor"
+            )
+            queue = _FakeQueue()
+            request = Arv2PersonLaunchRequest(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                contact_entity_ids=(UUID(str(dana)), UUID(str(sam))),
+                requested_by_user_id=USER_ID,
+                directive_text="open with the podcast",
+            )
+
+            receipt = await launch_arv2_person_research(
+                conn,
+                request,
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+            await enqueue_launched_jobs(queue, receipt)
+
+            run = await read_run(conn, run_id=receipt.run_id)
+            assert run is not None
+            assert run.profile_ref == ARV2_PERSON_PROFILE_REF
+            assert run.profile_sha256 == arv2_person_profile_sha256()
+            assert run.effort == "full" and run.committee_cap == 2
+            assert run.icp_artifact_key == fixture.icp_artifact_key
+            assert run.icp_artifact_sha256 == fixture.icp_artifact_sha256
+            assert run.icp_key == ICP_KEY and run.icp_version == 1
+            assert run.product_selection_version == fixture.selection_version
+            assert run.directive_text == "open with the podcast"
+
+            jobs = {
+                job.subject_entity_id: job for job in await list_jobs(conn, run_id=receipt.run_id)
+            }
+            assert set(jobs) == {UUID(str(dana)), UUID(str(sam))}
+            assert all(job.subject_type == "person" for job in jobs.values())
+            # A person job carries their employer: it is scoped and joined like its account sibling.
+            assert jobs[UUID(str(dana))].account_entity_id == UUID(str(fixture.accounts[0]))
+            assert jobs[UUID(str(sam))].account_entity_id == UUID(str(fixture.accounts[1]))
+            assert all(job.profile_sha256 == arv2_person_profile_sha256() for job in jobs.values())
+            assert len(queue.calls) == 2
+
+            # The same request is the same run: one person, one job, offered again for repair.
+            replay = await launch_arv2_person_research(
+                conn,
+                request,
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+            assert replay.run_id == receipt.run_id and replay.replayed is True
+            assert len(await list_jobs(conn, run_id=receipt.run_id)) == 2
+
+    run_async(scenario())
+
+
+def test_a_person_launched_on_demand_is_seated_on_their_account_committee(tmp_path: Any) -> None:
+    """Walk finding W2: the account's contact list *is* the committee claims, so a person launched
+    on demand with no persona claim was researched at cost and then invisible on the very screen
+    the research was for. The launch now writes the seat the requesting human named.
+
+    The seat is a human statement — tier 1, ``HUMAN`` extraction, no URL to cite — and the persona
+    is the closed platform vocabulary, so a launch can neither invent a role nor pretend a page
+    confirmed one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await load_deep_profiling_pack(conn)
+            await load_committee_pack(conn)
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            dana = await insert_contact_entity(
+                conn,
+                account_entity_id=fixture.accounts[0],
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+
+            await launch_arv2_person_research(
+                conn,
+                Arv2PersonLaunchRequest(
+                    workspace_id=fixture.workspace_id,
+                    project_id=fixture.project_id,
+                    contact_entity_ids=(UUID(str(dana)),),
+                    requested_by_user_id=USER_ID,
+                    persona=Persona.CHAMPION,
+                ),
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+
+            members = await committee_members(
+                conn, workspace_id=fixture.workspace_id, account_id=str(fixture.accounts[0])
+            )
+            assert [member.id for member in members] == [str(dana)]
+            assert members[0].persona == "champion"
+
+            claims = {
+                str(claim.field_key): claim
+                for claim in await claims_for(
+                    conn,
+                    EntityId(UUID(str(dana))),
+                    scope=WorkspaceScope.for_workspace(fixture.workspace_id),
+                )
+            }
+            assert claims["contact.persona"].value_json == "champion"
+            assert claims["contact.role_on_committee"].value_json == {
+                "role": "champion",
+                "rationale": f"launched on demand by {USER_ID}",
+            }
+            # A human named this person and this seat: tier 1, and honestly unevidenced by URL.
+            seat = claims["contact.persona"]
+            assert seat.extraction_method is ExtractionMethod.HUMAN and seat.source_tier == 1
+            assert seat.source_url is None
+            assert (seat.write_markers or {}).get("source_missing") is None
+
+    run_async(scenario())
+
+
+def test_a_launch_never_re_seats_a_person_who_already_holds_one(tmp_path: Any) -> None:
+    """The committee step's own assessment — read off a page that says so — outranks a launch's
+    default, and re-launching the same person must not write a second persona claim."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_core_pack(conn)
+            await load_deep_profiling_pack(conn)
+            await load_committee_pack(conn)
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            dana = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
+            )
+
+            request = Arv2PersonLaunchRequest(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                contact_entity_ids=(UUID(str(dana)),),
+                requested_by_user_id=USER_ID,
+                persona=Persona.ECONOMIC_BUYER,
+            )
+            await launch_arv2_person_research(
+                conn,
+                request,
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+            # A second launch at a *different* seat is a different request (and so a different
+            # run), and it still leaves the seat this person already holds alone.
+            await launch_arv2_person_research(
+                conn,
+                dataclasses.replace(request, persona=Persona.BLOCKER),
+                settings=_settings(),
+                storage=storage,
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+
+            personas = [
+                claim
+                for claim in await claims_for(
+                    conn,
+                    EntityId(UUID(str(dana))),
+                    scope=WorkspaceScope.for_workspace(fixture.workspace_id),
+                )
+                if str(claim.field_key) == "contact.persona"
+            ]
+            assert [claim.value_json for claim in personas] == ["economic_buyer"]
+
+    run_async(scenario())
+
+
+def test_person_launch_refuses_a_contact_this_workspace_does_not_hold(tmp_path: Any) -> None:
+    """Unknown and foreign are the same refusal: the caller learns nothing about another tenant."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            stranger = uuid4()
+            with pytest.raises(Arv2LaunchRefused) as unknown:
+                await launch_arv2_person_research(
+                    conn,
+                    Arv2PersonLaunchRequest(
+                        workspace_id=fixture.workspace_id,
+                        project_id=fixture.project_id,
+                        contact_entity_ids=(stranger,),
+                        requested_by_user_id=USER_ID,
+                    ),
+                    settings=_settings(),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+            assert unknown.value.code == f"contact_not_found:{stranger}"
+
+            other = await seed_project(conn, "ws_r2_launch_other")
+            other_account = await insert_account_entity(
+                conn,
+                canonical_name="Elsewhere",
+                primary_domain="elsewhere.example",
+                workspace_id=other.workspace_id,
+            )
+            foreign = await insert_contact_entity(
+                conn, account_entity_id=other_account, full_name="Someone Else"
+            )
+            with pytest.raises(Arv2LaunchRefused) as tenant:
+                await launch_arv2_person_research(
+                    conn,
+                    Arv2PersonLaunchRequest(
+                        workspace_id=fixture.workspace_id,
+                        project_id=fixture.project_id,
+                        contact_entity_ids=(UUID(str(foreign)),),
+                        requested_by_user_id=USER_ID,
+                    ),
+                    settings=_settings(),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+            assert tenant.value.code == f"contact_not_found:{foreign}"
+
+            # Nothing was written by either refusal.
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM arv2_research_run WHERE profile_ref = :ref "
+                        "AND workspace_id = :workspace_id"
+                    ),
+                    {"ref": ARV2_PERSON_PROFILE_REF, "workspace_id": fixture.workspace_id},
+                )
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_person_launch_refuses_a_lane_that_is_off_and_a_request_naming_nobody(
+    tmp_path: Any,
+) -> None:
+    """The two cheapest refusals, before a single read."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            contact = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
+            )
+            request = Arv2PersonLaunchRequest(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                contact_entity_ids=(UUID(str(contact)),),
+                requested_by_user_id=USER_ID,
+            )
+            with pytest.raises(Arv2LaunchRefused) as disabled:
+                await launch_arv2_person_research(
+                    conn,
+                    request,
+                    settings=_settings(enabled=False),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+            assert disabled.value.code == "lane_disabled"
+
+            with pytest.raises(Arv2LaunchRefused) as empty:
+                await launch_arv2_person_research(
+                    conn,
+                    Arv2PersonLaunchRequest(
+                        workspace_id=fixture.workspace_id,
+                        project_id=fixture.project_id,
+                        contact_entity_ids=(),
+                        requested_by_user_id=USER_ID,
+                    ),
+                    settings=_settings(),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+            assert empty.value.code == "no_contacts"
 
     run_async(scenario())

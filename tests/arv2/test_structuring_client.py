@@ -31,6 +31,8 @@ from clue_api.arv2.structuring_client import (
     MODEL_PROPOSED_ORIGIN,
     NEUTRALISED_MARKER,
     STRUCTURING_SYSTEM_PROMPT,
+    UNIQUE_INSIGHT_MODE,
+    UNIQUE_INSIGHT_TARGET_KEYS,
     UNREGISTERED_KEY_ORIGIN,
     AccountSubject,
     FieldCatalog,
@@ -51,6 +53,7 @@ from clue_api.arv2.structuring_client import (
     read_structured_reply,
     schema_hint,
     source_of_span,
+    system_prompt_for,
 )
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 
@@ -951,3 +954,102 @@ def test_the_client_builds_the_bundle_from_the_sources_and_states_the_quoting_ru
     assert CONTEXT_BEGIN in user
     assert "Quote only from inside a SOURCE block" in user
     assert "must never appear in evidence_span" in user
+
+
+# -- the unique-insight mode ----------------------------------------------------------------------
+
+
+def test_the_unique_insight_system_prompt_asks_one_question_and_caps_the_answer() -> None:
+    system = system_prompt_for(UNIQUE_INSIGHT_MODE, "person")
+
+    assert "a generic enrichment tool would never surface" in system
+    assert "one row" in system and "priority 1" in system
+    assert system != STRUCTURING_SYSTEM_PROMPT
+
+
+def test_the_unique_insight_user_turn_states_the_one_question_and_drops_the_broad_task() -> None:
+    subject = PersonSubject(name="Nick Fisher", company="Zafran", linkedin_url="https://li/nick")
+
+    prompt = person_user_prompt(subject, BUNDLE, CATALOG, mode=UNIQUE_INSIGHT_MODE)
+
+    assert "a generic enrichment tool would never surface" in prompt
+    assert "one row" in prompt and "priority 1" in prompt
+    assert "emit every claim the bundle actually supports" not in prompt
+    assert "Sweep the whole bundle for all six" not in prompt
+    # What makes an answer readable and attributable is identical in every mode.
+    assert "SUBJECT — ONE person" in prompt
+    assert catalog_menu_text(CATALOG) in prompt
+    assert BUNDLE_BEGIN in prompt and BUNDLE_END in prompt
+
+
+def test_the_unique_insight_user_turn_lists_the_keys_an_insight_may_land_on() -> None:
+    """The live run read "the CONTACT FACET key that fact actually is" as "any contact facet"."""
+    subject = PersonSubject(name="Nick Fisher", company="Zafran", linkedin_url="https://li/nick")
+
+    prompt = person_user_prompt(subject, BUNDLE, CATALOG, mode=UNIQUE_INSIGHT_MODE)
+
+    assert all(key in prompt for key in UNIQUE_INSIGHT_TARGET_KEYS)
+    assert "contact.facet.hooks" not in UNIQUE_INSIGHT_TARGET_KEYS
+    assert "`contact.facet.hooks`" in prompt and "NEVER an answer here" in prompt
+
+
+def test_the_unique_insight_mode_keeps_one_row_and_counts_the_rest() -> None:
+    reply = _reply(
+        *(
+            {
+                "field_key": "contact.facet.alma_mater",
+                "value": [f"school {index}"],
+                "evidence_span": f"school {index}",
+                "priority": 1,
+            }
+            for index in range(3)
+        )
+    )
+
+    output = read_structured_reply(
+        reply, catalog=CATALOG, bundle=BUNDLE, model="m", mode=UNIQUE_INSIGHT_MODE
+    )
+
+    assert len(output.claims) == 1 and output.dropped_rows == 2
+    assert output.claims[0].value == ["school 0"]
+    assert output.mode == UNIQUE_INSIGHT_MODE
+
+
+def test_an_empty_unique_insight_answer_is_a_correct_answer() -> None:
+    output = read_structured_reply(
+        _reply(), catalog=CATALOG, bundle=BUNDLE, model="m", mode=UNIQUE_INSIGHT_MODE
+    )
+
+    assert output.claims == () and output.dropped_rows == 0
+
+
+def test_the_sweep_cap_is_untouched_by_the_new_mode() -> None:
+    output = read_structured_reply(
+        _seven_claims(), catalog=CATALOG, bundle=BUNDLE, model="m", mode="intent_sweep"
+    )
+
+    assert len(output.claims) == 4 and output.dropped_rows == 3
+
+
+def test_structure_person_sends_the_unique_insight_turns_on_both_sides() -> None:
+    client, transport = _scripted_client({"claims": []})
+
+    output = client.structure_person(
+        PersonSubject(name="Nick Fisher", company="Zafran", linkedin_url="https://li/nick"),
+        "=== MATERIAL\nhe rebuilt a 1972 Land Rover in his garage",
+        CATALOG,
+        mode=UNIQUE_INSIGHT_MODE,
+    )
+
+    system, user = _sent_messages(transport)[0], _sent_messages(transport)[1]
+    assert "a generic enrichment tool would never surface" in system["content"]
+    assert "a generic enrichment tool would never surface" in user["content"]
+    assert output.mode == UNIQUE_INSIGHT_MODE
+
+
+def test_a_field_spec_carries_the_registry_use_class_hint_when_the_field_declares_one() -> None:
+    """The hint is what a person claim's use class is born from; a field with none is ``None``."""
+    hinted = FieldSpec("contact.facet.hobby", "Hobbies.", None, use_class_hint="sensitive")
+
+    assert hinted.use_class_hint == "sensitive"
+    assert FieldSpec("contact.current_title", "Title.").use_class_hint is None

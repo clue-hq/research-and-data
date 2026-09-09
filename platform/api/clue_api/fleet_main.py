@@ -175,7 +175,7 @@ from clue_execution import (
     RecipeExecutor,
     sweep_stream_tokens,
 )
-from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
+from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_research.adapters import default_scrape_backend
@@ -718,6 +718,7 @@ def _build_arv2_account_research_handler(
     *,
     storage: StorageBackend,
     model_provider: AgentModelProvider | None,
+    queue: WorkQueue,
 ) -> Arv2AccountResearchWorkHandler | None:
     """The ARV2 account-research lane (Track R, R2) on this worker, behind its own flag.
 
@@ -750,6 +751,10 @@ def _build_arv2_account_research_handler(
         storage=storage,
         artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         model_provider=model_provider,
+        # R3: an account job that resolves a committee creates one person job per member and offers
+        # it here, on this process's own queue — the same one the launch service uses, so a fanned
+        # out person job is queued through exactly the machinery that drains it.
+        queue=queue,
     )
 
 
@@ -1137,6 +1142,7 @@ async def _serve() -> None:
             secrets,
             storage=storage,
             model_provider=arv2_account_models,
+            queue=work_queue,
         )
         worker = build_multi_work_worker(
             settings,

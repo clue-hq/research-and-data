@@ -6,9 +6,10 @@ and a run's status is *derived* from its jobs rather than set by whoever finishe
 "in progress" while any account still has work, "needs review" when one of them ended flagged, and
 "completed" only when every job did.
 
-One job per account (the migration's ruling): an account that fails takes only itself down. So the
-run row is a launch record — what the request was pinned to — and the jobs are the moving parts.
-Nothing here calls a provider or an agent.
+One job per *subject* (the migrations' ruling): an account, and since R3 (``60e51eba0123``) each
+committee member of it, so a subject that fails takes only itself down. The run row is a launch
+record — what the request was pinned to — and the jobs are the moving parts. Nothing here calls a
+provider or an agent.
 """
 
 from __future__ import annotations
@@ -29,23 +30,30 @@ from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
 
 __all__ = [
+    "PERSON_EXTRA_FIELDS",
     "UNRECORDED_REASON",
     "UNSPECIFIED_FAILURE",
     "AnnotationRow",
     "JobRow",
     "JobSpend",
     "JobStatus",
+    "JobSubject",
     "RunRow",
     "TerminalJob",
     "begin_job",
+    "contacts_named",
     "create_job",
     "create_run",
+    "find_contact_by_linkedin",
+    "find_contact_by_name",
     "finish_job",
+    "fold_linkedin_url",
     "job_link_audit",
     "job_spend",
     "list_jobs",
     "read_account_catalog",
     "read_job",
+    "read_person_catalog",
     "read_persona_documents",
     "read_run",
     "record_annotations",
@@ -55,6 +63,9 @@ __all__ = [
 
 #: The seam-1 states, shared by runs and jobs so a reader learns one vocabulary.
 JobStatus = Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
+
+#: What a job researches: the account (R2) or one of its committee members (R3).
+JobSubject = Literal["account", "person"]
 
 #: The two statuses a job can *finish* on. ``suspended`` is a pause, not a terminal.
 TerminalJob = Literal["completed", "needs_review"]
@@ -135,12 +146,22 @@ class RunRow:
 
 @dataclass(frozen=True)
 class JobRow:
-    """One account inside a run. ``finalization`` is the decoded ``finalization_json`` payload."""
+    """One research subject inside a run. ``finalization`` decodes ``finalization_json``.
+
+    ``subject_type`` says *what* the job researches: the account itself (R2), or one committee
+    member of it (R3, with ``subject_entity_id`` naming the contact). ``account_entity_id`` is the
+    account either way, so a person job stays scoped and joined like its account sibling.
+    ``profile_sha256`` is the profile *this* job was pinned to — a person job is queued later than
+    the launch, so replay reads the job's own copy rather than the run's.
+    """
 
     job_id: UUID
     run_id: UUID
     workspace_id: str
     account_entity_id: UUID
+    subject_type: JobSubject
+    subject_entity_id: UUID | None
+    profile_sha256: str | None
     status: JobStatus
     attempt: int
     started_at: datetime | None
@@ -224,17 +245,29 @@ async def create_job(
     run_id: UUID,
     workspace_id: str,
     account_entity_id: UUID,
+    subject_type: JobSubject = "account",
+    subject_entity_id: UUID | None = None,
+    profile_sha256: str | None = None,
 ) -> bool:
-    """Queue one account. Returns whether the row was inserted.
+    """Queue one subject — the account itself, or one of its committee members. Returns whether
+    the row was inserted.
 
-    ``arv2_research_job_once`` is unique on ``(run_id, account_entity_id)``, so re-queuing an
-    account in the same run is refused there too — this conflict clause makes both spellings of
-    "already queued" the same quiet ``False`` rather than one no-op and one IntegrityError.
+    ``arv2_research_job_subject_once`` is unique on ``(run_id, subject_type,
+    COALESCE(subject_entity_id, account_entity_id))``, so re-queuing the same subject in the same
+    run is refused there too — this conflict clause makes both spellings of "already queued" the
+    same quiet ``False`` rather than one no-op and one IntegrityError. A *different* subject is
+    never a conflict: the second committee member of an already-queued account inserts.
+
+    A ``person`` subject must name its contact and an ``account`` subject must not; that pair is
+    the migration's ``arv2_research_job_subject`` CHECK, so a caller that gets it wrong raises
+    rather than storing a job nobody can interpret.
     """
     result = await conn.execute(
         text(
-            "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id) "
-            "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id) "
+            "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id, "
+            " subject_type, subject_entity_id, profile_sha256) "
+            "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id, :subject_type, "
+            " :subject_entity_id, :profile_sha256) "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -242,6 +275,9 @@ async def create_job(
             "run_id": run_id,
             "workspace_id": workspace_id,
             "account_entity_id": account_entity_id,
+            "subject_type": subject_type,
+            "subject_entity_id": subject_entity_id,
+            "profile_sha256": profile_sha256,
         },
     )
     return result.rowcount == 1
@@ -527,6 +563,165 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
     )
 
 
+#: The one non-``contact.*`` field a person job may write against: the person's own work email,
+#: which the registry holds in the ``core.*`` namespace as a contact channel rather than as a
+#: company fact.
+#:
+#: **No ``account.*`` key belongs on this menu.** A person job stamps every claim it writes to the
+#: contact (``account_research_claims._draft``), so an account fact offered here would be written
+#: *on the person* — a company's open requisitions recorded as a fact about one employee, where no
+#: reader of the account looks. The person agent reads the account's facts from the
+#: already-established block the driver supplies in its context, and writes none of them.
+PERSON_EXTRA_FIELDS: tuple[str, ...] = ("core.work_email",)
+
+
+async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
+    """The person-side field menu one person job may write against.
+
+    Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
+    the facet section — plus :data:`PERSON_EXTRA_FIELDS`. Read from the registry for the same
+    reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
+    grows with it without a code change.
+
+    Each row also carries the field's declared ``use_class_hint``. The registry holds it in
+    ``field_definition.validation`` (``{"use_class_hint": …}``), and it is what a contact claim
+    written against that field is born with — so the difference between a professional fact and a
+    personal one is read off the field that declares it, never inferred from the key's spelling.
+    A field whose ``validation`` says nothing has no hint, and the claim path's default decides.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT field_key, description, value_schema, "
+                    " validation->>'use_class_hint' AS use_class_hint "
+                    "FROM field_definition "
+                    "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
+                    "ORDER BY field_key"
+                ),
+                {"extra": list(PERSON_EXTRA_FIELDS)},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
+    for row in rows:
+        key = str(row["field_key"])
+        section = (
+            "facet"
+            if key.startswith("contact.facet.")
+            else "contact"
+            if key.startswith("contact.")
+            else "account"
+        )
+        sections[section].append(
+            FieldSpec(
+                key=key,
+                description=str(row["description"] or ""),
+                value_schema=_schema(row["value_schema"]),
+                use_class_hint=(
+                    str(row["use_class_hint"]) if row["use_class_hint"] is not None else None
+                ),
+            )
+        )
+    return FieldCatalog(
+        account=tuple(sections["account"]),
+        contact=tuple(sections["contact"]),
+        facet=tuple(sections["facet"]),
+    )
+
+
+async def contacts_named(
+    conn: AsyncConnection, *, workspace_id: str, account_id: UUID, name: str
+) -> tuple[UUID, ...]:
+    """Every live contact under this account whose full name is ``name`` (at most two).
+
+    Two is all any caller needs: one is a resolution, two or more is the same-name trap and the
+    honest answer is "not resolvable", never "whichever row came back first". The match is exact on
+    the trimmed, case-folded name.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id FROM contact_entity "
+                    "WHERE workspace_id = :workspace_id AND account_entity_id = :account_id "
+                    "  AND merged_into IS NULL "
+                    "  AND lower(btrim(full_name)) = lower(btrim(:name)) "
+                    "LIMIT 2"
+                ),
+                {"workspace_id": workspace_id, "account_id": account_id, "name": name},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(UUID(str(row["id"])) for row in rows)
+
+
+async def find_contact_by_name(
+    conn: AsyncConnection, *, workspace_id: str, account_id: UUID, name: str
+) -> UUID | None:
+    """The one contact under this account whose name is ``name``, or ``None``.
+
+    ``contact.reports_to`` declares ``contact_id`` as its **required** key, but the agent knows the
+    manager by name — so the name is resolved here, against the entities this workspace actually
+    holds, rather than the agent being asked for an id it cannot know or the claim being written
+    with an invented one.
+
+    The match is exact on the trimmed, case-folded full name, and **two matches resolve to
+    nothing**: two people called "Dana Reyes" at one account is precisely the same-name trap this
+    lane exists to refuse, and picking either would be a guess. The caller records the skip. A
+    caller that must tell "nobody" from "two of them" — the committee step, which would otherwise
+    create a third row — reads :func:`contacts_named` instead.
+    """
+    found = await contacts_named(conn, workspace_id=workspace_id, account_id=account_id, name=name)
+    return found[0] if len(found) == 1 else None
+
+
+def fold_linkedin_url(value: object) -> str | None:
+    """The stored form of a LinkedIn profile URL, or ``None`` when there is none.
+
+    It must fold exactly the way ``clue_research.identity`` folds a strong-key column on insert
+    (lower-cased, trimmed, trailing slash dropped), because a lookup that folds differently from
+    the write would miss a row that is there and then insert a duplicate — which the unique index
+    refuses, turning a join into an error. The fold is repeated rather than imported: it is a
+    private of that package, and three lines copied under this comment are safer than a private
+    import that can move.
+    """
+    if not isinstance(value, str):
+        return None
+    folded = value.strip().rstrip("/").lower()
+    return folded or None
+
+
+async def find_contact_by_linkedin(
+    conn: AsyncConnection, *, workspace_id: str, linkedin_url: str
+) -> UUID | None:
+    """The contact this workspace holds under that LinkedIn URL, or ``None``.
+
+    Workspace-scoped, not account-scoped, because that is the scope of the strong key's unique
+    index (``contact_entity_linkedin_url_ws_key``): the same person met under two accounts is one
+    row, and looking only under one account would insert a duplicate the index then refuses.
+    """
+    folded = fold_linkedin_url(linkedin_url)
+    if folded is None:
+        return None
+    row = (
+        await conn.execute(
+            text(
+                "SELECT id FROM contact_entity "
+                "WHERE workspace_id = :workspace_id AND linkedin_url = :linkedin_url "
+                "  AND merged_into IS NULL "
+                "LIMIT 1"
+            ),
+            {"workspace_id": workspace_id, "linkedin_url": folded},
+        )
+    ).scalar_one_or_none()
+    return UUID(str(row)) if row is not None else None
+
+
 async def read_persona_documents(
     conn: AsyncConnection, *, workspace_id: str, brand_id: str
 ) -> tuple[DocumentRow, ...]:
@@ -617,6 +812,9 @@ def _job(row: RowMapping) -> JobRow:
         run_id=row["run_id"],
         workspace_id=row["workspace_id"],
         account_entity_id=row["account_entity_id"],
+        subject_type=row["subject_type"],
+        subject_entity_id=row["subject_entity_id"],
+        profile_sha256=row["profile_sha256"],
         status=row["status"],
         attempt=row["attempt"],
         started_at=row["started_at"],

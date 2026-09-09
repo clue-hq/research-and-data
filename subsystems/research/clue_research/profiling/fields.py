@@ -353,6 +353,10 @@ FACET_PACK: tuple[SeedField, ...] = (
         value_type="list[object]",
         freshness_ttl=timedelta(days=75),
         use_class_hint=UseClass.PROFESSIONAL_PUBLIC,
+        # The dates sit under ``date`` (ARV2 W3, 2026-09-09; migration ``7c4f1a2b9d63`` aligns the
+        # durable row): that is the shape the answer keys carry and the one the contact header's
+        # tenure reads (``current_position_start`` takes the entry with no ``date.end``). The row
+        # previously declared them flat, which is neither writer's shape.
         value_schema={
             "type": "array",
             "items": {
@@ -361,8 +365,13 @@ FACET_PACK: tuple[SeedField, ...] = (
                 "properties": {
                     "org": {"type": "string"},
                     "role": {"type": "string"},
-                    "start": {"type": "string"},
-                    "end": {"type": "string"},
+                    "date": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "string"},
+                            "end": {"type": "string"},
+                        },
+                    },
                 },
             },
         },

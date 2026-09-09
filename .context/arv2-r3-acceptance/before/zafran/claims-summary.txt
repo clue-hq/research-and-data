@@ -1,0 +1,9 @@
+     subject      | claims | contact_claims | schema_false | insight | media_items | emails 
+------------------+--------+----------------+--------------+---------+-------------+--------
+ Ben Seri         |      3 |              3 |            0 |       0 |           0 |      0
+ Rotem Peled-Dvir |      3 |              3 |            0 |       0 |           0 |      0
+ Sanaz Yashar     |      3 |              3 |            0 |       0 |           0 |      0
+ Vari Kaur        |      3 |              3 |            0 |       0 |           0 |      0
+ Zafran Security  |    113 |              0 |            2 |       0 |           0 |      0
+(5 rows)
+

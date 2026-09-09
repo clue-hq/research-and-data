@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -29,16 +30,23 @@ from pydantic import PrivateAttr, SecretStr
 
 from clue_api.arv2 import account_research_driver as driver
 from clue_api.arv2 import account_research_tools as tools_module
-from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
+from clue_api.arv2.account_research_catalog import (
+    arv2_account_profile_sha256,
+    arv2_person_profile_sha256,
+)
 from clue_api.arv2.account_research_driver import (
     ARV2_ACCOUNT_DEDUP_PREFIX,
     ARV2_ACCOUNT_TASK_PRIORITY,
+    ARV2_PERSON_MODEL_ENV,
     Arv2AccountResearchWorkHandler,
     arv2_account_work_id,
     build_arv2_account_research_handler,
+    employment_history_lines,
     format_established,
 )
+from clue_api.arv2.account_research_launch import QueuedJob
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
+from clue_api.arv2.account_research_tools import PERSON_TOOL_NAMES
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
 from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
@@ -49,9 +57,11 @@ from clue_core import (
     EntityId,
     EntityType,
     ExtractionMethod,
+    IdentityBinding,
     ResearchMode,
     ReuseScope,
     RunId,
+    UseClass,
 )
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
@@ -105,6 +115,9 @@ def _job_row(run: RunRow, *, attempt: int = 1) -> JobRow:
         run_id=run.run_id,
         workspace_id=run.workspace_id,
         account_entity_id=uuid4(),
+        subject_type="account",
+        subject_entity_id=None,
+        profile_sha256=run.profile_sha256,
         status="in_progress",
         attempt=attempt,
         started_at=datetime(2026, 9, 8, tzinfo=UTC),
@@ -186,6 +199,14 @@ class FakeStore:
         del conn
         self.events.append(("read_account_catalog", {}))
         return FieldCatalog(account=(FieldSpec("core.industry", "Industry."),))
+
+    async def read_person_catalog(self, conn: Any) -> FieldCatalog:
+        del conn
+        self.events.append(("read_person_catalog", {}))
+        return FieldCatalog(
+            contact=(FieldSpec("contact.current_title", "Current title."),),
+            facet=(FieldSpec("contact.facet.personal_hook", "A personal hook."),),
+        )
 
     async def job_spend(self, conn: Any, *, job_id: UUID) -> JobSpend:
         del conn
@@ -336,12 +357,18 @@ def _patch_reads(
     icp_sha: str = ICP_SHA,
     account: Any | None = None,
     icp_body: bytes = ICP_BODY,
+    contact: Any | None = None,
+    claims: Mapping[str, Sequence[Any]] | None = None,
 ) -> None:
-    """Patch the three composition reads the driver makes through other packages."""
+    """Patch the four composition reads the driver makes through other packages."""
 
     async def fake_get_account(conn: Any, entity_id: Any) -> Any:
         del conn, entity_id
         return account
+
+    async def fake_get_contact(conn: Any, entity_id: Any) -> Any:
+        del conn, entity_id
+        return contact
 
     async def fake_read_verified_artifact(
         conn: Any, storage: Any, *, storage_key: str, workspace_id: str
@@ -352,21 +379,26 @@ def _patch_reads(
         return SimpleNamespace(content_sha256=icp_sha), icp_body
 
     async def fake_claims_for(conn: Any, entity_id: Any, *, scope: Any) -> Sequence[Any]:
-        del conn, entity_id, scope
-        return ()
+        del conn, scope
+        return (claims or {}).get(str(entity_id), ())
 
     async def fake_claims_for_runs(conn: Any, run_ids: Any, *, scope: Any) -> Sequence[Any]:
         del conn, run_ids, scope
         return ()
 
     monkeypatch.setattr(driver, "get_account", fake_get_account)
+    monkeypatch.setattr(driver, "get_contact", fake_get_contact)
     monkeypatch.setattr(driver, "read_verified_artifact", fake_read_verified_artifact)
     monkeypatch.setattr(driver, "claims_for", fake_claims_for)
     monkeypatch.setattr(tools_module, "claims_for_runs", fake_claims_for_runs)
 
 
 def _handler(
-    store: FakeStore, *, model: BaseChatModel | None = None
+    store: FakeStore,
+    *,
+    model: BaseChatModel | None = None,
+    queue: Any | None = None,
+    person_model_id: str = "x-ai/grok-4.6-person",
 ) -> tuple[Arv2AccountResearchWorkHandler, FakeConnFactory, FakeWriter, FakeModels]:
     conn_factory = FakeConnFactory()
     writer = FakeWriter()
@@ -379,7 +411,9 @@ def _handler(
         clients=FakeClients(),
         model_provider=models,
         model_id="x-ai/grok-4.6",
+        person_model_id=person_model_id,
         writer=writer,
+        queue=queue,
         store=store,
         clock=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
     )
@@ -990,3 +1024,612 @@ def test_format_established_writes_compact_json_values_capped_per_line() -> None
         "… (https://jobs.test)"
     )
     assert lines[1] == "- core.founded_year: 2022 (ai_ark:company)"
+
+
+# -- the committee fan-out (R3 task 6) ------------------------------------------------------------
+
+
+def _finalizes_with_a_committee() -> _ScriptedModel:
+    """The same finalization, carrying one confirmed committee member."""
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_research",
+                    "args": {
+                        "summary": "Probook is a strong fit on hiring and tooling evidence.",
+                        "fit_verdicts": [],
+                        "gaps": [],
+                        "committee_candidates": [
+                            {
+                                "name": "Dana Reyes",
+                                "title": "VP Marketing",
+                                "persona": "economic_buyer",
+                                "linkedin_url": "https://www.linkedin.com/in/dana-reyes",
+                                "confirmed_by": "https://probook.ai/team",
+                                "vacant_seat": False,
+                                "evidence_span": "Dana Reyes, VP Marketing",
+                            }
+                        ],
+                    },
+                    "id": "call-finalize",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    return _ScriptedModel(respond)
+
+
+class _RecordingQueue:
+    """A queue that records its offers into the store's own event log, to pin the ORDER."""
+
+    def __init__(self, store: FakeStore) -> None:
+        self._store = store
+
+    async def enqueue(self, **kwargs: Any) -> bool:
+        self._store.events.append(("enqueue", kwargs))
+        return True
+
+
+def _patch_committee_step(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, run: RunRow
+) -> list[dict[str, Any]]:
+    """Stand in for the step: record the call, and hand back one person job to offer."""
+    calls: list[dict[str, Any]] = []
+    person_job = uuid4()
+
+    async def fake_step(conn: Any, **kwargs: Any) -> Any:
+        del conn
+        store.events.append(("committee_step", {"candidates": len(kwargs["candidates"])}))
+        calls.append(kwargs)
+        return driver.CommitteeStepResult(
+            contacts_created=(),
+            jobs=(QueuedJob(job_id=person_job, run_id=run.run_id, workspace_id=run.workspace_id),),
+            skipped=(),
+        )
+
+    monkeypatch.setattr(driver, "run_committee_step", fake_step)
+    return calls
+
+
+def test_an_account_job_fans_its_committee_out_inside_the_settle_and_offers_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rows first, offer second: the step runs after ``finish_job``, the offer after the commit."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    calls = _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    order = [name for name, _ in store.events]
+    assert order[order.index("finish_job") :][:4] == [
+        "finish_job",
+        "committee_step",
+        "refresh_run_status",
+        "enqueue",
+    ]
+    # The step is handed the finalization's own candidates, the job, the run and the job's scope.
+    assert calls[0]["candidates"][0]["name"] == "Dana Reyes"
+    assert calls[0]["job"] is job and calls[0]["run"] is run
+    assert calls[0]["scope"].account_id == EntityId(job.account_entity_id)
+    assert calls[0]["person_profile_sha256"] == arv2_person_profile_sha256()
+
+
+def test_a_worker_with_no_queue_still_writes_the_committee_and_says_it_offered_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``queue=None`` composes a fan-out that creates rows and offers none — loudly."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=None
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    assert [name for name, _ in store.events].count("committee_step") == 1
+    assert not store.named("enqueue")
+
+
+def test_a_committee_step_that_explodes_never_costs_the_job_its_terminal_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The failure law at the driver's own boundary: the account job still lands completed."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+
+    async def explode(conn: Any, **kwargs: Any) -> Any:
+        del conn, kwargs
+        raise RuntimeError("the committee step is broken")
+
+    monkeypatch.setattr(driver, "run_committee_step", explode)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    assert store.named("finish_job")[0]["status"] == "completed"
+    assert not store.named("enqueue")
+
+
+# -- the person job (R3 task 8) -------------------------------------------------------------------
+
+
+def _person_job_row(run: RunRow, *, contact_id: UUID, profile_sha256: str | None = None) -> JobRow:
+    """One committee member's job: the same run, the account it belongs to, its own pin."""
+    return replace(
+        _job_row(run),
+        subject_type="person",
+        subject_entity_id=contact_id,
+        profile_sha256=profile_sha256 or arv2_person_profile_sha256(),
+    )
+
+
+def _contact_claim(field_key: str, *, value: Any, contact_id: UUID, url: str | None) -> Claim:
+    """A live contact claim shaped the way ``claims_for`` hands the person composition them."""
+    return Claim(
+        entity_id=EntityId(contact_id),
+        entity_type=EntityType.CONTACT,
+        field_key=field_key,
+        value_json=value,
+        source_tier=2,
+        extraction_method=ExtractionMethod.API,
+        run_id=RunId(uuid4()),
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        confidence=0.9,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id=WORKSPACE,
+        source_url=url,
+        evidence_span="Dana Reyes, VP Product Marketing",
+        source_key="ai_ark:person",
+        identity_binding=IdentityBinding.STRONG,
+        use_class=UseClass.PROFESSIONAL_PUBLIC,
+    )
+
+
+CAREER_HISTORY = [
+    {"org": "Sysdig", "role": "VP Product Marketing", "start": "2021", "end": "2024"},
+    {"org": "Probook", "role": "VP Marketing", "start": "2024-04-01"},
+    {"org": "Datadog"},
+]
+
+
+def _person_reads(
+    monkeypatch: pytest.MonkeyPatch, job: JobRow, *, contact: Any | None = None
+) -> None:
+    """The person composition's reads: the account, the contact, and each one's live claims."""
+    account_id = str(job.account_entity_id)
+    contact_id = job.subject_entity_id
+    assert contact_id is not None
+    _patch_reads(
+        monkeypatch,
+        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        contact=(
+            contact
+            if contact is not None
+            else SimpleNamespace(
+                id=EntityId(contact_id),
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+        ),
+        claims={
+            account_id: (
+                _established_claim(
+                    "core.industry", value="observability", url="https://probook.ai/about"
+                ),
+            ),
+            str(contact_id): (
+                _contact_claim(
+                    "contact.current_title",
+                    value="VP Product Marketing",
+                    contact_id=contact_id,
+                    url="https://probook.ai/team",
+                ),
+                _contact_claim(
+                    "contact.facet.career_history",
+                    value=CAREER_HISTORY,
+                    contact_id=contact_id,
+                    url=None,
+                ),
+            ),
+        },
+    )
+
+
+def _finalizes_the_person() -> _ScriptedModel:
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_research",
+                    "args": {
+                        "summary": "Dana Reyes runs product marketing and speaks about pipeline.",
+                        "openers": [
+                            {
+                                "text": "Your DevOpsDays talk on pipeline hygiene stayed with me.",
+                                "hook": "the DevOpsDays talk",
+                                "quote": "pipeline hygiene is a marketing problem",
+                                "url": "https://devopsdays.test/talk",
+                            }
+                        ],
+                        "hooks": ["speaks at DevOpsDays"],
+                        "not_found": ["no personal blog"],
+                        "same_name_log": [
+                            {
+                                "name_or_url": "https://www.linkedin.com/in/dana-reyes-md",
+                                "why_excluded": "a physician in Ohio, never at Probook",
+                            }
+                        ],
+                        "gaps": ["no podcast appearances found"],
+                    },
+                    "id": "call-finalize",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    return _ScriptedModel(respond)
+
+
+def test_employment_history_lines_render_one_line_per_role_with_missing_parts_omitted() -> None:
+    assert employment_history_lines(CAREER_HISTORY) == (
+        "VP Product Marketing @ Sysdig (2021–2024)",
+        "VP Marketing @ Probook (2024-04-01–)",
+        "Datadog",
+    )
+
+
+def test_employment_history_lines_ignore_anything_that_is_not_a_career_row() -> None:
+    assert employment_history_lines(None) == ()
+    assert employment_history_lines("VP Marketing") == ()
+    # A row naming neither a role nor an organisation is a date range about nobody.
+    assert employment_history_lines([{"start": "2019", "end": "2020"}, "not a row"]) == ()
+    # A role with no employer is still a role the model should not re-derive.
+    assert employment_history_lines([{"role": "Advisor"}]) == ("Advisor",)
+
+
+def test_a_person_job_composes_the_person_bundle_its_tools_and_the_identity_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+    built: list[str] = []
+    real_person_tools = driver.build_person_tools
+
+    def spy(runtime: Any) -> Any:
+        tools = real_person_tools(runtime)
+        built.extend(tool.name for tool in tools)
+        return tools
+
+    monkeypatch.setattr(driver, "build_person_tools", spy)
+    seen: dict[str, Any] = {}
+    model = _finalizes_the_person()
+    real_respond = model._respond
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        seen.setdefault("messages", list(messages))
+        return real_respond(messages)
+
+    handler, _conn_factory, _writer, models = _handler(store, model=_ScriptedModel(respond))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    # The person belt, not the account's.
+    assert built == list(PERSON_TOOL_NAMES)
+    assert store.named("read_person_catalog") == [{}]
+    assert not store.named("read_account_catalog")
+    # Its own model id and its own effort role.
+    assert models.builds[0]["model_id"] == "x-ai/grok-4.6-person"
+    assert models.builds[0]["role"] == "arv2_person"
+
+    prompt = "\n".join(str(message.content) for message in seen["messages"])
+    assert "<person_research_context>" in prompt
+    assert "agent-profile:arv2-person:v1" in prompt
+    assert '"name": "Dana Reyes"' in prompt
+    assert '"title": "VP Product Marketing"' in prompt
+    assert '"linkedin_url": "https://www.linkedin.com/in/dana-reyes"' in prompt
+    assert "VP Product Marketing @ Sysdig (2021–2024)" in prompt, "the lock reaches the model"
+    # Account first, then a heading, then the person's own claims.
+    account_line = prompt.index("- core.industry: ")
+    heading = prompt.index("## the person's own claims")
+    person_line = prompt.index("- contact.current_title: ")
+    assert account_line < heading < person_line
+
+
+def test_a_person_job_lands_the_person_receipt_and_never_runs_the_committee_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+
+    async def explode(conn: Any, **kwargs: Any) -> Any:
+        del conn, kwargs
+        raise AssertionError("a person job resolves no committee")
+
+    monkeypatch.setattr(driver, "run_committee_step", explode)
+    handler, conn_factory, writer, _models = _handler(
+        store, model=_finalizes_the_person(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    assert not store.named("enqueue")
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["reason"] == "finalized"
+    assert receipt["summary"].startswith("Dana Reyes runs product marketing")
+    assert receipt["openers_written"] == 1
+    assert receipt["openers_dropped"] == []
+    assert receipt["hooks_written"] == 1
+    assert receipt["not_found"] == ["no personal blog"]
+    assert receipt["same_name_log"][0]["why_excluded"].startswith("a physician")
+    assert receipt["insight_found"] is False
+    assert receipt["reports_to_written"] is False
+    assert receipt["reports_to_skipped"] is None
+    # The coded compliance pass ran over the finalization's own writes, and its actions ride the
+    # receipt: here the same-name log row cites nothing, and is marked, not hidden. The hooks claim
+    # cites nothing either and produces no row at all — rule 6 exempts it, because a claim that
+    # carries neither quote nor URL *by design* is not an evidence gap.
+    assert [row["rule"] for row in receipt["compliance_log"]] == ["unevidenced"]
+    assert [row["field_key"] for row in receipt["compliance_log"]] == [
+        "contact.facet.excluded_lookalike"
+    ]
+    assert receipt["gaps"] == ["no podcast appearances found"]
+    # Derived from the ROWS, not from the drafts: nothing is read back through the fake connection.
+    assert receipt["claims_written"] == 0
+    assert receipt["link_audit"] == {
+        "EXACT/on_page": 3,
+        "NOT_FOUND/not_on_page": 2,
+        "PARTIAL/partial_on_page": 1,
+    }
+    assert receipt["model_spend"]["calls"] == 1
+    assert receipt["model_id"] == "x-ai/grok-4.6-person"
+    assert receipt["profile_sha256"] == arv2_person_profile_sha256()
+    # No account-shaped key rides along: this job decided nothing about the account.
+    assert "fit_verdicts" not in receipt and "committee_candidates" not in receipt
+    # Every claim it wrote is the person's.
+    assert {draft.entity_id for draft in writer.drafts} == {EntityId(contact_id)}
+    activity = [
+        params
+        for statement, params in conn_factory.conn.statements
+        if "account_activity_event" in statement
+    ]
+    assert activity[0]["text"].startswith("Person research finalized")
+
+
+def test_a_person_job_whose_profile_digest_moved_refuses_on_its_own_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The JOB's pin, not the run's: a person job is queued long after the launch."""
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id, profile_sha256="a" * 64)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+    handler, _conn_factory, _writer, models = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    assert store.named("finish_job")[0]["failure_code"] == "profile_pin_mismatch"
+    assert models.builds == [], "a refused pin costs no model round"
+
+
+def test_a_person_job_with_no_contact_row_is_contained_as_contact_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job, contact=None)
+    monkeypatch.setattr(driver, "get_contact", _missing_contact)
+    handler, _conn_factory, _writer, models = _handler(store)
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    landed = store.named("finish_job")[0]
+    assert landed["failure_code"] == "contact_missing"
+    assert str(contact_id) in landed["failure_message"]
+    assert models.builds == []
+
+
+async def _missing_contact(conn: Any, entity_id: Any) -> Any:
+    del conn, entity_id
+    return None
+
+
+class _RecordingLog:
+    """The driver's logger, as a list of the lines it wrote."""
+
+    def __init__(self) -> None:
+        self.lines: list[tuple[str, dict[str, Any]]] = []
+
+    def _record(self, event: str, **fields: Any) -> None:
+        self.lines.append((event, fields))
+
+    info = warning = error = exception = _record
+
+    def named(self, event: str) -> list[dict[str, Any]]:
+        return [fields for name, fields in self.lines if name == event]
+
+
+def test_an_unset_person_model_falls_back_to_the_account_model_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded = _RecordingLog()
+    monkeypatch.setattr(driver, "log", recorded)
+    store = FakeStore(_run_row(), None)
+
+    handler, _conn_factory, _writer, _models = _handler(store, person_model_id="")
+
+    assert handler._person_model_id == "x-ai/grok-4.6"  # noqa: SLF001 — the fallback IS the point
+    fallback = recorded.named("arv2.person_model_fallback")
+    assert len(fallback) == 1
+    assert fallback[0]["model_id"] == "x-ai/grok-4.6"
+    assert fallback[0]["env"] == ARV2_PERSON_MODEL_ENV
+
+
+def test_the_builder_reads_the_person_model_from_its_own_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARV2_ACCOUNT_AGENT_MODEL", "x-ai/grok-4.6")
+    monkeypatch.setenv(ARV2_PERSON_MODEL_ENV, "x-ai/grok-4.6-fast")
+
+    handler = build_arv2_account_research_handler(
+        Settings(_env_file=None, arv2_account_research_enabled=True),
+        _live_secrets(),
+        storage=object(),  # type: ignore[arg-type]
+        artifacts=FakeArtifacts(),
+        model_provider=FakeModels(_finalizes_at_once()),
+    )
+
+    assert handler is not None
+    assert handler._person_model_id == "x-ai/grok-4.6-fast"  # noqa: SLF001
+
+
+def test_the_builder_falls_the_person_model_back_to_the_account_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing person model is NOT a missing credential: the lane still composes."""
+    monkeypatch.setenv("ARV2_ACCOUNT_AGENT_MODEL", "x-ai/grok-4.6")
+    monkeypatch.setenv(ARV2_PERSON_MODEL_ENV, "  ")
+
+    handler = build_arv2_account_research_handler(
+        Settings(_env_file=None, arv2_account_research_enabled=True),
+        _live_secrets(),
+        storage=object(),  # type: ignore[arg-type]
+        artifacts=FakeArtifacts(),
+        model_provider=FakeModels(_finalizes_at_once()),
+    )
+
+    assert handler is not None
+    assert handler._person_model_id == "x-ai/grok-4.6"  # noqa: SLF001
+
+
+def test_a_person_job_that_never_finalized_still_lands_its_compliance_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A job that stops on a model error wrote claims all the same, and the floor may have redacted
+    or dropped several. Reading the log off the finalization alone threw that audit trail away for
+    exactly the jobs most likely to have gone wrong; it comes off the runtime instead."""
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+    rounds: list[int] = []
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        rounds.append(1)
+        if len(rounds) > 1:
+            raise RuntimeError("the provider hung up")
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_claims",
+                    "args": {
+                        "claims": [
+                            {
+                                "field_key": "contact.facet.self_summary",
+                                "value": "She was diagnosed with cancer in 2019. She runs GTM.",
+                                "evidence_span": "She runs GTM",
+                                "source_url": "https://probook.ai/team",
+                                "priority": 2,
+                            }
+                        ]
+                    },
+                    "id": "call-write",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    handler, _conn_factory, _writer, _models = _handler(store, model=_ScriptedModel(respond))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["reason"] == "model_error"
+    assert [(row["action"], row["rule"]) for row in receipt["compliance_log"]] == [
+        ("redacted", "health")
+    ]
+
+
+def test_a_reporting_line_the_code_refused_reaches_the_durable_person_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal the model was told about must survive into the row a human reviews."""
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_research",
+                    "args": {
+                        "summary": "Dana Reyes runs product marketing and speaks about pipeline.",
+                        "reports_to": {
+                            "name": "Sam Okafor",
+                            "contact_id": str(uuid4()),
+                            "url": "https://probook.ai/team",
+                        },
+                    },
+                    "id": "call-finalize",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    handler, _conn_factory, writer, _models = _handler(store, model=_ScriptedModel(respond))
+
+    assert asyncio.run(handler.handle(_context(job))).outcome == "completed"
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["reports_to_written"] is False
+    assert "quote" in receipt["reports_to_skipped"]
+    assert [draft for draft in writer.drafts if draft.field_key == "contact.reports_to"] == []

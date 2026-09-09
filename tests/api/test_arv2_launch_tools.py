@@ -1,4 +1,4 @@
-"""Seam 1's toolbelt face: the two Head-of-ABM ARV2 account-research tools.
+"""Seam 1's toolbelt face: the three ARV2 research tools (launch account, launch people, read).
 
 Offline by design — the tools are a thin, typed skin over :class:`Arv2LaunchService`, and what is
 worth pinning here is exactly the skin: an uncomposed lane refuses before it touches anything, a
@@ -22,9 +22,12 @@ from clue_api.arv2.account_research_launch import (
     Arv2LaunchReceipt,
     Arv2LaunchRefused,
     Arv2LaunchRequest,
+    Arv2PersonLaunchRequest,
     Arv2RunView,
     LaunchArv2AccountResearchInput,
     LaunchArv2AccountResearchTool,
+    LaunchArv2PersonResearchInput,
+    LaunchArv2PersonResearchTool,
     ReadArv2AccountResearchRunInput,
     ReadArv2AccountResearchRunTool,
     build_arv2_launch_tools,
@@ -40,6 +43,7 @@ PROJECT = "prj_arv2_answer_key"
 RUN_ID = UUID("11111111-1111-5111-8111-111111111111")
 JOB_ID = UUID("22222222-2222-5222-8222-222222222222")
 ACCOUNT_ID = UUID("33333333-3333-5333-8333-333333333333")
+CONTACT_ID = UUID("44444444-4444-5444-8444-444444444444")
 SHA = "a" * 64
 
 
@@ -100,6 +104,9 @@ def _job_row() -> JobRow:
         run_id=RUN_ID,
         workspace_id=WORKSPACE,
         account_entity_id=ACCOUNT_ID,
+        subject_type="account",
+        subject_entity_id=None,
+        profile_sha256="b" * 64,
         status="needs_review",
         attempt=1,
         started_at=None,
@@ -123,10 +130,18 @@ class _FakeService:
     refusal: Arv2LaunchRefused | None = None
     view: Arv2RunView | None = None
     requests: list[Arv2LaunchRequest] = field(default_factory=list)
+    person_requests: list[Arv2PersonLaunchRequest] = field(default_factory=list)
     reads: list[tuple[str, UUID]] = field(default_factory=list)
 
     async def launch(self, request: Arv2LaunchRequest) -> Arv2LaunchReceipt:
         self.requests.append(request)
+        if self.refusal is not None:
+            raise self.refusal
+        assert self.receipt is not None
+        return self.receipt
+
+    async def launch_person(self, request: Arv2PersonLaunchRequest) -> Arv2LaunchReceipt:
+        self.person_requests.append(request)
         if self.refusal is not None:
             raise self.refusal
         assert self.receipt is not None
@@ -239,19 +254,98 @@ def test_a_run_this_workspace_cannot_see_is_a_typed_refusal_not_an_empty_success
     run_async(scenario())
 
 
-def test_the_two_tools_declare_the_effect_and_replay_classes_the_registry_admits() -> None:
-    launch, read = build_arv2_launch_tools(_FakeService())
+def test_the_three_tools_declare_the_effect_and_replay_classes_the_registry_admits() -> None:
+    launch, launch_person, read = build_arv2_launch_tools(_FakeService())
 
     assert launch.name == "launch_arv2_account_research" and launch.version == "1"
     assert launch.effect_class is ToolEffectClass.SPEND
     assert launch.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
+    assert launch_person.name == "launch_arv2_person_research" and launch_person.version == "1"
+    assert launch_person.effect_class is ToolEffectClass.SPEND
+    assert launch_person.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
     assert read.name == "read_arv2_account_research_run" and read.version == "1"
     assert read.effect_class is ToolEffectClass.READ
     assert read.replay.policy is ReplayPolicy.EFFECT_FREE
-    # Standing rule item 5: the launch pins accounts + ICP artifact + selection version, so it
-    # requires no Stage-0 pin at all — a pin requirement here would resurrect the old machinery.
-    assert launch.pin_requirements == () and read.pin_requirements == ()
+    # Standing rule item 5: the launches pin their subjects + ICP artifact + selection version, so
+    # they require no Stage-0 pin at all — a pin requirement here would resurrect the old
+    # machinery.
+    assert launch.pin_requirements == ()
+    assert launch_person.pin_requirements == () and read.pin_requirements == ()
     assert launch.descriptor.recipe_safe and read.descriptor.recipe_safe
+    assert launch_person.descriptor.recipe_safe
+
+
+# -- the person launch (R3 task 6) -----------------------------------------------------------------
+
+
+def _person_inputs(**overrides: object) -> LaunchArv2PersonResearchInput:
+    payload: dict[str, object] = {
+        "project_id": PROJECT,
+        "contact_entity_ids": (str(CONTACT_ID),),
+        "directive_text": "open with the podcast",
+    }
+    payload.update(overrides)
+    return LaunchArv2PersonResearchInput.model_validate(payload)
+
+
+def test_the_person_launch_refuses_uncomposed_and_unwitnessed_before_anything() -> None:
+    async def scenario() -> None:
+        uncomposed = LaunchArv2PersonResearchTool(None)
+        failures = await uncomposed.preconditions(_person_inputs(), _context())
+        assert [failure.reason_code for failure in failures] == [
+            "arv2_account_research_not_composed"
+        ]
+
+        service = _FakeService(receipt=Arv2LaunchReceipt(RUN_ID, (JOB_ID,), False, uuid4()))
+        composed = LaunchArv2PersonResearchTool(service)
+        assert await composed.preconditions(_person_inputs(), _context()) == ()
+        unwitnessed = await composed.preconditions(_person_inputs(), _context(action_ref=None))
+        assert [failure.reason_code for failure in unwitnessed] == ["launch_action_ref_missing"]
+        # Researching a named person is a SPEND on that person: nothing reached the service.
+        assert service.person_requests == []
+
+    run_async(scenario())
+
+
+def test_the_person_launch_maps_the_ambient_context_and_returns_the_receipt() -> None:
+    async def scenario() -> None:
+        service = _FakeService(receipt=Arv2LaunchReceipt(RUN_ID, (JOB_ID,), True, uuid4()))
+        tool = LaunchArv2PersonResearchTool(service)
+
+        result = await tool.invoke(_person_inputs(), _context())
+
+        request = service.person_requests[0]
+        assert request.workspace_id == WORKSPACE
+        assert request.requested_by_user_id == "usr_founder"
+        assert request.project_id == PROJECT
+        assert request.contact_entity_ids == (CONTACT_ID,)
+        assert request.directive_text == "open with the podcast"
+        assert result.references == {
+            "run_id": str(RUN_ID),
+            "job_ids": [str(JOB_ID)],
+            "replayed": True,
+        }
+        assert result.replayed is True
+
+    run_async(scenario())
+
+
+def test_a_person_launch_refusal_arrives_as_a_typed_precondition_failure() -> None:
+    async def scenario() -> None:
+        service = _FakeService(
+            refusal=Arv2LaunchRefused(
+                f"contact_not_found:{CONTACT_ID}", "no such contact in this workspace"
+            )
+        )
+        tool = LaunchArv2PersonResearchTool(service)
+
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(_person_inputs(), _context())
+
+        assert refused.value.reason_codes == (f"contact_not_found:{CONTACT_ID}",)
+        assert "no such contact" in refused.value.failures[0].message
+
+    run_async(scenario())
 
 
 # -- the operator's CLI (R2-close task 5) ---------------------------------------------------------
@@ -284,3 +378,28 @@ def test_the_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_traceback(
         module.main()
 
     assert str(exited.value) == ("refused: icp_front_matter_invalid: the ICP names no version")
+
+
+def test_the_person_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator who named somebody this workspace does not hold reads one line."""
+    path = Path(__file__).resolve().parents[2] / "scripts" / "launch_arv2_person_research.py"
+    spec = importlib.util.spec_from_file_location("arv2_person_launch_cli", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    async def refuse(args: Any) -> dict[str, Any]:
+        del args
+        raise Arv2LaunchRefused(f"contact_not_found:{CONTACT_ID}", "resolve the person first")
+
+    monkeypatch.setattr(module, "_args", lambda: object())
+    monkeypatch.setattr(module, "_run", refuse)
+
+    with pytest.raises(SystemExit) as exited:
+        module.main()
+
+    assert str(exited.value) == (
+        f"refused: contact_not_found:{CONTACT_ID}: resolve the person first"
+    )

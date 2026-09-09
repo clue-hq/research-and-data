@@ -30,19 +30,29 @@ from clue_api.arv2 import account_research_store as store
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
     arv2_account_profile_sha256,
+    arv2_person_profile_sha256,
 )
 from clue_api.arv2.account_research_driver import (
     Arv2AccountResearchWorkHandler,
     arv2_account_work_id,
 )
-from clue_api.arv2.claim_writer import LenientClaimWriter
+from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_config import Settings
-from clue_core import EntityId, new_project_run_id
+from clue_core import (
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    IdentityBinding,
+    ResearchMode,
+    RunId,
+    UseClass,
+    new_project_run_id,
+)
 from clue_fleet.lease import LeaseGeneration
 from clue_fleet.work_worker import WorkContext
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.durable.project_run import ensure_project_run
-from clue_research.identity import insert_account_entity
+from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project
 from tests.api.test_stage0_setup_db import _MemoryStorage
@@ -505,5 +515,266 @@ def test_the_agent_model_rounds_are_ledger_rows_and_the_job_cost_is_their_sum() 
             assert job.finalization["model_spend"]["calls"] == 1
             assert job.finalization["model_spend"]["usd"] == "0.005"
             assert job.finalization["model_spend"]["prompt_tokens"] == 1_000
+
+    run_async(scenario())
+
+
+# -- the person job (R3 task 8) -------------------------------------------------------------------
+
+
+def _finalizing_person_model(seen: dict[str, Any]) -> _ScriptedModel:
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        seen.setdefault("prompt", "\n".join(str(message.content) for message in messages))
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_research",
+                    "args": {
+                        "summary": "Dana Reyes runs demand generation and speaks about pipeline.",
+                        "openers": [
+                            {
+                                "text": "Your DevOpsDays talk on pipeline hygiene stayed with me.",
+                                "hook": "the DevOpsDays talk",
+                                "quote": "pipeline hygiene is a marketing problem",
+                                "url": "https://devopsdays.test/talk",
+                            }
+                        ],
+                        "hooks": ["speaks at DevOpsDays"],
+                        "not_found": [],
+                        "same_name_log": [],
+                        "gaps": ["no podcast appearances found"],
+                    },
+                    "id": "call-finalize",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    return _ScriptedModel(respond)
+
+
+async def _seed_contact_claim(
+    conn: AsyncConnection,
+    *,
+    contact_id: EntityId,
+    workspace_id: str,
+    run_id: UUID,
+    field_key: str,
+    value: Any,
+) -> None:
+    """One live contact claim, written through the same gate the lane writes every claim with."""
+    await LenientClaimWriter(lenient=True).write(
+        conn,
+        ClaimDraft(
+            entity_id=contact_id,
+            entity_type=EntityType.CONTACT,
+            field_key=field_key,
+            value_json=value,
+            extraction_method=ExtractionMethod.API,
+            run_id=RunId(run_id),
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            workspace_id=workspace_id,
+            source_url="https://probook.ai/team",
+            source_key="ai_ark:person",
+            evidence_span="Dana Reyes, VP Demand Generation",
+            confidence=0.9,
+            identity_binding=IdentityBinding.STRONG,
+            use_class=UseClass.PROFESSIONAL_PUBLIC,
+        ),
+    )
+
+
+def test_a_person_job_composes_against_the_real_contact_rows_and_lands_a_person_receipt() -> None:
+    """The committee member's own job: its pin, its lock, its belt, its receipt."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id = "ws-r3-person-driver"
+            project = await seed_project(conn, workspace_id, name="R3 person driver")
+            project_run_id = new_project_run_id()
+            await ensure_project_run(
+                conn,
+                project_run_id=project_run_id,
+                project_id=project.project_id,
+                workspace_id=workspace_id,
+                icp_key="clue-abm-buyers",
+                icp_version=1,
+            )
+            account_id = await insert_account_entity(
+                conn,
+                canonical_name="Probook",
+                primary_domain="probook.ai",
+                workspace_id=workspace_id,
+            )
+            contact_id = await insert_contact_entity(
+                conn,
+                account_entity_id=account_id,
+                full_name="Dana Reyes",
+                linkedin_url="https://www.linkedin.com/in/dana-reyes",
+            )
+            storage = _MemoryStorage()
+            icp_key_, icp_sha = await _register_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-clue-abm-buyers.md",
+                kind="icp-definition",
+                status="confirmed",
+                body=ICP_MARKDOWN,
+            )
+            await _register_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/persona-clue-abm-buyers.md",
+                kind="audience-persona",
+                status="ready",
+                body=PERSONA_MARKDOWN,
+            )
+
+            seen: dict[str, Any] = {}
+            run_id, job_id = uuid4(), uuid4()
+            await store.create_run(
+                conn,
+                store.RunRow(
+                    run_id=run_id,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    project_run_id=UUID(str(project_run_id)),
+                    icp_artifact_key=icp_key_,
+                    icp_artifact_sha256=icp_sha,
+                    icp_key="clue-abm-buyers",
+                    icp_version=1,
+                    product_selection_version=1,
+                    effort="full",
+                    committee_cap=3,
+                    directive_text="prioritise hiring evidence",
+                    profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+                    profile_sha256=arv2_account_profile_sha256(),
+                    requested_by_user_id="usr-r3",
+                    request_sha256=hashlib.sha256(b"person-request").hexdigest(),
+                ),
+            )
+            await _seed_contact_claim(
+                conn,
+                contact_id=contact_id,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                field_key="contact.current_title",
+                value="VP Demand Generation",
+            )
+            await _seed_contact_claim(
+                conn,
+                contact_id=contact_id,
+                workspace_id=workspace_id,
+                run_id=run_id,
+                field_key="contact.facet.career_history",
+                value=[
+                    {
+                        "org": "Sysdig",
+                        "role": "Director of Demand Gen",
+                        "start": "2021",
+                        "end": "2024",
+                    },
+                    {"org": "Probook", "role": "VP Demand Generation", "start": "2024-04"},
+                ],
+            )
+            assert await store.create_job(
+                conn,
+                job_id=job_id,
+                run_id=run_id,
+                workspace_id=workspace_id,
+                account_entity_id=UUID(str(account_id)),
+                subject_type="person",
+                subject_entity_id=UUID(str(contact_id)),
+                profile_sha256=arv2_person_profile_sha256(),
+            )
+
+            handler = Arv2AccountResearchWorkHandler(
+                settings=Settings(_env_file=None),
+                conn_factory=conn_session_factory(conn),
+                artifacts=DurableAgentArtifactStore(
+                    storage=storage,  # type: ignore[arg-type]
+                    conn_factory=conn_session_factory(conn),
+                ),
+                storage=storage,
+                clients=_Clients(),
+                model_provider=_Models(_finalizing_person_model(seen)),
+                model_id="x-ai/grok-4.6",
+                person_model_id="x-ai/grok-4.6-person",
+                writer=LenientClaimWriter(lenient=True),
+                clock=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+            )
+            context = WorkContext(
+                task_id=uuid4(),
+                work_id=arv2_account_work_id(job_id),
+                worker_id="w1",
+                lease_generation=LeaseGeneration(1),
+                payload={
+                    "job_id": str(job_id),
+                    "run_id": str(run_id),
+                    "workspace_id": workspace_id,
+                },
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+
+            result = await handler.handle(context)
+
+            assert result.outcome == "completed"
+            # The lock is built from the real rows: the contact column, the title claim and the
+            # career-history claim, rendered one line per role.
+            prompt = seen["prompt"]
+            assert "<person_research_context>" in prompt
+            assert '"title": "VP Demand Generation"' in prompt
+            assert '"linkedin_url": "https://www.linkedin.com/in/dana-reyes"' in prompt
+            assert "Director of Demand Gen @ Sysdig (2021–2024)" in prompt
+            assert "VP Demand Generation @ Probook (2024-04–)" in prompt
+            assert "## the person's own claims" in prompt
+
+            job = await store.read_job(conn, job_id=job_id)
+            assert job is not None
+            assert job.status == "completed"
+            assert job.finalization is not None
+            assert job.finalization["reason"] == "finalized"
+            assert job.finalization["openers_written"] == 1
+            assert job.finalization["hooks_written"] == 1
+            assert job.finalization["gaps"] == ["no podcast appearances found"]
+            assert job.finalization["profile_sha256"] == arv2_person_profile_sha256()
+            assert job.finalization["model_id"] == "x-ai/grok-4.6-person"
+
+            # The finalization's claims landed on the PERSON, never on the account.
+            contact_claims = await claims_for(
+                conn,
+                contact_id,
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            written = {claim.field_key for claim in contact_claims}
+            assert "contact.facet.openers" in written and "contact.facet.hooks" in written
+            account_claims = await claims_for(
+                conn,
+                EntityId(account_id),
+                scope=WorkspaceScope.for_workspace(workspace_id),
+            )
+            assert account_claims == []
+
+            activity = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT text FROM account_activity_event WHERE account_entity_id = :id"
+                        ),
+                        {"id": account_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert len(activity) == 1
+            assert "Person research finalized" in activity[0]["text"]
 
     run_async(scenario())

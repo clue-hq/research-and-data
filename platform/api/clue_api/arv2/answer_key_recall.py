@@ -1,9 +1,13 @@
 """Grade one research run against a fixed answer key — the R2 close's measurement.
 
-Two hand-built answer keys exist: Probook's (a JSON file, ``.context/arv2-clue-sample-v3``) and
-Zafran's (loaded into the database by :mod:`clue_api.arv2.answer_key_loader`). This module reads
-either one into the same shape (:class:`KeyClaim`), compares it against the claims a run actually
-wrote, and reports *recall*: the share of answer-key facts the run found.
+Three hand-built answer keys exist: Probook's (a JSON file, ``.context/arv2-clue-sample-v3``),
+Zafran's, and the ten-person depth key (both loaded into the database by
+:mod:`clue_api.arv2.answer_key_loader`). This module reads any of them into the same shape
+(:class:`KeyClaim`), compares it against the claims a run actually wrote, and reports *recall*:
+the share of answer-key facts the run found.
+
+An account and a person are graded by exactly the same rules — R3 added the ten people
+(:func:`people_keys`, :func:`person_report`), not a second measurement.
 
 The grading is deliberately generous about **form** and strict about **fact**. The answer key and
 the run were written by different pipelines, so the same fact appears as a bare string in one and
@@ -44,15 +48,20 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.answer_key import ZAFRAN_ANSWER_KEY, ZAFRAN_RUN_ID
-from clue_core import Claim, EntityType
+from clue_api.arv2.answer_key import (
+    PEOPLE_ANSWER_KEY,
+    PEOPLE_RUN_ID,
+    ZAFRAN_ANSWER_KEY,
+    ZAFRAN_RUN_ID,
+)
+from clue_core import Claim, EntityId, EntityType
 from clue_research.claimstore import WorkspaceScope, claims_for_runs
 
 #: How the Probook answer-key file names its one account's rows.
@@ -109,7 +118,13 @@ class Match:
 
 @dataclass(frozen=True)
 class RecallReport:
-    """One account's grade — the counts, every graded key, and the two renderings of them."""
+    """One subject's grade — the counts, every graded key, and the two renderings of them.
+
+    The subject is an account or (R3) one person. Both are graded by exactly the same rules, so
+    they share this shape; ``subject_kind`` says which one is being read, and ``account`` carries
+    the subject's short label either way — a domain-shaped account label (``zafran``) or a person
+    slug (``nick-fisher``).
+    """
 
     account: str
     keys: int
@@ -118,12 +133,23 @@ class RecallReport:
     field_only: int
     missing: int
     matches: tuple[Match, ...]
+    #: Did this person's job land the one-question ``unique_insight`` pass? Read off the run's
+    #: claim markers, never off what the agent said it did. Always ``False`` for an account.
+    insight_found: bool = False
+    #: ``account`` | ``person`` — which kind of subject was graded.
+    subject_kind: str = "account"
 
     def recall(self) -> float:
         """The share of answer-key facts the run found, exactly or partially."""
         if self.keys == 0:
             return 0.0
         return (self.exact + self.partial) / self.keys
+
+    def _subject_label(self) -> str:
+        """The subject as the operator reads it: a person slug back as a name, an account as-is."""
+        if self.subject_kind == "person":
+            return self.account.replace("-", " ").title()
+        return self.account
 
     def by_section(self) -> dict[str, tuple[int, int]]:
         """``field prefix → (hits, keys)`` in first-appearance order (a hit is exact or partial)."""
@@ -141,6 +167,8 @@ class RecallReport:
         """The machine-readable form — the same numbers the markdown renders."""
         return {
             "account": self.account,
+            "subject_kind": self.subject_kind,
+            "insight_found": self.insight_found,
             "keys": self.keys,
             "exact": self.exact,
             "partial": self.partial,
@@ -167,12 +195,21 @@ class RecallReport:
 
     def markdown(self) -> str:
         """The operator's page: the header line, the by-section table, and every miss."""
+        insight = ""
+        if self.subject_kind == "person":
+            # Only a person job runs the one-question pass, so only a person report claims one way
+            # or the other — an account report would be reporting on a pass it never made.
+            insight = (
+                " · unique insight **found**"
+                if self.insight_found
+                else (" · unique insight **not found**")
+            )
         lines = [
             f"# answer-key recall — {self.account}",
             "",
-            f"account **{self.account}** · keys {self.keys} · exact {self.exact} · "
-            f"partial {self.partial} · field_only {self.field_only} · missing {self.missing} · "
-            f"**recall {self.recall():.0%}**",
+            f"{self.subject_kind} **{self._subject_label()}** · keys {self.keys} · "
+            f"exact {self.exact} · partial {self.partial} · field_only {self.field_only} · "
+            f"missing {self.missing} · **recall {self.recall():.0%}**{insight}",
             "",
             "| section | hits | keys | recall |",
             "| --- | ---: | ---: | ---: |",
@@ -376,6 +413,25 @@ def match_claims(
     )
 
 
+def person_report(
+    keys: Sequence[KeyClaim], run_claims: Sequence[Claim], *, person: str
+) -> RecallReport:
+    """Grade one person: the same verdicts as an account, plus the two person-only fields.
+
+    ``insight_found`` is read off the **rows** — any claim the run wrote on this contact carrying
+    the ``unique_insight`` marker means the one-question pass landed something. A person whose
+    every fact came out of the broad structuring pass reports ``False``, which is the honest
+    reading of a thin public footprint, not a failure.
+    """
+    return replace(
+        match_claims(keys, run_claims, account=person),
+        subject_kind="person",
+        insight_found=any(
+            (claim.write_markers or {}).get("unique_insight") is True for claim in run_claims
+        ),
+    )
+
+
 def probook_keys(path: Path) -> list[KeyClaim]:
     """The Probook answer key's **account** rows (its contact rows belong to R3, not R2)."""
     rows = json.loads(path.read_text(encoding="utf-8"))
@@ -404,29 +460,63 @@ async def zafran_keys(conn: AsyncConnection, *, workspace_id: str) -> list[KeyCl
     claims = await claims_for_runs(
         conn, [ZAFRAN_RUN_ID], scope=WorkspaceScope.for_workspace(workspace_id)
     )
-    keys: list[KeyClaim] = []
+    keys = [
+        _key_claim(claim)
+        for claim in claims
+        if claim.entity_type is EntityType.ACCOUNT
+        and (claim.write_markers or {}).get("answer_key") == ZAFRAN_ANSWER_KEY
+    ]
+    return sorted(keys, key=_key_order)
+
+
+async def people_keys(
+    conn: AsyncConnection, *, workspace_id: str
+) -> dict[EntityId, list[KeyClaim]]:
+    """The ten-person depth answer key, read back per contact — one key bundle each.
+
+    The same read as :func:`zafran_keys` against the person-depth run, grouped by the contact the
+    loader hung each row on, because R3 grades one person at a time. Each bundle is ordered by the
+    answer key's own row ids (``nick_fisher-003``), so two runs of the measurement read alike.
+    """
+    claims = await claims_for_runs(
+        conn, [PEOPLE_RUN_ID], scope=WorkspaceScope.for_workspace(workspace_id)
+    )
+    grouped: dict[EntityId, list[KeyClaim]] = {}
     for claim in claims:
-        markers = claim.write_markers or {}
-        if claim.entity_type is not EntityType.ACCOUNT:
+        if claim.entity_type is not EntityType.CONTACT:
             continue
-        if markers.get("answer_key") != ZAFRAN_ANSWER_KEY:
+        if (claim.write_markers or {}).get("answer_key") != PEOPLE_ANSWER_KEY:
             continue
-        field_key = str(claim.field_key)
-        joined = markers.get("pipe_joined_key")
-        alternatives: tuple[str, ...] = ()
-        if isinstance(joined, str):
-            first, rest = _split_keys(joined)
-            alternatives = tuple(key for key in (first, *rest) if key != field_key)
-        row_id = markers.get("source_row_id")
-        keys.append(
-            KeyClaim(
-                field_key=field_key,
-                alternatives=alternatives,
-                value=claim.value_json,
-                source_row_id=str(row_id) if row_id is not None else None,
-            )
-        )
-    return sorted(keys, key=lambda key: (key.source_row_id or "", key.field_key))
+        grouped.setdefault(claim.entity_id, []).append(_key_claim(claim))
+    return {entity_id: sorted(keys, key=_key_order) for entity_id, keys in grouped.items()}
+
+
+def _key_claim(claim: Claim) -> KeyClaim:
+    """One loaded answer-key claim read back as the key it was written from.
+
+    The alternatives come off the ``pipe_joined_key`` marker the loader stamped — a ``a|b`` row was
+    loaded as two claims sharing one source row, and each of them may legitimately have been
+    answered under the other's field key.
+    """
+    markers = claim.write_markers or {}
+    field_key = str(claim.field_key)
+    joined = markers.get("pipe_joined_key")
+    alternatives: tuple[str, ...] = ()
+    if isinstance(joined, str):
+        first, rest = _split_keys(joined)
+        alternatives = tuple(key for key in (first, *rest) if key != field_key)
+    row_id = markers.get("source_row_id")
+    return KeyClaim(
+        field_key=field_key,
+        alternatives=alternatives,
+        value=claim.value_json,
+        source_row_id=str(row_id) if row_id is not None else None,
+    )
+
+
+def _key_order(key: KeyClaim) -> tuple[str, str]:
+    """Answer-key row order — the source row first, its field key breaking a pipe-split tie."""
+    return (key.source_row_id or "", key.field_key)
 
 
 def _candidates(by_field: dict[str, list[Claim]], key: KeyClaim) -> list[Claim]:

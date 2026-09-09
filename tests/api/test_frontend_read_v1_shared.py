@@ -22,7 +22,13 @@ import pytest
 from sqlalchemy import bindparam, event, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.account_research_store import JobStatus
+from clue_api.arv2.account_research_claims import (
+    JobScope,
+    ai_ark_person_claims,
+    email_export_claim,
+)
+from clue_api.arv2.account_research_store import JobStatus, create_job
+from clue_api.arv2.ai_ark_client import email_export_from_record, person_from_record
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.frontend_read.contract_v1 import (
@@ -92,6 +98,45 @@ from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
 
 _NOW = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+
+#: One person job's scope, and the AI Ark record it researches. They exist here so the two W1/W3
+#: tests below can assert the *pair* — the mapper's real output read by the real reader — instead
+#: of a hand-written value that could drift away from what the mapper writes.
+_PERSON_SCOPE = JobScope(
+    workspace_id="ws-v1-shared",
+    project_id="prj-v1-shared",
+    project_run_id=uuid.uuid4(),
+    run_id=uuid.uuid4(),
+    job_id=uuid.uuid4(),
+    account_id=EntityId(uuid.uuid4()),
+    account_name="Zafran Security",
+    account_domain="zafran.io",
+    icp_markdown="",
+    persona_markdown="",
+    already_established="",
+    effort="full",
+    committee_cap=1,
+    today=date(2026, 9, 9),
+    subject_kind="person",
+    contact_id=EntityId(uuid.uuid4()),
+    person_name="Nick Fisher",
+)
+
+_AI_ARK_PERSON: dict[str, Any] = {
+    "profile": {"full_name": "Nick Fisher", "title": "VP of Marketing"},
+    "position_groups": [
+        {
+            "company": {"name": "Zafran Security"},
+            "profile_positions": [
+                {
+                    "company": "Zafran Security",
+                    "title": "VP of Marketing",
+                    "date": {"start": "2024-04-01", "end": None},
+                }
+            ],
+        }
+    ],
+}
 
 
 def _settings() -> Settings:
@@ -528,6 +573,79 @@ def test_current_position_start_picks_the_latest_open_entry() -> None:
     assert current_position_start([{"date": {"start": "2019-02-01", "end": "2024-03-31"}}]) is None
     assert current_position_start(["VP of Marketing at Zafran"]) is None
     assert current_position_start(None) is None
+
+
+def test_the_tenure_reads_what_the_ai_ark_mapper_actually_writes() -> None:
+    """The two halves of walk finding W3, pinned against each other: this reader looks for
+    ``date.start`` on the entry with no ``date.end``, and the ARV2 person mapper now writes exactly
+    that. It wrote ``start``/``end`` flat, so every mapped person's tenure was empty."""
+    (career_history,) = [
+        draft.value_json
+        for draft in ai_ark_person_claims(person_from_record(_AI_ARK_PERSON), _PERSON_SCOPE)
+        if draft.field_key == "contact.facet.career_history"
+    ]
+
+    assert current_position_start(career_history) == date(2024, 4, 1)
+
+
+def test_the_email_chip_reads_what_the_ai_ark_export_mapper_actually_writes() -> None:
+    """The two halves of walk finding W1: the export mapper writes ``{address, status}`` and this
+    reader shows the address only for a graded verdict. It wrote a bare string, so the chip read
+    ``lookup`` for everybody."""
+    export = email_export_from_record(
+        {
+            "email": {
+                "output": [
+                    {
+                        "address": "nick@zafran.io",
+                        "status": "VALID",
+                        "domainType": "SMTP",
+                        "found": True,
+                        "date": "2026-09-02T09:00:00",
+                    }
+                ]
+            }
+        }
+    )
+    draft = email_export_claim(export, _PERSON_SCOPE)
+    assert draft is not None
+
+    facts = email_facts(
+        _contact_claim(
+            field_key="core.work_email",
+            value_json=draft.value_json,
+            observed_at=datetime(2026, 9, 2, 9, 0, tzinfo=UTC),
+        )
+    )
+
+    assert facts.status == "available"
+    assert facts.label == "nick@zafran.io"
+    # The date on the screen is the provider's own ``checked_at`` day when the value carries one.
+    assert facts.verified_at == "2026-09-02"
+
+
+def test_a_catch_all_export_is_shown_without_a_verification_date() -> None:
+    export = email_export_from_record(
+        {
+            "email": {
+                "output": [
+                    {
+                        "address": "kate@probook.ai",
+                        "status": "VALID",
+                        "domainType": "CATCH_ALL",
+                        "found": True,
+                    }
+                ]
+            }
+        }
+    )
+    draft = email_export_claim(export, _PERSON_SCOPE)
+    assert draft is not None
+
+    facts = email_facts(_contact_claim(field_key="core.work_email", value_json=draft.value_json))
+
+    assert facts.status == "available" and facts.label == "kate@probook.ai"
+    assert facts.verified_at is None
 
 
 def test_education_label_renders_an_object_or_a_bare_string() -> None:
@@ -1328,6 +1446,59 @@ def test_a_completed_job_after_an_older_in_flight_one_is_not_a_refresh() -> None
             )
             await seed_arv2_job(
                 conn, project=project, account_id=account, status="completed", created_at=_NOW
+            )
+
+            served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])
+            assert served[account] == ("completed", False)
+
+    run_async(scenario())
+
+
+@pytest_db
+def test_a_person_job_newer_than_the_completed_account_job_leaves_the_account_researched() -> None:
+    """R3's person jobs share the table and the account column. Zafran's account job finished and
+    fanned four committee members out into person jobs that are queued and newer; the account is
+    researched, not ``not_started``, and not refreshing — a person being researched is not the
+    account being re-researched."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await _base(conn)
+            project = await seed_project(conn, _WS, name="Research project")
+            account = await insert_account_entity(
+                conn, canonical_name="Zafran", primary_domain="zafran.io", workspace_id=_WS
+            )
+            account_job = await seed_arv2_job(
+                conn,
+                project=project,
+                account_id=account,
+                status="completed",
+                created_at=_NOW - timedelta(hours=1),
+            )
+            run_id = (
+                await conn.execute(
+                    text("SELECT run_id FROM arv2_research_job WHERE job_id = :job_id"),
+                    {"job_id": account_job},
+                )
+            ).scalar_one()
+            member = await insert_contact_entity(
+                conn, account_entity_id=account, full_name="Nick Fisher"
+            )
+            assert await create_job(
+                conn,
+                job_id=uuid.uuid4(),
+                run_id=run_id,
+                workspace_id=_WS,
+                account_entity_id=account,
+                subject_type="person",
+                subject_entity_id=uuid.UUID(str(member)),
+            )
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET created_at = :now "
+                    "WHERE run_id = :run_id AND subject_type = 'person'"
+                ),
+                {"now": _NOW, "run_id": run_id},
             )
 
             served = await arv2_research_status_for(conn, workspace_id=_WS, account_ids=[account])

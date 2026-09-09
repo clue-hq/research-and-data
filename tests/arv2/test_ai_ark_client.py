@@ -366,6 +366,105 @@ def test_the_person_reader_takes_the_domain_from_the_embedded_current_employer()
     assert person.department == {"seniority": "vp"}
 
 
+def test_the_person_reader_takes_the_domain_when_the_two_blocks_share_a_linkedin_page() -> None:
+    """The live Cogent record: the two blocks spell the name differently and are one company.
+
+    ``position_groups[0].company.name`` is ``"Cogent"`` and ``company.summary.name`` is
+    ``"Cogent Security"``. On the name alone the domain was refused and every Cogent person lost
+    their lookup; the company URL both blocks carry says they are the same page.
+    """
+    person = person_from_record(
+        {
+            "profile": {"full_name": "Alexander Semien"},
+            "position_groups": [
+                {
+                    "company": {
+                        "name": "Cogent",
+                        "url": "https://www.linkedin.com/company/cogentsecurity/",
+                    }
+                }
+            ],
+            "company": {
+                "summary": {"name": "Cogent Security"},
+                "link": {
+                    "domain": "cogent.com",
+                    "linkedin": "https://linkedin.com/company/cogentsecurity",
+                },
+            },
+        }
+    )
+
+    assert person.current_company == "Cogent"
+    assert person.current_company_domain == "cogent.com"
+
+
+def test_the_person_reader_takes_the_domain_when_one_company_name_contains_the_other() -> None:
+    """No URL on either block: a folded name inside the other is the same employer written short."""
+    person = person_from_record(
+        {
+            "profile": {"full_name": "Alexander Semien"},
+            "position_groups": [{"company": {"name": "Cogent"}}],
+            "company": {
+                "summary": {"name": "Cogent Security"},
+                "link": {"domain": "cogent.com"},
+            },
+        }
+    )
+
+    assert person.current_company_domain == "cogent.com"
+
+
+@pytest.mark.parametrize(
+    ("position_name", "company_name"),
+    [("Box", "Dropbox"), ("Meta", "Metabase")],
+    ids=["box-in-dropbox", "meta-in-metabase"],
+)
+def test_a_name_merely_spelled_inside_another_is_not_the_same_employer(
+    position_name: str, company_name: str
+) -> None:
+    """Containment is over whole words. Character containment would hand a mover the old
+    employer's domain, and the caller compares that domain to the account — so a stale committee
+    row would clear the employer lock and be researched under the wrong account."""
+    person = person_from_record(
+        {
+            "profile": {"full_name": "Alexander Semien"},
+            "position_groups": [{"company": {"name": position_name}}],
+            "company": {
+                "summary": {"name": company_name},
+                "link": {"domain": f"{company_name.lower()}.com"},
+            },
+        }
+    )
+
+    assert person.current_company_domain is None
+
+
+def test_a_different_company_page_and_an_unrelated_name_leave_the_domain_unknown() -> None:
+    """Both rungs fail: a different company page, and neither name contains the other."""
+    person = person_from_record(
+        {
+            "profile": {"full_name": "Alexander Semien"},
+            "position_groups": [
+                {
+                    "company": {
+                        "name": "Cogent",
+                        "url": "https://www.linkedin.com/company/cogentsecurity",
+                    }
+                }
+            ],
+            "company": {
+                "summary": {"name": "Some Prior Corp"},
+                "link": {
+                    "domain": "prior.example",
+                    "linkedin": "https://www.linkedin.com/company/some-prior-corp",
+                },
+            },
+        }
+    )
+
+    assert person.current_company_domain is None
+
+
 def test_a_domain_from_a_different_company_is_not_attached_to_the_person() -> None:
     """Target-locking: a previous employer's domain on a mover would be a fabricated fact."""
     person = person_from_record(

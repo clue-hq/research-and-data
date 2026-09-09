@@ -1,0 +1,104 @@
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history"
+  ],
+  "compliance": [],
+  "email": null,
+  "employer": "verified",
+  "job_id": "2d3f74ca-6b0e-5bf1-a550-53927af26fab",
+  "linkedin_url": "https://www.linkedin.com/in/alexander-semien",
+  "outcome": "repaired",
+  "person": "Alexander Semien",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "cameron@cogent.com",
+  "employer": "verified",
+  "job_id": "c013f842-1536-5e52-af61-cf8885eeb248",
+  "linkedin_url": "https://www.linkedin.com/in/cameroncoles",
+  "outcome": "repaired",
+  "person": "Cameron Coles",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "cogent.com",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "vineet@cogent.com",
+  "employer": "verified",
+  "job_id": "d91556be-b1e2-5def-a5c9-61e6564ffb24",
+  "linkedin_url": "https://www.linkedin.com/in/vineetedupuganti",
+  "outcome": "repaired",
+  "person": "Vineet Edupuganti",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "harmonic.security",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "alastair@harmonic.security",
+  "employer": "verified",
+  "job_id": "4443097f-d3c1-53e8-953e-45766372b7b4",
+  "linkedin_url": "https://www.linkedin.com/in/alastair-paterson-2586445",
+  "outcome": "repaired",
+  "person": "Alastair Paterson",
+  "record_found": true,
+  "write_failures": []
+}
+{
+  "account_domain": "harmonic.security",
+  "claims_written": [
+    "contact.current_title",
+    "contact.headline",
+    "contact.current_location",
+    "contact.network_statistics",
+    "contact.member_badges",
+    "contact.facet.career_history",
+    "core.work_email"
+  ],
+  "compliance": [],
+  "email": "ana@harmonic.security",
+  "employer": "verified",
+  "job_id": "2e3803bb-628b-58b0-8871-5eeef1618644",
+  "linkedin_url": "https://www.linkedin.com/in/anastasiacorio",
+  "outcome": "repaired",
+  "person": "Ana Corio",
+  "record_found": true,
+  "write_failures": []
+}

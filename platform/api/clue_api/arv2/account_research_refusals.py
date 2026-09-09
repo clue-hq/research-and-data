@@ -1,8 +1,13 @@
-"""Refusal codes the R2 driver and tools can emit, and the envelope the model receives.
+"""Refusal codes the arv2 drivers and tools can emit, and the envelope the model receives.
 
 A refusal spends nothing, suspends nothing and ends nothing (master plan Appendix A 12; substance
 §5). The ``reaction`` sentence is the manual's row for that code, so the model reads the correct
 move inside the envelope and the manual test proves the two never drift.
+
+One table serves both agents. ``REFUSAL_CODES`` is what the account driver can emit;
+``PERSON_REFUSAL_CODES`` is what the person driver can emit — the five person codes plus every
+shared code whose tool the person toolbelt keeps. The person agent has no ATS board and no company
+lookup, so those three codes are not in its set and its manual carries no row for them.
 """
 
 from __future__ import annotations
@@ -61,9 +66,34 @@ REACTIONS: dict[str, str] = {
         "The tool failed for a reason outside your control; record the gap and continue."
     ),
     "invalid_arguments": "Correct the named argument and call again.",
+    # --- R3, the person driver ---
+    "subject_lock_failed": (
+        "This candidate is not the person; record the lookalike; no person job."
+    ),
+    "email_export_empty": "Record no email; the member is still researched.",
+    "media_cap_reached": (
+        "Media for this person is complete; do not call read_media_feeds again for them."
+    ),
+    "insight_not_found": 'Record "thin public footprint" with channels checked; move on.',
 }
 
-REFUSAL_CODES: frozenset[str] = frozenset(REACTIONS)
+#: The codes only the person driver emits.
+_PERSON_ONLY_CODES: frozenset[str] = frozenset(
+    {
+        "subject_lock_failed",
+        "email_export_empty",
+        "media_cap_reached",
+        "insight_not_found",
+    }
+)
+
+#: The codes only the account driver emits: the ATS board and the company lookup are account tools.
+_ACCOUNT_ONLY_CODES: frozenset[str] = frozenset(
+    {"board_not_found", "board_fetch_failed", "company_not_found"}
+)
+
+REFUSAL_CODES: frozenset[str] = frozenset(REACTIONS) - _PERSON_ONLY_CODES
+PERSON_REFUSAL_CODES: frozenset[str] = frozenset(REACTIONS) - _ACCOUNT_ONLY_CODES
 
 
 @dataclass(frozen=True)
