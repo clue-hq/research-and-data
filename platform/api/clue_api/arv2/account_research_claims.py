@@ -40,6 +40,7 @@ from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPer
 from clue_api.arv2.ats_client import BoardPostings
 from clue_api.arv2.claim_writer import ClaimDraft
 from clue_api.arv2.structuring_client import (
+    UNIQUE_INSIGHT_TARGET_KEYS,
     FieldCatalog,
     NegativeOrRisk,
     StructuredClaim,
@@ -77,6 +78,7 @@ __all__ = [
     "ClaimInput",
     "JobScope",
     "PersonFinalization",
+    "UniqueInsight",
     "agent_claims",
     "ai_ark_company_claims",
     "ai_ark_person_claims",
@@ -1522,23 +1524,51 @@ def committee_member_claims(
 # -- the person job's own two shapes --------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class UniqueInsight:
+    """The one-question pass's answer, and the keys it was not allowed to answer on."""
+
+    drafts: list[ClaimDraft]
+    #: Field keys the target set refused, in the order the model wrote them. Reported on the tool
+    #: result: a dropped row and a thin footprint are otherwise the same empty ``written``, and the
+    #: agent would learn the wrong thing from each.
+    off_target: tuple[str, ...]
+
+
 def unique_insight_claims(
     output: StructuredOutput, *, scope: JobScope, catalog: FieldCatalog
-) -> list[ClaimDraft]:
-    """The one-question pass's answer: at most one claim, at priority 1, marked.
+) -> UniqueInsight:
+    """The one-question pass's answer: at most one claim, on a fact facet, at priority 1, marked.
 
     The mode registers no field — the fact is written to the existing facet it actually *is* — so
-    this is :func:`structured_claims` with two things forced in code rather than trusted to the
-    prompt: the row cap (the whole point of the mode is that it returns *the* one thing, not a
-    second broad pass) and the priority (this is the fact the outreach opens with, and a model that
-    typed ``priority: 3`` must not be able to bury it). The ``unique_insight`` marker is what the
-    finalization receipt reads to say whether the insight was found; it lives on the claim row.
+    this is :func:`structured_claims` with three things forced in code rather than trusted to the
+    prompt:
+
+    * **The target keys.** Only :data:`UNIQUE_INSIGHT_TARGET_KEYS` may carry an insight. The live
+      run answered on ``contact.facet.hooks``, which is the outreach argument the finalization
+      builds *from* the facts, not a fact — so the insight landed as an unquoted line in the field
+      the openers are drawn from. A row on any other key is dropped and named.
+    * **The row cap** — the whole point of the mode is that it returns *the* one thing, not a
+      second broad pass. It applies after the target filter, so an admissible second row is
+      still the answer when the model's first row was off target.
+    * **The priority** — this is the fact the outreach opens with, and a model that typed
+      ``priority: 3`` must not be able to bury it.
+
+    The ``unique_insight`` marker is what the finalization receipt reads to say whether the insight
+    was found; it lives on the claim row.
     """
     drafts = structured_claims(output, scope=scope, subject_url_hint=None, catalog=catalog)
-    return [
-        replace(draft, signal_priority=1, markers={**draft.markers, "unique_insight": True})
-        for draft in drafts[:1]
-    ]
+    on_target = [draft for draft in drafts if draft.field_key in UNIQUE_INSIGHT_TARGET_KEYS]
+    off_target = tuple(
+        draft.field_key for draft in drafts if draft.field_key not in UNIQUE_INSIGHT_TARGET_KEYS
+    )
+    return UniqueInsight(
+        drafts=[
+            replace(draft, signal_priority=1, markers={**draft.markers, "unique_insight": True})
+            for draft in on_target[:1]
+        ],
+        off_target=off_target,
+    )
 
 
 @dataclass(frozen=True)

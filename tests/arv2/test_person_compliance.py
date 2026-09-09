@@ -179,6 +179,51 @@ def test_a_labelled_phone_number_is_still_found() -> None:
     assert kept == []
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Reach me on +1 415 555 0134 any time.",
+        "My direct line is 415-555-0134.",
+        "Mobile 07700 900123",
+    ],
+    ids=["international-prefix", "dash-separated-tail", "uk-five-plus-six"],
+)
+def test_a_phone_number_carrying_its_own_shape_is_still_found(value: str) -> None:
+    """Each of the shapes that says "phone" without a label: the signal is on the number itself."""
+    kept, log = apply_person_floor([_draft(value=value)], purge_unevidenced=False)
+
+    assert kept == [] and _rules(log) == [("dropped", "personal_contact_detail")]
+
+
+@pytest.mark.parametrize(
+    ("field_key", "value"),
+    [
+        (
+            "contact.facet.conference_talk",
+            ["RSA 2023 (Apr 24) — Detection at scale", "Black Hat 2024 — Purple teaming"],
+        ),
+        ("contact.facet.career_history", ["Acme 2019-06", "Beta 2021", "Cogent 2024"]),
+        (
+            "contact.facet.self_summary",
+            "Grew the team from 12 to 250 people between 2019 and 2024.",
+        ),
+    ],
+    ids=["talk-list", "career-dates", "counts-and-years"],
+)
+def test_years_dates_and_counts_carry_no_phone_signal(field_key: str, value: object) -> None:
+    """The live R3 run's dropped rows. A digit count alone is not a phone number.
+
+    The token fence only splits at *letter* tokens, so whitespace-separated years and dates still
+    merged into one nine-to-fifteen-digit run: four talk / appearance rows and a career history
+    were dropped whole as "personal contact detail". None of them carries a phone signal.
+    """
+    kept, log = apply_person_floor(
+        [_draft(field_key=field_key, value=value)], purge_unevidenced=False
+    )
+
+    assert len(kept) == 1 and log == []
+
+
 def test_an_email_address_outside_the_work_email_field_drops_the_draft() -> None:
     kept, log = apply_person_floor(
         [_draft(value="Write to nick.fisher@gmail.com about the book.")], purge_unevidenced=False

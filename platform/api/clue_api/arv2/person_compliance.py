@@ -317,6 +317,20 @@ _LETTER_TOKEN = re.compile(r"\S*[A-Za-z]\S*")
 #: fences each number off from the next, so only digits actually written together are counted.
 _TOKEN_FENCE = "|"
 
+#: What makes a run of digits a *phone number* rather than a set of years, dates or counts. One of
+#: these must hold, on the candidate itself: an international prefix, a parenthesised area code, a
+#: dash- or dot-separated subscriber tail, or the UK five-plus-six grouping ("07700 900123").
+_PHONE_SIGNALS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\+\d"),
+    re.compile(r"\(\d{3}\)"),
+    re.compile(r"\d{3}[-.]\d{4}"),
+    re.compile(r"\d{5}\s\d{6}"),
+)
+
+#: The words that make a number a phone number whatever it is punctuated like. Read on the
+#: **sentence** the candidate sits in, before the letters are fenced out of it.
+_PHONE_WORDS = re.compile(r"\b(?:tel|phone|mobile|cell|whatsapp)\b|\bcall me\b", re.IGNORECASE)
+
 _EMAIL = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
 
 #: A house number, a capitalised street name and a thoroughfare word. The capitals are load-bearing:
@@ -448,16 +462,30 @@ def _evidenced_by_shape(draft: ClaimDraft) -> bool:
 
 
 def _phone_in(text: str) -> str | None:
-    """A phone number, or ``None``. Digit runs that belong to a word or an id do not count.
+    """A phone number, or ``None``. A digit count alone is never enough.
 
-    Every removed word leaves a :data:`_TOKEN_FENCE` behind rather than a space, so two numbers
-    that merely stand near each other ("from 12 to 250 people between 2019 and 2024") stay two
-    numbers instead of becoming one fifteen-digit "phone number".
+    The scan runs one sentence at a time, and a candidate is a phone number only when something
+    *says so*: a leading ``+``, a parenthesised area code, a dash- or dot-separated four-digit
+    tail, the UK five-plus-six grouping, or one of :data:`_PHONE_WORDS` in the sentence it sits in.
+
+    Two fences failed before this rule existed. Every removed word leaves a :data:`_TOKEN_FENCE`
+    rather than a space, so two numbers standing near each other ("from 12 to 250 people between
+    2019 and 2024") stay two numbers — but the fence only splits at *letter* tokens, and a talk
+    list or a career history is years and dates separated by nothing but whitespace and
+    punctuation. "2019-06 2021 2024" is fourteen digits in one run, and four conference-talk rows
+    and a career history were dropped whole as phone numbers. A run of plain numbers carrying none
+    of the signals above is a set of years, dates or counts, and it is never a phone number.
     """
-    digits_only = _LETTER_TOKEN.sub(_TOKEN_FENCE, text.replace(":", " ").replace(",", " "))
-    for match in _PHONE.finditer(digits_only):
-        if sum(character.isdigit() for character in match.group()) in _PHONE_DIGITS:
-            return match.group().strip()
+    for sentence in _SENTENCE.split(text):
+        fenced = _LETTER_TOKEN.sub(_TOKEN_FENCE, sentence.replace(":", " ").replace(",", " "))
+        for match in _PHONE.finditer(fenced):
+            candidate = match.group().strip()
+            if sum(character.isdigit() for character in candidate) not in _PHONE_DIGITS:
+                continue
+            if any(signal.search(candidate) for signal in _PHONE_SIGNALS):
+                return candidate
+            if _PHONE_WORDS.search(sentence):
+                return candidate
     return None
 
 

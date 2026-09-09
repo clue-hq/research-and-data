@@ -32,6 +32,7 @@ from clue_api.arv2.structuring_client import (
     NEUTRALISED_MARKER,
     STRUCTURING_SYSTEM_PROMPT,
     UNIQUE_INSIGHT_MODE,
+    UNIQUE_INSIGHT_TARGET_KEYS,
     UNREGISTERED_KEY_ORIGIN,
     AccountSubject,
     FieldCatalog,
@@ -979,6 +980,17 @@ def test_the_unique_insight_user_turn_states_the_one_question_and_drops_the_broa
     assert "SUBJECT — ONE person" in prompt
     assert catalog_menu_text(CATALOG) in prompt
     assert BUNDLE_BEGIN in prompt and BUNDLE_END in prompt
+
+
+def test_the_unique_insight_user_turn_lists_the_keys_an_insight_may_land_on() -> None:
+    """The live run read "the CONTACT FACET key that fact actually is" as "any contact facet"."""
+    subject = PersonSubject(name="Nick Fisher", company="Zafran", linkedin_url="https://li/nick")
+
+    prompt = person_user_prompt(subject, BUNDLE, CATALOG, mode=UNIQUE_INSIGHT_MODE)
+
+    assert all(key in prompt for key in UNIQUE_INSIGHT_TARGET_KEYS)
+    assert "contact.facet.hooks" not in UNIQUE_INSIGHT_TARGET_KEYS
+    assert "`contact.facet.hooks`" in prompt and "NEVER an answer here" in prompt
 
 
 def test_the_unique_insight_mode_keeps_one_row_and_counts_the_rest() -> None:

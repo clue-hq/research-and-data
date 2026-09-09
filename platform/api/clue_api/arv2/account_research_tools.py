@@ -26,7 +26,7 @@ import hashlib
 import json
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -145,6 +145,7 @@ __all__ = [
     "WriteFailure",
     "build_account_tools",
     "build_person_tools",
+    "fold_identity",
 ]
 
 #: The twelve tools, in the order the manual lists them — free instruments first, the paid deep
@@ -1117,7 +1118,7 @@ async def _lookup_people(runtime: ToolRuntime, args: LookupPeopleArgs) -> dict[s
     }
 
 
-def _fold_identity(value: str) -> str:
+def fold_identity(value: str) -> str:
     """The form two URLs or two domains are compared in: lower-case, no scheme, no ``www.``, no
     trailing slash.
 
@@ -1131,6 +1132,11 @@ def _fold_identity(value: str) -> str:
     for scheme in ("https://", "http://"):
         folded = folded.removeprefix(scheme)
     return folded.removeprefix("www.")
+
+
+def _marked(draft: ClaimDraft, markers: Mapping[str, Any]) -> ClaimDraft:
+    """One draft with extra markers folded in. No markers is the draft itself, untouched."""
+    return replace(draft, markers={**draft.markers, **markers}) if markers else draft
 
 
 async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[str, Any]:
@@ -1150,11 +1156,16 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
        matching is ``subject_lock_failed``, and the refusal names the companies the candidates
        *do* work for, so the agent can log them as lookalikes rather than guess why the call
        failed.
-    3. **The employer, exact.** A record with the right LinkedIn URL whose
-       ``current_company_domain`` is not this account's domain is the same person at a *different*
-       employer — the account job's committee is stale, and researching them here would file
-       another company's employee under this account. That is ``subject_lock_failed`` too, and
-       it names both domains.
+    3. **The employer, as corroboration.** A record with the right LinkedIn URL whose
+       ``current_company_domain`` is a *different* company than this account is the same person at
+       another employer — the account job's committee is stale, and researching them here would
+       file another company's employee under this account. That is ``subject_lock_failed`` too,
+       and it names both domains. An employer the record cannot state (no domain at all) is a
+       different answer: the identity is already anchored on the confirmed URL, so the lookup
+       **proceeds** and every claim it writes carries ``employer_unverified`` — an unstated fact is
+       recorded as unstated, never read as a contradiction. The live Cogent records were refused
+       here for a spelling of the employer's name, and three confirmed members lost their whole
+       lookup to it.
 
     Only past all three locks is the email export bought. An export that finds nothing is a
     **result**, never a refusal: no mailbox is a fact about the mailbox, and the member is still
@@ -1166,8 +1177,8 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     call already had.
     """
     scope = runtime.scope
-    wanted = _fold_identity(args.linkedin_url)
-    locked = _fold_identity(scope.person_linkedin_url or "")
+    wanted = fold_identity(args.linkedin_url)
+    locked = fold_identity(scope.person_linkedin_url or "")
     if locked and wanted != locked:
         raise RefusalError(
             "subject_lock_failed",
@@ -1186,7 +1197,7 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
         (
             person
             for person in people.people
-            if person.linkedin_url and _fold_identity(person.linkedin_url) == wanted
+            if person.linkedin_url and fold_identity(person.linkedin_url) == wanted
         ),
         None,
     )
@@ -1200,20 +1211,26 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
             f"no candidate for {scope.person_name!r} at {scope.account_domain} carries the "
             f"LinkedIn URL {args.linkedin_url}; the provider returned {companies}",
         )
-    employer = _fold_identity(record.current_company_domain or "")
-    if employer != _fold_identity(scope.account_domain):
+    employer = fold_identity(record.current_company_domain or "")
+    account_domain = fold_identity(scope.account_domain)
+    if employer and employer != account_domain:
         raise RefusalError(
             "subject_lock_failed",
             f"the record for {args.linkedin_url} says this person's current employer is "
-            f"{employer or 'not stated'}, and this job's account is "
-            f"{_fold_identity(scope.account_domain)}",
+            f"{employer}, and this job's account is {account_domain}",
         )
+    # An employer the record does not state is unknown, not wrong. The claims are still written,
+    # and they say so themselves rather than leaving a reader to assume the domain was checked.
+    employer_verified = bool(employer)
+    unverified: Mapping[str, Any] = {} if employer_verified else {"employer_unverified": True}
 
     # The record's own claims first, before a second paid call can fail: one transaction per draft,
     # because the record's fields are independent facts and a value the store will not take must
     # cost its own claim rather than the whole lookup.
     floor_from = len(runtime.compliance_log)
-    results = await runtime.write_each(ai_ark_person_claims(record, scope))
+    results = await runtime.write_each(
+        [_marked(draft, unverified) for draft in ai_ark_person_claims(record, scope)]
+    )
 
     def export(caller: ProviderCaller) -> Any:
         return runtime.clients.ai_ark(caller).export_email(args.linkedin_url)
@@ -1221,7 +1238,7 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     exported = await runtime.call_provider("ai_ark", export)
     email_draft = email_export_claim(exported, scope)
     if email_draft is not None:
-        results.extend(await runtime.write_each([email_draft]))
+        results.extend(await runtime.write_each([_marked(email_draft, unverified)]))
     return {
         "person": {
             "full_name": record.full_name,
@@ -1231,6 +1248,9 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
             "current_company": record.current_company,
             "current_company_domain": record.current_company_domain,
         },
+        # Whether the third lock corroborated the employer or the record simply did not state it.
+        # The claims carry the same fact as a marker, so a reader of either surface knows which.
+        "employer_verified": employer_verified,
         "email": (
             {
                 "address": exported.address,
@@ -1712,6 +1732,10 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
     An empty answer is ``insight_not_found``, which is a **finding** — the manual's row tells the
     agent to record "thin public footprint" with the channels checked — so the refusal names the
     source kinds it read, which is what "the channels checked" means here.
+
+    The answer may only land on a **fact** facet (``UNIQUE_INSIGHT_TARGET_KEYS``); a row on
+    ``contact.facet.hooks`` or any other outreach field is dropped and named in
+    ``dropped_off_target``, never written.
     """
     scope = runtime.scope
     sources = tuple(runtime.person_sources)
@@ -1744,9 +1768,9 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
             f"nothing beyond a standard profile in the {len(sources)} source(s) this job has "
             f"structured (kinds checked: {', '.join(kinds)})",
         )
-    drafts = unique_insight_claims(output, scope=scope, catalog=runtime.catalog)
+    insight = unique_insight_claims(output, scope=scope, catalog=runtime.catalog)
     floor_from = len(runtime.compliance_log)
-    results = await runtime.write_each(drafts)
+    results = await runtime.write_each(insight.drafts)
     return {
         "written": [
             _receipt_json(result, draft, runtime.catalog)
@@ -1762,7 +1786,12 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
         # same empty ``written`` without this: the rows say which happened.
         "compliance": runtime.compliance_log[floor_from:],
         "sources_read": len(sources),
-        "dropped_rows": output.dropped_rows,
+        # Rows the reply lost after the parse: the mode's own cap, plus the ones written to a key
+        # that may not carry an insight. ``dropped_off_target`` names those keys, because "the
+        # answer was on the wrong field" and "there was nothing to find" are otherwise the same
+        # empty ``written`` and the agent would record the wrong finding.
+        "dropped_rows": output.dropped_rows + len(insight.off_target),
+        "dropped_off_target": list(insight.off_target),
         "cost": _cost_json(output.cost),
     }
 

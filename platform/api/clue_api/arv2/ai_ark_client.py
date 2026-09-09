@@ -331,19 +331,58 @@ def _current_position(record: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _fold_company_url(value: str | None) -> str | None:
+    """A LinkedIn company URL in the form two spellings of the same page share.
+
+    Lower-cased, without the scheme, without ``www.`` and without the trailing slash — the same
+    fold the person lock uses on profile URLs, kept here because this module may not import the
+    toolbelt.
+    """
+    if value is None:
+        return None
+    folded = value.strip().lower().rstrip("/")
+    for scheme in ("https://", "http://"):
+        folded = folded.removeprefix(scheme)
+    folded = folded.removeprefix("www.")
+    return folded or None
+
+
 def _current_company_domain(record: Mapping[str, Any], current_company: str | None) -> str | None:
     """The current employer's domain, or ``None`` when it cannot be target-locked.
 
     Wire fact: ``position_groups[0].company`` carries no domain at all, while the person record's
     top-level ``company`` block does (``company.link.domain``). That block is not labelled
-    "current", so it is trusted only when its name matches the current position's — attaching a
-    previous employer's domain to a person who has moved is a target-lock error, and an empty
-    field is the correct output.
+    "current", so something has to say the two blocks are the same employer before its domain is
+    attached — a previous employer's domain on a person who has moved is a target-lock error, and
+    an empty field is the correct output.
+
+    The proof runs as a ladder, strongest rung first:
+
+    1. **The LinkedIn company URL.** Both blocks carry it (``position_groups[0].company.url`` and
+       ``company.link.linkedin``), and it is the stable key the *name* never was: the live record
+       for Alexander Semien at Cogent names the position ``"Cogent"`` and the company block
+       ``"Cogent Security"``, both pointing at ``/company/cogentsecurity``. Two equal URLs are the
+       same company page, whatever either block spells the name as.
+    2. **Containment of the folded names**, for a record whose blocks carry no URL: ``"cogent"``
+       inside ``"cogent security"`` is the same employer written short. Two unrelated names are
+       not, and neither is an employer the record only half-states.
+    3. Otherwise ``None`` — the domain is genuinely unknown, which is a different answer from a
+       *different* employer, and the caller is the one that decides what to do with it.
     """
-    embedded_name = _text(_dig(record, "company", "summary", "name"))
-    if current_company is None or embedded_name != current_company:
+    domain = _text(_dig(record, "company", "link", "domain"))
+    if domain is None:
         return None
-    return _text(_dig(record, "company", "link", "domain"))
+    position_url = _fold_company_url(_text(_dig(_current_position(record), "company", "url")))
+    company_url = _fold_company_url(_text(_dig(record, "company", "link", "linkedin")))
+    if position_url is not None and position_url == company_url:
+        return domain
+    embedded_name = _text(_dig(record, "company", "summary", "name"))
+    if current_company is None or embedded_name is None:
+        return None
+    left, right = current_company.strip().lower(), embedded_name.strip().lower()
+    if left in right or right in left:
+        return domain
+    return None
 
 
 def company_from_record(record: Mapping[str, Any]) -> AiArkCompany:

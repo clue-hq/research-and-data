@@ -354,7 +354,7 @@ def _ark_person(
     *,
     linkedin_url: str = "https://www.linkedin.com/in/nick",
     current_company: str = "Probook",
-    current_company_domain: str = "probook.ai",
+    current_company_domain: str | None = "probook.ai",
     headline: str = "Demand gen",
 ) -> AiArkPerson:
     return AiArkPerson(
@@ -2518,6 +2518,52 @@ def test_lookup_person_refuses_subject_lock_failed_when_the_employer_is_not_the_
     assert writer.drafts == []
 
 
+def test_lookup_person_proceeds_when_the_record_cannot_state_the_employer_and_marks_it() -> None:
+    """The live Cogent failure: an unstated employer is unknown, not a different company.
+
+    The identity is already anchored on the URL the committee confirmed, so an employer the record
+    does not state cannot contradict it. Refusing there cost three confirmed members their whole
+    lookup — no provider claims, no email — over a name the record spelled two ways.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _ark_person(
+            linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+            current_company="Probook",
+            current_company_domain=None,
+        ),
+    )
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert "code" not in found, "an unstated employer is a marker, never a refusal"
+    assert found["employer_verified"] is False
+    assert clients.ai_ark_client.export_calls != [], "the email is still bought"
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+        "core.work_email",
+    }
+    assert all(draft.markers["employer_unverified"] is True for draft in writer.drafts), (
+        "every claim this lookup wrote says the employer was not corroborated"
+    )
+
+
+def test_lookup_person_marks_nothing_when_the_employer_is_the_account() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert found["employer_verified"] is True
+    assert all("employer_unverified" not in draft.markers for draft in writer.drafts)
+
+
 def test_lookup_person_reports_an_empty_email_export_as_a_result_never_a_refusal() -> None:
     """``email_export_empty`` is a finding about the mailbox, not a verdict on the person."""
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
@@ -2715,6 +2761,64 @@ def test_unique_insight_writes_one_priority_one_claim_carrying_the_marker() -> N
     assert written[0].markers["unique_insight"] is True
     assert written[0].entity_id == CONTACT_ID
     assert found["written"][0]["field_key"] == "contact.facet.publications"
+
+
+def test_unique_insight_drops_a_row_written_to_an_outreach_field_and_names_the_key() -> None:
+    """``contact.facet.hooks`` is the argument the finalization builds from facts, not a fact.
+
+    The live run answered there, so the insight landed as an unquoted line in the field the openers
+    are drawn from. The row is dropped, and the result names the key — otherwise a dropped row and
+    a thin public footprint are the same empty ``written``.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.hooks",
+                ["he cares about pipeline hygiene"],
+                span="I wrote The Pipeline Book",
+                url="https://nickfisher.dev/book",
+            ),
+        ),
+    )
+    before = {draft.field_key for draft in writer.drafts}
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert found["written"] == []
+    assert found["dropped_off_target"] == ["contact.facet.hooks"]
+    assert found["dropped_rows"] == 1
+    assert {draft.field_key for draft in writer.drafts} == before, "nothing reached the store"
+
+
+def test_unique_insight_writes_a_fact_facet_at_priority_one_with_the_marker() -> None:
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.hobby",
+                ["ultramarathons"],
+                priority=3,
+                span="I run ultramarathons at the weekend",
+                url="https://nickfisher.dev/about",
+            ),
+        ),
+    )
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    written = [
+        draft
+        for draft in writer.drafts
+        if draft.field_key == "contact.facet.hobby" and draft.markers.get("unique_insight")
+    ]
+    assert len(written) == 1
+    assert written[0].signal_priority == 1
+    assert found["dropped_off_target"] == []
 
 
 def test_unique_insight_says_when_the_floor_took_the_one_claim_it_found() -> None:

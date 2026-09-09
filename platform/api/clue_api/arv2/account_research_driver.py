@@ -32,7 +32,7 @@ import os
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -106,6 +106,7 @@ __all__ = [
     "Arv2AccountResearchWorkHandler",
     "arv2_account_work_id",
     "build_arv2_account_research_handler",
+    "person_scope_for",
 ]
 
 #: The env var holding the model id this lane runs on. It is read directly rather than through an
@@ -312,6 +313,84 @@ class _InvalidTaskPayload(RuntimeError):
 
 class _ContactMissing(RuntimeError):
     """A person job's subject has no contact row."""
+
+
+async def person_scope_for(
+    conn: AsyncConnection,
+    *,
+    job: JobRow,
+    run: RunRow,
+    today: date,
+    icp_markdown: str = "",
+    icp_gate_keys: tuple[str, ...] = (),
+    persona_markdown: str = "",
+) -> JobScope:
+    """The :class:`JobScope` one person job's claims are stamped from, read off the rows.
+
+    It is the identity half of the person composition, lifted out of it so a second caller — the
+    repair script, which re-runs a finished job's deterministic lookup and calls no model — stamps
+    exactly what the driver stamped rather than a second spelling of it. The prompt half (the ICP
+    body, the persona map, the catalog menu, the profile pin) stays in the composition: it is
+    context for a model, and a caller that runs none can pass the defaults honestly.
+
+    The person's own facts come from the contact row first and its claims second — the LinkedIn URL
+    the committee confirmed, the newest title, the career history the lock reads — and the
+    already-established block is the account's claims followed by the person's under a heading, so
+    a company fact is never read as a fact about them.
+    """
+    account = await get_account(conn, EntityId(job.account_entity_id))
+    if account is None:
+        raise RuntimeError(f"account row {job.account_entity_id} is missing")
+    contact = (
+        await get_contact(conn, EntityId(job.subject_entity_id))
+        if job.subject_entity_id is not None
+        else None
+    )
+    if contact is None:
+        raise _ContactMissing(
+            f"person job {job.job_id} names contact {job.subject_entity_id}, "
+            "which has no row in this workspace"
+        )
+    contact_id = EntityId(contact.id)
+
+    workspace = WorkspaceScope.for_workspace(run.workspace_id)
+    account_claims = await claims_for(conn, EntityId(job.account_entity_id), scope=workspace)
+    contact_claims = await claims_for(conn, contact_id, scope=workspace)
+    established = "\n".join(
+        (
+            format_established(account_claims),
+            PERSON_CLAIMS_HEADING,
+            format_established(contact_claims),
+        )
+    ).strip("\n")
+
+    return JobScope(
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        project_run_id=run.project_run_id,
+        run_id=run.run_id,
+        job_id=job.job_id,
+        account_id=EntityId(job.account_entity_id),
+        account_name=account.canonical_name,
+        account_domain=account.primary_domain or "",
+        icp_markdown=icp_markdown,
+        persona_markdown=persona_markdown,
+        already_established=established,
+        effort=run.effort,
+        committee_cap=run.committee_cap,
+        today=today,
+        icp_gate_keys=icp_gate_keys,
+        subject_kind="person",
+        contact_id=contact_id,
+        person_name=contact.full_name or "",
+        person_title=_newest_string(contact_claims, CURRENT_TITLE_FIELD),
+        person_linkedin_url=(
+            contact.linkedin_url or _newest_string(contact_claims, _LINKEDIN_URL_FIELD)
+        ),
+        employment_history=employment_history_lines(
+            _newest_value(contact_claims, _CAREER_HISTORY_FIELD)
+        ),
+    )
 
 
 class Arv2AccountResearchWorkHandler:
@@ -654,31 +733,6 @@ class Arv2AccountResearchWorkHandler:
         run = await self._store.read_run(conn, run_id=job.run_id)
         if run is None:
             raise RuntimeError(f"run row {job.run_id} is missing for job {job.job_id}")
-        account = await get_account(conn, EntityId(job.account_entity_id))
-        if account is None:
-            raise RuntimeError(f"account row {job.account_entity_id} is missing")
-        contact = (
-            await get_contact(conn, EntityId(job.subject_entity_id))
-            if job.subject_entity_id is not None
-            else None
-        )
-        if contact is None:
-            raise _ContactMissing(
-                f"person job {job.job_id} names contact {job.subject_entity_id}, "
-                "which has no row in this workspace"
-            )
-        contact_id = EntityId(contact.id)
-
-        workspace = WorkspaceScope.for_workspace(run.workspace_id)
-        account_claims = await claims_for(conn, EntityId(job.account_entity_id), scope=workspace)
-        contact_claims = await claims_for(conn, contact_id, scope=workspace)
-        established = "\n".join(
-            (
-                format_established(account_claims),
-                PERSON_CLAIMS_HEADING,
-                format_established(contact_claims),
-            )
-        ).strip("\n")
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
@@ -692,50 +746,30 @@ class Arv2AccountResearchWorkHandler:
             )
 
         today = self._clock().date()
-        person_name = contact.full_name or ""
-        person_title = _newest_string(contact_claims, CURRENT_TITLE_FIELD)
-        person_linkedin_url = contact.linkedin_url or _newest_string(
-            contact_claims, _LINKEDIN_URL_FIELD
-        )
-        history = employment_history_lines(_newest_value(contact_claims, _CAREER_HISTORY_FIELD))
-        scope = JobScope(
-            workspace_id=run.workspace_id,
-            project_id=run.project_id,
-            project_run_id=run.project_run_id,
-            run_id=run.run_id,
-            job_id=job.job_id,
-            account_id=EntityId(job.account_entity_id),
-            account_name=account.canonical_name,
-            account_domain=account.primary_domain or "",
-            icp_markdown=icp,
-            persona_markdown=persona,
-            already_established=established,
-            effort=run.effort,
-            committee_cap=run.committee_cap,
+        scope = await person_scope_for(
+            conn,
+            job=job,
+            run=run,
             today=today,
+            icp_markdown=icp,
             icp_gate_keys=icp_gate_keys,
-            subject_kind="person",
-            contact_id=contact_id,
-            person_name=person_name,
-            person_title=person_title,
-            person_linkedin_url=person_linkedin_url,
-            employment_history=history,
+            persona_markdown=persona,
         )
         context = PersonContext(
-            person_name=person_name,
-            person_title=person_title,
-            person_linkedin_url=person_linkedin_url,
-            employment_history=history,
+            person_name=scope.person_name,
+            person_title=scope.person_title,
+            person_linkedin_url=scope.person_linkedin_url,
+            employment_history=scope.employment_history,
             account_name=scope.account_name,
             account_domain=scope.account_domain,
-            contact_id=str(contact_id),
+            contact_id=str(scope.contact_id),
             account_id=str(scope.account_id),
             workspace_id=scope.workspace_id,
             today=today,
             icp_markdown=icp,
             persona_markdown=persona,
             catalog_menu=catalog_menu_text(catalog),
-            already_established=established,
+            already_established=scope.already_established,
             directive_text=run.directive_text,
             media_max_items=self._settings.arv2_person_media_max_items,
             stop_policy={
