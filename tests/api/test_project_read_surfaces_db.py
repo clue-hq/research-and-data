@@ -303,3 +303,63 @@ def test_sidebar_is_paginated_scoped_and_constant_query_count(
             )
 
     run_async(scenario())
+
+
+def test_sidebar_serves_only_active_projects(require_chat_db: None) -> None:
+    """An archived project leaves the sidebar, threads and all (O6).
+
+    Archiving is how a marketer clears finished work out of the rail, so the
+    read has to honour it at the SQL boundary rather than serving the project
+    and letting the client hide it — a hidden-but-served project is still a
+    project the next page cursor has to step over.
+    """
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            brand = await _seed(conn, "ws-o6-archive")
+            membership_id = fixture_membership_id(
+                workspace_id="ws-o6-archive",
+                user_id=USER_ID,
+            )
+            live = await create_project(
+                conn,
+                workspace_id="ws-o6-archive",
+                brand_id=brand.brand_id,
+                name="Live project",
+                status="active",
+            )
+            archived = await create_project(
+                conn,
+                workspace_id="ws-o6-archive",
+                brand_id=brand.brand_id,
+                name="Archived project",
+                status="archived",
+            )
+            for index, project in enumerate((live, archived)):
+                await create_thread(
+                    conn,
+                    thread_id=f"thr_o6_arch_{index}",
+                    workspace_id="ws-o6-archive",
+                    project_id=project.project_id,
+                    title=f"Conversation {index}",
+                    created_by_user_id=USER_ID,
+                    created_via_membership_id=membership_id,
+                )
+
+            app, _storage = _app(conn)
+            async with _client(app) as client:
+                response = await client.get(
+                    "/api/v1/projects/sidebar?limit=50",
+                    headers={"X-Workspace-Id": "ws-o6-archive"},
+                )
+
+            assert response.status_code == 200, response.text
+            projects = {item["id"]: item for item in response.json()["data"]}
+            assert set(projects) == {live.project_id}
+            assert archived.project_id not in projects
+            assert [
+                item["id"] for item in projects[live.project_id]["conversations"]
+            ] == ["thr_o6_arch_0"]
+
+    run_async(scenario())

@@ -126,6 +126,9 @@ export function createFixtureChatTurnsRepository(
           ...(submission.response.selectedProductId
             ? { selectedProductId: submission.response.selectedProductId }
             : {}),
+          ...(submission.response.selectedProductIds
+            ? { selectedProductIds: [...submission.response.selectedProductIds] }
+            : {}),
         });
         state.scripts.set(
           turnId,

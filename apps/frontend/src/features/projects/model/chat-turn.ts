@@ -279,15 +279,22 @@ export const GateResponseSchema = z
     expectedEstimatedCostCents: z.number().nullable(),
     revisionRequest: z.string().min(1).optional(),
     selectedProductId: z.string().min(1).optional(),
+    // The set-valued product gate (O6/D10) answers with the whole chosen list.
+    // The route refuses `selected_product_id` on that kind and this list on the
+    // single-valued one, so the two are never both present here either.
+    selectedProductIds: z.array(z.string().min(1)).min(1).readonly().optional(),
   })
   .superRefine((response, ctx) => {
-    if (
-      response.revisionRequest !== undefined &&
-      response.selectedProductId !== undefined
-    ) {
+    const exclusive = [
+      response.revisionRequest,
+      response.selectedProductId,
+      response.selectedProductIds,
+    ].filter((value) => value !== undefined);
+    if (exclusive.length > 1) {
       ctx.addIssue({
         code: "custom",
-        message: "revisionRequest and selectedProductId are mutually exclusive",
+        message:
+          "revisionRequest, selectedProductId and selectedProductIds are mutually exclusive",
       });
     }
   });
@@ -329,6 +336,9 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
   }
   if (submission.response.selectedProductId !== undefined) {
     gateResponse.selected_product_id = submission.response.selectedProductId;
+  }
+  if (submission.response.selectedProductIds !== undefined) {
+    gateResponse.selected_product_ids = [...submission.response.selectedProductIds];
   }
   return {
     gate_response: gateResponse,

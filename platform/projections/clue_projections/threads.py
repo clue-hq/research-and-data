@@ -245,6 +245,10 @@ _PROJECT_SIDEBAR_PAGE = text(
         SELECT project_id, name, created_at
         FROM project
         WHERE workspace_id = :workspace_id
+          -- Archiving a project takes it out of the rail entirely (O6). The
+          -- filter belongs here rather than in the client so the page cursor
+          -- never has to step over rows nobody may see.
+          AND status = 'active'
           AND (
               CAST(:cursor_created_at AS timestamptz) IS NULL
               OR (created_at, project_id)
