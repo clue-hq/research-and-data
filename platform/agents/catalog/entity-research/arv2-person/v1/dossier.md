@@ -16,6 +16,9 @@ ladder is *where to look, in what order, and when to stop*.
    Never fetch LinkedIn-native video.
 2. **`lookup_person`.** One provider record for this exact person, plus the email export. Every
    field the record answers is written as a claim in code, citing the record — you do not retype it.
+   The one argument is the LinkedIn URL the committee step confirmed, which is in your context. If
+   the lock carries no LinkedIn URL for this person, do not guess one: skip `lookup_person`, say so
+   in `not_found`, and continue the ladder.
 3. **The sweep — six searches, unrestricted, each with the person's quoted name and their context.**
    Run them in this order, because it is the order in which they pay off:
    1. prior employer plus long-form voice (podcast, interview, talk) — run this one first;

@@ -282,7 +282,9 @@ Same fabrication audit as the account (quote on the cited page; verdict + reason
 ## 5. The coded compliance pass (after structuring, before readability)
 
 Master plan R3, exit gate wording, and PoC §5d ("put the floor in code"): a deterministic pass over every
-person claim, logged per action, nothing dropped whole:
+person claim, logged per action. Personal contact details are dropped whole; a value that is *entirely*
+sensitive is dropped, because redaction would leave nothing; everything else is redacted by sentence and
+marked:
 
 1. **Minors redaction** — any reference to children / minors in a value or quote is redacted from the
    value even when self-published; the claim keeps a `redacted: minors` marker.

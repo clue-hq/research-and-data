@@ -837,6 +837,14 @@ class FitVerdict(_Args):
 
 
 class CommitteeCandidate(_Args):
+    """One seat on the buying committee, as the account agent resolved it.
+
+    ``rationale`` and ``influence`` are optional and are the *why* behind the seat: the mapper
+    writes them into the member's own ``contact.role_on_committee`` claim, which is what the
+    contact page's "why they matter" reads. Absent, the claim carries the role alone and the page
+    falls back to its default line — an honest empty, never an invention.
+    """
+
     name: str | None = None
     title: str | None = None
     persona: Literal["economic_buyer", "champion", "user", "technical_evaluator", "blocker"]
@@ -844,6 +852,8 @@ class CommitteeCandidate(_Args):
     confirmed_by: str | None = None
     vacant_seat: bool = False
     evidence_span: str | None = None
+    rationale: str | None = None
+    influence: Literal["High", "Medium", "Low"] | None = None
 
 
 class FinalizeResearchArgs(_Args):
@@ -1126,24 +1136,45 @@ def _fold_identity(value: str) -> str:
 async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[str, Any]:
     """One provider record for this job's person, their email export, and the claims behind both.
 
-    Two locks, in order, and neither is a scored match (law 10):
+    Three locks, in order, and none is a scored match (law 10):
 
-    1. **The LinkedIn URL.** The name-scoped search returns up to three candidates; the one this
-       job is about is the one whose ``linkedin_url`` folds equal to the URL the committee step
-       confirmed. No candidate matching is ``subject_lock_failed``, and the refusal names the
-       companies the candidates *do* work for, so the agent can log them as lookalikes rather than
-       guess why the call failed.
-    2. **The employer, exact.** A record with the right LinkedIn URL whose
+    1. **The argument against the job.** The URL the record is matched on must be the URL the
+       *committee step* confirmed (``scope.person_linkedin_url``), not merely the one the model
+       typed. Without this the model's argument is the whole identity, and a same-name colleague
+       at the same company would pass the other two locks and be written onto this contact. The
+       check runs before the provider hop, so a mismatched call also costs nothing. The argument
+       still exists — the skills name it, and it is the only URL there is when the confirmed
+       member carried none.
+    2. **The LinkedIn URL.** The name-scoped search returns up to three candidates; the one this
+       job is about is the one whose ``linkedin_url`` folds equal to that URL. No candidate
+       matching is ``subject_lock_failed``, and the refusal names the companies the candidates
+       *do* work for, so the agent can log them as lookalikes rather than guess why the call
+       failed.
+    3. **The employer, exact.** A record with the right LinkedIn URL whose
        ``current_company_domain`` is not this account's domain is the same person at a *different*
        employer — the account job's committee is stale, and researching them here would file
        another company's employee under this account. That is ``subject_lock_failed`` too, and
        it names both domains.
 
-    Only past both locks is the email export bought. An export that finds nothing is a **result**,
-    never a refusal: no mailbox is a fact about the mailbox, and the member is still researched.
+    Only past all three locks is the email export bought. An export that finds nothing is a
+    **result**, never a refusal: no mailbox is a fact about the mailbox, and the member is still
+    researched.
+
+    The record's own claims are written **before** the export hop, not after: the export is a
+    second paid call that can fail on transport, and losing the title, headline, location, badges
+    and career history to it would send the model back to re-buy the name search for facts this
+    call already had.
     """
     scope = runtime.scope
     wanted = _fold_identity(args.linkedin_url)
+    locked = _fold_identity(scope.person_linkedin_url or "")
+    if locked and wanted != locked:
+        raise RefusalError(
+            "subject_lock_failed",
+            f"this job is locked to {scope.person_linkedin_url}, and the call asked for "
+            f"{args.linkedin_url}. Look up the person this job is about, or record the other "
+            "one as a same-name lookalike.",
+        )
 
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.ai_ark(caller).people_by_name(
@@ -1178,17 +1209,19 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
             f"{_fold_identity(scope.account_domain)}",
         )
 
+    # The record's own claims first, before a second paid call can fail: one transaction per draft,
+    # because the record's fields are independent facts and a value the store will not take must
+    # cost its own claim rather than the whole lookup.
+    floor_from = len(runtime.compliance_log)
+    results = await runtime.write_each(ai_ark_person_claims(record, scope))
+
     def export(caller: ProviderCaller) -> Any:
         return runtime.clients.ai_ark(caller).export_email(args.linkedin_url)
 
     exported = await runtime.call_provider("ai_ark", export)
-    drafts = list(ai_ark_person_claims(record, scope))
     email_draft = email_export_claim(exported, scope)
     if email_draft is not None:
-        drafts.append(email_draft)
-    # One transaction per draft: the record's fields and the email are independent facts, and a
-    # value the store will not take must cost its own claim rather than the whole lookup.
-    results = await runtime.write_each(drafts)
+        results.extend(await runtime.write_each([email_draft]))
     return {
         "person": {
             "full_name": record.full_name,
@@ -1220,6 +1253,10 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
             for _, result in results
             if isinstance(result, WriteFailure)
         ],
+        # What the compliance floor did to THIS call's drafts. Without it an empty ``written``
+        # reads the same whether the record answered nothing or the floor removed what it did
+        # answer, and the model cannot tell a gap from a rule.
+        "compliance": runtime.compliance_log[floor_from:],
         "cost": [_cost_json(cost) for cost in (people.cost, exported.cost) if cost is not None],
     }
 
@@ -1621,6 +1658,7 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     # One transaction per draft: a value the store will not take costs its own claim and nothing
     # else. The claims and the negatives are written as two batches so the two counts stay their
     # own — the compliance floor may remove a draft, so a single batch could not be split by index.
+    floor_from = len(runtime.compliance_log)
     claim_results = await runtime.write_each(drafts)
     negative_results = await runtime.write_each(negatives)
     written = [
@@ -1653,6 +1691,10 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
         "write_failures": [
             {"field_key": failure.field_key, "error": failure.error} for failure in failures
         ],
+        # What the compliance floor did to THIS call's drafts (person jobs only; an account job's
+        # claims never meet it). A claim the floor dropped would otherwise be indistinguishable
+        # from a claim the structuring pass never produced.
+        "compliance": runtime.compliance_log[floor_from:],
         "mode": output.mode,
         "cost": _cost_json(output.cost),
     }
@@ -1703,6 +1745,7 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
             f"structured (kinds checked: {', '.join(kinds)})",
         )
     drafts = unique_insight_claims(output, scope=scope, catalog=runtime.catalog)
+    floor_from = len(runtime.compliance_log)
     results = await runtime.write_each(drafts)
     return {
         "written": [
@@ -1715,6 +1758,9 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
             for _, result in results
             if isinstance(result, WriteFailure)
         ],
+        # The insight is at most one claim, so "the floor took it" and "there was nothing" are the
+        # same empty ``written`` without this: the rows say which happened.
+        "compliance": runtime.compliance_log[floor_from:],
         "sources_read": len(sources),
         "dropped_rows": output.dropped_rows,
         "cost": _cost_json(output.cost),

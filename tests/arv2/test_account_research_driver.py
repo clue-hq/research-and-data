@@ -1402,8 +1402,13 @@ def test_a_person_job_lands_the_person_receipt_and_never_runs_the_committee_step
     assert receipt["reports_to_written"] is False
     assert receipt["reports_to_skipped"] is None
     # The coded compliance pass ran over the finalization's own writes, and its actions ride the
-    # receipt: here the hooks claim carries no evidence span of its own, and is marked, not hidden.
-    assert [row["rule"] for row in receipt["compliance_log"]] == ["unevidenced", "unevidenced"]
+    # receipt: here the same-name log row cites nothing, and is marked, not hidden. The hooks claim
+    # cites nothing either and produces no row at all — rule 6 exempts it, because a claim that
+    # carries neither quote nor URL *by design* is not an evidence gap.
+    assert [row["rule"] for row in receipt["compliance_log"]] == ["unevidenced"]
+    assert [row["field_key"] for row in receipt["compliance_log"]] == [
+        "contact.facet.excluded_lookalike"
+    ]
     assert receipt["gaps"] == ["no podcast appearances found"]
     # Derived from the ROWS, not from the drafts: nothing is read back through the fake connection.
     assert receipt["claims_written"] == 0
@@ -1536,6 +1541,58 @@ def test_the_builder_falls_the_person_model_back_to_the_account_model(
 
     assert handler is not None
     assert handler._person_model_id == "x-ai/grok-4.6"  # noqa: SLF001
+
+
+def test_a_person_job_that_never_finalized_still_lands_its_compliance_log(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A job that stops on a model error wrote claims all the same, and the floor may have redacted
+    or dropped several. Reading the log off the finalization alone threw that audit trail away for
+    exactly the jobs most likely to have gone wrong; it comes off the runtime instead."""
+    run = _run_row()
+    contact_id = uuid4()
+    job = _person_job_row(run, contact_id=contact_id)
+    store = FakeStore(run, job)
+    _person_reads(monkeypatch, job)
+    rounds: list[int] = []
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        rounds.append(1)
+        if len(rounds) > 1:
+            raise RuntimeError("the provider hung up")
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_claims",
+                    "args": {
+                        "claims": [
+                            {
+                                "field_key": "contact.facet.self_summary",
+                                "value": "She was diagnosed with cancer in 2019. She runs GTM.",
+                                "evidence_span": "She runs GTM",
+                                "source_url": "https://probook.ai/team",
+                                "priority": 2,
+                            }
+                        ]
+                    },
+                    "id": "call-write",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    handler, _conn_factory, _writer, _models = _handler(store, model=_ScriptedModel(respond))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    receipt = store.named("finish_job")[0]["finalization"]
+    assert receipt["reason"] == "model_error"
+    assert [(row["action"], row["rule"]) for row in receipt["compliance_log"]] == [
+        ("redacted", "health")
+    ]
 
 
 def test_a_reporting_line_the_code_refused_reaches_the_durable_person_receipt(

@@ -397,8 +397,10 @@ class Settings(BaseSettings):
     # When "on", quoted spans are checked against cited claims and the verdict is recorded as a
     # marker; never a blocker. Env: ``CLUE_EVIDENCE_VERBATIM_CHECK``.
     evidence_verbatim_check: Literal["on", "off"] = "off"
-    # When true, rows with no quote and no URL are purged by the compliance pass; when false they
-    # are only marked ``unevidenced``. Env: ``CLUE_UNEVIDENCED_ROW_PURGE_ENABLED``.
+    # When true, rows with no quote or no URL are purged by the compliance pass; when false they
+    # are only marked ``unevidenced``. It cannot reach a provider-API record or the hooks claim:
+    # those carry neither quote nor URL by design and rule 6 exempts them either way.
+    # Env: ``CLUE_UNEVIDENCED_ROW_PURGE_ENABLED``.
     unevidenced_row_purge_enabled: bool = False
     # When "on", the interview records whether a typed value is entailed by the user's statement
     # as a marker; the value is never required to be a substring. Env:

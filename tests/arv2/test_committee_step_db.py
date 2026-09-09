@@ -30,6 +30,7 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.committee_step import run_committee_step
+from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import EntityId, new_project_run_id
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.durable.project_run import ensure_project_run
@@ -51,6 +52,21 @@ pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 WORKSPACE = "ws_r3_committee"
 SHA = "a" * 64
+
+#: The three committee fields as the job's own catalog serves them: the member's claims take their
+#: use class from the field's declared hint, never from a default this module chose.
+COMMITTEE_CATALOG = FieldCatalog(
+    contact=(
+        FieldSpec("contact.persona", "Buying-committee persona.", None),
+        FieldSpec("contact.current_title", "Current professional title.", None),
+        FieldSpec(
+            "contact.role_on_committee",
+            "The seat and the reasoning behind it.",
+            None,
+            use_class_hint="professional-public",
+        ),
+    )
+)
 
 #: The candidate list a finalization proposes, in the model's own order. Two confirmed people, one
 #: vacant seat, one named candidate nobody confirmed, and a third confirmed person past the cap.
@@ -214,6 +230,7 @@ def test_confirmed_candidates_become_contacts_claims_and_person_jobs() -> None:
                 candidates=CANDIDATES,
                 writer=LenientClaimWriter(lenient=True),
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             contacts = await _contacts(conn, account)
@@ -285,6 +302,7 @@ def test_a_re_settled_job_creates_no_second_contact_job_or_claim() -> None:
                 candidates=CANDIDATES,
                 writer=writer,
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
             second = await run_committee_step(
                 conn,
@@ -294,6 +312,7 @@ def test_a_re_settled_job_creates_no_second_contact_job_or_claim() -> None:
                 candidates=CANDIDATES,
                 writer=writer,
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             assert second.contacts_created == ()
@@ -340,6 +359,7 @@ def test_a_candidate_whose_linkedin_is_already_a_contact_reuses_that_person() ->
                 candidates=CANDIDATES[:1],
                 writer=LenientClaimWriter(lenient=True),
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             assert result.contacts_created == ()
@@ -379,6 +399,7 @@ def test_an_unwritable_member_is_a_recorded_skip_not_a_lost_transaction() -> Non
                 candidates=CANDIDATES[:1],
                 writer=_Exploding(lenient=True),
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             assert [skip.reason for skip in result.skipped] == ["member_not_written"]
@@ -425,6 +446,7 @@ def test_a_member_the_workspace_already_holds_elsewhere_keeps_their_own_employer
                 candidates=CANDIDATES[:1],
                 writer=LenientClaimWriter(lenient=True),
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             assert result.contacts_created == ()
@@ -465,6 +487,7 @@ def test_two_people_of_one_name_under_the_account_are_refused_rather_than_guesse
                 candidates=CANDIDATES[2:3],
                 writer=LenientClaimWriter(lenient=True),
                 person_profile_sha256=arv2_person_profile_sha256(),
+                catalog=COMMITTEE_CATALOG,
             )
 
             assert [(skip.name, skip.reason) for skip in result.skipped] == [

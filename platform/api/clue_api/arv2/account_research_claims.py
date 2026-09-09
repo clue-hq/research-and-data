@@ -1423,6 +1423,11 @@ def committee_candidate_claims(
                 "linkedin_url": candidate.get("linkedin_url"),
                 "confirmed_by": confirmed_by,
                 "vacant_seat": bool(candidate.get("vacant_seat")) or not name,
+                # The why behind the seat, when the agent gave one. It rides the account claim as
+                # well as the member's own role claim, so the account's committee reads the same
+                # reasoning the contact page shows.
+                "rationale": candidate.get("rationale"),
+                "influence": candidate.get("influence"),
             },
             # ``persona`` alone identifies the row (``catalog_seed``): a vacant seat has no name,
             # and writing ``"name": null`` into a string-typed property would make the correctly
@@ -1456,7 +1461,7 @@ CURRENT_TITLE_FIELD = "contact.current_title"
 
 
 def committee_member_claims(
-    candidate: Mapping[str, Any], *, scope: JobScope, contact_id: EntityId
+    candidate: Mapping[str, Any], *, scope: JobScope, contact_id: EntityId, catalog: FieldCatalog
 ) -> list[ClaimDraft]:
     """One confirmed committee member's persona, role and title, written onto their own contact.
 
@@ -1464,7 +1469,8 @@ def committee_member_claims(
     job whose own subject is the account — which is why the contact entity is passed in rather
     than inferred: the caller resolved the identity, and this module never guesses whose claim
     this is. Everything else about a contact claim is stamped as usual by :func:`_draft` (contact
-    profiling, strong binding, the field's use class).
+    profiling, strong binding, the field's use class — read from the catalog, so nothing here
+    decides a meaning the field does not declare).
 
     Only what the candidate actually states is written. No persona means no persona claim and no
     role claim — ``role`` is the role field's required key and its closed enum, and a role with no
@@ -1506,6 +1512,7 @@ def committee_member_claims(
             confidence=0.6,
             source_key="agent",
             contact_id=contact_id,
+            use_class_hint=_hint(field_key, catalog),
         )
         for field_key, value in values
         if value is not None

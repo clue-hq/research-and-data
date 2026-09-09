@@ -46,7 +46,7 @@ from clue_api.arv2.ai_ark_client import (
 from clue_api.arv2.ats_client import AtsBoard, BoardFetchFailed, BoardPostings, JobPosting
 from clue_api.arv2.calls import CallCost
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
-from clue_api.arv2.errors import ProviderHalted
+from clue_api.arv2.errors import ProviderHalted, ProviderTransportError
 from clue_api.arv2.exa_client import (
     ExaContentsResult,
     ExaDeepResult,
@@ -355,18 +355,19 @@ def _ark_person(
     linkedin_url: str = "https://www.linkedin.com/in/nick",
     current_company: str = "Probook",
     current_company_domain: str = "probook.ai",
+    headline: str = "Demand gen",
 ) -> AiArkPerson:
     return AiArkPerson(
         full_name="Nick Fisher",
         title="VP Marketing",
-        headline="Demand gen",
+        headline=headline,
         linkedin_url=linkedin_url,
         location={"country": "US"},
         current_company=current_company,
         current_company_domain=current_company_domain,
         department={"name": "marketing"},
         ark_id="ark-1",
-        raw={"profile": {"title": "VP Marketing", "headline": "Demand gen"}},
+        raw={"profile": {"title": "VP Marketing", "headline": headline}},
     )
 
 
@@ -403,6 +404,9 @@ class FakeAiArk:
         #: stranger and the real subject in one page the way the provider does.
         self.people: tuple[AiArkPerson, ...] = (_ark_person(),)
         self.export: AiArkEmailExport = _email_export()
+        #: What the export hop raises instead of answering — a transport failure with its retries
+        #: spent, which is the shape that used to cost the record's own claims.
+        self.raise_on_export: Exception | None = None
         self.company: AiArkCompany | None = AiArkCompany(
             name="Probook",
             domain="probook.ai",
@@ -450,6 +454,8 @@ class FakeAiArk:
 
     def export_email(self, linkedin_url: str) -> AiArkEmailExport:
         self.export_calls.append(linkedin_url)
+        if self.raise_on_export is not None:
+            raise self.raise_on_export
         return self.export
 
 
@@ -1970,6 +1976,55 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     ]
 
 
+def test_finalize_admits_the_candidate_rationale_and_influence_and_writes_them() -> None:
+    """``CommitteeCandidate`` forbids extra keys, so the two optional ones have to be declared for
+    the agent to be able to send them at all — and the mapper carries them onto the claim the
+    contact page's "why they matter" reads."""
+    runtime, _, writer, _ = _runtime()
+    args = _finalize_args()
+    args["committee_candidates"] = [
+        {
+            **args["committee_candidates"][0],
+            "rationale": "owns the ABM programme and the agency budget",
+            "influence": "High",
+        }
+    ]
+
+    accepted = _call(runtime, "finalize_research", **args)
+
+    assert accepted["accepted"] is True
+    [candidate] = [d for d in writer.drafts if d.field_key == "account.committee_candidate"]
+    assert candidate.value_json["rationale"] == "owns the ABM programme and the agency budget"
+    assert candidate.value_json["influence"] == "High"
+    assert runtime.finalization is not None
+    seated = runtime.finalization["committee_candidates"][0]
+    assert seated["rationale"] and seated["influence"] == "High", (
+        "the committee step reads the finalization, so the why must survive into it"
+    )
+
+
+def test_finalize_refuses_an_influence_that_is_not_one_of_the_three_bands() -> None:
+    runtime, _, writer, _ = _runtime()
+    args = _finalize_args()
+    args["committee_candidates"] = [{**args["committee_candidates"][0], "influence": "quite a lot"}]
+
+    refused = _call(runtime, "finalize_research", **args)
+
+    assert refused["code"] == "invalid_arguments"
+    assert writer.drafts == []
+
+
+def test_a_candidate_with_no_rationale_is_unchanged_and_writes_neither_key() -> None:
+    """The account agent's behaviour with the two keys absent is exactly what it was."""
+    runtime, _, writer, _ = _runtime()
+
+    _call(runtime, "finalize_research", **_finalize_args())
+
+    [candidate] = [d for d in writer.drafts if d.field_key == "account.committee_candidate"]
+    assert "rationale" not in candidate.value_json
+    assert "influence" not in candidate.value_json
+
+
 def test_a_verdict_on_a_gate_the_icp_never_named_is_refused_and_names_the_admitted_keys() -> None:
     """Verdicts are keyed to the ICP's hard gates, so receipts compare across accounts."""
     gated = replace(SCOPE, icp_gate_keys=("stage", "geography"))
@@ -2303,6 +2358,12 @@ def _lock_record() -> AiArkPerson:
     return _ark_person(linkedin_url="https://www.linkedin.com/in/nicholastfisher")
 
 
+def _lock_record_with(*, headline: str) -> AiArkPerson:
+    return _ark_person(
+        linkedin_url="https://www.linkedin.com/in/nicholastfisher", headline=headline
+    )
+
+
 def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_verdict() -> None:
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (_lock_record(),)
@@ -2326,6 +2387,93 @@ def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_ve
     }
     assert all(draft.entity_id == CONTACT_ID for draft in writer.drafts), (
         "every claim a person job writes lands on the contact"
+    )
+
+
+def test_lookup_person_refuses_a_url_the_committee_step_did_not_confirm() -> None:
+    """The lock is the JOB's URL, not the model's argument.
+
+    A same-name colleague at the same company clears both provider-side locks — the record carries
+    the URL the call asked for, and the employer is this account — so the only thing that keeps
+    the research on the confirmed person is comparing the argument to the confirmed URL first. The
+    check is before the provider hop, so a mismatched call costs nothing.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    refused = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nick-fisher-2"
+    )
+
+    assert refused["code"] == "subject_lock_failed"
+    assert "nicholastfisher" in refused["detail"] and "nick-fisher-2" in refused["detail"]
+    assert clients.ai_ark_client.people_calls == [], "nothing is bought for the wrong person"
+    assert clients.ai_ark_client.export_calls == []
+    assert writer.drafts == []
+
+
+def test_lookup_person_takes_the_argument_when_the_confirmed_member_carried_no_url() -> None:
+    """A member confirmed on a team page that linked nothing: the argument is the only URL there
+    is, so the first lock has nothing to compare and the provider-side locks still stand."""
+    runtime, clients, writer, _ = _runtime(replace(PERSON_SCOPE, person_linkedin_url=""))
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert "code" not in found
+    assert found["person"]["current_company_domain"] == "probook.ai"
+
+
+def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() -> None:
+    """The record's fields are written before the export is bought, so a transport failure on the
+    second call costs only the email — not the title, headline and location this call already had.
+    """
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+    clients.ai_ark_client.raise_on_export = ProviderTransportError("ai_ark", 3, "connection reset")
+
+    failed = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert failed["code"] == "tool_error:ProviderTransportError"
+    assert {draft.field_key for draft in writer.drafts} == {
+        "contact.current_title",
+        "contact.headline",
+        "contact.current_location",
+    }, "the record's own claims survive the failed second hop"
+
+
+def test_lookup_person_reports_what_the_compliance_floor_did_to_this_calls_drafts() -> None:
+    """An empty ``written`` slot must be readable: "the record said nothing" and "the floor removed
+    it" are different facts, and only the compliance rows tell them apart."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (
+        _lock_record_with(headline="Demand gen — write to nick.fisher@gmail.com"),
+    )
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert [row["field_key"] for row in found["compliance"]] == ["contact.headline"]
+    assert found["compliance"][0]["rule"] == "personal_contact_detail"
+    assert "contact.headline" not in {draft.field_key for draft in writer.drafts}
+    assert "contact.headline" not in {row["field_key"] for row in found["written"]}
+
+
+def test_lookup_person_reports_no_compliance_rows_when_the_floor_did_nothing() -> None:
+    runtime, clients, _, _ = _runtime(PERSON_SCOPE)
+    clients.ai_ark_client.people = (_lock_record(),)
+
+    found = _call(
+        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
+    )
+
+    assert found["compliance"] == [], (
+        "a provider record carries no page quote by design and rule 6 exempts it"
     )
 
 
@@ -2440,6 +2588,54 @@ def test_structure_material_on_a_person_job_writes_contact_scoped_drafts() -> No
     assert hobby.use_class is not None and hobby.identity_binding is not None
 
 
+def test_structure_material_reports_what_the_compliance_floor_removed() -> None:
+    """The floor sits between the structuring pass and the store, so a claim it drops leaves an
+    empty ``written`` that reads exactly like "the pass found nothing". The rows say which."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    clients.structuring_client.person_output = replace(
+        clients.structuring_client.person_output,
+        claims=(
+            _structured(
+                "contact.facet.hobby",
+                ["ultramarathons"],
+                span="He was diagnosed with cancer in 2019. I run ultramarathons at the weekend",
+                url="https://nickfisher.dev/about",
+            ),
+        ),
+    )
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="person",
+        subject_name="Nick Fisher",
+        subject_domain_or_company="Probook",
+        sources=PERSON_SOURCES,
+    )
+
+    assert [(row["action"], row["rule"]) for row in structured["compliance"]] == [
+        ("redacted", "health")
+    ]
+    assert "diagnosed" not in writer.drafts[0].evidence_span
+
+
+def test_structure_material_on_an_account_job_reports_no_compliance_rows() -> None:
+    """The floor is about a person; an account job's claims never meet it, so the key is empty
+    rather than absent — one shape for both subjects."""
+    runtime, _, _, _ = _runtime()
+
+    structured = _call(
+        runtime,
+        "structure_material",
+        subject_kind="account",
+        subject_name="Probook",
+        subject_domain_or_company="probook.ai",
+        sources=SOURCES,
+    )
+
+    assert structured["compliance"] == []
+
+
 def test_structure_material_on_a_person_job_takes_the_intent_sweep_mode_too() -> None:
     runtime, clients, _, _ = _runtime(PERSON_SCOPE)
 
@@ -2519,6 +2715,33 @@ def test_unique_insight_writes_one_priority_one_claim_carrying_the_marker() -> N
     assert written[0].markers["unique_insight"] is True
     assert written[0].entity_id == CONTACT_ID
     assert found["written"][0]["field_key"] == "contact.facet.publications"
+
+
+def test_unique_insight_says_when_the_floor_took_the_one_claim_it_found() -> None:
+    """The insight is at most one claim: without the rows, "the floor removed it" and "there was
+    nothing distinctive" are the same empty answer, and the agent would record the wrong finding."""
+    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
+    _structure_once(runtime)
+    clients.structuring_client.insight_output = replace(
+        clients.structuring_client.insight_output,
+        claims=(
+            _structured(
+                "contact.facet.publications",
+                [{"title": "The Pipeline Book"}],
+                span="Call the author on +1 (415) 555-0132 for a copy",
+                url="https://nickfisher.dev/book",
+            ),
+        ),
+    )
+    before = len(writer.drafts)
+
+    found = _call(runtime, "unique_insight", subject="Nick Fisher")
+
+    assert found["written"] == []
+    assert [(row["action"], row["rule"]) for row in found["compliance"]] == [
+        ("dropped", "personal_contact_detail")
+    ]
+    assert len(writer.drafts) == before, "the dropped draft never reached the store"
 
 
 def test_unique_insight_refuses_insight_not_found_naming_the_channels_checked() -> None:

@@ -98,8 +98,9 @@ map and is your judgment, cited to the member's own evidence.
 
 A confirmed member is recorded as an account-level `account.committee_candidate` claim — through
 `write_claims`, or through `finalize_research`'s `committee_candidates`. A named candidate needs a
-`confirmed_by` URL; one without it is dropped, never written. Contact-depth research is R3's, not
-yours.
+`confirmed_by` URL; one without it is dropped, never written. Give each confirmed member a
+one-sentence `rationale` — why this person matters to the deal — and, when the evidence supports it,
+an `influence` of High, Medium or Low. Contact-depth research is R3's, not yours.
 
 ## Structuring, and the second pass
 

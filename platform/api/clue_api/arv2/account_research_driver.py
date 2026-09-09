@@ -920,6 +920,9 @@ class Arv2AccountResearchWorkHandler:
                 candidates=candidates,
                 writer=self._writer,
                 person_profile_sha256=arv2_person_profile_sha256(),
+                # This job's own catalog: the member's three claims take their use class from the
+                # field's declared hint, exactly as every other contact claim does.
+                catalog=composition.catalog,
             )
         except Exception:  # noqa: BLE001 — containment: the terminal row outranks the fan-out
             log.exception("arv2.committee_step_failed", job_id=str(composition.job.job_id))
@@ -1084,7 +1087,12 @@ def _person_receipt(
         "insight_found": finalization.get("insight_found", False),
         "reports_to_written": finalization.get("reports_to_written", False),
         "reports_to_skipped": finalization.get("reports_to_skipped"),
-        "compliance_log": finalization.get("compliance_log", []),
+        # From the RUNTIME when the job never finalized. A job that stopped on a cap or a model
+        # error still wrote claims, and the floor may have dropped or redacted several; reading
+        # only the finalization would throw away the audit trail of exactly the jobs most likely
+        # to have gone wrong. The finalize tool snapshots the same list after its own writes, so
+        # the two agree whenever there is a finalization at all.
+        "compliance_log": finalization.get("compliance_log") or list(runtime.compliance_log),
         "gaps": finalization.get("gaps", []),
         **_written_down(
             outcome=outcome,

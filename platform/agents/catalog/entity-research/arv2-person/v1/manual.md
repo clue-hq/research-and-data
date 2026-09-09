@@ -28,7 +28,7 @@ The base code before the colon is the row key and decides the reaction.
 | `provider_halted` | Money truth: 402 or credit exhaustion latched this provider for the run. The wire form is `provider_halted:<provider>` and names it. | Continue with the other providers and note the gap; never retry that provider in this job. |
 | `subject_lock_failed` | The confirmed employer or employment history does not match the account — the same-name trap, caught at launch. | This candidate is not the person; record the lookalike; no person job. |
 | `page_unavailable` | The page was fetched and came back with no text. | Record the URL as unreadable; try a different known URL, never a search for the same page. |
-| `email_export_empty` | The provider export returned no email for this member. | Record no email; the member is still researched. |
+| `email_export_empty` | The provider export returned no email for this member. It arrives as the `email_export_empty` result field of `lookup_person`, never as a refusal. | Record no email; the member is still researched. |
 | `feed_not_found` | No podcast RSS or YouTube URL resolved for the named person. | Every URL given failed to load (the message names each with its error). If you have not yet passed alternates — the podcast's other feed host, the YouTube upload of the same episode — call once more with them in alternate_urls; otherwise media stays empty for this person; move on. |
 | `episode_not_found` | The feed loaded, but it holds no episode matching what you named. | The feed has no matching episode; media stays empty for this person. |
 | `media_ceiling_reached` | The enforced media-seconds ceiling would be exceeded by this item. | Skip this item; the reservation was released; do not shorten and retry. |
@@ -84,8 +84,14 @@ Notes that decide calls, not style:
   other claim in the call landed, so re-write only what is named there.
 - After structuring, a deterministic compliance pass runs over every claim this job wrote before the
   claims are readable: minors redacted, origin and faith recorded as biography only, the sensitivity
-  floor redacted with the category on the claim, rows with no quote or no URL marked `unevidenced`,
-  and every action logged to the receipt. Nothing is dropped whole.
+  floor redacted with the category on the claim, rows with no quote or no URL marked `unevidenced`.
+  A claim carrying a phone number, a personal email or a home address is **dropped whole**, whatever
+  field it arrived on; a value whose every sentence is sensitive is dropped too, because redacting it
+  leaves nothing; everything else is redacted sentence by sentence and marked with the category. Every
+  action is logged to the receipt, so a claim you wrote and cannot find afterwards was removed there.
+  `lookup_person`, `structure_material` and `unique_insight` each return a `compliance` list of the
+  rows *their own call* produced, so an empty `written` is never ambiguous: it says whether nothing
+  was found or the floor removed what was.
 - `research_deep` returns a thin report rather than refusing it; `deep_thin_response` fires only
   when the report text is empty.
 - Deliberately absent: the account-only tools — `read_account_state`, `read_ats_board`,

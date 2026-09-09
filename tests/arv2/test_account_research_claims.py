@@ -523,6 +523,29 @@ def test_a_named_committee_candidate_without_a_confirming_url_is_never_written()
     assert [c["name"] for c in unconfirmed_candidates(candidates)] == ["Someone Unconfirmed"]
 
 
+def test_a_committee_candidate_carries_the_rationale_and_influence_when_the_agent_gave_them() -> (
+    None
+):
+    """The why behind the seat rides the account claim as well as the member's role claim, so the
+    two surfaces read the same reasoning. Both keys are optional and neither is ever invented."""
+    [draft] = committee_candidate_claims(
+        [
+            {
+                "name": "Nick Fisher",
+                "title": "VP Marketing",
+                "persona": "champion",
+                "confirmed_by": "https://probook.ai/about",
+                "rationale": "owns the ABM programme and the agency budget",
+                "influence": "High",
+            }
+        ],
+        SCOPE,
+    )
+
+    assert draft.value_json["rationale"] == "owns the ABM programme and the agency budget"
+    assert draft.value_json["influence"] == "High"
+
+
 def test_agent_claims_force_the_two_never_outreach_safe_fields() -> None:
     drafts = agent_claims(
         [
@@ -1452,6 +1475,23 @@ def test_only_an_smtp_verified_mailbox_is_recorded_as_provider_verified() -> Non
     assert draft.markers["provider_verified"] is True
 
 
+#: The three committee fields as a registry serves them. ``contact.role_on_committee``'s hint is
+#: deliberately the *unusual* one: it is what proves the born use class is read off the field and
+#: not the claim path's ``PROFESSIONAL_PUBLIC`` default, which the other two happen to agree with.
+COMMITTEE_CATALOG = FieldCatalog(
+    contact=(
+        FieldSpec("contact.persona", "Buying-committee persona.", _STR),
+        FieldSpec("contact.current_title", "Current professional title.", _STR),
+        FieldSpec(
+            "contact.role_on_committee",
+            "The seat and the reasoning behind it.",
+            None,
+            use_class_hint="personal-public-non-sensitive",
+        ),
+    )
+)
+
+
 def test_a_committee_member_is_written_onto_their_own_contact_entity() -> None:
     """The account job resolved the committee, so the claims are about a person even though the
     job's own subject is the account: the contact id is passed, never inferred."""
@@ -1467,6 +1507,7 @@ def test_a_committee_member_is_written_onto_their_own_contact_entity() -> None:
         },
         scope=SCOPE,
         contact_id=CONTACT_ID,
+        catalog=COMMITTEE_CATALOG,
     )
 
     by_key = {draft.field_key: draft for draft in drafts}
@@ -1486,9 +1527,32 @@ def test_a_committee_member_is_written_onto_their_own_contact_entity() -> None:
         assert draft.entity_id == CONTACT_ID and draft.entity_type is EntityType.CONTACT
         assert draft.research_mode is ResearchMode.CONTACT_PROFILING
         assert draft.identity_binding is IdentityBinding.STRONG
-        assert draft.use_class is UseClass.PROFESSIONAL_PUBLIC
         assert draft.source_url == "https://www.linkedin.com/in/nicholastfisher"
         assert draft.evidence_span == "VP Marketing at Zafran Security"
+
+
+def test_a_committee_member_claim_takes_its_use_class_from_the_field_not_the_default() -> None:
+    """Nothing here decides a meaning the field does not declare: the two fields whose registry
+    row states nothing land the claim path's default, and the one that declares a use class lands
+    what it declares — even when that is not the default."""
+    drafts = {
+        draft.field_key: draft
+        for draft in committee_member_claims(
+            {
+                "name": "Nick Fisher",
+                "title": "VP of Marketing",
+                "persona": "champion",
+                "confirmed_by": "https://www.linkedin.com/in/nicholastfisher",
+            },
+            scope=SCOPE,
+            contact_id=CONTACT_ID,
+            catalog=COMMITTEE_CATALOG,
+        )
+    }
+
+    assert drafts["contact.persona"].use_class is UseClass.PROFESSIONAL_PUBLIC
+    assert drafts["contact.current_title"].use_class is UseClass.PROFESSIONAL_PUBLIC
+    assert drafts["contact.role_on_committee"].use_class is UseClass.PERSONAL_PUBLIC_NON_SENSITIVE
 
 
 def test_a_committee_member_with_no_persona_or_title_writes_only_what_it_has() -> None:
@@ -1496,6 +1560,7 @@ def test_a_committee_member_with_no_persona_or_title_writes_only_what_it_has() -
         {"name": "Sanaz Yashar", "confirmed_by": "https://li.test/sanaz"},
         scope=SCOPE,
         contact_id=CONTACT_ID,
+        catalog=COMMITTEE_CATALOG,
     )
 
     assert [draft.field_key for draft in drafts] == []

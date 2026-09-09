@@ -43,6 +43,7 @@ from clue_api.arv2.account_research_store import (
     fold_linkedin_url,
 )
 from clue_api.arv2.claim_writer import LenientClaimWriter
+from clue_api.arv2.structuring_client import FieldCatalog
 from clue_core import EntityId
 from clue_obs import get_logger
 from clue_research.identity import get_contact, insert_contact_entity
@@ -88,6 +89,7 @@ async def run_committee_step(
     candidates: Sequence[Mapping[str, Any]],
     writer: LenientClaimWriter,
     person_profile_sha256: str,
+    catalog: FieldCatalog,
 ) -> CommitteeStepResult:
     """Turn one account job's confirmed committee candidates into people and person jobs.
 
@@ -126,6 +128,7 @@ async def run_committee_step(
                     name=name,
                     writer=writer,
                     person_profile_sha256=person_profile_sha256,
+                    catalog=catalog,
                 )
         except _AmbiguousName:
             # Deliberately not an error in the log: two people of one name under one account is a
@@ -191,6 +194,7 @@ async def _fan_out(
     name: str,
     writer: LenientClaimWriter,
     person_profile_sha256: str,
+    catalog: FieldCatalog,
 ) -> _Member:
     """One confirmed member: their contact row, their three claims, and their person job.
 
@@ -220,7 +224,9 @@ async def _fan_out(
         profile_sha256=person_profile_sha256,
     )
     if inserted:
-        for draft in committee_member_claims(candidate, scope=scope, contact_id=contact_id):
+        for draft in committee_member_claims(
+            candidate, scope=scope, contact_id=contact_id, catalog=catalog
+        ):
             await writer.write(conn, draft)
     return _Member(
         contact_id=contact_id,

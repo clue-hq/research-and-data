@@ -99,6 +99,64 @@ def test_a_year_range_is_not_a_phone_number() -> None:
     assert len(kept) == 1
 
 
+def test_two_years_and_a_headcount_in_one_sentence_are_not_a_phone_number() -> None:
+    """The scan must not merge numbers that merely stand near each other.
+
+    Nine to fifteen digits is a phone number, and a sentence like this holds fourteen across three
+    unrelated numbers. Merging them dropped the person agent's most valuable output — this exact
+    value, an evidenced ``self_summary``, was removed as a "personal contact detail".
+    """
+    kept, log = apply_person_floor(
+        [
+            _draft(
+                field_key="contact.facet.self_summary",
+                value="Grew the team from 12 to 250 people between 2019 and 2024.",
+            )
+        ],
+        purge_unevidenced=False,
+    )
+
+    assert len(kept) == 1 and log == []
+
+
+def test_a_voice_quote_with_its_media_timestamp_is_not_a_phone_number() -> None:
+    """``voice_quote`` is *required* to carry ``media_timestamp`` inside its value, so nearly every
+    quoted claim used to land in the digit band."""
+    kept, log = apply_person_floor(
+        [
+            _draft(
+                field_key="contact.facet.voice_quote",
+                value={
+                    "quote": "In 2023 we cut onboarding from 30 days to 3 days.",
+                    "media_timestamp": "01:12:33",
+                },
+            )
+        ],
+        purge_unevidenced=False,
+    )
+
+    assert len(kept) == 1 and log == []
+
+
+def test_a_career_history_of_two_roles_with_dates_is_not_a_phone_number() -> None:
+    """``career_history`` is the source of the next person job's identity lock; losing it whole to
+    a run of dates would break the lock as well as the page."""
+    kept, log = apply_person_floor(
+        [
+            _draft(
+                field_key="contact.facet.career_history",
+                value=[
+                    {"org": "Acme", "role": "VP", "start": "2015-01-01"},
+                    {"org": "Beta", "role": "Dir", "start": "2019-06"},
+                ],
+            )
+        ],
+        purge_unevidenced=False,
+    )
+
+    assert len(kept) == 1 and log == []
+
+
 def test_a_uuid_is_not_a_phone_number() -> None:
     """``contact.reports_to`` carries a uuid; its digit runs must not read as a phone number."""
     kept, log = apply_person_floor(
@@ -144,6 +202,34 @@ def test_a_street_address_in_a_quote_drops_the_draft() -> None:
     )
 
     assert kept == [] and _rules(log) == [("dropped", "personal_contact_detail")]
+
+
+def test_an_address_ending_the_clause_is_still_found() -> None:
+    """``court`` is an ordinary noun as well as a thoroughfare, so it needs the comma; the address
+    shape itself is unchanged."""
+    kept, log = apply_person_floor(
+        [_draft(evidence_span="Post it to 14 Elm Court, Springfield.")],
+        purge_unevidenced=False,
+    )
+
+    assert kept == [] and _rules(log) == [("dropped", "personal_contact_detail")]
+
+
+def test_a_thoroughfare_word_used_as_an_ordinary_noun_is_not_an_address() -> None:
+    kept, log = apply_person_floor(
+        [_draft(value="He led 3 Product Lines Way beyond target this year.")],
+        purge_unevidenced=False,
+    )
+
+    assert len(kept) == 1 and log == []
+
+
+def test_a_year_beside_a_place_name_is_not_a_house_number() -> None:
+    kept, log = apply_person_floor(
+        [_draft(value="Joined in 2019 Acme Corp St. Louis office.")], purge_unevidenced=False
+    )
+
+    assert len(kept) == 1 and log == []
 
 
 def test_an_idiom_with_a_number_is_not_a_street_address() -> None:
@@ -334,6 +420,49 @@ def test_a_claim_with_no_quote_is_marked_unevidenced_and_kept() -> None:
 
 def test_the_unevidenced_row_is_dropped_when_the_purge_flag_is_on() -> None:
     kept, log = apply_person_floor([_draft(source_url=None)], purge_unevidenced=True)
+
+    assert kept == [] and _rules(log) == [("dropped", "unevidenced")]
+
+
+def test_a_provider_record_is_never_unevidenced_even_when_the_purge_is_on() -> None:
+    """A provider record is evidenced by the record, which is not a page a human can open. Rule 6
+    exempts it: with the purge on, the un-exempt path would delete the lane's whole deterministic
+    spine — title, headline, location, badges, network stats, career history and the work email.
+    """
+    record = _draft(
+        field_key="contact.current_title",
+        value="VP of Marketing",
+        extraction_method=ExtractionMethod.API,
+        source_url=None,
+        evidence_span=None,
+    )
+
+    kept, log = apply_person_floor([record], purge_unevidenced=True)
+
+    assert kept == [record] and log == []
+
+
+def test_the_hooks_claim_is_never_unevidenced_even_when_the_purge_is_on() -> None:
+    """The hooks are the agent's reading of claims already in the store, so they cite nothing by
+    design."""
+    hooks = _draft(
+        field_key="contact.facet.hooks",
+        value=["ultramarathons", "the pipeline book"],
+        source_url=None,
+        evidence_span=None,
+    )
+
+    kept, log = apply_person_floor([hooks], purge_unevidenced=True)
+
+    assert kept == [hooks] and log == []
+
+
+def test_an_ordinary_person_claim_missing_only_the_url_is_still_purged() -> None:
+    """The exemptions are by shape, not a hole in rule 6: an LLM-synthesised claim with a quote and
+    no URL is still purged when the operator turns the purge on."""
+    kept, log = apply_person_floor(
+        [_draft(field_key="contact.facet.hobby", source_url=None)], purge_unevidenced=True
+    )
 
     assert kept == [] and _rules(log) == [("dropped", "unevidenced")]
 

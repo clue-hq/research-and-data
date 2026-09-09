@@ -27,10 +27,17 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from clue_api.arv2.claim_writer import ClaimDraft
+from clue_core import ExtractionMethod
 
 #: The one field where an email address is the point: the professional email the export produces.
 #: An email address on any other field is a personal contact detail and the draft goes.
 WORK_EMAIL_FIELD = "core.work_email"
+
+#: The agent's reading of claims it already wrote. It cites nothing *by design* — the hooks are a
+#: judgement about evidence that is already in the store, not a new fact off a page — so rule 6
+#: has nothing to say about it. Named here rather than imported, the way ``WORK_EMAIL_FIELD`` is,
+#: so this module stays a pure function of drafts with no claim-mapper import behind it.
+HOOKS_FIELD = "contact.facet.hooks"
 
 #: The two fields the display turns into outreach. Rule 7 holds them to a higher bar than the rest:
 #: a fact that is biography-only may be *recorded* but may never be the thing an opener rests on.
@@ -303,16 +310,34 @@ _PHONE_DIGITS = range(9, 16)
 #: baffling. A phone number written with a label ("tel:+1…") survives because ``:`` splits first.
 _LETTER_TOKEN = re.compile(r"\S*[A-Za-z]\S*")
 
+#: What a removed word leaves behind. It must be a character ``_PHONE``'s class does **not**
+#: contain: whitespace *is* in that class, so substituting a space let the digits of unrelated
+#: numbers run together into one match — "grew the team from 12 to 250 people between 2019 and
+#: 2024" scanned as a fifteen-digit run and the whole claim was dropped as a phone number. A pipe
+#: fences each number off from the next, so only digits actually written together are counted.
+_TOKEN_FENCE = "|"
+
 _EMAIL = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
 
 #: A house number, a capitalised street name and a thoroughfare word. The capitals are load-bearing:
 #: without them "5 people found a way" and "3 steps on the road" are addresses, and a claim would
-#: vanish over an idiom. A street written in lower case is missed, which is the right way to be
-#: wrong here.
+#: vanish over an idiom. Two more fences, because a match here **drops the whole claim**:
+#:
+#: * the house number may not be a year — "Joined in 2019 Acme Corp St. Louis office" is a date and
+#:   a place name, not number 2019 of some street;
+#: * ``way``, ``place``, ``court`` and ``square`` are ordinary English nouns as well as
+#:   thoroughfares, so those four (and their abbreviations) count only when the address ends the
+#:   clause — a comma or the end of the value behind them. "He led 3 Product Lines Way beyond
+#:   target" is a sentence; "12 Elm Court, Springfield" is an address. The unambiguous
+#:   thoroughfares still match mid-sentence ("he works from 221 Baker Street most days").
+#:
+#: A street written in lower case is still missed, which is the right way to be wrong here.
 _STREET = re.compile(
-    r"\b\d{1,5}\s+(?:[A-Z][\w.'\-]*\s+){1,3}"
-    r"(?i:street|avenue|boulevard|road|lane|drive|court|way|place|terrace|crescent|square|"
-    r"st|ave|blvd|rd|ln|dr|ct|pl|sq)\b\.?"
+    r"\b(?!(?:19|20)\d{2}\b)\d{1,5}\s+(?:[A-Z][\w.'\-]*\s+){1,3}"
+    r"(?:"
+    r"(?i:street|avenue|boulevard|road|lane|drive|terrace|crescent|st|ave|blvd|rd|ln|dr)\b\.?"
+    r"|(?i:way|place|court|square|pl|ct|sq)\b\.?(?=\s*(?:,|$))"
+    r")"
 )
 
 #: Rule 1's three shapes, by the name the log reports.
@@ -412,9 +437,24 @@ def _sentences(texts: Iterable[str]) -> frozenset[str]:
     return frozenset(found)
 
 
+def _evidenced_by_shape(draft: ClaimDraft) -> bool:
+    """Is this a draft rule 6 has nothing to say about, whatever its span and URL are?
+
+    A provider record and the hooks claim are the two: neither *can* carry a page quote, so marking
+    them ``unevidenced`` would be a complaint about their shape, and purging them would delete the
+    deterministic spine the person page is built from.
+    """
+    return draft.extraction_method is ExtractionMethod.API or draft.field_key == HOOKS_FIELD
+
+
 def _phone_in(text: str) -> str | None:
-    """A phone number, or ``None``. Digit runs that belong to a word or an id do not count."""
-    digits_only = _LETTER_TOKEN.sub(" ", text.replace(":", " ").replace(",", " "))
+    """A phone number, or ``None``. Digit runs that belong to a word or an id do not count.
+
+    Every removed word leaves a :data:`_TOKEN_FENCE` behind rather than a space, so two numbers
+    that merely stand near each other ("from 12 to 250 people between 2019 and 2024") stay two
+    numbers instead of becoming one fifteen-digit "phone number".
+    """
+    digits_only = _LETTER_TOKEN.sub(_TOKEN_FENCE, text.replace(":", " ").replace(",", " "))
     for match in _PHONE.finditer(digits_only):
         if sum(character.isdigit() for character in match.group()) in _PHONE_DIGITS:
             return match.group().strip()
@@ -537,8 +577,12 @@ def _apply_rules_one_to_six(
             _row("unsafe", draft, "self_announced_milestone", "a wedding or a birth is biography")
         )
 
-    # Rule 6 — a row with no quote or no URL is marked; it is only purged when the flag says so.
-    if not span or not draft.source_url:
+    # Rule 6 — a row with no quote **or** no URL is marked; it is only purged when the flag says
+    # so. Two shapes are exempt, because for them "no quote and no URL" is the correct output and
+    # not a gap: a provider record (``ExtractionMethod.API``) is evidenced by the record itself,
+    # which is not a page a human can open, and the hooks claim carries neither by design. Without
+    # the exemption, turning the purge on would delete the lane's whole deterministic spine.
+    if (not span or not draft.source_url) and not _evidenced_by_shape(draft):
         missing = "no evidence span" if not span else "no source url"
         markers["unevidenced"] = True
         if purge_unevidenced:
