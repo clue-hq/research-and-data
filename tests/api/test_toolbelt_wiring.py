@@ -215,6 +215,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("product_selection_scope_unavailable",),
     ),
+    # ARV2 onboarding O6: the set-valued sibling derives everything from the presenting turn, so an
+    # unresolvable turn ref is its first fail-closed boundary (it reads no Client-KB scope at all).
+    "open_product_set_selection_gate": (
+        "precondition",
+        ("product_set_turn_not_found",),
+    ),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
@@ -551,6 +557,9 @@ def _bodies() -> dict[str, dict[str, object]]:
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_product_set_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "submit_onboarding_input": {

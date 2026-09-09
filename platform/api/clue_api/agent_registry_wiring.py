@@ -258,6 +258,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "open_discovery_configuration_gate": (AgentRole.HEAD_OF_ABM,),
     "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
     "open_product_selection_gate": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6 (T3). Registered UNGRANTED for exactly the reason the R2 launch tools
+    # above are: the audit demands that every live tool appear here, while granting a role is not a
+    # dict edit — `build_agent_profile_registry` refuses to compose when a role's authority and its
+    # profile's tool list disagree, so the Head-of-ABM grant arrives with the head-of-abm profile
+    # version that pins it (O6 T5/T7, `head-of-abm@v44`).
+    "open_product_set_selection_gate": (),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
