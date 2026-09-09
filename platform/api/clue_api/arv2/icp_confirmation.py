@@ -314,6 +314,60 @@ def _confirmed_front_matter(
     return front
 
 
+def _may_retire(proposed: IcpDocumentSubject, *, project_id: str) -> bool:
+    """Whether this project may retire the row it is confirming.
+
+    A proposal is a draft nobody depends on, and a project's own earlier confirmation is its own
+    to replace. Another project's confirmation is neither: it is that project's pinned ICP.
+    """
+
+    if proposed.status == "proposed":
+        return True
+    return proposed.status == "confirmed" and proposed.confirmed_for_project_id == project_id
+
+
+async def _stored_confirmation(
+    conn: AsyncConnection,
+    *,
+    document_id: UUID,
+    proposed: IcpDocumentSubject,
+    fallback_supersedes: UUID,
+    product_selection_version: int | None,
+) -> ConfirmedIcp | None:
+    """The already-persisted confirmation row, or ``None`` when there is not one yet.
+
+    ``product_selection_version`` is the caller's, not a column: the durable record of the set a
+    confirmation was made against is the confirmed document's own front matter, and a replay of the
+    same approval carries the same value that wrote it.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT version, artifact_key, artifact_sha256, supersedes_document_id "
+                    "FROM brand_knowledge_document WHERE document_id = :document_id"
+                ),
+                {"document_id": document_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    supersedes = row["supersedes_document_id"]
+    return ConfirmedIcp(
+        document_id=document_id,
+        icp_key=proposed.icp_key,
+        version=int(row["version"]),
+        artifact_key=str(row["artifact_key"]),
+        artifact_sha256=str(row["artifact_sha256"]),
+        supersedes_document_id=fallback_supersedes if supersedes is None else supersedes,
+        product_selection_version=product_selection_version,
+    )
+
+
 async def confirm_icp_document(
     conn: AsyncConnection,
     storage: StorageBackend,
@@ -333,9 +387,32 @@ async def confirm_icp_document(
     a confirmation is a statement about exact bytes, so bytes that moved are refused rather than
     confirmed on the human's behalf.
 
-    The insert is ``ON CONFLICT (document_id) DO NOTHING`` over a derived id and the stored row is
-    read back, so a replayed approval returns the version it already minted instead of a second one.
+    **Which row is retired.** The subject is retired only when this project is entitled to retire
+    it — it is still a ``proposed`` draft, or it is this project's *own* earlier confirmation. A
+    row confirmed for **another** project is left ``confirmed`` untouched: that project pins its
+    ICP by artifact key and requires the row to still be confirmed
+    (``arv2.account_research_launch._pinned_icp``), so retiring it would break its launches. The
+    two confirmations then coexist as different versions of the same path.
+
+    **Replay.** The document id is derived from ``(workspace, proposal, project)``, so a second
+    call for the same confirmation finds its own row and returns it *before* reading, rendering or
+    storing anything — a replay must not leave an orphan artifact behind per attempt.
     """
+
+    document_id = confirmed_document_id(
+        workspace_id=workspace_id,
+        proposed_document_id=proposed.document_id,
+        project_id=project_id,
+    )
+    replayed = await _stored_confirmation(
+        conn,
+        document_id=document_id,
+        proposed=proposed,
+        fallback_supersedes=proposed.document_id,
+        product_selection_version=product_selection_version,
+    )
+    if replayed is not None:
+        return replayed
 
     record, body = await read_verified_artifact(
         conn,
@@ -375,11 +452,6 @@ async def confirm_icp_document(
     )
     await storage.put(key, rendered, media_type=ICP_ARTIFACT_MEDIA_TYPE)
 
-    document_id = confirmed_document_id(
-        workspace_id=workspace_id,
-        proposed_document_id=proposed.document_id,
-        project_id=project_id,
-    )
     next_version = int(
         (
             await conn.execute(
@@ -419,34 +491,23 @@ async def confirm_icp_document(
             "supersedes": proposed.document_id,
         },
     )
-    await conn.execute(
-        text(
-            "UPDATE brand_knowledge_document SET status = 'superseded', updated_at = now() "
-            "WHERE document_id = :document_id AND status = ANY(:statuses)"
-        ),
-        {"document_id": proposed.document_id, "statuses": list(_SERVABLE_STATUSES)},
-    )
-    # Read the row back rather than trusting the values just computed: on a replay the INSERT was
-    # a no-op and the stored version is the one every reader will cite.
-    stored = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT version, artifact_key, artifact_sha256 "
-                    "FROM brand_knowledge_document WHERE document_id = :document_id"
-                ),
-                {"document_id": document_id},
-            )
+    if _may_retire(proposed, project_id=project_id):
+        await conn.execute(
+            text(
+                "UPDATE brand_knowledge_document SET status = 'superseded', updated_at = now() "
+                "WHERE document_id = :document_id AND status = ANY(:statuses)"
+            ),
+            {"document_id": proposed.document_id, "statuses": list(_SERVABLE_STATUSES)},
         )
-        .mappings()
-        .one()
-    )
-    return ConfirmedIcp(
+    # Read the row back rather than trusting the values just computed: the stored version is the
+    # one every reader will cite.
+    stored = await _stored_confirmation(
+        conn,
         document_id=document_id,
-        icp_key=proposed.icp_key,
-        version=int(stored["version"]),
-        artifact_key=str(stored["artifact_key"]),
-        artifact_sha256=str(stored["artifact_sha256"]),
-        supersedes_document_id=proposed.document_id,
+        proposed=proposed,
+        fallback_supersedes=proposed.document_id,
         product_selection_version=product_selection_version,
     )
+    if stored is None:  # pragma: no cover - the INSERT above either landed or conflicted
+        raise IcpConfirmationStale("the confirmed ICP document did not persist")
+    return stored

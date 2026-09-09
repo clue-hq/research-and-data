@@ -480,6 +480,17 @@ async def _documents(conn: Any, seeded: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows.all()]
 
 
+async def _artifacts(conn: Any, seeded: Any) -> int:
+    return int(
+        (
+            await conn.execute(
+                text("SELECT count(*) FROM artifact WHERE workspace_id = :ws"),
+                {"ws": seeded.workspace_id},
+            )
+        ).scalar_one()
+    )
+
+
 def test_approving_an_icp_document_mints_its_confirmed_version(tmp_path: Path) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -557,6 +568,7 @@ def test_a_retried_approval_replays_and_mints_nothing_further(tmp_path: Path) ->
             app = _app(conn, storage=seeded.storage)
             async with _client(app) as client:
                 first = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-rep")
+                after_first = await _artifacts(conn, seeded)
                 second = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-rep")
             assert first.status_code == 202, first.text
             assert second.status_code == 202, second.text
@@ -564,6 +576,8 @@ def test_a_retried_approval_replays_and_mints_nothing_further(tmp_path: Path) ->
             assert first.json()["data"]["turn_id"] == second.json()["data"]["turn_id"]
             rows = await _documents(conn, seeded)
             assert [row["version"] for row in rows] == [1, 2]
+            # No orphan: the replay renders and stores nothing, so it records no artifact either.
+            assert await _artifacts(conn, seeded) == after_first
 
     run_async(scenario())
 

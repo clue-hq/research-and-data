@@ -176,6 +176,31 @@ async def _seed_icp(
     )
 
 
+async def _icp_rows(conn: AsyncConnection, fixture: Any) -> list[dict[str, Any]]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT document_id, version, status, supersedes_document_id "
+                "FROM brand_knowledge_document WHERE workspace_id = :ws "
+                " AND path = 'audience/icp-clinics.md' ORDER BY version"
+            ),
+            {"ws": fixture.seeded.workspace_id},
+        )
+    ).mappings()
+    return [dict(row) for row in rows.all()]
+
+
+async def _artifact_count(conn: AsyncConnection, fixture: Any) -> int:
+    return int(
+        (
+            await conn.execute(
+                text("SELECT count(*) FROM artifact WHERE workspace_id = :ws"),
+                {"ws": fixture.seeded.workspace_id},
+            )
+        ).scalar_one()
+    )
+
+
 def _ctx(fixture: Any) -> ToolContext:
     return ToolContext(
         workspace_id=fixture.seeded.workspace_id,
@@ -485,20 +510,7 @@ def test_confirming_the_same_document_twice_mints_exactly_one_version(tmp_path: 
             assert first.version == second.version == 2
             assert first.artifact_sha256 == second.artifact_sha256
             assert first.supersedes_document_id == fixture.document_id
-            rows = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT document_id, version, status, supersedes_document_id "
-                            "FROM brand_knowledge_document WHERE workspace_id = :ws "
-                            "AND path = 'audience/icp-clinics.md' ORDER BY version"
-                        ),
-                        {"ws": fixture.seeded.workspace_id},
-                    )
-                )
-                .mappings()
-                .all()
-            )
+            rows = await _icp_rows(conn, fixture)
             assert [(row["version"], row["status"]) for row in rows] == [
                 (1, "superseded"),
                 (2, "confirmed"),
@@ -544,5 +556,115 @@ def test_a_confirmation_against_moved_bytes_is_refused(tmp_path: Path) -> None:
                     {"ws": fixture.seeded.workspace_id},
                 )
             ).scalar_one() == 1
+
+    run_async(scenario())
+
+
+def test_another_projects_confirmation_is_not_retired_by_this_ones(tmp_path: Path) -> None:
+    """A brand's ICPs are shared, so a confirmation is never taken away from its own project.
+
+    Project A's confirmed row is what A's launches pin by artifact key
+    (``arv2.account_research_launch._pinned_icp`` requires ``status = 'confirmed'``), so B
+    confirming the same profile mints a further version and leaves A's row exactly as it was.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_icp(conn, tmp_path, workspace_id="ws-o6-icp-two", label="icptwo")
+            project_a = fixture.seeded.project_id
+            project_b = "prj_o6_icp_two_b"
+
+            proposal = await current_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                icp_key="clinics",
+            )
+            assert proposal is not None
+            confirmed_a = await confirm_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                project_id=project_a,
+                proposed=proposal,
+                expected_sha256=proposal.artifact_sha256,
+                confirmed_by_user_id=USER_ID,
+                product_selection_version=None,
+            )
+            # The proposal was A's to retire.
+            rows = await _icp_rows(conn, fixture)
+            assert [(row["version"], row["status"]) for row in rows] == [
+                (1, "superseded"),
+                (2, "confirmed"),
+            ]
+
+            # B now confirms what is currently on file — A's confirmed version.
+            subject_b = await current_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                icp_key="clinics",
+            )
+            assert subject_b is not None
+            assert subject_b.document_id == confirmed_a.document_id
+            assert subject_b.confirmed_for_project_id == project_a
+            confirmed_b = await confirm_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                project_id=project_b,
+                proposed=subject_b,
+                expected_sha256=subject_b.artifact_sha256,
+                confirmed_by_user_id=USER_ID,
+                product_selection_version=None,
+            )
+            assert confirmed_b.document_id != confirmed_a.document_id
+            assert confirmed_b.supersedes_document_id == confirmed_a.document_id
+            rows = await _icp_rows(conn, fixture)
+            assert [(row["version"], row["status"]) for row in rows] == [
+                (1, "superseded"),
+                (2, "confirmed"),
+                (3, "confirmed"),
+            ]
+            # A's confirmation is untouched and still pinnable.
+            assert rows[1]["document_id"] == confirmed_a.document_id
+
+    run_async(scenario())
+
+
+def test_a_replayed_confirmation_stores_no_second_artifact(tmp_path: Path) -> None:
+    """A replay returns the row it already minted — it does not re-render or re-store anything."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_icp(
+                conn, tmp_path, workspace_id="ws-o6-icp-orphan", label="icporphan"
+            )
+            subject = await current_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                icp_key="clinics",
+            )
+            assert subject is not None
+            kwargs: dict[str, Any] = {
+                "workspace_id": fixture.seeded.workspace_id,
+                "brand_id": fixture.brand_id,
+                "project_id": fixture.seeded.project_id,
+                "proposed": subject,
+                "expected_sha256": subject.artifact_sha256,
+                "confirmed_by_user_id": USER_ID,
+                "product_selection_version": None,
+            }
+            first = await confirm_icp_document(conn, fixture.storage, **kwargs)
+            after_first = await _artifact_count(conn, fixture)
+            second = await confirm_icp_document(conn, fixture.storage, **kwargs)
+            assert await _artifact_count(conn, fixture) == after_first
+            assert second == first
 
     run_async(scenario())
