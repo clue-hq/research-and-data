@@ -14,13 +14,17 @@ from clue_config import load_settings
 from clue_db import db_lifespan, transaction
 
 WS = "ws_arv2_answer_key"
+ZAFRAN = "74d83176-f407-4d35-a9c2-25ad0a8bbf91"
+SEMIEN = "a9b153a0-161e-45b5-a104-904a355a5253"
+NICK = "034de76e-06e7-48b2-8141-11aa664da79c"
+COLES = "f6a8fb07-3bd4-4531-8adf-8da2d5e65f4b"
 OUT = pathlib.Path(".context/arv2-r3-acceptance/pages")
 PATHS = {
-    "zafran-contacts": "/accounts/74d83176-f407-4d35-a9c2-25ad0a8bbf91/contacts?contract=v1",
-    "semien-page": "/accounts/{cogent}/contacts/a9b153a0-161e-45b5-a104-904a355a5253?contract=v1",
-    "nick-fisher-page": "/accounts/74d83176-f407-4d35-a9c2-25ad0a8bbf91/contacts/034de76e-06e7-48b2-8141-11aa664da79c?contract=v1",
+    "zafran-contacts": f"/accounts/{ZAFRAN}/contacts?contract=v1",
+    "semien-page": "/accounts/{cogent}/contacts/" + SEMIEN + "?contract=v1",
+    "nick-fisher-page": f"/accounts/{ZAFRAN}/contacts/{NICK}?contract=v1",
     "cogent-contacts": "/accounts/{cogent}/contacts?contract=v1",
-    "coles-page": "/accounts/{cogent}/contacts/f6a8fb07-3bd4-4531-8adf-8da2d5e65f4b?contract=v1",
+    "coles-page": "/accounts/{cogent}/contacts/" + COLES + "?contract=v1",
 }
 
 
