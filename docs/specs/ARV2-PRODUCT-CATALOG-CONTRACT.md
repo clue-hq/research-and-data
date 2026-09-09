@@ -356,7 +356,7 @@ All of the above are in the R0 quarantine ledger. Their deletion rides Phase 6.
       "short_description": "Ambient clinical documentation with automated coding suggestions.",
       "aliases": [],
       "status": "active",
-      "resolution_state": "model_matched",
+      "resolution_state": "model_reused",
       "reconcile_confidence": "high",
       "reconcile_reason": null,
       "offering_kind": "product",

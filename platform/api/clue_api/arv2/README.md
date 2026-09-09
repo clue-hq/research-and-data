@@ -1266,3 +1266,29 @@ person facets are prose (a hobby, a quote, a talk) and exact leaf agreement is t
 them. Field-found coverage was ≈ 0.9 on every person researched live. A semantic or containment
 mode for facet text is the follow-up; until it exists, the R3 recall number is not the number the
 master plan's exit gate means.
+
+## O6 — the Head-of-ABM integration (what of it lives here, and what cannot)
+
+Only one O6 module is inside the lane: **`icp_confirmation.py`**. It owns the ICP *knowledge
+document* as the subject of a human gate — `current_icp_document` (the brand's current servable
+`icp-definition` document for one key, read back through its verified bytes so its `product_ids`,
+title and any existing confirmation are the document's own), `icp_gate_subject_ref` /
+`icp_gate_snapshot` (what the gate names and shows), and `confirm_icp_document` (the human's yes,
+minted as a new `confirmed` version of the same path, stamped `confirmed_for_project_id`, with the
+proposal retired). It imports only `clue_storage`, `clue_core`, SQLAlchemy and its `arv2` siblings,
+so the import guard is satisfied.
+
+The rest of O6 is composition, and composition may not live under `arv2/` — a module here imports
+nothing outside the allowed prefixes (`tests/arv2/test_import_guard.py`), and these three need the
+agent-turn, gate, toolbelt and chat machinery in `clue_api` proper:
+
+| Module (outside `arv2/`) | What it owns | How it uses the lane |
+|---|---|---|
+| `clue_api/brand_knowledge_context.py` | The turn's knowledge pin (`agent_turn_knowledge_pin`), the pinned bodies, the read-only seed files under `inputs/brand/knowledge/`, `BrandKnowledgeIndexCard@1`, and the project's confirmed ICP read from the pinned front matter | Reads the same onboarding document rows this lane writes; parses their front matter with the lane's `knowledge_frontmatter` |
+| `clue_api/product_set_selection_gate_tools.py` | `open_product_set_selection_gate@1` — the set-valued product gate over the brand's catalog document | Presents the catalog contract §7.1 snapshot the lane's catalog synchronizer produced |
+| `clue_api/icp_artifact_gate_tools.py` | `open_icp_confirmation_gate@2` — the gate over a knowledge-document artifact ref | Calls `arv2.icp_confirmation` for the subject, the snapshot and the confirmation write |
+
+The direction of the dependency is the point: the composition modules import the lane, never the
+other way round. Nothing on any of these paths reads a Client-KB version, a readiness decision or a
+Stage-0 run pin (standing rule `_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`); an ICP
+and a product catalog are files, and a file is pinned by ref and digest.
