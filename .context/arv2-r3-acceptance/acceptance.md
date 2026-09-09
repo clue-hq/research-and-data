@@ -124,8 +124,9 @@ the master plan's exit gate asks.
   1 year 1 month (email none — provider). Seating claims for Coles/Corio/Chonoles are written as
   `ExtractionMethod.HUMAN` with the rationale "launched on demand by <user>".
 - Migration `7c4f1a2b9d63` moved `core.work_email` to `{address, status, checked_at}` and
-  `contact.facet.career_history` to the nested `date` shape; the two flag-off old-lane writers of
-  `core.work_email` only gained shape tolerance.
+  `contact.facet.career_history` to the nested `date` shape at the time of this walk; after the
+  2026-09-10 rebase the work_email swap is D4-b's `7332ac974920` (closed vocabulary
+  `WORK_EMAIL_STATUSES`) and `7c4f1a2b9d63` keeps only the career-history swap.
 - **Loader follow-up (D1):** the answer key's `core.work_email` rows carry the provider's raw block
   (`status: "VALID"`), so the Zafran list's email chips stay empty and those rows now read `schema_valid=false`.
 - Repair-run cost: 6 × 1.5 credits (search + export) for the six re-exports.

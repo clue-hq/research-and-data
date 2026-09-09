@@ -16,11 +16,12 @@ person job's output was read through the live read surface
   entry the record dates nowhere carries no `date` at all. `account_research_driver`'s
   `employment_history_lines` reads `date` first and the flat spelling second, because the claims
   already at rest are immutable.
-- **Migration `7c4f1a2b9d63`** (head was `60e51eba0123`) swaps both registry rows exactly:
-  `core.work_email` `str`/`{"type":"string"}` → `object`/`{address (req), status (enum),
-  checked_at}` **and its description**; `contact.facet.career_history` flat `start`/`end` →
-  nested `date`. The description column is in the swap because `register_field` compares the whole
-  row — a row aligned on schema+type only still fails the pack load at worker start.
+- **Migration `7c4f1a2b9d63`** (head was `60e51eba0123`) swapped both registry rows exactly at
+  the time; **after the 2026-09-10 rebase onto `integration/design-improvement` it keeps only the
+  `contact.facet.career_history` swap** (flat `start`/`end` → nested `date`). D4-b's
+  `7332ac974920` had already moved `core.work_email` to `{address, status, checked_at?}` with the
+  closed vocabulary `WORK_EMAIL_STATUSES`; `email_export_claim` writes that shape. The two chains
+  join at `57e06d696d49`.
 - **W2 on-demand seat.** `Arv2PersonLaunchRequest.persona: Persona = Persona.USER`; the launch
   writes `contact.persona` + `contact.role_on_committee` inside its transaction through
   `seat_person_on_committee` (new, in `account_research_launch.py`, reused by the repair script).

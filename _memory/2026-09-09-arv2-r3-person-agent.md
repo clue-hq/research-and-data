@@ -195,3 +195,43 @@ touched test files.
 ## Addendum — scoped review of the live waves and fix wave 3 (2026-09-09, 360fe0756)
 - Findings fixed: grouped-space and contiguous phone forms are signals again (boundary-fenced so year runs stay negative); a job with no confirmed LinkedIn URL refuses `lookup_person` (`subject_lock_failed`, the dossier's rung 2 already says skip); employer name containment is token-aware (box/dropbox no longer match); the phone-word rule is scoped to ~30 chars of the candidate and the scan runs per leaf; migration swaps raise when neither shape is present; persona-only repair needs no provider key; one public error class; one `_marked` helper. Left by ruling: a persona never changes an existing seat.
 - Final gates (controller, first-hand): 821 offline tests passed (tests/arv2 + read-surface + toolbelt matrix); ruff clean on every file the slice touched; import contracts 26/0; single Alembic head 7c4f1a2b9d63.
+
+## Addendum — rebase onto `integration/design-improvement` (2026-09-10)
+
+`track-r3` (24 commits) was rebased onto `origin/integration/design-improvement` (17 commits ahead,
+incl. PR #52 track-d4b and the O6 plan doc). Pre-rebase ref kept locally as `track-r3-pre-rebase`.
+Resolutions, all toward the target where the two lanes touched the same thing (D4-b merged first
+and its readers/loader follow its shapes):
+
+- **Committee membership read (`display/gather.committee_members`)** — the target's D4-b rule is
+  kept: every contact under the account holding **at least one live claim**, persona-ranked, no
+  coverage branch; `persona_rank`/`PERSONA_RANK` live in `display/personas.py`. Our Task 7 version
+  (a live `contact.persona` claim seats somebody) was dropped from gather and the three read-surface
+  files + their tests. **Divergence to know:** the eligibility chain's `Arv2CommitteeReferenceSource`
+  (kept, `contact_eligibility.py`) still requires persona + role claims, because a governed member
+  needs both claim ids. On live data the two agree once every launch seats (W2 fix); a contact
+  profiled but never seated would show on the page list but not in the governed chain.
+- **`core.work_email` shape** — D4-b's `7332ac974920` owns the swap (`{address, status,
+  checked_at?}`, `status` required, closed vocabulary `packs.WORK_EMAIL_STATUSES` = verified_smtp |
+  catch_all_valid | invalid | unknown | unverified). Our `7c4f1a2b9d63` now keeps **only** the
+  `contact.facet.career_history` swap (file renamed `…_arv2_r3_career_history_shape.py`; the
+  scoped-review "loud swap" logic kept). `email_export_claim` writes D4-b's shape (`status` always
+  one of the two usable verdicts since only a found export is written; `checked_at` verbatim, read
+  first by the chip's `_checked_on`). The six old-lane files/tests we had touched for W1 tolerance
+  took the target's versions wholesale (`contact_channel_enrichment.py`, `contact_email_lookup.py`,
+  `packs.py`, three tests).
+- **Alembic**: join `57e06d696d49` (`7c4f1a2b9d63` + `63294c3ce019`) is the single head.
+- **Lane DB (`clue_san-salvador`)**: was at our old two-row `7c4f1a2b9d63`; `alembic upgrade head`
+  applied D4-b's swap as a no-op (its WHERE keys on `value_type='str'`, ours was already `object`),
+  so the `core.work_email` row was aligned **by hand** to the pack's declared row (schema +
+  description; note the migration module's `_OBJECT_DESCRIPTION` carries SQL-doubled apostrophes —
+  never bind it as a parameter). Proven by `load_pack(conn, CORE_PACK)` succeeding (what a worker
+  does at start). Fresh-DB up→down→up run on a throwaway smoke DB (see the rebase report).
+- Gates after the rebase, offline, no `.env`: the R3 + read-surface + eligibility-chain suites
+  passed (`--ignore-glob='*_live.py'`); ruff clean on the slice (6 pre-existing lint errors in two
+  old design merge revisions on the target, untouched); import contracts 26/0.
+- Observed, not changed: local `.env` lacks 33 keys that `.env.example` carries (pre-existing, not
+  from this rebase; e.g. `CLUE_FRONTEND_READ_ENABLED`, `CLUE_CLAIM_WRITE_LENIENT`) — founder to
+  decide whether to append the example defaults.
+- `?contract=v1` is accepted and ignored on the target (v1 is the only contract), so the evidence
+  script `.context/arv2-r3-acceptance/pages/dump_pages.py` still works unchanged.

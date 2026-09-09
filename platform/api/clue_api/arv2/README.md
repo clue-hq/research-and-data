@@ -1189,21 +1189,23 @@ governed exactly like a coverage-sourced one.
 
 ### The two migrations and the two shape changes
 
-`60e51eba0123` is the job-subject migration above. `7c4f1a2b9d63` (its child, and the head) swaps
-two **field-registry** rows found wrong by the acceptance walk, exactly, one field at a time, in the
-`320e975d4c46` pattern; a row that is neither shape is left untouched and existing claims are not
-rewritten. `core.work_email` moves from `str`/`{"type":"string"}` to an object
-`{address (required), status (enum `verified_smtp` | `catch_all_valid` | `not_found`), checked_at}`
-— W1: the contact header's email chip reads `value["address"]` + `value["status"]`, so a bare
-string left the chip empty for everyone. `contact.facet.career_history` moves its flat
-`start`/`end` under the nested `date: {start, end}` the read surface's `current_position_start` and
-the answer key both use — W3, which left every mapped person's tenure empty. Both rows' `value_type`
-and `core.work_email`'s **description** are in the swap because `register_field` compares the whole
-row: a row aligned on schema and type alone still raises `FieldRedefinitionError` at pack load.
-Blast radius accepted deliberately: `core.work_email` is shared with two flag-off old-lane writers
-that insert *strictly*, so `frontend_read/contact_email_lookup.py` and `contact_channel_enrichment.py`
-were moved to `{address}` and taught to read either shape — neither grades a mailbox, so neither
-states a `status`.
+`60e51eba0123` is the job-subject migration above. `7c4f1a2b9d63` (its child) swaps one
+**field-registry** row found wrong by the acceptance walk, exactly, in the `320e975d4c46` pattern:
+`contact.facet.career_history` moves its flat `start`/`end` under the nested `date: {start, end}`
+the read surface's `current_position_start` and the answer key both use — W3, which left every
+mapped person's tenure empty. A row that is neither shape raises (naming the field) rather than
+matching nothing in silence, and existing claims are not rewritten.
+
+The walk's other shape finding, W1 — `core.work_email` written as a bare string while the contact
+header's email chip reads `value["address"]` + `value["status"]` — is carried by **D4-b's**
+migration `7332ac974920`, which landed first on the integration branch: `str`/`{"type":"string"}` →
+`object`/`{address, status, checked_at?}` with the registry's closed vocabulary
+`claimstore.packs.WORK_EMAIL_STATUSES` (`verified_smtp` | `catch_all_valid` | `invalid` |
+`unknown` | `unverified`). R3's export mapper (`email_export_claim`) writes that shape; a found
+export is always one of the two usable verdicts. The two flag-off old-lane writers of the field
+(`frontend_read/contact_email_lookup.py`, `contact_channel_enrichment.py`) are D4-b's, and write
+the verdict shape with `unverified`. The R3 and D4-b migration chains meet at the join
+`57e06d696d49`, the single head.
 
 ### Configuration (R3's additions)
 

@@ -1,9 +1,10 @@
 """The R3 registry migration's swap says what it did, instead of matching zero rows in silence.
 
-`7c4f1a2b9d63` moves two `field_definition` rows onto the shapes the R3 writers write. The swap is
-exact on every column it reads, so a row that drifted matches nothing — and until this test's
-subject existed, the operator learned about that only as a `FieldRedefinitionError` at fleet worker
-start, which is the exact failure the migration exists to prevent.
+`7c4f1a2b9d63` moves the `contact.facet.career_history` `field_definition` row onto the shape the
+R3 writer writes (the `core.work_email` row is D4-b's `7332ac974920`). The swap is exact on every
+column it reads, so a row that drifted matches nothing — and until this test's subject existed,
+the operator learned about that only as a `FieldRedefinitionError` at fleet worker start, which is
+the exact failure the migration exists to prevent.
 
 The bind is a stub rather than a database because the four outcomes are decided by three counts,
 and driving them through Postgres would need four differently-seeded databases to say the same
@@ -23,7 +24,7 @@ _MIGRATION = (
     Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
-    / "7c4f1a2b9d63_arv2_r3_work_email_and_career_history_shapes.py"
+    / "7c4f1a2b9d63_arv2_r3_career_history_shape.py"
 )
 
 
@@ -65,11 +66,11 @@ def _swap_with(bind: _Bind, monkeypatch: pytest.MonkeyPatch) -> None:
     module = _migration()
     monkeypatch.setattr(module.op, "get_bind", lambda: bind)
     module._swap(
-        field_key="core.work_email",
-        old_schema={"type": "string"},
-        new_schema={"type": "object"},
-        old_type="str",
-        new_type="object",
+        field_key="contact.facet.career_history",
+        old_schema={"type": "array", "items": {"type": "object"}},
+        new_schema={"type": "array", "items": {"type": "object", "properties": {}}},
+        old_type="list[object]",
+        new_type="list[object]",
         old_description="before",
         new_description="after",
     )
@@ -103,5 +104,5 @@ def test_a_row_that_is_neither_shape_raises_and_names_the_field(
     with pytest.raises(RuntimeError) as raised:
         _swap_with(_Bind(updated=0, already=0, present=1), monkeypatch)
 
-    assert "core.work_email" in str(raised.value)
+    assert "contact.facet.career_history" in str(raised.value)
     assert "FieldRedefinitionError" in str(raised.value)
