@@ -104,6 +104,7 @@ __all__ = [
     "ARV2_ACCOUNT_DEDUP_PREFIX",
     "ARV2_ACCOUNT_TASK_PRIORITY",
     "Arv2AccountResearchWorkHandler",
+    "ContactMissing",
     "arv2_account_work_id",
     "build_arv2_account_research_handler",
     "person_scope_for",
@@ -318,8 +319,13 @@ class _InvalidTaskPayload(RuntimeError):
     """The task payload does not describe the job it names."""
 
 
-class _ContactMissing(RuntimeError):
-    """A person job's subject has no contact row."""
+class ContactMissing(RuntimeError):
+    """A person job's subject has no contact row.
+
+    Public because :func:`person_scope_for` is public: the repair script rebuilds a job's scope
+    through it and turns every other prerequisite into a one-line refusal, so this one may not be
+    the only failure that arrives as a traceback.
+    """
 
 
 async def person_scope_for(
@@ -354,7 +360,7 @@ async def person_scope_for(
         else None
     )
     if contact is None:
-        raise _ContactMissing(
+        raise ContactMissing(
             f"person job {job.job_id} names contact {job.subject_entity_id}, "
             "which has no row in this workspace"
         )
@@ -1051,7 +1057,7 @@ def _failure_code(error: BaseException) -> str:
         return PROFILE_PIN_MISMATCH
     if isinstance(error, _InvalidTaskPayload):
         return INVALID_TASK_PAYLOAD
-    if isinstance(error, _ContactMissing):
+    if isinstance(error, ContactMissing):
         return CONTACT_MISSING
     return type(error).__name__
 

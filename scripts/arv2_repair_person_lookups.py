@@ -28,8 +28,11 @@ overrides that. ``--persona`` additionally seats each job's person on their acco
 when they hold no seat yet — the write a person launched on demand never got — which is how the
 people who have already been researched become visible on their account's contact list.
 
-``--dry-run`` reads the rows and prints what each job would be asked for, without a provider call
-and without a write. The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url``
+``--dry-run`` reads the rows and prints what each job would be asked for — including whether each
+person already holds a seat — without a provider call and without a write. ``CLUE_AI_ARK_API_KEY``
+is demanded only where a lookup will actually run, so a ``--persona`` pass over people whose lookup
+already succeeded (every job ``skipped_already_looked_up``, the seat the only write) needs no
+provider key at all. The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url``
 overrides it, and the blob store is this deployment's configured storage unless ``--storage-root``
 overrides it.
 """
@@ -40,7 +43,6 @@ import argparse
 import asyncio
 import json
 import sys
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -51,20 +53,22 @@ from pydantic import SecretStr
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2 import account_research_store as store
 from clue_api.arv2.account_research_claims import (
+    PERSONA_FIELD,
     ai_ark_person_claims,
     email_export_claim,
 )
-from clue_api.arv2.account_research_driver import person_scope_for
+from clue_api.arv2.account_research_driver import ContactMissing, person_scope_for
 from clue_api.arv2.account_research_launch import seat_person_on_committee
 from clue_api.arv2.account_research_tools import (
     ProviderClients,
     ToolRuntime,
     WriteFailure,
     fold_identity,
+    marked,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.calls import ProviderCaller
-from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
+from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.gemini_media_client import MediaBudget
 from clue_api.arv2.provider_ledger import ArtifactSink
 from clue_api.arv2_wiring import register_arv2_wiring
@@ -209,7 +213,7 @@ async def _repair_one(
     run: store.RunRow,
     settings: Settings,
     artifacts: ArtifactSink,
-    api_key: SecretStr,
+    api_key: SecretStr | None,
     dry_run: bool,
     force: bool,
     persona: Persona | None,
@@ -231,7 +235,12 @@ async def _repair_one(
         # The job's own pins (workspace, project, run, account, contact) come off the rows. The
         # prompt half of the composition is left at its defaults on purpose: this repair runs no
         # model, so an ICP body and a persona map would be context nobody reads.
-        scope = await person_scope_for(conn, job=job, run=run, today=datetime.now(UTC).date())
+        try:
+            scope = await person_scope_for(conn, job=job, run=run, today=datetime.now(UTC).date())
+        except ContactMissing as error:
+            # Every other prerequisite this script cannot satisfy is one line and exit 2; a job
+            # naming a contact row that is not there is the same kind of operator fact.
+            raise Refused(str(error)) from error
         catalog = await store.read_person_catalog(conn)
         contact_id = scope.contact_id
         assert contact_id is not None  # a person scope carries its contact (JobScope.__post_init__)
@@ -247,8 +256,12 @@ async def _repair_one(
     }
 
     if persona is not None:
+        # The same read ``seat_person_on_committee`` makes, on the claims already in hand: the dry
+        # run exists so the operator does not have to guess, so it answers rather than restating
+        # the condition.
+        seated = any(str(claim.field_key) == PERSONA_FIELD for claim in live)
         if dry_run:
-            report["seat"] = f"would seat as {persona.value} if they hold no seat"
+            report["seat"] = "already seated" if seated else f"would seat as {persona.value}"
         else:
             async with transaction() as conn:
                 wrote = await seat_person_on_committee(
@@ -278,6 +291,16 @@ async def _repair_one(
     if dry_run:
         report["outcome"] = "would look the person up and write the record's claims"
         return report
+    if api_key is None:
+        # Checked here rather than up front because a ``--persona`` run over people whose lookup
+        # already worked buys nothing: every job reports ``skipped_already_looked_up`` and the only
+        # write is the seat. Demanding the provider key for that run refused a repair that needed
+        # no provider. It is still refused before the first paid call, and still all-or-nothing —
+        # this is the first job that would spend.
+        raise Refused(
+            f"CLUE_AI_ARK_API_KEY is unset and job {job.job_id} needs the lookup; set the key, or "
+            "run with --dry-run, or name only jobs whose lookup already succeeded"
+        )
 
     clients: ProviderClients = _AiArkOnly(settings=settings, api_key=api_key)
     runtime = ToolRuntime(
@@ -321,18 +344,20 @@ async def _repair_one(
         return report
     report["employer"] = "verified" if employer else "unverified"
 
-    markers: dict[str, Any] = {"repaired": "lookup_person"}
+    stamps: dict[str, Any] = {"repaired": "lookup_person"}
     if not employer:
-        markers["employer_unverified"] = True
+        stamps["employer_unverified"] = True
 
-    written = await runtime.write_each(_marked(ai_ark_person_claims(record, scope), markers))
+    written = await runtime.write_each(
+        [marked(draft, stamps) for draft in ai_ark_person_claims(record, scope)]
+    )
     exported = await runtime.call_provider(
         "ai_ark",
         lambda caller: runtime.clients.ai_ark(caller).export_email(scope.person_linkedin_url),
     )
     email_draft = email_export_claim(exported, scope)
     if email_draft is not None:
-        written.extend(await runtime.write_each(_marked([email_draft], markers)))
+        written.extend(await runtime.write_each([marked(email_draft, stamps)]))
 
     report["claims_written"] = [
         draft.field_key for draft, result in written if not isinstance(result, WriteFailure)
@@ -348,19 +373,14 @@ async def _repair_one(
     return report
 
 
-def _marked(drafts: list[ClaimDraft], markers: dict[str, Any]) -> list[ClaimDraft]:
-    """Every draft with the repair's markers folded in, so a repaired claim says it was repaired."""
-    return [replace(draft, markers={**draft.markers, **markers}) for draft in drafts]
-
-
 async def _run(args: argparse.Namespace) -> list[dict[str, Any]]:
     settings = Settings()
     if not settings.arv2_account_research_enabled:
         raise Refused("CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is false in this environment")
     secrets = Secrets()
     key = secrets.ai_ark_api_key
-    if not args.dry_run and (key is None or not key.get_secret_value().strip()):
-        raise Refused("CLUE_AI_ARK_API_KEY is unset; the repair cannot call the provider")
+    if key is not None and not key.get_secret_value().strip():
+        key = None
     register_arv2_wiring()
     storage: StorageBackend = (
         FsStorage(Path(args.storage_root))
@@ -380,7 +400,7 @@ async def _run(args: argparse.Namespace) -> list[dict[str, Any]]:
                     run=run,
                     settings=settings,
                     artifacts=artifacts,
-                    api_key=key or SecretStr(""),
+                    api_key=key,
                     dry_run=args.dry_run,
                     force=args.force,
                     persona=Persona(args.persona) if args.persona else None,

@@ -185,8 +185,16 @@ def test_a_labelled_phone_number_is_still_found() -> None:
         "Reach me on +1 415 555 0134 any time.",
         "My direct line is 415-555-0134.",
         "Mobile 07700 900123",
+        "Reach me at 415 555 0134.",
+        "Direct 4155550134",
     ],
-    ids=["international-prefix", "dash-separated-tail", "uk-five-plus-six"],
+    ids=[
+        "international-prefix",
+        "dash-separated-tail",
+        "uk-five-plus-six",
+        "grouped-space-national",
+        "contiguous-ten-digits",
+    ],
 )
 def test_a_phone_number_carrying_its_own_shape_is_still_found(value: str) -> None:
     """Each of the shapes that says "phone" without a label: the signal is on the number itself."""
@@ -222,6 +230,33 @@ def test_years_dates_and_counts_carry_no_phone_signal(field_key: str, value: obj
     )
 
     assert len(kept) == 1 and log == []
+
+
+def test_a_phone_word_beside_the_number_is_still_enough_without_any_grouping() -> None:
+    """The word rule stands on its own: this number carries none of the shapes above."""
+    kept, log = apply_person_floor(
+        [_draft(value="My cell is 020 7946 0958.")], purge_unevidenced=False
+    )
+
+    assert kept == [] and _rules(log) == [("dropped", "personal_contact_detail")]
+
+
+def test_a_phone_word_in_one_leaf_does_not_make_another_leafs_years_a_phone_number() -> None:
+    """The word must be beside the number, and the leaves are read apart.
+
+    A talk row titled "Mobile threat landscape" sitting beside a row of appearance years is the
+    live shape this rule kept dropping: the pass joined every leaf into one line, that line had no
+    terminal punctuation so it was one "sentence", and the title's word made the years a phone
+    number. Each leaf is now scanned on its own, and the word must be within thirty characters.
+    """
+    draft = _draft(
+        field_key="contact.facet.conference_talk",
+        value=[{"talk": "Mobile threat landscape", "appearances": "2019 2021 2024"}],
+    )
+
+    kept, log = apply_person_floor([draft], purge_unevidenced=False)
+
+    assert kept == [draft] and log == []
 
 
 def test_an_email_address_outside_the_work_email_field_drops_the_draft() -> None:

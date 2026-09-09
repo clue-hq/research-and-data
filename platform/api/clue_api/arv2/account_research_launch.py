@@ -822,10 +822,10 @@ async def seat_person_on_committee(
     The seat is written through the same helper the committee step uses, from a synthetic
     candidate: the human named this person and this seat, so ``rationale`` says exactly that and
     ``confirmed_by`` is absent — there is no page to cite, and citing the launch as if it were
-    evidence would be worse than admitting there is none. The lenient writer marks the claim
-    ``source_missing``, which is the honest record of a fact a human asserted.
-    :attr:`~clue_core.ExtractionMethod.HUMAN` is why that is not a refusal: a human statement needs
-    no URL, and it is tier 1 rather than the model's tier 4.
+    evidence would be worse than admitting there is none. Writing no URL is not a refusal and is
+    not marked ``source_missing`` either: :attr:`~clue_core.ExtractionMethod.HUMAN` is not one of
+    the writer's URL-requiring methods (``claim_writer._URL_REQUIRED``), because a human statement
+    is not citing a page — and it is tier 1 rather than the model's tier 4.
 
     A person who **already** holds a live persona claim is left alone. Re-seating them would let a
     launch overwrite the committee's own assessment ("champion", read off a page that says so) with

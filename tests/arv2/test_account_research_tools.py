@@ -2412,18 +2412,27 @@ def test_lookup_person_refuses_a_url_the_committee_step_did_not_confirm() -> Non
     assert writer.drafts == []
 
 
-def test_lookup_person_takes_the_argument_when_the_confirmed_member_carried_no_url() -> None:
-    """A member confirmed on a team page that linked nothing: the argument is the only URL there
-    is, so the first lock has nothing to compare and the provider-side locks still stand."""
+def test_lookup_person_refuses_a_job_that_carries_no_confirmed_linkedin_url() -> None:
+    """No confirmed URL is no anchor, so the lookup is refused rather than run unlocked.
+
+    A member confirmed on a team page that linked nothing has nothing for lock 1 to compare, and
+    the two provider-side locks do not stand on their own: lock 2 matches whatever candidate
+    carries the URL the *model* typed, and lock 3 passes for every colleague at this account. The
+    refusal is before the hop, so it costs nothing, and it names the skip the dossier asks for.
+    """
     runtime, clients, writer, _ = _runtime(replace(PERSON_SCOPE, person_linkedin_url=""))
     clients.ai_ark_client.people = (_lock_record(),)
 
-    found = _call(
+    refused = _call(
         runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
     )
 
-    assert "code" not in found
-    assert found["person"]["current_company_domain"] == "probook.ai"
+    assert refused["code"] == "subject_lock_failed"
+    assert "no confirmed LinkedIn URL for Nick Fisher" in refused["detail"]
+    assert "not_found" in refused["detail"]
+    assert clients.ai_ark_client.people_calls == [], "no provider record is bought unlocked"
+    assert clients.ai_ark_client.export_calls == []
+    assert writer.drafts == []
 
 
 def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() -> None:

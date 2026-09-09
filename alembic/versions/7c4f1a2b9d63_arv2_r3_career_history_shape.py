@@ -21,6 +21,13 @@ by D4-b's own migration `7332ac974920`, which landed first on the integration br
 registry's closed status vocabulary (`claimstore.packs.WORK_EMAIL_STATUSES`); this revision does
 not touch that row. The ARV2 export mapper writes the shape that migration declares.
 
+**A swap that matches nothing is loud.** Each swap checks what it did: an updated row is the
+happy path, a row already in the after shape is a re-run or a fresh pack load, no row at all is a
+database that has never loaded the packs — and a row that is *neither* shape raises here, naming
+the field, because that database's pack load is going to fail at worker start with
+`FieldRedefinitionError` and the migration is the earlier, better place to hear it. Nothing is
+rewritten in that case, which is the `320e975d4c46` posture; only the silence is removed.
+
 **Existing claims are not touched** (the `320e975d4c46` precedent). A value written under the old
 declaration keeps the shape it was written in and the annotations it was graded with; the next run
 validates against the new one. Readers that must serve both — the person job's identity-lock
@@ -85,13 +92,26 @@ _CAREER_HISTORY_AFTER: dict[str, Any] = {
 }
 
 #: The swap is exact on every column it reads, so a row a deployment has deliberately overridden
-#: (a schema that is neither shape) is left untouched rather than silently rewritten.
+#: (a schema that is neither shape) is never silently rewritten.
 _UPDATE = sa.text(
     "UPDATE field_definition SET value_schema = CAST(:new_schema AS jsonb), "
     "value_type = :new_type, description = :new_description "
     "WHERE field_key = :field_key AND value_schema = CAST(:old_schema AS jsonb) "
     "AND value_type = :old_type AND description = :old_description"
 )
+
+#: Is the row already the shape this swap moves *to*? A second run of the same migration and a
+#: database seeded fresh from the packs both land here, and both are fine.
+_ALREADY = sa.text(
+    "SELECT count(*) FROM field_definition WHERE field_key = :field_key "
+    "AND value_schema = CAST(:new_schema AS jsonb) AND value_type = :new_type "
+    "AND description = :new_description"
+)
+
+#: Does this deployment carry a row for the field at all? A database that has never loaded the
+#: packs carries none — the rows are written by ``register_field`` at worker start, not here — and
+#: there is nothing to align.
+_PRESENT = sa.text("SELECT count(*) FROM field_definition WHERE field_key = :field_key")
 
 
 def _swap(
@@ -104,17 +124,38 @@ def _swap(
     old_description: str,
     new_description: str,
 ) -> None:
-    op.get_bind().execute(
-        _UPDATE,
-        {
-            "field_key": field_key,
-            "old_schema": json.dumps(old_schema),
-            "new_schema": json.dumps(new_schema),
-            "old_type": old_type,
-            "new_type": new_type,
-            "old_description": old_description,
-            "new_description": new_description,
-        },
+    """Move one field_definition row from the before shape to the after shape, or say why not.
+
+    A swap that matches nothing is only ever *silent* about one thing worth hearing: a row that is
+    neither shape. ``register_field`` compares the whole row, so that database's pack load fails at
+    worker start with ``FieldRedefinitionError`` — the exact failure this migration exists to
+    prevent — and the operator learns about it from a worker that will not come up rather than from
+    the migration that could have told them. So it is raised here, naming the field.
+
+    The ``320e975d4c46`` precedent (an override "is left untouched rather than silently rewritten")
+    is kept: nothing is rewritten either way. The raise adds no write, only the signal.
+    """
+    bind = op.get_bind()
+    parameters = {
+        "field_key": field_key,
+        "old_schema": json.dumps(old_schema),
+        "new_schema": json.dumps(new_schema),
+        "old_type": old_type,
+        "new_type": new_type,
+        "old_description": old_description,
+        "new_description": new_description,
+    }
+    if bind.execute(_UPDATE, parameters).rowcount:
+        return
+    if bind.execute(_ALREADY, parameters).scalar_one():
+        return
+    if not bind.execute(_PRESENT, {"field_key": field_key}).scalar_one():
+        return
+    raise RuntimeError(
+        f"field_definition row for {field_key!r} is neither the shape this migration moves from "
+        "nor the shape it moves to, so it was left alone. Align it (or drop it and let the pack "
+        "load rewrite it) before starting a worker: register_field compares the whole row and "
+        "would raise FieldRedefinitionError at worker start."
     )
 
 

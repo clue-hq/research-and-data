@@ -314,22 +314,43 @@ _LETTER_TOKEN = re.compile(r"\S*[A-Za-z]\S*")
 #: contain: whitespace *is* in that class, so substituting a space let the digits of unrelated
 #: numbers run together into one match — "grew the team from 12 to 250 people between 2019 and
 #: 2024" scanned as a fifteen-digit run and the whole claim was dropped as a phone number. A pipe
-#: fences each number off from the next, so only digits actually written together are counted.
+#: fences each number off from the next, so only digits actually written together are counted. One
+#: fence character is written **per character of the removed word**, so the fenced text is the same
+#: length as the text it came from and a match's offsets still point at the original words — which
+#: is what lets :data:`_PHONE_WORDS` be read in the candidate's own neighbourhood.
 _TOKEN_FENCE = "|"
 
 #: What makes a run of digits a *phone number* rather than a set of years, dates or counts. One of
 #: these must hold, on the candidate itself: an international prefix, a parenthesised area code, a
-#: dash- or dot-separated subscriber tail, or the UK five-plus-six grouping ("07700 900123").
+#: dash- or dot-separated subscriber tail, one of the grouped national forms (the UK five-plus-six
+#: "07700 900123", the North American three-three-four "415 555 0134", and its two mirrors), or a
+#: contiguous ten-or-eleven-digit token ("4155550134") — URLs are stripped and every token carrying
+#: a letter is fenced out before the scan, so a bare run that long is not an id or a date.
+#:
+#: The grouped forms are boundary-fenced (``(?<!\d)``/``(?!\d)``) because a phone number's grouping
+#: must be the *whole* run, not a slice of a longer one: without the fences "2019 2021 2024" (a talk
+#: list's three appearances) reads as the two-four-four grouping and a real claim is dropped.
 _PHONE_SIGNALS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\+\d"),
     re.compile(r"\(\d{3}\)"),
     re.compile(r"\d{3}[-.]\d{4}"),
-    re.compile(r"\d{5}\s\d{6}"),
+    re.compile(r"(?<!\d)\d{5}\s\d{6}(?!\d)"),
+    re.compile(r"(?<!\d)\d{3}\s\d{3}\s\d{4}(?!\d)"),
+    re.compile(r"(?<!\d)\d{4}\s\d{3}\s\d{3}(?!\d)"),
+    re.compile(r"(?<!\d)\d{2}\s\d{4}\s\d{4}(?!\d)"),
+    re.compile(r"(?<!\d)\d{10,11}(?!\d)"),
 )
 
-#: The words that make a number a phone number whatever it is punctuated like. Read on the
-#: **sentence** the candidate sits in, before the letters are fenced out of it.
+#: The words that make a number a phone number whatever it is punctuated like. Read on the text
+#: around the candidate, before the letters are fenced out of it.
 _PHONE_WORDS = re.compile(r"\b(?:tel|phone|mobile|cell|whatsapp)\b|\bcall me\b", re.IGNORECASE)
+
+#: How near a phone word has to be to be about *this* number. A leaf is not a sentence — a talk
+#: list, a publication list and a career history rarely carry terminal punctuation — so reading the
+#: word anywhere in "the sentence" meant reading it anywhere in the whole value: one row titled
+#: "Mobile threat landscape" made every year in the list a phone number. Thirty characters is close
+#: enough to be a label on the number and far enough to survive "my mobile is 020 7946 0958".
+_PHONE_WORD_WINDOW = 30
 
 _EMAIL = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
 
@@ -461,31 +482,41 @@ def _evidenced_by_shape(draft: ClaimDraft) -> bool:
     return draft.extraction_method is ExtractionMethod.API or draft.field_key == HOOKS_FIELD
 
 
-def _phone_in(text: str) -> str | None:
-    """A phone number, or ``None``. A digit count alone is never enough.
+def _phone_in(texts: Iterable[str]) -> str | None:
+    """A phone number in any one of these texts, or ``None``. A digit count is never enough.
 
-    The scan runs one sentence at a time, and a candidate is a phone number only when something
-    *says so*: a leading ``+``, a parenthesised area code, a dash- or dot-separated four-digit
-    tail, the UK five-plus-six grouping, or one of :data:`_PHONE_WORDS` in the sentence it sits in.
+    The texts are the value's string leaves and the evidence span, **each scanned on its own** and
+    never joined: a joined value is one long line with no terminal punctuation, so a "sentence" was
+    frequently the whole claim and one leaf's word decided every other leaf's numbers. A phone
+    number and the word that labels it are written together, in the same leaf.
 
-    Two fences failed before this rule existed. Every removed word leaves a :data:`_TOKEN_FENCE`
-    rather than a space, so two numbers standing near each other ("from 12 to 250 people between
-    2019 and 2024") stay two numbers — but the fence only splits at *letter* tokens, and a talk
-    list or a career history is years and dates separated by nothing but whitespace and
+    Within a leaf the scan runs one sentence at a time, and a candidate is a phone number only when
+    something *says so*: one of :data:`_PHONE_SIGNALS` on the candidate itself, or one of
+    :data:`_PHONE_WORDS` within :data:`_PHONE_WORD_WINDOW` characters of it.
+
+    Two fences failed before this rule existed. Every removed word leaves :data:`_TOKEN_FENCE`
+    characters rather than spaces, so two numbers standing near each other ("from 12 to 250 people
+    between 2019 and 2024") stay two numbers — but the fence only splits at *letter* tokens, and a
+    talk list or a career history is years and dates separated by nothing but whitespace and
     punctuation. "2019-06 2021 2024" is fourteen digits in one run, and four conference-talk rows
     and a career history were dropped whole as phone numbers. A run of plain numbers carrying none
     of the signals above is a set of years, dates or counts, and it is never a phone number.
     """
-    for sentence in _SENTENCE.split(text):
-        fenced = _LETTER_TOKEN.sub(_TOKEN_FENCE, sentence.replace(":", " ").replace(",", " "))
-        for match in _PHONE.finditer(fenced):
-            candidate = match.group().strip()
-            if sum(character.isdigit() for character in candidate) not in _PHONE_DIGITS:
-                continue
-            if any(signal.search(candidate) for signal in _PHONE_SIGNALS):
-                return candidate
-            if _PHONE_WORDS.search(sentence):
-                return candidate
+    for text in texts:
+        # ``:`` and ``,`` become spaces one-for-one, so the offsets below still point at the
+        # original characters — "tel:+1…" must split into a word and a number, not read as one.
+        normalized = text.replace(":", " ").replace(",", " ")
+        for sentence in _SENTENCE.split(normalized):
+            fenced = _LETTER_TOKEN.sub(lambda hit: _TOKEN_FENCE * len(hit.group()), sentence)
+            for match in _PHONE.finditer(fenced):
+                candidate = match.group().strip()
+                if sum(character.isdigit() for character in candidate) not in _PHONE_DIGITS:
+                    continue
+                if any(signal.search(candidate) for signal in _PHONE_SIGNALS):
+                    return candidate
+                start = max(0, match.start() - _PHONE_WORD_WINDOW)
+                if _PHONE_WORDS.search(sentence[start : match.end() + _PHONE_WORD_WINDOW]):
+                    return candidate
     return None
 
 
@@ -552,13 +583,17 @@ def _apply_rules_one_to_six(
     # written, whatever field it arrived on; the professional email export is the one exception.
     # URLs come out first: a numeric id in a media link is not a phone number.
     scrubbed = _URL.sub(" ", blob)
+    # The phone scan reads the leaves apart; the other two read the value as one text, because an
+    # address or an email is a single span and cannot be split across leaves the way a number and
+    # its label can.
+    scrubbed_leaves = [_URL.sub(" ", leaf) for leaf in original]
     for name, pattern in PERSONAL_CONTACT_PATTERNS.items():
         if name == "personal_email":
             if draft.field_key == WORK_EMAIL_FIELD:
                 continue
             found = pattern.search(blob) is not None
         elif name == "phone":
-            found = _phone_in(scrubbed) is not None
+            found = _phone_in(scrubbed_leaves) is not None
         else:
             found = pattern.search(scrubbed) is not None
         if found:

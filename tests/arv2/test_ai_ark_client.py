@@ -414,6 +414,31 @@ def test_the_person_reader_takes_the_domain_when_one_company_name_contains_the_o
     assert person.current_company_domain == "cogent.com"
 
 
+@pytest.mark.parametrize(
+    ("position_name", "company_name"),
+    [("Box", "Dropbox"), ("Meta", "Metabase")],
+    ids=["box-in-dropbox", "meta-in-metabase"],
+)
+def test_a_name_merely_spelled_inside_another_is_not_the_same_employer(
+    position_name: str, company_name: str
+) -> None:
+    """Containment is over whole words. Character containment would hand a mover the old
+    employer's domain, and the caller compares that domain to the account — so a stale committee
+    row would clear the employer lock and be researched under the wrong account."""
+    person = person_from_record(
+        {
+            "profile": {"full_name": "Alexander Semien"},
+            "position_groups": [{"company": {"name": position_name}}],
+            "company": {
+                "summary": {"name": company_name},
+                "link": {"domain": f"{company_name.lower()}.com"},
+            },
+        }
+    )
+
+    assert person.current_company_domain is None
+
+
 def test_a_different_company_page_and_an_unrelated_name_leave_the_domain_unknown() -> None:
     """Both rungs fail: a different company page, and neither name contains the other."""
     person = person_from_record(

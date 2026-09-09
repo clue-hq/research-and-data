@@ -1039,13 +1039,20 @@ cites a posting or the person's own words).
 `lookup_person` is the provider hop, and it holds three locks in order, none of them a scored
 match. **(1) The argument against the job:** the URL the record is matched on must be the one the
 committee step confirmed (`scope.person_linkedin_url`), not merely the one the model typed — the
-check runs before the hop, so a mismatched call also costs nothing. **(2) The LinkedIn URL:** the
+check runs before the hop, so a mismatched call also costs nothing. A job carrying **no** confirmed
+URL is refused `subject_lock_failed` right there, before the hop: the two provider-side locks do
+not stand without an anchor (lock 2 would match whatever candidate carries the URL the model typed,
+and lock 3 passes for every colleague at this account), so all three run only for URL-anchored
+jobs. The person dossier's rung 2 already tells the agent to skip the call and say so in
+`not_found` in that case. **(2) The LinkedIn URL:** the
 name-scoped search returns up to three candidates and the one this job is about is the one whose
 `linkedin_url` folds equal to that URL; no match is `subject_lock_failed`, and the refusal names
 the companies the other candidates work for so they can be logged as lookalikes. **(3) The
 employer, as corroboration only:** `AiArkClient._current_company_domain` resolves the record's
 current employer by a ladder — fold-equal LinkedIn **company URLs** first, folded-name
-**containment** second, otherwise unknown. A *different* resolvable company is `subject_lock_failed`
+**containment by whole word** second (`"cogent"` inside `"cogent security"` is the same employer
+written short; `"box"` inside `"dropbox"` is not, and character containment would hand a mover the
+old employer's domain and clear this very lock with it), otherwise unknown. A *different* resolvable company is `subject_lock_failed`
 naming both domains; an employer the record simply cannot state lets the lookup **proceed**, with
 every claim it writes carrying the marker `employer_unverified` and the result carrying
 `employer_verified: false`. That third rung is the live L1 fix: the old code demanded the two

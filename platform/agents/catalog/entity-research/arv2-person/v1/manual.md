@@ -26,7 +26,7 @@ The base code before the colon is the row key and decides the reaction.
 | Refusal | Means | Reaction |
 |---|---|---|
 | `provider_halted` | Money truth: 402 or credit exhaustion latched this provider for the run. The wire form is `provider_halted:<provider>` and names it. | Continue with the other providers and note the gap; never retry that provider in this job. |
-| `subject_lock_failed` | The confirmed employer or employment history does not match the account — the same-name trap, caught at launch. | This candidate is not the person; record the lookalike; no person job. |
+| `subject_lock_failed` | Either this job carries no confirmed LinkedIn URL for the person — nothing can be locked to them, so no provider record may be written onto them — or the confirmed employer or employment history does not match the account (the same-name trap, caught at launch). | This candidate is not the person; record the lookalike; no person job. |
 | `page_unavailable` | The page was fetched and came back with no text. | Record the URL as unreadable; try a different known URL, never a search for the same page. |
 | `email_export_empty` | The provider export returned no email for this member. It arrives as the `email_export_empty` result field of `lookup_person`, never as a refusal. | Record no email; the member is still researched. |
 | `feed_not_found` | No podcast RSS or YouTube URL resolved for the named person. | Every URL given failed to load (the message names each with its error). If you have not yet passed alternates — the podcast's other feed host, the YouTube upload of the same episode — call once more with them in alternate_urls; otherwise media stays empty for this person; move on. |

@@ -146,6 +146,7 @@ __all__ = [
     "build_account_tools",
     "build_person_tools",
     "fold_identity",
+    "marked",
 ]
 
 #: The twelve tools, in the order the manual lists them — free instruments first, the paid deep
@@ -1134,8 +1135,12 @@ def fold_identity(value: str) -> str:
     return folded.removeprefix("www.")
 
 
-def _marked(draft: ClaimDraft, markers: Mapping[str, Any]) -> ClaimDraft:
-    """One draft with extra markers folded in. No markers is the draft itself, untouched."""
+def marked(draft: ClaimDraft, markers: Mapping[str, Any]) -> ClaimDraft:
+    """One draft with extra markers folded in. No markers is the draft itself, untouched.
+
+    Public because the repair script writes the same claims outside this module and must stamp them
+    the way the tool does — one helper rather than a second spelling that can drift.
+    """
     return replace(draft, markers={**draft.markers, **markers}) if markers else draft
 
 
@@ -1148,9 +1153,14 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
        *committee step* confirmed (``scope.person_linkedin_url``), not merely the one the model
        typed. Without this the model's argument is the whole identity, and a same-name colleague
        at the same company would pass the other two locks and be written onto this contact. The
-       check runs before the provider hop, so a mismatched call also costs nothing. The argument
-       still exists — the skills name it, and it is the only URL there is when the confirmed
-       member carried none.
+       check runs before the provider hop, so a mismatched call also costs nothing.
+
+       A job carrying **no** confirmed URL has no anchor at all, so all three locks are refused
+       together: lock 2 would match whatever candidate carries the URL the model typed, and lock 3
+       passes for every colleague at this account. The three locks below therefore run **only for
+       URL-anchored jobs**, and a job without one gets ``subject_lock_failed`` before the hop
+       rather than a lookup that reads locked and is not. The person dossier's rung 2 already tells
+       the agent to skip the call and say so in ``not_found`` when the lock carries no URL.
     2. **The LinkedIn URL.** The name-scoped search returns up to three candidates; the one this
        job is about is the one whose ``linkedin_url`` folds equal to that URL. No candidate
        matching is ``subject_lock_failed``, and the refusal names the companies the candidates
@@ -1179,7 +1189,13 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     scope = runtime.scope
     wanted = fold_identity(args.linkedin_url)
     locked = fold_identity(scope.person_linkedin_url or "")
-    if locked and wanted != locked:
+    if not locked:
+        raise RefusalError(
+            "subject_lock_failed",
+            f"this job carries no confirmed LinkedIn URL for {scope.person_name}, so no provider "
+            "record can be locked to them; skip the lookup and say so in not_found",
+        )
+    if wanted != locked:
         raise RefusalError(
             "subject_lock_failed",
             f"this job is locked to {scope.person_linkedin_url}, and the call asked for "
@@ -1229,7 +1245,7 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     # cost its own claim rather than the whole lookup.
     floor_from = len(runtime.compliance_log)
     results = await runtime.write_each(
-        [_marked(draft, unverified) for draft in ai_ark_person_claims(record, scope)]
+        [marked(draft, unverified) for draft in ai_ark_person_claims(record, scope)]
     )
 
     def export(caller: ProviderCaller) -> Any:
@@ -1238,7 +1254,7 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     exported = await runtime.call_provider("ai_ark", export)
     email_draft = email_export_claim(exported, scope)
     if email_draft is not None:
-        results.extend(await runtime.write_each([_marked(email_draft, unverified)]))
+        results.extend(await runtime.write_each([marked(email_draft, unverified)]))
     return {
         "person": {
             "full_name": record.full_name,
