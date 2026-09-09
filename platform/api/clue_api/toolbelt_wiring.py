@@ -2873,11 +2873,11 @@ def build_toolbelt(
     )
     # ARV2 onboarding O6: the ICP gate over a knowledge document, registered here rather than in
     # ``agent_gate_wiring`` because — unlike its ``@1`` sibling — its subject is an artifact, so it
-    # needs the storage the knowledge documents live in. NOT the default version: the active
-    # head-of-abm profile still pins ``@1``, and a default that outran its profile would make the
-    # registry disagree with the pin. O6's profile bump (v44) flips it.
+    # needs the storage the knowledge documents live in. It is the DEFAULT version now: T6 promoted
+    # ``head-of-abm@v44``, which pins ``@2``, so the unversioned address must resolve to the gate
+    # the active profile actually holds. ``@1`` stays registered and frozen for replay.
     for tool in build_icp_artifact_gate_tools(conn_factory=conn_factory, storage=storage):
-        registry.register(tool, make_default=False)
+        registry.register(tool, make_default=True)
     # ARV2 onboarding O6: the set-valued sibling of the S5-F product gate. It reads the brand's own
     # product rows and knowledge documents (never a Client-KB version), so it needs the storage the
     # knowledge documents live in; without one it still presents every candidate, just without the

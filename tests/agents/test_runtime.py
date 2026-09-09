@@ -722,11 +722,14 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     content="",
                     tool_calls=[
                         {
-                            "name": "synthesize_icps",
-                            # PC-C8 §6a: ``client_entity_id`` is constitution authority now, so
-                            # the model sends nothing at all here and the seam fills it in.
+                            "name": "open_product_set_selection_gate",
+                            # PC-C8 §6a: every identifier this gate needs is constitution or
+                            # engine authority, so the model sends nothing at all and the seam
+                            # fills it in. ARV2 onboarding O6 replaced `synthesize_icps@3` here
+                            # when `head-of-abm@v44` dropped it; the property under test is the
+                            # wrapper, and this tool has the same all-trusted input shape.
                             "args": {},
-                            "id": "synthesize-stage0-c65",
+                            "id": "open-product-set-gate-c65",
                             "type": "tool_call",
                         }
                     ],
@@ -740,7 +743,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     )
     context = AssembledAgentContext(
         manifest=context_manifest(),
-        messages=(HumanMessage(content="Synthesize the ICP."),),
+        messages=(HumanMessage(content="Let us pick the products for this project."),),
     )
 
     outcome = run_async(
@@ -756,11 +759,21 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "synthesize_icps@3"  # type: ignore[union-attr]
-    assert proposed.arguments == {}  # type: ignore[union-attr]
+    assert proposed.tool.address == "open_product_set_selection_gate@1"  # type: ignore[union-attr]
+    # The one optional model-facing field the gate has, defaulted by the wrapper because the model
+    # sent nothing: everything else it needs is trusted authority the seam fills in.
+    assert proposed.arguments == {"icp_key": None}  # type: ignore[union-attr]
 
 
-def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp() -> None:
+def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_icp() -> None:
+    """ARV2 onboarding O6 retargeted this regression without changing what it protects.
+
+    The v20 subject was readiness terminology — label the policy version, never call an
+    unsynthesized ICP a spec. `head-of-abm@v44` has no readiness surface at all, so the same
+    discipline now lives on the gates: the agent may open one and describe it, but a gate receipt
+    is the only authority for a confirmation, and its own prose must not claim one.
+    """
+
     request, resolved = _request()
     stage0_skill = next(  # type: ignore[union-attr]
         skill.ref.address
@@ -768,14 +781,14 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
         if skill.ref.name == "stage0-interview"
     )
     body = resolved.open_skill(stage0_skill)  # type: ignore[union-attr]
-    assert "readiness-policy version" in body
-    assert "say that no ICP" in body
+    assert "A gate receipt is the only authority" in body
+    assert 'Ordinary prose such as "looks good" confirms nothing.' in body
 
     execution = _ReadinessResponseExecution()
     artifacts = _DelegationArtifacts()
     response = (
-        "The backend readiness check is ready under readiness-policy version 1. "
-        "No ICP exists yet; synthesis must persist a draft icp_spec before one can be reviewed."
+        "I opened the product-set gate with the three products this profile sells. "
+        "No product set is confirmed yet; it is awaiting your answer on the gate."
     )
     runtime = DeepAgentTurnRuntime(
         models=_Models(
@@ -784,9 +797,9 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
                     content="",
                     tool_calls=[
                         {
-                            "name": "evaluate_stage0_readiness",
-                            "args": {"gate": "icp_synthesis"},
-                            "id": "stage0-readiness-terminology",
+                            "name": "open_product_set_selection_gate",
+                            "args": {},
+                            "id": "stage0-gate-terminology",
                             "type": "tool_call",
                         }
                     ],
@@ -830,7 +843,7 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
             resolved_profile=resolved,  # type: ignore[arg-type]
             context=AssembledAgentContext(
                 manifest=context_manifest(),
-                messages=(HumanMessage(content="Are we ready to synthesize an ICP?"),),
+                messages=(HumanMessage(content="Which products is this project about?"),),
             ),
             backend=None,
             governed_tools=factory.build(),
@@ -841,9 +854,10 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
     envelope = cast(Any, execution.envelope)
     persisted_response = artifacts.data[envelope.user_message_artifact_ref.artifact_key].decode()
     assert persisted_response == response
-    assert "readiness-policy version 1" in persisted_response
-    assert "synthesized spec version" not in persisted_response
-    assert "No ICP exists yet" in persisted_response
+    assert "awaiting your answer on the gate" in persisted_response
+    assert "now confirmed" not in persisted_response
+    assert "has been confirmed" not in persisted_response
+    assert "No product set is confirmed yet" in persisted_response
 
 
 def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake() -> None:

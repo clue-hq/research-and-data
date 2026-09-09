@@ -77,27 +77,52 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # alone: it is the one SPEND tool of the onboarding synthesis turn (plan §4.5 — at most one
     # call per persona role, behind `CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED`), and no other role
     # has a reason to buy a deep-reasoning web search from inside a conversation.
-    # ARV2 Track R, R2 adds the account-research lane's two toolbelt surfaces (120 -> 122), both
-    # UNGRANTED for now. `launch_arv2_account_research` is the seam-1 launch (SPEND, admitted only
-    # from a captured user action) and its read counterpart is the same seam's reverse edge; the
-    # Head of ABM is their eventual holder. The grant is deliberately not made here, because it is
-    # not a dict edit: `build_agent_profile_registry` refuses to compose when a role's authority
-    # and its profile's tool list disagree, so the grant needs a new head-of-abm profile version
-    # carrying both pins AND the conversation surface's promoted-profile pin moving with it. O6 —
-    # the slice that teaches the Head of ABM this launch — owns that bump. Today the launch is a
-    # human act through `scripts/launch_arv2_account_research.py`, so nothing is gated on it.
-    # ARV2 Track R, R3 adds `launch_arv2_person_research` (122 -> 123), UNGRANTED on exactly the
-    # same terms: it is the person-shaped twin of the launch above (SPEND, admitted only from a
-    # captured user action), and if anything the more personal of the two — it researches named
-    # people. Today it is a human act through `scripts/launch_arv2_person_research.py`, and the
-    # committee step reaches the same rows in code without going through the toolbelt at all.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 123
-    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == ()
+    # ARV2 Track R, R2 adds the account-research lane's two toolbelt surfaces (120 -> 122), and
+    # ARV2 Track R, R3 adds `launch_arv2_person_research` (122 -> 123), UNGRANTED on the same
+    # terms as the account launch was (a human act through `scripts/launch_arv2_person_research.py`),
+    # and ARV2 onboarding O6 adds the set-valued product gate (123 -> 124).
+    # R2 registered the launch pair UNGRANTED and said the grant was not a dict edit —
+    # `build_agent_profile_registry` refuses to compose when a role's authority and its profile's
+    # tool list disagree, so it needed a new head-of-abm profile version carrying both pins AND the
+    # conversation surface's promoted-profile pin moving with it. O6 is that bump:
+    # `head-of-abm@v44` pins `launch_arv2_account_research@1`,
+    # `read_arv2_account_research_run@1` and `open_product_set_selection_gate@1`, so all three are
+    # granted to the Head of ABM here, and stage0-interview v21 §6 is the procedure that says what
+    # must be confirmed before the launch may be called.
+    #
+    # The same slice moved twelve old-lane tools the other way, to `()`. They stay registered and
+    # audited — the complete-write-surface property is what this file is for — but no model surface
+    # names them: the new Stage-0 lane reads the brand's knowledge documents instead of recon-ing
+    # the company, has no readiness check, and confirms a product SET rather than one product.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 124
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == ()
-    assert c6_roles_for_tool("launch_arv2_account_research@1") == ()
     assert c6_roles_for_tool("launch_arv2_person_research@1") == ()
-    assert c6_roles_for_tool("read_arv2_account_research_run@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("launch_arv2_account_research@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_arv2_account_research_run@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["open_product_set_selection_gate"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("open_product_set_selection_gate@1") == (AgentRole.HEAD_OF_ABM,)
+    for dropped in (
+        "evaluate_stage0_readiness",
+        "inspect_readiness_history",
+        "list_client_knowledge",
+        "inspect_client_claim",
+        "list_product_knowledge",
+        "inspect_product_claim",
+        "start_confirmed_project_run",
+        "open_product_selection_gate",
+        "synthesize_icps",
+        "start_recon",
+        "submit_onboarding_input",
+        "open_discovery_configuration_gate",
+    ):
+        assert C6_AGENT_TOOL_AUTHORITY[dropped] == (), dropped
+    # `open_icp_confirmation_gate` did not leave the role — its subject changed. `@2` presents the
+    # brand's ICP knowledge document; `@1`, whose subject was a draft `icp_spec` row this lane
+    # never writes, stays registered and frozen for replay with no role behind it.
+    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("open_icp_confirmation_gate@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
@@ -149,21 +174,32 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
     # (The total is asserted once above — 114 after the part-iii merge.)
     assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["list_client_knowledge"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["inspect_client_claim"] == (AgentRole.HEAD_OF_ABM,)
+    # ARV2 onboarding O6: the S4-E/S5-F Client-KB and Product-KB readers, and the single-product
+    # gate, are ungranted at EVERY version now. The exact-address rules that used to admit one safe
+    # version of each were deleted with the grants, so `@1` and `@2` are both `()` — which is what
+    # these assertions check, because a resurrected exact-address rule would otherwise re-grant a
+    # tool the profile does not pin and only the registry's composition check would notice.
+    for dropped in (
+        "list_client_knowledge",
+        "inspect_client_claim",
+        "list_product_knowledge",
+        "inspect_product_claim",
+        "open_product_selection_gate",
+    ):
+        assert C6_AGENT_TOOL_AUTHORITY[dropped] == (), dropped
     assert c6_roles_for_tool("list_client_knowledge@1") == ()
+    assert c6_roles_for_tool("list_client_knowledge@2") == ()
     assert c6_roles_for_tool("inspect_client_claim@1") == ()
-    assert c6_roles_for_tool("list_client_knowledge@2") == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("inspect_client_claim@2") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["list_product_knowledge"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["inspect_product_claim"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["open_product_selection_gate"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("list_product_knowledge@1") == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("inspect_product_claim@1") == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("open_product_selection_gate@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("inspect_client_claim@2") == ()
+    assert c6_roles_for_tool("list_product_knowledge@1") == ()
+    assert c6_roles_for_tool("inspect_product_claim@1") == ()
+    assert c6_roles_for_tool("open_product_selection_gate@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["confirm_project_product"] == ()
+    # `inspect_statement_history` survives O6 and `inspect_readiness_history` does not: the first
+    # reads what the human said in this conversation, which the new lane still records; the second
+    # reads a readiness decision the new lane never makes.
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["approve_contact_research_selection"] == ()

@@ -102,7 +102,14 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # directive@5` and account-deep-steering v8 — and nothing else; v40 and v42 were divergent
         # siblings (v42 pins the retired `open_design_leg@1`), so the merge minted the join rather
         # than promoting either. Digest measured off the merged tree.
-        AgentRole.HEAD_OF_ABM: ("eebab7e415e87ad4f8ac5e7a5ea9376db3ad11247a9dcfbd3b895a5204aaed2e"),
+        # v44 (ARV2 onboarding O6) is v43 with the new-lane Stage-0 surface: prompt v8 and
+        # stage0-interview v21 (read the brand's knowledge documents, propose from the ICP files,
+        # open the product-set and ICP gates, launch on the ARV2 lane), the twelve old-lane
+        # recon/readiness/Client-KB/Product-KB/`icp_spec` tools dropped, and
+        # `open_product_set_selection_gate@1`, `open_icp_confirmation_gate@2`,
+        # `launch_arv2_account_research@1` and `read_arv2_account_research_run@1` pinned in their
+        # place. Model, workspace, delegation and limits are v43's. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("5468f0432f8c23e62e581cc5fc9d903ba2c5b88ab3efefe82e70eb283a1594aa"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -203,7 +210,13 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # installs `exa_search_evidence@1` — the onboarding synthesis agent's one governed evidence
     # call, granted to `onboarding_synthesis` alone, so it is role-unavailable from this view
     # (136 + 1 = 137).
-    assert len(by_address) == 137
+    # ARV2 onboarding O6 re-measures this off the tree rather than continuing the arithmetic: the
+    # standing 137 had already drifted to 139 before this lane (two installs landed without moving
+    # the number), and O6's own seams install `open_icp_confirmation_gate@2` and
+    # `open_product_set_selection_gate@1` (139 + 2 = 141). The ARV2 launch/read pair was already
+    # installed and merely ungranted, so promoting it moves grants, not inventory. The pre-existing
+    # 137 -> 139 drift is folded into this one re-pin.
+    assert len(by_address) == 141
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -289,7 +302,13 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # additions; 136 is measured off the merged tree, not derived from either side's arithmetic.
     # ARV2 Track O, O4's `exa_search_evidence@1` joins on the same terms: installed, disclosed,
     # and granted only to `onboarding_synthesis`, so it is unavailable here (136 + 1 = 137).
-    assert len(by_address) == 137
+    # ARV2 onboarding O6 re-measures this off the tree rather than continuing the arithmetic: the
+    # standing 137 had already drifted to 139 before this lane (two installs landed without moving
+    # the number), and O6's own seams install `open_icp_confirmation_gate@2` and
+    # `open_product_set_selection_gate@1` (139 + 2 = 141). The ARV2 launch/read pair was already
+    # installed and merely ungranted, so promoting it moves grants, not inventory. The pre-existing
+    # 137 -> 139 drift is folded into this one re-pin.
+    assert len(by_address) == 141
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -300,46 +319,54 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["list_client_knowledge@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["inspect_client_claim@2"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["list_client_knowledge@2"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
+    # ARV2 onboarding O6: every Client-KB / Product-KB / readiness reader left the Head-of-ABM
+    # surface with `head-of-abm@v44`, both versions of each. The map must disclose them — the model
+    # seeing a capability it lacks is what stops it inventing a workaround — but never as available.
+    for address in (
+        "evaluate_stage0_readiness@1",
+        "evaluate_stage0_readiness@2",
+        "inspect_readiness_history@1",
+        "inspect_client_claim@1",
+        "inspect_client_claim@2",
+        "list_client_knowledge@1",
+        "list_client_knowledge@2",
+        "inspect_product_claim@1",
+        "list_product_knowledge@1",
+        "open_product_selection_gate@1",
+        "open_discovery_configuration_gate@1",
+        "start_recon@1",
+        "submit_onboarding_input@1",
+        "start_confirmed_project_run@3",
+        "synthesize_icps@3",
+        "open_icp_confirmation_gate@1",
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE, address
+    # The whole model-invocable surface of the new Stage-0 lane. `open_icp_confirmation_gate@2`
+    # replaces `@1` (a knowledge document instead of a draft `icp_spec` row),
+    # `open_product_set_selection_gate@1` replaces the single-product gate, and the ARV2
+    # launch/read pair — installed but ungranted since Track R R2 — is granted here for the first
+    # time, with stage0-interview v21 §6 stating what must be confirmed before it may be called.
     assert available == {
         "draft_account_research_directive@5",
-        "evaluate_stage0_readiness@2",
         "get_research_view@1",
-        "inspect_readiness_history@1",
-        "inspect_client_claim@2",
-        "inspect_product_claim@1",
         "inspect_statement_history@1",
-        "list_client_knowledge@2",
-        "list_product_knowledge@1",
         "launch_account_research@1",
+        "launch_arv2_account_research@1",
         "launch_selected_account_research@1",
         "launch_contact_research@1",
         "open_design_leg@4",
         "open_directive_confirmation_gate@1",
-        "open_icp_confirmation_gate@1",
-        "open_product_selection_gate@1",
+        "open_icp_confirmation_gate@2",
+        "open_product_set_selection_gate@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research_run@1",
+        "read_arv2_account_research_run@1",
         "read_contact_research_run@1",
         "record_interview_answer@1",
-        "open_discovery_configuration_gate@1",
-        "start_confirmed_project_run@3",
-        "start_recon@1",
         "submit_ingestion@1",
-        "submit_onboarding_input@1",
-        "synthesize_icps@3",
     }
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
-    assert by_address["evaluate_stage0_readiness@1"].status is (
-        AgentCapabilityStatus.ROLE_UNAVAILABLE
-    )
     assert by_address["start_confirmed_project_run@1"].status is (
         AgentCapabilityStatus.ROLE_UNAVAILABLE
     )
@@ -389,20 +416,45 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v43"
+    assert production.profile_ref.address == "profile:head-of-abm@v44"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v20"
+        "skill:stage0-interview@v21"
     )
-    assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
-    assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
-    assert "open_product_selection_gate@1" in addresses
-    assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
-    assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
-    assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
+    # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
+    # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
+    # so the strictness this test was written to guard is now enforced by the tools' ABSENCE.
+    # Every version of every retired reader must be gone from the production surface, not merely
+    # narrowed to its safe version.
+    assert {
+        "list_client_knowledge@1",
+        "list_client_knowledge@2",
+        "inspect_client_claim@1",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+        "evaluate_stage0_readiness@1",
+        "evaluate_stage0_readiness@2",
+        "start_recon@1",
+    }.isdisjoint(addresses)
+    # What replaces them: the set-valued product gate and the ICP gate over the knowledge document.
+    assert {"open_product_set_selection_gate@1", "open_icp_confirmation_gate@2"} <= addresses
+    assert "open_icp_confirmation_gate@1" not in addresses
+    assert toolbelt.descriptor("open_icp_confirmation_gate").address == (
+        "open_icp_confirmation_gate@2"
+    )
 
 
-def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() -> None:
-    """No published Product-KB blocks reads, not the first governed human-authored write."""
+def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents() -> None:
+    """The honest empty state replaces S4-E's missing-Product-KB carve-out.
+
+    The ancestor of this test guarded that a missing Product-KB card could not block a human from
+    supplying the first product fact. ARV2 onboarding O6 removed the Client-KB/Product-KB readers
+    from this surface entirely, so the equivalent guarantee is now about the brand's knowledge
+    documents: when there are none the agent says so plainly and points at onboarding — it does not
+    research the company itself and does not invent a profile — while routing what the human says
+    stays unconditional, with `unmapped` as the honest floor.
+    """
 
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
@@ -410,13 +462,13 @@ def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() 
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v20")
+    body = production.open_skill("skill:stage0-interview@v21")
 
-    assert "A missing Product-KB card blocks historical product-knowledge reads" in body
-    assert "not block a human from supplying the first fact" in body
-    assert "Never leave a clearly matching fact unmapped" in body
-    assert "`client.product_use_case`" in body
-    assert "publishes Product-KB v1" in body
+    assert "onboarding has not produced knowledge for this brand yet" in body
+    assert "point the user to onboarding on the Knowledge page" in body
+    assert "Do not research the company yourself and do not invent a profile." in body
+    assert "Never state a product fact that a product file does not contain" in body
+    assert "is routed `unmapped` with its exact quote" in body
 
 
 def test_onboarding_icp_surface_withholds_the_evidence_tool_under_one_profile() -> None:
@@ -465,7 +517,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     disclosures = head.skill_disclosures()
 
     assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v20"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v21"
     assert disclosures[1].resource.address == "skill:account-deep-steering@v8"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -531,16 +583,25 @@ def test_c67_account_deepagent_profile_is_historical_only(
 @pytest.mark.parametrize(
     ("fixture", "required_guidance"),
     (
-        ("url_only", "capture the URL as onboarding input, then start one governed recon"),
-        ("known_product", "show the current product candidate and ask the human to confirm"),
-        ("stale_product", "name the stale evidence and ask for the smallest refresh needed"),
-        ("contradictory_correction", "preserve the new exact quote and route it as a correction"),
-        ("upload", "submit an already captured workspace artifact through `submit_ingestion`"),
-        ("novel_field", "goes through `propose_field` or"),
-        ("novel_source", "or\n  `propose_source`"),
-        ("missing_readiness_floor", "cannot turn a failing deterministic result into ready"),
-        ("human_override", "records a readiness override"),
-        ("confirmed_start", "After the human approves the ICP"),
+        # ARV2 onboarding O6 re-pins these to the situations the NEW lane actually meets. The
+        # v20 fixtures named recon, readiness floors and readiness overrides — three mechanisms
+        # `head-of-abm@v44` no longer has. The rule the test enforces is unchanged: every Stage-0
+        # situation a human can walk into has one explicit governed behaviour written down, not an
+        # inference the model is trusted to make.
+        ("no_knowledge_documents", "onboarding has not produced knowledge for this brand yet"),
+        ("read_before_speaking", "issue every `read_file` call together in a single turn"),
+        ("unknown_product_fact", "Never state a product fact that a product file does not contain"),
+        ("product_set_gate", "call `open_product_set_selection_gate` with the `icp_key`"),
+        ("possible_duplicate", "A candidate marked as a possible duplicate"),
+        ("icp_gate", "call `open_icp_confirmation_gate` with the `icp_key` of the picked ICP"),
+        ("icp_revised", "a revised profile needs a new onboarding synthesis"),
+        ("prose_is_not_a_receipt", 'Ordinary prose such as "looks good" confirms nothing.'),
+        ("contradictory_correction", "**Corrections carry lineage.**"),
+        ("upload", "goes through `submit_ingestion` with its material context"),
+        ("novel_field", "goes through `propose_field` or `propose_source`"),
+        ("unmappable", "is routed `unmapped` with its exact quote"),
+        ("launch_preconditions", "never launch before both gates are answered"),
+        ("launch_is_not_completion", "It is never completed research"),
     ),
 )
 def test_stage0_quality_fixture_has_explicit_governed_behavior(
@@ -550,7 +611,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v20")
+    body = head.open_skill("skill:stage0-interview@v21")
 
     assert required_guidance in body
 
@@ -582,7 +643,11 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
         if roles
     }
-    admitted.remove("evaluate_stage0_readiness@2")
+    # ARV2 onboarding O6: `evaluate_stage0_readiness@2` is no longer granted anywhere, so it can
+    # no longer stand for "a tool the Stage-0 skill needs". `record_interview_answer@1` is the
+    # v21 skill's own routing tool and belongs to no other skill on this profile, so withdrawing it
+    # is the same proof: the ceiling drops the tool AND the skill that depends on it.
+    admitted.remove("record_interview_answer@1")
     narrowed = AgentProfileRegistry(
         prompts=FolderPromptCatalog((CATALOG_ROOT / "prompts").resolve(strict=True)),
         skills=FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)),
@@ -593,7 +658,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     )
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
-    assert "evaluate_stage0_readiness@2" not in {pin.address for pin in head.profile.tools}
+    assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
     assert [item.resource.address for item in head.skill_disclosures()] == [
         "skill:account-deep-steering@v8"
     ]
@@ -625,7 +690,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v7/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v8/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

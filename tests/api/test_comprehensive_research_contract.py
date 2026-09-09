@@ -454,6 +454,9 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     assert c6_roles_for_tool("draft_account_research_directive@5") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("draft_account_research_directive@3") == ()
     assert c6_roles_for_tool("draft_account_research_directive@4") == ()
-    # v42 was re-minted from comprehensive; its contract carried into active v43 at the R0 merge.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v43"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v43"
+    # v42 was re-minted from comprehensive; its contract carried into active v43 at the R0 merge
+    # and into v44 (ARV2 onboarding O6) unchanged — O6 replaced the Stage-0 surface, not the
+    # account-deep directive contract, so `draft_account_research_directive@5` is still the granted
+    # address and the two pins must still agree.
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v44"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v44"
