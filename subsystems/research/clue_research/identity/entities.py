@@ -665,7 +665,7 @@ async def surviving_ids(
 
 
 async def contact_ids_for_account(
-    conn: AsyncConnection, account_entity_id: EntityId
+    conn: AsyncConnection, account_entity_id: EntityId, *, include_merged: bool = False
 ) -> tuple[EntityId, ...]:
     """The **live** (non-merged) contact entity ids under an account — the committee membership the
     VERIFICATION pass and the M12 handoff assembler iterate.
@@ -673,16 +673,22 @@ async def contact_ids_for_account(
     Merged-loser contacts are excluded (``status = 'merged'``): a merge re-keys the loser's claims
     onto the survivor, which is itself returned, so the survivor's claims are covered exactly once.
     Read-only; ordered by ``id`` for deterministic iteration. Entities are not tenant-scoped (claims
-    carry tenancy), so this takes no scope — like :func:`get_contact`."""
+    carry tenancy), so this takes no scope — like :func:`get_contact`.
+
+    ``include_merged=True`` returns the losers too, for a caller that reads *claims* off these rows
+    and redirects them itself (``surviving_ids``). A merge does not rewrite the loser's immutable
+    claims, so a reader that skipped the loser row would lose every fact the survivor inherited."""
+    merged_clause = "" if include_merged else "AND status <> CAST(:merged AS entity_status) "
     rows = (
         (
             await conn.execute(
                 text(
                     "SELECT id FROM contact_entity "
-                    "WHERE account_entity_id = :acct AND status <> CAST(:merged AS entity_status) "
+                    f"WHERE account_entity_id = :acct {merged_clause}"
                     "ORDER BY id"
                 ),
-                {"acct": account_entity_id, "merged": AccountStatus.MERGED.value},
+                {"acct": account_entity_id}
+                | ({} if include_merged else {"merged": AccountStatus.MERGED.value}),
             )
         )
         .scalars()
