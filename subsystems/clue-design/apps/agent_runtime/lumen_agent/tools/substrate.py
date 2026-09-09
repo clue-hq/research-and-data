@@ -10,6 +10,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
@@ -295,6 +296,10 @@ class LumenDesignTools:
         # append + event_sink push) so trace lines never interleave and in-process
         # event order stays deterministic.
         self._record_lock = threading.Lock()
+        # Image providers may run in parallel; serialize only registration's
+        # read/apply/replace and ledger append so results cannot replace a stale
+        # Scene snapshot from another completed generation.
+        self._image_registration_lock = threading.Lock()
         self.run_id = new_run_id()
         self.iteration = 0
         # Fast-loop v1 §7: per-run summary counters, started at the earliest
@@ -1015,7 +1020,7 @@ class LumenDesignTools:
         refused = self._refuse_without_page("generate_image")
         if refused is not None:
             return refused
-        asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
+        asset_id = f"asset_img_{self.run_id[:8]}_{uuid4().hex}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
         )
@@ -1054,9 +1059,28 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         try:
-            apply_response = self.core.apply_operations(
-                self.scene, [{"kind": "upsert_asset", "asset": record}]
-            )
+            with self._image_registration_lock:
+                assets = self.scene.get("assets") or {}
+                existing = assets.get(record.get("id"))
+                if existing is not None and existing != record:
+                    # Legacy cache entries can share an ID despite holding
+                    # different bytes. Keep cached custody/provenance intact,
+                    # changing only the Scene registration ID. Find an earlier
+                    # remap first so identical free retries keep a stable ID.
+                    reused_id = next(
+                        (
+                            candidate_id
+                            for candidate_id, candidate in assets.items()
+                            if candidate == {**record, "id": candidate_id}
+                        ),
+                        asset_id,
+                    )
+                    record = {**record, "id": reused_id}
+                operations = [{"kind": "upsert_asset", "asset": record}]
+                apply_response = self.core.apply_operations(self.scene, operations)
+                self._replace_scene_from_core_response(
+                    apply_response, "generate_image", operations
+                )
         except CoreError as error:
             payload = {
                 "image": {
@@ -1084,10 +1108,6 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(
-            apply_response, "generate_image", [{"kind": "upsert_asset", "asset": record}]
-        )
-
         image: JsonObject = {
             "status": "ok",
             "asset_id": record.get("id"),
