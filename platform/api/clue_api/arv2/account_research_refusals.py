@@ -74,9 +74,6 @@ REACTIONS: dict[str, str] = {
     "media_cap_reached": (
         "Media for this person is complete; do not call read_media_feeds again for them."
     ),
-    "person_not_admitted": (
-        "Confirm the member first (lookup_person); a vacant seat is not a person."
-    ),
     "insight_not_found": 'Record "thin public footprint" with channels checked; move on.',
 }
 
@@ -86,7 +83,6 @@ _PERSON_ONLY_CODES: frozenset[str] = frozenset(
         "subject_lock_failed",
         "email_export_empty",
         "media_cap_reached",
-        "person_not_admitted",
         "insight_not_found",
     }
 )

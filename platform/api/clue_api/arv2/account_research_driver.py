@@ -48,10 +48,15 @@ from clue_api.arv2.account_research_agent import AgentOutcome, run_account_agent
 from clue_api.arv2.account_research_catalog import (
     AccountContext,
     AccountResourceBundle,
+    arv2_person_profile_sha256,
     build_system_prompt,
     load_account_resources,
 )
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.account_research_launch import (
+    Arv2LaunchReceipt,
+    enqueue_launched_jobs,
+)
 from clue_api.arv2.account_research_store import JobRow, RunRow
 from clue_api.arv2.account_research_tools import (
     ProviderClients,
@@ -61,7 +66,13 @@ from clue_api.arv2.account_research_tools import (
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import LenientClaimWriter
+from clue_api.arv2.committee_step import CommitteeStepResult, run_committee_step
 from clue_api.arv2.exa_client import ExaClient
+from clue_api.arv2.fleet_task import (
+    ARV2_ACCOUNT_DEDUP_PREFIX,
+    ARV2_ACCOUNT_TASK_PRIORITY,
+    arv2_account_work_id,
+)
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.arv2.provider_ledger import (
@@ -75,8 +86,7 @@ from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, ca
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_db import ConnFactory, transaction
-from clue_fleet import FleetTaskKind
-from clue_fleet.lease import WorkId
+from clue_fleet import FleetTaskKind, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for
@@ -92,14 +102,6 @@ __all__ = [
     "arv2_account_work_id",
     "build_arv2_account_research_handler",
 ]
-
-#: What an enqueuer puts in front of the job id, so an R2 task's dedup key cannot collide with
-#: another kind's.
-ARV2_ACCOUNT_DEDUP_PREFIX = "arv2-account-research:"
-
-#: Account research outranks ordinary work but yields to onboarding (-150): a workspace that is
-#: still being profiled has nothing to research against yet.
-ARV2_ACCOUNT_TASK_PRIORITY = -100
 
 #: The env var holding the model id this lane runs on. It is read directly rather than through an
 #: agent-registry role, because R2 composes its own loop (facts-agent.md) — there is no profile
@@ -174,11 +176,6 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def arv2_account_work_id(job_id: UUID) -> WorkId:
-    """The job id IS the work id: one task per account, and the identity is checked on arrival."""
-    return WorkId(job_id)
-
-
 @runtime_checkable
 class JobScopedClients(Protocol):
     """Clients that must be bound to one job's own media budget before they are used.
@@ -236,6 +233,7 @@ class Arv2AccountResearchWorkHandler:
         model_provider: AgentModelProvider,
         model_id: str,
         writer: LenientClaimWriter,
+        queue: WorkQueue | None = None,
         store: Any = default_store,
         catalog_root: Path | None = None,
         clock: Callable[[], datetime] = _utcnow,
@@ -248,6 +246,10 @@ class Arv2AccountResearchWorkHandler:
         self._models = model_provider
         self._model_id = model_id
         self._writer = writer
+        #: Where the committee step's person jobs are offered, once the settling transaction has
+        #: committed. ``None`` composes the handler without a fan-out: the rows are still written
+        #: (they are what a later relaunch or a re-settle re-offers), and the log says so loudly.
+        self._queue = queue
         # The store is injected as a module-shaped object so the offline tests can record every
         # transition in order without a database.
         self._store = store
@@ -576,8 +578,16 @@ class Arv2AccountResearchWorkHandler:
     async def _settle(
         self, composition: _Composition, runtime: ToolRuntime, outcome: AgentOutcome
     ) -> str:
-        """Land the job's terminal row: the receipt, the ledger's spend, one activity event."""
+        """Land the job's terminal row: the receipt, the ledger's spend, one activity event.
+
+        An **account** job also fans its confirmed committee out here, inside the same transaction
+        and after ``finish_job``: the members it resolved become contacts, their three claims and
+        one person job each. That is deliberately not a second transaction — a committee written
+        beside a job row that did not land, or a job row with a committee that did not, are both
+        states nothing repairs — and the jobs are offered to the fleet only once this one commits.
+        """
         claims = await runtime.job_claims()
+        committee = CommitteeStepResult((), (), ())
         async with self._connection() as conn:
             # The loop's model rounds, onto the same ledger the tools' hops use, BEFORE the spend
             # is read — ``job_spend`` sums every ``result`` row, so the job's ``cost_usd`` is the
@@ -621,8 +631,11 @@ class Arv2AccountResearchWorkHandler:
                 credits=spend.credits,
                 media_seconds=spend.media_seconds,
             )
+            if composition.job.subject_type == "account":
+                committee = await self._fan_out_committee(conn, composition, runtime)
             await self._store.refresh_run_status(conn, run_id=composition.run.run_id)
             await self._record_activity(conn, composition, outcome=outcome, claims=len(claims))
+        await self._offer_committee(composition, committee)
         log.info(
             "arv2.account_job_finished",
             job_id=str(composition.job.job_id),
@@ -630,8 +643,77 @@ class Arv2AccountResearchWorkHandler:
             status=status,
             claims=len(claims),
             cost_usd=str(spend.cost_usd),
+            committee_jobs=len(committee.jobs),
         )
         return status
+
+    async def _fan_out_committee(
+        self, conn: AsyncConnection, composition: _Composition, runtime: ToolRuntime
+    ) -> CommitteeStepResult:
+        """Run the committee step over what this job's finalization confirmed. Never raises.
+
+        The candidates are the finalization's own, in the order the agent named them — the cap
+        truncates the tail, so an order is part of the answer and the claim rows (written in one
+        batch, read back by digest) do not carry one. A job that never finalized confirmed nobody.
+
+        Any failure the step did not already contain per member is swallowed *here*: the account
+        job's terminal row is already written in this transaction, and losing it to a committee
+        problem would turn a finished account into one that must be researched again.
+        """
+        candidates = (runtime.finalization or {}).get("committee_candidates") or []
+        if not candidates:
+            return CommitteeStepResult((), (), ())
+        try:
+            return await run_committee_step(
+                conn,
+                job=composition.job,
+                run=composition.run,
+                scope=composition.scope,
+                candidates=candidates,
+                writer=self._writer,
+                person_profile_sha256=arv2_person_profile_sha256(),
+            )
+        except Exception:  # noqa: BLE001 — containment: the terminal row outranks the fan-out
+            log.exception("arv2.committee_step_failed", job_id=str(composition.job.job_id))
+            return CommitteeStepResult((), (), ())
+
+    async def _offer_committee(
+        self, composition: _Composition, committee: CommitteeStepResult
+    ) -> None:
+        """Offer the committee's person jobs — **after** the settle committed. Never raises.
+
+        Rows first, offer second (the launch's own rule): a task that reaches a worker before its
+        job row exists reads "no such job" as "already done" and drops that person's research for
+        good. A failed offer is the recoverable half — the rows are there, and re-settling or
+        launching the same people re-offers them — so it is logged, not raised: raising here would
+        reach ``handle``'s containment and overwrite the account job's completed row.
+        """
+        if not committee.jobs:
+            return
+        if self._queue is None:
+            log.warning(
+                "arv2.committee_jobs_not_enqueued",
+                job_id=str(composition.job.job_id),
+                run_id=str(composition.run.run_id),
+                job_ids=[str(job.job_id) for job in committee.jobs],
+                detail=(
+                    "this worker composed the ARV2 research handler without a work queue, so the "
+                    "committee's person jobs exist as rows nothing is driving; launch them again "
+                    "from a worker that has one"
+                ),
+            )
+            return
+        receipt = Arv2LaunchReceipt(
+            run_id=composition.run.run_id,
+            job_ids=tuple(job.job_id for job in committee.jobs),
+            replayed=False,
+            project_run_id=composition.run.project_run_id,
+            to_enqueue=committee.jobs,
+        )
+        try:
+            await enqueue_launched_jobs(self._queue, receipt)
+        except Exception:  # noqa: BLE001 — the job's terminal row must survive a queue outage
+            log.exception("arv2.committee_jobs_enqueue_failed", job_id=str(composition.job.job_id))
 
     async def _record_activity(
         self,
@@ -830,6 +912,7 @@ def build_arv2_account_research_handler(
     storage: StorageBackend,
     artifacts: ArtifactSink,
     model_provider: AgentModelProvider,
+    queue: WorkQueue | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> Arv2AccountResearchWorkHandler | None:
     """Compose the lane on this worker, or refuse loudly and compose nothing.
@@ -890,6 +973,10 @@ def build_arv2_account_research_handler(
         model_provider=model_provider,
         model_id=model_id,
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
+        # The worker's own queue, so a committee resolved on this worker is offered through exactly
+        # the machinery that will drain it. Composing without one still writes the person job rows
+        # and says so (``arv2.committee_jobs_not_enqueued``).
+        queue=queue,
     )
 
 

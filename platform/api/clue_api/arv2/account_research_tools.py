@@ -1969,6 +1969,13 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
         "summary": args.summary,
         "fit_verdicts": verdicts,
         "gaps": list(args.gaps),
+        # The committee the job confirmed, in the order the agent named it. The driver's committee
+        # step reads it here rather than off the claim rows this call just wrote: the rows carry
+        # every field but no order, and the order is what the run's committee cap truncates. It is
+        # deliberately NOT copied onto the durable receipt (``account_research_driver._receipt``) —
+        # the members are already claims, and a second at-rest copy of a person's name and title
+        # inside ``finalization_json`` is a copy no DSAR erasure would reach.
+        "committee_candidates": candidates,
         "proposed_at": runtime.now().isoformat(),
     }
     return {

@@ -37,7 +37,6 @@ The base code before the colon is the row key and decides the reaction.
 | `native_video_rejected` | You asked for a native video download; only the YouTube words path is admitted. | Use the YouTube words path (page text), never a video download. |
 | `speaker_unverified` | The transcript's speaker could not be verified as the subject. | Quote nothing from this transcript; record the item as unattributed media. |
 | `deep_thin_response` | The deep call was attempted twice and its report came back empty. | Both deep attempts came back thin; structure what the free sources yielded; do not call research_deep again. |
-| `person_not_admitted` | You asked to structure material for a person subject that has no contact entity. | Confirm the member first (lookup_person); a vacant seat is not a person. |
 | `structuring_unparseable` | The structuring reply failed the bundle-fence parse. | Resend the same material once; if it fails again record the subject as unstructured. |
 | `insight_not_found` | `unique_insight` found nothing beyond a standard profile. | Record "thin public footprint" with channels checked; move on. |
 | `already_established` | You asked for a fact the already-established block already holds. The wire form is `already_established:<field>` and names it. | Drop that field from the call; it is already recorded. |
@@ -66,8 +65,8 @@ The base code before the colon is the row key and decides the reaction.
 Notes that decide calls, not style:
 
 - `structure_material` takes one subject per call and writes the claims it extracts. On a person job
-  the subject is this person and the `subject_kind` is `person`; a person subject with no contact
-  entity behind it is refused `person_not_admitted`.
+  the subject is this person and the `subject_kind` is `person`; an `account` subject is refused
+  `invalid_arguments`, because every claim this job writes is stamped to the person.
 - `structure_material` takes its material as `sources` (one to twelve), never as one string: each
   source is a page, posting, report, transcript or provider record, with the URL it came from. A
   quote may only come from inside a source, and the claim cites that source's URL. Your own reading

@@ -29,7 +29,10 @@ from pydantic import PrivateAttr, SecretStr
 
 from clue_api.arv2 import account_research_driver as driver
 from clue_api.arv2 import account_research_tools as tools_module
-from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
+from clue_api.arv2.account_research_catalog import (
+    arv2_account_profile_sha256,
+    arv2_person_profile_sha256,
+)
 from clue_api.arv2.account_research_driver import (
     ARV2_ACCOUNT_DEDUP_PREFIX,
     ARV2_ACCOUNT_TASK_PRIORITY,
@@ -38,6 +41,7 @@ from clue_api.arv2.account_research_driver import (
     build_arv2_account_research_handler,
     format_established,
 )
+from clue_api.arv2.account_research_launch import QueuedJob
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
 from clue_api.arv2.provider_ledger import ledger_id_for
@@ -369,7 +373,7 @@ def _patch_reads(
 
 
 def _handler(
-    store: FakeStore, *, model: BaseChatModel | None = None
+    store: FakeStore, *, model: BaseChatModel | None = None, queue: Any | None = None
 ) -> tuple[Arv2AccountResearchWorkHandler, FakeConnFactory, FakeWriter, FakeModels]:
     conn_factory = FakeConnFactory()
     writer = FakeWriter()
@@ -383,6 +387,7 @@ def _handler(
         model_provider=models,
         model_id="x-ai/grok-4.6",
         writer=writer,
+        queue=queue,
         store=store,
         clock=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
     )
@@ -993,3 +998,154 @@ def test_format_established_writes_compact_json_values_capped_per_line() -> None
         "… (https://jobs.test)"
     )
     assert lines[1] == "- core.founded_year: 2022 (ai_ark:company)"
+
+
+# -- the committee fan-out (R3 task 6) ------------------------------------------------------------
+
+
+def _finalizes_with_a_committee() -> _ScriptedModel:
+    """The same finalization, carrying one confirmed committee member."""
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_research",
+                    "args": {
+                        "summary": "Probook is a strong fit on hiring and tooling evidence.",
+                        "fit_verdicts": [],
+                        "gaps": [],
+                        "committee_candidates": [
+                            {
+                                "name": "Dana Reyes",
+                                "title": "VP Marketing",
+                                "persona": "economic_buyer",
+                                "linkedin_url": "https://www.linkedin.com/in/dana-reyes",
+                                "confirmed_by": "https://probook.ai/team",
+                                "vacant_seat": False,
+                                "evidence_span": "Dana Reyes, VP Marketing",
+                            }
+                        ],
+                    },
+                    "id": "call-finalize",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    return _ScriptedModel(respond)
+
+
+class _RecordingQueue:
+    """A queue that records its offers into the store's own event log, to pin the ORDER."""
+
+    def __init__(self, store: FakeStore) -> None:
+        self._store = store
+
+    async def enqueue(self, **kwargs: Any) -> bool:
+        self._store.events.append(("enqueue", kwargs))
+        return True
+
+
+def _patch_committee_step(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, run: RunRow
+) -> list[dict[str, Any]]:
+    """Stand in for the step: record the call, and hand back one person job to offer."""
+    calls: list[dict[str, Any]] = []
+    person_job = uuid4()
+
+    async def fake_step(conn: Any, **kwargs: Any) -> Any:
+        del conn
+        store.events.append(("committee_step", {"candidates": len(kwargs["candidates"])}))
+        calls.append(kwargs)
+        return driver.CommitteeStepResult(
+            contacts_created=(),
+            jobs=(QueuedJob(job_id=person_job, run_id=run.run_id, workspace_id=run.workspace_id),),
+            skipped=(),
+        )
+
+    monkeypatch.setattr(driver, "run_committee_step", fake_step)
+    return calls
+
+
+def test_an_account_job_fans_its_committee_out_inside_the_settle_and_offers_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rows first, offer second: the step runs after ``finish_job``, the offer after the commit."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    calls = _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    order = [name for name, _ in store.events]
+    assert order[order.index("finish_job") :][:4] == [
+        "finish_job",
+        "committee_step",
+        "refresh_run_status",
+        "enqueue",
+    ]
+    # The step is handed the finalization's own candidates, the job, the run and the job's scope.
+    assert calls[0]["candidates"][0]["name"] == "Dana Reyes"
+    assert calls[0]["job"] is job and calls[0]["run"] is run
+    assert calls[0]["scope"].account_id == EntityId(job.account_entity_id)
+    assert calls[0]["person_profile_sha256"] == arv2_person_profile_sha256()
+
+
+def test_a_worker_with_no_queue_still_writes_the_committee_and_says_it_offered_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``queue=None`` composes a fan-out that creates rows and offers none — loudly."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=None
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    assert [name for name, _ in store.events].count("committee_step") == 1
+    assert not store.named("enqueue")
+
+
+def test_a_committee_step_that_explodes_never_costs_the_job_its_terminal_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The failure law at the driver's own boundary: the account job still lands completed."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+
+    async def explode(conn: Any, **kwargs: Any) -> Any:
+        del conn, kwargs
+        raise RuntimeError("the committee step is broken")
+
+    monkeypatch.setattr(driver, "run_committee_step", explode)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    assert store.named("finish_job")[0]["status"] == "completed"
+    assert not store.named("enqueue")

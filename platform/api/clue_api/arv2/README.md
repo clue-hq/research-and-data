@@ -666,7 +666,7 @@ Two things worth knowing before touching it:
 One `arv2_account_research` fleet task is **one account**: its own lease, its own job row, its own
 failure. An account that goes wrong takes only itself down, and the rest of the run keeps moving.
 
-### The module map (nine modules)
+### The module map (eleven modules)
 
 | module | what it owns |
 | --- | --- |
@@ -677,8 +677,10 @@ failure. An account that goes wrong takes only itself down, and the rest of the 
 | `account_research_claims.py` | the deterministic claim mappers (provider record → typed draft) and the prose-claim carry-across |
 | `account_research_tools.py` | the twelve governed tools and the `ToolRuntime` behind them (halt latch, provider semaphore, the drain, the lenient claim write) |
 | `account_research_agent.py` | the `create_agent` loop and its cap-to-finalize middlewares |
-| `account_research_driver.py` | the fleet handler: compose under the launch's pins, run the agent, settle the receipt |
-| `account_research_launch.py` | **seam 1** — the launch function, its typed refusals, the `Arv2LaunchService` seam, and the two toolbelt tools |
+| `account_research_driver.py` | the fleet handler: compose under the launch's pins, run the agent, settle the receipt — and, for an account job, fan its confirmed committee out |
+| `committee_step.py` | R3: one account job's confirmed candidates become contact entities, their three committee claims and one person job each, inside the settling transaction |
+| `account_research_launch.py` | **seam 1** — the account launch, the on-demand person launch, their typed refusals, the `Arv2LaunchService` seam, and the three toolbelt tools |
+| `fleet_task.py` | the fleet identity of one research task (work id, dedup prefix, priority), shared by the enqueuer and the handler so neither has to import the other |
 
 ### The failure law
 

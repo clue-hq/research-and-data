@@ -41,10 +41,13 @@ __all__ = [
     "RunRow",
     "TerminalJob",
     "begin_job",
+    "contacts_named",
     "create_job",
     "create_run",
+    "find_contact_by_linkedin",
     "find_contact_by_name",
     "finish_job",
+    "fold_linkedin_url",
     "job_link_audit",
     "job_spend",
     "list_jobs",
@@ -629,19 +632,14 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
     )
 
 
-async def find_contact_by_name(
+async def contacts_named(
     conn: AsyncConnection, *, workspace_id: str, account_id: UUID, name: str
-) -> UUID | None:
-    """The one contact under this account whose name is ``name``, or ``None``.
+) -> tuple[UUID, ...]:
+    """Every live contact under this account whose full name is ``name`` (at most two).
 
-    ``contact.reports_to`` declares ``contact_id`` as its **required** key, but the agent knows the
-    manager by name — so the name is resolved here, against the entities this workspace actually
-    holds, rather than the agent being asked for an id it cannot know or the claim being written
-    with an invented one.
-
-    The match is exact on the trimmed, case-folded full name, and **two matches resolve to
-    nothing**: two people called "Dana Reyes" at one account is precisely the same-name trap this
-    lane exists to refuse, and picking either would be a guess. The caller records the skip.
+    Two is all any caller needs: one is a resolution, two or more is the same-name trap and the
+    honest answer is "not resolvable", never "whichever row came back first". The match is exact on
+    the trimmed, case-folded name.
     """
     rows = (
         (
@@ -659,7 +657,69 @@ async def find_contact_by_name(
         .mappings()
         .all()
     )
-    return UUID(str(rows[0]["id"])) if len(rows) == 1 else None
+    return tuple(UUID(str(row["id"])) for row in rows)
+
+
+async def find_contact_by_name(
+    conn: AsyncConnection, *, workspace_id: str, account_id: UUID, name: str
+) -> UUID | None:
+    """The one contact under this account whose name is ``name``, or ``None``.
+
+    ``contact.reports_to`` declares ``contact_id`` as its **required** key, but the agent knows the
+    manager by name — so the name is resolved here, against the entities this workspace actually
+    holds, rather than the agent being asked for an id it cannot know or the claim being written
+    with an invented one.
+
+    The match is exact on the trimmed, case-folded full name, and **two matches resolve to
+    nothing**: two people called "Dana Reyes" at one account is precisely the same-name trap this
+    lane exists to refuse, and picking either would be a guess. The caller records the skip. A
+    caller that must tell "nobody" from "two of them" — the committee step, which would otherwise
+    create a third row — reads :func:`contacts_named` instead.
+    """
+    found = await contacts_named(conn, workspace_id=workspace_id, account_id=account_id, name=name)
+    return found[0] if len(found) == 1 else None
+
+
+def fold_linkedin_url(value: object) -> str | None:
+    """The stored form of a LinkedIn profile URL, or ``None`` when there is none.
+
+    It must fold exactly the way ``clue_research.identity`` folds a strong-key column on insert
+    (lower-cased, trimmed, trailing slash dropped), because a lookup that folds differently from
+    the write would miss a row that is there and then insert a duplicate — which the unique index
+    refuses, turning a join into an error. The fold is repeated rather than imported: it is a
+    private of that package, and three lines copied under this comment are safer than a private
+    import that can move.
+    """
+    if not isinstance(value, str):
+        return None
+    folded = value.strip().rstrip("/").lower()
+    return folded or None
+
+
+async def find_contact_by_linkedin(
+    conn: AsyncConnection, *, workspace_id: str, linkedin_url: str
+) -> UUID | None:
+    """The contact this workspace holds under that LinkedIn URL, or ``None``.
+
+    Workspace-scoped, not account-scoped, because that is the scope of the strong key's unique
+    index (``contact_entity_linkedin_url_ws_key``): the same person met under two accounts is one
+    row, and looking only under one account would insert a duplicate the index then refuses.
+    """
+    folded = fold_linkedin_url(linkedin_url)
+    if folded is None:
+        return None
+    row = (
+        await conn.execute(
+            text(
+                "SELECT id FROM contact_entity "
+                "WHERE workspace_id = :workspace_id AND linkedin_url = :linkedin_url "
+                "  AND merged_into IS NULL "
+                "LIMIT 1"
+            ),
+            {"workspace_id": workspace_id, "linkedin_url": folded},
+        )
+    ).scalar_one_or_none()
+    return UUID(str(row)) if row is not None else None
 
 
 async def read_persona_documents(

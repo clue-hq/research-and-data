@@ -236,6 +236,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # ABM the launch, along with the prompt/skill content telling it what to confirm first. Until
     # then the lane is launched by a human: `scripts/launch_arv2_account_research.py`.
     "launch_arv2_account_research": (),
+    # ARV2 Track R, R3: the same launch for named *people*, on exactly the same terms and for the
+    # same reason. It researches contacts a human picked (or a committee step resolved), so it is
+    # if anything the more personal of the two — an ungranted registration keeps the audit complete
+    # while the role decision waits for the profile version that teaches it. Until then the person
+    # launch is a human act: `scripts/launch_arv2_person_research.py`.
+    "launch_arv2_person_research": (),
     "read_arv2_account_research_run": (),
     "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
     "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
