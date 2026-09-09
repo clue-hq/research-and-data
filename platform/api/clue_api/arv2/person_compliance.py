@@ -1,0 +1,591 @@
+"""The coded compliance pass for person claims (substance §5; prompt rules 4–6).
+
+The prompt tells the agent the floor, but the prompt is advice and this module is the decision: no
+person claim reaches the store without passing through :func:`apply_person_floor` first. It is
+deliberately a *pure* function — drafts in, surviving drafts and a log out — with no settings
+import, no database and no clock, so the founder can read exactly what happens to a sentence and a
+test can prove it without a connection.
+
+Two laws hold everywhere here:
+
+* **Nothing disappears silently.** Every drop, redaction and marking is one row in the returned log,
+  and the log rides the job receipt so the display can say *something was removed and why* without
+  showing what it was.
+* **The pass never raises.** A value shape it cannot read is logged (``unreadable_value``) and the
+  draft is passed through untouched: a compliance pass that crashed the write path would cost a job
+  every claim it had, which is a worse failure than a value it could not inspect.
+
+Redaction is by **sentence**, never by word: half a sentence with a hole in it is both unreadable
+and still capable of implying what was removed.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, replace
+from typing import Any
+
+from clue_api.arv2.claim_writer import ClaimDraft
+
+#: The one field where an email address is the point: the professional email the export produces.
+#: An email address on any other field is a personal contact detail and the draft goes.
+WORK_EMAIL_FIELD = "core.work_email"
+
+#: The two fields the display turns into outreach. Rule 7 holds them to a higher bar than the rest:
+#: a fact that is biography-only may be *recorded* but may never be the thing an opener rests on.
+HOOK_FIELD_LEAVES = frozenset({"hooks", "openers"})
+
+# -- the keyword lists ----------------------------------------------------------------------------
+#
+# Plain lower-case lists, one per category, meant to be read and edited by a human. Matching is
+# whole-word and case-insensitive, so ``son`` does not fire on "Jackson" and ``ill`` is not here at
+# all. Keep entries specific: a word that is also ordinary business vocabulary (campaign, party,
+# engaged, anniversary) costs real claims and belongs nowhere in this file.
+
+KEYWORDS: dict[str, list[str]] = {
+    # health — medical conditions, treatment, diagnosis, disability, mental health.
+    "health": [
+        "cancer",
+        "chemotherapy",
+        "diagnosed",
+        "diagnosis",
+        "surgery",
+        "hospitalised",
+        "hospitalized",
+        "disability",
+        "disabled",
+        "depression",
+        "mental health",
+        "adhd",
+        "autism",
+        "diabetes",
+        "had a stroke",
+        "suffered a stroke",
+        "heart attack",
+        "medication",
+        "chronic illness",
+        "terminal illness",
+        "addiction",
+        "rehab",
+        "in remission",
+    ],
+    # faith — religion, observance, places of worship, religious festivals and clergy.
+    "faith": [
+        "church",
+        "mosque",
+        "synagogue",
+        "christian",
+        "catholic",
+        "protestant",
+        "muslim",
+        "islam",
+        "islamic",
+        "jewish",
+        "judaism",
+        "hindu",
+        "buddhist",
+        "sikh",
+        "atheist",
+        "religion",
+        "religious",
+        "faith community",
+        "prayer",
+        "baptised",
+        "baptized",
+        "ramadan",
+        "diwali",
+        "hanukkah",
+        "bible",
+        "quran",
+        "torah",
+        "pastor",
+        "rabbi",
+        "imam",
+    ],
+    # politics — party affiliation, voting, activism, campaigning for a cause or candidate.
+    "politics": [
+        "election",
+        "republican",
+        "democrat",
+        "labour party",
+        "conservative party",
+        "green party",
+        "socialist",
+        "communist",
+        "maga",
+        "brexit",
+        "voted for",
+        "campaigned for",
+        "political",
+        "politics",
+        "political activist",
+        "activism",
+        "protest",
+        "protester",
+        "lobbying",
+        "party member",
+    ],
+    # sexuality — sexual orientation and gender identity.
+    "sexuality": [
+        "lgbtq",
+        "lgbt",
+        "gay",
+        "lesbian",
+        "bisexual",
+        "queer",
+        "transgender",
+        "same-sex",
+        "sexuality",
+        "sexual orientation",
+        "coming out",
+        "non-binary",
+        "nonbinary",
+    ],
+    # family_tragedy — bereavement, illness in the family, divorce, loss.
+    "family_tragedy": [
+        "bereavement",
+        "bereaved",
+        "passed away",
+        "funeral",
+        "grieving",
+        "mourning",
+        "divorce",
+        "divorced",
+        "widow",
+        "widowed",
+        "miscarriage",
+        "in memory of",
+        "lost my",
+        "loss of my",
+    ],
+    # union — trade-union membership and industrial action.
+    "union": [
+        "trade union",
+        "labor union",
+        "labour union",
+        "union member",
+        "union rep",
+        "unionised",
+        "unionized",
+        "shop steward",
+        "collective bargaining",
+        "strike action",
+        "picket line",
+    ],
+    # criminal — arrests, charges, convictions, courts and prison.
+    "criminal": [
+        "arrested",
+        "under arrest",
+        "convicted",
+        "conviction",
+        "indicted",
+        "prosecuted",
+        "felony",
+        "misdemeanor",
+        "prison",
+        "jail",
+        "probation officer",
+        "parole",
+        "lawsuit",
+        "court case",
+        "criminal record",
+    ],
+    # minors — any reference to children, redacted even when the person published it themselves.
+    "minors": [
+        "child",
+        "children",
+        "kid",
+        "kids",
+        "son",
+        "sons",
+        "daughter",
+        "daughters",
+        "baby",
+        "babies",
+        "newborn",
+        "toddler",
+        "infant",
+        "grandchild",
+        "grandchildren",
+        "stepson",
+        "stepdaughter",
+        "school run",
+        "kindergarten",
+        "nursery",
+        "preschool",
+        "playgroup",
+    ],
+    # origin — nationality, migration and origin stories: biography only, never an outreach hook.
+    "origin": [
+        "immigrant",
+        "immigrated",
+        "emigrated",
+        "migrated",
+        "refugee",
+        "asylum",
+        "born in",
+        "grew up in",
+        "naturalised",
+        "naturalized",
+        "citizenship",
+        "green card",
+        "work visa",
+        "visa sponsorship",
+        "ancestry",
+        "homeland",
+        "native of",
+        "first-generation",
+        "second-generation",
+        "nationality",
+        "diaspora",
+        "mother tongue",
+    ],
+    # milestone_wedding — a self-announced wedding: recorded, never a hook (founder, 2026-09-09).
+    "milestone_wedding": [
+        "wedding",
+        "married",
+        "got engaged",
+        "engaged to",
+        "my wife",
+        "my husband",
+        "my fiancé",
+        "my fiancée",
+        "honeymoon",
+        "tied the knot",
+        "bride",
+        "groom",
+    ],
+    # milestone_baby — a self-announced birth: recorded, never a hook (founder, 2026-09-09).
+    "milestone_baby": [
+        "new baby",
+        "newborn",
+        "gave birth",
+        "expecting a baby",
+        "pregnant",
+        "pregnancy",
+        "maternity leave",
+        "paternity leave",
+        "parental leave",
+        "welcomed our",
+        "welcomed a baby",
+        "birth of our",
+        "baby shower",
+    ],
+}
+
+#: The floor of rule 3, in the order it is applied. ``minors`` (rule 2) runs before these and the
+#: two ``milestone_*`` lists and ``origin`` are markings, not redactions — so none of them is here.
+SENSITIVITY_CATEGORIES: tuple[str, ...] = (
+    "health",
+    "faith",
+    "politics",
+    "sexuality",
+    "family_tragedy",
+    "union",
+    "criminal",
+)
+
+# -- personal contact details (rule 1) ------------------------------------------------------------
+
+#: Stripped before the phone and address scans: a numeric id inside a media URL is not a phone
+#: number, and dropping a voice quote over its episode id would be a silly, invisible loss.
+_URL = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+
+#: A run of digits and phone punctuation. The *pattern* is deliberately loose and the digit count
+#: below is what decides, so "2021-2024" (eight digits) is a tenure and not a phone number.
+_PHONE = re.compile(r"\+?\d[\d\s().\-]{6,}\d")
+_PHONE_DIGITS = range(9, 16)
+
+#: Any token carrying a letter is not a phone number and is taken out of the text before the scan:
+#: the digits inside a uuid (``contact.reports_to``'s required ``contact_id``) or a media id read
+#: exactly like a phone number otherwise, and dropping a whole claim over one would be silent and
+#: baffling. A phone number written with a label ("tel:+1…") survives because ``:`` splits first.
+_LETTER_TOKEN = re.compile(r"\S*[A-Za-z]\S*")
+
+_EMAIL = re.compile(r"[\w.+\-]+@[\w\-]+\.[\w.\-]+")
+
+#: A house number, a capitalised street name and a thoroughfare word. The capitals are load-bearing:
+#: without them "5 people found a way" and "3 steps on the road" are addresses, and a claim would
+#: vanish over an idiom. A street written in lower case is missed, which is the right way to be
+#: wrong here.
+_STREET = re.compile(
+    r"\b\d{1,5}\s+(?:[A-Z][\w.'\-]*\s+){1,3}"
+    r"(?i:street|avenue|boulevard|road|lane|drive|court|way|place|terrace|crescent|square|"
+    r"st|ave|blvd|rd|ln|dr|ct|pl|sq)\b\.?"
+)
+
+#: Rule 1's three shapes, by the name the log reports.
+PERSONAL_CONTACT_PATTERNS: dict[str, re.Pattern[str]] = {
+    "phone": _PHONE,
+    "personal_email": _EMAIL,
+    "street_address": _STREET,
+}
+
+# -- text mechanics -------------------------------------------------------------------------------
+
+#: A sentence ends at ``.``/``!``/``?`` followed by whitespace. Redaction removes whole sentences.
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+#: Below this, a sentence is too generic to prove that two drafts rest on the same fact (rule 7).
+_SHARED_SENTENCE_MIN_WORDS = 4
+
+
+class _UnreadableValue(Exception):
+    """A value shape outside JSON: the draft is passed through and the pass says so."""
+
+
+def _keyword_pattern(words: Iterable[str]) -> re.Pattern[str]:
+    """One whole-word, case-insensitive alternation; longest first so phrases win over words."""
+    ordered = sorted(words, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(word) for word in ordered) + r")\b", re.I)
+
+
+_PATTERNS: dict[str, re.Pattern[str]] = {
+    category: _keyword_pattern(words) for category, words in KEYWORDS.items()
+}
+_MILESTONE = _keyword_pattern(KEYWORDS["milestone_wedding"] + KEYWORDS["milestone_baby"])
+
+
+def _text_leaves(value: Any) -> list[str]:
+    """Every string inside a JSON value, in order. Raises on a shape that is not JSON."""
+    if value is None or isinstance(value, bool | int | float):
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _text_leaves(item)]
+    if isinstance(value, dict):
+        leaves: list[str] = []
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise _UnreadableValue(f"object key of type {type(key).__name__}")
+            leaves.extend(_text_leaves(item))
+        return leaves
+    raise _UnreadableValue(f"value of type {type(value).__name__}")
+
+
+def _redact_text(text: str, pattern: re.Pattern[str]) -> str:
+    """Drop every sentence the pattern hits; keep the rest exactly as written."""
+    sentences = _SENTENCE.split(text)
+    kept = [sentence for sentence in sentences if not pattern.search(sentence)]
+    if len(kept) == len(sentences):
+        return text
+    return " ".join(sentence for sentence in kept if sentence.strip()).strip()
+
+
+def _redact_value(value: Any, pattern: re.Pattern[str]) -> tuple[Any, bool]:
+    """Redact every string leaf. The flag is *survived*: false means the node lost its content.
+
+    A list keeps only the items that survived and dies when it empties; an object dies when any of
+    its leaves does, because a ``voice_quote`` with no text or a career row with no role is not a
+    smaller fact, it is a broken one.
+    """
+    if isinstance(value, str):
+        redacted = _redact_text(value, pattern)
+        return redacted, bool(redacted.strip()) or not value.strip()
+    if isinstance(value, list):
+        kept: list[Any] = []
+        for item in value:
+            new_item, survived = _redact_value(item, pattern)
+            if survived:
+                kept.append(new_item)
+        return kept, bool(kept) or not value
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        survived_all = True
+        for key, item in value.items():
+            out[key], survived = _redact_value(item, pattern)
+            survived_all = survived_all and survived
+        return out, survived_all
+    return value, True
+
+
+def _sentences(texts: Iterable[str]) -> frozenset[str]:
+    """The draft's sentences, normalized, long enough to identify a shared fact (rule 7)."""
+    found: set[str] = set()
+    for text in texts:
+        for sentence in _SENTENCE.split(text):
+            normalized = " ".join(sentence.lower().split())
+            if len(normalized.split()) >= _SHARED_SENTENCE_MIN_WORDS:
+                found.add(normalized)
+    return frozenset(found)
+
+
+def _phone_in(text: str) -> str | None:
+    """A phone number, or ``None``. Digit runs that belong to a word or an id do not count."""
+    digits_only = _LETTER_TOKEN.sub(" ", text.replace(":", " ").replace(",", " "))
+    for match in _PHONE.finditer(digits_only):
+        if sum(character.isdigit() for character in match.group()) in _PHONE_DIGITS:
+            return match.group().strip()
+    return None
+
+
+# -- the pass -------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Processed:
+    """One draft after rules 1–6, with what rule 7 needs to judge the hooks beside it."""
+
+    draft: ClaimDraft
+    sentences: frozenset[str]
+    #: Marked origin-biography or self-announced-milestone: nothing may rest on this fact.
+    unsafe: bool
+    #: This draft met the floor itself (redacted, origin or milestone) — a hook may not survive it.
+    floor_hit: bool
+
+
+def _row(action: str, draft: ClaimDraft, rule: str, detail: str) -> dict[str, str]:
+    return {"action": action, "field_key": draft.field_key, "rule": rule, "detail": detail}
+
+
+def apply_person_floor(
+    drafts: Sequence[ClaimDraft], *, purge_unevidenced: bool
+) -> tuple[list[ClaimDraft], list[dict[str, str]]]:
+    """Run the person floor over one batch of drafts, in the order the rules are written.
+
+    Returns the drafts that survive and the log of everything the pass did. The log's rows are all
+    strings so they can ride the job receipt as they are.
+    """
+    log: list[dict[str, str]] = []
+    processed: list[_Processed] = []
+
+    for draft in drafts:
+        try:
+            outcome = _apply_rules_one_to_six(draft, purge_unevidenced=purge_unevidenced, log=log)
+        except Exception as error:  # noqa: BLE001 — the pass never raises into the write path
+            detail = (
+                str(error)
+                if isinstance(error, _UnreadableValue)
+                else f"{type(error).__name__}: {error}"
+            )
+            log.append(_row("skipped", draft, "unreadable_value", detail[:200]))
+            processed.append(
+                _Processed(draft=draft, sentences=frozenset(), unsafe=False, floor_hit=False)
+            )
+            continue
+        if outcome is not None:
+            processed.append(outcome)
+
+    return _apply_rule_seven(processed, log=log), log
+
+
+def _apply_rules_one_to_six(
+    draft: ClaimDraft, *, purge_unevidenced: bool, log: list[dict[str, str]]
+) -> _Processed | None:
+    """The six per-draft rules. ``None`` means the draft is dropped; the log already says why."""
+    original = _text_leaves(draft.value_json)
+    if draft.evidence_span:
+        original.append(draft.evidence_span)
+    blob = " ".join(original)
+
+    # Rule 1 — personal contact details. A phone, a private email or a home address is never
+    # written, whatever field it arrived on; the professional email export is the one exception.
+    # URLs come out first: a numeric id in a media link is not a phone number.
+    scrubbed = _URL.sub(" ", blob)
+    for name, pattern in PERSONAL_CONTACT_PATTERNS.items():
+        if name == "personal_email":
+            if draft.field_key == WORK_EMAIL_FIELD:
+                continue
+            found = pattern.search(blob) is not None
+        elif name == "phone":
+            found = _phone_in(scrubbed) is not None
+        else:
+            found = pattern.search(scrubbed) is not None
+        if found:
+            log.append(_row("dropped", draft, "personal_contact_detail", f"{name} in the value"))
+            return None
+
+    markers: dict[str, Any] = dict(draft.markers)
+    value: Any = draft.value_json
+    span = draft.evidence_span
+    redacted: list[str] = []
+
+    # Rules 2 and 3 — minors first, then the sensitivity floor, one category at a time so the log
+    # and the marker name exactly which one fired.
+    for category in ("minors", *SENSITIVITY_CATEGORIES):
+        pattern = _PATTERNS[category]
+        new_value, survived = _redact_value(value, pattern)
+        new_span = _redact_text(span, pattern) if span else span
+        if new_value == value and new_span == span:
+            continue
+        if not survived:
+            log.append(_row("dropped", draft, category, "the whole value matched the floor"))
+            return None
+        value, span = new_value, (new_span or None)
+        redacted.append(category)
+        log.append(_row("redacted", draft, category, "the matching sentence was removed"))
+
+    if redacted:
+        markers["redacted"] = redacted[0] if len(redacted) == 1 else redacted
+
+    outreach_safe = draft.outreach_safe
+
+    # Rule 4 — origin, nationality and migration are biography. Read against the *original* text:
+    # a sentence rule 2 or 3 already removed still tells us what this claim was about.
+    if _PATTERNS["origin"].search(blob):
+        markers["origin_biography"] = True
+        outreach_safe = False
+        log.append(_row("unsafe", draft, "origin_biography", "recorded as biography only"))
+
+    # Rule 5 — a self-announced wedding or baby is recorded and is never an outreach hook.
+    if _MILESTONE.search(blob):
+        markers["self_announced_milestone"] = True
+        outreach_safe = False
+        log.append(
+            _row("unsafe", draft, "self_announced_milestone", "a wedding or a birth is biography")
+        )
+
+    # Rule 6 — a row with no quote or no URL is marked; it is only purged when the flag says so.
+    if not span or not draft.source_url:
+        missing = "no evidence span" if not span else "no source url"
+        markers["unevidenced"] = True
+        if purge_unevidenced:
+            log.append(_row("dropped", draft, "unevidenced", f"{missing}; purge enabled"))
+            return None
+        log.append(_row("marked", draft, "unevidenced", missing))
+
+    kept = replace(
+        draft,
+        value_json=value,
+        evidence_span=span,
+        outreach_safe=outreach_safe,
+        markers=markers,
+    )
+    unsafe = bool(markers.get("origin_biography")) or bool(markers.get("self_announced_milestone"))
+    return _Processed(
+        draft=kept,
+        sentences=_sentences(original),
+        unsafe=unsafe,
+        floor_hit=unsafe or bool(redacted),
+    )
+
+
+def _apply_rule_seven(
+    processed: Sequence[_Processed], *, log: list[dict[str, str]]
+) -> list[ClaimDraft]:
+    """Rule 7 — an opener or a hook may not rest on a fact the floor made biography-only."""
+    unsafe_sentences: set[str] = set()
+    for item in processed:
+        if item.unsafe:
+            unsafe_sentences |= item.sentences
+
+    kept: list[ClaimDraft] = []
+    for item in processed:
+        leaf = item.draft.field_key.rsplit(".", 1)[-1]
+        if leaf not in HOOK_FIELD_LEAVES:
+            kept.append(item.draft)
+            continue
+        if item.floor_hit:
+            log.append(
+                _row("dropped", item.draft, "unsafe_hook", "the hook itself meets the floor")
+            )
+            continue
+        if item.sentences & unsafe_sentences:
+            log.append(
+                _row("dropped", item.draft, "unsafe_hook", "it rests on a biography-only fact")
+            )
+            continue
+        kept.append(item.draft)
+    return kept

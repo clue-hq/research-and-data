@@ -1302,11 +1302,12 @@ def test_write_each_isolates_every_draft_in_its_own_transaction() -> None:
 
     results = _run(runtime.write_each(drafts))
 
-    assert isinstance(results[0], WriteReceipt)
-    assert results[1] == tools.WriteFailure(
+    assert [draft for draft, _ in results] == drafts, "each result names the draft it belongs to"
+    assert isinstance(results[0][1], WriteReceipt)
+    assert results[1][1] == tools.WriteFailure(
         field_key="account.gtm_tooling_stack", error="cannot write account.gtm_tooling_stack"
     )
-    assert isinstance(results[2], WriteReceipt)
+    assert isinstance(results[2][1], WriteReceipt)
     assert conn_factory.opened == 3, "one transaction per draft"
 
 
@@ -2917,6 +2918,103 @@ def test_a_person_job_finalizes_only_once_and_closes_the_other_tools(
         _call(runtime, "unique_insight", subject="Nick Fisher")["code"]
         == "finalization_already_proposed"
     )
+
+
+# -- the coded compliance pass (Task 5) ------------------------------------------------------
+
+
+def _person_draft(**overrides: Any) -> ClaimDraft:
+    base: dict[str, Any] = {
+        "entity_id": CONTACT_ID,
+        "entity_type": EntityType.CONTACT,
+        "field_key": "contact.facet.hobby",
+        "value_json": "He runs ultras. He coaches his daughter's team on Sundays.",
+        "extraction_method": ExtractionMethod.LLM_SYNTHESIS,
+        "run_id": RunId(RUN_ID),
+        "research_mode": ResearchMode.CONTACT_PROFILING,
+        "workspace_id": "ws-1",
+        "source_url": "https://nickfisher.dev/about",
+        "evidence_span": "I run ultras.",
+    }
+    base.update(overrides)
+    return ClaimDraft(**base)
+
+
+def test_a_person_job_runs_the_floor_on_every_write_and_the_log_reaches_the_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pass sits at the write path, so no tool can reach the store around it."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    _run(runtime.write_each([_person_draft()]))
+
+    [written] = writer.drafts
+    assert written.value_json == "He runs ultras.", "the sentence about a child is gone"
+    assert written.markers["redacted"] == "minors"
+    assert runtime.compliance_log[0] == {
+        "action": "redacted",
+        "field_key": "contact.facet.hobby",
+        "rule": "minors",
+        "detail": "the matching sentence was removed",
+    }
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["compliance_log"] == runtime.compliance_log
+    assert accepted["compliance_log"][0]["rule"] == "minors"
+    assert runtime.finalization is not None
+    assert runtime.finalization["compliance_log"][0]["rule"] == "minors"
+
+
+def test_the_one_transaction_write_path_runs_the_floor_too() -> None:
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+
+    _run(runtime.write([_person_draft(value_json="Reach him on +1 (415) 555-0132.")]))
+
+    assert writer.drafts == [], "a personal contact detail never reaches the gate"
+    assert [row["rule"] for row in runtime.compliance_log] == ["personal_contact_detail"]
+
+
+def test_write_each_pairs_its_results_with_the_drafts_the_floor_left() -> None:
+    """The batch out is not the batch in, so the caller is handed the draft each result is about."""
+    runtime, _, writer, _ = _runtime(PERSON_SCOPE)
+
+    results = _run(
+        runtime.write_each(
+            [
+                _person_draft(value_json="Reach him on +1 (415) 555-0132."),
+                _person_draft(field_key="contact.headline", value_json="VP Marketing at Probook."),
+            ]
+        )
+    )
+
+    assert [draft.field_key for draft, _ in results] == ["contact.headline"]
+    assert [draft.field_key for draft in writer.drafts] == ["contact.headline"]
+    assert [row["rule"] for row in runtime.compliance_log] == ["personal_contact_detail"]
+
+
+def test_an_account_job_never_runs_the_compliance_pass() -> None:
+    """The floor is about a person; an account claim has no subject it could be personal about."""
+    runtime, _, writer, _ = _runtime()
+
+    _run(
+        runtime.write_each(
+            [
+                _person_draft(
+                    entity_id=ACCOUNT_ID,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key="account.gtm_tooling_stack",
+                    value_json="Support answers on +1 (415) 555-0132. Their kids use it too.",
+                )
+            ]
+        )
+    )
+
+    assert [draft.value_json for draft in writer.drafts] == [
+        "Support answers on +1 (415) 555-0132. Their kids use it too."
+    ]
+    assert runtime.compliance_log == []
 
 
 # -- the refusal-code guard ------------------------------------------------------------------

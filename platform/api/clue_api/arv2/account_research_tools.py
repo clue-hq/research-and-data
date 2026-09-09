@@ -105,6 +105,7 @@ from clue_api.arv2.media_feeds_client import (
     youtube_metadata,
     youtube_words,
 )
+from clue_api.arv2.person_compliance import apply_person_floor
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -373,6 +374,11 @@ class ToolRuntime:
         #: to resend the same material once after ``structuring_unparseable``.
         self.person_sources: list[SourceBlock] = []
 
+        #: Every action the coded compliance pass (§5) took on this job's person claims, in order.
+        #: It accumulates across every write the job makes and lands whole on the finalize receipt,
+        #: so the display can say a thing was removed and why without ever showing the thing.
+        self.compliance_log: list[dict[str, str]] = []
+
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._inflight: set[asyncio.Task[Any]] = set()
@@ -476,14 +482,32 @@ class ToolRuntime:
 
     # -- the one path to a claim ------------------------------------------------------------------
 
+    def compliance_pass(self, drafts: Sequence[ClaimDraft]) -> list[ClaimDraft]:
+        """The §5 floor, at the one place every person claim passes: just before it is written.
+
+        Account jobs never run it — the floor is about a *person*, and an account claim has no
+        subject it could be personal about. For a person job it is unconditional: both write paths
+        go through here, so there is no way for a tool to reach the store around it.
+        """
+        if self.scope.subject_kind != "person":
+            return list(drafts)
+        kept, actions = apply_person_floor(
+            drafts, purge_unevidenced=self.settings.unevidenced_row_purge_enabled
+        )
+        self.compliance_log.extend(actions)
+        return kept
+
     async def write(self, drafts: Sequence[ClaimDraft]) -> list[WriteReceipt]:
         """Write every draft through the lenient gate, in one transaction."""
+        drafts = self.compliance_pass(drafts)
         if not drafts:
             return []
         async with self._conn_factory() as conn:
             return [await self._writer.write(conn, draft) for draft in drafts]
 
-    async def write_each(self, drafts: Sequence[ClaimDraft]) -> list[WriteReceipt | WriteFailure]:
+    async def write_each(
+        self, drafts: Sequence[ClaimDraft]
+    ) -> list[tuple[ClaimDraft, WriteReceipt | WriteFailure]]:
         """Write every draft in a transaction of its own, and report the ones that failed.
 
         :meth:`write` is one transaction for the batch, which is right for a batch the *code*
@@ -496,15 +520,22 @@ class ToolRuntime:
         Here each draft gets its own transaction, and a failure becomes a :class:`WriteFailure` in
         the result rather than an exception: the model sees exactly which field did not land, and
         the rest of the batch is already written.
+
+        Each result carries **the draft it belongs to**, because the batch that comes out is not
+        always the batch that went in: on a person job the compliance floor
+        (:meth:`compliance_pass`) drops and rewrites drafts before any of them is written, so a
+        caller must never pair a result with an input by position.
         """
-        results: list[WriteReceipt | WriteFailure] = []
-        for draft in drafts:
+        results: list[tuple[ClaimDraft, WriteReceipt | WriteFailure]] = []
+        for draft in self.compliance_pass(drafts):
             try:
                 async with self._conn_factory() as conn:
-                    results.append(await self._writer.write(conn, draft))
+                    results.append((draft, await self._writer.write(conn, draft)))
             except Exception as error:  # noqa: BLE001 — one draft's failure is a row, never a stop
                 log.warning("arv2.claim_write_failed", field_key=draft.field_key, error=str(error))
-                results.append(WriteFailure(field_key=draft.field_key, error=str(error)[:300]))
+                results.append(
+                    (draft, WriteFailure(field_key=draft.field_key, error=str(error)[:300]))
+                )
         return results
 
     async def job_claims(self) -> Sequence[Claim]:
@@ -1181,12 +1212,12 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
         "email_export_empty": not (exported.found and exported.address),
         "written": [
             _receipt_json(result, draft, runtime.catalog)
-            for result, draft in zip(results, drafts, strict=True)
+            for draft, result in results
             if isinstance(result, WriteReceipt)
         ],
         "write_failures": [
             {"field_key": result.field_key, "error": result.error}
-            for result in results
+            for _, result in results
             if isinstance(result, WriteFailure)
         ],
         "cost": [_cost_json(cost) for cost in (people.cost, exported.cost) if cost is not None],
@@ -1588,15 +1619,20 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     )
     negatives = negative_claims(output.negatives, runtime.scope)
     # One transaction per draft: a value the store will not take costs its own claim and nothing
-    # else. ``write_each`` returns one result per draft, in order, so the two halves stay aligned.
-    results = await runtime.write_each([*drafts, *negatives])
-    claim_results, negative_results = results[: len(drafts)], results[len(drafts) :]
+    # else. The claims and the negatives are written as two batches so the two counts stay their
+    # own — the compliance floor may remove a draft, so a single batch could not be split by index.
+    claim_results = await runtime.write_each(drafts)
+    negative_results = await runtime.write_each(negatives)
     written = [
         _receipt_json(result, draft, runtime.catalog)
-        for result, draft in zip(claim_results, drafts, strict=True)
+        for draft, result in claim_results
         if isinstance(result, WriteReceipt)
     ]
-    failures = [result for result in results if isinstance(result, WriteFailure)]
+    failures = [
+        result
+        for _, result in [*claim_results, *negative_results]
+        if isinstance(result, WriteFailure)
+    ]
     return {
         "written": written,
         "proposed": [
@@ -1608,7 +1644,7 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
             for proposed in output.proposed
         ],
         "negatives_written": sum(
-            1 for result in negative_results if isinstance(result, WriteReceipt)
+            1 for _, result in negative_results if isinstance(result, WriteReceipt)
         ),
         # Rows the mode's cap discarded after the parse, and drafts the claim gate would not take:
         # both are things that happened to this call's output, and both are reported rather than
@@ -1671,12 +1707,12 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
     return {
         "written": [
             _receipt_json(result, draft, runtime.catalog)
-            for result, draft in zip(results, drafts, strict=True)
+            for draft, result in results
             if isinstance(result, WriteReceipt)
         ],
         "write_failures": [
             {"field_key": result.field_key, "error": result.error}
-            for result in results
+            for _, result in results
             if isinstance(result, WriteFailure)
         ],
         "sources_read": len(sources),
@@ -1709,12 +1745,12 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
     return {
         "written": [
             _receipt_json(result, draft, runtime.catalog)
-            for result, draft in zip(results, drafts, strict=True)
+            for draft, result in results
             if isinstance(result, WriteReceipt)
         ],
         "write_failures": [
             {"field_key": result.field_key, "error": result.error}
-            for result in results
+            for _, result in results
             if isinstance(result, WriteFailure)
         ],
     }
@@ -1994,6 +2030,9 @@ async def _finalize_person_research(
         "insight_found": insight_found,
         "reports_to_written": finalization.reports_to_written,
         "gaps": list(args.gaps),
+        # The whole job's compliance actions, in order — the finalization's own writes included,
+        # because they went through the same pass a moment ago.
+        "compliance_log": list(runtime.compliance_log),
         "proposed_at": runtime.now().isoformat(),
     }
     runtime.finalization = receipt
@@ -2003,11 +2042,11 @@ async def _finalize_person_research(
         "lookalikes_written": finalization.lookalikes_written,
         "reports_to_skipped": finalization.reports_to_skipped,
         "claim_ids": [
-            str(result.claim_id) for result in results if isinstance(result, WriteReceipt)
+            str(result.claim_id) for _, result in results if isinstance(result, WriteReceipt)
         ],
         "write_failures": [
             {"field_key": result.field_key, "error": result.error}
-            for result in results
+            for _, result in results
             if isinstance(result, WriteFailure)
         ],
     }
