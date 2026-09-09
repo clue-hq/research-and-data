@@ -143,6 +143,14 @@ def _pinned_documents(*, project_id: str) -> tuple[PinnedDocument, ...]:
     )
 
 
+def _icp_document_id(documents: tuple[PinnedDocument, ...]) -> UUID:
+    """The ICP document id a project would have pinned when it confirmed this set."""
+
+    return next(
+        document.ref.document_id for document in documents if document.ref.kind == "icp-definition"
+    )
+
+
 def _profile() -> AgentProfile:
     return AgentProfile(
         name="head-of-abm",
@@ -527,16 +535,15 @@ def test_post_recon_scope_composes_only_the_brand_knowledge_index(
                 scope=scope_a,
                 documents=documents,
                 confirmed_icp=confirmed_icp_for_project(
-                    documents, project_id=seeded.project_a.project_id
+                    documents, pinned_document_id=_icp_document_id(documents)
                 ),
             )
             bundle_b = await runner._compose_project_context(
                 submission=submission_b,
                 scope=scope_b,
                 documents=documents,
-                confirmed_icp=confirmed_icp_for_project(
-                    documents, project_id=seeded.project_b.project_id
-                ),
+                # Project B pinned nothing, so nothing is its confirmed ICP.
+                confirmed_icp=confirmed_icp_for_project(documents, pinned_document_id=None),
             )
             assert tuple(item.name for item in bundle_a.artifacts) == ("brand_knowledge_index",)
             assert tuple(item.name for item in bundle_b.artifacts) == ("brand_knowledge_index",)
@@ -699,7 +706,9 @@ def test_the_pinned_document_set_is_the_composition_authority(tmp_path: Path) ->
             )
             scope = await runner._resolve_current_scope(conn, submission)
             pinned = _pinned_documents(project_id=seeded.project_a.project_id)
-            confirmed = confirmed_icp_for_project(pinned, project_id=seeded.project_a.project_id)
+            confirmed = confirmed_icp_for_project(
+                pinned, pinned_document_id=_icp_document_id(pinned)
+            )
             bundle = await runner._compose_project_context(
                 submission=submission,
                 scope=scope,

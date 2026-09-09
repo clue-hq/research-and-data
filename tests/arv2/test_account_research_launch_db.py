@@ -131,6 +131,7 @@ class _Fixture:
     project_id: str
     brand_id: str
     accounts: tuple[EntityId, ...]
+    icp_document_id: UUID
     icp_artifact_key: str
     icp_artifact_sha256: str
     selection_version: int
@@ -150,7 +151,7 @@ async def _seed_icp_document(
     kind: str = "icp-definition",
     status: str = "confirmed",
     path: str = "audience/icp-clue-abm-buyers.md",
-) -> tuple[str, str]:
+) -> tuple[UUID, str, str]:
     """Register one ``brand_knowledge_document`` + its artifact, the way the loader does."""
     rendered = body.encode("utf-8")
     sha = content_address(rendered)
@@ -165,6 +166,7 @@ async def _seed_icp_document(
         source_key="arv2:test:knowledge_document",
     )
     await storage.put(key, rendered, media_type="text/markdown")
+    document_id = uuid5(UUID(int=0), f"{workspace_id}:{path}:{status}")
     await conn.execute(
         text(
             """
@@ -177,7 +179,7 @@ async def _seed_icp_document(
             """
         ),
         {
-            "document_id": uuid5(UUID(int=0), f"{workspace_id}:{path}:{status}"),
+            "document_id": document_id,
             "workspace_id": workspace_id,
             "brand_id": brand_id,
             "folder": path.split("/", 1)[0],
@@ -188,14 +190,55 @@ async def _seed_icp_document(
             "artifact_sha256": sha,
         },
     )
-    return key, sha
+    return document_id, key, sha
+
+
+async def _pin_icp(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    brand_id: str,
+    document_id: UUID,
+    artifact_key_: str,
+    artifact_sha256: str,
+    icp_key: str = ICP_KEY,
+) -> None:
+    """Append the project's ICP pin, the way the gate approval does.
+
+    Written as a row rather than through ``pin_project_icp`` so a test can pin a document the
+    approval path would never mint (a proposal, a malformed body) and prove the launch refuses it
+    by name instead of researching against it.
+    """
+    await conn.execute(
+        text(
+            "INSERT INTO project_icp_pin ("
+            "  workspace_id, project_id, pin_seq, brand_id, document_id, icp_key, "
+            "  artifact_key, artifact_sha256, product_selection_version, pinned_by_user_id"
+            ") SELECT :workspace_id, :project_id, COALESCE(MAX(pin_seq), 0) + 1, :brand_id, "
+            "  :document_id, :icp_key, :artifact_key, :artifact_sha256, NULL, :user_id "
+            "FROM project_icp_pin WHERE project_id = :project_id"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "brand_id": brand_id,
+            "document_id": document_id,
+            "icp_key": icp_key,
+            "artifact_key": artifact_key_,
+            "artifact_sha256": artifact_sha256,
+            "user_id": USER_ID,
+        },
+    )
 
 
 async def _seed(conn: AsyncConnection, storage: FsStorage) -> _Fixture:
     """The whole launch prerequisite set: spine, a confirmed product set, accounts, a confirmed ICP.
 
     Deliberately NOT seeded: an ``icp_spec`` row, an ``account_research_directive``, or any Stage-0
-    pin on the project run — the launch must need none of them (standing rule item 5).
+    pin on the project run — the launch must need none of them (standing rule item 5). The one pin
+    it does need is the project's own ICP pin, which is a record of a human approval, not Stage-0
+    machinery.
     """
     project = await seed_project(conn, WORKSPACE)
     await create_platform_user(conn, user_id=USER_ID, display_name="R2 launch test")
@@ -218,18 +261,30 @@ async def _seed(conn: AsyncConnection, storage: FsStorage) -> _Fixture:
                 conn, canonical_name=name, primary_domain=domain, workspace_id=project.workspace_id
             )
         )
-    key, sha = await _seed_icp_document(
+    document_id, key, sha = await _seed_icp_document(
         conn,
         storage,
         workspace_id=project.workspace_id,
         brand_id=str(project.brand_id),
         path="audience/icp-clue-abm-buyers.md",
     )
+    # The project pins that confirmed version, exactly as the ICP gate's approval does. Every
+    # launch resolves its ICP from this row (founder rulings 2026-09-10).
+    await _pin_icp(
+        conn,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        brand_id=str(project.brand_id),
+        document_id=document_id,
+        artifact_key_=key,
+        artifact_sha256=sha,
+    )
     return _Fixture(
         workspace_id=project.workspace_id,
         project_id=project.project_id,
         brand_id=str(project.brand_id),
         accounts=tuple(accounts),
+        icp_document_id=document_id,
         icp_artifact_key=key,
         icp_artifact_sha256=sha,
         selection_version=confirmed.selection_version,
@@ -437,13 +492,9 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
                 )
             assert foreign_refusal.value.code == f"account_not_in_workspace:{foreign}"
 
-            with pytest.raises(Arv2LaunchRefused) as absent:
-                await _launch(
-                    conn, storage, _request(fixture, icp_artifact_key="ws_r2_launch/nope"), queue
-                )
-            assert absent.value.code == "icp_artifact_not_found"
-
-            proposed_key, proposed_sha = await _seed_icp_document(
+            # An artifact ref that is not this project's pin: the pin is the selector, and a
+            # request composed against any other ICP is refused rather than researched.
+            _, proposed_key, proposed_sha = await _seed_icp_document(
                 conn,
                 storage,
                 workspace_id=fixture.workspace_id,
@@ -452,30 +503,37 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
                 status="proposed",
                 path="audience/icp-proposed.md",
             )
-            with pytest.raises(Arv2LaunchRefused) as unconfirmed:
-                await _launch(
-                    conn,
-                    storage,
-                    _request(
-                        fixture,
-                        icp_artifact_key=proposed_key,
-                        icp_artifact_sha256=proposed_sha,
-                    ),
-                    queue,
-                )
-            assert unconfirmed.value.code == "icp_artifact_not_confirmed"
-
-            with pytest.raises(Arv2LaunchRefused) as mismatch:
-                await _launch(conn, storage, _request(fixture, icp_artifact_sha256="d" * 64), queue)
-            assert mismatch.value.code == "icp_digest_mismatch"
+            for key, sha in (
+                ("ws_r2_launch/nope", fixture.icp_artifact_sha256),
+                (proposed_key, proposed_sha),
+                (fixture.icp_artifact_key, "d" * 64),
+            ):
+                with pytest.raises(Arv2LaunchRefused) as not_the_pin:
+                    await _launch(
+                        conn,
+                        storage,
+                        _request(fixture, icp_artifact_key=key, icp_artifact_sha256=sha),
+                        queue,
+                    )
+                assert not_the_pin.value.code == "icp_artifact_not_project_pin", key
 
             with pytest.raises(Arv2LaunchRefused) as version:
                 await _launch(conn, storage, _request(fixture, product_selection_version=99), queue)
             assert version.value.code == "product_selection_version_unknown"
 
+            # A project with no pin has no ICP; it is told so rather than handed the brand's
+            # newest confirmed document.
+            unpinned = await seed_project(conn, fixture.workspace_id, name="R2 unpinned")
+            with pytest.raises(Arv2LaunchRefused) as unpinned_refusal:
+                await _launch(
+                    conn, storage, _request(fixture, project_id=unpinned.project_id), queue
+                )
+            assert unpinned_refusal.value.code == "project_icp_not_pinned"
+
             with pytest.raises(Arv2LaunchRefused) as project:
                 await _launch(conn, storage, _request(fixture, project_id="prj_nope"), queue)
             assert project.value.code in {
+                "project_icp_not_pinned",
                 "project_not_found",
                 "product_selection_version_unknown",
             }
@@ -510,13 +568,24 @@ def test_launch_refuses_an_icp_whose_front_matter_has_no_key_or_no_integer_versi
                 "audience/icp-no-key.md": ICP_BODY.replace(f"icp_key: {ICP_KEY}\n", ""),
             }
             for path, body in malformed.items():
-                key, sha = await _seed_icp_document(
+                document_id, key, sha = await _seed_icp_document(
                     conn,
                     storage,
                     workspace_id=fixture.workspace_id,
                     brand_id=fixture.brand_id,
                     body=body,
                     path=path,
+                )
+                # The malformed document has to BE the project's pin: the pin is what the launch
+                # reads its key and version off, so it is the only body that can be malformed.
+                await _pin_icp(
+                    conn,
+                    workspace_id=fixture.workspace_id,
+                    project_id=fixture.project_id,
+                    brand_id=fixture.brand_id,
+                    document_id=document_id,
+                    artifact_key_=key,
+                    artifact_sha256=sha,
                 )
                 with pytest.raises(Arv2LaunchRefused) as refused:
                     await _launch(
@@ -658,9 +727,9 @@ def test_the_service_offers_the_tasks_only_after_the_launch_transaction_closes(
 def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path: Any) -> None:
     """A human named these people, so the run is theirs: person profile, full effort, cap = them.
 
-    It resolves its own pins — the brand's currently confirmed ICP and the project's current
-    product set — because there is no approved artifact ref to be handed one on-demand, and it
-    records both on the run exactly like the account launch does.
+    It resolves its own pins — the project's pinned ICP and its current product set — because
+    there is no approved artifact ref to be handed one on-demand, and it records both on the run
+    exactly like the account launch does.
     """
 
     async def scenario() -> None:
@@ -953,5 +1022,117 @@ def test_person_launch_refuses_a_lane_that_is_off_and_a_request_naming_nobody(
                     profile_sha256=arv2_person_profile_sha256(),
                 )
             assert empty.value.code == "no_contacts"
+
+    run_async(scenario())
+
+
+def test_a_pin_whose_document_moved_refuses_loudly_on_both_launches(tmp_path: Any) -> None:
+    """The pin names a version; a version that is no longer what it was is refused, not researched.
+
+    Both refusals are reachable in production. A project that re-confirms its own ICP retires the
+    row its earlier pin names (``icp_confirmation._may_retire``), and a document's stored digest
+    moving means the bytes behind the pin are not the bytes a human approved. Neither may quietly
+    become "research against whatever is there now".
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            queue = _FakeQueue()
+            contact = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
+            )
+            person_request = Arv2PersonLaunchRequest(
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                contact_entity_ids=(UUID(str(contact)),),
+                requested_by_user_id=USER_ID,
+            )
+
+            async def person_launch() -> Any:
+                return await launch_arv2_person_research(
+                    conn,
+                    person_request,
+                    settings=_settings(),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+
+            # 1. The pinned row was retired.
+            await conn.execute(
+                text(
+                    "UPDATE brand_knowledge_document SET status = 'superseded' "
+                    "WHERE document_id = :id"
+                ),
+                {"id": fixture.icp_document_id},
+            )
+            with pytest.raises(Arv2LaunchRefused) as account_retired:
+                await _launch(conn, storage, _request(fixture), queue)
+            assert account_retired.value.code == "icp_artifact_not_confirmed"
+            with pytest.raises(Arv2LaunchRefused) as person_retired:
+                await person_launch()
+            assert person_retired.value.code == "icp_artifact_not_confirmed"
+
+            # 2. The row is confirmed again, but its stored digest is not the pinned one.
+            await conn.execute(
+                text(
+                    "UPDATE brand_knowledge_document "
+                    "SET status = 'confirmed', artifact_sha256 = :sha WHERE document_id = :id"
+                ),
+                {"id": fixture.icp_document_id, "sha": "c" * 64},
+            )
+            with pytest.raises(Arv2LaunchRefused) as account_moved:
+                await _launch(conn, storage, _request(fixture), queue)
+            assert account_moved.value.code == "icp_digest_mismatch"
+            with pytest.raises(Arv2LaunchRefused) as person_moved:
+                await person_launch()
+            assert person_moved.value.code == "icp_digest_mismatch"
+
+            assert queue.calls == []
+
+    run_async(scenario())
+
+
+def test_a_person_launch_under_an_unpinned_project_is_refused_by_name(tmp_path: Any) -> None:
+    """No pin, no ICP: an on-demand person launch no longer falls back to the brand's newest."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await _seed(conn, storage)
+            unpinned = await seed_project(conn, fixture.workspace_id, name="R2 person unpinned")
+            contact = await insert_contact_entity(
+                conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
+            )
+
+            with pytest.raises(Arv2LaunchRefused) as refused:
+                await launch_arv2_person_research(
+                    conn,
+                    Arv2PersonLaunchRequest(
+                        workspace_id=fixture.workspace_id,
+                        project_id=unpinned.project_id,
+                        contact_entity_ids=(UUID(str(contact)),),
+                        requested_by_user_id=USER_ID,
+                    ),
+                    settings=_settings(),
+                    storage=storage,
+                    profile_sha256=arv2_person_profile_sha256(),
+                )
+            assert refused.value.code == "project_icp_not_pinned"
+
+            # The brand HAS a confirmed ICP — the one the other project pinned. It is not this
+            # project's, and nothing resolves it as such.
+            confirmed = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM brand_knowledge_document "
+                        "WHERE workspace_id = :ws AND brand_id = :brand "
+                        "  AND kind = 'icp-definition' AND status = 'confirmed'"
+                    ),
+                    {"ws": fixture.workspace_id, "brand": fixture.brand_id},
+                )
+            ).scalar_one()
+            assert confirmed == 1
 
     run_async(scenario())

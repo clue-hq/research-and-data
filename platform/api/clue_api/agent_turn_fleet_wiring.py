@@ -75,6 +75,7 @@ from clue_api.agent_turn_submission import (
     message_artifact_ref,
     submission_context_refs,
 )
+from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.brand_knowledge_context import (
     BRAND_KNOWLEDGE_INDEX_CARD_MEDIA_TYPE,
     ConfirmedIcpRef,
@@ -535,6 +536,7 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = ()
         confirmed_icp: ConfirmedIcpRef | None = None
         product_set: ProjectProductSet | None = None
+        icp_pin: ProjectIcpPin | None = None
         knowledge_pin_created = False
         if self._storage is None:
             log.info(
@@ -551,6 +553,7 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     turn_id=turn_id,
                     brand_id=scope.brand_id,
+                    project_id=scope.project_id,
                 )
                 documents = await read_pinned_documents(conn, self._storage, pin=knowledge_pin)
                 product_set = await current_project_product_set(
@@ -558,8 +561,21 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     project_id=scope.project_id,
                 )
-            confirmed_icp = confirmed_icp_for_project(documents, project_id=scope.project_id)
-        input_seeds = knowledge_seed_files(documents)
+                # Founder rulings 2026-09-10: what this project's ICP *is* comes from its durable
+                # pin, not from whatever the brand's documents currently claim.
+                icp_pin = await current_project_icp_pin(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                )
+            confirmed_icp = confirmed_icp_for_project(
+                documents,
+                pinned_document_id=None if icp_pin is None else icp_pin.document_id,
+            )
+        input_seeds = knowledge_seed_files(
+            documents,
+            pinned_document_id=None if icp_pin is None else icp_pin.document_id,
+        )
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,

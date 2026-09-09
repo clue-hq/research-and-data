@@ -164,6 +164,9 @@ _REQUIRED_INPUT_KINDS = frozenset({"company-overview", "product-catalog"})
 #: alone. (``customer-reviews`` is optional; a brand without one simply has no row.)
 _CORE_INPUT_KINDS = ("company-overview", "product-catalog", "customer-reviews")
 _ICP_KIND = "icp-definition"
+#: The statuses a newly published version may retire. `confirmed` is deliberately absent: it is a
+#: human's yes, and some project's pinned ICP. Reads still use the wider `SERVABLE_STATUSES`.
+RETIRABLE_STATUSES: tuple[str, ...] = ("ready", "proposed")
 #: Per-product research: deep, numerous, and only some of it belongs to a given ICP. It is seeded
 #: under ``inputs/`` for the model to read by path, never pushed into the opening context.
 _PRODUCT_RESEARCH_KIND = "product-research"
@@ -1336,6 +1339,11 @@ class OnboardingSynthesisLauncher:
                         "supersedes": None if supersedes == document_id else supersedes,
                     },
                 )
+                # Re-synthesis retires the drafts it replaces — and only those. A `confirmed`
+                # row is a human's yes and some project's pinned ICP (founder rulings
+                # 2026-09-10); superseding it here would retire an ICP nobody asked to change and
+                # break the launches pinned to it. It stays confirmed beside the new proposal, and
+                # the project moves only when a human approves the new one at the gate.
                 await conn.execute(
                     text(
                         "UPDATE brand_knowledge_document SET status = 'superseded', "
@@ -1349,7 +1357,7 @@ class OnboardingSynthesisLauncher:
                         "brand_id": brand_id,
                         "path": path,
                         "document_id": document_id,
-                        "statuses": list(SERVABLE_STATUSES),
+                        "statuses": list(RETIRABLE_STATUSES),
                     },
                 )
                 # Read the version back rather than trusting the one we just computed: on a

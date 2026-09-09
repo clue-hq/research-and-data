@@ -480,6 +480,21 @@ async def _documents(conn: Any, seeded: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows.all()]
 
 
+async def _pins(conn: Any, seeded: Any) -> list[dict[str, Any]]:
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT pin_seq, document_id, icp_key, artifact_key, artifact_sha256, "
+                " product_selection_version, pinned_by_user_id, brand_id "
+                "FROM project_icp_pin WHERE workspace_id = :ws AND project_id = :project "
+                "ORDER BY pin_seq"
+            ),
+            {"ws": seeded.workspace_id, "project": seeded.project_id},
+        )
+    ).mappings()
+    return [dict(row) for row in rows.all()]
+
+
 async def _artifacts(conn: Any, seeded: Any) -> int:
     return int(
         (
@@ -537,6 +552,19 @@ def test_approving_an_icp_document_mints_its_confirmed_version(tmp_path: Path) -
             assert front["product_selection_version"] == 1
             assert isinstance(front["confirmed_at"], str)
 
+            # Founder rulings 2026-09-10: the same approval pins the minted version for this
+            # project, in the same transaction. The pin — not the front matter — is what every
+            # later read and every launch resolves the project's ICP from.
+            pins = await _pins(conn, seeded)
+            assert [row["pin_seq"] for row in pins] == [1]
+            assert pins[0]["document_id"] == minted["document_id"]
+            assert pins[0]["icp_key"] == "clinics"
+            assert pins[0]["brand_id"] == seeded.brand_id
+            assert pins[0]["artifact_key"] == minted["artifact_key"]
+            assert pins[0]["artifact_sha256"] == minted["artifact_sha256"]
+            assert pins[0]["product_selection_version"] == 1
+            assert pins[0]["pinned_by_user_id"] == USER_ID
+
     run_async(scenario())
 
 
@@ -555,6 +583,9 @@ def test_a_confirmation_with_no_product_set_omits_the_selection_version(tmp_path
             front, _rest = parse_front_matter(body.decode())
             assert "product_selection_version" not in front
             assert front["confirmed_for_project_id"] == seeded.project_id
+            pins = await _pins(conn, seeded)
+            assert [row["pin_seq"] for row in pins] == [1]
+            assert pins[0]["product_selection_version"] is None
 
     run_async(scenario())
 
@@ -578,6 +609,8 @@ def test_a_retried_approval_replays_and_mints_nothing_further(tmp_path: Path) ->
             assert [row["version"] for row in rows] == [1, 2]
             # No orphan: the replay renders and stores nothing, so it records no artifact either.
             assert await _artifacts(conn, seeded) == after_first
+            # And it pins nothing further: the pin's receipt stays the first approval's.
+            assert [row["pin_seq"] for row in await _pins(conn, seeded)] == [1]
 
     run_async(scenario())
 
@@ -681,5 +714,6 @@ def test_a_rejected_icp_document_writes_no_confirmation(tmp_path: Path) -> None:
             assert answer is not None and answer.decision == "rejected"
             rows = await _documents(conn, seeded)
             assert [(row["version"], row["status"]) for row in rows] == [(1, "proposed")]
+            assert await _pins(conn, seeded) == []
 
     run_async(scenario())

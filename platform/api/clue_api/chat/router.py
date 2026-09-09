@@ -64,6 +64,7 @@ from clue_api.arv2.icp_confirmation import (
     IcpConfirmationStale,
     confirm_icp_document,
     current_icp_document,
+    pin_project_icp,
 )
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
@@ -2590,7 +2591,10 @@ def build_chat_router(
                                 raise IcpConfirmationStale(
                                     "the reviewed ICP document is no longer readable"
                                 )
-                            await confirm_icp_document(
+                            selection_version = (
+                                None if product_set is None else product_set.selection_version
+                            )
+                            confirmed = await confirm_icp_document(
                                 conn,
                                 storage,
                                 workspace_id=who.workspace_id,
@@ -2599,9 +2603,21 @@ def build_chat_router(
                                 proposed=subject,
                                 expected_sha256=gate.expected_subject_sha256,
                                 confirmed_by_user_id=who.user_id,
-                                product_selection_version=(
-                                    None if product_set is None else product_set.selection_version
-                                ),
+                                product_selection_version=selection_version,
+                            )
+                            # Founder rulings 2026-09-10: the approval is also the moment this
+                            # project pins its ICP. Same transaction as the confirmed version and
+                            # the immutable answer — a project can never end up having confirmed a
+                            # document it does not pin, or pinning one nobody approved. A replayed
+                            # approval finds its own document already pinned and writes nothing.
+                            await pin_project_icp(
+                                conn,
+                                workspace_id=who.workspace_id,
+                                project_id=project_id,
+                                brand_id=brand_id,
+                                document=confirmed,
+                                product_selection_version=selection_version,
+                                pinned_by_user_id=who.user_id,
                             )
                         except IcpConfirmationStale as exc:
                             raise _refuse(

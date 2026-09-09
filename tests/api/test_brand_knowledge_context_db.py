@@ -16,6 +16,7 @@ by hand and assert the bounded shape the model actually receives.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_submission import insert_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
 from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
     BrandKnowledgeIndexCard,
@@ -278,13 +280,21 @@ def test_the_turn_pin_is_written_once_and_a_newer_document_cannot_change_it() ->
             )
 
             first, created = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
             assert created is True
             assert [doc.path for doc in first.documents] == ["company/overview.md"]
 
             again, created_again = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
             assert created_again is False
             assert again.documents_sha256 == first.documents_sha256
@@ -302,7 +312,11 @@ def test_the_turn_pin_is_written_once_and_a_newer_document_cannot_change_it() ->
                 body=f"{OVERVIEW}\nnewer\n",
             )
             retry, retry_created = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
             assert retry_created is False
             assert [(doc.path, doc.version) for doc in retry.documents] == [
@@ -363,7 +377,11 @@ def test_read_pinned_documents_refuses_a_document_whose_stored_digest_moved() ->
                 label="digest",
             )
             pin, _ = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
 
             with pytest.raises(KnowledgePinConflict):
@@ -412,7 +430,11 @@ def test_pinned_documents_seed_read_only_files_under_the_knowledge_prefix() -> N
                 label="seed",
             )
             pin, _ = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
 
             documents = await read_pinned_documents(conn, storage, pin=pin)
@@ -436,7 +458,9 @@ def test_pinned_documents_seed_read_only_files_under_the_knowledge_prefix() -> N
     run_async(scenario())
 
 
-def test_confirmed_icp_for_project_picks_this_projects_confirmation() -> None:
+def test_the_projects_icp_is_the_document_it_pinned_not_a_front_matter_scan() -> None:
+    """Founder rulings 2026-09-10: the pin is the selector, the front matter is only data."""
+
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             workspace_id = f"o6-icp-{uuid4().hex[:6]}"
@@ -451,7 +475,7 @@ def test_confirmed_icp_for_project_picks_this_projects_confirmation() -> None:
             artifacts = DurableAgentArtifactStore(
                 storage=storage, conn_factory=conn_session_factory(conn)
             )
-            await _seed_document(
+            gi_document_id = await _seed_document(
                 conn,
                 artifacts=artifacts,
                 workspace_id=workspace_id,
@@ -467,7 +491,7 @@ def test_confirmed_icp_for_project_picks_this_projects_confirmation() -> None:
                     selection_version=3,
                 ),
             )
-            await _seed_document(
+            asc_document_id = await _seed_document(
                 conn,
                 artifacts=artifacts,
                 workspace_id=workspace_id,
@@ -503,22 +527,33 @@ def test_confirmed_icp_for_project_picks_this_projects_confirmation() -> None:
                 label="icp",
             )
             pin, _ = await load_or_create_knowledge_pin(
-                conn, workspace_id=workspace_id, turn_id=turn_id, brand_id=project.brand_id
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
             )
             documents = await read_pinned_documents(conn, storage, pin=pin)
 
-            confirmed = confirmed_icp_for_project(documents, project_id=project.project_id)
+            confirmed = confirmed_icp_for_project(documents, pinned_document_id=gi_document_id)
             assert confirmed is not None
+            assert confirmed.document_id == gi_document_id
             assert confirmed.icp_key == "gi"
             assert confirmed.version == 2
             assert confirmed.product_ids == ("prd_aura", "prd_beta")
             assert confirmed.product_selection_version == 3
 
-            for_other = confirmed_icp_for_project(documents, project_id=other.project_id)
+            # The other project's pin names the other document — from the same pinned set. The
+            # front matter of `icp-gi` still says it was confirmed for the first project; that is
+            # a fact about the document, and it is not what decides.
+            for_other = confirmed_icp_for_project(documents, pinned_document_id=asc_document_id)
             assert for_other is not None
             assert for_other.icp_key == "asc"
 
-            assert confirmed_icp_for_project(documents, project_id="prj-nobody") is None
+            # A project that has pinned nothing has no confirmed ICP, and a pin whose bytes this
+            # turn does not hold is honestly absent rather than half-known.
+            assert confirmed_icp_for_project(documents, pinned_document_id=None) is None
+            assert confirmed_icp_for_project(documents, pinned_document_id=uuid4()) is None
 
             # The confirmed ref rides the card, so it must survive the JSON round trip Task 7
             # persists the card through.
@@ -685,3 +720,189 @@ def test_the_index_card_drops_product_research_entries_to_fit_its_budget() -> No
     assert bounded.omitted_count == 2
     assert [entry.kind for entry in bounded.documents] == ["company-overview"]
     assert len(bounded.canonical_bytes()) < len(full.canonical_bytes())
+
+
+async def _pin_icp(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    brand_id: str,
+    document_id: UUID,
+    icp_key: str,
+    product_selection_version: int | None,
+) -> Any:
+    """Pin an already-seeded confirmed document, the way the gate approval does."""
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT version, artifact_key, artifact_sha256 "
+                    "FROM brand_knowledge_document WHERE document_id = :id"
+                ),
+                {"id": document_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return await pin_project_icp(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        brand_id=brand_id,
+        document=ConfirmedIcp(
+            document_id=document_id,
+            icp_key=icp_key,
+            version=int(row["version"]),
+            artifact_key=str(row["artifact_key"]),
+            artifact_sha256=str(row["artifact_sha256"]),
+            supersedes_document_id=document_id,
+            product_selection_version=product_selection_version,
+        ),
+        product_selection_version=product_selection_version,
+        pinned_by_user_id="usr-o6-knowledge",
+    )
+
+
+def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirmed() -> None:
+    """The ruling, end to end through a turn's composition.
+
+    Onboarding re-synthesizes an ICP and publishes a newer ``proposed`` version of the same path.
+    The project pinned the earlier ``confirmed`` version, so that version is still in the turn's
+    pinned set, still seeded on disk, and still what the card calls ``confirmed_icp``. The newer
+    proposal is not hidden — it rides the set and it is listed — it simply is not the ICP, and it
+    materializes beside the pin under a version-qualified name rather than over it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-newer-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 newer proposal")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="company/overview.md",
+                kind="company-overview",
+                version=1,
+                status="ready",
+                body=OVERVIEW,
+            )
+            pinned_document_id = await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi.md",
+                kind="icp-definition",
+                version=2,
+                status="confirmed",
+                body=_icp(
+                    key="gi",
+                    status="confirmed",
+                    project_id=project.project_id,
+                    selection_version=3,
+                ),
+            )
+            pin = await _pin_icp(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                document_id=pinned_document_id,
+                icp_key="gi",
+                product_selection_version=3,
+            )
+            # Onboarding re-synthesizes: a newer proposal lands on the very same path.
+            newer_document_id = await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi.md",
+                kind="icp-definition",
+                version=3,
+                status="proposed",
+                body=_icp(key="gi", status="proposed", project_id=None, selection_version=None),
+            )
+            # The brand's *current* set serves only the newest version of the path.
+            current = await current_knowledge_documents(
+                conn, workspace_id=workspace_id, brand_id=project.brand_id
+            )
+            assert [(ref.path, ref.version) for ref in current] == [
+                ("audience/icp-gi.md", 3),
+                ("company/overview.md", 1),
+            ]
+
+            turn_id = await _submitted_turn(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                label="newer",
+            )
+            knowledge_pin, created = await load_or_create_knowledge_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+            )
+            assert created is True
+            # The turn holds BOTH: what the brand knows now, and what this project agreed to.
+            assert [(ref.path, ref.version) for ref in knowledge_pin.documents] == [
+                ("audience/icp-gi.md", 2),
+                ("audience/icp-gi.md", 3),
+                ("company/overview.md", 1),
+            ]
+
+            documents = await read_pinned_documents(conn, storage, pin=knowledge_pin)
+            seeds = knowledge_seed_files(documents, pinned_document_id=pin.document_id)
+            # Every seed is a distinct real file, and the pinned version owns the natural name.
+            assert len({seed.path for seed in seeds}) == len(seeds)
+            assert sorted(seed.path for seed in seeds) == [
+                f"{INPUT_PREFIX}audience/icp-gi.md",
+                f"{INPUT_PREFIX}audience/icp-gi.v3.md",
+                f"{INPUT_PREFIX}company/overview.md",
+            ]
+            pinned_seed = next(
+                seed for seed in seeds if seed.path == f"{INPUT_PREFIX}audience/icp-gi.md"
+            )
+            assert pinned_seed.sha256 == pin.artifact_sha256
+
+            confirmed = confirmed_icp_for_project(documents, pinned_document_id=pin.document_id)
+            assert confirmed is not None
+            assert confirmed.document_id == pinned_document_id
+            assert confirmed.version == 2
+
+            card = compile_brand_knowledge_index_card(
+                brand_id=project.brand_id,
+                documents=documents,
+                confirmed_icp=confirmed,
+                product_set=None,
+            )
+            assert card.confirmed_icp is not None
+            assert card.confirmed_icp.document_id == pinned_document_id
+            listed = {entry.document_id: entry for entry in card.documents}
+            assert str(newer_document_id) in listed
+            newer_entry = listed[str(newer_document_id)]
+            assert newer_entry.status == "proposed"
+            assert newer_entry.version == 3
+            # The index names files that really exist, so it points at the qualified name too.
+            assert newer_entry.workspace_path == f"{INPUT_PREFIX}audience/icp-gi.v3.md"
+            assert listed[str(pinned_document_id)].workspace_path == (
+                f"{INPUT_PREFIX}audience/icp-gi.md"
+            )
+            assert {entry.workspace_path for entry in card.documents} == {
+                seed.path for seed in seeds
+            }
+
+    run_async(scenario())

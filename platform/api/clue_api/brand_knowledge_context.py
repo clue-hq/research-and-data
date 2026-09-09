@@ -18,6 +18,12 @@ This module is the seam between the durable documents and one turn's context:
   context. The card is an *index*, not the knowledge: it carries a path, a status and one summary
   line per document so the model knows what to read, never the documents' contents.
 
+The project's **ICP pin** (``arv2.icp_confirmation.current_project_icp_pin``) rides through both:
+the turn's pinned set always contains the document version this project agreed to, even after a
+newer version is published on its path, and the card's ``confirmed_icp`` is that pinned document —
+never a scan for whatever currently carries ``confirmed_for_project_id`` (founder rulings
+2026-09-10).
+
 The module holds no Client-KB version, readiness decision or Stage-0 pin: the brand's knowledge is
 files, and files are pinned by ref and digest.
 """
@@ -38,6 +44,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import WorkspaceSeedFile
+from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_core import UtcDatetime
 from clue_spine import ProjectProductSet
@@ -62,6 +69,7 @@ __all__ = [
     "knowledge_seed_files",
     "load_or_create_knowledge_pin",
     "read_pinned_documents",
+    "workspace_paths",
 ]
 
 #: Every brand knowledge document is materialized read-only below this workspace prefix.
@@ -173,6 +181,47 @@ async def current_knowledge_documents(
     )
 
 
+async def _document_ref(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    document_id: UUID,
+) -> KnowledgeDocumentRef | None:
+    """One named document version, whatever its status — read inside one workspace.
+
+    Status is deliberately not filtered: this reads the version a *project pinned*, and a pin is
+    not undone by a later publish on the same path. A row with no bytes is honestly absent, because
+    there is nothing to seed or verify.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_DOCUMENT_COLUMNS} FROM brand_knowledge_document "
+                    "WHERE document_id = :document_id AND workspace_id = :workspace_id "
+                    "  AND artifact_key IS NOT NULL"
+                ),
+                {"document_id": document_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    return KnowledgeDocumentRef(
+        document_id=row["document_id"],
+        path=str(row["path"]),
+        kind=str(row["kind"]),
+        version=int(row["version"]),
+        status=str(row["status"]),
+        artifact_key=str(row["artifact_key"]),
+        artifact_sha256=str(row["artifact_sha256"]),
+        updated_at=row["updated_at"],
+    )
+
+
 class KnowledgePinRow(BaseModel):
     """One turn's immutable brand-knowledge receipt."""
 
@@ -225,12 +274,19 @@ async def load_or_create_knowledge_pin(
     workspace_id: str,
     turn_id: UUID,
     brand_id: str,
+    project_id: str,
 ) -> tuple[KnowledgePinRow, bool]:
     """Return this turn's pinned documents, atomically creating them on the first attempt.
 
     Concurrent attempts may both observe the live documents, but only the winning ``INSERT`` owns
     the turn. The loser reads the winner's row; it never composes from its discarded observation.
     Database ``now()`` supplies the receipt time.
+
+    **The project's pinned ICP is always in the set** (founder rulings 2026-09-10), even when a
+    newer version has since been published on its path: the brand's *current* documents answer
+    "what does this brand know now", and the pin answers "what did this project agree to". A turn
+    needs both, so they are unioned (by document id, so the common case where the pin still is the
+    current version adds nothing). Replaying an existing pin is unchanged — the row is immutable.
     """
 
     existing = await get_knowledge_pin(conn, workspace_id=workspace_id, turn_id=turn_id)
@@ -240,6 +296,15 @@ async def load_or_create_knowledge_pin(
     documents = await current_knowledge_documents(
         conn, workspace_id=workspace_id, brand_id=brand_id
     )
+    pin = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
+    if pin is not None and all(ref.document_id != pin.document_id for ref in documents):
+        pinned_ref = await _document_ref(
+            conn, workspace_id=workspace_id, document_id=pin.document_id
+        )
+        if pinned_ref is not None:
+            documents = tuple(
+                sorted((*documents, pinned_ref), key=lambda ref: (ref.path, ref.version))
+            )
     inserted = (
         (
             await conn.execute(
@@ -325,12 +390,59 @@ async def read_pinned_documents(
     return tuple(documents)
 
 
-def knowledge_seed_files(documents: Sequence[PinnedDocument]) -> tuple[WorkspaceSeedFile, ...]:
+def _version_qualified(path: str, version: int) -> str:
+    """``audience/icp-gi.md`` at v3 → ``audience/icp-gi.v3.md``."""
+
+    stem, dot, suffix = path.rpartition(".")
+    return f"{stem}.v{version}.{suffix}" if dot else f"{path}.v{version}"
+
+
+def workspace_paths(
+    documents: Sequence[PinnedDocument],
+    *,
+    pinned_document_id: UUID | None = None,
+) -> dict[UUID, str]:
+    """Where each pinned document materializes under ``inputs/brand/knowledge/``.
+
+    Normally one document holds a path and the answer is just that path. A project's ICP pin can
+    put **two** versions of one path in a turn's set at once — the version the project agreed to,
+    and a newer proposal the brand has since published — and a workspace refuses to materialize two
+    files at one path (``AgentResourceMaterializer``). So the pinned version keeps the natural
+    name, because it is what this project's ICP *is*, and the other version is offered beside it
+    under a version-qualified name. Both are real, readable files; neither is silently dropped and
+    neither overwrites the other.
+    """
+
+    grouped: dict[str, list[PinnedDocument]] = {}
+    for document in documents:
+        grouped.setdefault(document.ref.path, []).append(document)
+    resolved: dict[UUID, str] = {}
+    for path, group in grouped.items():
+        keeper = next(
+            (item for item in group if item.ref.document_id == pinned_document_id),
+            # No pin on this path: the newest version answers to the plain name.
+            max(group, key=lambda item: item.ref.version),
+        )
+        for document in group:
+            resolved[document.ref.document_id] = INPUT_PREFIX + (
+                path
+                if document.ref.document_id == keeper.ref.document_id
+                else _version_qualified(path, document.ref.version)
+            )
+    return resolved
+
+
+def knowledge_seed_files(
+    documents: Sequence[PinnedDocument],
+    *,
+    pinned_document_id: UUID | None = None,
+) -> tuple[WorkspaceSeedFile, ...]:
     """The read-only workspace files the model reads by path, one per pinned document."""
 
+    paths = workspace_paths(documents, pinned_document_id=pinned_document_id)
     return tuple(
         WorkspaceSeedFile(
-            path=INPUT_PREFIX + document.ref.path,
+            path=paths[document.ref.document_id],
             content=document.body,
             sha256=document.ref.artifact_sha256,
             media_type=KNOWLEDGE_DOCUMENT_MEDIA_TYPE,
@@ -376,25 +488,31 @@ def _front_selection_version(front: dict[str, Any]) -> int | None:
 def confirmed_icp_for_project(
     documents: Sequence[PinnedDocument],
     *,
-    project_id: str,
+    pinned_document_id: UUID | None,
 ) -> ConfirmedIcpRef | None:
-    """The confirmed ICP document belonging to this project, or ``None``.
+    """The document this project **pinned** as its ICP, or ``None`` when it has not pinned one.
 
-    A brand's ICPs are shared; a *confirmation* is per project, recorded in the confirmed version's
-    own front matter. Another project's confirmation is therefore not this project's ICP, and a
-    proposal is not a confirmation.
+    A brand's ICPs are shared; a *confirmation* is per project — and the selector for which one is
+    the project's is its durable pin (``project_icp_pin``), not a scan of whatever the brand holds
+    now (founder rulings 2026-09-10). The confirmed version's front matter still records
+    ``confirmed_for_project_id``, but as data about that document, never as the choice: a scan
+    would move the moment another project confirmed the same path, or a re-synthesis published a
+    newer version.
+
+    A newer proposal on the pinned path stays in ``documents`` and stays listed in the card — the
+    agent may read it. The card simply does not call it confirmed.
     """
 
-    candidates = [
-        document
-        for document in documents
-        if document.ref.kind == _ICP_KIND
-        and document.ref.status == "confirmed"
-        and document.front_matter.get("confirmed_for_project_id") == project_id
-    ]
-    if not candidates:
+    if pinned_document_id is None:
         return None
-    chosen = max(candidates, key=lambda document: document.ref.version)
+    chosen = next(
+        (document for document in documents if document.ref.document_id == pinned_document_id),
+        None,
+    )
+    # A pin whose bytes are not in this turn's set cannot be cited, so it is honestly absent
+    # rather than half-known.
+    if chosen is None:
+        return None
     return ConfirmedIcpRef(
         document_id=chosen.ref.document_id,
         icp_key=_icp_key(chosen),
@@ -481,14 +599,14 @@ def _summary(body_text: str) -> str:
     return ""
 
 
-def _index_entry(document: PinnedDocument) -> IndexEntry:
+def _index_entry(document: PinnedDocument, *, workspace_path: str) -> IndexEntry:
     front = document.front_matter
     product_ids = _front_product_ids(front)
     product_id = front.get("product_id")
     _, icp_key = document_identity(front)
     return IndexEntry(
         path=document.ref.path,
-        workspace_path=INPUT_PREFIX + document.ref.path,
+        workspace_path=workspace_path,
         kind=document.ref.kind,
         version=document.ref.version,
         status=document.ref.status,
@@ -520,8 +638,19 @@ def compile_brand_knowledge_index_card(
     yields a card that is as small as it can honestly be rather than a card missing its spine.
     """
 
-    ordered = sorted(documents, key=lambda document: _card_rank(document.ref.path))
-    entries = [_index_entry(document) for document in ordered]
+    ordered = sorted(
+        documents, key=lambda document: (_card_rank(document.ref.path), document.ref.version)
+    )
+    # The same paths the seeds materialize under, so every line of the index names a file that is
+    # really there — including both versions of a pinned path.
+    paths = workspace_paths(
+        documents,
+        pinned_document_id=None if confirmed_icp is None else confirmed_icp.document_id,
+    )
+    entries = [
+        _index_entry(document, workspace_path=paths[document.ref.document_id])
+        for document in ordered
+    ]
     kinds = [document.ref.kind for document in ordered]
 
     def build(omitted: int) -> BrandKnowledgeIndexCard:

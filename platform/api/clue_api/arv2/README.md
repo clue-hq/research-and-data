@@ -731,10 +731,14 @@ row that *exists* but is unclaimable is the idempotent `completed`.
 
 It needs **only** account rows, an ICP artifact ref (key + sha256) and a product-selection version
 — no `icp_spec`, no `account_research_directive`, no Stage-0 pin on the project run (standing rule
-item 5). The run id is `uuid5` over the digest of the signed-off request, so relaunching the same
-request returns the same run, writes no second job and buys no second task. Every refusal is a
-typed `Arv2LaunchRefused` with a stable code: `lane_disabled`, `account_not_found:<id>`,
-`account_not_in_workspace:<id>`, `icp_artifact_not_found`, `icp_artifact_not_confirmed`,
+item 5). The ICP artifact ref is checked **against the project's ICP pin** (`project_icp_pin`,
+founder rulings 2026-09-10) rather than trusted as the selector: a launch researches the one
+confirmed document version a human pinned for this project, so a re-synthesis proposal or another
+project's confirmation cannot repoint it. The run id is `uuid5` over the digest of the signed-off
+request, so relaunching the same request returns the same run, writes no second job and buys no
+second task. Every refusal is a typed `Arv2LaunchRefused` with a stable code: `lane_disabled`,
+`account_not_found:<id>`, `account_not_in_workspace:<id>`, `project_icp_not_pinned`,
+`icp_artifact_not_project_pin`, `icp_artifact_not_found`, `icp_artifact_not_confirmed`,
 `icp_digest_mismatch`, `product_selection_version_unknown`, `project_not_found`.
 
 Two toolbelt tools sit on it — `launch_arv2_account_research@1` (SPEND, refuses
@@ -1153,7 +1157,11 @@ live persona claim. Those two claims are written as `ExtractionMethod.HUMAN` —
 required — because they are a human's own statement, not model synthesis; stamping them
 `LLM_SYNTHESIS` would have tripped the writer's `source_missing` marker on a claim that is honestly
 unevidenced-by-URL. `persona` is part of the run digest, so the same people at a different seat is
-a different run rather than a silent replay. This is the W2 walk fix: without a seat a person was
+a different run rather than a silent replay. Its ICP comes from the **project's pin**, exactly like
+the account launch's: an on-demand person launch has no approved artifact ref to be handed, and
+before the pin existed it resolved "the brand's newest confirmed ICP" — an answer that moved the
+moment onboarding re-synthesized or another project confirmed the same path. A project with no pin
+refuses `project_icp_not_pinned` rather than researching against something nobody chose. This is the W2 walk fix: without a seat a person was
 researched at full cost and then invisible on their own account's contact list. The tool
 `launch_arv2_person_research@1` is registered UNGRANTED in `C6_AGENT_TOOL_AUTHORITY`, like its two
 R2 neighbours.
@@ -1273,10 +1281,15 @@ Only one O6 module is inside the lane: **`icp_confirmation.py`**. It owns the IC
 document* as the subject of a human gate — `current_icp_document` (the brand's current servable
 `icp-definition` document for one key, read back through its verified bytes so its `product_ids`,
 title and any existing confirmation are the document's own), `icp_gate_subject_ref` /
-`icp_gate_snapshot` (what the gate names and shows), and `confirm_icp_document` (the human's yes,
+`icp_gate_snapshot` (what the gate names and shows), `confirm_icp_document` (the human's yes,
 minted as a new `confirmed` version of the same path, stamped `confirmed_for_project_id`, with the
-proposal retired). It imports only `clue_storage`, `clue_core`, SQLAlchemy and its `arv2` siblings,
-so the import guard is satisfied.
+proposal retired) and the **project ICP pin** — `pin_project_icp` / `current_project_icp_pin` over
+`project_icp_pin`, an append-only table whose greatest `pin_seq` is the project's current ICP. The
+pin is written in the same transaction as the approval that minted the version, and it is what the
+index card, the account launch and the person launch all resolve the project's ICP from;
+`confirmed_for_project_id` in front matter survives as data about that document, never as the
+selector. It imports only `clue_storage`, `clue_core`, SQLAlchemy and its `arv2` siblings, so the
+import guard is satisfied.
 
 The rest of O6 is composition, and composition may not live under `arv2/` — a module here imports
 nothing outside the allowed prefixes (`tests/arv2/test_import_guard.py`), and these three need the
@@ -1284,7 +1297,7 @@ agent-turn, gate, toolbelt and chat machinery in `clue_api` proper:
 
 | Module (outside `arv2/`) | What it owns | How it uses the lane |
 |---|---|---|
-| `clue_api/brand_knowledge_context.py` | The turn's knowledge pin (`agent_turn_knowledge_pin`), the pinned bodies, the read-only seed files under `inputs/brand/knowledge/`, `BrandKnowledgeIndexCard@1`, and the project's confirmed ICP read from the pinned front matter | Reads the same onboarding document rows this lane writes; parses their front matter with the lane's `knowledge_frontmatter` |
+| `clue_api/brand_knowledge_context.py` | The turn's knowledge pin (`agent_turn_knowledge_pin`) — which always contains the project's pinned ICP version, even when a newer one exists on its path — the pinned bodies, the read-only seed files under `inputs/brand/knowledge/`, and `BrandKnowledgeIndexCard@1`, whose `confirmed_icp` is the pinned document | Reads the same onboarding document rows this lane writes; parses their front matter with the lane's `knowledge_frontmatter`, and reads the lane's `current_project_icp_pin` |
 | `clue_api/product_set_selection_gate_tools.py` | `open_product_set_selection_gate@1` — the set-valued product gate over the brand's catalog document | Presents the catalog contract §7.1 snapshot the lane's catalog synchronizer produced |
 | `clue_api/icp_artifact_gate_tools.py` | `open_icp_confirmation_gate@2` — the gate over a knowledge-document artifact ref | Calls `arv2.icp_confirmation` for the subject, the snapshot and the confirmation write |
 

@@ -576,6 +576,7 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     workspace_id=workspace_id,
                     turn_id=submission.turn_id,
                     brand_id=project.brand_id,
+                    project_id=project.project_id,
                 )
                 assert retry_created is False
                 assert retry_pin.documents_sha256 == pin_rows[0]["documents_sha256"]

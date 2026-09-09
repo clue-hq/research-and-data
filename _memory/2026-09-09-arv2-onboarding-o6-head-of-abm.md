@@ -253,3 +253,42 @@ none was fixed here (Task 9 is docs-only).
   O6 row records "built 2026-09-09 … live exit gate owed".
 - Lane module map: `platform/api/clue_api/arv2/README.md` §"O6 — the Head-of-ABM integration".
 - SDD ledger (git-ignored): `.superpowers/sdd/2026-09-09-arv2-onboarding-o6-head-of-abm/progress.md`.
+
+## Task 9b — the durable project ICP pin (founder rulings 2026-09-10)
+
+Migration `71e80c777cf6` adds `project_icp_pin` (append-only, PK `(project_id, pin_seq)`; the
+current pin is the greatest `pin_seq`; composite FKs to `project` and `brand`, FK to
+`brand_knowledge_document`; bare-64-hex digest CHECK; `product_selection_version` nullable for the
+ICP-first order). Single alembic head after it: `71e80c777cf6`.
+
+- **Writer/reader live in `arv2/icp_confirmation.py`** (`pin_project_icp`, `current_project_icp_pin`,
+  `ProjectIcpPin`). Forced by the import guard: the launches are inside `clue_api.arv2` and may not
+  import `clue_api.brand_knowledge_context`, while `brand_knowledge_context` may import the lane.
+  `version`/`path` are joined off the document row rather than copied into the pin.
+- **Written in the gate-approval transaction** (`chat/router.py`), immediately after
+  `confirm_icp_document`; a replay/double-approve finds its document already pinned and writes
+  nothing, so the receipt stays the first approval's.
+- **`load_or_create_knowledge_pin` now takes `project_id`** and unions the project's pinned
+  document into the turn's set (dedupe by document id). `confirmed_icp_for_project` is pin-driven
+  (`pinned_document_id=`), not a `confirmed_for_project_id` front-matter scan.
+- **New `workspace_paths()` helper (decision the brief did not settle).** Two versions of one path
+  can now ride one turn (the pin plus a newer proposal), and
+  `AgentResourceMaterializer` hard-refuses duplicate seed paths. Rule adopted: the *pinned* version
+  keeps the natural name (`audience/icp-gi.md`); any other version on that path materializes beside
+  it as `audience/icp-gi.v<N>.md`, and the index card's `workspace_path` uses the same map, so every
+  card line names a file that really exists. Worth a founder confirmation.
+- **Both launches resolve from the pin.** Account launch refuses `project_icp_not_pinned` /
+  `icp_artifact_not_project_pin`; person launch refuses `project_icp_not_pinned` and the
+  `_CONFIRMED_ICP_FOR_BRAND` (brand-newest) query is deleted. `_ICP_ROW` (by artifact key) is
+  replaced by `_PINNED_ICP_ROW` (by document id). Side effect worth knowing: a launch naming a
+  non-existent project now refuses `project_icp_not_pinned` before `project_not_found`.
+- **Re-synthesis retires only `ready`/`proposed`** (`onboarding_synthesis_wiring.RETIRABLE_STATUSES`);
+  `SERVABLE_STATUSES` still governs reads.
+
+Verification: `tests/db/test_arv2_project_icp_pin_migration.py` (4), `tests/api/test_project_icp_pin_db.py`
+(6), and the touched suites — brand-knowledge context, ICP artifact gate, O6 chat gate answers, O6
+conversation composition, production-context S3, onboarding synthesis wiring, ARV2 launch — 66 passed
+together. `tests/arv2` 886 passed / 4 skipped. Full `uv run mypy`: the only 4 errors are pre-existing
+in files this task never touched. `tests/db/test_db_migrations.py` passes on a fresh throwaway DB; on
+the shared `clue_o6_head` it fails the downgrade-to-base trio because accumulated `run_event` rows
+trip the deliberate "decide their fate explicitly" guard — a DB-state artifact, not the migration.

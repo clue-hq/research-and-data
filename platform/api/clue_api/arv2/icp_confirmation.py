@@ -1,11 +1,11 @@
-"""The ICP knowledge document a human is asked about, and the confirmed version they mint.
+"""The ICP knowledge document a human is asked about, the version they mint, and the project's pin.
 
 ARV2 onboarding writes a brand's proposed ICPs as ``icp-definition`` knowledge documents
 (``ARV2-ONBOARDING-PLAN.md`` §6.1). O6 makes one of those documents the *subject* of the ICP
 confirmation gate: the thing the human reads is the thing the gate names, pinned by document id and
 by the digest of its exact bytes, so an approval can only ever confirm the file that was on screen.
 
-Two functions, one shape each:
+Three shapes:
 
 * :func:`current_icp_document` — the brand's current servable ICP document for one key, read back
   through its verified bytes so its ``product_ids``, its title and any existing confirmation are
@@ -17,11 +17,18 @@ Two functions, one shape each:
   and ``supersedes_document_id`` naming the proposal, which is then retired. The document id is
   derived from ``(workspace, proposed document, project)``, so a replayed approval finds its own
   row instead of minting a second one.
+* :func:`pin_project_icp` / :func:`current_project_icp_pin` — the durable **project ICP pin**
+  (founder rulings 2026-09-10). A project pins exactly one confirmed ICP document version, by
+  document id, written in the same transaction as the approval that minted it. Everything that
+  asks "what is this project's ICP?" — the opening index card, the account launch, the person
+  launch — reads that row, so a newer version on the same path (a re-synthesis proposal, or
+  another project's confirmation) cannot change what an existing project reads or launches with.
 
 A brand's ICPs are shared; a *confirmation* belongs to one project, and it says so in the confirmed
-version's own front matter (``confirmed_for_project_id``). Nothing here reads a Client-KB version, a
-readiness decision or a Stage-0 pin — an ICP is a file, and a file is pinned by ref and digest
-(standing rule ``_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md``).
+version's own front matter (``confirmed_for_project_id``) — data, not the selector: the pin is the
+selector. Nothing here reads a Client-KB version, a readiness decision or a Stage-0 pin — an ICP is
+a file, and a file is pinned by ref and digest (standing rule
+``_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md``).
 """
 
 from __future__ import annotations
@@ -55,10 +62,13 @@ __all__ = [
     "ConfirmedIcp",
     "IcpConfirmationStale",
     "IcpDocumentSubject",
+    "ProjectIcpPin",
     "confirm_icp_document",
     "current_icp_document",
+    "current_project_icp_pin",
     "icp_gate_snapshot",
     "icp_gate_subject_ref",
+    "pin_project_icp",
 ]
 
 #: The one document kind this module confirms.
@@ -510,4 +520,135 @@ async def confirm_icp_document(
     )
     if stored is None:  # pragma: no cover - the INSERT above either landed or conflicted
         raise IcpConfirmationStale("the confirmed ICP document did not persist")
+    return stored
+
+
+# =================================================================================================
+# the project's ICP pin: one confirmed document version, chosen by a human, that never moves alone
+# =================================================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectIcpPin:
+    """The confirmed ICP document version one project reads and launches against."""
+
+    document_id: UUID
+    icp_key: str
+    artifact_key: str
+    artifact_sha256: str
+    product_selection_version: int | None
+    version: int
+    path: str
+
+
+#: The current pin is the project's greatest ``pin_seq``. ``version`` and ``path`` are not columns
+#: of the pin — they belong to the document version it names, and a document's version and path
+#: never change — so they are joined rather than copied, and cannot drift from the row they
+#: describe.
+_CURRENT_PIN = text(
+    """
+    SELECT pin.document_id, pin.icp_key, pin.artifact_key, pin.artifact_sha256,
+           pin.product_selection_version, doc.version, doc.path
+    FROM project_icp_pin AS pin
+    JOIN brand_knowledge_document AS doc ON doc.document_id = pin.document_id
+    WHERE pin.workspace_id = :workspace_id AND pin.project_id = :project_id
+    ORDER BY pin.pin_seq DESC
+    LIMIT 1
+    """
+)
+
+
+async def current_project_icp_pin(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> ProjectIcpPin | None:
+    """This project's pinned ICP document, or ``None`` when a human has not pinned one yet.
+
+    Read inside one workspace: another tenant's pin is indistinguishable from absence. A project
+    with no pin is honestly unpinned — the launches refuse by name rather than falling back to
+    "whatever the brand confirmed most recently", which is exactly the moving answer the pin
+    exists to remove (founder rulings 2026-09-10).
+    """
+
+    row = (
+        (
+            await conn.execute(
+                _CURRENT_PIN,
+                {"workspace_id": workspace_id, "project_id": project_id},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    selection_version = row["product_selection_version"]
+    return ProjectIcpPin(
+        document_id=row["document_id"],
+        icp_key=str(row["icp_key"]),
+        artifact_key=str(row["artifact_key"]),
+        artifact_sha256=str(row["artifact_sha256"]),
+        product_selection_version=(None if selection_version is None else int(selection_version)),
+        version=int(row["version"]),
+        path=str(row["path"]),
+    )
+
+
+async def pin_project_icp(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    brand_id: str,
+    document: ConfirmedIcp,
+    product_selection_version: int | None,
+    pinned_by_user_id: str,
+) -> ProjectIcpPin:
+    """Pin ``document`` as this project's ICP, appending a row unless it is already the pin.
+
+    Called in the gate-approval transaction, immediately after :func:`confirm_icp_document`: the
+    human's yes is one act, so the confirmed version and the pin that names it commit together or
+    not at all.
+
+    **Replay writes nothing.** A double-approve, or a retried request, re-derives the same
+    confirmed document id, finds it is already the current pin, and returns it — the receipt of who
+    pinned it and when stays the first one's, which is the truth.
+
+    The table is append-only and the current pin is the greatest ``pin_seq``, so a future "switch
+    this project's ICP" act appends its own row and this project's earlier pins remain readable as
+    the history of what it researched against.
+    """
+
+    current = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
+    if current is not None and current.document_id == document.document_id:
+        return current
+    await conn.execute(
+        text(
+            "INSERT INTO project_icp_pin ("
+            "  workspace_id, project_id, pin_seq, brand_id, document_id, icp_key, "
+            "  artifact_key, artifact_sha256, product_selection_version, pinned_by_user_id"
+            ") SELECT :workspace_id, :project_id, "
+            "  COALESCE(MAX(pin_seq), 0) + 1, :brand_id, :document_id, :icp_key, "
+            "  :artifact_key, :artifact_sha256, :product_selection_version, :pinned_by_user_id "
+            "FROM project_icp_pin WHERE project_id = :project_id"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "brand_id": brand_id,
+            "document_id": document.document_id,
+            "icp_key": document.icp_key,
+            "artifact_key": document.artifact_key,
+            "artifact_sha256": document.artifact_sha256,
+            "product_selection_version": product_selection_version,
+            "pinned_by_user_id": pinned_by_user_id,
+        },
+    )
+    # Read the pin back rather than trusting what was just written: the stored row, joined to its
+    # document, is the one every launch and every turn will cite.
+    stored = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
+    if stored is None:  # pragma: no cover - the INSERT above either landed or raised
+        raise IcpConfirmationStale("the project's ICP pin did not persist")
     return stored
