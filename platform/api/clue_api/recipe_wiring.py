@@ -81,6 +81,12 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # births a ZERO-PAGE document; the design agent authors the page). Same exact-address rule as
     # v17/v18 — the slot would refuse the tool the profile grants without its own revision.
     "recipe0-stage0-v19.json",
+    # ARV2 onboarding O6: the four new-lane tools join the interaction slot, and the directive
+    # draft is re-pinned at @5 (profile v43 pinned @5 while v19 admitted only @3 — the draft was
+    # refused by plan validation since the R0 merge). Admitting the ICP gate at @2 *re-pins* that
+    # key: a requirement set resolves one version per (kind, key), so @1 and @2 in one slot is a
+    # `conflicting_requirement` that refuses promotion. v19 keeps @1 and stays its replay input.
+    "recipe0-stage0-v22.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

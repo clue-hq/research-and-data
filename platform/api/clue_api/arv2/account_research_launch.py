@@ -1164,10 +1164,9 @@ class LaunchArv2AccountResearchTool(Tool):
             "committee_cap",
         )
     )
-    #: No Stage-0 pin (standing rule item 5). What this launch is authorized against travels in
-    #: its own inputs — the ICP artifact digest and the product-selection version — not in a
-    #: project-run pin the old Stage-0 machinery owned.
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service
@@ -1317,7 +1316,9 @@ class ReadArv2AccountResearchRunTool(Tool):
         durable_identity="current ARV2 account research run + job states",
     )
     parameter_policy = JournalParameterPolicy(safe_display_fields=("run_id",))
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service

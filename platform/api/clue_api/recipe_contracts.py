@@ -63,6 +63,14 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # and no dispatch; each birth is one governed create keyed on the same replay identity as the
     # leg, so a retried delegation converges on one leg and one document rather than minting twins.
     "open_design_leg@4",
+    # ARV2 onboarding O6 (added in recipe0-stage0@22): the new-lane onboarding surface Head-of-ABM
+    # drives in the conversation slot — the set-valued product gate, the artifact-shaped ICP
+    # confirmation gate, and the ARV2 launch/read pair. Nothing is removed: every address the
+    # earlier revisions pinned stays here so an already-pinned execution still resolves it.
+    "open_product_set_selection_gate@1",
+    "open_icp_confirmation_gate@2",
+    "launch_arv2_account_research@1",
+    "read_arv2_account_research_run@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
