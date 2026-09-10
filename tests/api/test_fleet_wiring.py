@@ -20,6 +20,7 @@ from pydantic import SecretStr
 
 from clue_api.fleet_main import (
     NoBootHandlersRegistered,
+    _build_arv2_discovery_handler,
     _build_onboarding_handler,
     _require_registered,
     _start_orphan_sweep,
@@ -417,6 +418,49 @@ def test_arv2_account_research_handler_is_composed_when_given_and_kind_guarded()
             graph_handler=graph,
             arv2_account_research_handler=_CompositionHandler(FleetTaskKind.ONBOARDING_RUN),
         )
+
+
+def test_arv2_discovery_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Track R (R4): the discovery drain joins on the same terms as its neighbours — optional (a
+    # deployment without ``arv2_discovery_enabled`` or without ``CLUE_EXA_API_KEY`` composes no
+    # discovery driver and nothing enqueues the kind) and kind-guarded at construction, so a
+    # handler wired to the wrong keyword fails here rather than after a run has claimed its row.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ARV2_DISCOVERY)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        arv2_discovery_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ARV2_DISCOVERY] is handler
+
+    with pytest.raises(ValueError, match="arv2_discovery_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            arv2_discovery_handler=_CompositionHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH),
+        )
+
+
+def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_set(
+    tmp_path: Path,
+) -> None:
+    """The production gate for R4: no flag, no handler; a flag with no key, a warning and none."""
+    storage = FsStorage(tmp_path)
+    keyed = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
+    keyless = Secrets(_env_file=None)  # type: ignore[call-arg]
+
+    assert _build_arv2_discovery_handler(_settings(), keyed, storage=storage) is None
+
+    on = _settings(arv2_discovery_enabled=True)
+    assert _build_arv2_discovery_handler(on, keyless, storage=storage) is None
+
+    composed = _build_arv2_discovery_handler(on, keyed, storage=storage)
+    assert composed is not None
+    assert composed.kind is FleetTaskKind.ARV2_DISCOVERY
 
 
 def test_the_onboarding_handler_is_off_unless_the_lane_flag_is_set(tmp_path: Path) -> None:

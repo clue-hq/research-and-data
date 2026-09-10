@@ -374,6 +374,7 @@ def build_multi_work_worker(
     design_handler: WorkHandler | None = None,
     onboarding_handler: WorkHandler | None = None,
     arv2_account_research_handler: WorkHandler | None = None,
+    arv2_discovery_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -400,6 +401,11 @@ def build_multi_work_worker(
 
     ``arv2_account_research_handler`` (Track R, R2) is the same shape again: optional because a
     deployment without ``arv2_account_research_enabled`` composes no account driver.
+
+    ``arv2_discovery_handler`` (Track R, R4) joins on exactly those terms: optional because a
+    deployment without ``arv2_discovery_enabled`` (or without ``CLUE_EXA_API_KEY``) composes no
+    discovery driver, and kind-guarded here so a handler wired to the wrong keyword fails at
+    construction rather than after a run has already claimed its row.
 
     ``CLUE_FLEET_WORKER_CONCURRENCY`` (founder ruling 2026-09-10) is threaded here like every
     other ``CLUE_FLEET_*`` knob: it is how many tasks THIS process drives at once. Several worker
@@ -437,6 +443,11 @@ def build_multi_work_worker(
         and arv2_account_research_handler.kind is not FleetTaskKind.ARV2_ACCOUNT_RESEARCH
     ):
         raise ValueError("arv2_account_research_handler must own arv2_account_research tasks")
+    if (
+        arv2_discovery_handler is not None
+        and arv2_discovery_handler.kind is not FleetTaskKind.ARV2_DISCOVERY
+    ):
+        raise ValueError("arv2_discovery_handler must own arv2_discovery tasks")
     handlers: list[WorkHandler] = [
         # The one kind the 9d handler-safety audit found NOT safe to run concurrently on one
         # instance. Two independent reasons, both in code today:
@@ -468,6 +479,8 @@ def build_multi_work_worker(
         handlers.append(onboarding_handler)
     if arv2_account_research_handler is not None:
         handlers.append(arv2_account_research_handler)
+    if arv2_discovery_handler is not None:
+        handlers.append(arv2_discovery_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),
