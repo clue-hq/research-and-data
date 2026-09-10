@@ -1,0 +1,44 @@
+[
+  {
+    "provider": "exa",
+    "label": "d1_seriesA_vertical_ai_smb",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 3.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "d2_seriesA_gtm_hiring",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 2.6,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "d3_founder_led_sales_scaling",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.9,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  }
+]
