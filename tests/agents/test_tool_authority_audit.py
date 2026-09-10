@@ -101,7 +101,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # but no model surface names them: the new Stage-0 lane reads the brand's knowledge documents
     # instead of recon-ing the company, has no readiness check, confirms a product SET rather than
     # one product, and launches research on the ARV2 lane rather than the entity-research fleet.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 124
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 125
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_person_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == (AgentRole.HEAD_OF_ABM,)

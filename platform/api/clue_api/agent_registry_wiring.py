@@ -268,6 +268,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # stage0-interview v21's.
     "launch_arv2_person_research": (AgentRole.HEAD_OF_ABM,),
     "read_arv2_account_research_run": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 Track R, R4: registered ungranted; the O6-style grant lands with head-of-abm@v45
+    # (Task 8).
+    "launch_arv2_discovery": (),
     "launch_selected_account_research": (),
     "launch_contact_research": (),
     # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool

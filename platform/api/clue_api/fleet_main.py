@@ -70,6 +70,7 @@ from clue_api.arv2.account_research_driver import (
     build_arv2_account_research_handler,
 )
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
+from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
     IcpSynthesisOutcome,
@@ -889,6 +890,14 @@ async def _serve() -> None:
             if settings.arv2_account_research_enabled
             else None
         )
+        # ARV2 Track R, R4, on exactly the same terms: composed only behind
+        # ``arv2_discovery_enabled``, sharing this process's work queue so a launched run is
+        # offered through the machinery that drains it.
+        arv2_discovery_launch = (
+            DbArv2DiscoveryService(settings, storage, queue=work_queue)
+            if settings.arv2_discovery_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -920,6 +929,7 @@ async def _serve() -> None:
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
             arv2_account_launch=arv2_account_launch,
+            arv2_discovery_launch=arv2_discovery_launch,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )

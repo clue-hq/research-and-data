@@ -7,6 +7,9 @@ driver started enqueueing the person jobs the committee step creates — which m
 import the launch that already imported the driver. One small module both may import is the
 honest shape of a fact both own; the driver still re-exports the three names, so every existing
 caller and test reads them where they always did.
+
+R4's discovery task has the same three facts and lives here for the same reason: the discovery
+launch offers it and the discovery driver drains it, and neither may import the other.
 """
 
 from __future__ import annotations
@@ -18,7 +21,10 @@ from clue_fleet.lease import WorkId
 __all__ = [
     "ARV2_ACCOUNT_DEDUP_PREFIX",
     "ARV2_ACCOUNT_TASK_PRIORITY",
+    "ARV2_DISCOVERY_DEDUP_PREFIX",
+    "ARV2_DISCOVERY_TASK_PRIORITY",
     "arv2_account_work_id",
+    "arv2_discovery_work_id",
 ]
 
 #: What an enqueuer puts in front of the job id, so an R2 task's dedup key cannot collide with
@@ -33,3 +39,19 @@ ARV2_ACCOUNT_TASK_PRIORITY = -100
 def arv2_account_work_id(job_id: UUID) -> WorkId:
     """The job id IS the work id: one task per subject, and the identity is checked on arrival."""
     return WorkId(job_id)
+
+
+#: R4's prefix, so a discovery run's dedup key cannot collide with a research job's.
+ARV2_DISCOVERY_DEDUP_PREFIX = "arv2-discovery:"
+
+#: The fleet orders by ASCENDING priority — the lower number is the more urgent task — so a
+#: discovery run at -90 outranks ordinary work but **yields to account research** at -100. That is
+#: the right way round: research is work a human already approved on named accounts, while
+#: discovery is looking for accounts nobody has picked yet. It still outranks ordinary work
+#: because a run holding a paid-for webset should not sit behind a queue of background chores.
+ARV2_DISCOVERY_TASK_PRIORITY = -90
+
+
+def arv2_discovery_work_id(run_id: UUID) -> WorkId:
+    """The run id IS the work id: one task per discovery run, checked against the row on arrival."""
+    return WorkId(run_id)
