@@ -321,3 +321,12 @@ Two things worth knowing next time:
   `payload.icp_key` / `payload.icp_version`; the ruling put the two artifact pins in `markers`
   instead. The grouping half is untouched: a discovery `account.scoring.fit` still groups as an
   ICP-less score beside an M6.3 score for the same project. Left for whoever owns that list.
+
+## Parked at the final review (controller ruling, 2026-09-10)
+
+- **M6 residual — the fit payload carries no `icp_key`/`icp_version`.** `frontend_read.accounts_list`
+  groups `account.scoring.fit` rows by `(project, payload.icp_key, payload.icp_version)`, so a
+  discovery score groups as ICP-less beside any later M6.3 score for the same project. Parked: on
+  ARV2 workspaces no other writer of that field exists today, so the list shows the discovery score.
+  First follow-up: add `icp_key`/`icp_version` to the fit payload (the registered schema admits
+  extra keys) — one line in `discovery_driver._write_claims` plus a test.
