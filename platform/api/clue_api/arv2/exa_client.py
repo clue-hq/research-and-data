@@ -57,6 +57,9 @@ PROVIDER = "exa"
 SEARCH_ESTIMATE_USD = Decimal("0.01")
 CONTENTS_ESTIMATE_USD_PER_URL = Decimal("0.002")
 DEEP_REASONING_ESTIMATE_USD = Decimal("0.05")
+#: One ``/answer`` call — a search plus one model pass over what it found. The R4 discovery
+#: experiment metered them at roughly half a cent each; a cent is the honest reservation.
+ANSWER_ESTIMATE_USD = Decimal("0.01")
 
 #: Appendix A law 4's silent-fail signature, measured on the proof-of-concept: a deep-reasoning
 #: call that "succeeded" with nine or fewer results **and** a cost that never left the floor did
@@ -196,6 +199,43 @@ class ExaDeepResult:
     @property
     def n_results(self) -> int:
         return len(self.results)
+
+
+@dataclass(frozen=True)
+class ExaCitation:
+    """One source ``/answer`` says it read. ``text`` is present only when ``text=True`` was sent.
+
+    Kept as its own type rather than folded into :class:`ExaHit`: an answer's citation is the
+    evidence *behind a verdict*, and the R4 gate verifier stores the URL, the date and the quoted
+    passage against the claim it justifies. A field Exa did not report stays ``None``.
+    """
+
+    url: str
+    title: str | None
+    published_date: str | None
+    text: str | None
+
+
+@dataclass(frozen=True)
+class ExaAnswerResult:
+    """A completed ``/answer`` call: the answer, its sources, and the money row behind them.
+
+    ``answer`` is whatever Exa returned in that key — a dict when an ``outputSchema`` was sent and
+    honoured, a string when the answer was prose, and ``None`` when Exa returned no answer at all.
+    None of the three is rounded into another: "Exa answered nothing" is a real verdict for a gate
+    that cannot be decided, and an empty dict would hide it.
+
+    ``cost`` is the request's money view in the lane's uniform shape (see :class:`ExaSearchResult`).
+    """
+
+    answer: object
+    citations: tuple[ExaCitation, ...]
+    status: int
+    cost_usd: Decimal | None
+    request_id: str | None
+    raw_ref: str | None
+    ledger_row_id: str
+    cost: CallCost
 
 
 @dataclass(frozen=True)
@@ -413,6 +453,31 @@ def contents_body(
     return body
 
 
+def answer_body(
+    query: str,
+    *,
+    system_prompt: str,
+    output_schema: Mapping[str, object],
+    model: str = "exa",
+    text: bool = True,
+) -> dict[str, Any]:
+    """Build an ``/answer`` body.
+
+    ``text`` defaults on because an answer whose citations carry no passages cannot be audited:
+    R4's gate verifier stores the quoted sentence its verdict rests on, and without ``text`` the
+    only thing left to store is a URL and the model's word for what is on it. ``outputSchema`` is
+    copied, not aliased — a caller that reuses one schema dict across every gate must not have it
+    mutated by a body it built earlier.
+    """
+    return {
+        "query": query,
+        "model": model,
+        "text": text,
+        "systemPrompt": system_prompt,
+        "outputSchema": dict(output_schema),
+    }
+
+
 def deep_reasoning_body(
     *,
     system_prompt: str,
@@ -585,6 +650,32 @@ def _statuses(rows: object) -> tuple[ExaContentStatus, ...]:
                 url=identifier if isinstance(identifier, str) else None,
                 status=status if isinstance(status, str) else None,
                 error=row.get("error"),
+            )
+        )
+    return tuple(out)
+
+
+def _citations(rows: object) -> tuple[ExaCitation, ...]:
+    """Map ``/answer``'s citations. A row with no ``url`` is dropped: a passage that cannot be
+    pointed at is not evidence, and keeping it would let an unattributable quote reach a claim."""
+    if not isinstance(rows, list):
+        return ()
+    out: list[ExaCitation] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        url = row.get("url")
+        if not isinstance(url, str):
+            continue
+        published = row.get("publishedDate")
+        title = row.get("title")
+        text = row.get("text")
+        out.append(
+            ExaCitation(
+                url=url,
+                title=title if isinstance(title, str) else None,
+                published_date=published if isinstance(published, str) else None,
+                text=text if isinstance(text, str) else None,
             )
         )
     return tuple(out)
@@ -821,6 +912,48 @@ class ExaClient:
         return ExaContentsResult(
             results=_hits(body.get("results")),
             statuses=_statuses(body.get("statuses")),
+            status=result.response.status,
+            cost_usd=result.cost.cost_usd,
+            request_id=result.cost.provider_request_id,
+            raw_ref=result.raw_ref,
+            ledger_row_id=result.ledger_row_id,
+            cost=result.call_cost,
+        )
+
+    def answer(
+        self,
+        query: str,
+        *,
+        system_prompt: str,
+        output_schema: Mapping[str, object],
+        model: str = "exa",
+        label: str = "exa-answer",
+        timeout_s: float = 120.0,
+    ) -> ExaAnswerResult:
+        """One ``/answer`` call — a search plus one model pass, answering a single question.
+
+        This is R4's verifier: one gate, one question, one structured verdict with the passage it
+        rests on. It is deliberately *not* :meth:`deep_reasoning` — a gate is a fact-check against
+        what the open web already says, not a research pass, and at a hundredth of the price it
+        can be run per company per gate.
+        """
+        result = self._call(
+            operation="answer",
+            label=label,
+            path="/answer",
+            body=answer_body(
+                query,
+                system_prompt=system_prompt,
+                output_schema=output_schema,
+                model=model,
+            ),
+            estimate=SpendEstimate(usd=ANSWER_ESTIMATE_USD),
+            timeout_s=timeout_s,
+        )
+        body = _body_json(result.response)
+        return ExaAnswerResult(
+            answer=body.get("answer"),
+            citations=_citations(body.get("citations")),
             status=result.response.status,
             cost_usd=result.cost.cost_usd,
             request_id=result.cost.provider_request_id,

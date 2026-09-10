@@ -72,6 +72,8 @@ from clue_api.arv2.errors import (
     RawScrubFailed,
 )
 from clue_api.arv2.exa_client import (
+    ExaAnswerResult,
+    ExaCitation,
     ExaClient,
     ExaContentsResult,
     ExaDeepResult,
@@ -79,6 +81,15 @@ from clue_api.arv2.exa_client import (
     ExaSearchResult,
     product_catalog_output_schema,
     report_output_schema,
+)
+from clue_api.arv2.exa_websets_client import (
+    ExaWebsetsClient,
+    WebsetItem,
+    WebsetItemsResult,
+    WebsetSearchView,
+    WebsetView,
+    websets_halt_rule,
+    websets_items_cost,
 )
 from clue_api.arv2.gemini_media_client import (
     EmbeddedChunk,
@@ -184,11 +195,14 @@ __all__ = [
     "EmbeddedChunk",
     "EmbeddedTranscript",
     "Episode",
+    "ExaAnswerResult",
+    "ExaCitation",
     "ExaClient",
     "ExaContentsResult",
     "ExaDeepResult",
     "ExaHit",
     "ExaSearchResult",
+    "ExaWebsetsClient",
     "FieldCatalog",
     "FieldSpec",
     "FileRawSink",
@@ -240,6 +254,10 @@ __all__ = [
     "Transport",
     "TransportFailure",
     "UnsupportedMediaHost",
+    "WebsetItem",
+    "WebsetItemsResult",
+    "WebsetSearchView",
+    "WebsetView",
     "YouTubeMeta",
     "YouTubeWords",
     "build_arv2_launch_tools",
@@ -265,6 +283,8 @@ __all__ = [
     "report_output_schema",
     "substring_verdict",
     "transcription_input_from_enclosure",
+    "websets_halt_rule",
+    "websets_items_cost",
     "youtube_metadata",
     "youtube_words",
 ]
