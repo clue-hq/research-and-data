@@ -1,4 +1,4 @@
-# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 3)
+# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 4)
 
 **Status: rev 3 — §8 items 1–5 RULED 2026-09-10 (below) plus the rev 3 ruling; items 6–10 open. Nothing here is code or
 a plan yet; the R4 plan is written from this document once every §8 item is ruled, then implemented
@@ -20,6 +20,12 @@ screens, not a new slot, not a marker. Show every discovered account; write "unc
 unclear ones and show a full match as the best fit, using only what the screens already render.
 Frontend suggestions are stored for a separate polishing session
 (`docs/superpowers/plans/2026-09-10-arv2-frontend-polish-backlog.md`), never applied in this one.
+
+**Rev 4 ruling (founder, 2026-09-10): Overall fit and Fit score only.** No custom variables, no
+notes column, nothing the dummy frontend (`clue-frontend/live-backend-v1`, live at
+`localhost:3000`) does not already show; parity with it is the reference. The Overall fit
+vocabulary question (High / Medium / Low today versus Best fit / Partial fit / Unclear / Low fit)
+is §8 item 10, because changing those words is a change to the dummy frontend's own schema.
 
 **Ruled already (founder, 2026-09-10):** Exa Websets builds the long list; every company is then
 checked by our own cheap probe on the Exa search API, the way the experiment did it; AI Ark stays
@@ -143,46 +149,42 @@ Probe spend is about $0.007 per candidate plus free ATS reads, recorded, not cap
 cohort-poisoning ways (a pre-seed called Series A, Bengaluru called US, a 2024 round dated 2026,
 an unlabelled round called A, one entity credited with another's round). The probe caught all five.
 
-## 4. Step three — the human approves the cohort (Option B, zero frontend change)
+## 4. Step three — the human approves the cohort (Option B, parity with the dummy frontend)
 
-**Ruled:** the accounts table is the approval surface; nothing in the frontend changes. Every
-word below is carried by a field the lifted screens already render, verified in the frontend's own
-code (`account-table-view.ts` builds a column per custom variable it finds on the accounts it
-receives; `accounts-table.tsx` renders a `badge` variable as a badge with its text, a `score`
-variable as the fit-score indicator, and the Overall fit badge from `overallFit`).
+**Ruled:** the accounts table is the approval surface; nothing in the frontend changes; discovery
+shows itself through **Overall fit and Fit score only** — the two columns the dummy frontend
+already renders from the fit claim — and through nothing else.
 
 **What the discovery job writes when it finishes.** Every candidate that is not a duplicate of an
 existing account becomes an `account_entity` with `status = candidate`, `primary_domain` as the
-strong key, workspace-scoped, and these claims:
+strong key, workspace-scoped, plus:
 
-| What the human sees | Field written | Value |
-|---|---|---|
-| **Overall fit** badge and **Fit score** column | `account.scoring.fit` (registered, project-relative; `run_lineage` kind `discovery` attributes it to the project) | §3 fit: every gate passed → 1.0 → **High 100**; three of four with one unclear → 0.875 → High 88; half → 0.5 → Medium 50; mostly failed → Low |
-| **"ICP qualification"** column, a badge with plain words | a workspace custom variable registered once per workspace (`client.icp_qualification`, presentation `badge`, description "ICP qualification") | **"Best fit"** when every gate passed; **"Partial fit"** when some passed and some failed; **"Unclear"** when a gate could not be answered and none failed; **"Low fit"** when most failed |
-| **"Qualification notes"** column, text | a second custom variable (`client.icp_qualification_notes`, presentation `text`) | one line per gate, e.g. `stage: pass — $14M Series A 2026-03 (businesswire.com) · hiring: unclear — no ATS board found` |
-| Revenue band, employee band | the ordinary `core.revenue_band` / `core.employee_count` claims | from the Websets firmographics when present, source `exa_websets` |
-| Research status | nothing (no job yet) | reads **"Not started"** |
+- one `account.scoring.fit` claim (registered, project-relative; the run's `run_lineage` row,
+  kind `discovery`, attributes it to the project) with `value` = the §3 fit. The list turns it
+  into the badge and the score exactly as it does for a scored account today: every gate passed →
+  1.0 → **High 100**; three of four with one unclear → 0.875 → High 88; two passed, two unclear →
+  0.75 → High 75; half → 0.5 → Medium 50; one of four → 0.25 → Low 25;
+- the ordinary `core.revenue_band` / `core.employee_count` claims from the Websets firmographics
+  when present (source `exa_websets`), which fill the bands the table already has;
+- the per-gate verdicts with references on the candidate row (`verdicts_json`) in full, handed to
+  the researcher as "already established" at launch. They are not displayed in R4.
 
-The custom-variable route is the only tenant-local field the table shows without a code change;
-`register_workspace_field` admits `client.*` keys only, so the two variables live in that
-namespace although they describe the account against the ICP — recorded as §8 item 10(c) for the
-founder to accept or redirect. The per-gate verdicts with references stay on the candidate row
-(`verdicts_json`) in full, and reach the researcher as "already established" at launch.
+Research status reads **"Not started"** until a job exists. Every discovered account is shown,
+low fit included.
 
 **What the human does, on the screens that exist:**
 
-1. Opens `/accounts`: thirty-odd new rows, each with Overall fit, Fit score, the "ICP
-   qualification" badge (Best fit / Partial fit / Unclear / Low fit) and the notes line.
-2. Filters or sorts with the existing panel (Overall fit, Fit score) and reads the badge.
+1. Opens `/accounts`: thirty-odd new rows with Overall fit and Fit score.
+2. Filters or sorts with the existing panel (Overall fit, Fit score).
 3. Ticks rows → the existing **"Add to project"** bulk action. That write is the approval: the
-   `project_account` row (`added_via = 'discovered'`), and R4 stamps the candidate row
+   `project_account` row (`added_via = 'discovered'`); R4 stamps the candidate row
    `decision = approved`, `decided_by`, `decided_at`. Rows never added stay candidate accounts.
 4. Names the approved accounts in the project chat; the Head of ABM launches
    `launch_arv2_account_research@1` (v44), or the operator runs the CLI. No research button.
 
-**Later, in the polishing session** (not here): the target-accounts tab beside Gallery, a chat
-gate presenting the same rows, an "unclear" tone on the badge, a "Qualification" section on the
-detail page for the four verdicts with their sources. All recorded in the backlog file.
+**The one open word.** Today the dummy frontend's Overall fit accepts exactly `High`, `Medium`,
+`Low` (its Zod enum, its badge, its filter panel), and the backend contract mirrors those three.
+"Unclear" is therefore a Medium with an honest score until §8 item 10 is ruled.
 
 ## 5. Step four — launch and fan-out with a cap that binds
 
@@ -247,9 +249,10 @@ spend per approved account, time to idle, jobs in flight versus the cap.
 9. **Where the two Head-of-ABM discovery tools land**: in R4 with a v45 profile bump (proposed),
    or held for O7 so the profile moves once. With Option B ruled, only `launch_arv2_discovery@1` is
    needed now; `open_cohort_approval_gate@1` waits for the founder's gate design.
-10. **Naming and namespace of the two custom variables** (rev 3): (a) accept "ICP qualification" /
-    "Qualification notes" as the labels the columns show; (b) accept the values Best fit / Partial
-    fit / Unclear / Low fit; (c) accept that they are registered as `client.*` workspace custom
-    variables, the one tenant-local field kind the table renders without a frontend change — or
-    redirect. Everything visual beyond this (an unclear tone, a detail-page section, the
-    target-accounts tab) is in the polish backlog, not in R4.
+10. **The Overall fit vocabulary.** The dummy frontend accepts exactly High / Medium / Low
+    (`AccountFitSchema` in `src/features/accounts/model/account.ts`, the `FitBadge`, the filter
+    panel's three options); the backend contract `AccountFit` mirrors them. Replacing them with
+    Best fit / Partial fit / Unclear / Low fit is a change to the dummy frontend's schema, badge
+    and filter, then the backend contract and its Zod oracle — i.e. a frontend change. Founder to
+    rule: (a) keep the three words exactly (parity; unclear = Medium by score), or (b) change the
+    words in the dummy frontend first, after which the backend follows in the same slice.
