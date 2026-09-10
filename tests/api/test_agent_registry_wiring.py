@@ -113,7 +113,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `launch_arv2_person_research@1` is pinned — so stage0-interview v21 is the profile's one
         # skill and the ARV2 trio is its one research lane. Model, workspace, delegation and limits
         # are v43's. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("bd7893ddada9eb3c709bddc0c1264e6956a9e2d85415a2c6378a2bfeb8ed0a28"),
+        AgentRole.HEAD_OF_ABM: ("5e1a2ac427d7bec5688a1e382c12da885e32bf9eccf847f5e48a6db0b337904b"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -543,7 +543,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert disclosures[0].resource.address == "skill:stage0-interview@v21"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
-    assert "Ask one compact question" in body
+    assert "Ask one question at a time" in body
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 

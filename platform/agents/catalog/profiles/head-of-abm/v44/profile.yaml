@@ -16,11 +16,11 @@ role: head_of_abm
 prompt:
   name: head-of-abm
   version: v8
-  sha256: 4fe93af2f4e7964556c3f1fe3fcf4dd4a418b82fa8a0b3fd8f80776dbf053792
+  sha256: 0d942eb54273765236a59b98bd248654c70816ffea4fb0f26d5011f71ba76cc3
 skills:
   - name: stage0-interview
     version: v21
-    sha256: b7601999240ad3677242eb6d212521fa99f6106afc5c92f0d5b2213820989c85
+    sha256: d603edd3f2bc6119988c25f26b40535a776fc4a245b5fdb7b90db1d278bdbe7a
 tools:
   - name: draft_account_research_directive
     version: "5"

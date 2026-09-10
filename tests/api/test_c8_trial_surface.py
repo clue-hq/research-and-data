@@ -316,10 +316,13 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "launch_arv2_account_research",
         "open_product_set_selection_gate",
         "open_icp_confirmation_gate",
+        # Founder ruling 3 (2026-09-10): the person launch is granted to the role and taught by
+        # stage0-interview v21 §8; the trial withholds it with its account sibling.
+        "launch_arv2_person_research",
     }
 
     body = base.open_skill("skill:stage0-interview@v21")
-    assert "Ask one compact question" in body
+    assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
     assert "trial" not in body.casefold()
