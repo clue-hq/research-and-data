@@ -1364,12 +1364,12 @@ verdicts were wrong six times in fifteen). The hand-written regex probe of rev 4
 
 | module | what it owns |
 | --- | --- |
-| `discovery_store.py` | the only module that speaks SQL to `arv2_discovery_run` / `arv2_discovery_candidate`: one function per run transition (`create_discovery_run`, `begin_discovery_run`, `record_webset`, `request_relaxed`, `suspend_discovery_run`, `finish_discovery_run`), the candidate writers (`upsert_candidate`, `record_verdicts`, `mark_candidates_approved`) and the readers (`list_candidates`, `unapproved_domains`) |
-| `exa_websets_client.py` | the thin Websets client — `create` / `get` / `items` / `add_search` through one private `_call` on the injected `ProviderCaller`, `is_all_green`, `websets_items_cost`, `websets_halt_rule` |
+| `discovery_store.py` | the only module that speaks SQL to `arv2_discovery_run` / `arv2_discovery_candidate`: one function per run transition (`create_discovery_run`, `begin_discovery_run`, `record_webset`, `record_relaxed_search`, `request_relaxed`, `suspend_discovery_run`, `finish_discovery_run`), the candidate writers (`upsert_candidate`, `record_verdicts`, `mark_candidates_approved`) and the readers (`list_candidates`, `unapproved_domains`) |
+| `exa_websets_client.py` | the thin Websets client — `create` / `get` / `items` / `add_search` through one private `_call` on the injected `ProviderCaller`, `is_all_green`, `newly_priced` (a webset row is billed once per run: `items(…, priced_item_ids=…)` returns every row and prices only the new ones), `websets_items_cost`, `websets_halt_rule` |
 | `exa_client.py` (`answer`) | R4's addition to the R1 client: `answer_body`, `ExaCitation`, `ExaAnswerResult`, `ANSWER_ESTIMATE_USD`, and `ExaClient.answer` — one `/answer` hop inheriting the module's existing cost reader and halt rule |
 | `discovery_brief.py` | the ICP document compiled into the brief one run executes — `Gate`, `DiscoveryBrief`, `compile_brief`, `buyer_sentence`, `parse_window_months`, and the typed `BriefError` |
 | `discovery_verifier.py` | what we send and what we trust — `system_prompt(today)`, `gate_question`, `website_question`, `OUTPUT_SCHEMA` / `WEBSITE_SCHEMA`, `apply_guards` (the three guards), `fit_score`, `disposition`; pure, with no clock, no settings, no database and no provider |
-| `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp`, `launch_arv2_discovery` (replay + lineage, rows only), `request_relaxed_pass`, `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
+| `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp` (the project's *current* pin, for the launch) and `read_icp_document` (a run's *own* pinned bytes, by key and sha, for the driver), `launch_arv2_discovery` (replay + lineage, rows only), `request_relaxed_pass`, `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
 | `discovery_driver.py` | the fleet handler: claim, compile, buy the long list, verify every candidate, land the run — plus `relaxed_criteria` and `revenue_band`, the two pure helpers its arithmetic lives in |
 | `fleet_task.py` | R4's three names beside R2's — `ARV2_DISCOVERY_DEDUP_PREFIX = "arv2-discovery:"`, `ARV2_DISCOVERY_TASK_PRIORITY = -90`, `arv2_discovery_work_id(run_id)` (the run id **is** the work id) — so the enqueuer and the handler never import each other |
 | `scripts/launch_arv2_discovery.py` | the operator CLI: launch, `--relaxed-pass <run>`, `--report <run>` |
@@ -1386,10 +1386,14 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
 1. **Claim.** `begin_discovery_run` takes a `not_started` or `suspended` run. Nothing to claim is an
    idempotent `completed` and not a cent spent; a stop or a lost lease parks the run `suspended`; a
    task whose `work_id` disagrees with its `run_id` is refused before any spend.
-2. **Compile.** `read_pinned_icp` resolves the project's pinned ICP (`project_icp_pin`; no pin is the
-   refusal `project_icp_not_pinned`) and `compile_brief` turns it into the query sentence, the
-   criteria and the gates. More than three criteria gate keys is a refusal, never a silent truncation
-   of a criterion the human configured.
+2. **Compile.** The **launch** resolves the project's pinned ICP with `read_pinned_icp`
+   (`project_icp_pin`; no pin is the refusal `project_icp_not_pinned`) and stamps its artifact key
+   and sha on the run row. Every **attempt** then re-reads *that* document with `read_icp_document`
+   — by the run's own key, refusing `icp_digest_mismatch` when the bytes have moved — rather than
+   the project's current pin, so a human who confirms a new ICP version while a run is queued or
+   suspended cannot silently change the gates half-way through it. `compile_brief` turns the
+   document into the query sentence, the criteria and the gates. More than three criteria gate keys
+   is a refusal, never a silent truncation of a criterion the human configured.
 3. **The long list.** One webset, `entity.type = company`, `count` = the strict ask,
    **at most three criteria** — each a hard gate a public page can answer, worded as the ICP means
    it. Hiring and intent are never webset criteria (3.7% and 2.7% success rates starved the search
@@ -1397,7 +1401,12 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
    size *before* the spend. The run polls to `idle` under a wall clock
    (`arv2_discovery_wall_s`, → `needs_review` with `webset_wall_exceeded`), and a run that already
    recorded a `webset_id` **reads it again instead of buying another**, whether the redelivery is a
-   human's relaxed request or a plain resume after a restart.
+   human's relaxed request or a plain resume after a restart. The webset's `strict_search_id` is
+   recorded with it, so no later attempt has to guess which of a webset's searches is the strict one
+   (array position is not a provider contract); a webset carrying two searches on a run that
+   recorded no strict id refuses `webset_search_ambiguous` rather than guessing. Every read of the
+   items page names the rows this run has already been charged for, so a resumed or widened run
+   prices each row **once** — the receipt says so with `credits_priced_once`.
 4. **Per candidate**, in this order, so nothing is verified twice or paid for needlessly:
    - **the website**, first: one Answer call for the company's own registrable domain, because
      Websets returned `probook.com` for `probook.ai`. The announcement's domain wins and the
@@ -1418,11 +1427,16 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
    criterion counts as lowest), adds a second search on the **same** webset excluding the strict
    results, asks for the shortfall, and then verifies every company it returns on **all** gates
    exactly like a strict one — so a partial match lands Medium or Low with an honest score rather
-   than being hidden (ruling 4).
+   than being hidden (ruling 4). The widening is bought **once per run**: its search id is recorded
+   the moment `add_search` returns, and a run that already carries a `relaxed_search_id` polls and
+   reads it instead of adding a second search (whose exclusion would name only the strict search,
+   so Exa would re-find and re-charge for the first widening's results, once per retry).
 6. **Land.** `finish_discovery_run` records a terminal status only (`completed` / `needs_review`)
    with `asked`, `found_strict`, `found_relaxed`, `analyzed`, the recall estimate and a receipt
    carrying the counters a human reads to decide whether the pool was exhausted or the ICP is too
-   narrow: `shown`, `target_count`, `criteria`, `criteria_relaxed`, the guard hit counts, `cost_usd`,
+   narrow: `shown`, `target_count`, `criteria`, `criteria_relaxed` (what *this attempt* sent, so
+   null on an attempt that found the widening already bought), `relaxed_search_id` (which says a
+   widening happened at all), `credits_priced_once`, the guard hit counts, `cost_usd`,
    `duplicates`, `not_chosen_before`, `unresolvable_domain` and `candidate_failures`. A short list is
    information, never padded.
 7. **Containment, per candidate and per run.** `handle` never raises. One candidate that fails is
@@ -1540,3 +1554,12 @@ discovery run against real providers.
   (ruling 2). What the future in-project target-accounts tab reads — candidate rows or a pending
   membership — is the founder's later design decision (ruling 6′), which is why R4 writes nothing to
   the project until a human approves.
+- **The ICP's exclusion questions.** Spec §3 asks one `POST /answer` per hard gate *and per
+  page-answerable exclusion*; R4 asks the gates only. `compile_brief` still compiles
+  `DiscoveryBrief.exclusions` from the document, and nothing reads it. Two open questions make this
+  a founder decision rather than an omission to fix quietly: how an exclusion scores, given that fit
+  is `passes / gates` today and an exclusion is a disqualifier rather than a gate; and the cost —
+  the confirmed Clue ICP states eight exclusions, so asking them is about eight more Answer calls,
+  roughly **$0.04 per company**, on top of the four gate calls. Recorded as final-review finding I3;
+  until it is decided, a company that clears every hard gate but sells to consumers can still land
+  as a High-fit candidate for a human to read.

@@ -23,6 +23,13 @@ Track R (ARV2 verified account discovery), R4 — the substrate the discovery dr
    ``(workspace_id, request_sha256)`` is unique: a re-launch of the same signed-off request finds
    the run it already made instead of paying for a second one.
 
+   ``webset_id`` / ``strict_search_id`` / ``relaxed_search_id`` are the "already bought" record.
+   The webset id alone was not enough: a webset holds *searches*, and a resumed run that could not
+   see which search was the strict one guessed by array position, and a resumed relaxed pass bought
+   a second widening search whose exclusion did not name the first one — Exa re-finds, and
+   re-charges for, everything it already returned. Recording both search ids makes "never buy this
+   twice" a fact of the row rather than of one attempt's memory.
+
 3. ``arv2_discovery_candidate`` — one company the long list returned, with the pass it came from
    (``strict`` / ``relaxed``), its verified ``domain`` (unique per run), the provider's raw
    snapshot, the per-gate verdicts, the derived ``fit`` and its ``disposition``.
@@ -108,6 +115,8 @@ def upgrade() -> None:
             criteria_gate_keys   jsonb NOT NULL,
             status               text NOT NULL DEFAULT 'not_started',
             webset_id            text,
+            strict_search_id     text,
+            relaxed_search_id    text,
             asked                integer,
             found_strict         integer,
             found_relaxed        integer,

@@ -4,9 +4,12 @@ This is spec §2–§4 executed in order, once per ``arv2_discovery`` task:
 
 1. **Claim the run** (``begin_discovery_run``). A run another worker is driving, or one that has
    already landed, is not this task's to run — the task completes without spending a cent.
-2. **Read the program.** The project's pinned ICP document is re-read at the start of every
-   attempt and compiled into the brief (§2: *the ICP document is the program*), so a resumed run
-   asks exactly the questions the first attempt asked.
+2. **Read the program.** The document THIS RUN was pinned to — ``run.icp_artifact_key``, checked
+   against ``run.icp_artifact_sha256`` — is re-read at the start of every attempt and compiled
+   into the brief (§2: *the ICP document is the program*), so a resumed run asks exactly the
+   questions the first attempt asked even if a human has since repinned the project onto a newer
+   ICP. Reading the project's *current* pin instead would grade one run's candidates against two
+   different documents; the digest that no longer matches refuses by name instead.
 3. **The strict pass** — one webset with the full criteria, polled to ``idle`` under a wall clock,
    then read once. Skipped entirely when the human asked for a relaxed pass on a run that already
    bought its long list: a second webset would be a second bill for the same companies.
@@ -61,7 +64,7 @@ from clue_api.arv2 import discovery_store as default_store
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.arv2.discovery_brief import DiscoveryBrief, compile_brief
-from clue_api.arv2.discovery_launch import read_pinned_icp
+from clue_api.arv2.discovery_launch import read_icp_document
 from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow, Disposition, Pass
 from clue_api.arv2.discovery_verifier import (
     OUTPUT_SCHEMA,
@@ -120,6 +123,9 @@ PROVIDER_HALTED = "provider_halted"
 
 #: The failure a task whose work id disagrees with its payload records.
 INVALID_TASK_PAYLOAD = "invalid_task_payload"
+
+#: The failure a webset whose strict search cannot be named records.
+WEBSET_SEARCH_AMBIGUOUS = "webset_search_ambiguous"
 
 #: The candidate id is derived from ``(run, domain)``, so a resumed run re-addresses the row it
 #: already wrote instead of racing its own ``ON CONFLICT`` for a second id.
@@ -180,6 +186,19 @@ class _WallExceeded(Arv2Error):
     """The webset did not reach ``idle`` inside the run's wall clock."""
 
 
+class _SearchAmbiguous(Arv2Error):
+    """The webset carries more than one search and nothing says which is the strict one.
+
+    Only reachable on a run whose ``strict_search_id`` was never recorded (an attempt that died
+    between ``create`` and ``record_webset``) and whose webset has since grown a second search.
+    Guessing by array position is what this refusal exists to prevent: the wrong guess excludes
+    the wrong search when widening, mislabels every candidate's pass, and drops a criterion using
+    another search's success rates. A human relaunches; nothing is bought.
+    """
+
+    code = WEBSET_SEARCH_AMBIGUOUS
+
+
 @dataclass
 class _RunState:
     """What one attempt has learned so far — the numbers its receipt is made of."""
@@ -194,6 +213,15 @@ class _RunState:
     seen: set[str] = field(default_factory=set)
     webset_id: str | None = None
     strict_search_id: str | None = None
+    #: Set once the widening search has been bought — the relaxed pass then READS it rather than
+    #: buying a second one (which would exclude only the strict search and re-charge for the first
+    #: widening's results).
+    relaxed_search_id: str | None = None
+    #: Every webset row this run has already been charged for. A webset is read again on every
+    #: resume and again after a widening search, and each read returns every row, so without this
+    #: the strict pass's rows are priced onto the ledger two or three times — on the exact number
+    #: §8's exit gate divides by.
+    priced_item_ids: set[str] = field(default_factory=set)
     strict_rates: tuple[tuple[str, float | None], ...] = ()
     asked: int | None = None
     recall_estimate: int | None = None
@@ -328,11 +356,14 @@ class Arv2DiscoveryWorkHandler:
         """Re-read the program and everything this attempt must not spend twice on."""
         now = self._clock()
         async with self._connection() as conn:
-            icp = await read_pinned_icp(
+            # The RUN's pinned bytes, not the project's current pin: a project repinned while this
+            # run was queued or suspended must not silently change the gates half-way through it.
+            icp = await read_icp_document(
                 conn,
                 self._storage,
                 workspace_id=run.workspace_id,
-                project_id=run.project_id,
+                artifact_key=run.icp_artifact_key,
+                artifact_sha256=run.icp_artifact_sha256,
             )
             brief = compile_brief(icp.front, icp.body, criteria_gate_keys=run.criteria_gate_keys)
             existing = await self._workspace_domains(conn, run.workspace_id)
@@ -351,6 +382,8 @@ class Arv2DiscoveryWorkHandler:
             existing=existing,
             unapproved=frozenset(unapproved),
             webset_id=run.webset_id,
+            strict_search_id=run.strict_search_id,
+            relaxed_search_id=run.relaxed_search_id,
             asked=run.asked,
             recall_estimate=run.recall_estimate,
             found_strict=run.found_strict or 0,
@@ -369,6 +402,12 @@ class Arv2DiscoveryWorkHandler:
                 state.seen.add(websets_domain)
             if candidate.disposition in _SHOWN:
                 state.shown += 1
+        # Every row an earlier attempt read was priced then; the raw Websets item is kept whole on
+        # the candidate's snapshot, so its id is recoverable and this attempt does not buy it again.
+        for candidate in already:
+            item_id = _snapshot_item_id(candidate)
+            if item_id:
+                state.priced_item_ids.add(item_id)
         return state
 
     # -- step one: the long list ---------------------------------------------------------------
@@ -397,6 +436,9 @@ class Arv2DiscoveryWorkHandler:
                 webset_id=view.webset_id,
                 asked=run.strict_count,
                 recall_estimate=state.recall_estimate,
+                # The create response names the one search this webset has, so the strict id is
+                # durable from the first write — a resumed attempt never has to guess it.
+                strict_search_id=state.strict_search_id,
             )
         view = await self._poll(state, view.webset_id)
         items = await self._read_items(state, view.webset_id)
@@ -476,15 +518,25 @@ class Arv2DiscoveryWorkHandler:
             await self._sleep(self._settings.arv2_discovery_poll_interval_s)
 
     async def _read_items(self, state: _RunState, webset_id: str) -> tuple[WebsetItem, ...]:
-        """The billed read of the long list. ``all_green`` is Exa's *bill*, never a verdict."""
+        """The billed read of the long list. ``all_green`` is Exa's *bill*, never a verdict.
+
+        A webset is read again on every resume and again after the widening search, and each read
+        returns the WHOLE webset — so the rows this run has already been charged for are named to
+        the client and priced at zero. The bill for one row is paid once per run, which is what
+        makes the receipt's ``cost_usd`` (and §8's cost-per-approved-account) mean what it says.
+        """
+        priced = frozenset(state.priced_item_ids)
         result = await self._hop(
-            state, lambda caller: self._clients.websets(caller).items(webset_id)
+            state,
+            lambda caller: self._clients.websets(caller).items(webset_id, priced_item_ids=priced),
         )
+        state.priced_item_ids.update(result.priced_item_ids)
         log.info(
             "arv2.discovery_items",
             run_id=str(state.run.run_id),
             items=len(result.items),
             credits_est=result.credits_est,
+            newly_priced=len(result.priced_item_ids),
         )
         return result.items
 
@@ -718,6 +770,10 @@ class Arv2DiscoveryWorkHandler:
             "discovery_run_id": str(run.run_id),
             "pass": pass_,
             "gates": {verdict.gate_key: verdict.verdict for verdict in verdicts},
+            # The document the score was scored against, by key and by bytes: a fit is only
+            # readable next to the gates that produced it, and those move with the ICP version.
+            "icp_artifact_key": run.icp_artifact_key,
+            "icp_artifact_sha256": run.icp_artifact_sha256,
         }
         await self._writer.write(
             conn,
@@ -800,6 +856,12 @@ class Arv2DiscoveryWorkHandler:
         The dropped criterion is the one the strict search's own success rates say was starving it,
         never a guess. Every company it returns is verified on **all** the gates, exactly like a
         strict one, so it lands with an honestly weaker score rather than a hidden one.
+
+        **The widening is bought once.** ``relaxed_search_id`` set on the run row means this run
+        already paid for its second search, so a redelivered task (a lost lease, a repeated relaxed
+        request) polls and reads it instead of calling ``add_search`` again — a second call would
+        exclude only the *strict* search, so Exa would re-find and re-charge for everything the
+        first widening returned, once per retry.
         """
         run = state.run
         if state.shown >= run.target_count:
@@ -812,14 +874,38 @@ class Arv2DiscoveryWorkHandler:
                 target=run.target_count,
             )
             return
-        if state.webset_id is None or state.strict_search_id is None:
+        if state.webset_id is None:
             log.info("arv2.discovery_relaxed_unavailable", run_id=str(run.run_id))
             return
+        webset_id = state.webset_id
+        if state.relaxed_search_id is None:
+            if state.strict_search_id is None:
+                log.info("arv2.discovery_relaxed_unavailable", run_id=str(run.run_id))
+                return
+            await self._buy_relaxed_search(state, webset_id, state.strict_search_id)
+        else:
+            log.info(
+                "arv2.discovery_relaxed_already_bought",
+                run_id=str(run.run_id),
+                webset_id=webset_id,
+                relaxed_search_id=state.relaxed_search_id,
+            )
+        view = await self._poll(state, webset_id)
+        items = await self._read_items(state, view.webset_id)
+        fresh = [item for item in items if (registrable_domain(item.url) or "") not in state.seen]
+        state.found_relaxed += len(fresh)
+        for item in fresh:
+            await self._verify_contained(state, item, pass_="relaxed")
+
+    async def _buy_relaxed_search(
+        self, state: _RunState, webset_id: str, strict_search_id: str
+    ) -> None:
+        """Add the widening search to this webset and record its id before reading a single row."""
+        run = state.run
         criteria = relaxed_criteria(state.brief.criteria, state.strict_rates)
         state.criteria_relaxed = criteria
-        webset_id, strict_search_id = state.webset_id, state.strict_search_id
         shortfall = run.target_count - state.shown
-        await self._hop(
+        view = await self._hop(
             state,
             lambda caller: self._clients.websets(caller).add_search(
                 webset_id,
@@ -829,12 +915,21 @@ class Arv2DiscoveryWorkHandler:
                 exclude_search_ids=[strict_search_id],
             ),
         )
-        view = await self._poll(state, webset_id)
-        items = await self._read_items(state, view.webset_id)
-        fresh = [item for item in items if (registrable_domain(item.url) or "") not in state.seen]
-        state.found_relaxed += len(fresh)
-        for item in fresh:
-            await self._verify_contained(state, item, pass_="relaxed")
+        relaxed_search_id = _relaxed_search_id(view, strict_search_id)
+        if relaxed_search_id is None:
+            # The purchase happened; only its id is missing, so the read below still runs. What is
+            # lost is the "bought already" fact, which is stated rather than hidden.
+            log.warning(
+                "arv2.discovery_relaxed_search_unnamed",
+                run_id=str(run.run_id),
+                webset_id=webset_id,
+            )
+            return
+        state.relaxed_search_id = relaxed_search_id
+        async with self._connection() as conn:
+            await self._store.record_relaxed_search(
+                conn, run_id=run.run_id, relaxed_search_id=relaxed_search_id
+            )
 
     # -- landing ---------------------------------------------------------------------------------
 
@@ -848,11 +943,18 @@ class Arv2DiscoveryWorkHandler:
             "shown": state.shown,
             "target_count": state.run.target_count,
             "criteria": list(state.brief.criteria),
+            # ``criteria_relaxed`` is what THIS attempt sent, so it is null on an attempt that
+            # found the widening already bought and only read it. ``relaxed_search_id`` is what
+            # says a widening happened at all, so the pair is never silent about one.
             "criteria_relaxed": (
                 list(state.criteria_relaxed) if state.criteria_relaxed is not None else None
             ),
+            "relaxed_search_id": state.relaxed_search_id,
             "guards": dict(state.guards),
             "cost_usd": str(state.cost_usd),
+            # States the assumption behind the number above: a webset row is priced once per run,
+            # not once per read, so a resumed or widened run does not over-report its own spend.
+            "credits_priced_once": True,
             "duplicates": state.duplicates,
             "not_chosen_before": state.not_chosen_before,
             "unresolvable_domain": state.unresolvable,
@@ -981,14 +1083,53 @@ def relaxed_criteria(
 
 
 def _strict_search(view: WebsetView, known: str | None) -> WebsetSearchView | None:
-    """The run's *first* search — the strict one. Once known, it is looked up by id, so a view
-    carrying the relaxed search first cannot repoint what the exclusion excludes."""
+    """The run's strict search, looked up by id — never by array position once the id is known.
+
+    The id is durable from the moment the webset was created (``record_webset``), so a view that
+    lists the relaxed search first cannot repoint what the exclusion excludes, what
+    ``_is_strict_item`` labels, or whose success rates choose the dropped criterion.
+
+    With no known id, one search is unambiguous — it is the strict one, because it is the only one
+    a run is guaranteed to have made. Two are not, and the guess is refused
+    (:class:`_SearchAmbiguous`) rather than made.
+    """
     if known is not None:
         for search in view.searches:
             if search.search_id == known:
                 return search
         return None
+    if len(view.searches) > 1:
+        raise _SearchAmbiguous(
+            f"webset {view.webset_id} carries {len(view.searches)} searches and this run recorded "
+            "no strict search id; which search is the strict one cannot be guessed"
+        )
     return view.searches[0]
+
+
+def _relaxed_search_id(view: WebsetView, strict_search_id: str) -> str | None:
+    """The id of the search ``add_search`` just created: the one that is not the strict one.
+
+    ``POST /websets/{id}/searches`` answers with the bare search it made, but a re-read of the
+    whole webset answers with every search, and both shapes arrive here as ``view.searches`` — so
+    the relaxed search is identified by *not being* the strict one rather than by position.
+    """
+    for search in view.searches:
+        if search.search_id and search.search_id != strict_search_id:
+            return search.search_id
+    return None
+
+
+def _snapshot_item_id(candidate: CandidateRow) -> str | None:
+    """The Websets item id inside a recorded candidate's provider snapshot, if it kept one.
+
+    The raw item is stored whole under ``item``, so a resumed attempt can tell which webset rows a
+    previous attempt already paid for without a second column.
+    """
+    item = candidate.provider_snapshot.get("item")
+    if not isinstance(item, Mapping):
+        return None
+    item_id = item.get("id")
+    return item_id if isinstance(item_id, str) and item_id else None
 
 
 def _replace_disposition(row: CandidateRow, value: Disposition) -> CandidateRow:

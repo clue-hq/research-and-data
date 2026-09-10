@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_launch import (
     build_arv2_discovery_tools,
     enqueue_discovery_run,
     launch_arv2_discovery,
+    read_icp_document,
     read_pinned_icp,
     request_relaxed_pass,
 )
@@ -302,6 +303,7 @@ __all__ = [
     "openrouter_halt_rule",
     "openrouter_message_text",
     "product_catalog_output_schema",
+    "read_icp_document",
     "read_pinned_icp",
     "redact_headers",
     "redact_url",

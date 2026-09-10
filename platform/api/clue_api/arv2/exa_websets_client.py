@@ -12,9 +12,12 @@ Three rules this module exists to keep:
 * **The bill is read on the items page, not guessed at creation.** Websets charges ten credits
   per *all-green* result — a row whose every criterion was satisfied. :func:`websets_items_cost`
   is that arithmetic in one place, and :meth:`ExaWebsetsClient.items` records it as the call's
-  cost. Creation reserves the worst case (``count`` × ten credits) as a law-2 pre-spend estimate
-  and records a **zero** cost, because recording the reservation as spend too would double-count
-  every match: once when the search was asked for, once when its results were read.
+  cost — **once per row per run**: a webset is read again on every resume and again after a
+  widening search, and every read returns every row, so the caller carries the ids it has already
+  been charged for (:func:`newly_priced`). Creation reserves the worst case (``count`` × ten
+  credits) as a law-2 pre-spend estimate and records a **zero** cost, because recording the
+  reservation as spend too would double-count every match: once when the search was asked for,
+  once when its results were read.
 * **A GET carries no body.** ``json_request(..., json_body=None)`` would serialise the literal
   ``null`` onto the wire; the read paths build their :class:`~clue_api.arv2.transport.HttpRequest`
   directly instead.
@@ -33,6 +36,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import SecretStr
 
@@ -96,6 +100,7 @@ __all__ = [
     "WebsetSearchView",
     "WebsetView",
     "is_all_green",
+    "newly_priced",
     "websets_halt_rule",
     "websets_items_cost",
 ]
@@ -176,6 +181,10 @@ class WebsetItemsResult:
     cost_usd: Decimal
     raw_refs: tuple[str, ...]
     ledger_row_ids: tuple[str, ...]
+    #: The ids of the all-green rows THIS read paid for — every id not already in the caller's
+    #: ``priced_item_ids``. The caller adds them to that set so the next read of the same webset
+    #: prices only what is new; ``all_green``/``credits_est``/``cost_usd`` count exactly these.
+    priced_item_ids: tuple[str, ...] = ()
 
 
 # -- reading the response ----------------------------------------------------------------------
@@ -348,21 +357,50 @@ def websets_items_cost(all_green: int, usd_per_credit: Decimal) -> Decimal:
     return Decimal(all_green * CREDITS_PER_MATCH) * usd_per_credit
 
 
-def _items_cost_reader(usd_per_credit: Decimal) -> Callable[[HttpResponse], CostReading]:
-    """The cost reader for one items page, closing over the account's credit rate.
+def newly_priced(
+    page: Sequence[Mapping[str, Any]], already_priced: frozenset[str]
+) -> tuple[int, tuple[str, ...]]:
+    """The all-green rows of one page that have not been paid for yet, and their ids.
+
+    Websets charges when a *search produces a result*, not when a page is read — but the page is
+    the only place the bill is visible, so reading the same webset again (a plain resume, or the
+    read that follows a widening search) shows every row a second time. Pricing those rows twice
+    would over-report real spend on the exact number §8's exit gate divides by. A row Exa gave no
+    id for cannot be recognised on a later read, so it is priced every time: over-reporting one
+    unidentifiable row is the safe direction, silently dropping it is not.
+    """
+    count = 0
+    ids: list[str] = []
+    for item in page:
+        if not is_all_green(item):
+            continue
+        item_id = _str(item.get("id")) or ""
+        if item_id and item_id in already_priced:
+            continue
+        count += 1
+        if item_id:
+            ids.append(item_id)
+    return count, tuple(ids)
+
+
+def _items_cost_reader(
+    usd_per_credit: Decimal, already_priced: frozenset[str]
+) -> Callable[[HttpResponse], CostReading]:
+    """The cost reader for one items page, closing over the credit rate and what is already paid.
 
     Websets does not meter a call in its response the way ``/search`` does — the page *is* the
     bill, and reading it is the only place the lane can know what a webset charged. The reading
-    carries both the credits (the unit Exa charges in) and their dollar value.
+    carries both the credits (the unit Exa charges in) and their dollar value, and counts only the
+    rows this run has not already been charged for (:func:`newly_priced`).
     """
 
     def read(response: HttpResponse) -> CostReading:
-        body = _body_json(response)
-        all_green = sum(1 for item in _page_items(body) if is_all_green(item))
+        page = _page_items(_body_json(response))
+        all_green, _ = newly_priced(page, already_priced)
         return CostReading(
             cost_usd=websets_items_cost(all_green, usd_per_credit),
             credits=Decimal(all_green * CREDITS_PER_MATCH),
-            extras={"all_green": all_green, "items": len(_page_items(body))},
+            extras={"all_green": all_green, "items": len(page)},
         )
 
     return read
@@ -474,23 +512,37 @@ class ExaWebsetsClient:
         )
         return _webset_view(result, fallback_id=webset_id)
 
-    def items(self, webset_id: str) -> WebsetItemsResult:
+    def items(
+        self, webset_id: str, *, priced_item_ids: frozenset[str] = frozenset()
+    ) -> WebsetItemsResult:
         """Every item of a webset, following ``nextCursor`` until ``hasMore`` is false.
 
         This is the billed call: each page's cost reader prices that page's all-green rows, and
         the result sums them, so "what did this webset cost" is the sum of rows the ledger
         already holds rather than a number computed twice.
+
+        ``priced_item_ids`` is what the caller has already been charged for on this webset. A
+        webset is read more than once per run — a resumed attempt polls and reads it again, and
+        the widening pass reads the WHOLE webset, strict rows included — and every read returns
+        every row. Rows named here are still returned; they are simply not priced a second time.
+        The rows this read did pay for come back on
+        :attr:`WebsetItemsResult.priced_item_ids` for the caller to carry forward.
         """
         items: list[WebsetItem] = []
         raw_refs: list[str] = []
         ledger_row_ids: list[str] = []
+        priced: list[str] = []
+        already = set(priced_item_ids)
         cost = Decimal(0)
         all_green = 0
         cursor: str | None = None
         for _ in range(MAX_ITEM_PAGES):
             path = f"{WEBSETS_BASE_PATH}/{webset_id}/items?limit={ITEMS_PAGE_LIMIT}"
             if cursor:
-                path = f"{path}&cursor={cursor}"
+                # An opaque cursor is base64 far more often than not, so ``+``, ``=`` and ``/``
+                # are ordinary contents of one — and an unencoded ``+`` decodes server-side as a
+                # space, which silently walks the wrong page.
+                path = f"{path}&cursor={quote(cursor, safe='')}"
             result = self._call(
                 operation="items",
                 label="websets-items",
@@ -498,7 +550,7 @@ class ExaWebsetsClient:
                 path=path,
                 body=None,
                 estimate=SpendEstimate(),
-                cost_reader=_items_cost_reader(self._usd_per_credit),
+                cost_reader=_items_cost_reader(self._usd_per_credit, frozenset(already)),
                 timeout_s=ITEMS_TIMEOUT_S,
             )
             if result.raw_ref is not None:
@@ -507,7 +559,13 @@ class ExaWebsetsClient:
             cost += result.call_cost.cost_usd or Decimal(0)
             body = _body_json(result.response)
             page = _page_items(body)
-            all_green += sum(1 for item in page if is_all_green(item))
+            # The same arithmetic the cost reader just ran on this page, against the same
+            # already-priced set — so what the ledger was charged and what the caller carries
+            # forward can never disagree.
+            page_green, page_ids = newly_priced(page, frozenset(already))
+            all_green += page_green
+            priced.extend(page_ids)
+            already.update(page_ids)
             items.extend(_item_view(item) for item in page)
             next_cursor = _str(body.get("nextCursor"))
             if not body.get("hasMore") or not next_cursor or next_cursor == cursor:
@@ -520,6 +578,7 @@ class ExaWebsetsClient:
             cost_usd=cost,
             raw_refs=tuple(raw_refs),
             ledger_row_ids=tuple(ledger_row_ids),
+            priced_item_ids=tuple(priced),
         )
 
     def add_search(

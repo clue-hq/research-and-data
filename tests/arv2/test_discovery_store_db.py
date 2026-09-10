@@ -18,6 +18,7 @@ from clue_api.arv2.discovery_store import (
     list_candidates,
     mark_candidates_approved,
     read_discovery_run,
+    record_relaxed_search,
     record_verdicts,
     record_webset,
     request_relaxed,
@@ -96,6 +97,12 @@ def test_run_create_is_idempotent_and_replay_finds_it_by_request_sha() -> None:
             assert found.status == "not_started"
             assert found.criteria_gate_keys == ("geography", "stage")
             assert found.relaxed_enabled is True
+            # A launched run has bought nothing yet: no webset, and neither of its searches.
+            assert (found.webset_id, found.strict_search_id, found.relaxed_search_id) == (
+                None,
+                None,
+                None,
+            )
 
     run_async(scenario())
 
@@ -112,8 +119,19 @@ def test_begin_claims_only_not_started_or_suspended_and_finish_records_counts() 
             assert begun.started_at is not None
             assert await begin_discovery_run(conn, run_id=row.run_id) is None
             await record_webset(
-                conn, run_id=row.run_id, webset_id="ws_123", asked=35, recall_estimate=210
+                conn,
+                run_id=row.run_id,
+                webset_id="ws_123",
+                asked=35,
+                recall_estimate=210,
+                strict_search_id="srch_strict",
             )
+            mid = await read_discovery_run(conn, run_id=row.run_id)
+            assert mid is not None
+            # The strict search is durable from the create, and no widening has been bought yet.
+            assert mid.strict_search_id == "srch_strict"
+            assert mid.relaxed_search_id is None
+            await record_relaxed_search(conn, run_id=row.run_id, relaxed_search_id="srch_relaxed")
             await finish_discovery_run(
                 conn,
                 run_id=row.run_id,
@@ -131,6 +149,9 @@ def test_begin_claims_only_not_started_or_suspended_and_finish_records_counts() 
             assert done.webset_id == "ws_123"
             assert done.asked == 35
             assert done.recall_estimate == 210
+            # Both searches survive the finish, so a reopened relaxed request never buys a second.
+            assert done.strict_search_id == "srch_strict"
+            assert done.relaxed_search_id == "srch_relaxed"
             assert done.finished_at is not None
             assert await request_relaxed(conn, run_id=row.run_id) is True
             reopened = await read_discovery_run(conn, run_id=row.run_id)

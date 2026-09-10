@@ -96,6 +96,7 @@ __all__ = [
     "build_arv2_discovery_tools",
     "enqueue_discovery_run",
     "launch_arv2_discovery",
+    "read_icp_document",
     "read_pinned_icp",
     "request_relaxed_pass",
 ]
@@ -193,8 +194,15 @@ class PinnedIcpDocument:
 
     The launch needs the *document*, not a summary of it, because the brief the run executes — the
     long-list query, the webset criteria, the gates the verifier asks — is compiled out of these
-    exact bytes (spec §2: the ICP document is the program). The driver reads it again the same way
-    at the start of every attempt, so a resumed run recompiles the same brief.
+    exact bytes (spec §2: the ICP document is the program). The driver reads it again at the start
+    of every attempt — by the run's OWN pinned key, through :func:`read_icp_document` — so a
+    resumed run recompiles the same brief even when the project has since repinned.
+
+    ``brand_id`` is the brand that owns the document *row*, and only the pin path
+    (:func:`read_pinned_icp`) resolves one: it is read off ``brand_knowledge_document`` while the
+    pin is being resolved. :func:`read_icp_document` is handed an artifact key and nothing else,
+    and an artifact key is content-addressed rather than brand-keyed, so it leaves this empty
+    rather than guessing — its one caller (the driver) already carries the brand on its run row.
     """
 
     front: Mapping[str, Any]
@@ -203,7 +211,9 @@ class PinnedIcpDocument:
     artifact_sha256: str
     icp_key: str
     icp_version: int
-    brand_id: str
+    #: The owning brand, or ``""`` when the document was read by artifact key. See the class
+    #: docstring: never a guess, and never read by the run-pinned path.
+    brand_id: str = ""
 
 
 async def read_pinned_icp(
@@ -254,18 +264,84 @@ async def read_pinned_icp(
             "the pinned ICP document's bytes are not the ones the project pinned: stored "
             f"{row['artifact_sha256']}, pinned {pin.artifact_sha256}",
         )
-    _, blob = await read_verified_artifact(
+    return await _icp_document(
         conn,
         storage,
-        storage_key=str(row["artifact_key"]),
+        workspace_id=workspace_id,
+        artifact_key=str(row["artifact_key"]),
+        artifact_sha256=str(row["artifact_sha256"]),
+        brand_id=str(row["brand_id"]),
+        label=str(row["path"]),
+    )
+
+
+async def read_icp_document(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    artifact_key: str,
+    artifact_sha256: str,
+) -> PinnedIcpDocument:
+    """The ICP document *one run* was pinned to, read by its own key and checked against its sha.
+
+    This is the driver's read, and it is deliberately NOT :func:`read_pinned_icp`. The launch
+    resolves what the project points at **now**; a run resolves what it was authorized against,
+    which is the pair of columns the run row carries (``icp_artifact_key`` /
+    ``icp_artifact_sha256``). Reading the current pin instead would let a human who repinned the
+    project while a run was queued or suspended silently move the gates mid-run: the candidates
+    already landed would have been graded against one document and the rest against another, under
+    one run id whose row still names the first. A digest that has moved refuses by name
+    (``icp_digest_mismatch``) so the driver contains it as ``needs_review`` and a human relaunches.
+
+    The R2 sibling reads its pin exactly this way (``account_research_driver._pinned_icp``).
+    """
+    return await _icp_document(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        artifact_key=artifact_key,
+        artifact_sha256=artifact_sha256,
+        brand_id="",
+        label=artifact_key,
+    )
+
+
+async def _icp_document(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    artifact_key: str,
+    artifact_sha256: str,
+    brand_id: str,
+    label: str,
+) -> PinnedIcpDocument:
+    """The bytes at ``artifact_key``, checked against ``artifact_sha256`` and parsed.
+
+    The half both readers share: read the artifact, refuse when its content digest is not the one
+    the caller pinned, parse the front matter, and refuse by name when the document names no
+    ``icp_key``/``version``. ``label`` is what a refusal calls the document — its path when the
+    caller resolved a row, its artifact key when it did not.
+    """
+    record, blob = await read_verified_artifact(
+        conn,
+        storage,
+        storage_key=artifact_key,
         workspace_id=workspace_id,
     )
+    if record.content_sha256 != artifact_sha256:
+        raise Arv2DiscoveryRefused(
+            "icp_digest_mismatch",
+            f"document {label!r} does not hold the bytes it was pinned to: stored "
+            f"{record.content_sha256}, pinned {artifact_sha256}",
+        )
     try:
         front, body = parse_front_matter(blob.decode("utf-8"))
     except ValueError as unreadable:
         raise Arv2DiscoveryRefused(
             "icp_front_matter_invalid",
-            f"document {row['path']!r} carries no readable YAML front matter: {unreadable}",
+            f"document {label!r} carries no readable YAML front matter: {unreadable}",
         ) from unreadable
     # The run pins the ICP by key and version, and both come from the document itself. A document
     # missing either is a malformed pin, and a malformed pin must refuse by name rather than raise
@@ -275,22 +351,22 @@ async def read_pinned_icp(
     if not isinstance(icp_key, str) or not icp_key.strip():
         raise Arv2DiscoveryRefused(
             "icp_front_matter_invalid",
-            f"document {row['path']!r} names no icp_key; a run is pinned to the ICP's own key",
+            f"document {label!r} names no icp_key; a run is pinned to the ICP's own key",
         )
     if not isinstance(version, int) or isinstance(version, bool):
         raise Arv2DiscoveryRefused(
             "icp_front_matter_invalid",
-            f"document {row['path']!r} has version {version!r}, which is not an integer; a run is "
+            f"document {label!r} has version {version!r}, which is not an integer; a run is "
             "pinned to the ICP version the human confirmed",
         )
     return PinnedIcpDocument(
         front=front,
         body=body,
-        artifact_key=str(row["artifact_key"]),
-        artifact_sha256=str(row["artifact_sha256"]),
+        artifact_key=artifact_key,
+        artifact_sha256=artifact_sha256,
         icp_key=icp_key,
         icp_version=version,
-        brand_id=str(row["brand_id"]),
+        brand_id=brand_id,
     )
 
 

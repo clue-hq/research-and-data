@@ -50,6 +50,7 @@ __all__ = [
     "list_candidates",
     "mark_candidates_approved",
     "read_discovery_run",
+    "record_relaxed_search",
     "record_verdicts",
     "record_webset",
     "request_relaxed",
@@ -78,7 +79,8 @@ _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, requested_by_user_id, request_sha256, "
     "target_count, strict_count, relaxed_enabled, relaxed_requested, criteria_gate_keys, "
-    "status, webset_id, asked, found_strict, found_relaxed, analyzed, recall_estimate, "
+    "status, webset_id, strict_search_id, relaxed_search_id, asked, found_strict, "
+    "found_relaxed, analyzed, recall_estimate, "
     "receipt_json, created_at, started_at, finished_at"
 )
 
@@ -117,6 +119,12 @@ class DiscoveryRunRow:
     status: DiscoveryStatus = "not_started"
     relaxed_requested: bool = False
     webset_id: str | None = None
+    #: The two searches inside that webset, recorded so a resumed attempt never guesses which one
+    #: is the strict pass (an array position is not a provider contract) and never buys the
+    #: widening search a second time. ``relaxed_search_id`` set means "the relaxed pass has been
+    #: bought" — the driver polls and reads it rather than calling ``add_search`` again.
+    strict_search_id: str | None = None
+    relaxed_search_id: str | None = None
     asked: int | None = None
     found_strict: int | None = None
     found_relaxed: int | None = None
@@ -170,6 +178,7 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             " :icp_artifact_sha256, :icp_key, :icp_version, :requested_by_user_id, "
             " :request_sha256, :target_count, :strict_count, :relaxed_enabled, "
             " :relaxed_requested, CAST(:criteria_gate_keys AS jsonb), :status, :webset_id, "
+            " :strict_search_id, :relaxed_search_id, "
             " :asked, :found_strict, :found_relaxed, :analyzed, :recall_estimate, "
             " CAST(:receipt AS jsonb), COALESCE(:created_at, now()), :started_at, :finished_at) "
             "ON CONFLICT (run_id) DO NOTHING"
@@ -193,6 +202,8 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             "criteria_gate_keys": json.dumps(list(row.criteria_gate_keys)),
             "status": row.status,
             "webset_id": row.webset_id,
+            "strict_search_id": row.strict_search_id,
+            "relaxed_search_id": row.relaxed_search_id,
             "asked": row.asked,
             "found_strict": row.found_strict,
             "found_relaxed": row.found_relaxed,
@@ -299,24 +310,54 @@ async def suspend_discovery_run(conn: AsyncConnection, *, run_id: UUID) -> None:
 
 
 async def record_webset(
-    conn: AsyncConnection, *, run_id: UUID, webset_id: str, asked: int, recall_estimate: int | None
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    webset_id: str,
+    asked: int,
+    recall_estimate: int | None,
+    strict_search_id: str | None,
 ) -> None:
     """Record the long list this run is reading from, before any of it is verified.
 
     Written as its own transition rather than folded into the finish, so a run that dies mid-verify
-    resumes against the webset it already paid to create instead of making a second one.
+    resumes against the webset it already paid to create instead of making a second one. The strict
+    search's id rides along for the same reason one level down: a webset holds searches, and a
+    resumed attempt that cannot name the strict one has to guess it by array position — which the
+    provider never promised — and then excludes the wrong search when it widens.
     """
     await conn.execute(
         text(
             "UPDATE arv2_discovery_run SET webset_id = :webset_id, asked = :asked, "
-            " recall_estimate = :recall_estimate WHERE run_id = :run_id"
+            " recall_estimate = :recall_estimate, strict_search_id = :strict_search_id "
+            "WHERE run_id = :run_id"
         ),
         {
             "webset_id": webset_id,
             "asked": int(asked),
             "recall_estimate": None if recall_estimate is None else int(recall_estimate),
+            "strict_search_id": strict_search_id,
             "run_id": run_id,
         },
+    )
+
+
+async def record_relaxed_search(
+    conn: AsyncConnection, *, run_id: UUID, relaxed_search_id: str
+) -> None:
+    """Record the widening search the §4 relaxed pass bought — the "never buy it twice" fact.
+
+    Written the moment ``add_search`` returns, before any of its results are read, so an attempt
+    that dies between the two resumes by *reading* the search it already paid for. Without it a
+    redelivered relaxed request calls ``add_search`` again, excluding only the strict search, and
+    Exa re-finds and re-charges for everything the first widening already returned.
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run SET relaxed_search_id = :relaxed_search_id "
+            "WHERE run_id = :run_id"
+        ),
+        {"relaxed_search_id": relaxed_search_id, "run_id": run_id},
     )
 
 
@@ -526,6 +567,8 @@ def _run(row: RowMapping) -> DiscoveryRunRow:
         status=row["status"],
         relaxed_requested=row["relaxed_requested"],
         webset_id=row["webset_id"],
+        strict_search_id=row["strict_search_id"],
+        relaxed_search_id=row["relaxed_search_id"],
         asked=row["asked"],
         found_strict=row["found_strict"],
         found_relaxed=row["found_relaxed"],

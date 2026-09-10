@@ -287,6 +287,87 @@ def test_a_single_page_is_one_request_and_its_items_are_priced_once() -> None:
     assert result.cost_usd == websets_items_cost(2, USD_PER_CREDIT)
 
 
+def test_a_second_read_of_the_same_webset_returns_every_row_and_prices_none_of_them_twice() -> None:
+    """A webset row is billed once per run, not once per read (final review I4).
+
+    Websets charges when a search produces a result; the items page is only where that bill is
+    visible. A run reads the same webset again on every resume and again after a widening search,
+    so pricing each read in full would over-report real spend on exactly the number §8's exit gate
+    divides by.
+    """
+    page = {
+        "data": [
+            _item("witem_1", "https://probook.com", "Probook", yes=True),
+            _item("witem_2", "https://digs.com", "Digs", yes=True),
+        ],
+        "hasMore": False,
+    }
+    client, _ = _client([_response(page), _response(page)])
+
+    first = client.items("webset_1")
+    second = client.items("webset_1", priced_item_ids=frozenset(first.priced_item_ids))
+
+    assert first.priced_item_ids == ("witem_1", "witem_2")
+    assert first.all_green == 2 and first.cost_usd == websets_items_cost(2, USD_PER_CREDIT)
+    # Both rows still come back — only the money is withheld.
+    assert [item.name for item in second.items] == ["Probook", "Digs"]
+    assert second.priced_item_ids == ()
+    assert second.all_green == 0 and second.credits_est == 0
+    assert second.cost_usd == Decimal(0)
+
+
+def test_only_the_rows_a_read_has_not_been_charged_for_are_priced() -> None:
+    """The half-overlap: the widening pass's read holds the strict rows and the new ones."""
+    page = {
+        "data": [
+            _item("witem_1", "https://probook.com", "Probook", yes=True),
+            _item("witem_2", "https://digs.com", "Digs", yes=True),
+            # A row that failed a criterion is returned and was never charged for either way.
+            _item("witem_3", "https://lassie.ai", "Lassie", yes=False),
+        ],
+        "hasMore": False,
+    }
+    client, _ = _client([_response(page)])
+
+    result = client.items("webset_1", priced_item_ids=frozenset({"witem_1"}))
+
+    assert len(result.items) == 3
+    assert result.priced_item_ids == ("witem_2",)
+    assert result.all_green == 1
+    assert result.cost_usd == websets_items_cost(1, USD_PER_CREDIT)
+
+
+def test_a_row_exa_gave_no_id_for_is_priced_every_read_rather_than_silently_dropped() -> None:
+    """Over-reporting one unidentifiable row is the safe direction; losing it is not."""
+    anonymous = _item("", "https://noid.com", "NoId", yes=True)
+    page = {"data": [anonymous], "hasMore": False}
+    client, _ = _client([_response(page), _response(page)])
+
+    first = client.items("webset_1")
+    second = client.items("webset_1", priced_item_ids=frozenset(first.priced_item_ids))
+
+    assert first.priced_item_ids == () and first.all_green == 1
+    assert second.all_green == 1
+    assert second.cost_usd == websets_items_cost(1, USD_PER_CREDIT)
+
+
+def test_the_items_cursor_is_url_encoded() -> None:
+    """An opaque cursor is base64 more often than not, and a raw ``+`` decodes as a space."""
+    cursor = "a+b/c=="
+    page1 = {
+        "data": [_item("witem_1", "https://probook.com", "Probook", yes=True)],
+        "hasMore": True,
+        "nextCursor": cursor,
+    }
+    page2 = {"data": [], "hasMore": False}
+    client, transport = _client([_response(page1), _response(page2)])
+
+    client.items("webset_1")
+
+    assert "cursor=a%2Bb%2Fc%3D%3D" in transport.requests[1].url
+    assert cursor not in transport.requests[1].url
+
+
 def test_the_items_cost_is_ten_credits_for_each_row_that_satisfied_every_criterion() -> None:
     assert websets_items_cost(0, USD_PER_CREDIT) == Decimal(0)
     assert websets_items_cost(15, USD_PER_CREDIT) == Decimal(150) * USD_PER_CREDIT

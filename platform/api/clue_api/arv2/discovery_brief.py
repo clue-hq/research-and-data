@@ -8,11 +8,12 @@ contains no vertical, no round name, no job title and no geography; the only pat
 over the document's prose is a count of months, because a window is arithmetic and arithmetic is
 code's job (spec §3, guard 3).
 
-Every gate in the document is verified. Only the gates the caller names become **webset
-criteria**, because the provider takes at most :data:`MAX_CRITERIA` of them — the rest are asked
-by the verifier afterwards, where a gate costs an Answer call instead of a place in the long
-list's filter. If a criteria slot is left over, the buyer sentence from the body fills it, so the
-webset still carries the ICP's own description of who we sell to.
+Every gate in the document is verified; the document's ``exclusions`` are compiled and, in R4,
+asked of nobody — see :attr:`DiscoveryBrief.exclusions`. Only the gates the caller names become
+**webset criteria**, because the provider takes at most :data:`MAX_CRITERIA` of them — the rest
+are asked by the verifier afterwards, where a gate costs an Answer call instead of a place in the
+long list's filter. If a criteria slot is left over, the buyer sentence from the body fills it, so
+the webset still carries the ICP's own description of who we sell to.
 
 Nothing here touches a database, a provider or an agent: a document in, a brief out.
 """
@@ -82,6 +83,15 @@ class DiscoveryBrief:
     criteria: tuple[str, ...]
     criteria_gate_keys: tuple[str, ...]
     gates: tuple[Gate, ...]
+    #: **Reserved — R4 compiles the document's exclusions but asks none of them.** Spec §3's "one
+    #: ``POST /answer`` per hard gate (and per page-answerable exclusion)" is implemented for the
+    #: gates only: the driver iterates :attr:`gates` and nothing reads this. Asking each
+    #: page-answerable exclusion (one Answer per exclusion per candidate) and deciding how an
+    #: exclusion scores against ``fit = passes / gates`` is a **founder decision**, recorded as a
+    #: follow-up (final review I3) rather than guessed here — the cost is real (the Clue ICP states
+    #: eight exclusions, so about eight more Answer calls, roughly $0.04, per company) and a
+    #: disqualifier that silently halves a fit is worse than one that is not yet asked. Compiled
+    #: rather than dropped so the field is ready for the pass that will ask them.
     exclusions: tuple[str, ...]
 
 

@@ -150,6 +150,10 @@ class _Store:
         del conn
         self.events.append(("record_webset", kwargs))
 
+    async def record_relaxed_search(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("record_relaxed_search", kwargs))
+
     async def finish_discovery_run(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("finish_discovery_run", kwargs))
@@ -301,14 +305,38 @@ def _item(
     )
 
 
+#: What one all-green webset row costs in these fakes — the real client's ten credits at the
+#: default rate. Spelled once so a re-read that prices nothing is visibly worth this much less.
+ITEM_COST = Decimal("0.0449")
+
+
 def _items(*items: WebsetItem) -> WebsetItemsResult:
+    """A first read of a fresh webset: every row is all-green, and every row is priced."""
     return WebsetItemsResult(
         items=tuple(items),
         all_green=len(items),
         credits_est=10 * len(items),
-        cost_usd=Decimal("0.449"),
+        cost_usd=ITEM_COST * len(items),
         raw_refs=("raw-items",),
         ledger_row_ids=("led-items",),
+        priced_item_ids=tuple(item.item_id for item in items),
+    )
+
+
+def _repriced(result: WebsetItemsResult, already: frozenset[str]) -> WebsetItemsResult:
+    """The scripted read as the real client would return it to a caller that has already paid.
+
+    Every row is still returned; only the rows this run has not been charged for are priced. This
+    is the fake's half of the "a webset row is billed once per run" contract — without it the
+    offline tests could not tell a second read that costs nothing from one that costs full price.
+    """
+    fresh = tuple(item_id for item_id in result.priced_item_ids if item_id not in already)
+    return replace(
+        result,
+        all_green=len(fresh),
+        credits_est=10 * len(fresh),
+        cost_usd=ITEM_COST * len(fresh),
+        priced_item_ids=fresh,
     )
 
 
@@ -330,6 +358,8 @@ class _FakeWebsets:
         self._add_search_view = add_search_view
         self._create_error = create_error
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        #: What each ``items`` read actually priced, in order — the fake's money trail.
+        self.returned_items: list[WebsetItemsResult] = []
 
     def create(self, **kwargs: Any) -> WebsetView:
         self.calls.append(("create", kwargs))
@@ -344,12 +374,18 @@ class _FakeWebsets:
             self._get_views.pop(0)
         return view
 
-    def items(self, webset_id: str) -> WebsetItemsResult:
-        self.calls.append(("items", {"webset_id": webset_id}))
+    def items(
+        self, webset_id: str, *, priced_item_ids: frozenset[str] = frozenset()
+    ) -> WebsetItemsResult:
+        self.calls.append(
+            ("items", {"webset_id": webset_id, "priced_item_ids": frozenset(priced_item_ids)})
+        )
         result = self._items[0]
         if len(self._items) > 1:
             self._items.pop(0)
-        return result
+        repriced = _repriced(result, frozenset(priced_item_ids))
+        self.returned_items.append(repriced)
+        return repriced
 
     def add_search(self, webset_id: str, **kwargs: Any) -> WebsetView:
         self.calls.append(("add_search", {"webset_id": webset_id, **kwargs}))
@@ -535,22 +571,24 @@ def _handler(
     writer = _Writer()
     drain = _DrainRecorder()
     accounts = _Accounts(account_writes_fail_on)
+    #: Every argument set the driver read its ICP with — the pin it verified against.
+    icp_reads: list[dict[str, str]] = []
 
-    async def fake_read_pinned_icp(
-        conn: Any, storage: Any, *, workspace_id: str, project_id: str
+    async def fake_read_icp_document(
+        conn: Any, storage: Any, *, workspace_id: str, artifact_key: str, artifact_sha256: str
     ) -> PinnedIcpDocument:
-        del conn, storage, workspace_id, project_id
+        del conn, storage, workspace_id
+        icp_reads.append({"artifact_key": artifact_key, "artifact_sha256": artifact_sha256})
         return PinnedIcpDocument(
             front=ICP_FRONT,
             body=ICP_BODY,
-            artifact_key=f"{WORKSPACE}/icp",
-            artifact_sha256="d" * 64,
+            artifact_key=artifact_key,
+            artifact_sha256=artifact_sha256,
             icp_key="clue-abm-buyers",
             icp_version=1,
-            brand_id="brd-1",
         )
 
-    monkeypatch.setattr(driver, "read_pinned_icp", fake_read_pinned_icp)
+    monkeypatch.setattr(driver, "read_icp_document", fake_read_icp_document)
     monkeypatch.setattr(driver, "drain_provider_calls", drain)
     monkeypatch.setattr(driver, "insert_account_entity", accounts)
 
@@ -566,6 +604,7 @@ def _handler(
         clock=clock or _clock(),
         sleep=_no_sleep,
     )
+    handler.icp_reads = icp_reads  # type: ignore[attr-defined]
     return handler, conn_factory, writer, drain, accounts
 
 
@@ -639,6 +678,12 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert created["external_id"] == f"arv2-discovery:{run.run_id}"
     assert store.named("record_webset")[0]["asked"] == 35
     assert store.named("record_webset")[0]["recall_estimate"] == 180
+    # The strict search is durable from the first write, so no later attempt has to guess it.
+    assert store.named("record_webset")[0]["strict_search_id"] == "srch-strict"
+    # And the document the run was pinned to is the one it verified against.
+    assert handler.icp_reads == [  # type: ignore[attr-defined]
+        {"artifact_key": run.icp_artifact_key, "artifact_sha256": run.icp_artifact_sha256}
+    ]
 
     # Every candidate was verified: one website answer plus one answer per gate, twice over.
     assert len(exa.gate_queries()) == 8
@@ -905,6 +950,11 @@ def test_a_requested_relaxed_pass_on_a_finished_run_skips_the_strict_pass(
     assert added["webset_id"] == "ws-1"
     assert added["count"] == 2
     assert added["exclude_search_ids"] == ["srch-strict"]
+    # The widening was recorded before a single one of its rows was read.
+    assert store.named("record_relaxed_search")[0] == {
+        "run_id": run.run_id,
+        "relaxed_search_id": "srch-relaxed",
+    }
     finished = store.named("finish_discovery_run")[0]
     assert finished["found_strict"] == 1  # carried from the earlier attempt, not recounted
     assert finished["found_relaxed"] == 1
@@ -1077,7 +1127,7 @@ def test_a_refused_icp_lands_the_run_needs_review_under_the_refusals_own_name(
         del conn, storage, kwargs
         raise Arv2DiscoveryRefused("project_icp_not_pinned", "no confirmed ICP is pinned")
 
-    monkeypatch.setattr(driver, "read_pinned_icp", refuse)
+    monkeypatch.setattr(driver, "read_icp_document", refuse)
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
@@ -1309,3 +1359,305 @@ def test_a_task_whose_work_id_disagrees_with_its_run_is_refused_before_it_spends
     finished = store.named("finish_discovery_run")[0]
     assert finished["status"] == "needs_review"
     assert finished["receipt"]["failure"] == "invalid_task_payload"
+
+
+def test_a_run_whose_pinned_icp_bytes_moved_is_refused_before_a_provider_is_touched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run verifies against its OWN pin, not the project's current one (final review I1).
+
+    A human confirms a new ICP version and repins the project while this run is queued. The run
+    row still names the bytes the human authorized, so the document read refuses on the digest and
+    the run lands ``needs_review`` — rather than compiling a brief from the *new* document's gates
+    and grading the rest of its candidates against questions the first half never faced.
+    """
+    run = _run_row()
+    store = _Store(run)
+    websets = _FakeWebsets()
+    handler, _, _, _, _ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+
+    asked: list[dict[str, str]] = []
+
+    async def moved(conn: Any, storage: Any, **kwargs: Any) -> Any:
+        del conn, storage
+        asked.append({str(key): str(value) for key, value in kwargs.items()})
+        raise Arv2DiscoveryRefused(
+            "icp_digest_mismatch",
+            f"document does not hold the bytes it was pinned to: stored {'e' * 64}, "
+            f"pinned {run.icp_artifact_sha256}",
+        )
+
+    monkeypatch.setattr(driver, "read_icp_document", moved)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    # It asked for the RUN's pinned artifact, by key and by sha — not for the project's pin.
+    assert asked == [
+        {
+            "workspace_id": WORKSPACE,
+            "artifact_key": run.icp_artifact_key,
+            "artifact_sha256": run.icp_artifact_sha256,
+        }
+    ]
+    assert websets.calls == []  # refused before a cent was spent
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["status"] == "needs_review"
+    assert finished["receipt"]["failure"] == "icp_digest_mismatch"
+
+
+def test_a_resumed_relaxed_pass_reads_the_search_it_bought_instead_of_buying_a_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The widening is bought once per run (final review I2, scenario A).
+
+    The first attempt added the relaxed search and died before it finished verifying its results.
+    ``relaxed_requested`` is still true, so this attempt runs the relaxed pass again — and must
+    poll and read the search that is already paid for. A second ``add_search`` would exclude only
+    the *strict* search, so Exa would re-find and re-charge for everything the first widening
+    returned, once per retry.
+    """
+    run = _run_row(
+        target_count=3,
+        relaxed_enabled=False,
+        relaxed_requested=True,
+        webset_id="ws-1",
+        strict_search_id="srch-strict",
+        relaxed_search_id="srch-relaxed",
+        asked=35,
+        found_strict=1,
+        recall_estimate=180,
+    )
+    store = _Store(
+        run,
+        candidates=[_verified_candidate(run, "Probook", "probook.ai", "https://probook.com")],
+    )
+    exa = _FakeExa(
+        _responder(
+            {
+                "Patientdesk": _company_answers(
+                    "Patientdesk",
+                    "patientdesk.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120)
+    websets = _FakeWebsets(
+        get_views=[_view(searches=(_search(rates=STRICT_RATES), relaxed_search))],
+        items_results=[
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
+            )
+        ],
+    )
+    handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    # Not a second widening, and not a second webset: only the free read of what was bought.
+    assert websets.named("add_search") == []
+    assert websets.named("create") == []
+    assert store.named("record_relaxed_search") == []
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    # This attempt sent no criteria, and says so — but it still names the widening that happened.
+    assert receipt["criteria_relaxed"] is None
+    assert receipt["relaxed_search_id"] == "srch-relaxed"
+    # Two free reads of the same webset — the relaxed resume's, then the poll's — and no third id.
+    assert [call["webset_id"] for call in websets.named("get")] == ["ws-1", "ws-1"]
+    assert [call["webset_id"] for call in websets.named("items")] == ["ws-1"]
+    # Only the company the earlier attempt never verified is verified, and as a relaxed one.
+    assert len(exa.gate_queries()) == 4
+    assert [created["primary_domain"] for created in accounts.created] == ["patientdesk.com"]
+    landed = store.named("upsert_candidate")
+    assert [(row["row"].domain, row["row"].pass_) for row in landed] == [
+        ("patientdesk.com", "relaxed")
+    ]
+
+
+def test_the_strict_search_is_found_by_id_even_when_the_relaxed_one_is_listed_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Array position is not a provider contract (final review I2, scenario B).
+
+    Exa returns this webset's searches newest-first. The run recorded which search is the strict
+    one, so the exclusion still names it, every strict item is still labelled ``strict``, and the
+    dropped criterion is still chosen from the *strict* search's success rates.
+    """
+    run = _run_row(
+        target_count=3,
+        relaxed_enabled=True,
+        webset_id="ws-1",
+        strict_search_id="srch-strict",
+        asked=35,
+        recall_estimate=180,
+    )
+    store = _Store(run)
+    passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Probook": _company_answers("Probook", "probook.ai", passes),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
+            }
+        )
+    )
+    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120, rates=())
+    # The relaxed search is listed FIRST — ``searches[0]`` would be the wrong answer everywhere.
+    newest_first = _view(searches=(relaxed_search, _search(rates=STRICT_RATES)))
+    websets = _FakeWebsets(
+        get_views=[newest_first],
+        items_results=[
+            _items(_item("Probook", "https://probook.com")),
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
+            ),
+        ],
+        add_search_view=newest_first,
+    )
+    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    added = websets.named("add_search")[0]
+    assert added["exclude_search_ids"] == ["srch-strict"]
+    # The strict search's own rates chose the dropped criterion — the relaxed one reported none.
+    assert added["criteria"] == (GEOGRAPHY_RULE, BUYER_SENTENCE)
+    assert store.named("record_relaxed_search")[0]["relaxed_search_id"] == "srch-relaxed"
+    passes_by_domain = {
+        row["row"].domain: row["row"].pass_ for row in store.named("upsert_candidate")
+    }
+    assert passes_by_domain == {"probook.ai": "strict", "patientdesk.com": "relaxed"}
+
+
+def test_a_webset_with_two_searches_and_no_recorded_strict_id_refuses_rather_than_guesses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one case a guess would be silently wrong: refuse it by name."""
+    run = _run_row(webset_id="ws-1", asked=35, relaxed_enabled=False)
+    store = _Store(run)
+    websets = _FakeWebsets(
+        get_views=[_view(searches=(_search(search_id="srch-relaxed"), _search(rates=STRICT_RATES)))]
+    )
+    handler, _, _, _, _ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    assert websets.named("items") == []  # nothing was read, so nothing was billed
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["failure"] == "webset_search_ambiguous"
+
+
+def test_a_webset_row_is_priced_once_per_run_across_the_relaxed_re_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The relaxed pass re-reads the WHOLE webset; the strict rows are not billed again (I4).
+
+    Every ``items`` read returns every row, so without the already-priced set the strict pass's
+    rows land on ``provider_call_ledger`` — and in ``receipt.cost_usd`` — twice. §8's exit gate
+    divides by that number.
+    """
+    run = _run_row(target_count=3, relaxed_enabled=True)
+    store = _Store(run)
+    passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Probook": _company_answers("Probook", "probook.ai", passes),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
+            }
+        )
+    )
+    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120, rates=())
+    websets = _FakeWebsets(
+        items_results=[
+            _items(_item("Probook", "https://probook.com")),
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
+            ),
+        ],
+        get_views=[_view(), _view(searches=(_search(rates=STRICT_RATES), relaxed_search))],
+        add_search_view=_view(
+            status="running", searches=(_search(rates=STRICT_RATES), relaxed_search)
+        ),
+    )
+    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    reads = websets.named("items")
+    # The first read pays for nothing before it; the second names the strict row it already paid.
+    assert [call["priced_item_ids"] for call in reads] == [
+        frozenset(),
+        frozenset({"itm-probook"}),
+    ]
+    # Both rows came back the second time; only the new one was billed.
+    first, second = websets.returned_items
+    assert first.priced_item_ids == ("itm-probook",)
+    assert first.cost_usd == ITEM_COST
+    assert [item.name for item in second.items] == ["Probook", "Patientdesk"]
+    assert second.priced_item_ids == ("itm-patientdesk",)
+    assert second.cost_usd == ITEM_COST  # one row, not two — the strict row is not re-billed
+    assert store.named("finish_discovery_run")[0]["receipt"]["credits_priced_once"] is True
+
+
+def test_a_resumed_run_does_not_re_price_the_rows_an_earlier_attempt_already_paid_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other half of I4: a plain resume re-reads the same webset and must not re-bill it.
+
+    The item ids come off the candidate rows the earlier attempt wrote — the raw Websets record is
+    kept whole on each snapshot — so "already paid for" survives a worker restart.
+    """
+    run = _run_row(webset_id="ws-1", asked=35, recall_estimate=180, relaxed_enabled=False)
+    already = _verified_candidate(run, "Probook", "probook.ai", "https://probook.com")
+    store = _Store(
+        run,
+        candidates=[
+            replace(
+                already,
+                provider_snapshot={**already.provider_snapshot, "item": {"id": "itm-probook"}},
+            )
+        ],
+    )
+    exa = _FakeExa(
+        _responder(
+            {
+                "Patientdesk": _company_answers(
+                    "Patientdesk",
+                    "patientdesk.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Patientdesk", "https://patientdesk.com"),
+            )
+        ]
+    )
+    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert websets.named("items")[0]["priced_item_ids"] == frozenset({"itm-probook"})
+    (read,) = websets.returned_items
+    assert [item.name for item in read.items] == ["Probook", "Patientdesk"]
+    assert read.priced_item_ids == ("itm-patientdesk",)
+    assert read.cost_usd == ITEM_COST

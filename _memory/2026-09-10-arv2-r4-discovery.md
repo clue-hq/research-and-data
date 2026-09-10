@@ -245,7 +245,16 @@ file list through `tr '\n' '\0' | xargs -0`, or ruff sees one impossible filenam
    `hard_gates`, more than three keys). The message is always accurate; the code is a misnomer for
    two of them. Two-line change plus a test (`icp_has_no_hard_gates` /
    `too_many_criteria_gate_keys`).
-7. **`exa_answer` cost readers, if Exa starts metering differently** — `ANSWER_ESTIMATE_USD` is a
+7. **The ICP's exclusion questions (final review I3 — founder decision).** Spec §3 asks one
+   `/answer` per hard gate *and per page-answerable exclusion*; R4 asks the gates only.
+   `compile_brief` compiles `DiscoveryBrief.exclusions` and nothing reads it (the field is now
+   documented as reserved, and the README's "what R4 deliberately does not build" names the gap).
+   Two things need deciding before it is built: how an exclusion scores, given fit is
+   `passes / gates` today and an exclusion is a disqualifier rather than a gate; and whether the
+   cost is worth it — the confirmed Clue ICP states eight exclusions, so about eight more Answer
+   calls, roughly **$0.04 per company**, on top of the four gate calls. Until then a company that
+   clears every hard gate but sells to consumers can still land as a High-fit candidate.
+8. **`exa_answer` cost readers, if Exa starts metering differently** — `ANSWER_ESTIMATE_USD` is a
    flat cent and the ledger reads Exa's own `costDollars.total`; `websets_items_cost` prices 10
    credits per all-green row at `CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT`. Both are honest today
    and both are one place to change if the meter moves.
@@ -262,3 +271,53 @@ candidate row keeps `decision NULL` even if the human ticked it (benign — such
 normally `duplicate_of_existing`, and `unapproved_domains` only remembers `pass`/`partial`/
 `unclear`); `websets_halt_rule`'s reason string is a message, not a short error code like the rest
 of the ledger's.
+
+---
+
+## Final-review fix wave (2026-09-10, one commit on `track-r4`)
+
+The whole-branch review (`.superpowers/sdd/2026-09-10-arv2-r4-discovery/final-review.md`) found
+0 Critical / 4 Important / 12 Minor. I1, I2 and I4 are fixed; I3 is a recorded founder deferral;
+M1, M6 and M12 are folded in. Nothing else on the review's minor list was touched.
+
+- **I1 — the run verifies against its own pinned bytes.** `discovery_launch` gained a second
+  public read, `read_icp_document(conn, storage, *, workspace_id, artifact_key, artifact_sha256)`,
+  and the parsing/validation half both readers share moved into a private `_icp_document`.
+  `read_pinned_icp` still resolves the project's *current* pin (that is the launch's question);
+  the driver's `_compose` now reads the run row's own `icp_artifact_key` and refuses
+  `icp_digest_mismatch` when the stored content sha is not the run's. `PinnedIcpDocument.brand_id`
+  is documented as pin-path-only and defaults `""` on the by-key read — an artifact key is
+  content-addressed, not brand-keyed, so resolving a brand from it would be a guess.
+- **I2 — the search ids are persisted.** Migration `2cd622be2da0` was edited **in place** (it is
+  unreleased; only the lane DB carried it) to add nullable `strict_search_id` / `relaxed_search_id`
+  on `arv2_discovery_run`, and re-applied with `alembic downgrade 71e80c777cf6 && alembic upgrade
+  head` (the downgrade's `arv2_discovery`-tasks refusal did not fire; one head after). The store
+  round-trips both, `record_webset` takes the strict id, and `record_relaxed_search` is a new
+  transition written the moment `add_search` returns. The driver looks the strict search up **by
+  id** (a webset with two searches and no recorded strict id now refuses
+  `webset_search_ambiguous` instead of taking `searches[0]`), and a run that already carries a
+  `relaxed_search_id` polls and reads it rather than buying a second widening.
+- **I3 — deferred by founder ruling, recorded three places.** `DiscoveryBrief.exclusions` is
+  documented as reserved-and-unread, the README's "what R4 deliberately does not build" names the
+  gap with its cost (~8 more Answer calls, ≈$0.04 per company), and follow-up 7 above carries it.
+  The field is kept rather than deleted so the pass that will ask them has its input.
+- **I4 — a webset row is priced once per run.** `ExaWebsetsClient.items` takes
+  `priced_item_ids` and returns the ids it actually priced; `newly_priced` is the one predicate
+  both the cost reader and the page loop use, so the ledger and the caller can never disagree.
+  `_RunState.priced_item_ids` is seeded in `_compose` from each recorded candidate's
+  `provider_snapshot["item"]["id"]` (the raw item is stored whole), so the set survives a restart,
+  and the receipt states the assumption with `credits_priced_once: true`. A row Exa gave no id for
+  is priced on every read — over-reporting one unidentifiable row is the safe direction.
+- **M1** the items cursor is `urllib.parse.quote(cursor, safe="")`-encoded (a base64 `+` decodes
+  server-side as a space). **M6** the fit claim's `markers` carry `icp_artifact_key` /
+  `icp_artifact_sha256`. **M12** the two resume gaps are pinned by new offline tests.
+
+Two things worth knowing next time:
+
+- The receipt's `criteria_relaxed` is now null on an attempt that found the widening already
+  bought (it states what *this* attempt sent), so `relaxed_search_id` was added beside it — the
+  pair is never silent about whether a widening happened.
+- M6 as the review wrote it was about the accounts list *grouping* discovery scores by
+  `payload.icp_key` / `payload.icp_version`; the ruling put the two artifact pins in `markers`
+  instead. The grouping half is untouched: a discovery `account.scoring.fit` still groups as an
+  ICP-less score beside an M6.3 score for the same project. Left for whoever owns that list.

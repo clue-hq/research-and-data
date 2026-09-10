@@ -43,6 +43,36 @@ def test_fleet_kind_and_r4_tables_exist() -> None:
 
 
 @pytest.mark.usefixtures("require_db")
+def test_a_run_row_records_the_webset_and_both_of_its_search_ids() -> None:
+    """The "never buy this twice" columns: the webset, and the two searches inside it.
+
+    ``webset_id`` alone was not enough — a resumed relaxed pass could buy a second widening search
+    whose exclusion did not name the first, and a resumed run with no strict id had to guess which
+    search was the strict one by array position (final review I2).
+    """
+
+    async def scenario() -> dict[str, str]:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            return {
+                str(r.column_name): str(r.is_nullable)
+                for r in await conn.execute(
+                    text(
+                        "SELECT column_name, is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'arv2_discovery_run' AND column_name IN "
+                        "('webset_id', 'strict_search_id', 'relaxed_search_id')"
+                    )
+                )
+            }
+
+    columns = run_async(scenario())
+    assert columns == {
+        "webset_id": "YES",
+        "strict_search_id": "YES",
+        "relaxed_search_id": "YES",
+    }
+
+
+@pytest.mark.usefixtures("require_db")
 def test_candidate_domain_is_unique_per_run_and_dispositions_are_closed() -> None:
     """The two constraints the store's upsert and its closed vocabulary rely on."""
 
