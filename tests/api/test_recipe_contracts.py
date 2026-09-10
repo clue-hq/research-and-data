@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 22
+    assert CONVERSATION_RECIPE_VERSION == 23
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -323,6 +323,47 @@ def test_o6_head_of_abm_mints_recipe_v22_without_rewriting_v19() -> None:
             )["dynamic_pin_kinds"]
         )
     )
+
+
+def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v22 = json.loads((root / "recipe0-stage0-v22.json").read_text())
+    v23 = json.loads((root / "recipe0-stage0-v23.json").read_text())
+    # ARV2 Track R, R4 adds exactly one address: verified account discovery for the project, on the
+    # same lane and behind the same confirmations as the two launches already in this slot.
+    added = {"launch_arv2_discovery@1"}
+
+    v22_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v22.json")
+    assert SYSTEM_RECIPE_FILENAMES[v22_index : v22_index + 2] == (
+        "recipe0-stage0-v22.json",
+        "recipe0-stage0-v23.json",
+    )
+    assert added.isdisjoint(v22["graph"]["tool_allowlist"])
+    assert added <= set(v23["graph"]["tool_allowlist"])
+    slot = next(node for node in v23["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v23["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    expected = {tuple(address.split("@")) for address in added}
+    assert expected <= slot_requirements
+    assert expected <= node_compatibility
+    # v23 is v22 PLUS the one address and nothing else: every address v22 admitted still resolves,
+    # so an execution pinned to either revision keeps the surface it was validated against.
+    v22_slot = next(
+        node for node in v22["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v22["graph"]["tool_allowlist"]) | added == set(v23["graph"]["tool_allowlist"])
+    assert set(v22_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    assert "launch_arv2_discovery@1" in RECIPE_0_TOOL_ADDRESSES
+    assert v22["version"] == 22
+    assert v23["version"] == 23
+    assert slot["dynamic_pin_kinds"] == v22_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

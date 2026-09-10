@@ -440,8 +440,10 @@ class Stage0StepPinProvider:
         # execution's own project is not, so it is pinned from the same trusted coordinate as its
         # siblings. An execution with no project pins explicitly absent and each tool's own
         # preconditions refuse it, rather than the plan failing to validate.
+        # ARV2 Track R, R4 adds the discovery launch on exactly the person launch's terms.
         if step.tool_name in {
             "launch_arv2_account_research",
+            "launch_arv2_discovery",
             "launch_arv2_person_research",
             "read_arv2_account_research_run",
         }:

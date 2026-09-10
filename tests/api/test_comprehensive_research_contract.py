@@ -457,6 +457,7 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     # v42 was re-minted from comprehensive; its contract carried into active v43 at the R0 merge
     # and into v44 (ARV2 onboarding O6) unchanged — O6 replaced the Stage-0 surface, not the
     # account-deep directive contract, so `draft_account_research_directive@5` is still the granted
-    # address and the two pins must still agree.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v44"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v44"
+    # address and the two pins must still agree. v45 (ARV2 Track R, R4) carries it forward again:
+    # that bump adds `launch_arv2_discovery@1` and nothing else.
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v45"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v45"
