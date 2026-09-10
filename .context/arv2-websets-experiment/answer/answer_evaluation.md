@@ -95,3 +95,23 @@ plus `citations[]` (url, title, publishedDate, full text when requested) and `co
 The difference in one line: Answer is a verifier you ask one question; deep-reasoning is a
 researcher you hand a charter. The qualifier needs the first, and the R2 agent already owns the
 second.
+
+## Addendum — the same 72 questions through `POST /search` with `systemPrompt` + `outputSchema`
+
+`run_search_schema.py`: `type=auto`, 6 results, page text 3000 chars, the identical system prompt,
+schema and question text; no date bounds (so the retrieval difference is Exa's, not ours).
+
+| | Answer | Search + schema |
+|---|---|---|
+| Cost per call | $0.005 | $0.007 (contents were not billed separately on this account) |
+| Total, 72 calls | $0.36 | $0.50 |
+| Median latency | 2.3 s | 3.6 s |
+| Stage: read "Series A or Series A extension" correctly | 17/18 | **9/18** — nine companies with a plain Series A (Probook, Lassie, Snout, INFI, Digs, Equal Parts, GenHealth.ai, Pie, Superorder) were marked **fail** with the reasoning "a Series A, not a Series A extension" |
+| Verdict agreement with Answer, all gates | — | 48/72 |
+| Absence treated as `fail` (intent, hiring) | rare | frequent ("the sources do not describe…" → fail) |
+
+Same prompt, same schema, same question: the synthesis behind `/search` read the test literally
+and wrongly, the synthesis behind `/answer` read it as written. Search is also slower and costs
+more per question on this account. Search keeps the control Answer lacks (date bounds, domain
+include/exclude, page count), but that control did not buy quality here, and the reading error is
+in the part we cannot control.
