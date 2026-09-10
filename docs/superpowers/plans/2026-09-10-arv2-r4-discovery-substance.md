@@ -14,7 +14,8 @@ with tests, exclusions, qualifier fields); the v3 proof of concept and its disco
 Websets experiment; `arv2/account_research_launch.py` (`Arv2LaunchRequest.account_entity_ids`);
 `arv2/account_research_store.py` (run/job rows); `clue_fleet/work_worker.py` (one leased work item
 per worker process); `frontend_read/bulk_actions.py` and `project_account` (how an account joins a
-project today); the O6 plan's set-valued gate (Task 3) as the gate pattern.
+project today); the O6 plan's set-valued gate (Task 3) as the gate pattern; O6 as merged locally in the semarang
+workspace on 2026-09-10 (`f60d1d270`: project ICP pin, v44 grants, fleet worker concurrency).
 
 ## 0. What R4 delivers (the master plan's exit gate, restated)
 
@@ -51,9 +52,12 @@ with its cost, and the pre-spend estimate is raised before the wire (Appendix A 
 
 ## 2. Step one — the long list (Exa Websets)
 
-**Input.** The confirmed ICP document's front matter is the discovery brief. Nothing else is
-authored: `hard_gates[]` give the criteria, `exclusions[]` give the query's negative half, the body's
-"who they sell to" paragraph and the vertical give the query's positive half.
+**Input.** The project's **pinned** confirmed ICP document (O6 Task 9b: `project_icp_pin`, read
+through `arv2/icp_confirmation.current_project_icp_pin`; a project pins one ICP version and nothing
+moves it on its own). Its front matter is the discovery brief. Nothing else is authored:
+`hard_gates[]` give the criteria, `exclusions[]` give the query's negative half, the body's "who
+they sell to" paragraph and the vertical give the query's positive half. A project with no pin
+refuses `project_icp_not_pinned`, the same code the account launch uses.
 
 **Query.** One webset, `entity.type = company`, `count = candidate_count`, `query` = a plain
 sentence compiled from the ICP (what the company sells, to whom, at what stage), and **three
@@ -119,10 +123,14 @@ A human gate. Candidates with their verdicts, references and firmographics are p
 human approves a set. Two surfaces are possible; §8 rules which:
 
 - **(a) A gate card in chat**, opened by the Head of ABM after the discovery run completes, built
-  on O6's set-valued gate (`product_set_selection` → a `cohort_approval` kind: the snapshot lists
-  candidates with verdicts, pre-checked = the `pass` set, the answer carries `selected_candidate_ids`).
-  Matches the master plan's wording ("the agent proposes and opens the gate"). Lands after O6
-  merges; the frontend card is the same component with a different row shape.
+  on O6's set-valued gate, which is now shipped (`open_product_set_selection_gate@1`, its answer
+  route and the frontend card, merged into `integration/design-improvement` locally on 2026-09-10):
+  a `cohort_approval` kind whose snapshot lists candidates with verdicts, pre-checked = the `pass`
+  set, the answer carrying `selected_candidate_ids`. Matches the master plan's wording ("the agent
+  proposes and opens the gate"). Two new Head-of-ABM tools ride with it — `launch_arv2_discovery@1`
+  (starts the discovery job) and `open_cohort_approval_gate@1` — which means a profile bump (v45),
+  the recipe allowlist, the authority map and the stage0-interview skill text (founder-reviewed),
+  the same mechanics O6 used to grant the two ARV2 launches.
 - **(b) The accounts table**: approved candidates become accounts immediately, the table shows them
   with verdict chips, and the existing "add to project" bulk action is the approval. Reuses D4-b;
   but unapproved candidates would sit in the main accounts list, and the table has no verdict slot
@@ -136,19 +144,22 @@ skips them (§8 asks whether "rejected" is remembered across runs).
 ## 5. Step four — launch and fan-out with a cap that binds
 
 **Launch.** The approved accounts go through the existing `launch_arv2_account_research` with
-`account_entity_ids = the cohort` — the launch already takes a list, pins the ICP artifact and the
-product set, and creates one job per account. From chat via the Head of ABM (O6's grant) or the
-CLI. No research button.
+`account_entity_ids = the cohort` — the launch already takes a list, checks the approved ICP
+artifact against the project's pin, pins the product set, and creates one job per account. From
+chat via the Head of ABM (v44 grants `launch_arv2_account_research@1` and
+`launch_arv2_person_research@1` since O6) or the CLI. No research button.
 
-**The cap.** Today one worker process drives one leased work item at a time
-(`clue_fleet.work_worker.LeasedWorkWorker`), and `CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS` is a
-per-process semaphore that never binds. R4 makes the cap a **run-level admission** in the ARV2
-driver: `arv2_research_run.max_parallel_jobs` (from the launch, default = the setting); when a
-worker claims a job whose run already has `max_parallel_jobs` jobs `in_progress`, the job is
-re-queued (not failed) with a short backoff. Throughput is then N workers up to the run's cap,
-which is what the R3 parallel test measured (three workers ≈ +25%). The AI Ark spacing rule
-(≥10.5 s between calls) becomes a **shared** limiter keyed on the provider, since parallel workers
-would otherwise each keep their own clock.
+**The cap.** Since O6 Task 9d (founder ruling 2026-09-10) one worker process drives
+`CLUE_FLEET_WORKER_CONCURRENCY` tasks at once (default 1; semarang's `.env` runs 3), each slot
+claiming on its own, and the ARV2 driver's per-process semaphore
+(`CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS`, default 4) now binds *inside* a process. So today's cap is
+**per process × N slots**, and provider fan-out multiplies with it (9d follow-up 2). R4 adds the
+one thing that is still missing, a cap **per run**: `arv2_research_run.max_parallel_jobs` (from the
+launch, default = the setting); a slot that claims a job whose run already has that many jobs
+`in_progress` re-queues it (not a failure) with a short backoff, so a 20-account cohort cannot
+take every slot of every worker at once. The AI Ark spacing rule (≥10.5 s between calls) becomes a
+**shared** limiter keyed on the provider, since parallel slots and processes would otherwise each
+keep their own clock (today it is per process).
 
 **Display** needs nothing new: the accounts list reads research status from ARV2 job rows (account
 jobs only, after the R3 rebase fix), and an account with no job shows as not started.
@@ -188,5 +199,6 @@ spend per approved account, time to idle, jobs in flight versus the cap.
    (proposed yes), and whether the Websets `exclude` import of existing accounts is used from day
    one (proposed: yes when the plan's exclusion cap is confirmed with Exa; local dedupe regardless).
 7. **Plan tier**: Core ($49) for R4 and the exit gate; Pro only when volume justifies it.
-8. **The cap's home**: run-level admission in the ARV2 driver (proposed) versus more worker
-   processes only.
+8. **The cap's home**: a per-run cap on top of O6's per-process slots (proposed), or slots only.
+9. **Where the two new Head-of-ABM tools land**: in R4 with a v45 profile bump (proposed), or held
+   for O7 so the profile moves once.
