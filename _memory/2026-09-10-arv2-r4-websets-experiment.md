@@ -28,3 +28,16 @@ written as "most recent round is …", over-discover), our own qualifier probe g
 geography with references, human approves; `/search` kept for the domain lock; a thin client next
 to `exa_client.py`, never the old M06A pipeline (Phase 6 inventory: DROP). Plan tier is a
 procurement ruling.
+
+## Hybrid PoC (same day, founder-requested before the plan)
+
+`.context/arv2-websets-experiment/hybrid/` — one webset (3 criteria, "most recent round" wording,
+35 asked) → **15 found of 333 analyzed** (Exa hit its search limit), 150 credits, 7 min; then our
+probe graded all 15 in ~100 s for $0.105. Websets' stage verdict was wrong 6/15 even with the right
+wording (pre-seed/seed ×5, Series B ×1); the probe caught every one. Full passes: Boostly, and
+Probook once its real URL is used — **Websets returned `probook.com` instead of `probook.ai`**, so
+R4 must verify the company URL before dedupe and reads. Free ATS boards covered 4/15; a regex
+careers-page fallback produced false positives (marketing copy, a GTM tag-manager id) and was
+replaced by unclear + reference. Stage rules that now hold: announcements decide the date, majority
+vote within it (title ×3), profile pages only as a fallback. Evaluation:
+`hybrid/hybrid_evaluation.md`.

@@ -1,0 +1,60 @@
+webset webset_01m25g3f3azqf2x5ya3gpra5kz created
+  t=0s running found=0 analyzed=0
+  t=16s running found=0 analyzed=7
+  t=31s running found=0 analyzed=34
+  t=47s running found=1 analyzed=55
+  t=62s running found=4 analyzed=66
+  t=78s running found=5 analyzed=72
+  t=94s running found=6 analyzed=82
+  t=109s running found=6 analyzed=91
+  t=125s running found=6 analyzed=95
+  t=141s running found=6 analyzed=95
+  t=157s running found=6 analyzed=96
+  t=172s running found=6 analyzed=96
+  t=188s running found=6 analyzed=96
+  t=204s running found=6 analyzed=100
+  t=220s running found=10 analyzed=130
+  t=237s running found=10 analyzed=152
+  t=253s running found=10 analyzed=162
+  t=268s running found=12 analyzed=188
+  t=284s running found=12 analyzed=202
+  t=299s running found=13 analyzed=222
+  t=315s running found=14 analyzed=233
+  t=331s running found=14 analyzed=247
+  t=346s running found=14 analyzed=256
+  t=362s running found=15 analyzed=269
+  t=378s running found=15 analyzed=301
+  t=394s running found=15 analyzed=317
+  t=410s running found=15 analyzed=332
+  t=425s running found=15 analyzed=333
+  t=441s idle found=15 analyzed=333
+15 items; grading…
+  Patientdesk.ai (YC W26)          fit= 50 Medium partial  gtm=0 board=None
+  1Fort AI                         fit= 50 Medium partial  gtm=0 board=None
+  Snout                            fit= 75 High   unclear  gtm=0 board=None
+  Lasso MD                         fit= 50 Medium partial  gtm=0 board=None
+  &AI                              fit= 50 Medium partial  gtm=0 board=None
+  DentalHQ                         fit= 50 Medium partial  gtm=0 board=None
+  Probook                          fit= 37 Low    fail     gtm=0 board=None
+  Digs                             fit= 50 Medium partial  gtm=0 board=greenhouse:digs
+  Lassie                           fit= 87 High   unclear  gtm=4 board=ashby:lassie
+  Levanta                          fit= 62 Medium partial  gtm=3 board=greenhouse:levanta
+  INFI                             fit= 75 High   unclear  gtm=0 board=None
+  Superorder                       fit= 75 High   unclear  gtm=0 board=None
+  BeyondTrucks                     fit= 75 High   unclear  gtm=0 board=None
+  Equal Parts                      fit= 50 Medium partial  gtm=0 board=None
+  Boostly                          fit=100 High   pass     gtm=1 board=ashby:boostly
+# Hybrid discovery PoC — results (2026-09-10)
+
+Webset `webset_01m25g3f3azqf2x5ya3gpra5kz`: found 15 of 333 analyzed; 15 items graded. Credits ≈ 150 (≈ $0.67 Pro / $0.92 Core). Probe spend $0.105 (15 stage searches; ATS reads free). Probe wall time 95 s.
+
+Dispositions: pass 1, partial 8, unclear 5, fail 1. Bands: High 6, Medium 8, Low 1.
+
+| # | company | HQ | emp | stage | geo | hiring | intent | fit | band | disposition | GTM reqs | board |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Patientdesk.ai (YC W26) | San Francisco California US | 6 | ❌ | ✅ | ❓ | ❓ | 50 | Medium | partial | 0 | — |
+| 2 | 1Fort AI | New York New York US | 9 | ❌ | ✅ | ❓ | ❓ | 50 | Medium | partial | 0 | — |
+| 3 | Snout | Troy Michigan US | 33 | ✅ | ✅ | ❓ | ❓ | 75 | High | unclear | 0 | — |
+| 4 | Lasso MD | San Diego California US | 32 | ❌ | ✅ | ❓ | ❓ | 50 | Medium | partial | 0 | — |
+done 2026-09-10T11:18:00.456242+00:00
+EXIT=0

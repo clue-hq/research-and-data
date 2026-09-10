@@ -1,0 +1,61 @@
+{
+  "id": "webset_01m25g3f3azqf2x5ya3gpra5kz",
+  "object": "webset",
+  "status": "idle",
+  "externalId": "arv2-r4-hybrid-1789038538",
+  "title": "Companies: US B2B SaaS/AI, Series A within 24 months, small biz verticals",
+  "searches": [
+    {
+      "id": "wsearch_01m25g3ff3f4bpzp4azbhnamq2",
+      "object": "webset_search",
+      "websetId": "webset_01m25g3f3azqf2x5ya3gpra5kz",
+      "status": "completed",
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States",
+          "successRate": 83.39
+        },
+        {
+          "description": "Company's most recent funding round is a Series A or Series A extension, announced within the last 24 months (not seed, not pre-seed, not Series B or later, not a growth round)",
+          "successRate": 8.31
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking",
+          "successRate": 28.12
+        }
+      ],
+      "count": 35,
+      "maxPeoplePerCompany": null,
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {
+        "found": 15,
+        "analyzed": 333,
+        "completion": 100,
+        "timeLeft": 0
+      },
+      "recall": null,
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-09-10T11:09:02.307Z",
+      "updatedAt": "2026-09-10T11:16:12.094Z"
+    }
+  ],
+  "imports": [],
+  "enrichments": [],
+  "monitors": [],
+  "excludes": [],
+  "metadata": {},
+  "dashboardUrl": "https://websets.exa.ai/websets/webset_01m25g3f3azqf2x5ya3gpra5kz",
+  "createdAt": "2026-09-10T11:09:01.930Z",
+  "updatedAt": "2026-09-10T11:16:12.094Z",
+  "items": [],
+  "_http_status": 200,
+  "_elapsed_s": 0.63
+}

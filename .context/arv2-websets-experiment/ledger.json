@@ -283,5 +283,187 @@
     "label": "stage_Rebar",
     "http": 200,
     "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:09:02.881829+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "create",
+    "http": 201,
+    "webset_id": "webset_01m25g3f3azqf2x5ya3gpra5kz"
+  },
+  {
+    "at": "2026-09-10T11:16:24.368351+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "final",
+    "found": 15,
+    "analyzed": 333,
+    "time_to_idle_s": 441
+  },
+  {
+    "at": "2026-09-10T11:16:25.486648+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:16:26.834149+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Patientdesk_ai__YC_W26_",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:33.215117+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_1Fort_AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:39.831364+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Snout",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:46.768236+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Lasso_MD",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:54.150190+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage__AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:00.387962+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_DentalHQ",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:10.772394+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Probook",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:19.483209+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Digs",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:22.392191+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Lassie",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:25.570434+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Levanta",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:28.876542+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_INFI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:33.630309+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Superorder",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:41.741387+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_BeyondTrucks",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:49.574893+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Equal_Parts",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:57.300936+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Boostly",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:19:45.322574+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:22:18.285268+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:24:03.158261+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:26:30.546781+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
   }
 ]
