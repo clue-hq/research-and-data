@@ -35,6 +35,7 @@ pure composition, no logic:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 from sqlalchemy import text
@@ -47,6 +48,7 @@ from clue_db import ConnFactory, transaction
 from clue_execution import enqueue_recipe_execution
 from clue_fleet import (
     AccountAdmission,
+    CapabilityGated,
     DbLeaseStore,
     DbTaskQueue,
     DbWorkLeaseStore,
@@ -58,6 +60,7 @@ from clue_fleet import (
     ProjectRunWorkHandler,
     QueueBackedScheduler,
     RunDriver,
+    TaskCapability,
     TaskQueue,
     TierPriority,
     WorkContext,
@@ -321,6 +324,44 @@ def build_fleet_worker(
     )
 
 
+class _SerializedHandler:
+    """Run one wrapped ``handle`` at a time, whatever the worker's concurrency.
+
+    ``CLUE_FLEET_WORKER_CONCURRENCY`` > 1 makes several ``handle()`` calls share one handler
+    *instance*. A handler that keeps per-instance mutable state across awaits is correct only
+    when its calls do not interleave, so this wrapper gives it back the one-at-a-time guarantee
+    it was written under — a lock, not a rewrite, because the alternative is editing another
+    lane's driver to satisfy a fleet knob.
+
+    Only the wrapped kind is serialised: every other kind on the process keeps draining in
+    parallel, so the cost is the throughput of one kind, not of the worker.
+    """
+
+    def __init__(self, inner: WorkHandler) -> None:
+        self._inner = inner
+        self._lock = asyncio.Lock()
+
+    @property
+    def kind(self) -> FleetTaskKind:
+        return self._inner.kind
+
+    @property
+    def task_capabilities(self) -> tuple[TaskCapability, ...]:
+        """Forward the R3-B declaration; an ungated inner handler still claims its whole kind.
+
+        Read per call, like :class:`~clue_fleet.CapabilityGated` requires — the wrapper must not
+        freeze a capability that depends on live configuration.
+        """
+        inner = self._inner
+        if not isinstance(inner, CapabilityGated):
+            return ()
+        return tuple(inner.task_capabilities)
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        async with self._lock:
+            return await self._inner.handle(context)
+
+
 def build_multi_work_worker(
     settings: Settings,
     *,
@@ -359,6 +400,13 @@ def build_multi_work_worker(
 
     ``arv2_account_research_handler`` (Track R, R2) is the same shape again: optional because a
     deployment without ``arv2_account_research_enabled`` composes no account driver.
+
+    ``CLUE_FLEET_WORKER_CONCURRENCY`` (founder ruling 2026-09-10) is threaded here like every
+    other ``CLUE_FLEET_*`` knob: it is how many tasks THIS process drives at once. Several worker
+    processes still run against the same queue; the knob multiplies each of them. A handler whose
+    ``handle`` is not safe under concurrent calls on ONE instance is wrapped in
+    :class:`_SerializedHandler` at the point it joins the worker, so raising the knob can never
+    make a handler less correct — only the work that handler gates less parallel.
     """
     if (
         entity_research_handler is not None
@@ -389,8 +437,21 @@ def build_multi_work_worker(
         and arv2_account_research_handler.kind is not FleetTaskKind.ARV2_ACCOUNT_RESEARCH
     ):
         raise ValueError("arv2_account_research_handler must own arv2_account_research tasks")
-    handlers = [
-        _OwnedRunGuardHandler(ProjectRunWorkHandler(driver)),
+    handlers: list[WorkHandler] = [
+        # The one kind the 9d handler-safety audit found NOT safe to run concurrently on one
+        # instance. Two independent reasons, both in code today:
+        #   * the production driver (``ComposingRunDriver``) keeps an LRU per-run registry cache
+        #     with no lock and an ``await`` between the cache miss and the fill, and evicts by
+        #     size — so concurrent drives both compose, and past the cache size they evict each
+        #     other's mid-drive registry;
+        #   * ``clue_research.durable.ProjectRun`` states single-driver-per-run as a
+        #     *precondition* ("what lets phase idempotency use a zero ``stale_after``") and says
+        #     the enforcing lock is left to the scheduler — and the fleet cannot supply it here,
+        #     because every slot claims under the SAME ``worker_id`` and ``work_lease``'s acquire
+        #     hands its own worker a live lease at the SAME generation, so the lease fence that
+        #     separates two worker *processes* does not separate two slots of one process.
+        # A lock, not a rewrite: both fixes belong to their own lanes. Only ``drive_run`` pays.
+        _SerializedHandler(_OwnedRunGuardHandler(ProjectRunWorkHandler(driver))),
         graph_handler,
     ]
     if entity_research_handler is not None:
@@ -416,6 +477,7 @@ def build_multi_work_worker(
         lease_ttl=timedelta(seconds=settings.fleet_lease_ttl_s),
         heartbeat_interval=settings.fleet_heartbeat_interval_s,
         task_stale_after=timedelta(seconds=settings.fleet_task_stale_after_s),
+        concurrency=settings.fleet_worker_concurrency,
     )
 
 

@@ -100,12 +100,16 @@ from clue_api.exa_targeted_enrichment import (
 )
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
+from clue_api.icp_artifact_gate_tools import build_icp_artifact_gate_tools
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
+from clue_api.product_set_selection_gate_tools import (
+    build_product_set_selection_gate_tools,
+)
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
@@ -2867,6 +2871,22 @@ def build_toolbelt(
         conn_factory=conn_factory,
         budget_controls_enabled=resolved_settings.budget_controls_enabled,
     )
+    # ARV2 onboarding O6: the ICP gate over a knowledge document, registered here rather than in
+    # ``agent_gate_wiring`` because — unlike its ``@1`` sibling — its subject is an artifact, so it
+    # needs the storage the knowledge documents live in. It is the DEFAULT version now: T6 promoted
+    # ``head-of-abm@v44``, which pins ``@2``, so the unversioned address must resolve to the gate
+    # the active profile actually holds. ``@1`` stays registered and frozen for replay.
+    for tool in build_icp_artifact_gate_tools(conn_factory=conn_factory, storage=storage):
+        registry.register(tool, make_default=True)
+    # ARV2 onboarding O6: the set-valued sibling of the S5-F product gate. It reads the brand's own
+    # product rows and knowledge documents (never a Client-KB version), so it needs the storage the
+    # knowledge documents live in; without one it still presents every candidate, just without the
+    # catalog's descriptions.
+    for tool in build_product_set_selection_gate_tools(
+        conn_factory=conn_factory,
+        storage=storage,
+    ):
+        registry.register(tool, make_default=True)
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected

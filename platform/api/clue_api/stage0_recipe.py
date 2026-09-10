@@ -118,13 +118,54 @@ class Stage0StepPinProvider:
             digest=pin.digest,
         )
 
-    async def _design_leg_project_pin(
+    async def _execution_project_pin(self, ctx: ToolContext) -> PinRequest:
+        """Resolve a tool's project pin from the execution this step is running under (D9).
+
+        For a tool whose body names no project *and* carries no presenting-turn ref, the execution
+        row is the trusted coordinate: the run was started against one project and cannot move. An
+        execution with no project is pinned explicitly absent, so the tool's own preconditions
+        refuse it rather than the plan failing to validate.
+
+        Used by the ARV2 lane's tools (``launch_arv2_account_research@1`` /
+        ``launch_arv2_person_research@1`` / ``read_arv2_account_research_run@1``) — wired in
+        Task 5 of the O6 lane, and extended to the person launch when v44 granted it.
+        """
+
+        absent = PinRequest(
+            kind="project",
+            key="__not_supplied__",
+            version="missing",
+            required=False,
+        )
+        if ctx.execution_id is None:
+            return absent
+        async with self._conn_factory() as conn:
+            project_id = (
+                await conn.execute(
+                    text(
+                        "SELECT project_id FROM execution "
+                        "WHERE id = :execution_id AND workspace_id = :workspace_id"
+                    ),
+                    {"execution_id": ctx.execution_id, "workspace_id": ctx.workspace_id},
+                )
+            ).scalar_one_or_none()
+        if not isinstance(project_id, str) or not project_id:
+            return absent
+        return await self._current(kind="project", key=project_id, ctx=ctx)
+
+    async def _presenting_turn_project_pin(
         self,
         body: dict[str, JsonValue],
         *,
         ctx: ToolContext,
     ) -> PinRequest:
-        """Resolve ``open_design_leg``'s project pin from the injected presenting-turn ref."""
+        """Resolve a tool's project pin from the presenting-turn ref the engine injected.
+
+        Shared by every tool whose only trusted input is that ref (``open_design_leg``, the
+        product-set gate, the artifact-shaped ICP gate): the project is never a body field, so the
+        pin is derived from the turn instead. A ref that does not resolve is pinned explicitly
+        absent and the tool's own preconditions refuse it, with a reason a model can act on.
+        """
 
         from clue_api.turn_action import (
             TurnActionUnresolvable,
@@ -385,8 +426,26 @@ class Stage0StepPinProvider:
         # presenting turn), so the pin is resolved through the turn ref the engine injected. A
         # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
         # tool's own preconditions are what refuse it, with a reason a model can act on.
-        if step.tool_name == "open_design_leg":
-            requested.append(await self._design_leg_project_pin(body, ctx=ctx))
+        if step.tool_name in {"open_design_leg", "open_product_set_selection_gate"}:
+            requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
+        # The artifact-shaped ICP gate (``@2``) derives its project the same way. ``@1`` keeps the
+        # Stage-0 scope path above, so the version is part of the condition.
+        if step.tool_name == "open_icp_confirmation_gate" and step.tool_version == "2":
+            requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
+        # --- ARV2 onboarding O6: the new-lane launches and their read --------------------------
+        # None of the three carries a presenting-turn ref, so the execution row is the trusted
+        # coordinate for their ``project`` pin. The account launch is authorized by its ICP
+        # artifact digest and product-selection version and the read names only a run id; the
+        # person launch names a project in its body, but a body field is model-authored and the
+        # execution's own project is not, so it is pinned from the same trusted coordinate as its
+        # siblings. An execution with no project pins explicitly absent and each tool's own
+        # preconditions refuse it, rather than the plan failing to validate.
+        if step.tool_name in {
+            "launch_arv2_account_research",
+            "launch_arv2_person_research",
+            "read_arv2_account_research_run",
+        }:
+            requested.append(await self._execution_project_pin(ctx))
 
         if step.tool_name in {
             "open_directive_confirmation_gate",

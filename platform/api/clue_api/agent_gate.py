@@ -54,6 +54,7 @@ __all__ = [
     "product_set_selection_gate_id",
     "gate_answer_for_turn",
     "get_gate",
+    "icp_artifact_gate_id",
     "insert_gate",
     "insert_gate_answer",
     "money_text",
@@ -102,6 +103,7 @@ _PRODUCT_SELECTION_GATE_NAMESPACE = uuid5(
 _PRODUCT_SET_SELECTION_GATE_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:arv2:onboarding:product-set-selection-gate"
 )
+_ICP_ARTIFACT_GATE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:arv2:onboarding:icp-artifact-gate")
 
 _GATE_COLUMNS = (
     "gate_id, workspace_id, project_id, thread_id, turn_id, kind, subject_ref, "
@@ -263,6 +265,27 @@ def product_set_selection_gate_id(
         for part in (workspace_id, str(turn_id), subject_ref, expected_subject_sha256)
     )
     return uuid5(_PRODUCT_SET_SELECTION_GATE_NAMESPACE, framed)
+
+
+def icp_artifact_gate_id(
+    *,
+    workspace_id: str,
+    project_id: str,
+    subject_ref: str,
+    expected_subject_sha256: str,
+) -> UUID:
+    """Derive one immutable ICP gate for one exact ``brand_knowledge_document`` (ARV2 O6).
+
+    Keyed on the **project**, not the presenting turn, and on the document ref plus its digest —
+    the same four coordinates the ``agent_gate_one_icp_subject`` unique index enforces. One project
+    asking about one exact ICP document is one question, however many turns reach for it.
+    """
+
+    framed = "".join(
+        f"{len(part)}:{part}"
+        for part in (workspace_id, project_id, subject_ref, expected_subject_sha256)
+    )
+    return uuid5(_ICP_ARTIFACT_GATE_NAMESPACE, framed)
 
 
 async def insert_gate(

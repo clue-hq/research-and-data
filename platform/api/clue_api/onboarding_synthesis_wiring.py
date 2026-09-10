@@ -89,6 +89,11 @@ from clue_api.agent_runtime_wiring import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
+from clue_api.brand_knowledge_context import (
+    INPUT_PREFIX,
+    SERVABLE_STATUSES,
+    current_knowledge_documents,
+)
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_config import Secrets, Settings
 from clue_core import (
@@ -142,8 +147,6 @@ TURN_NAMESPACE = UUID("6c2f9d0e-4b3a-5f1e-9a77-0e2b4c8d1f55")
 #: The $5 record-only ceiling the C5 plan policy enforces for one synthesis turn.
 BUDGET_LIMIT_MILLICENTS = 500_000
 SYNTHESIS_CARD_MEDIA_TYPE = "application/vnd.clue.onboarding-synthesis-card+json"
-#: Every brand knowledge document is materialized read-only below this workspace prefix.
-INPUT_PREFIX = "inputs/brand/knowledge/"
 
 _RECIPE_KEY = "onboarding-synthesis-unit"
 _RECIPE_VERSION = 1
@@ -152,8 +155,6 @@ _PREPARER_WORKER_ID = "agent-onboarding-synthesis-preparer"
 _EVIDENCE_TOOL_NAME = "exa_search_evidence"
 _EVIDENCE_TOOL_VERSION = "1"
 
-#: A document is servable input when its bytes exist and it has not been superseded.
-_SERVABLE_STATUSES = ("ready", "proposed", "confirmed")
 #: Synthesis needs both halves of the brand's story: who the company is, and what it sells.
 _REQUIRED_INPUT_KINDS = frozenset({"company-overview", "product-catalog"})
 
@@ -163,6 +164,9 @@ _REQUIRED_INPUT_KINDS = frozenset({"company-overview", "product-catalog"})
 #: alone. (``customer-reviews`` is optional; a brand without one simply has no row.)
 _CORE_INPUT_KINDS = ("company-overview", "product-catalog", "customer-reviews")
 _ICP_KIND = "icp-definition"
+#: The statuses a newly published version may retire. `confirmed` is deliberately absent: it is a
+#: human's yes, and some project's pinned ICP. Reads still use the wider `SERVABLE_STATUSES`.
+RETIRABLE_STATUSES: tuple[str, ...] = ("ready", "proposed")
 #: Per-product research: deep, numerous, and only some of it belongs to a given ICP. It is seeded
 #: under ``inputs/`` for the model to read by path, never pushed into the opening context.
 _PRODUCT_RESEARCH_KIND = "product-research"
@@ -497,26 +501,26 @@ async def _current_input_documents(
     workspace_id: str,
     brand_id: str,
 ) -> tuple[dict[str, Any], ...]:
-    """The brand's current servable knowledge documents — the max version of each path."""
+    """The brand's current servable knowledge documents, as this surface's mutable input rows.
 
-    rows = (
-        await conn.execute(
-            text(
-                "SELECT DISTINCT ON (path) document_id, path, kind, version, artifact_key, "
-                "  artifact_sha256 "
-                "FROM brand_knowledge_document "
-                "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
-                "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
-                "ORDER BY path, version DESC"
-            ),
-            {
-                "workspace_id": workspace_id,
-                "brand_id": brand_id,
-                "statuses": list(_SERVABLE_STATUSES),
-            },
+    One reader of ``brand_knowledge_document`` (``current_knowledge_documents``), two shapes: the
+    O6 conversation turn pins the typed refs, while this surface still carries each row through a
+    dict it later stamps with the document's own ``body``.
+    """
+
+    return tuple(
+        {
+            "document_id": document.document_id,
+            "path": document.path,
+            "kind": document.kind,
+            "version": document.version,
+            "artifact_key": document.artifact_key,
+            "artifact_sha256": document.artifact_sha256,
+        }
+        for document in await current_knowledge_documents(
+            conn, workspace_id=workspace_id, brand_id=brand_id
         )
-    ).mappings()
-    return tuple(dict(row) for row in rows.all())
+    )
 
 
 def _objective(
@@ -1298,7 +1302,7 @@ class OnboardingSynthesisLauncher:
                                 "workspace_id": workspace_id,
                                 "brand_id": brand_id,
                                 "path": path,
-                                "statuses": list(_SERVABLE_STATUSES),
+                                "statuses": list(SERVABLE_STATUSES),
                             },
                         )
                     )
@@ -1335,6 +1339,11 @@ class OnboardingSynthesisLauncher:
                         "supersedes": None if supersedes == document_id else supersedes,
                     },
                 )
+                # Re-synthesis retires the drafts it replaces — and only those. A `confirmed`
+                # row is a human's yes and some project's pinned ICP (founder rulings
+                # 2026-09-10); superseding it here would retire an ICP nobody asked to change and
+                # break the launches pinned to it. It stays confirmed beside the new proposal, and
+                # the project moves only when a human approves the new one at the gate.
                 await conn.execute(
                     text(
                         "UPDATE brand_knowledge_document SET status = 'superseded', "
@@ -1348,7 +1357,7 @@ class OnboardingSynthesisLauncher:
                         "brand_id": brand_id,
                         "path": path,
                         "document_id": document_id,
-                        "statuses": list(_SERVABLE_STATUSES),
+                        "statuses": list(RETIRABLE_STATUSES),
                     },
                 )
                 # Read the version back rather than trusting the one we just computed: on a

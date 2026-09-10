@@ -608,3 +608,66 @@ def test_a_persona_turn_whose_icp_document_is_gone_fails_without_raising(tmp_pat
             assert result.documents == ()
 
     run_async(scenario())
+
+
+def test_a_re_synthesis_retires_the_draft_it_replaces_but_never_a_confirmation(
+    tmp_path: Path,
+) -> None:
+    """Founder rulings 2026-09-10: re-synthesis must never retire a ``confirmed`` row.
+
+    A confirmed version is a human's yes and some project's pinned ICP. Onboarding keeps refining
+    profiles in the background; if a refinement superseded the confirmation, the project's pinned
+    document would stop being servable and its launches would refuse — a background process
+    revoking an approval nobody withdrew. So the new version supersedes only ``ready``/``proposed``
+    drafts, and the confirmation stays confirmed beside it until a human approves the new one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WS, name="seed")
+            await seed_principal(conn, workspace_id=WS, user_id="usr_o4")
+            brand_id = project.brand_id
+            storage = _MemoryStorage()
+            await _seed_inputs(conn, storage=storage, brand_id=brand_id)
+
+            launcher = await OnboardingSynthesisLauncher.for_tests(
+                conn=conn,
+                storage=storage,
+                models=_Models(_icp_script(1), _icp_script(2), _icp_script(3)),
+                workspace_root=tmp_path / "ws",
+            )
+
+            first = await launcher.launch_icps(
+                workspace_id=WS, brand_id=brand_id, run_id=uuid4(), step_id=uuid4()
+            )
+            assert first.status == "completed", (first.failure_code, first.failure_message)
+            confirmed_id = first.icps[0].document_id
+            # A human approves v1 at the gate and their project pins it.
+            await conn.execute(
+                text(
+                    "UPDATE brand_knowledge_document SET status = 'confirmed' "
+                    "WHERE document_id = :id"
+                ),
+                {"id": confirmed_id},
+            )
+
+            second = await launcher.launch_icps(
+                workspace_id=WS, brand_id=brand_id, run_id=uuid4(), step_id=uuid4()
+            )
+            assert second.status == "completed", (second.failure_code, second.failure_message)
+            rows = {row["version"]: row for row in await _document_rows(conn)}
+            assert rows[1]["status"] == "confirmed"
+            assert rows[2]["status"] == "proposed"
+            assert rows[2]["supersedes_document_id"] == confirmed_id
+
+            # A third refinement retires the *draft* it replaces, and still leaves v1 alone.
+            third = await launcher.launch_icps(
+                workspace_id=WS, brand_id=brand_id, run_id=uuid4(), step_id=uuid4()
+            )
+            assert third.status == "completed", (third.failure_code, third.failure_message)
+            rows = {row["version"]: row for row in await _document_rows(conn)}
+            assert rows[1]["status"] == "confirmed"
+            assert rows[2]["status"] == "superseded"
+            assert rows[3]["status"] == "proposed"
+
+    run_async(scenario())

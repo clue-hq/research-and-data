@@ -73,7 +73,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # but pins prompt v4, ``open_design_leg@1``, and ``openai/gpt-5.6-terra``, so it cannot even
     # resolve here (this line retired @1/@2/@3) and would revert the grok-4.6 correction. v42
     # stays on disk, replay-only, exactly as minted.
-    AgentRole.HEAD_OF_ABM: "v43",
+    # v44 (ARV2 onboarding O6, 2026-09-09): v43 with the new-lane Stage-0 surface — prompt v8 and
+    # stage0-interview v21. The twelve old-lane tools (recon, readiness, Client-KB/Product-KB
+    # listing and inspection, the `icp_spec` synthesis and single-product gate, the discovery
+    # configuration gate, the onboarding-input capture and the confirmed-run start) are gone,
+    # because the knowledge they served is now brand knowledge documents the agent reads off its
+    # workspace. What replaces them is the product-set gate, `open_icp_confirmation_gate@2` over
+    # the ICP knowledge document, and the ARV2 launch/read pair. Model, workspace, delegation and
+    # limits are v43's, unchanged.
+    AgentRole.HEAD_OF_ABM: "v44",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -199,7 +207,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "estimate_project": (),
     "enrich_account_gaps": (),
     "enrich_selected_accounts": (),
-    "evaluate_stage0_readiness": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped from the Head-of-ABM surface at v44. There is no readiness
+    # check on the new lane — the brand's knowledge documents either exist or they do not, and the
+    # agent says which. Registered here so the audit stays a complete statement.
+    "evaluate_stage0_readiness": (),
     # ARV2 onboarding O4 (plan §4.5): the synthesis agent's one SPEND tool — a single fixed
     # deep-reasoning search for first-person evidence, at most once per persona role. No other
     # role may buy it: this is the onboarding synthesis turn's own governed provider call.
@@ -211,20 +222,28 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
         AgentRole.REVIEWER,
     ),
     "import_accounts": (),
-    # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10). These are the tools the
-    # card's `omissions` cursors are resolvable *through*: read-only, effect-free, page-bounded,
-    # and fail-closed on workspace/project scope. They are granted on the base role *and* stay
-    # installed on the trial surface — §7 sanctions them there explicitly, and a card that emits an
-    # omission kind no installed tool can resolve is the contract
-    # `test_c8_omission_resolution_contract.py` now refuses to let ship.
-    "inspect_readiness_history": (AgentRole.HEAD_OF_ABM,),
-    "inspect_client_claim": (AgentRole.HEAD_OF_ABM,),
-    "inspect_product_claim": (AgentRole.HEAD_OF_ABM,),
+    # PC-C8 §7 (task 1.5's deferred grant, landed against profile v10) granted six read-only
+    # cursor-resolution tools here. ARV2 onboarding O6 drops five of them at `head-of-abm@v44`:
+    # they all read the Client-KB / Product-KB claim surfaces, and the new lane's Stage-0 knowledge
+    # is brand knowledge documents the agent reads off its own workspace instead. Only
+    # `inspect_statement_history` survives — it reads what the human said in this conversation,
+    # which the new lane still records through `record_interview_answer`.
+    "inspect_readiness_history": (),
+    "inspect_client_claim": (),
+    "inspect_product_claim": (),
     "inspect_statement_history": (AgentRole.HEAD_OF_ABM,),
-    "list_client_knowledge": (AgentRole.HEAD_OF_ABM,),
-    "list_product_knowledge": (AgentRole.HEAD_OF_ABM,),
+    "list_client_knowledge": (),
+    "list_product_knowledge": (),
     "launch_account_deep": (),
-    "launch_account_research": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6 / FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools are
+    # dropped from the Head-of-ABM surface at v44. `head-of-abm@v44` runs one research lane, and it
+    # is the ARV2 pair below: these three launches start entity-research fleet jobs the new lane
+    # does not use, and the two run reads answer about `account_research_run` rows it never writes.
+    # They stay registered and invocable by whatever non-model surface still calls them; what
+    # changes is that no model surface names them. The skill that required all five —
+    # `account-deep-steering@v8` — leaves v44 with them; a steering skill written against the ARV2
+    # tools is a follow-up, and it is not a re-grant of these.
+    "launch_account_research": (),
     # ARV2 Track R, R2 (seam 1). Registered UNGRANTED, on the terms the ad-assets lane and the
     # pre-P3.3 design writes already established: the platform's write surface stays complete and
     # auditable, and the role decision lands with the profile version that teaches it. Granting is
@@ -235,16 +254,22 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # `agent_turn_fleet_wiring.py:561`). That is O6's bump — it is the slice that gives the Head of
     # ABM the launch, along with the prompt/skill content telling it what to confirm first. Until
     # then the lane is launched by a human: `scripts/launch_arv2_account_research.py`.
-    "launch_arv2_account_research": (),
+    # ARV2 onboarding O6 (T6): granted. `head-of-abm@v44` pins both and stage0-interview v21 §6
+    # states the preconditions the tool itself enforces — a confirmed ICP document version, a
+    # confirmed product set, and the exact accounts attached to the current human turn.
+    "launch_arv2_account_research": (AgentRole.HEAD_OF_ABM,),
     # ARV2 Track R, R3: the same launch for named *people*, on exactly the same terms and for the
-    # same reason. It researches contacts a human picked (or a committee step resolved), so it is
-    # if anything the more personal of the two — an ungranted registration keeps the audit complete
-    # while the role decision waits for the profile version that teaches it. Until then the person
-    # launch is a human act: `scripts/launch_arv2_person_research.py`.
-    "launch_arv2_person_research": (),
-    "read_arv2_account_research_run": (),
-    "launch_selected_account_research": (AgentRole.HEAD_OF_ABM,),
-    "launch_contact_research": (AgentRole.HEAD_OF_ABM,),
+    # same reason. It researches contacts a human picked (or a committee step resolved). Registered
+    # ungranted by R3 (a human act through `scripts/launch_arv2_person_research.py`); the O6 grant
+    # to the Head of ABM lands with the v44 pin that teaches it.
+    # ARV2 onboarding O6 / FOUNDER RULING 3 (2026-09-10): granted. Researching people a human
+    # named is the same act on the same lane as researching accounts they named, so it is granted
+    # on the same terms — `head-of-abm@v44` pins it, and the skill text that teaches it is
+    # stage0-interview v21's.
+    "launch_arv2_person_research": (AgentRole.HEAD_OF_ABM,),
+    "read_arv2_account_research_run": (AgentRole.HEAD_OF_ABM,),
+    "launch_selected_account_research": (),
+    "launch_contact_research": (),
     # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
     # validates the D5 pins, freezes the delegation bundle, and opens the durable leg whose
     # existence IS the routing rule. It spends nothing and dispatches nothing; the user's next
@@ -255,16 +280,24 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
     "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
-    "open_discovery_configuration_gate": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44. Discovery scope is not configured from the Stage-0
+    # conversation on the new lane — the human attaches the accounts to the turn.
+    "open_discovery_configuration_gate": (),
     "open_icp_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
-    "open_product_selection_gate": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44, superseded by the set-valued gate below. A project
+    # targets a SET of products, and the candidates come from the brand's own product rows.
+    "open_product_selection_gate": (),
+    # ARV2 onboarding O6 (T3/T6): granted, and `head-of-abm@v44` pins it. The agent may present
+    # the exact derived candidate set; only the human confirms it, and the gate receipt is the only
+    # authority a confirmed product set ever has.
+    "open_product_set_selection_gate": (AgentRole.HEAD_OF_ABM,),
     "override_stage0_readiness": (),
     "pause_run": (),
     "profile_contact": (),
     "propose_field": (AgentRole.HEAD_OF_ABM,),
     "propose_source": (AgentRole.HEAD_OF_ABM,),
-    "read_account_research_run": (AgentRole.HEAD_OF_ABM,),
-    "read_contact_research_run": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research_run": (),
+    "read_contact_research_run": (),
     "record_interview_answer": (AgentRole.HEAD_OF_ABM,),
     "recheck_research_view": (),
     "research_account_gaps": (),
@@ -275,11 +308,16 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "run_deep_account": (),
     "run_verification": (AgentRole.RESEARCH,),
     "score_accounts": (),
-    "start_confirmed_project_run": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44. The new lane launches research per account through
+    # `launch_arv2_account_research`, not by starting a phase-machine project run.
+    "start_confirmed_project_run": (),
     "start_project_run": (),
-    "start_recon": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44. There is no recon on this surface — onboarding produced
+    # the brand's knowledge documents before the conversation ever opened.
+    "start_recon": (),
     "submit_ingestion": (AgentRole.HEAD_OF_ABM,),
-    "submit_onboarding_input": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44. Its only consumer was `start_recon`.
+    "submit_onboarding_input": (),
     "submit_project_checkpoint": (),
     "submit_tier_checkpoint": (),
     # Lane E E1. Machine-invoked only: the post-finalize fleet step offers a just-terminal research
@@ -290,7 +328,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # one completion (and one judge call) *per committee persona*, so an on-demand agent reach for
     # it is an unbounded spend on research the engine may never have finished.
     "synthesize_value_narrative": (),
-    "synthesize_icps": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 onboarding O6: dropped at v44. The ICPs are written by the onboarding synthesis agent
+    # into the brand's knowledge documents; the Head of ABM proposes from those files and can never
+    # author one.
+    "synthesize_icps": (),
 }
 
 #: The Stage-0 conversation trial (`clue_api.stage0_trial`). One human types, the platform captures
@@ -331,30 +372,22 @@ ONBOARDING_ICP_SURFACE = "onboarding_icp"
 #: surface; the registry refuses a policy that withholds a tool the role's profile does not pin, so
 #: a rename cannot quietly restore a withheld capability.
 #:
-#: The trial withholds four tools, all for one reason — this surface is a manual conversation and
-#: does no external research, and neither the model nor the platform captures anything on the
-#: agent's behalf:
+#: The trial withholds the launch and delegation surfaces, all for one reason — this surface is a
+#: manual conversation and does no external research, and neither the model nor the platform
+#: captures anything on the agent's behalf.
 #:
-#: * ``start_recon`` and ``synthesize_icps`` are the two prohibitions the deleted stage-snapshot
-#:   prose used to state (task 1.3 deleted it with its artifact). ``start_recon`` spends against
-#:   external surfaces; ``synthesize_icps`` is driven from the human ``/synthesize-icp`` command,
-#:   which calls the research function directly and never needs the agent tool.
-#: * ``submit_onboarding_input`` is withheld as a **policy call** (PC-C8 §8, task 1.4). The trial's
-#:   rule is that the agent never captures: ``Stage0Trial.run_turn`` writes the ``user_turn``
-#:   capture itself, as ``actor='human'``, before the model is ever woken. Task 1.2's binder made
-#:   an agent-written row harmless to the turn binding (the capture lookup is scoped by project and
-#:   ``actor='human'``), so this is no longer a *safety* fix — it is that the tool has no honest use
-#:   left here. Its only consumers of a fresh capture were ``start_recon`` (withheld) and the human
-#:   upload boundary (absent on this surface), so every reachable call would write an
-#:   ``actor='agent'`` capture record for a turn the platform already captured: durable noise with
-#:   misleading provenance. Defence in depth is unchanged — 1.2's lookup scoping stays.
-#: * ``enrich_selected_accounts`` and ``enrich_account_gaps`` are post-checkpoint provider-spend
-#:   boundaries. They have no honest Stage-0 use even though the broader Head-of-ABM role owns
-#:   those decisions.
+#: ARV2 onboarding O6 shortened this list without relaxing it. The registry refuses a policy that
+#: withholds a tool the role's profile does not pin, and ``head-of-abm@v44`` no longer pins
+#: ``start_recon``, ``submit_onboarding_input``, ``synthesize_icps``,
+#: ``open_product_selection_gate``, ``open_discovery_configuration_gate`` or — per founder ruling
+#: 2, 2026-09-10 — ``launch_account_research``, ``launch_selected_account_research``,
+#: ``launch_contact_research``, ``read_account_research_run`` and ``read_contact_research_run`` at
+#: all. They are ungranted on *every* surface now, which is a stronger statement than withholding
+#: them on one. The trial's own reasons for withholding them are preserved in the authority map
+#: above.
 #:
 #: ``submit_ingestion`` is deliberately **kept**: it ingests an already-captured workspace artifact
-#: and performs no external research, so it does not cross this surface's boundary. So are the two
-#: §7 inspection tools: read-only, effect-free, and the only way a card omission cursor resolves.
+#: and performs no external research, so it does not cross this surface's boundary.
 #:
 #: **Delegation is withheld too, and for the same sentence.** A tool ceiling alone left the trial's
 #: own map promising "no external research" while still advertising ``delegate_specialist`` and the
@@ -370,24 +403,30 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         role=AgentRole.HEAD_OF_ABM,
         withheld_tools=frozenset(
             {
-                "launch_account_research",
-                "launch_selected_account_research",
-                "launch_contact_research",
-                # D4 added the gate tool to the role. The trial keeps it withheld with the launch
-                # tools it belongs to: a dev harness that could present a real, durable, addressed
-                # confirmation gate — but never act on the answer — would be inviting a human to
-                # approve spend that no surface here can perform.
+                # D4 added the gate tool to the role. The trial keeps it withheld alongside the
+                # launches below, which is where it belongs: a dev harness that could present a
+                # real, durable, addressed confirmation gate — but never act on the answer — would
+                # be inviting a human to approve spend that no surface here can perform.
                 "open_directive_confirmation_gate",
-                "open_discovery_configuration_gate",
-                "open_product_selection_gate",
                 # P3.4 added the design delegation entry to the role. The trial withholds it for
                 # the same sentence as delegation itself: this surface is a manual conversation,
                 # and a leg opened from a dev CLI would durably reroute a thread no design
                 # runtime here can serve.
                 "open_design_leg",
-                "start_recon",
-                "submit_onboarding_input",
-                "synthesize_icps",
+                # ARV2 onboarding O6: the new lane's launch and its two gates join the same
+                # sentence their predecessors are here for. `launch_arv2_account_research` queues
+                # real per-account research jobs against external providers, which is precisely
+                # what this surface promises it does not do; `open_product_set_selection_gate` and
+                # `open_icp_confirmation_gate` each write a real, durable, human-addressed gate
+                # whose answer no surface here can act on — inviting a person to confirm a product
+                # set or an ICP that goes nowhere. `read_arv2_account_research_run` stays
+                # installed: it is read-only, spends nothing, and addresses nobody.
+                # `launch_arv2_person_research` joins for the same sentence as its account sibling
+                # (founder ruling 3, 2026-09-10) — it queues real per-person research jobs.
+                "launch_arv2_account_research",
+                "launch_arv2_person_research",
+                "open_product_set_selection_gate",
+                "open_icp_confirmation_gate",
             }
         ),
         withheld_delegation_roles=frozenset(
@@ -407,20 +446,16 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
     # D4 widened this surface: `launch_account_research` / `launch_contact_research` are no longer
     # withheld here, because the authority they were waiting for now exists — a durable gate object
     # (`open_directive_confirmation_gate@1`), a structured human answer to it, and the confirming
-    # turn's own `action_ref` threaded into the tool context. The remaining two subtractions are
-    # the trial's, for the trial's reasons: this surface still does no external research and still
-    # never captures on the client's behalf. Slice 1 removes ``synthesize_icps`` from this list:
-    # @2 is the governed Stage-0 capability and persists draft specs. Delegation stays withheld
-    # (D4 grants launch authority, not a specialist fleet).
+    # turn's own `action_ref` threaded into the tool context. Its remaining two subtractions were
+    # ``start_recon`` and ``submit_onboarding_input``, the trial's, for the trial's reasons.
+    # ARV2 onboarding O6 empties the tool ceiling because ``head-of-abm@v44`` does not pin either
+    # tool on any surface: the role-wide drop is stronger than this surface's withholding was, and
+    # the registry refuses a policy that withholds a tool the profile never grants. The policy
+    # stays for its delegation ceiling and its framing — this surface still delegates to nobody.
     AgentSurfacePolicy(
         surface=PROJECT_CONVERSATION_SURFACE,
         role=AgentRole.HEAD_OF_ABM,
-        withheld_tools=frozenset(
-            {
-                "start_recon",
-                "submit_onboarding_input",
-            }
-        ),
+        withheld_tools=frozenset(),
         withheld_delegation_roles=frozenset(
             {
                 AgentRole.RESEARCH,
@@ -484,30 +519,52 @@ _RESERVED_REASON: dict[str, str] = {
     "reverse_profile": "superseded_by_governed_stage0_recon",
     "score_accounts": "post_stage0_not_admitted",
     "start_project_run": "legacy_unconfirmed_entry_forbidden",
+    # ARV2 onboarding O6: the seventeen tools `head-of-abm@v44` dropped. They stay registered and
+    # invocable by whatever non-model surface still calls them; what this records is WHY no model
+    # surface names them any more — the new Stage-0 lane reads the brand's knowledge documents
+    # instead of the Client-KB/Product-KB claim surfaces, its gates are the product-set gate and
+    # the artifact-ref ICP gate, and its research is launched on the ARV2 lane.
+    "evaluate_stage0_readiness": "superseded_by_onboarding_v2",
+    "inspect_readiness_history": "superseded_by_onboarding_v2",
+    "list_client_knowledge": "superseded_by_onboarding_v2",
+    "inspect_client_claim": "superseded_by_onboarding_v2",
+    "list_product_knowledge": "superseded_by_onboarding_v2",
+    "inspect_product_claim": "superseded_by_onboarding_v2",
+    "start_confirmed_project_run": "superseded_by_onboarding_v2",
+    "open_product_selection_gate": "superseded_by_onboarding_v2",
+    "synthesize_icps": "superseded_by_onboarding_v2",
+    "start_recon": "superseded_by_onboarding_v2",
+    "submit_onboarding_input": "superseded_by_onboarding_v2",
+    "open_discovery_configuration_gate": "superseded_by_onboarding_v2",
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools, on the same terms as the
+    # twelve above. The new lane's `launch_arv2_*` pair supersedes the three launches, and
+    # `read_arv2_account_research_run` supersedes the two run reads.
+    "launch_account_research": "superseded_by_onboarding_v2",
+    "launch_selected_account_research": "superseded_by_onboarding_v2",
+    "launch_contact_research": "superseded_by_onboarding_v2",
+    "read_account_research_run": "superseded_by_onboarding_v2",
+    "read_contact_research_run": "superseded_by_onboarding_v2",
 }
 
 
 def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     """Resolve authority by exact address where versions have different safety proofs."""
 
-    if name == "list_client_knowledge":
-        return (AgentRole.HEAD_OF_ABM,) if address == "list_client_knowledge@2" else ()
-    if name == "inspect_client_claim":
-        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_client_claim@2" else ()
-    if name == "list_product_knowledge":
-        return (AgentRole.HEAD_OF_ABM,) if address == "list_product_knowledge@1" else ()
-    if name == "inspect_product_claim":
-        return (AgentRole.HEAD_OF_ABM,) if address == "inspect_product_claim@1" else ()
+    # (ARV2 onboarding O6 deleted the exact-address rules for `list_client_knowledge`,
+    # `inspect_client_claim`, `list_product_knowledge`, `inspect_product_claim`,
+    # `evaluate_stage0_readiness`, `synthesize_icps` and `start_confirmed_project_run`. Those rules
+    # existed to grant ONE safe version of a tool the Head of ABM held; v44 holds none of them, so
+    # they now fall through to the authority map above, which says `()` for every version.)
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
     if name == "draft_account_research_directive":
         return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@5" else ()
-    if name == "evaluate_stage0_readiness":
+    # ARV2 onboarding O6 (T4/T6): ``@2`` presents the ICP knowledge document instead of a draft
+    # ``icp_spec`` row, and its approval mints a confirmed version of that document. ``@1``'s
+    # subject — a draft ``icp_spec`` row — is not written on this lane at all, so the grant moves
+    # to ``@2`` with the ``head-of-abm@v44`` pin. ``@1`` stays registered and frozen for replay.
+    if name == "open_icp_confirmation_gate":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
-    if name == "synthesize_icps":
-        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
-    if name == "start_confirmed_project_run":
-        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@3") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

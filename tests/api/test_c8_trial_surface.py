@@ -50,30 +50,64 @@ from tests.api.test_agent_registry_wiring import CATALOG_ROOT
 # on the answer — would be inviting a human to approve spend no surface here can perform. S5-F
 # applies the same fail-closed rule to the product-selection gate: the shared skill may explain the
 # procedure, but this trial cannot present a control whose answer it cannot compose.
+# ARV2 onboarding O6 shortened this set without relaxing it. `head-of-abm@v44` drops
+# `start_recon`, `submit_onboarding_input`, `synthesize_icps`, `open_product_selection_gate`,
+# `open_discovery_configuration_gate` and — per founder ruling 2, 2026-09-10 — the five
+# old-research-lane tools from the ROLE, so there is nothing left for this surface to withhold on
+# any of them, and a policy may only narrow tools the profile pins. Ungranted on every surface is a
+# stronger statement than withheld on one, which is what the assertions below now say.
 _WITHHELD = {
-    "launch_account_research",
-    "launch_selected_account_research",
-    "launch_contact_research",
-    "open_discovery_configuration_gate",
     # P3.4: the design delegation entry is withheld on the trial for the same sentence as
     # delegation itself — a leg opened from a dev CLI would durably reroute a thread no
     # design runtime here can serve.
     "open_design_leg",
     "open_directive_confirmation_gate",
-    "open_product_selection_gate",
+    # ARV2 onboarding O6: the new lane's two launches and its two gates, for the same sentence.
+    # Each launch queues real research jobs against external providers; each gate writes a real,
+    # durable, human-addressed decision control whose answer no surface here can act on.
+    # `read_arv2_account_research_run` is deliberately NOT here — read-only, spends nothing,
+    # addresses nobody. The three old-lane launches that used to head this set are gone from it
+    # because `head-of-abm@v44` no longer grants them at all (see `_ROLE_DROPPED`), which is the
+    # stronger statement.
+    "launch_arv2_account_research",
+    "launch_arv2_person_research",
+    "open_product_set_selection_gate",
+    "open_icp_confirmation_gate",
+}
+
+# The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
+# be absent from the trial surface for a stronger reason than a policy — the role does not hold
+# them — and this set is what keeps the two facts from silently swapping places.
+_ROLE_DROPPED = {
     "start_recon",
     "submit_onboarding_input",
     "synthesize_icps",
+    "open_product_selection_gate",
+    "open_discovery_configuration_gate",
+    "evaluate_stage0_readiness",
+    "start_confirmed_project_run",
+    "list_client_knowledge",
+    "inspect_client_claim",
+    "list_product_knowledge",
+    "inspect_product_claim",
+    "inspect_readiness_history",
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools. The trial used to withhold
+    # the three launches; v44 drops all five from the ROLE, so there is nothing left to withhold.
+    "launch_account_research",
+    "launch_selected_account_research",
+    "launch_contact_research",
+    "read_account_research_run",
+    "read_contact_research_run",
 }
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:
 # it keeps the drafting, gate, and launch tools (that flow is the whole point of the surface) and
 # withholds only the two trial restrictions that still hold here — this surface does no external
 # research and never captures on the client's behalf. Trusted durable ICP synthesis is now present.
-_PROJECT_WITHHELD = {
-    "start_recon",
-    "submit_onboarding_input",
-}
+# ARV2 onboarding O6 empties it: neither tool is pinned by `head-of-abm@v44` on any surface, and
+# the registry refuses a policy that withholds a tool the profile never grants. The policy remains
+# for its delegation ceiling and its framing.
+_PROJECT_WITHHELD: set[str] = set()
 
 
 @pytest.fixture(scope="module")
@@ -93,8 +127,8 @@ def test_the_trial_surface_withholds_exactly_the_prohibited_tools(
 
     assert base_names >= _WITHHELD, "the full role must still hold the authority being withheld"
     assert base_names - trial_names == _WITHHELD
-    assert "start_recon" not in trial_names
-    assert "synthesize_icps" not in trial_names
+    assert base_names.isdisjoint(_ROLE_DROPPED), "v44 must not re-grant a dropped old-lane tool"
+    assert trial_names.isdisjoint(_ROLE_DROPPED)
     assert "enrich_selected_accounts" not in trial_names
     assert "enrich_account_gaps" not in trial_names
     # The surface narrows authority only — same reviewed profile resource, same prompt.
@@ -132,7 +166,7 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
         # genweb slice 2 promoted the design delegation entry to @2 (web document birth at
         # leg-open), genad promoted it again to @3 (ad document birth) and genad2 to @4
         # (zero-page scene birth); the trial withholds it at whatever version the belt carries.
-        _promoted = {"synthesize_icps": "2", "open_design_leg": "4"}
+        _promoted = {"open_design_leg": "4", "open_icp_confirmation_gate": "2"}
         address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
@@ -242,25 +276,53 @@ def test_the_trial_surface_withholds_delegation_rather_than_crashing_on_it(
         registry.resolve_delegation(parent=trial, child_role=AgentRole.RESEARCH, current_depth=0)
 
 
-def test_the_stage0_skill_survives_the_narrowed_surface(
+def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     registry: AgentProfileRegistry,
 ) -> None:
-    """The regression this design could most easily have shipped, silently.
+    """INVERTED by ARV2 onboarding O6 — deliberately, with the consequence stated out loud.
 
-    Skills are dropped when a required tool is not effective, so a skill that still *required*
-    ``start_recon``/``synthesize_icps``/``submit_onboarding_input`` would vanish from the trial
-    entirely — restricting three tools would quietly also remove all of Stage-0's routing
-    procedure, and nothing else in this file would have noticed.
+    This test was written to catch the regression this design could most easily have shipped
+    silently: skills are dropped when a required tool is not effective, so withholding tools can
+    quietly also remove all of Stage-0's routing procedure, and nothing else in this file would
+    notice. Under stage0-interview v20 the withheld set and the skill's required set were
+    disjoint, so the skill survived and this test said so.
+
+    stage0-interview v21 requires the product-set gate, the ICP gate and the ARV2 launch — which
+    are exactly the three tools this surface now withholds (fix round 1, coordinator ruling: a dev
+    harness must not present a real, durable, addressed gate or hold launch authority it cannot
+    act on). The consequence is that **the trial surface discloses no skill at all**: it keeps the
+    prompt, the constitution and its read/route tools, and has no Stage-0 procedure.
+
+    That is a genuine degradation of the trial, accepted because the trial is quarantine-bound
+    (master plan Phase 6). It is asserted here rather than discovered later — which is the job the
+    original guard was doing, and the reason this test is inverted instead of deleted.
     """
 
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
-    disclosures = trial.skill_disclosures()
+    base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
-    assert [item.resource.address for item in disclosures] == ["skill:stage0-interview@v20"]
-    required = {address.partition("@")[0] for address in disclosures[0].required_tool_addresses}
-    assert required & _WITHHELD == set()
-    body = trial.open_skill("skill:stage0-interview@v20")
-    assert "Ask one compact question" in body
+    assert trial.skill_disclosures() == ()
+    # The withholding is what removed it — not a catalog break, not a missing resource. The
+    # unnarrowed role still discloses the same skill from the same profile.
+    base_disclosures = {item.resource.address for item in base.skill_disclosures()}
+    assert "skill:stage0-interview@v21" in base_disclosures
+    assert trial.profile_ref == base.profile_ref
+
+    stage0 = next(
+        item for item in base.skill_disclosures() if item.resource.name == "stage0-interview"
+    )
+    required = {address.partition("@")[0] for address in stage0.required_tool_addresses}
+    assert required & _WITHHELD == {
+        "launch_arv2_account_research",
+        "open_product_set_selection_gate",
+        "open_icp_confirmation_gate",
+        # Founder ruling 3 (2026-09-10): the person launch is granted to the role and taught by
+        # stage0-interview v21 §8; the trial withholds it with its account sibling.
+        "launch_arv2_person_research",
+    }
+
+    body = base.open_skill("skill:stage0-interview@v21")
+    assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
     assert "trial" not in body.casefold()
@@ -330,7 +392,7 @@ def test_a_surface_policy_cannot_withhold_a_tool_the_profile_never_pinned() -> N
             AgentSurfacePolicy(
                 surface="typo",
                 role=AgentRole.HEAD_OF_ABM,
-                withheld_tools=frozenset({"start_recon", "start_reccon"}),
+                withheld_tools=frozenset({"submit_ingestion", "submit_ingesstion"}),
                 withheld_reason_code="typo",
                 framing="typo",
             )
@@ -341,7 +403,7 @@ def test_a_surface_policy_cannot_withhold_a_tool_the_profile_never_pinned() -> N
             AgentSurfacePolicy(
                 surface="undelegated",
                 role=AgentRole.HEAD_OF_ABM,
-                withheld_tools=frozenset({"start_recon"}),
+                withheld_tools=frozenset({"submit_ingestion"}),
                 withheld_delegation_roles=frozenset({AgentRole.ACCOUNT_RESEARCH}),
                 withheld_reason_code="undelegated",
                 framing="undelegated",

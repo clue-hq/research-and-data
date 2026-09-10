@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 19
+    assert CONVERSATION_RECIPE_VERSION == 22
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -260,6 +260,69 @@ def test_plan_safe_directive_mints_recipe_v15_without_rewriting_v14() -> None:
     assert "draft_account_research_directive@3" in v15["graph"]["tool_allowlist"]
     assert "draft_account_research_directive@2" not in v15["graph"]["tool_allowlist"]
     assert v15["version"] == 15
+
+
+def test_o6_head_of_abm_mints_recipe_v22_without_rewriting_v19() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v19 = json.loads((root / "recipe0-stage0-v19.json").read_text())
+    v22 = json.loads((root / "recipe0-stage0-v22.json").read_text())
+    added = {
+        "open_product_set_selection_gate@1",
+        "open_icp_confirmation_gate@2",
+        "launch_arv2_account_research@1",
+        # FOUNDER RULING 3 (2026-09-10): the person launch is the Head of ABM's own act on the same
+        # lane, so it is admitted to the conversation slot beside its account sibling.
+        "launch_arv2_person_research@1",
+        "read_arv2_account_research_run@1",
+    }
+
+    v19_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v19.json")
+    assert SYSTEM_RECIPE_FILENAMES[v19_index : v19_index + 2] == (
+        "recipe0-stage0-v19.json",
+        "recipe0-stage0-v22.json",
+    )
+    assert added.isdisjoint(v19["graph"]["tool_allowlist"])
+    assert added <= set(v22["graph"]["tool_allowlist"])
+    slot = next(node for node in v22["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v22["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    expected = {tuple(address.split("@")) for address in added}
+    assert expected <= slot_requirements
+    assert expected <= node_compatibility
+    # The promoted profile pins the directive draft at @5; v19 admitted only @3, so the draft was
+    # refused by plan validation. v22 re-pins the slot at @5 everywhere the address appears.
+    assert "draft_account_research_directive@5" in v22["graph"]["tool_allowlist"]
+    assert "draft_account_research_directive@3" not in v22["graph"]["tool_allowlist"]
+    assert ("draft_account_research_directive", "5") in slot_requirements
+    assert ("draft_account_research_directive", "3") not in slot_requirements
+    assert ("draft_account_research_directive", "5") in node_compatibility
+    assert ("draft_account_research_directive", "3") not in node_compatibility
+    assert "draft_account_research_directive@5" in slot["dynamic_tool_allowlist"]
+    assert "draft_account_research_directive@3" not in slot["dynamic_tool_allowlist"]
+    # A requirement set resolves one version per ``(kind, key)`` (``conflicting_requirement``), so
+    # admitting the artifact-shaped ICP gate at ``@2`` RE-PINS the key: ``@1`` leaves v22 the way
+    # ``draft_account_research_directive@3`` does. v19 stays its exact replay input.
+    assert "open_icp_confirmation_gate@1" in v19["graph"]["tool_allowlist"]
+    assert "open_icp_confirmation_gate@1" not in v22["graph"]["tool_allowlist"]
+    assert "open_icp_confirmation_gate@1" not in slot["dynamic_tool_allowlist"]
+    assert ("open_icp_confirmation_gate", "1") not in slot_requirements
+    assert ("open_icp_confirmation_gate", "1") not in node_compatibility
+    assert v22["version"] == 22
+    assert (
+        slot["dynamic_pin_kinds"]
+        == (
+            next(
+                node for node in v19["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+            )["dynamic_pin_kinds"]
+        )
+    )
 
 
 def test_operation_id_requirements_are_explicit() -> None:

@@ -213,6 +213,28 @@ test("a physically missing historical artifact gives actionable recovery copy", 
       },
     },
   );
+  // The set-valued gate sends the whole chosen list, never a single id.
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-product-set",
+        decision: "approved",
+        expectedSubjectSha256: "c".repeat(64),
+        expectedEstimatedCostCents: null,
+        selectedProductIds: ["prd_phone", "prd_intake"],
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-product-set",
+        decision: "approved",
+        expected_subject_sha256: "c".repeat(64),
+        expected_estimated_cost_cents: null,
+        selected_product_ids: ["prd_phone", "prd_intake"],
+      },
+    },
+  );
 });
 
 test("the submissions-union keeps queued turns and their attach cursor", () => {

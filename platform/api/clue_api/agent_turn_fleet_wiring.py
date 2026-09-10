@@ -75,6 +75,17 @@ from clue_api.agent_turn_submission import (
     message_artifact_ref,
     submission_context_refs,
 )
+from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
+from clue_api.brand_knowledge_context import (
+    BRAND_KNOWLEDGE_INDEX_CARD_MEDIA_TYPE,
+    ConfirmedIcpRef,
+    PinnedDocument,
+    compile_brand_knowledge_index_card,
+    confirmed_icp_for_project,
+    knowledge_seed_files,
+    load_or_create_knowledge_pin,
+    read_pinned_documents,
+)
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
@@ -98,14 +109,6 @@ from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
 )
 from clue_api.frontend_read import latest_project_run_context
-from clue_api.product_context_compiler import (
-    compile_client_knowledge_card_v2,
-    compile_product_knowledge_card,
-    compile_product_profile_card,
-)
-from clue_api.product_knowledge_privacy import product_context_subject_bindings
-from clue_api.stage0_card_dsar import stage0_card_subject_bindings
-from clue_api.statement_evidence import ArtifactStatementEvidenceReader
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -136,17 +139,12 @@ from clue_fleet import (
 )
 from clue_obs import get_logger
 from clue_projections import (
-    CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
-    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
-    PRODUCT_PROFILE_CARD_MEDIA_TYPE,
     PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
-    STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
     compile_project_conversation_card,
-    compile_stage0_project_state_card,
 )
 from clue_research.stage0 import current_kb_version
-from clue_spine import get_project
-from clue_storage import ArtifactNotFound
+from clue_spine import ProjectProductSet, current_project_product_set, get_project
+from clue_storage import ArtifactNotFound, StorageBackend
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 log = get_logger("clue_api.agent_turn_fleet")
@@ -309,10 +307,11 @@ class _ContextCardObservation:
 class _ProjectContextBundle:
     """The conditional half of one atomically constituted production L3 bundle.
 
-    The v2 conversation envelope is deliberately compiled only *after* this bundle succeeds, so
-    its availability flags can never advertise an artifact that failed to compile or persist. A
-    bound client with no published Client-KB is the one valid empty bundle (pre-recon); every
-    post-recon bundle contains both the account-wide index and exactly the active project's state.
+    Since ARV2 onboarding O6 (ruling D5) the conditional half is the brand-knowledge index over
+    this turn's pinned documents, plus whatever account-deep steering the focus refs earn. A brand
+    with no servable knowledge document yet is the one valid empty bundle; the v2 conversation
+    envelope is still compiled only *after* this bundle succeeds, so it can never advertise an
+    artifact that failed to compile or persist.
     """
 
     artifacts: tuple[ProjectContextArtifact, ...] = ()
@@ -342,6 +341,7 @@ class ProjectConversationTurnRunner:
         starter: DbExecutionStarter,
         parameters: ExecutionParameterStore,
         design_legs: DesignLegTurnRunner | None = None,
+        storage: StorageBackend | None = None,
         conn_factory: ConnFactory = transaction,
         streaming: bool = True,
         stream_policy: TurnStreamPolicy | None = None,
@@ -353,6 +353,10 @@ class ProjectConversationTurnRunner:
         self._starter = starter
         self._parameters = parameters
         self._design_legs = design_legs
+        # ARV2 onboarding O6: the blob backend the pinned knowledge documents are read from. A
+        # runner composed without one (diagnostic fixtures) composes no knowledge at all and says
+        # so once per turn — it never falls back to "current" documents nobody pinned.
+        self._storage = storage
         self._conn_factory = conn_factory
         # D3 streaming is on for the production conversation and switchable off in one place, so a
         # deployment that must fall back to non-streaming turns changes a flag, not a code path.
@@ -524,6 +528,54 @@ class ProjectConversationTurnRunner:
                 created=created,
             )
         scope = _ProjectScope.from_pin(scope_pin)
+        # ARV2 onboarding O6 (ruling D6): pin this turn's brand-knowledge document set before
+        # anything is composed from it. Onboarding keeps publishing versions in the background, so
+        # a turn that re-resolved "current" per attempt could seed one set, crash, and seed a
+        # different set on the retry — the file the model was told to re-read would have moved.
+        # Every later attempt reads the winner's row.
+        documents: tuple[PinnedDocument, ...] = ()
+        confirmed_icp: ConfirmedIcpRef | None = None
+        product_set: ProjectProductSet | None = None
+        icp_pin: ProjectIcpPin | None = None
+        knowledge_pin_created = False
+        if self._storage is None:
+            log.info(
+                "agent_turn.knowledge_not_composed",
+                turn_id=str(turn_id),
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
+                brand_id=scope.brand_id,
+            )
+        else:
+            async with self._conn_factory() as conn:
+                knowledge_pin, knowledge_pin_created = await load_or_create_knowledge_pin(
+                    conn,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                    brand_id=scope.brand_id,
+                    project_id=scope.project_id,
+                )
+                documents = await read_pinned_documents(conn, self._storage, pin=knowledge_pin)
+                product_set = await current_project_product_set(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                )
+                # Founder rulings 2026-09-10: what this project's ICP *is* comes from its durable
+                # pin, not from whatever the brand's documents currently claim.
+                icp_pin = await current_project_icp_pin(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                )
+            confirmed_icp = confirmed_icp_for_project(
+                documents,
+                pinned_document_id=None if icp_pin is None else icp_pin.document_id,
+            )
+        input_seeds = knowledge_seed_files(
+            documents,
+            pinned_document_id=None if icp_pin is None else icp_pin.document_id,
+        )
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -582,6 +634,9 @@ class ProjectConversationTurnRunner:
         context_bundle = await self._compose_project_context(
             submission=submission,
             scope=scope,
+            documents=documents,
+            confirmed_icp=confirmed_icp,
+            product_set=product_set,
             focus_refs=submission_focus_refs,
         )
         card_ref = await self._artifact(
@@ -596,8 +651,10 @@ class ProjectConversationTurnRunner:
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 thread_id=submission.thread_id,
-                client_knowledge_available=context_bundle.available,
-                stage0_project_state_available=context_bundle.available,
+                # Ruling D5: neither card is compiled onto this surface any more. The envelope
+                # says so honestly rather than advertising an artifact L3 does not carry.
+                client_knowledge_available=False,
+                stage0_project_state_available=False,
             ),
         )
         budget_ref = await self._artifact(
@@ -645,10 +702,7 @@ class ProjectConversationTurnRunner:
             focus_refs=submission_focus_refs,
             requested_at=submission.requested_at,
         )
-        client_knowledge = context_bundle.artifact("client_knowledge")
-        stage0_project_state = context_bundle.artifact("stage0_project_state")
-        product_profile = context_bundle.artifact("product_profile")
-        product_knowledge = context_bundle.artifact("product_knowledge")
+        brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
         log.info(
             "agent_turn.context_composed",
             turn_id=str(turn_id),
@@ -662,20 +716,13 @@ class ProjectConversationTurnRunner:
             client_kb_version=scope.client_kb_version,
             product_kb_version=scope.product_kb_version,
             project_card_sha256=card_ref.sha256,
-            client_knowledge_sha256=(
-                None if client_knowledge is None else client_knowledge.artifact_ref.sha256
+            brand_knowledge_documents=len(documents),
+            brand_knowledge_index_sha256=(
+                None if brand_knowledge_index is None else brand_knowledge_index.artifact_ref.sha256
             ),
-            stage0_project_state_sha256=(
-                None if stage0_project_state is None else stage0_project_state.artifact_ref.sha256
-            ),
-            product_profile_sha256=(
-                None if product_profile is None else product_profile.artifact_ref.sha256
-            ),
-            product_knowledge_sha256=(
-                None if product_knowledge is None else product_knowledge.artifact_ref.sha256
-            ),
-            client_knowledge_available=context_bundle.available,
-            stage0_project_state_available=context_bundle.available,
+            knowledge_pin_created=knowledge_pin_created,
+            client_knowledge_available=False,
+            stage0_project_state_available=False,
         )
         observations = {item.card_kind: item for item in context_bundle.observations}
         self._observe_context_card(
@@ -688,26 +735,13 @@ class ProjectConversationTurnRunner:
                 omitted_count=0,
             ),
         )
-        for card_kind, schema_version in (
-            ("client_knowledge", "2"),
-            ("stage0_project_state", "1"),
-        ):
-            self._observe_context_card(
-                submission=submission,
-                scope=scope,
-                observation=observations.get(card_kind),
-                card_kind=card_kind,
-                schema_version=schema_version,
-            )
-        if scope.product_id is not None:
-            for card_kind in ("product_profile", "product_knowledge"):
-                self._observe_context_card(
-                    submission=submission,
-                    scope=scope,
-                    observation=observations.get(card_kind),
-                    card_kind=card_kind,
-                    schema_version="1",
-                )
+        self._observe_context_card(
+            submission=submission,
+            scope=scope,
+            observation=observations.get("brand_knowledge_index"),
+            card_kind="brand_knowledge_index",
+            schema_version="1",
+        )
         result = await self._execute_watched(
             run=lambda: self._engine.execute(
                 request=request,
@@ -716,6 +750,7 @@ class ProjectConversationTurnRunner:
                 submitted_by_user_id=submission.submitted_by_user_id,
                 submitted_via_membership_id=submission.submitted_via_membership_id,
                 stream=stream,
+                input_seeds=input_seeds,
             ),
             submission=submission,
             turn_id=request.turn_id,
@@ -730,189 +765,60 @@ class ProjectConversationTurnRunner:
         *,
         submission: AgentTurnSubmissionRow,
         scope: _ProjectScope,
+        documents: tuple[PinnedDocument, ...] = (),
+        confirmed_icp: ConfirmedIcpRef | None = None,
+        product_set: ProjectProductSet | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
-        """Compile and persist one exact Client-KB pin plus this project's Stage-0 state.
+        """Compile and persist the bounded index of this turn's pinned brand knowledge.
 
-        ``scope.client_kb_version`` comes from the durable turn scope pin. Both compilers use that
-        immutable value even if background recon publishes a newer marker while this method is
-        running or before a reclaimed worker retries it. Compilation is fail-closed: a
-        missing/foreign version, project, statement, or evidence artifact raises before an
-        ``AgentTurnRequest`` exists and therefore before the context assembler or model can run.
+        Ruling D5: the Head of ABM does not open on four compiled cards any more — it opens on an
+        *index* of the brand's own knowledge documents and reads the files it needs by path from
+        ``inputs/brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
+        froze, so this method compiles nothing from mutable "current" state; a brand with no
+        servable document yet composes honestly nothing.
         """
 
-        if scope.client_entity_id is None or scope.client_kb_version is None:
-            return _ProjectContextBundle()
-
-        client_card = await compile_client_knowledge_card_v2(
-            workspace_id=submission.workspace_id,
-            client_entity_id=scope.client_entity_id,
-            company_client_kb_version=scope.client_kb_version,
-            conn_factory=self._conn_factory,
-        )
-        client_ref = await self._artifact(
-            submission,
-            scope,
-            CLIENT_KNOWLEDGE_CARD_V2_MEDIA_TYPE,
-            client_card.model_dump(mode="json", exclude_none=True),
-            bind_project=False,
-        )
-        if client_ref.sha256 != client_card.content_sha256().removeprefix("sha256:"):
-            raise RuntimeError("persisted Client-KB card differs from its compiled content hash")
-
-        stage0_card = await compile_stage0_project_state_card(
-            project_id=scope.project_id,
-            workspace_id=submission.workspace_id,
-            client_entity_id=scope.client_entity_id,
-            client_kb_version=scope.client_kb_version,
-            client_knowledge_sha256=client_card.content_sha256(),
-            evidence=ArtifactStatementEvidenceReader(
-                artifacts=self._engine.artifacts,
-                conn_factory=self._conn_factory,
-            ),
-            conn_factory=self._conn_factory,
-        )
-        stage0_ref = await self._artifact(
-            submission,
-            scope,
-            STAGE0_PROJECT_STATE_CARD_MEDIA_TYPE,
-            stage0_card.model_dump(mode="json", exclude_none=True),
-            subject_bindings=stage0_card_subject_bindings(
-                card=stage0_card,
-                base=self._client_subject_bindings(scope),
-            ),
-        )
-        if stage0_ref.sha256 != stage0_card.content_sha256().removeprefix("sha256:"):
-            raise RuntimeError(
-                "persisted Stage-0 project-state card differs from its compiled content hash"
-            )
-
-        artifacts = [
-            ProjectContextArtifact(
-                name="client_knowledge",
-                artifact_ref=client_ref,
-                domain_ref=DomainObjectRef(
-                    workspace_id=submission.workspace_id,
-                    object_type="client_knowledge",
-                    object_id=str(scope.client_entity_id),
-                    version=scope.client_kb_version,
-                ),
-            ),
-            ProjectContextArtifact(
-                name="stage0_project_state",
-                artifact_ref=stage0_ref,
-                domain_ref=DomainObjectRef(
-                    workspace_id=submission.workspace_id,
-                    object_type="stage0_project_state",
-                    object_id=scope.project_id,
-                    version=None,
-                ),
-            ),
-        ]
-        observations = [
-            _ContextCardObservation(
-                card_kind=client_card.card_kind,
-                schema_version=client_card.schema_version,
-                content_sha256=client_ref.sha256,
-                omitted_count=(
-                    sum(
-                        _bounded_omission_count(item.get("count"))
-                        for item in client_card.knowledge_omissions
-                    )
-                    + sum(item.count for item in client_card.product_catalog.omissions)
-                ),
-            ),
-            _ContextCardObservation(
-                card_kind=stage0_card.card_kind,
-                schema_version=stage0_card.schema_version,
-                content_sha256=stage0_ref.sha256,
-                omitted_count=sum(item.count for item in stage0_card.omissions),
-            ),
-        ]
-        if scope.product_id is not None:
-            product_profile = await compile_product_profile_card(
-                workspace_id=submission.workspace_id,
+        artifacts: list[ProjectContextArtifact] = []
+        observations: list[_ContextCardObservation] = []
+        if documents:
+            card = compile_brand_knowledge_index_card(
                 brand_id=scope.brand_id,
-                product_id=scope.product_id,
-                conn_factory=self._conn_factory,
+                documents=documents,
+                confirmed_icp=confirmed_icp,
+                product_set=product_set,
             )
-            profile_ref = await self._artifact(
+            index_ref = await self._artifact(
                 submission,
                 scope,
-                PRODUCT_PROFILE_CARD_MEDIA_TYPE,
-                product_profile.model_dump(mode="json", exclude_none=True),
-                subject_bindings=product_context_subject_bindings(
-                    client_entity_id=UUID(str(scope.client_entity_id)),
-                    product_id=scope.product_id,
-                ),
+                BRAND_KNOWLEDGE_INDEX_CARD_MEDIA_TYPE,
+                card.model_dump(mode="json", exclude_none=False),
+                bind_project=False,
             )
-            if profile_ref.sha256 != product_profile.content_sha256().removeprefix("sha256:"):
+            if index_ref.sha256 != card.content_sha256().removeprefix("sha256:"):
                 raise RuntimeError(
-                    "persisted product profile differs from its compiled content hash"
+                    "persisted brand-knowledge index differs from its compiled content hash"
                 )
             artifacts.append(
                 ProjectContextArtifact(
-                    name="product_profile",
-                    artifact_ref=profile_ref,
+                    name="brand_knowledge_index",
+                    artifact_ref=index_ref,
                     domain_ref=DomainObjectRef(
                         workspace_id=submission.workspace_id,
-                        object_type="product",
-                        object_id=scope.product_id,
+                        object_type="brand_knowledge_index",
+                        object_id=scope.brand_id,
                         version=None,
                     ),
                 )
             )
             observations.append(
                 _ContextCardObservation(
-                    card_kind=product_profile.card_kind,
-                    schema_version=product_profile.schema_version,
-                    content_sha256=profile_ref.sha256,
-                    omitted_count=0,
+                    card_kind=card.card_kind,
+                    schema_version=card.schema_version,
+                    content_sha256=index_ref.sha256,
+                    omitted_count=card.omitted_count,
                 )
             )
-            if scope.product_kb_version is not None:
-                product_card = await compile_product_knowledge_card(
-                    workspace_id=submission.workspace_id,
-                    client_entity_id=scope.client_entity_id,
-                    product_id=scope.product_id,
-                    product_kb_version=scope.product_kb_version,
-                    conn_factory=self._conn_factory,
-                )
-                product_ref = await self._artifact(
-                    submission,
-                    scope,
-                    PRODUCT_KNOWLEDGE_CARD_MEDIA_TYPE,
-                    product_card.model_dump(mode="json", exclude_none=True),
-                    subject_bindings=product_context_subject_bindings(
-                        client_entity_id=UUID(str(scope.client_entity_id)),
-                        product_id=scope.product_id,
-                        card=product_card,
-                    ),
-                )
-                if product_ref.sha256 != product_card.content_sha256().removeprefix("sha256:"):
-                    raise RuntimeError(
-                        "persisted Product-KB card differs from its compiled content hash"
-                    )
-                artifacts.append(
-                    ProjectContextArtifact(
-                        name="product_knowledge",
-                        artifact_ref=product_ref,
-                        domain_ref=DomainObjectRef(
-                            workspace_id=submission.workspace_id,
-                            object_type="product_knowledge",
-                            object_id=scope.product_id,
-                            version=scope.product_kb_version,
-                        ),
-                    )
-                )
-                observations.append(
-                    _ContextCardObservation(
-                        card_kind=product_card.card_kind,
-                        schema_version=product_card.schema_version,
-                        content_sha256=product_ref.sha256,
-                        omitted_count=sum(item.count for item in product_card.omissions),
-                    )
-                )
 
         if any(ref.object_type == "account" for ref in focus_refs):
             async with self._conn_factory() as conn:
@@ -1468,6 +1374,7 @@ def build_agent_turn_work_handler(
     parameters: ExecutionParameterStore,
     memory: ContextAssembly,
     queue: WorkQueue,
+    storage: StorageBackend | None = None,
     child_runner: FreshWakeChildRunner | None = None,
     design_lane: DesignLegLaneDriver | None = None,
     design_exit_judge: DesignLegExitJudge | None = None,
@@ -1488,6 +1395,9 @@ def build_agent_turn_work_handler(
     — the routing rule is unconditional, so a thread with an open leg must reach a deliberate
     answer either way — but without a lane the answer is a loud refusal at drive time, the same
     stance ``clue_api.design_fleet`` takes for the fleet handler.
+
+    ``storage`` (ARV2 onboarding O6) is the blob backend this worker reads the brand's pinned
+    knowledge documents from. Without it a turn composes no knowledge and says so once.
     """
 
     engine = build_conversation_turn_engine(
@@ -1521,6 +1431,7 @@ def build_agent_turn_work_handler(
             starter=starter,
             parameters=parameters,
             design_legs=design_legs_runner,
+            storage=storage,
             conn_factory=conn_factory,
             streaming=streaming,
             stream_policy=stream_policy,

@@ -84,10 +84,17 @@ export function createFixtureChatGatesRepository(
                 actionRef: `turn-action:${answered.turnId}`,
                 decision: answered.decision,
                 expectedSubjectSha256: gate.expectedSubjectSha256,
-                decisionPayload:
-                  answered.revisionRequest === undefined
+                decisionPayload: {
+                  ...(answered.revisionRequest === undefined
                     ? {}
-                    : { revision_request: answered.revisionRequest },
+                    : { revision_request: answered.revisionRequest }),
+                  // The set-valued gate records its whole chosen list in the
+                  // payload and leaves `selected_option_ref` null, exactly as
+                  // the real route writes it.
+                  ...(answered.selectedProductIds === undefined
+                    ? {}
+                    : { selected_option_refs: [...answered.selectedProductIds] }),
+                },
                 selectedOptionRef: answered.selectedProductId ?? null,
                 answeredByUserId: gate.addresseeUserId,
                 answeredAt: new Date().toISOString(),

@@ -61,6 +61,7 @@ from clue_api.arv2.fleet_task import (
     ARV2_ACCOUNT_TASK_PRIORITY,
     arv2_account_work_id,
 )
+from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.structuring_client import FieldCatalog
 from clue_config import Settings
@@ -147,13 +148,13 @@ def arv2_job_id(run_id: UUID, subject_id: UUID) -> UUID:
 #: cannot silently become a research posture nobody defined.
 Arv2Effort = Literal["full", "reduced", "cheap-pass"]
 
-_ICP_ROW = text(
+#: The document a project pinned, read by id — the exact version a human approved, never "the
+#: newest row that happens to carry these bytes".
+_PINNED_ICP_ROW = text(
     """
     SELECT document_id, brand_id, kind, status, artifact_key, artifact_sha256, path
     FROM brand_knowledge_document
-    WHERE workspace_id = :workspace_id AND artifact_key = :artifact_key
-    ORDER BY version DESC
-    LIMIT 1
+    WHERE workspace_id = :workspace_id AND document_id = :document_id
     """
 )
 
@@ -183,9 +184,11 @@ class Arv2LaunchRefused(Arv2Error):
     """A launch prerequisite is unmet. ``code`` is stable and machine-readable.
 
     Codes: ``lane_disabled``, ``account_not_found:<id>``, ``account_not_in_workspace:<id>``,
-    ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``, ``icp_digest_mismatch``,
-    ``icp_front_matter_invalid``, ``product_selection_version_unknown``, ``project_not_found``.
-    The person launch adds ``no_contacts``, ``contact_not_found:<id>``, ``contact_merged:<id>``,
+    ``project_icp_not_pinned``, ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``,
+    ``icp_digest_mismatch``, ``icp_front_matter_invalid``, ``product_selection_version_unknown``,
+    ``project_not_found``. The account launch adds ``icp_artifact_not_project_pin`` (the request
+    names an ICP artifact that is not what this project pinned). The person launch adds
+    ``no_contacts``, ``contact_not_found:<id>``, ``contact_merged:<id>``,
     ``contact_without_account`` and ``product_set_not_confirmed``.
     """
 
@@ -257,6 +260,17 @@ async def launch_arv2_account_research(
             "lane_disabled", "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is false on this deployment"
         )
 
+    # The project comes first, exactly as it does in the person launch. Every check after this one
+    # is a question *about* a project — which ICP it pinned, which product set it confirmed — so a
+    # launch naming a project that does not exist must be told THAT, rather than "you have pinned
+    # no ICP", which is true of a non-existent project and useless to the human reading it.
+    project = await get_project(conn, request.project_id)
+    if project is None or project.workspace_id != request.workspace_id:
+        raise Arv2LaunchRefused(
+            "project_not_found",
+            f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}, "
+            "so there is no project run to research under",
+        )
     await _check_accounts(conn, request)
     icp = await _pinned_icp(conn, storage, request)
     await _check_product_selection(conn, request)
@@ -274,10 +288,10 @@ async def launch_arv2_account_research(
         icp_version=icp.icp_version,
         phase=ProjectPhase.DEEP,
     )
-    # ``ensure_project_run``'s INSERT selects the brand/workspace FROM ``project``, so an unknown
-    # project inserts nothing at all and says nothing about it. Read the row back rather than
-    # trusting the write: a launch under a project that does not exist would strand every job.
-    if await get_project_run(conn, ProjectRunId(project_run_id)) is None:
+    if await get_project_run(conn, ProjectRunId(project_run_id)) is None:  # pragma: no cover
+        # Guarded by the project read above; kept because ``ensure_project_run``'s INSERT selects
+        # the brand/workspace FROM ``project``, so an unknown project inserts nothing at all and
+        # says nothing about it — and a run with no project run would strand every job under it.
         raise Arv2LaunchRefused(
             "project_not_found",
             f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}, "
@@ -434,42 +448,90 @@ async def _check_accounts(conn: AsyncConnection, request: Arv2LaunchRequest) -> 
             )
 
 
-async def _pinned_icp(
-    conn: AsyncConnection, storage: StorageBackend, request: Arv2LaunchRequest
-) -> _PinnedIcp:
-    """Resolve the ICP artifact ref to a confirmed document, and read its key/version from it."""
-    row = (
+async def _project_icp_pin(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> ProjectIcpPin:
+    """The ICP this project pinned, or a typed refusal — never a fallback to something else.
+
+    Founder rulings 2026-09-10: a project researches against the one confirmed ICP version a human
+    pinned for it. A project that has not pinned one has no ICP, and saying so is the honest
+    answer; resolving "the brand's newest confirmed" instead would let a re-synthesis, or another
+    project's confirmation, silently repoint what this project spends money researching.
+    """
+    pin = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
+    if pin is None:
+        raise Arv2LaunchRefused(
+            "project_icp_not_pinned",
+            f"project {project_id!r} has not pinned a confirmed {_ICP_KIND}; confirm one at the "
+            "ICP gate before researching anything",
+        )
+    return pin
+
+
+async def _icp_from_pin(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    pin: ProjectIcpPin,
+) -> tuple[Mapping[str, Any], _PinnedIcp]:
+    """The pinned document's row and the run's pins, checked to still be what was pinned."""
+    found = (
         (
             await conn.execute(
-                _ICP_ROW,
-                {
-                    "workspace_id": request.workspace_id,
-                    "artifact_key": request.icp_artifact_key,
-                },
+                _PINNED_ICP_ROW,
+                {"workspace_id": workspace_id, "document_id": pin.document_id},
             )
         )
         .mappings()
         .first()
     )
-    if row is None:
+    if found is None:
         raise Arv2LaunchRefused(
             "icp_artifact_not_found",
-            f"no knowledge document in workspace {request.workspace_id!r} carries artifact "
-            f"{request.icp_artifact_key!r}",
+            f"the pinned document {pin.document_id} is not held by workspace {workspace_id!r}",
         )
+    row: Mapping[str, Any] = dict(found)
     if row["kind"] != _ICP_KIND or row["status"] != _ICP_STATUS:
         raise Arv2LaunchRefused(
             "icp_artifact_not_confirmed",
             f"document {row['path']!r} is a {row['kind']!r} at status {row['status']!r}; a launch "
             f"researches only against a {_ICP_STATUS} {_ICP_KIND}",
         )
-    if row["artifact_sha256"] != request.icp_artifact_sha256:
+    if row["artifact_sha256"] != pin.artifact_sha256:
         raise Arv2LaunchRefused(
             "icp_digest_mismatch",
-            "the ICP artifact's bytes are not the ones this request approved: stored "
-            f"{row['artifact_sha256']}, requested {request.icp_artifact_sha256}",
+            "the pinned ICP document's bytes are not the ones the project pinned: stored "
+            f"{row['artifact_sha256']}, pinned {pin.artifact_sha256}",
         )
-    return await _icp_pins(conn, storage, workspace_id=request.workspace_id, row=row)
+    return row, await _icp_pins(conn, storage, workspace_id=workspace_id, row=row)
+
+
+async def _pinned_icp(
+    conn: AsyncConnection, storage: StorageBackend, request: Arv2LaunchRequest
+) -> _PinnedIcp:
+    """Resolve the run's ICP from the project's pin, and read its key/version off the document.
+
+    The request still carries an ICP artifact ref, because a launch is a statement about the exact
+    bytes a human signed off on — but it is now checked *against the pin* rather than trusted as
+    the selector. A request naming any other artifact is refused by name: it was composed against
+    an ICP this project does not research with.
+    """
+    pin = await _project_icp_pin(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
+    )
+    if (
+        request.icp_artifact_key != pin.artifact_key
+        or request.icp_artifact_sha256 != pin.artifact_sha256
+    ):
+        raise Arv2LaunchRefused(
+            "icp_artifact_not_project_pin",
+            f"project {request.project_id!r} pins {pin.artifact_key!r} "
+            f"({pin.artifact_sha256}); this request names {request.icp_artifact_key!r} "
+            f"({request.icp_artifact_sha256})",
+        )
+    _row, icp = await _icp_from_pin(conn, storage, workspace_id=request.workspace_id, pin=pin)
+    return icp
 
 
 async def _icp_pins(
@@ -570,21 +632,6 @@ def _request_sha256(request: Arv2LaunchRequest, *, profile_sha256: str) -> str:
 # =================================================================================================
 
 
-#: The project's brand's newest confirmed ICP. The account launch is handed the artifact ref a
-#: human approved; an on-demand person launch has no such ref to be handed, so it pins what the
-#: brand has confirmed *now* — and records that key and digest on its run, exactly like the other.
-_CONFIRMED_ICP_FOR_BRAND = text(
-    """
-    SELECT document_id, brand_id, kind, status, artifact_key, artifact_sha256, path
-    FROM brand_knowledge_document
-    WHERE workspace_id = :workspace_id AND brand_id = :brand_id
-      AND kind = 'icp-definition' AND status = 'confirmed' AND artifact_key IS NOT NULL
-    ORDER BY version DESC, path
-    LIMIT 1
-    """
-)
-
-
 @dataclass(frozen=True)
 class Arv2PersonLaunchRequest:
     """One human's request to research these named people, whoever resolved them.
@@ -646,8 +693,15 @@ async def launch_arv2_person_research(
             f"project {request.project_id!r} has no row in workspace {request.workspace_id!r}",
         )
     accounts = await _check_contacts(conn, request)
-    icp_row, icp = await _current_confirmed_icp(
-        conn, storage, workspace_id=request.workspace_id, brand_id=str(project.brand_id)
+    # The same pin the account launch resolves. An on-demand person launch has no approved
+    # artifact ref to be handed, so before the pin existed it resolved "the brand's newest
+    # confirmed ICP" — which moved under a project the moment onboarding re-synthesized or another
+    # project confirmed. It now reads the project's own pin, like every other consumer.
+    icp_pin = await _project_icp_pin(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
+    )
+    icp_row, icp = await _icp_from_pin(
+        conn, storage, workspace_id=request.workspace_id, pin=icp_pin
     )
     product_set = await current_project_product_set(
         conn, workspace_id=request.workspace_id, project_id=request.project_id
@@ -909,28 +963,6 @@ async def _check_contacts(
     return accounts
 
 
-async def _current_confirmed_icp(
-    conn: AsyncConnection, storage: StorageBackend, *, workspace_id: str, brand_id: str
-) -> tuple[Mapping[str, Any], _PinnedIcp]:
-    """The brand's newest confirmed ICP document and the pins read out of its body."""
-    row = (
-        (
-            await conn.execute(
-                _CONFIRMED_ICP_FOR_BRAND,
-                {"workspace_id": workspace_id, "brand_id": brand_id},
-            )
-        )
-        .mappings()
-        .first()
-    )
-    if row is None:
-        raise Arv2LaunchRefused(
-            "icp_artifact_not_found",
-            f"brand {brand_id!r} has no confirmed {_ICP_KIND} document to research against",
-        )
-    return row, await _icp_pins(conn, storage, workspace_id=workspace_id, row=row)
-
-
 def _person_request_sha256(
     request: Arv2PersonLaunchRequest,
     *,
@@ -1164,10 +1196,9 @@ class LaunchArv2AccountResearchTool(Tool):
             "committee_cap",
         )
     )
-    #: No Stage-0 pin (standing rule item 5). What this launch is authorized against travels in
-    #: its own inputs — the ICP artifact digest and the product-selection version — not in a
-    #: project-run pin the old Stage-0 machinery owned.
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service
@@ -1252,7 +1283,9 @@ class LaunchArv2PersonResearchTool(Tool):
         safe_display_fields=("project_id", "contact_entity_ids", "persona")
     )
     #: No Stage-0 pin, for the same reason the account launch has none (standing rule item 5).
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin — and it is what the recipe-safety audit requires of every standing address.
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service
@@ -1317,7 +1350,9 @@ class ReadArv2AccountResearchRunTool(Tool):
         durable_identity="current ARV2 account research run + job states",
     )
     parameter_policy = JournalParameterPolicy(safe_display_fields=("run_id",))
-    pin_requirements = ()
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
 
     def __init__(self, service: Arv2LaunchService | None) -> None:
         self._service = service

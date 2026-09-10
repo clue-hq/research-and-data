@@ -997,6 +997,92 @@
   cursor: default;
 }
 
+/* The set-valued product gate: one checkbox list, grouped by offering kind. */
+.productSetGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.productSetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.productSetGroupHeading {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.productSetOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: white;
+  padding: 10px 12px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.productSetOption:hover:has(input:not(:disabled)) {
+  border-color: var(--clue-ds-color-bg-brand);
+}
+
+.productSetOption[data-archived="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.productSetOption input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.productSetOptionBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.productSetOptionName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.productSetOptionBody span,
+.productSetOptionBody small {
+  overflow-wrap: anywhere;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.productSetOptionName strong {
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.productSetDuplicate {
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  padding: 0 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: help;
+}
+
 .planApproval > header {
   display: flex;
   align-items: center;

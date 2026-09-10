@@ -538,6 +538,96 @@ Knowledge section is re-lifted, not patched (principle 7); anything the dummy ha
   a detail is needed rather than recall it.
 - **Launch:** `launch_account_research` carries `icp_artifact_ref` + `product_selection_version`.
 
+### Addendum 2026-09-09 — O6 as built
+
+Built on branch `onboarding/o6-head-of-abm` (commits `8720f3509`..`83817317e`, base `3ceb81f36`)
+from `docs/superpowers/plans/2026-09-09-arv2-onboarding-o6-head-of-abm.md`. The §8 text above is
+the specification and is unchanged; this addendum records the decisions the plan took and the shape
+that actually landed. The **live** exit gate in §9 is still owed (founder-triggered).
+
+**Decisions D1–D12 (from the plan's decision table):**
+
+- **D1 — profile v44 tool set.** Drop the eight tools §8 names *plus* `synthesize_icps@3`,
+  `start_recon@1`, `submit_onboarding_input@1` and `open_discovery_configuration_gate@1`; keep the
+  directive, launch, read, propose, ingestion, design-leg and `record_interview_answer@1` pins; add
+  `open_product_set_selection_gate@1`, `open_icp_confirmation_gate@2`,
+  `launch_arv2_account_research@1`, `read_arv2_account_research_run@1`.
+- **D2 — the launch is R2's tool.** §8's "`launch_account_research` carries `icp_artifact_ref` +
+  `product_selection_version`" is satisfied by `launch_arv2_account_research@1`; the old directive
+  chain stays granted, and `account-deep-steering@v8` is *not* rewritten in O6.
+- **D3 — gate order.** Pick the ICP in conversation → the **product-set** gate pre-checked from that
+  ICP's `product_ids[]` → then the **ICP confirmation** gate, whose approval stamps
+  `product_selection_version`. The other order is tolerated (the stamp is then absent and the launch
+  pins the set version itself).
+- **D4 — `revised` on the ICP gate is recorded, not authored.** The agent records the requested
+  changes in project context and says a revised ICP needs a new onboarding synthesis. O6 adds no
+  ICP-authoring tool.
+- **D5 — the four old cards leave the production conversation for every workspace**, not behind a
+  flag: no Client-KB v2 card, no Stage-0 project-state card, no product-profile or product-knowledge
+  card. `_compose_project_context` compiles the brand-knowledge index card and (when account refs
+  are attached) the account-deep-steering context, and nothing else.
+- **D6 — knowledge documents are pinned per turn** in `agent_turn_knowledge_pin` (migration
+  `a3fc75e248e0`): one insert-once row of document refs + digests, written before composition and
+  read again by every retry.
+- **D7 — recipe v22 = v19 + the four new addresses + `draft_account_research_directive@5` in place
+  of `@3`.** Old addresses stay in the slot; the slot is a ceiling, the profile is the grant.
+- **D8 — the exact-quote rule stays in skill v21**, because `record_interview_answer@1` refuses a
+  paraphrased quote. The master plan's "quote rule removed" line waits for a
+  `record_interview_answer@2` — recorded as a follow-up, not built.
+- **D9 — `pin_requirements = ("project",)`** on the two R2 tools and both new gate tools; the
+  Stage-0 pin provider resolves `project` from the execution row or from the presenting turn.
+- **D10 — product-set gate subject** is `brand-product-catalog:{brand_id}:{catalog_document_id or
+  'none'}` at the catalog document's own version, with the contract §7.1 snapshot plus
+  `suggested_product_ids[]` and per-candidate `resolution_state` / `reconcile_confidence` /
+  `reconcile_reason`. The catalog contract's `client-product-catalog:{client_entity_id}:v{kb}` form
+  is superseded — it named a Client-KB version.
+- **D11 — the projects sidebar lists `status = 'active'` projects only**, which keeps O4's
+  onboarding system project out of it.
+- **D12 — `qualifier_fields` registration (seam-freeze 2b) is not built anywhere in the tree.** The
+  confirmed ICP document keeps them in its front matter; registration into the field catalog belongs
+  to the R lane at launch. Recorded, not built.
+
+**Two amendments taken during execution:**
+
+1. **Recipe v22 re-pins `open_icp_confirmation_gate` at `@2` and drops `@1`** from its allowlists and
+   requirements. The compatibility loader resolves one version per tool key, so carrying both is a
+   `conflicting_requirement` and the seeder refuses to promote the recipe (the v16 fresh-boot wedge).
+   `@1` stays in `RECIPE_0_TOOL_ADDRESSES` for replay, and v19 remains the exact replay input for
+   turns that ran on `@1`. Consequence: profile v44 must pin `@2`, and does.
+2. **A confirmation never retires another project's confirmed row.** `confirm_icp_document` retires
+   the subject row only when it is `proposed`, or `confirmed` for the *same* project; a version
+   confirmed for a different project stays confirmed. (Two confirmed versions of one path can then
+   coexist and `current_knowledge_documents` serves only the newest, so the displaced project's index
+   card loses its confirmation — a known multi-project limitation deferred to O7.)
+
+**The landed shape.**
+
+- **Profile `head-of-abm@v44`** (prompt v8, skills `stage0-interview@v21` + `account-deep-steering@v8`)
+  pins eighteen tools: `draft_account_research_directive@5`, `get_research_view@1`,
+  `inspect_statement_history@1`, `launch_account_research@1`, `launch_arv2_account_research@1`,
+  `launch_selected_account_research@1`, `launch_contact_research@1`, `open_design_leg@4`,
+  `open_directive_confirmation_gate@1`, `open_icp_confirmation_gate@2`,
+  `open_product_set_selection_gate@1`, `propose_field@2`, `propose_source@1`,
+  `read_account_research_run@1`, `read_arv2_account_research_run@1`, `read_contact_research_run@1`,
+  `record_interview_answer@1`, `submit_ingestion@1`. Model, effort, timeout and budget are v43's.
+- **The knowledge pin.** Every production project-conversation turn writes its
+  `agent_turn_knowledge_pin` row before it composes anything, and every retry reads the winner. The
+  pinned bytes are seeded read-only under `inputs/brand/knowledge/`, and a reclaimed turn re-verifies
+  the frozen tree rather than skipping it.
+- **The index card.** L3 carries exactly one compiled artifact from that pinned set —
+  `BrandKnowledgeIndexCard@1` (`card_kind = "brand_knowledge_index"`) — a bounded index of the files,
+  so the model reads a document by path instead of being handed its body.
+- **The two gates.** `open_product_set_selection_gate@1` (set-valued; answered with
+  `selected_product_ids`, which writes the project's `project_product` rows and a new selection
+  version) and `open_icp_confirmation_gate@2` (subject = a knowledge document pinned by id and
+  digest; approval mints a `confirmed` version of the same path stamped
+  `confirmed_for_project_id`). Both live at the composition root, outside `clue_api/arv2/`, because
+  of the lane's import guard.
+- **The launch** is `launch_arv2_account_research@1`, taught by skill v21 with what must be confirmed
+  first: a confirmed ICP document version and a confirmed product set.
+- **Env posture unchanged; O6 added no flag** (`git diff` on `.env.example` and
+  `clue_config/settings.py` against the base is empty).
+
 ---
 
 ## 9. Phases, exit gates, ownership, timeline
@@ -550,7 +640,7 @@ Knowledge section is re-lifted, not patched (principle 7); anything the dummy ha
 | O3 | Research steps on the fleet | `arv2/onboarding_driver.py` (fleet job), `POST /onboarding` 202, step graph, catalog sync re-pointed at the artifact, background fan-out + cap, document rows with statuses | One unseeded Insight Health run: every document present or honestly failed; ledger complete; nothing on the web loop | agent-built, Aryan composes |
 | O4 | Synthesis agent | Profile/prompt/two skills (§5), `exa_search_evidence@1`, materialization of inputs, outputs→documents registration. **+ 2026-09-08 — the synthesis split** (§5 addendum; branch `onboarding/o4-synthesis-split`, spec `docs/superpowers/specs/2026-09-08-arv2-onboarding-o4-synthesis-split-design.md`): `onboarding-synthesis@v2`, one ICP turn + one persona turn per ICP, the `onboarding_icp` surface, per-turn input selection into the opening context, migration `ae4a5dfb3943` | 2–3 ICPs + personas for Insight Health; no fictional names; every specific fact cited; per-role evidence when found; matches Shashank's answer keys; checklist item 1. **Split gate (2026-09-08, owed — founder-triggered):** one unseeded Insight Health re-run where the three ICP documents are servable within ~6 minutes while `persona` steps still run, three `persona` steps run concurrently and the run settles `completed`, the ICP keys on file are reused, each persona's `icp_version` equals its ICP row's version, fifteen `exa_search_evidence@1` invocations, none of them attributed to the ICP turn | content Shashank, wiring agent-built, Aryan promotes |
 | O5 | Brand-context read surface | §7 endpoints; frontend Knowledge section re-lifted from the dummy on the real endpoints; status chips; progressive fill | With `CLUE_API_BASE_URL` set the page renders the real tree and fills as steps land; frontend gates green | agent-built from Shashank's charter; Aryan merges |
-| O6 | Head-of-ABM integration | §8: profile, index card source, materialization, Stage-0 skill v21, product-set gate tool, ICP gate on artifact refs, launch fields | New project on Insight Health: interview → ICP pick → product set → ICP confirmation → launch; old lane off; checklist 7/7 | Aryan (integration point) |
+| O6 | Head-of-ABM integration | §8: profile, index card source, materialization, Stage-0 skill v21, product-set gate tool, ICP gate on artifact refs, launch fields | New project on Insight Health: interview → ICP pick → product set → ICP confirmation → launch; old lane off; checklist 7/7. **Built 2026-09-09 on `onboarding/o6-head-of-abm`; live exit gate owed (founder-triggered)** — see the §8 addendum | Aryan (integration point) |
 | O7 | Acceptance | Unseeded onboarding on Clue (cluehq.ai) and one more seller; cost/latency table per step; defect list; evidence under `.context/` | Founders sign; old Stage-0 recon stays flag-off until Phase 6 | both |
 
 **Coordination with D1 (running in parallel on the display lane; recorded 2026-09-07 from the D1

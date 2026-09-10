@@ -35,7 +35,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -45,6 +45,7 @@ from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
     KIND_PRODUCT_SELECTION,
+    KIND_PRODUCT_SET_SELECTION,
     AgentGateRow,
     GateAlreadyAnswered,
     get_gate,
@@ -59,6 +60,12 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_confirmation import (
+    IcpConfirmationStale,
+    confirm_icp_document,
+    current_icp_document,
+    pin_project_icp,
+)
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
@@ -187,7 +194,9 @@ from clue_projections import (
 )
 from clue_research.icp import activate_icp_version
 from clue_spine import (
+    confirm_project_product_set,
     create_project,
+    current_project_product_set,
     get_brand,
     get_project,
     get_project_for_workspace,
@@ -527,6 +536,17 @@ def _status_code_name(status_code: int) -> str:
 
 def _refuse(*, status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+def _is_knowledge_document_gate(gate: AgentGateRow) -> bool:
+    """Whether this ICP gate's subject is a knowledge document (``@2``) or a draft spec (``@1``).
+
+    The snapshot is immutable, so the shape a gate was opened with is the shape it is answered in
+    forever: an ``@1`` gate written before ARV2 onboarding O6 carries no ``subject_kind`` at all
+    and keeps the ``icp_spec`` path unchanged.
+    """
+
+    return gate.subject_snapshot.get("subject_kind") == "brand_knowledge_document"
 
 
 def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
@@ -1821,6 +1841,7 @@ def build_chat_router(
             KIND_DIRECTIVE_CONFIRMATION,
             KIND_ICP_CONFIRMATION,
             KIND_PRODUCT_SELECTION,
+            KIND_PRODUCT_SET_SELECTION,
         }:
             raise _refuse(
                 status_code=422,
@@ -1884,7 +1905,10 @@ def build_chat_router(
             )
 
         if view.gate.kind == KIND_ICP_CONFIRMATION:
-            if response.selected_product_id is not None:
+            if (
+                response.selected_product_id is not None
+                or response.selected_product_ids is not None
+            ):
                 raise _refuse(
                     status_code=422,
                     code="GATE_PRODUCT_UNEXPECTED",
@@ -1907,7 +1931,39 @@ def build_chat_router(
             # A retry of the same answering turn is checked against its existing captured bytes
             # below. Its subject is active after an approval, so only a *new* answer revalidates the
             # still-draft snapshot before any receipt is written.
-            if view.answer is None:
+            if view.answer is None and _is_knowledge_document_gate(view.gate):
+                # ARV2 onboarding O6: the subject is a `brand_knowledge_document`, so the check is
+                # "is the brand's current ICP document for this key still the exact one the human
+                # was shown?" — same document, same bytes. A newer proposal published at that path
+                # since the gate opened is precisely what must refuse.
+                snapshot = view.gate.subject_snapshot
+                assert storage is not None  # the submit route exists only when storage does
+                brand_id = snapshot.get("brand_id")
+                icp_key = snapshot.get("icp_key")
+                if not isinstance(brand_id, str) or not isinstance(icp_key, str):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the durable gate does not name a canonical ICP document",
+                    )
+                current = await current_icp_document(
+                    conn,
+                    storage,
+                    workspace_id=who.workspace_id,
+                    brand_id=brand_id,
+                    icp_key=icp_key,
+                )
+                if (
+                    current is None
+                    or str(current.document_id) != snapshot.get("document_id")
+                    or current.artifact_sha256 != snapshot.get("artifact_sha256")
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the current ICP document differs from the reviewed one",
+                    )
+            elif view.answer is None:
                 scope = await resolve_stage0_project_scope_for_project(
                     conn,
                     workspace_id=who.workspace_id,
@@ -1951,6 +2007,12 @@ def build_chat_router(
                         message="the persisted ICP draft differs from the reviewed snapshot",
                     )
         elif view.gate.kind == KIND_PRODUCT_SELECTION:
+            if response.selected_product_ids is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="this question takes one product, not a set",
+                )
             if response.revision_request is not None:
                 raise _refuse(
                     status_code=422,
@@ -1988,6 +2050,63 @@ def build_chat_router(
                     code="GATE_PRODUCT_STALE",
                     message="the selected product was not in the presented catalog",
                 )
+        elif view.gate.kind == KIND_PRODUCT_SET_SELECTION:
+            # A project targets a SET of products (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3, ruling
+            # P1). The same rules as the single-valued gate, applied per element, plus the one this
+            # shape adds: the same product cannot be chosen twice.
+            if response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="this question takes a set of products, not one",
+                )
+            # The durable answer for this kind carries its choices and nothing else (the answer
+            # trigger enforces it), so there is nowhere to record revision text.
+            if response.revision_request is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_REVISION_REQUEST_UNEXPECTED",
+                    message="a product-set question does not accept revision text",
+                )
+            chosen = list(response.selected_product_ids or ())
+            if response.decision == "approved" and not chosen:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_REQUIRED",
+                    message="select at least one product from the presented catalog",
+                )
+            if response.decision != "approved" and chosen:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a rejected or revised product question does not accept a choice",
+                )
+            if len(set(chosen)) != len(chosen):
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_DUPLICATE",
+                    message="a product can only be chosen once",
+                )
+            # An archived candidate is *presented* (the human may be looking at a set that
+            # includes it) but cannot be chosen, so the allowed set is narrower than the snapshot.
+            snapshot_products = view.gate.subject_snapshot.get("products")
+            selectable = (
+                {
+                    str(item["product_id"])
+                    for item in snapshot_products
+                    if isinstance(item, dict)
+                    and isinstance(item.get("product_id"), str)
+                    and item.get("status") != "archived"
+                }
+                if isinstance(snapshot_products, list)
+                else set()
+            )
+            if not set(chosen) <= selectable:
+                raise _refuse(
+                    status_code=409,
+                    code="GATE_PRODUCT_STALE",
+                    message="a chosen product was not selectable in the presented catalog",
+                )
         else:
             is_discovery_configuration = (
                 view.gate.subject_snapshot.get("subject_kind") == "discovery_configuration"
@@ -2009,7 +2128,10 @@ def build_chat_router(
                         else "an account-research directive does not accept revision text"
                     ),
                 )
-            if response.selected_product_id is not None:
+            if (
+                response.selected_product_id is not None
+                or response.selected_product_ids is not None
+            ):
                 raise _refuse(
                     status_code=422,
                     code="GATE_PRODUCT_UNEXPECTED",
@@ -2295,6 +2417,23 @@ def build_chat_router(
                     # The receipt is derived from the turn this request just made durable — the
                     # client never supplies it and never could (§3.5).
                     action_ref = derive_turn_action_ref(turn_id)
+                    # A set-valued answer names its choices in the payload — the single
+                    # ``selected_option_ref`` column cannot hold a set, and the answer trigger
+                    # refuses one on this kind.
+                    if gate.kind == KIND_PRODUCT_SET_SELECTION:
+                        decision_payload: dict[str, JsonValue] = (
+                            {"selected_option_refs": list(response.selected_product_ids)}
+                            if response.selected_product_ids is not None
+                            else {}
+                        )
+                        selected_option_ref = None
+                    else:
+                        decision_payload = (
+                            {"revision_request": response.revision_request}
+                            if response.revision_request is not None
+                            else {}
+                        )
+                        selected_option_ref = response.selected_product_id
                     try:
                         await insert_gate_answer(
                             conn,
@@ -2304,12 +2443,8 @@ def build_chat_router(
                             action_ref=action_ref,
                             decision=response.decision,
                             expected_subject_sha256=response.expected_subject_sha256,
-                            decision_payload=(
-                                {"revision_request": response.revision_request}
-                                if response.revision_request is not None
-                                else {}
-                            ),
-                            selected_option_ref=response.selected_product_id,
+                            decision_payload=decision_payload,
+                            selected_option_ref=selected_option_ref,
                             answered_by_user_id=who.user_id,
                         )
                     except GateAlreadyAnswered as exc:
@@ -2401,6 +2536,95 @@ def build_chat_router(
                                 else None
                             ),
                         )
+                    elif (
+                        gate.kind == KIND_PRODUCT_SET_SELECTION and response.decision == "approved"
+                    ):
+                        # Human-only and tool-free: confirming a set is one spine write with
+                        # server-derived authority (workspace, project, the answering gate and the
+                        # ambient user), in the same transaction as the immutable answer. Either
+                        # both effects commit or neither does.
+                        if (
+                            await confirm_project_product_set(
+                                conn,
+                                workspace_id=who.workspace_id,
+                                project_id=project_id,
+                                product_ids=list(response.selected_product_ids or ()),
+                                gate_id=gate.gate_id,
+                                confirmed_by_user_id=who.user_id,
+                            )
+                            is None
+                        ):
+                            raise _refuse(
+                                status_code=409,
+                                code="GATE_SUBJECT_STALE",
+                                message=(
+                                    "a chosen product no longer belongs to this project's brand"
+                                ),
+                            )
+                    elif (
+                        gate.kind == KIND_ICP_CONFIRMATION
+                        and response.decision == "approved"
+                        and _is_knowledge_document_gate(gate)
+                    ):
+                        # ARV2 onboarding O6: approving a knowledge-document ICP mints the
+                        # `confirmed` version of that same document path — human-only and
+                        # tool-free, with server-derived authority (the workspace, the project,
+                        # the ambient user and the gate's own digest), in the same transaction as
+                        # the immutable answer. Either both effects commit or neither does.
+                        assert storage is not None  # the submit route exists only when storage does
+                        snapshot = gate.subject_snapshot
+                        brand_id = str(snapshot["brand_id"])
+                        subject = await current_icp_document(
+                            conn,
+                            storage,
+                            workspace_id=who.workspace_id,
+                            brand_id=brand_id,
+                            icp_key=str(snapshot["icp_key"]),
+                        )
+                        product_set = await current_project_product_set(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                        )
+                        try:
+                            if subject is None:
+                                raise IcpConfirmationStale(
+                                    "the reviewed ICP document is no longer readable"
+                                )
+                            selection_version = (
+                                None if product_set is None else product_set.selection_version
+                            )
+                            confirmed = await confirm_icp_document(
+                                conn,
+                                storage,
+                                workspace_id=who.workspace_id,
+                                brand_id=brand_id,
+                                project_id=project_id,
+                                proposed=subject,
+                                expected_sha256=gate.expected_subject_sha256,
+                                confirmed_by_user_id=who.user_id,
+                                product_selection_version=selection_version,
+                            )
+                            # Founder rulings 2026-09-10: the approval is also the moment this
+                            # project pins its ICP. Same transaction as the confirmed version and
+                            # the immutable answer — a project can never end up having confirmed a
+                            # document it does not pin, or pinning one nobody approved. A replayed
+                            # approval finds its own document already pinned and writes nothing.
+                            await pin_project_icp(
+                                conn,
+                                workspace_id=who.workspace_id,
+                                project_id=project_id,
+                                brand_id=brand_id,
+                                document=confirmed,
+                                product_selection_version=selection_version,
+                                pinned_by_user_id=who.user_id,
+                            )
+                        except IcpConfirmationStale as exc:
+                            raise _refuse(
+                                status_code=409,
+                                code="GATE_SUBJECT_STALE",
+                                message=str(exc),
+                            ) from exc
                     elif gate.kind == KIND_ICP_CONFIRMATION and response.decision == "approved":
                         icp_key = gate.subject_snapshot["icp_key"]
                         version = gate.subject_snapshot["version"]

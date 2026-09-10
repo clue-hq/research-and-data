@@ -266,11 +266,13 @@ def test_the_three_tools_declare_the_effect_and_replay_classes_the_registry_admi
     assert read.name == "read_arv2_account_research_run" and read.version == "1"
     assert read.effect_class is ToolEffectClass.READ
     assert read.replay.policy is ReplayPolicy.EFFECT_FREE
-    # Standing rule item 5: the launches pin their subjects + ICP artifact + selection version, so
-    # they require no Stage-0 pin at all — a pin requirement here would resurrect the old
-    # machinery.
-    assert launch.pin_requirements == ()
-    assert launch_person.pin_requirements == () and read.pin_requirements == ()
+    # Standing rule item 5: none of the three requires a *Stage-0* pin — the launches pin their
+    # subjects + ICP artifact + selection version, and a Stage-0 pin here would resurrect the old
+    # machinery. ``project`` is not that: it is the spine row the execution is bound to, a replay
+    # identity, and the recipe-safety audit refuses a standing address with no pin at all.
+    assert launch.pin_requirements == ("project",)
+    assert launch_person.pin_requirements == ("project",)
+    assert read.pin_requirements == ("project",)
     assert launch.descriptor.recipe_safe and read.descriptor.recipe_safe
     assert launch_person.descriptor.recipe_safe
 

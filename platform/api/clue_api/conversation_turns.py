@@ -37,6 +37,7 @@ from clue_agents import (
     DelegationResult,
     DeterministicAgentContextAssembler,
     ResolvedAgentProfile,
+    WorkspaceSeedFile,
 )
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
 from clue_api.agent_execution_wiring import (
@@ -89,6 +90,13 @@ __all__ = [
 #: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
 #: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 22 (ARV2 onboarding O6) is revision 19 plus the new-lane onboarding surface — the
+# set-valued product gate, the artifact-shaped ICP confirmation gate (``@2``) and the ARV2
+# launch/read pair — and it re-pins the directive draft at ``draft_account_research_directive@5``
+# (profile v43 pinned @5 while revision 19 admitted only @3, so plan validation refused the draft
+# since the R0 merge). The ICP gate is *re-pinned*, not added twice: one requirement set resolves
+# one version per (kind, key), so ``@1`` leaves revision 22. Revision 19 keeps ``@1`` and stays the
+# exact replay input for turns already pinned to it.
 # Revision 21 (Slice B browser-gate repair) is revision 20 with
 # ``draft_account_research_directive@5`` — @4's contract behind a satisfiable schema
 # (``directive.field_keys`` omittable) — in place of @4. Seeded replay-only: the active revision
@@ -111,7 +119,7 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 19
+CONVERSATION_RECIPE_VERSION = 22
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
@@ -264,6 +272,7 @@ class ConversationTurnEngine:
         submitted_by_user_id: str | None = None,
         submitted_via_membership_id: str | None = None,
         stream: TurnStreamEmitter | None = None,
+        input_seeds: tuple[WorkspaceSeedFile, ...] = (),
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -281,6 +290,10 @@ class ConversationTurnEngine:
         ``stream`` (FI Lane D D3, charter §3-P4) is the live projection of this turn onto the
         durable event outbox. It is optional and never authoritative: every emission is best-effort
         by construction, and a turn's committed outcome is identical whether anybody was watching.
+
+        ``input_seeds`` (ARV2 onboarding O6) are the surface's read-only workspace inputs for this
+        turn. The engine only forwards them: what they are, and how they were pinned, belongs to
+        the surface that composed them.
         """
 
         constitution = request.constitution
@@ -342,6 +355,7 @@ class ConversationTurnEngine:
                 execution=execution,
                 completion_guard=completion_guard,
                 stream=stream,
+                input_seeds=input_seeds,
             )
         else:
             outcome = committed

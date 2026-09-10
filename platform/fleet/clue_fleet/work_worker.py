@@ -98,7 +98,20 @@ class CapabilityGated(Protocol):
 
 
 class LeasedWorkWorker:
-    """Claim any registered work kind and supervise it under a generated lease fence."""
+    """Claim any registered work kind and supervise it under a generated lease fence.
+
+    ``concurrency`` (founder ruling 2026-09-10) is how many tasks ONE process drives at once:
+    :meth:`run` starts that many independent drain loops ("slots") over the *same* queue,
+    leases and handler instances. Nothing about a task changes — each slot claims on its own
+    (``FOR UPDATE SKIP LOCKED`` already hands two claimers two different rows), takes its own
+    lease generation, and runs its own heartbeat, so a slot's failure is still one task's
+    failure. The default of 1 is exactly the single loop this class shipped with.
+
+    Two pieces of state are deliberately shared across slots: the stop event (one ``stop()``
+    ends every slot) and ``_next_kind``, the round-robin cursor. Slots racing on the cursor can
+    make two of them try the same kind first; the claim is atomic in the database, so they get
+    different rows and fairness is unaffected — a lock there would buy nothing.
+    """
 
     def __init__(
         self,
@@ -111,9 +124,12 @@ class LeasedWorkWorker:
         lease_ttl: timedelta = DEFAULT_LEASE_TTL,
         heartbeat_interval: float = 10.0,
         task_stale_after: timedelta = DEFAULT_TASK_STALE_AFTER,
+        concurrency: int = 1,
     ) -> None:
         if not handlers:
             raise ValueError("a leased worker requires at least one work handler")
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be at least 1 (got {concurrency})")
         if heartbeat_interval * 2 >= lease_ttl.total_seconds():
             raise ValueError(
                 "heartbeat_interval * 2 must be < lease_ttl "
@@ -135,6 +151,7 @@ class LeasedWorkWorker:
         self._lease_ttl = lease_ttl
         self._heartbeat_interval = heartbeat_interval
         self._task_stale_after = task_stale_after
+        self._concurrency = concurrency
         self._stop = asyncio.Event()
 
     def stop(self) -> None:
@@ -144,25 +161,73 @@ class LeasedWorkWorker:
     def stopping(self) -> bool:
         return self._stop.is_set()
 
+    @property
+    def concurrency(self) -> int:
+        """How many drain slots :meth:`run` starts."""
+        return self._concurrency
+
     async def run(self) -> None:
-        log.info("worker.start", worker_id=self.worker_id)
-        while not self._stop.is_set():
-            try:
-                drained = await self.drain_once()
-            except (InterfaceError, OperationalError):
-                # A cancelled sibling can close asyncpg while SQLAlchemy is returning the
-                # connection. The queue methods are transaction-scoped, so retrying obtains a
-                # fresh, pre-pinged connection; one poisoned checkout must not kill the fleet.
-                log.warning(
-                    "worker.drain_db_error",
-                    worker_id=self.worker_id,
-                    exc_info=True,
-                )
-                await self._sleep(self._poll_interval)
-                continue
-            if not drained:
-                await self._sleep(self._poll_interval)
-        log.info("worker.stop", worker_id=self.worker_id)
+        """Drive ``concurrency`` independent drain slots until :meth:`stop` (or they all die).
+
+        Slot failure policy: a slot that raises is logged at ``worker.slot_crashed`` and left
+        dead — its siblings keep draining, because losing one slot must not cost the process
+        every other kind of work it is the only drainer for. The process is only *told* once
+        there is nothing left: when every slot has ended, ``run`` re-raises the first slot
+        failure, which propagates through ``run_worker`` and ``asyncio.run`` to a non-zero exit.
+        A supervisor then restarts a worker that is genuinely no longer working, and never one
+        that is still draining.
+        """
+        log.info("worker.start", worker_id=self.worker_id, concurrency=self._concurrency)
+        slots = [
+            asyncio.create_task(self._drain_loop(slot), name=f"{self.worker_id}:slot-{slot}")
+            for slot in range(self._concurrency)
+        ]
+        outcomes = await asyncio.gather(*slots, return_exceptions=True)
+        failures = [
+            outcome
+            for outcome in outcomes
+            if isinstance(outcome, BaseException)
+            and not isinstance(outcome, asyncio.CancelledError)
+        ]
+        log.info(
+            "worker.stop",
+            worker_id=self.worker_id,
+            concurrency=self._concurrency,
+            slots_failed=len(failures),
+        )
+        if failures:
+            raise failures[0]
+
+    async def _drain_loop(self, slot: int) -> None:
+        """One slot: today's claim -> handle -> finish loop, unchanged, with a slot label."""
+        log.info("worker.slot_start", worker_id=self.worker_id, slot=slot)
+        try:
+            while not self._stop.is_set():
+                try:
+                    drained = await self.drain_once(slot=slot)
+                except (InterfaceError, OperationalError):
+                    # A cancelled sibling can close asyncpg while SQLAlchemy is returning the
+                    # connection. The queue methods are transaction-scoped, so retrying obtains a
+                    # fresh, pre-pinged connection; one poisoned checkout must not kill the fleet.
+                    log.warning(
+                        "worker.drain_db_error",
+                        worker_id=self.worker_id,
+                        slot=slot,
+                        exc_info=True,
+                    )
+                    await self._sleep(self._poll_interval)
+                    continue
+                if not drained:
+                    await self._sleep(self._poll_interval)
+        except asyncio.CancelledError:
+            log.info("worker.slot_cancelled", worker_id=self.worker_id, slot=slot)
+            raise
+        except Exception:
+            # Loud here, fatal later: the sibling slots are untouched and keep draining, and
+            # ``run`` turns the accumulated failures into the process exit code once they end.
+            log.exception("worker.slot_crashed", worker_id=self.worker_id, slot=slot)
+            raise
+        log.info("worker.slot_stop", worker_id=self.worker_id, slot=slot)
 
     def _capabilities(self, kind: FleetTaskKind) -> tuple[TaskCapability, ...]:
         """What this worker can run within ``kind`` — empty means "the whole kind" (R3-B).
@@ -179,8 +244,13 @@ class LeasedWorkWorker:
             return ()
         return tuple(handler.task_capabilities)
 
-    async def drain_once(self) -> bool:
-        """Fair round-robin claim across registered top-level task kinds."""
+    async def drain_once(self, *, slot: int | None = None) -> bool:
+        """Fair round-robin claim across registered top-level task kinds.
+
+        ``slot`` labels the drain loop this call belongs to, so every log line a concurrent
+        process emits names the slot as well as the worker. ``None`` is a direct call (a test,
+        or a single-shot drain), which belongs to no slot.
+        """
         for offset in range(len(self._kind_order)):
             index = (self._next_kind + offset) % len(self._kind_order)
             kind = self._kind_order[index]
@@ -190,6 +260,7 @@ class LeasedWorkWorker:
                 log.exception(
                     "worker.capabilities_error",
                     worker_id=self.worker_id,
+                    slot=slot,
                     kind=kind.value,
                 )
                 continue
@@ -201,11 +272,13 @@ class LeasedWorkWorker:
             )
             if task is not None:
                 self._next_kind = (index + 1) % len(self._kind_order)
-                await self._run_task(task, self._handlers[kind])
+                await self._run_task(task, self._handlers[kind], slot=slot)
                 return True
         return False
 
-    async def _run_task(self, task: WorkTaskRow, handler: WorkHandler) -> None:
+    async def _run_task(
+        self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
+    ) -> None:
         t_acquire = asyncio.get_running_loop().time()
         lease = await self._leases.acquire(
             work_id=task.work_id,
@@ -237,6 +310,7 @@ class LeasedWorkWorker:
                 generation=generation,
                 lease_lost=lease_lost,
                 acquired_at=t_acquire,
+                slot=slot,
             )
         )
         result: WorkResult | None = None
@@ -257,6 +331,7 @@ class LeasedWorkWorker:
                     log.error(
                         "worker.heartbeat_crashed",
                         worker_id=self.worker_id,
+                        slot=slot,
                         work_id=str(task.work_id),
                         exc_info=error,
                     )
@@ -268,6 +343,7 @@ class LeasedWorkWorker:
             log.exception(
                 "worker.work_error",
                 worker_id=self.worker_id,
+                slot=slot,
                 work_id=str(task.work_id),
                 kind=task.kind.value,
             )
@@ -294,6 +370,7 @@ class LeasedWorkWorker:
                 log.warning(
                     "worker.release_error",
                     worker_id=self.worker_id,
+                    slot=slot,
                     work_id=str(task.work_id),
                     exc_info=True,
                 )
@@ -323,6 +400,7 @@ class LeasedWorkWorker:
         generation: LeaseGeneration,
         lease_lost: asyncio.Event,
         acquired_at: float,
+        slot: int | None = None,
     ) -> None:
         loop = asyncio.get_running_loop()
         deadline = acquired_at + self._lease_ttl.total_seconds()
@@ -341,13 +419,14 @@ class LeasedWorkWorker:
                 log.warning(
                     "worker.renew_error",
                     worker_id=self.worker_id,
+                    slot=slot,
                     work_id=str(work_id),
                     exc_info=True,
                 )
                 if loop.time() >= deadline - self._heartbeat_interval:
                     lease_lost.set()
                     return
-                await self._touch(task_id, work_id)
+                await self._touch(task_id, work_id, slot=slot)
                 sleep_for = min(
                     self._heartbeat_interval,
                     max(0.05, (deadline - loop.time()) / 4),
@@ -358,15 +437,16 @@ class LeasedWorkWorker:
                 return
             deadline = t0 + self._lease_ttl.total_seconds()
             sleep_for = self._heartbeat_interval
-            await self._touch(task_id, work_id)
+            await self._touch(task_id, work_id, slot=slot)
 
-    async def _touch(self, task_id: UUID, work_id: WorkId) -> None:
+    async def _touch(self, task_id: UUID, work_id: WorkId, *, slot: int | None = None) -> None:
         try:
             await self._queue.touch(task_id=task_id, worker_id=self.worker_id)
         except Exception:
             log.warning(
                 "worker.touch_error",
                 worker_id=self.worker_id,
+                slot=slot,
                 work_id=str(work_id),
                 exc_info=True,
             )

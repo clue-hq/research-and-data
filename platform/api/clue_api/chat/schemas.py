@@ -25,10 +25,10 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from clue_api.agent_gate import money_text
 from clue_api.chat.message_bodies import HydratedBody
@@ -153,11 +153,30 @@ class GateResponseRequest(_Request):
     # coordinate: the server proves it is a member of the gate's immutable candidate snapshot and
     # then invokes the human-only confirmation tool with ambient workspace/project authority.
     selected_product_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # Present only for a product-**set** selection gate (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3,
+    # ruling P1: a project targets a set). Same posture as the single choice above — the server
+    # proves every id is a member of the gate's immutable candidate snapshot and confirms the set
+    # itself with ambient workspace/project authority.
+    selected_product_ids: (
+        list[Annotated[str, StringConstraints(min_length=1, max_length=200)]] | None
+    ) = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def one_bounded_auxiliary_answer(self) -> GateResponseRequest:
-        if self.revision_request is not None and self.selected_product_id is not None:
-            raise ValueError("revision_request and selected_product_id are mutually exclusive")
+        supplied = [
+            name
+            for name, value in (
+                ("revision_request", self.revision_request),
+                ("selected_product_id", self.selected_product_id),
+                ("selected_product_ids", self.selected_product_ids),
+            )
+            if value is not None
+        ]
+        if len(supplied) > 1:
+            raise ValueError(
+                "revision_request, selected_product_id and selected_product_ids are mutually "
+                "exclusive"
+            )
         return self
 
 
@@ -169,9 +188,7 @@ class ContextRefRequest(_Request):
     identifies one ready image in the design asset library for reference conditioning.
     """
 
-    object_type: Literal[
-        "account", "contact", "design_document", "design_node", "design_asset"
-    ]
+    object_type: Literal["account", "contact", "design_document", "design_node", "design_asset"]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 
@@ -286,7 +303,7 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
-    payload: dict[str, str | None] = {
+    payload: dict[str, str | list[str] | None] = {
         "kind": "gate_response",
         "gate_id": response.gate_id,
         "decision": response.decision,
@@ -303,6 +320,10 @@ def gate_response_message(response: GateResponseRequest) -> str:
     # product choice adds no new null member to their canonical transcript record.
     if response.selected_product_id is not None:
         payload["selected_product_id"] = response.selected_product_id
+    # Same rule for the set-valued answer: the member order is the order the human chose in, so it
+    # is captured as sent rather than sorted.
+    if response.selected_product_ids is not None:
+        payload["selected_product_ids"] = list(response.selected_product_ids)
     return json.dumps(
         payload,
         sort_keys=True,
