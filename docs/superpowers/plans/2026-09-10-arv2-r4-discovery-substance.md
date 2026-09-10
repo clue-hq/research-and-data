@@ -1,6 +1,6 @@
-# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 2)
+# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 3)
 
-**Status: rev 2 — §8 items 1–5 RULED 2026-09-10 (below); items 6–9 open. Nothing here is code or
+**Status: rev 3 — §8 items 1–5 RULED 2026-09-10 (below) plus the rev 3 ruling; items 6–10 open. Nothing here is code or
 a plan yet; the R4 plan is written from this document once every §8 item is ruled, then implemented
 by subagent-driven development.**
 
@@ -14,6 +14,12 @@ medium-fit, not rejects: the frontend shows the strongest signal for a company t
 criterion and an honestly weaker one for a partial match. (5) Unclear candidates are shown, marked
 unclear. **No approval UI is built until the founder has seen a preview of how it would look** —
 §4 is that preview, on the screens that exist today.
+
+**Rev 3 ruling (founder, 2026-09-10): no frontend change of any kind in R4** — not to the lifted
+screens, not a new slot, not a marker. Show every discovered account; write "unclear" for the
+unclear ones and show a full match as the best fit, using only what the screens already render.
+Frontend suggestions are stored for a separate polishing session
+(`docs/superpowers/plans/2026-09-10-arv2-frontend-polish-backlog.md`), never applied in this one.
 
 **Ruled already (founder, 2026-09-10):** Exa Websets builds the long list; every company is then
 checked by our own cheap probe on the Exa search API, the way the experiment did it; AI Ark stays
@@ -137,56 +143,46 @@ Probe spend is about $0.007 per candidate plus free ATS reads, recorded, not cap
 cohort-poisoning ways (a pre-seed called Series A, Bengaluru called US, a 2024 round dated 2026,
 an unlabelled round called A, one entity credited with another's round). The probe caught all five.
 
-## 4. Step three — the human approves the cohort (Option B, and the preview the founder asked for)
+## 4. Step three — the human approves the cohort (Option B, zero frontend change)
 
-**Ruled:** the accounts table is the approval surface for now; a chat gate follows once the founder
-has designed the in-project "target accounts" tab beside Gallery. Below is exactly what the human
-would see, on screens that exist in the dummy frontend today. Nothing new is drawn; if a piece of
-information has no slot, it is stored and stays invisible until the founder rules on a slot.
+**Ruled:** the accounts table is the approval surface; nothing in the frontend changes. Every
+word below is carried by a field the lifted screens already render, verified in the frontend's own
+code (`account-table-view.ts` builds a column per custom variable it finds on the accounts it
+receives; `accounts-table.tsx` renders a `badge` variable as a badge with its text, a `score`
+variable as the fit-score indicator, and the Overall fit badge from `overallFit`).
 
-**What the discovery job does when it finishes.** Every candidate that is not a duplicate of an
-existing account becomes an `account_entity` with `status = candidate` (the entity lifecycle's own
-first state), `primary_domain` as the strong key, workspace-scoped, and:
+**What the discovery job writes when it finishes.** Every candidate that is not a duplicate of an
+existing account becomes an `account_entity` with `status = candidate`, `primary_domain` as the
+strong key, workspace-scoped, and these claims:
 
-- one `account.scoring.fit` claim — the registered, project-relative fit field the accounts list
-  already reads — with `value` = the fit from §3 and the run's `run_lineage` row (`kind =
-  'discovery'`, an existing kind) attributing it to the project, so the list's **Overall fit** badge
-  and **Fit score** column show it exactly as they show a scored account today;
-- the per-gate verdicts with their reasons and references on the candidate row (`verdicts_json`),
-  and in the account job's "already established" block when research launches, so the researcher
-  starts from what discovery found. **They have no slot on the detail page today** (the detail
-  composes sections from registered claim fields through display recipes); whether the four gate
-  verdicts become registered fields with a section slot is §8 item 10;
-- **no** `project_account` row yet — the account exists, it is not on the project.
+| What the human sees | Field written | Value |
+|---|---|---|
+| **Overall fit** badge and **Fit score** column | `account.scoring.fit` (registered, project-relative; `run_lineage` kind `discovery` attributes it to the project) | §3 fit: every gate passed → 1.0 → **High 100**; three of four with one unclear → 0.875 → High 88; half → 0.5 → Medium 50; mostly failed → Low |
+| **"ICP qualification"** column, a badge with plain words | a workspace custom variable registered once per workspace (`client.icp_qualification`, presentation `badge`, description "ICP qualification") | **"Best fit"** when every gate passed; **"Partial fit"** when some passed and some failed; **"Unclear"** when a gate could not be answered and none failed; **"Low fit"** when most failed |
+| **"Qualification notes"** column, text | a second custom variable (`client.icp_qualification_notes`, presentation `text`) | one line per gate, e.g. `stage: pass — $14M Series A 2026-03 (businesswire.com) · hiring: unclear — no ATS board found` |
+| Revenue band, employee band | the ordinary `core.revenue_band` / `core.employee_count` claims | from the Websets firmographics when present, source `exa_websets` |
+| Research status | nothing (no job yet) | reads **"Not started"** |
 
-**What the human sees, step by step, on the existing accounts screens:**
+The custom-variable route is the only tenant-local field the table shows without a code change;
+`register_workspace_field` admits `client.*` keys only, so the two variables live in that
+namespace although they describe the account against the ICP — recorded as §8 item 10(c) for the
+founder to accept or redirect. The per-gate verdicts with references stay on the candidate row
+(`verdicts_json`) in full, and reach the researcher as "already established" at launch.
 
-1. **The accounts table** (`/accounts`). Thirty-odd new rows. Each shows: the name and website;
-   **Research status = "Not started"** (no ARV2 job yet — the list reads status from job rows);
-   **Overall fit = High / Medium / Low** and **Fit score = 0–100** from the discovery fit; revenue
-   and employee bands from the Websets firmographics when present (written as the ordinary
-   `core.employee_count` / `core.revenue_band` claims, source `exa_websets`); location count.
-   A company that matched every gate reads **High 100**; three of four and one unclear reads
-   **High 88**; half reads **Medium 50**; a company the probe failed on most gates reads **Low 25**.
-   That is ruling 4's "strongest signal for a full match, honestly weaker for a partial one", in
-   the columns the table already has.
-2. **Filter and sort.** The existing filter panel has "Overall fit" and "Fit score" rules, so the
-   human can show only High, or fit ≥ 60, and sort by score. Unclear rows are not a separate
-   filter today; they sit in Medium with their score telling the truth (§8 item 10 asks whether
-   "unclear" deserves its own visible marker).
-3. **Select and approve.** Row checkboxes → the existing **"Add to project"** bulk action (D4-b,
-   permission `project.write`). That write **is** the approval: it inserts the `project_account`
-   row with `added_via = 'discovered'`, and R4 stamps the candidate row `decision = approved`,
-   `decided_by`, `decided_at`. Accounts never added stay `candidate` entities with no project;
-   §8 item 6 decides whether a later run re-surfaces them.
-4. **Launch.** The human names the approved accounts in the project chat and the Head of ABM calls
-   `launch_arv2_account_research@1` for them (granted in v44), or the operator runs the CLI. No
-   research button (founder ruling). The rows' Research status moves to "In progress" and the
-   fit badge stays what discovery said until research writes a scored fit of its own.
+**What the human does, on the screens that exist:**
 
-**What the later chat gate adds, when the founder has designed it:** the same rows, presented as
-a set-valued gate card (pre-checked = High), with the approval writing the same `project_account`
-rows — the store side of R4 does not change.
+1. Opens `/accounts`: thirty-odd new rows, each with Overall fit, Fit score, the "ICP
+   qualification" badge (Best fit / Partial fit / Unclear / Low fit) and the notes line.
+2. Filters or sorts with the existing panel (Overall fit, Fit score) and reads the badge.
+3. Ticks rows → the existing **"Add to project"** bulk action. That write is the approval: the
+   `project_account` row (`added_via = 'discovered'`), and R4 stamps the candidate row
+   `decision = approved`, `decided_by`, `decided_at`. Rows never added stay candidate accounts.
+4. Names the approved accounts in the project chat; the Head of ABM launches
+   `launch_arv2_account_research@1` (v44), or the operator runs the CLI. No research button.
+
+**Later, in the polishing session** (not here): the target-accounts tab beside Gallery, a chat
+gate presenting the same rows, an "unclear" tone on the badge, a "Qualification" section on the
+detail page for the four verdicts with their sources. All recorded in the backlog file.
 
 ## 5. Step four — launch and fan-out with a cap that binds
 
@@ -251,9 +247,9 @@ spend per approved account, time to idle, jobs in flight versus the cap.
 9. **Where the two Head-of-ABM discovery tools land**: in R4 with a v45 profile bump (proposed),
    or held for O7 so the profile moves once. With Option B ruled, only `launch_arv2_discovery@1` is
    needed now; `open_cohort_approval_gate@1` waits for the founder's gate design.
-10. **Slots for what discovery knows**: (a) should the four gate verdicts (stage, geography,
-    hiring, intent) become registered fields with a section on the account detail page, so the
-    human can read *why* a row is High or Medium — proposed yes, as one "Qualification" section
-    with the verdict, the reason and the source link per gate; and (b) does "unclear" need its own
-    visible marker on the table, or is the fit score's honesty enough for now (proposed: enough for
-    now; the marker rides with the target-accounts tab).
+10. **Naming and namespace of the two custom variables** (rev 3): (a) accept "ICP qualification" /
+    "Qualification notes" as the labels the columns show; (b) accept the values Best fit / Partial
+    fit / Unclear / Low fit; (c) accept that they are registered as `client.*` workspace custom
+    variables, the one tenant-local field kind the table renders without a frontend change — or
+    redirect. Everything visual beyond this (an unclear tone, a detail-page section, the
+    target-accounts tab) is in the polish backlog, not in R4.
