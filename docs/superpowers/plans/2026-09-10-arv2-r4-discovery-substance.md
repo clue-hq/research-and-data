@@ -1,6 +1,6 @@
 # ARV2 R4 — verified account discovery, the plan of action (2026-09-10, rev 5)
 
-**Status: the approach is settled in discussion (founder, 2026-09-10) and recorded here. The R4
+**Status: the approach is settled in discussion (founder, 2026-09-10) and recorded here; every ruling in §9 is taken except 6′, which the founder decides with the target-accounts tab. The R4
 implementation plan (tasks, files, tests) is written from this document next, then implemented by
 subagent-driven development. Nothing in this document is code yet.**
 
@@ -188,8 +188,10 @@ Head-of-ABM tool, `launch_arv2_discovery@1` (project pin, the ICP pin resolved f
 `target_count`, `relaxed_enabled`), which is a **profile bump**: a new immutable profile version
 (v45 = v44 plus the tool), the recipe allowlist entry, the authority-map row, and one short passage
 in the interview skill that the founder reviews in chat before it is written — the same mechanics
-O6 used for the research launches. Whether the bump lands in R4 or waits for O7 is the one ruling
-still open (§9 item 4′). No gate tool is needed while the accounts table is the approval surface.
+O6 used for the research launches. **The bump lands in R4** (founder ruling 2026-09-10, §9 item
+4′): profile v45, recipe allowlist, authority map and the skill passage are R4 tasks, and the exit
+gate is walked from the project chat. No gate tool is needed while the accounts table is the
+approval surface.
 
 ## 8. Acceptance (the exit gate, measured)
 
@@ -217,6 +219,6 @@ capped); time to idle; the relaxed pass's contribution.
 | 1′ | Unapproved accounts are remembered per project and not re-surfaced; never labelled rejected; local dedupe always, Websets exclusion import once Exa confirms the cap | 2026-09-10 |
 | 2′ | Paid plan in place; proceed with Websets | 2026-09-10 |
 | 3′ | No per-run concurrency cap in R4; worker scheduling across job kinds is a separate follow-up discussion | 2026-09-10 |
-| 4′ | **OPEN** — the Head-of-ABM profile bump for `launch_arv2_discovery@1`: in R4 or at O7 | — |
+| 4′ | The Head-of-ABM profile bump for `launch_arv2_discovery@1` lands **in R4** (profile v45, recipe, authority map, skill passage), not at O7 | 2026-09-10 |
 | 5′ | Aggregator job sites count as hiring and intent evidence | 2026-09-10 |
 | 6′ | What the target-accounts tab reads (candidates vs pending membership): founder decides later | deferred |
