@@ -54,6 +54,7 @@ from clue_core import ClaimId, EntityId
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
 from clue_fleet.work_worker import WorkContext
+from clue_research.identity.normalize import registrable_domain
 
 WORKSPACE = "ws-r4-driver"
 PROJECT = "prj-r4"
@@ -489,13 +490,20 @@ class _DrainRecorder:
 
 
 class _Accounts:
-    """Stands in for ``insert_account_entity``: records the arguments, mints a fresh id."""
+    """Stands in for ``insert_account_entity``: records the arguments, mints a fresh id.
 
-    def __init__(self) -> None:
+    ``fail_on`` makes the writer raise for one domain, which is how the per-candidate containment
+    is exercised — a strong-key clash on one company is exactly the shape of failure it exists for.
+    """
+
+    def __init__(self, fail_on: frozenset[str] = frozenset()) -> None:
         self.created: list[dict[str, Any]] = []
+        self.fail_on = fail_on
 
     async def __call__(self, conn: Any, **kwargs: Any) -> EntityId:
         del conn
+        if str(kwargs.get("primary_domain")) in self.fail_on:
+            raise RuntimeError("account_entity_primary_domain_key already holds that domain")
         self.created.append(kwargs)
         return EntityId(uuid4())
 
@@ -521,11 +529,12 @@ def _handler(
     domains: Sequence[str] = (),
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
+    account_writes_fail_on: frozenset[str] = frozenset(),
 ) -> tuple[Arv2DiscoveryWorkHandler, _ConnFactory, _Writer, _DrainRecorder, _Accounts]:
     conn_factory = _ConnFactory(domains)
     writer = _Writer()
     drain = _DrainRecorder()
-    accounts = _Accounts()
+    accounts = _Accounts(account_writes_fail_on)
 
     async def fake_read_pinned_icp(
         conn: Any, storage: Any, *, workspace_id: str, project_id: str
@@ -1082,7 +1091,7 @@ def test_a_refused_icp_lands_the_run_needs_review_under_the_refusals_own_name(
 def test_a_resumed_run_skips_what_it_verified_and_re_verifies_what_it_only_started(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An attempt that died between the candidate row and its verdicts left a company stranded.
+    """An attempt that died BEFORE it recorded a webset, between a candidate row and its verdicts.
 
     A candidate that already carries a disposition is never re-asked (it was paid for), but a
     ``pending`` one bought nothing that survived — so the resumed run verifies it rather than
@@ -1151,3 +1160,152 @@ def test_a_resumed_run_skips_what_it_verified_and_re_verifies_what_it_only_start
     assert landed[0]["disposition"] == "pass"
     # The earlier attempt's verified candidate still counts toward what the human is being shown.
     assert store.named("finish_discovery_run")[0]["receipt"]["shown"] == 2
+
+
+def _verified_candidate(run: DiscoveryRunRow, name: str, domain: str, url: str) -> CandidateRow:
+    return CandidateRow(
+        candidate_id=uuid4(),
+        run_id=run.run_id,
+        workspace_id=WORKSPACE,
+        project_id=PROJECT,
+        pass_="strict",
+        domain=domain,
+        websets_url=url,
+        name=name,
+        provider_snapshot={
+            "websets_domain": registrable_domain(url),
+            "verified_domain": domain,
+        },
+        fit=1.0,
+        disposition="pass",
+    )
+
+
+def test_a_resumed_run_reads_the_webset_it_already_bought_instead_of_creating_another(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop, a lost lease or a restart must not buy the long list a second time.
+
+    The run row carries the webset it paid for, so the redelivered task polls and reads *that*
+    webset and verifies only the companies its earlier attempt never finished.
+    """
+    run = _run_row(webset_id="ws-1", asked=35, recall_estimate=180, relaxed_enabled=False)
+    store = _Store(
+        run,
+        candidates=[_verified_candidate(run, "Probook", "probook.ai", "https://probook.com")],
+    )
+    exa = _FakeExa(
+        _responder(
+            {
+                "Patientdesk": _company_answers(
+                    "Patientdesk",
+                    "patientdesk.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Patientdesk", "https://patientdesk.com"),
+            )
+        ]
+    )
+    handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    # Not one cent of a second long list: no create, and the recorded webset is what is read.
+    assert websets.named("create") == []
+    assert store.named("record_webset") == []
+    assert [call["webset_id"] for call in websets.named("get")] == ["ws-1"]
+    assert [call["webset_id"] for call in websets.named("items")] == ["ws-1"]
+    # Only the company the earlier attempt never finished is verified.
+    assert len(exa.gate_queries()) == 4
+    assert [created["primary_domain"] for created in accounts.created] == ["patientdesk.com"]
+    finished = store.named("finish_discovery_run")[0]
+    # The counters report what the list HELD, not what this attempt happened to do.
+    assert finished["found_strict"] == 2
+    assert finished["found_relaxed"] == 0
+    assert finished["receipt"]["shown"] == 2
+
+
+def test_a_failing_candidate_is_contained_and_named_while_its_neighbours_still_land(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One company going wrong is one company, never the run: the others were paid for too."""
+    run = _run_row()
+    store = _Store(run)
+    passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Probook": _company_answers("Probook", "probook.ai", passes),
+                "Zafran": _company_answers("Zafran", "zafran.io", passes),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Probook", "https://probook.com"),
+                _item("Zafran", "https://zafran.io"),
+                _item("Patientdesk", "https://patientdesk.com"),
+            )
+        ]
+    )
+    handler, _, _, _, accounts = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        account_writes_fail_on=frozenset({"zafran.io"}),
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    assert [created["primary_domain"] for created in accounts.created] == [
+        "probook.ai",
+        "patientdesk.com",
+    ]
+    landed = store.named("record_verdicts")
+    assert len(landed) == 2
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["status"] == "needs_review"
+    # Every counter survives the containment — the run is a finished run minus one company.
+    assert finished["found_strict"] == 3
+    assert finished["receipt"]["shown"] == 2
+    assert finished["receipt"]["candidate_failures"] == [
+        {"domain": "zafran.io", "code": "RuntimeError"}
+    ]
+    # The failed company keeps its row at ``pending``, so a later attempt re-verifies it.
+    zafran = [
+        row["row"] for row in store.named("upsert_candidate") if row["row"].domain == "zafran.io"
+    ]
+    assert [row.disposition for row in zafran] == ["pending"]
+
+
+def test_a_task_whose_work_id_disagrees_with_its_run_is_refused_before_it_spends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run)
+    websets = _FakeWebsets()
+    handler, _, _, _, _ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+    context = replace(_context(run.run_id), work_id=arv2_discovery_work_id(uuid4()))
+
+    result = asyncio.run(handler.handle(context))
+
+    assert result.outcome == "needs_review"
+    assert websets.calls == []
+    assert store.named("begin_discovery_run") == []
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["status"] == "needs_review"
+    assert finished["receipt"]["failure"] == "invalid_task_payload"

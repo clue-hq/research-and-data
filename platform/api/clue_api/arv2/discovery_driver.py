@@ -118,6 +118,9 @@ WEBSET_WALL_EXCEEDED = "webset_wall_exceeded"
 #: The failure a halted provider records.
 PROVIDER_HALTED = "provider_halted"
 
+#: The failure a task whose work id disagrees with its payload records.
+INVALID_TASK_PAYLOAD = "invalid_task_payload"
+
 #: The candidate id is derived from ``(run, domain)``, so a resumed run re-addresses the row it
 #: already wrote instead of racing its own ``ON CONFLICT`` for a second id.
 _CANDIDATE_NS = uuid5(NAMESPACE_URL, "arv2-discovery:candidate")
@@ -202,6 +205,8 @@ class _RunState:
     not_chosen_before: int = 0
     unresolvable: int = 0
     guards: dict[str, int] = field(default_factory=dict)
+    #: One entry per company that was on the list and could not be finished, with the named reason.
+    candidate_failures: list[dict[str, str]] = field(default_factory=list)
     criteria_relaxed: tuple[str, ...] | None = None
     cost_usd: Decimal = Decimal(0)
 
@@ -255,6 +260,16 @@ class Arv2DiscoveryWorkHandler:
         if context.stop_requested.is_set() or context.lease_lost.is_set():
             await self._suspend(run_id)
             return WorkResult(outcome="stopped", references={"run_id": str(run_id)}, requeue=True)
+        if UUID(str(context.work_id)) != run_id:
+            # The work id IS the run id (``arv2_discovery_work_id``). A task whose two ids disagree
+            # names two runs, and driving either of them would spend real money against a request
+            # nobody can reconstruct — so it flags the run it can address and runs nothing.
+            await self._contain(
+                run_id,
+                code=INVALID_TASK_PAYLOAD,
+                message=f"task work id {context.work_id} disagrees with run id {run_id}",
+            )
+            return WorkResult(outcome="needs_review", references={"run_id": str(run_id)})
         try:
             outcome = await self._run(run_id, workspace_id)
         except asyncio.CancelledError:
@@ -284,8 +299,10 @@ class Arv2DiscoveryWorkHandler:
         state = await self._compose(run)
         status, failure = "completed", None
         try:
-            if run.relaxed_requested and run.webset_id:
-                await self._resume_finished_webset(state)
+            if run.webset_id:
+                # A webset this run already paid for is never bought twice — not on a plain
+                # resume (a lost lease, a stop, a worker restart), and not on a relaxed request.
+                await self._resume_webset(state, verify=not run.relaxed_requested)
             else:
                 await self._strict_pass(state)
             await self._relaxed_pass(state)
@@ -299,6 +316,11 @@ class Arv2DiscoveryWorkHandler:
                 reason=halted.reason_code,
             )
             status, failure = "needs_review", (PROVIDER_HALTED, str(halted))
+        if status == "completed" and state.candidate_failures:
+            # Every other candidate landed and every counter is kept; the run still asks for a
+            # human, because a company that was on the list and has no verdict is not a finished
+            # run — it is a finished run minus a company, and the receipt names which.
+            status = "needs_review"
         await self._land(state, status=status, failure=failure)
         return status
 
@@ -332,6 +354,7 @@ class Arv2DiscoveryWorkHandler:
             asked=run.asked,
             recall_estimate=run.recall_estimate,
             found_strict=run.found_strict or 0,
+            found_relaxed=run.found_relaxed or 0,
         )
         # What an earlier attempt of this run already verified is neither re-asked nor re-billed.
         # A candidate still ``pending`` is the exception: an attempt that died between writing the
@@ -379,23 +402,62 @@ class Arv2DiscoveryWorkHandler:
         items = await self._read_items(state, view.webset_id)
         state.found_strict = len(items)
         for item in items:
-            await self._verify_candidate(state, item, pass_="strict")
+            await self._verify_contained(state, item, pass_="strict")
 
-    async def _resume_finished_webset(self, state: _RunState) -> None:
-        """A human asked for the relaxed pass on a run that already bought its long list.
+    async def _resume_webset(self, state: _RunState, *, verify: bool) -> None:
+        """Pick a recorded webset back up instead of buying a second one.
 
-        Only the free read: the webset's searches are what the relaxed pass excludes and what its
-        criteria choice is made from. Nothing here re-verifies a candidate the strict pass paid for.
+        Two callers, one rule — ``webset_id`` set means *never create*:
+
+        * ``verify=False`` is the human's relaxed request on a run that already finished. Only the
+          free read: the webset's searches are what the relaxed pass excludes and what its criteria
+          choice is made from, and every candidate the strict pass produced is already recorded.
+        * ``verify=True`` is a plain resume — the attempt that bought this webset was suspended,
+          stopped or lost its lease part-way through verifying it. The list is polled and read
+          again and every company this run has not already *finished* verifying is verified now.
+          A candidate left ``pending`` is re-verified on purpose: its verdicts never landed, so
+          skipping it would strand a company with no verdict and no account (see :meth:`_compose`).
         """
         webset_id = str(state.webset_id)
-        view = await self._hop(state, lambda caller: self._clients.websets(caller).get(webset_id))
-        self._read_searches(state, view)
+        if not verify:
+            view = await self._hop(
+                state, lambda caller: self._clients.websets(caller).get(webset_id)
+            )
+            self._read_searches(state, view)
+            log.info(
+                "arv2.discovery_relaxed_resume",
+                run_id=str(state.run.run_id),
+                webset_id=webset_id,
+                already=state.shown,
+            )
+            return
+        view = await self._poll(state, webset_id)
+        items = await self._read_items(state, view.webset_id)
+        strict = tuple(item for item in items if self._is_strict_item(state, item))
+        # The counters are what the list HELD, not what this attempt happened to verify — a resumed
+        # run that finds nothing left to do still reports the companies its webset found.
+        state.found_strict = len(strict)
+        if len(items) > len(strict):
+            state.found_relaxed = len(items) - len(strict)
         log.info(
-            "arv2.discovery_relaxed_resume",
+            "arv2.discovery_resume",
             run_id=str(state.run.run_id),
             webset_id=webset_id,
-            already=state.shown,
+            items=len(items),
+            already=len(state.seen),
         )
+        for item in items:
+            await self._verify_contained(
+                state, item, pass_="strict" if item in strict else "relaxed"
+            )
+
+    @staticmethod
+    def _is_strict_item(state: _RunState, item: WebsetItem) -> bool:
+        """Did the strict search find this item? An item Exa did not attribute counts as strict —
+        the strict search is the only one a run is guaranteed to have made."""
+        if item.search_id is None or state.strict_search_id is None:
+            return True
+        return item.search_id == state.strict_search_id
 
     async def _poll(self, state: _RunState, webset_id: str) -> WebsetView:
         """Poll the webset to ``idle``, or give up at the wall clock with a named refusal."""
@@ -440,6 +502,29 @@ class Arv2DiscoveryWorkHandler:
         state.analyzed = sum(search.analyzed or 0 for search in view.searches)
 
     # -- step two: the verifier ----------------------------------------------------------------
+
+    async def _verify_contained(self, state: _RunState, item: WebsetItem, *, pass_: Pass) -> None:
+        """One candidate, whose own failure is its own — never the whole run's.
+
+        A strong-key clash on the account write, a claim the gate refuses, an item shaped in a way
+        nothing anticipated: one company going wrong must not strand the others, which have already
+        been paid for and would otherwise be re-bought by the next attempt. The failure is logged,
+        named on the receipt, and the loop moves on; the candidate row stays as it is (``pending``,
+        so a later attempt re-verifies it — see :meth:`_compose`). ``ProviderHalted`` and the wall
+        clock are deliberately NOT contained here: both mean the *run* cannot continue.
+        ``CancelledError`` is a ``BaseException`` and passes through untouched.
+        """
+        try:
+            await self._verify_candidate(state, item, pass_=pass_)
+        except (ProviderHalted, _WallExceeded):
+            raise
+        except Exception as error:  # noqa: BLE001 — containment: one company, not the run
+            # The long list's domain, because the verified one may not have been reached.
+            domain = registrable_domain(item.url) or item.url
+            log.exception(
+                "arv2.discovery_candidate_failed", run_id=str(state.run.run_id), domain=domain
+            )
+            state.candidate_failures.append({"domain": domain, "code": _failure_code(error)})
 
     async def _verify_candidate(self, state: _RunState, item: WebsetItem, *, pass_: Pass) -> None:
         """One company: its website, the dedupes, every gate, the account and its claims."""
@@ -747,9 +832,9 @@ class Arv2DiscoveryWorkHandler:
         view = await self._poll(state, webset_id)
         items = await self._read_items(state, view.webset_id)
         fresh = [item for item in items if (registrable_domain(item.url) or "") not in state.seen]
-        state.found_relaxed = len(fresh)
+        state.found_relaxed += len(fresh)
         for item in fresh:
-            await self._verify_candidate(state, item, pass_="relaxed")
+            await self._verify_contained(state, item, pass_="relaxed")
 
     # -- landing ---------------------------------------------------------------------------------
 
@@ -771,6 +856,7 @@ class Arv2DiscoveryWorkHandler:
             "duplicates": state.duplicates,
             "not_chosen_before": state.not_chosen_before,
             "unresolvable_domain": state.unresolvable,
+            "candidate_failures": [dict(failure) for failure in state.candidate_failures],
         }
         if failure is not None:
             receipt["failure"], receipt["message"] = failure[0], failure[1][:1_000]
@@ -791,6 +877,7 @@ class Arv2DiscoveryWorkHandler:
             shown=state.shown,
             target=state.run.target_count,
             cost_usd=str(state.cost_usd),
+            candidate_failures=len(state.candidate_failures),
         )
 
     async def _suspend(self, run_id: UUID) -> None:
