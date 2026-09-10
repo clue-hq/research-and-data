@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -154,3 +155,57 @@ def test_require_secret_treats_a_blank_key_as_a_skip() -> None:
         with pytest.raises(pytest.skip.Exception) as excinfo:
             require_secret(secrets, "ai_ark_api_key")
         assert "CLUE_AI_ARK_API_KEY" in str(excinfo.value)
+
+
+#: R4 discovery knobs. Kept out of :data:`ARV2_SETTING_DEFAULTS` deliberately: the two checks below
+#: assert the same two properties (shipped default, ``.env.example`` parity) against the *exact*
+#: strings the R4 spec fixes, so the R4 block is pinned by its own spec rather than by a generic
+#: ``str(default)`` rendering.
+ARV2_DISCOVERY_SETTINGS = (
+    "arv2_discovery_enabled",
+    "arv2_discovery_strict_count",
+    "arv2_discovery_relaxed_auto",
+    "arv2_discovery_criteria_gate_keys",
+    "arv2_discovery_answer_model",
+    "arv2_discovery_poll_interval_s",
+    "arv2_discovery_wall_s",
+    "arv2_discovery_websets_usd_per_credit",
+)
+
+
+def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Same reason as ``unset_arv2_env``: the lane's own ``.env`` runs discovery on, so a shell that
+    # sourced it would otherwise read back its value instead of the shipped default.
+    for field_name in ARV2_DISCOVERY_SETTINGS:
+        monkeypatch.delenv(_env_name(field_name), raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.arv2_discovery_enabled is False
+    assert settings.arv2_discovery_strict_count == 35
+    assert settings.arv2_discovery_relaxed_auto is True
+    assert settings.arv2_discovery_criteria_gate_keys == "geography,stage"
+    assert settings.arv2_discovery_answer_model == "exa"
+    assert settings.arv2_discovery_poll_interval_s == 15.0
+    assert settings.arv2_discovery_wall_s == 1800
+    assert settings.arv2_discovery_websets_usd_per_credit == Decimal("0.00449")
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_ENABLED", "true")
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_STRICT_COUNT", "12")
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS", "geography")
+    loaded = Settings(_env_file=None)
+    assert loaded.arv2_discovery_enabled is True
+    assert loaded.arv2_discovery_strict_count == 12
+    assert loaded.arv2_discovery_criteria_gate_keys == "geography"
+
+
+def test_every_discovery_setting_is_in_env_example() -> None:
+    example = ENV_EXAMPLE.read_text(encoding="utf-8")
+    for key in (
+        "CLUE_ARV2_DISCOVERY_ENABLED=false",
+        "CLUE_ARV2_DISCOVERY_STRICT_COUNT=35",
+        "CLUE_ARV2_DISCOVERY_RELAXED_AUTO=true",
+        "CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS=geography,stage",
+        "CLUE_ARV2_DISCOVERY_ANSWER_MODEL=exa",
+        "CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S=15",
+        "CLUE_ARV2_DISCOVERY_WALL_S=1800",
+        "CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT=0.00449",
+    ):
+        assert key in example, key
