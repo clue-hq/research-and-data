@@ -249,10 +249,8 @@ spend per approved account, time to idle, jobs in flight versus the cap.
 9. **Where the two Head-of-ABM discovery tools land**: in R4 with a v45 profile bump (proposed),
    or held for O7 so the profile moves once. With Option B ruled, only `launch_arv2_discovery@1` is
    needed now; `open_cohort_approval_gate@1` waits for the founder's gate design.
-10. **The Overall fit vocabulary.** The dummy frontend accepts exactly High / Medium / Low
-    (`AccountFitSchema` in `src/features/accounts/model/account.ts`, the `FitBadge`, the filter
-    panel's three options); the backend contract `AccountFit` mirrors them. Replacing them with
-    Best fit / Partial fit / Unclear / Low fit is a change to the dummy frontend's schema, badge
-    and filter, then the backend contract and its Zod oracle — i.e. a frontend change. Founder to
-    rule: (a) keep the three words exactly (parity; unclear = Medium by score), or (b) change the
-    words in the dummy frontend first, after which the backend follows in the same slice.
+10. **RULED (a)** — the Overall fit vocabulary stays exactly High / Medium / Low; an unclear
+    account is a Medium by score; no change anywhere.
+11. **Hybrid proof of concept before the plan (founder, 2026-09-10):** Websets long list, then the
+    probe grading every company on all four gates, run end to end and shown to the founder before
+    the R4 plan is written. Evidence: `.context/arv2-websets-experiment/hybrid/`.
