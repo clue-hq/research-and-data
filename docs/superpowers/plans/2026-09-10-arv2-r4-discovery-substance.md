@@ -1,7 +1,19 @@
-# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 1)
+# ARV2 R4 — discovery, cohort approval and fleet fan-out, substance for founder review (2026-09-10, rev 2)
 
-**Status: DRAFT for rulings (§8). Nothing here is code or a plan yet; the R4 plan is written from
-this document once every §8 item is ruled, then implemented by subagent-driven development.**
+**Status: rev 2 — §8 items 1–5 RULED 2026-09-10 (below); items 6–9 open. Nothing here is code or
+a plan yet; the R4 plan is written from this document once every §8 item is ruled, then implemented
+by subagent-driven development.**
+
+**Rev 2 rulings (founder, 2026-09-10).** (1) The Clue ICP is the exit-gate target. (2) Approval is
+the accounts table for now (Option B); the chat gate comes later, once the founder has designed how
+a gate is asked for inside a project — a tab beside Gallery listing the project's target accounts.
+(3) **No spend caps.** The founder's standing rule (no budget-based blockers, 2026-09-08) applies to
+discovery too; costs are recorded on the ledger and the pre-spend estimate is raised before the
+wire, nothing stops a run on money. (4) Ask Websets for **35** candidates. Partial matches are
+medium-fit, not rejects: the frontend shows the strongest signal for a company that matches every
+criterion and an honestly weaker one for a partial match. (5) Unclear candidates are shown, marked
+unclear. **No approval UI is built until the founder has seen a preview of how it would look** —
+§4 is that preview, on the screens that exist today.
 
 **Ruled already (founder, 2026-09-10):** Exa Websets builds the long list; every company is then
 checked by our own cheap probe on the Exa search API, the way the experiment did it; AI Ark stays
@@ -36,13 +48,14 @@ which Phase 6 drops):**
 - `arv2_discovery_run` — one per request: `workspace_id`, `project_id`, `brand_id`,
   `icp_artifact_key` + `icp_artifact_sha256` + `icp_key` + `icp_version` (the same pins the
   research run carries), `requested_by_user_id`, `target_count` (how many approved accounts the
-  human wants), `candidate_count` (how many to surface, ≥ target), `spend_cap_usd`,
+  human wants), `candidate_count` (how many to surface, ≥ target; 35 by ruling 4),
   `status` (`not_started` / `in_progress` / `needs_review` / `completed` / `suspended`, the seam-1
   vocabulary), `webset_id`, `receipt_json`, timestamps.
 - `arv2_discovery_candidate` — one per distinct company: `run_id`, `domain` (the folded
   registrable domain, unique per run), `name`, `homepage_url`, `source` (`webset` / `search`),
   `provider_snapshot_json` (the Websets item as received, firmographics included),
-  `verdicts_json` (§3), `disposition` (`pass` / `unclear` / `fail` / `duplicate_of_existing`),
+  `verdicts_json` (§3), `disposition` (`pass` / `partial` / `unclear` / `fail` /
+  `duplicate_of_existing`), `fit` (0–1, §3),
   `decision` (`approved` / `rejected` / null) with `decided_by_user_id` and `decided_at`,
   `account_entity_id` (null until approved), `dedupe_hit` (the existing account it matched, if
   any).
@@ -78,9 +91,10 @@ per plan is unconfirmed, so R4 also dedupes locally, §3, and the import is a §
 
 **Behaviour.** Async: create, then poll every 15 s with a stale-after guard, or the webhook when the
 fleet's waiting state is wired for it; `status = in_progress` while it runs. Stop conditions: idle,
-`spend_cap_usd` (10 credits per all-green result at the plan's per-credit rate; the API exposes no
-credit counter, so the estimate is ours), or a hard 30-minute wall. Zero results is an honest
-terminal outcome (law 12).
+or a hard 30-minute wall. **No money stop** (ruling 3): the cost is recorded — 10 credits per
+all-green result at the plan's per-credit rate, estimated by us since the API exposes no credit
+counter — and the pre-spend estimate is raised before the wire, as a ledger fact, never a gate.
+Zero results is an honest terminal outcome (law 12).
 
 **Search stays** for two things: the per-company probe (§3) and the domain lock when a human names
 a company. The v3-style prose queries are not a discovery method (the experiment reproduced the
@@ -109,37 +123,70 @@ For every candidate, in code, before a human sees it:
    snapshot and the probe text; anything unanswerable is `unclear`, never `pass`.
 
 Each verdict is `{gate_key, verdict: pass|fail|unclear, reason, references[{url, quote}]}`,
-written to `verdicts_json`. **Disposition:** any `fail` on a hard gate → `fail`; every hard gate
-`pass` → `pass`; otherwise `unclear`. `unclear` is shown to the human (they decide), never hidden
-and never auto-approved. Probe spend is about $0.007 per candidate plus free ATS reads.
+written to `verdicts_json`. **Disposition and fit (ruling 4):** every hard gate `pass` → `pass`;
+at least one `fail` and at least one `pass` → `partial`; every gate answered and at least one
+`fail` with nothing unclear → still `partial` when a majority passes, `fail` when a majority fails;
+any gate `unclear` and no `fail` → `unclear`. **Fit** is one number the screens already show:
+`passes / gates`, with an unclear gate counted as half a pass — all four gates pass → 1.0 (High);
+three pass and one unclear → 0.875 (High); two pass, two fail → 0.5 (Medium); one pass → 0.25 (Low).
+The bands are the accounts list's own thresholds (`CLUE_ARV2_FIT_HIGH_THRESHOLD` 0.70,
+`CLUE_ARV2_FIT_MEDIUM_THRESHOLD` 0.40). Unclear is never hidden and never auto-approved (ruling 5).
+Probe spend is about $0.007 per candidate plus free ATS reads, recorded, not capped.
 
 **Why the probe and not Websets' verdicts:** five of twenty-five Websets verdicts were wrong in
 cohort-poisoning ways (a pre-seed called Series A, Bengaluru called US, a 2024 round dated 2026,
 an unlabelled round called A, one entity credited with another's round). The probe caught all five.
 
-## 4. Step three — the human approves the cohort
+## 4. Step three — the human approves the cohort (Option B, and the preview the founder asked for)
 
-A human gate. Candidates with their verdicts, references and firmographics are presented; the
-human approves a set. Two surfaces are possible; §8 rules which:
+**Ruled:** the accounts table is the approval surface for now; a chat gate follows once the founder
+has designed the in-project "target accounts" tab beside Gallery. Below is exactly what the human
+would see, on screens that exist in the dummy frontend today. Nothing new is drawn; if a piece of
+information has no slot, it is stored and stays invisible until the founder rules on a slot.
 
-- **(a) A gate card in chat**, opened by the Head of ABM after the discovery run completes, built
-  on O6's set-valued gate, which is now shipped (`open_product_set_selection_gate@1`, its answer
-  route and the frontend card, merged into `integration/design-improvement` locally on 2026-09-10):
-  a `cohort_approval` kind whose snapshot lists candidates with verdicts, pre-checked = the `pass`
-  set, the answer carrying `selected_candidate_ids`. Matches the master plan's wording ("the agent
-  proposes and opens the gate"). Two new Head-of-ABM tools ride with it — `launch_arv2_discovery@1`
-  (starts the discovery job) and `open_cohort_approval_gate@1` — which means a profile bump (v45),
-  the recipe allowlist, the authority map and the stage0-interview skill text (founder-reviewed),
-  the same mechanics O6 used to grant the two ARV2 launches.
-- **(b) The accounts table**: approved candidates become accounts immediately, the table shows them
-  with verdict chips, and the existing "add to project" bulk action is the approval. Reuses D4-b;
-  but unapproved candidates would sit in the main accounts list, and the table has no verdict slot
-  today (dummy-frontend rule: no invented UI).
+**What the discovery job does when it finishes.** Every candidate that is not a duplicate of an
+existing account becomes an `account_entity` with `status = candidate` (the entity lifecycle's own
+first state), `primary_domain` as the strong key, workspace-scoped, and:
 
-On approval, in one transaction: `insert_account_entity` (workspace-scoped, `status = candidate`,
-domain as the strong key), `project_account` row with `added_via = 'discovered'`, the candidate's
-`account_entity_id` set, `decision = approved`. Rejected candidates keep their row: a later run
-skips them (§8 asks whether "rejected" is remembered across runs).
+- one `account.scoring.fit` claim — the registered, project-relative fit field the accounts list
+  already reads — with `value` = the fit from §3 and the run's `run_lineage` row (`kind =
+  'discovery'`, an existing kind) attributing it to the project, so the list's **Overall fit** badge
+  and **Fit score** column show it exactly as they show a scored account today;
+- the per-gate verdicts with their reasons and references on the candidate row (`verdicts_json`),
+  and in the account job's "already established" block when research launches, so the researcher
+  starts from what discovery found. **They have no slot on the detail page today** (the detail
+  composes sections from registered claim fields through display recipes); whether the four gate
+  verdicts become registered fields with a section slot is §8 item 10;
+- **no** `project_account` row yet — the account exists, it is not on the project.
+
+**What the human sees, step by step, on the existing accounts screens:**
+
+1. **The accounts table** (`/accounts`). Thirty-odd new rows. Each shows: the name and website;
+   **Research status = "Not started"** (no ARV2 job yet — the list reads status from job rows);
+   **Overall fit = High / Medium / Low** and **Fit score = 0–100** from the discovery fit; revenue
+   and employee bands from the Websets firmographics when present (written as the ordinary
+   `core.employee_count` / `core.revenue_band` claims, source `exa_websets`); location count.
+   A company that matched every gate reads **High 100**; three of four and one unclear reads
+   **High 88**; half reads **Medium 50**; a company the probe failed on most gates reads **Low 25**.
+   That is ruling 4's "strongest signal for a full match, honestly weaker for a partial one", in
+   the columns the table already has.
+2. **Filter and sort.** The existing filter panel has "Overall fit" and "Fit score" rules, so the
+   human can show only High, or fit ≥ 60, and sort by score. Unclear rows are not a separate
+   filter today; they sit in Medium with their score telling the truth (§8 item 10 asks whether
+   "unclear" deserves its own visible marker).
+3. **Select and approve.** Row checkboxes → the existing **"Add to project"** bulk action (D4-b,
+   permission `project.write`). That write **is** the approval: it inserts the `project_account`
+   row with `added_via = 'discovered'`, and R4 stamps the candidate row `decision = approved`,
+   `decided_by`, `decided_at`. Accounts never added stay `candidate` entities with no project;
+   §8 item 6 decides whether a later run re-surfaces them.
+4. **Launch.** The human names the approved accounts in the project chat and the Head of ABM calls
+   `launch_arv2_account_research@1` for them (granted in v44), or the operator runs the CLI. No
+   research button (founder ruling). The rows' Research status moves to "In progress" and the
+   fit badge stays what discovery said until research writes a scored fit of its own.
+
+**What the later chat gate adds, when the founder has designed it:** the same rows, presented as
+a set-valued gate card (pre-checked = High), with the approval writing the same `project_account`
+rows — the store side of R4 does not change.
 
 ## 5. Step four — launch and fan-out with a cap that binds
 
@@ -166,15 +213,15 @@ jobs only, after the R3 rebase fix), and an account with no job shows as not sta
 
 ## 6. Cost and caps
 
-| Item | Per unit | 20-account cohort at `candidate_count` = 60 |
+| Item | Per unit | 20-account cohort at `candidate_count` = 35 |
 |---|---|---|
-| Webset (3 criteria) | 10 credits per all-green result; Pro $0.00449/credit, Core $0.0061 | ≤ 600 credits ≈ $2.70 Pro / $3.70 Core |
-| Probe (stage search) | $0.007 per candidate | $0.42 |
+| Webset (3 criteria, 35 candidates) | 10 credits per all-green result; Pro $0.00449/credit, Core $0.0061 | ≤ 350 credits ≈ $1.57 Pro / $2.14 Core |
+| Probe (stage search) | $0.007 per candidate | $0.25 |
 | ATS reads | free | — |
 | Research, full effort | R2/R3 measured per account + per person | as today |
 
-`spend_cap_usd` per discovery run and a per-candidate probe budget are §8 rulings. The plan tier is
-a procurement ruling (Core covers the exit gate many times over; Pro pays off at production volume).
+No caps (ruling 3): every figure is a ledger fact. The plan tier is a procurement ruling (Core
+covers the exit gate many times over; Pro pays off at production volume).
 
 ## 7. Acceptance (the exit gate, measured)
 
@@ -185,20 +232,28 @@ out, the cohort is researched and displayed. Measured and recorded under
 hand-graded sample, whether Probook and Zafran are surfaced (recall against the answer key),
 spend per approved account, time to idle, jobs in flight versus the cap.
 
-## 8. Rulings needed from the founder
+## 8. Rulings — 1–5 ruled 2026-09-10, 6–10 open
 
-1. **ICP and brand for the exit-gate cohort.** Proposed: the Clue ICP (`clue-abm-buyers`, workspace
-   of the answer key). Insight Health once O6 mints its confirmed ICP.
-2. **Cohort approval surface**: (a) chat gate card after O6, or (b) accounts table + add-to-project.
-   Recommendation: (a).
-3. **Spend caps**: per discovery run (proposed $10) and per candidate probe (proposed $0.05).
-4. **Candidate count**: how many to surface for a target of 20 (proposed 3× = 60, since the
-   experiment's strict precision on three criteria was 56%).
-5. **Unclear handling**: shown for the human to decide (proposed), or held back.
-6. **Rejected memory**: a rejected candidate is not re-surfaced in later runs for the same project
-   (proposed yes), and whether the Websets `exclude` import of existing accounts is used from day
-   one (proposed: yes when the plan's exclusion cap is confirmed with Exa; local dedupe regardless).
+1. **RULED** — the Clue ICP (`clue-abm-buyers`, the answer key's workspace) is the exit-gate cohort.
+2. **RULED** — Option B, the accounts table, for now; the chat gate follows the founder's design of
+   the in-project target-accounts tab beside Gallery.
+3. **RULED** — no spend caps of any kind; ledger and pre-spend estimate only.
+4. **RULED** — 35 candidates; partial matches are medium-fit and shown with an honestly weaker
+   signal (§3 fit, §4 columns).
+5. **RULED** — unclear candidates are shown and marked; no approval UI before the founder has seen
+   the preview (§4).
+6. **Rejected memory**: an account left unapproved is not re-surfaced by a later run for the same
+   project (proposed yes), and whether the Websets `exclude` import of existing accounts is used
+   from day one (proposed: yes when the plan's exclusion cap is confirmed with Exa; local dedupe
+   regardless).
 7. **Plan tier**: Core ($49) for R4 and the exit gate; Pro only when volume justifies it.
 8. **The cap's home**: a per-run cap on top of O6's per-process slots (proposed), or slots only.
-9. **Where the two new Head-of-ABM tools land**: in R4 with a v45 profile bump (proposed), or held
-   for O7 so the profile moves once.
+9. **Where the two Head-of-ABM discovery tools land**: in R4 with a v45 profile bump (proposed),
+   or held for O7 so the profile moves once. With Option B ruled, only `launch_arv2_discovery@1` is
+   needed now; `open_cohort_approval_gate@1` waits for the founder's gate design.
+10. **Slots for what discovery knows**: (a) should the four gate verdicts (stage, geography,
+    hiring, intent) become registered fields with a section on the account detail page, so the
+    human can read *why* a row is High or Medium — proposed yes, as one "Qualification" section
+    with the verdict, the reason and the source link per gate; and (b) does "unclear" need its own
+    visible marker on the table, or is the fit score's honesty enough for now (proposed: enough for
+    now; the marker rides with the target-accounts tab).
