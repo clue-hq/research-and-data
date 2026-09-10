@@ -44,7 +44,9 @@ def test_fleet_kind_and_r2_tables_exist() -> None:
         return labels, tables, extras
 
     labels, tables, extras = run_async(scenario())
-    assert labels[-1] == "arv2_account_research"
+    # Presence, not last-ness: R4 appended ``arv2_discovery`` after this one. The ordered
+    # comparison below is what actually proves labels are appended and never inserted.
+    assert "arv2_account_research" in labels
     assert labels == [k.value for k in FleetTaskKind]
     assert tables == {"arv2_research_run", "arv2_research_job", "arv2_claim_annotation"}
     assert extras

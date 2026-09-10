@@ -45,6 +45,8 @@ class FleetTaskKind(StrEnum):
     * ``ARV2_ACCOUNT_RESEARCH`` — one ARV2 account research job (Track R, R2): the agent loop
       for a single account, so one account has exactly one lease and the rest of the run keeps
       going when that account fails.
+    * ``ARV2_DISCOVERY`` — one ARV2 discovery run (Track R, R4): Websets long list, Answer
+      verification, candidate accounts.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
     (which appends), and the parity test compares the two **in order**. Member order here mirrors
@@ -65,6 +67,9 @@ class FleetTaskKind(StrEnum):
     ONBOARDING_RUN = "onboarding_run"
     # ARV2 R2: one job per account for the account research agent. Appended, never inserted.
     ARV2_ACCOUNT_RESEARCH = "arv2_account_research"
+    # ARV2 R4: one job per discovery run — the long list, the verification, the candidates.
+    # Appended, never inserted.
+    ARV2_DISCOVERY = "arv2_discovery"
 
 
 class FleetTaskStatus(StrEnum):
