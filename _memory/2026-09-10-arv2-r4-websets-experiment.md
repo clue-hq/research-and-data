@@ -41,3 +41,20 @@ careers-page fallback produced false positives (marketing copy, a GTM tag-manage
 replaced by unclear + reference. Stage rules that now hold: announcements decide the date, majority
 vote within it (title ×3), profile pages only as a fallback. Evaluation:
 `hybrid/hybrid_evaluation.md`.
+
+## Exa Answer as the verifier + the settled approach (2026-09-10, later the same day)
+
+- `answer/`: 18 companies × 4 gates through `POST /answer` (system prompt + `outputSchema`, the
+  gate's rule/test verbatim as the question): **24/26 agreement** with hand-checked truth, $0.005 and
+  ~2.3 s per call, quote found verbatim on the cited page 69/72. Error kinds: date arithmetic
+  (Superorder), same-name company on another domain (INFI→infinIT), absence read as fail. The same
+  72 through `/search` + schema: $0.007, 3.7 s, misread "Series A or extension" on 9/18 → Answer is
+  the verifier; search keeps the domain lock. The Exa account hit its credit limit once (topped up).
+- **Approach settled in discussion and written as rev 5 of the substance document**
+  (`docs/superpowers/plans/2026-09-10-arv2-r4-discovery-substance.md`): Websets long list from the
+  ICP's wording → Answer verifies every gate with quote/URL/date + three code guards (quote on page,
+  right domain, date arithmetic) → strict pass then relaxed pass (auto when short, and on request)
+  → Overall fit / Fit score on the existing accounts table, no frontend change → approval = "Add to
+  project". Rulings: unapproved ≠ rejected (remembered per project); paid plan in place; no per-run
+  cap in R4 (scheduling is a separate discussion); aggregators count for hiring/intent; the
+  target-accounts tab's reading deferred; the Head-of-ABM profile bump (R4 vs O7) still open.
