@@ -16,6 +16,7 @@ import {
   type ContactEmailLookup,
 } from "../model/contact-email-lookup";
 import { createLocalAccount, isLocalDraftAccount } from "../model/create-account";
+import { accountsForProject } from "../model/project-accounts";
 import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
 import {
   EMAIL_LOOKUP_POLL_LIMIT,
@@ -602,4 +603,84 @@ test("a created account invents nothing and is marked a local draft", () => {
   assert.equal("isLocalDraft" in AccountSchema.parse(draft), false);
   // The row says so in text; no new component, no invented badge.
   assert.match(table, /Not saved yet/);
+});
+
+// ---------------------------------------------------------------------------
+// Project scoping and the real membership write (founder ruling 2)
+// ---------------------------------------------------------------------------
+
+const projectScreen = source("../components/project-target-accounts.tsx");
+
+test("a project-scoped controller reads only that project's rows", () => {
+  // The hook cannot be mounted here (no DOM, no React renderer), so the wiring
+  // is read from source — the convention this file already uses. What the
+  // scoping actually computes is `accountsForProject`'s predicate, asserted
+  // against real rows in `model/project-accounts.test.ts`.
+  assert.match(controller, /options\?: \{ project\?: AccountProject \}/);
+  assert.match(controller, /const project = options\?\.project;/);
+  assert.match(
+    controller,
+    /const scopedAccounts = useMemo\(\(\) => project\s*\n\s*\? accountRows\.filter\(\(account\) => account\.projects\.some\(\(\{ id \}\) => id === project\.id\)\)\s*\n\s*: accountRows/,
+  );
+  // Search, filters, sort and the columns all read the scoped rows.
+  assert.match(controller, /const searched = scopedAccounts\.filter\(/);
+  assert.match(
+    controller,
+    /createAccountColumnDefinitions\(scopedAccounts\),\s*\n\s*\[scopedAccounts\],/,
+  );
+  assert.match(controller, /accounts: scopedAccounts,/);
+  // Omitted, the workspace-wide screen is unscoped as before.
+  assert.match(
+    projectScreen,
+    /useAccountsScreenController\(accountsForProject\(data\.accounts, projectId\), data\.bulkCapabilities, undefined, \{ project \}\)/,
+  );
+  assert.match(screen, /useAccountsScreenController\(accounts, bulkCapabilities\)/);
+});
+
+test("addAccounts stamps the project membership on rows the screen does not have", () => {
+  assert.match(
+    controller,
+    /function addAccounts\(accounts: Account\[\]\) \{\s*\n\s*const added = accounts\.map\(\(account\) => project && !account\.projects\.some\(\(\{ id \}\) => id === project\.id\)\s*\n\s*\? \{ \.\.\.account, projects: \[\.\.\.account\.projects, project\] \}\s*\n\s*: account\);/,
+  );
+  // Only rows the screen does not already hold are appended…
+  assert.match(
+    controller,
+    /setAccountRows\(\(current\) => \[\.\.\.current, \.\.\.added\.filter\(\(account\) => !current\.some\(\(\{ id \}\) => id === account\.id\)\)\]\);/,
+  );
+  // …and the columns widen to whatever custom variables they carry.
+  assert.match(controller, /const definitions = createAccountColumnDefinitions\(added\);/);
+  assert.match(controller, /setColumnOrder\(\(current\) => \[\.\.\.current, \.\.\.definitions\.map/);
+  assert.match(controller, /setColumnWidths\(\(current\) => \(\{ \.\.\.createAccountColumnWidths\(definitions\), \.\.\.current \}\)\);/);
+  assert.match(controller, /setVisibleColumns\(\(current\) => \(\{ \.\.\.createAccountColumnVisibility\(definitions\), \.\.\.current \}\)\);/);
+
+  // A stamped row is exactly what `accountsForProject` then keeps — the same
+  // predicate the scoped read uses, so the row appears in the project table.
+  const stamped: Account = {
+    ...servedAccount,
+    projects: [...servedAccount.projects, { id: project.id, name: project.name }],
+  };
+  assert.deepEqual(accountsForProject([servedAccount, stamped], project.id), [stamped]);
+});
+
+test("Add accounts is a real membership write, and a refusal changes no row", () => {
+  // The dialog's local-only add is not lifted: the write goes through the same
+  // bulk action the Accounts screen uses, with its own idempotency key. It
+  // lives in the controller because a presentation component may not reach a
+  // repository (the feature's import boundary), and the screen only reacts.
+  assert.match(controller, /addAccountsToProject,\s*\n\s*addSelectedAccountsToProject,\s*\n\} from "\.\.\/data\/bulk-actions\.repository";/);
+  assert.match(
+    controller,
+    /await addAccountsToProject\(\{\s*\n\s*accountIds: accounts\.map\(\(\{ id \}\) => id\),\s*\n\s*idempotencyKey: crypto\.randomUUID\(\),\s*\n\s*projectId: project\.id,\s*\n\s*\}\);/,
+  );
+  // A refusal returns before any row is reflected…
+  assert.match(controller, /\} catch \{\s*\n\s*return false;\s*\n\s*\}\s*\n\s*addAccounts\(accounts\);\s*\n\s*return true;/);
+  assert.doesNotMatch(projectScreen, /data\/bulk-actions\.repository/);
+  // …and the screen says so with the same alert block its load failure uses.
+  assert.match(
+    projectScreen,
+    /if \(await controller\.submitAddAccounts\(accounts\)\) \{\s*\n\s*setAddFailed\(false\);\s*\n\s*onReread\(\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*setAddFailed\(true\);/,
+  );
+  assert.match(projectScreen, /role="alert"[\s\S]*?Unable to add accounts/);
+  // Success re-reads the served pool so it stops offering a row now in the project.
+  assert.match(projectScreen, /setData\(ProjectAccountsResponseSchema\.parse\(await response\.json\(\)\)\);/);
 });

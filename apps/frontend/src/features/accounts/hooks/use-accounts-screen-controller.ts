@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { Account } from "../model/account";
+import type { Account, AccountProject } from "../model/account";
 import { useChatTransport } from "@/features/projects/data/projects-transport";
 import { useAccountWorkspaceOwner } from "./use-account-owner";
 import { resolveAccountOwner } from "../model/account-owner";
@@ -9,7 +9,10 @@ import {
   isLocalDraftAccount,
   type AccountRow,
 } from "../model/create-account";
-import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
+import {
+  addAccountsToProject,
+  addSelectedAccountsToProject,
+} from "../data/bulk-actions.repository";
 import {
   createAccountColumnDefinitions,
   createAccountColumnOrder,
@@ -25,11 +28,22 @@ import {
   sortAccounts,
 } from "../model/account-query";
 
+/**
+ * `options.project` scopes the controller to one project's target accounts.
+ *
+ * Given, the rows the screen reads (`accounts`) and everything derived from
+ * them — search, filters, sort, the column definitions — are the rows holding
+ * that membership; the rest of the workspace's accounts stay in `accountRows`
+ * so a row added to the project appears without a re-read. Omitted, the
+ * controller behaves exactly as the workspace-wide Accounts screen always has.
+ */
 export function useAccountsScreenController(
   initialAccounts: Account[],
   bulkCapabilities: AccountBulkCapabilities,
   submitAddToProject: typeof addSelectedAccountsToProject = addSelectedAccountsToProject,
+  options?: { project?: AccountProject },
 ) {
+  const project = options?.project;
   const workspaceOwner = useAccountWorkspaceOwner();
   // The chat handoff exists only against the real backend: in fixture mode the
   // projects transport has nowhere to prepare a composer draft.
@@ -64,9 +78,13 @@ export function useAccountsScreenController(
   // timeout resumes the same operation instead of starting a second one.
   const bulkAttemptKey = useRef<string | null>(null);
 
+  const scopedAccounts = useMemo(() => project
+    ? accountRows.filter((account) => account.projects.some(({ id }) => id === project.id))
+    : accountRows, [accountRows, project]);
+
   const visibleAccounts = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase();
-    const searched = accountRows.filter(
+    const searched = scopedAccounts.filter(
       (account) =>
         !normalizedSearch ||
         account.name.toLocaleLowerCase().includes(normalizedSearch),
@@ -74,11 +92,11 @@ export function useAccountsScreenController(
     return sortAccounts(filterAccounts(searched, filters), sort).map((account) => ({
       ...account, owner: resolveAccountOwner(account),
     }));
-  }, [accountRows, filters, search, sort]);
+  }, [scopedAccounts, filters, search, sort]);
 
   const columnDefinitions = useMemo(
-    () => createAccountColumnDefinitions(accountRows),
-    [accountRows],
+    () => createAccountColumnDefinitions(scopedAccounts),
+    [scopedAccounts],
   );
 
   // The research-status filter's vocabulary is the served `researchStatusLabel`
@@ -265,6 +283,49 @@ export function useAccountsScreenController(
     ]);
   }
 
+  /**
+   * Show accounts the server has just placed in this project.
+   *
+   * Called only after the write succeeded, so nothing here is optimistic: the
+   * membership stamped on each row is the one the backend now holds. Rows the
+   * screen already has are left alone, and the columns widen to cover any
+   * custom variable the new rows carry that the old ones did not.
+   */
+  function addAccounts(accounts: Account[]) {
+    const added = accounts.map((account) => project && !account.projects.some(({ id }) => id === project.id)
+      ? { ...account, projects: [...account.projects, project] }
+      : account);
+    setAccountRows((current) => [...current, ...added.filter((account) => !current.some(({ id }) => id === account.id))]);
+    const definitions = createAccountColumnDefinitions(added);
+    setColumnOrder((current) => [...current, ...definitions.map(({ key }) => key).filter((key) => !current.includes(key))]);
+    setColumnWidths((current) => ({ ...createAccountColumnWidths(definitions), ...current }));
+    setVisibleColumns((current) => ({ ...createAccountColumnVisibility(definitions), ...current }));
+  }
+
+  /**
+   * Founder ruling 2: adding accounts to a project is a real membership write.
+   *
+   * The design build added the picked accounts to its own state and stopped
+   * there. Here the backend decides: the rows are reflected only once the write
+   * is accepted, and a refusal returns `false` with nothing touched, so the
+   * screen can say so rather than show a membership the platform does not hold.
+   * It is the same bulk action the workspace-wide selection bar submits.
+   */
+  async function submitAddAccounts(accounts: Account[]): Promise<boolean> {
+    if (!project) return false;
+    try {
+      await addAccountsToProject({
+        accountIds: accounts.map(({ id }) => id),
+        idempotencyKey: crypto.randomUUID(),
+        projectId: project.id,
+      });
+    } catch {
+      return false;
+    }
+    addAccounts(accounts);
+    return true;
+  }
+
   function toggleAccount(accountId: string) {
     if (!selectableAccountIds.has(accountId)) return;
     bulkAttemptKey.current = null;
@@ -276,19 +337,26 @@ export function useAccountsScreenController(
     });
   }
 
-  function toggleAllVisibleAccounts() {
+  /**
+   * Select every given account, or clear them all when they already are.
+   *
+   * A local draft is never selected here either: the guard belongs to the
+   * selection, not to the caller, so a page-wide or project-wide toggle cannot
+   * name a row no server-side bulk action could act on.
+   */
+  function toggleAccounts(accounts: Account[]) {
     bulkAttemptKey.current = null;
     setSelectedAccountIds((current) => {
       const next = new Set(current);
-      const selectable = visibleAccounts.filter((account) =>
+      const selectable = accounts.filter((account) =>
         selectableAccountIds.has(account.id),
       );
-      const allVisibleSelected =
+      const allSelected =
         selectable.length > 0 &&
         selectable.every((account) => next.has(account.id));
 
       for (const account of selectable) {
-        if (allVisibleSelected) next.delete(account.id);
+        if (allSelected) next.delete(account.id);
         else next.add(account.id);
       }
 
@@ -296,7 +364,13 @@ export function useAccountsScreenController(
     });
   }
 
+  function toggleAllVisibleAccounts() {
+    toggleAccounts(visibleAccounts);
+  }
+
   return {
+    accounts: scopedAccounts,
+    addAccounts,
     bulkCapabilities,
     bulkNotice,
     chatHandoffAvailable,
@@ -329,7 +403,9 @@ export function useAccountsScreenController(
     setSearch,
     setSort,
     sort,
+    submitAddAccounts,
     toggleAccount,
+    toggleAccounts,
     toggleAllVisibleAccounts,
     toggleColumn,
     visibleAccounts,
