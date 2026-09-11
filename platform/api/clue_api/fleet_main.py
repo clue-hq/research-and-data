@@ -70,6 +70,11 @@ from clue_api.arv2.account_research_driver import (
     build_arv2_account_research_handler,
 )
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
+from clue_api.arv2.discovery_driver import (
+    Arv2DiscoveryWorkHandler,
+    build_arv2_discovery_handler,
+)
+from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
     IcpSynthesisOutcome,
@@ -758,6 +763,31 @@ def _build_arv2_account_research_handler(
     )
 
 
+def _build_arv2_discovery_handler(
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+) -> Arv2DiscoveryWorkHandler | None:
+    """The ARV2 discovery lane (Track R, R4) on this worker, behind its own flag.
+
+    Same posture as the account lane above: a worker that is missing the Exa credential gets a
+    named warning and **no handler**, so launched runs wait for a correctly-configured worker
+    instead of claiming a row and failing at their first provider call. The artifact sink is
+    injected from *outside* the lane — ARV2 may not open a second write path into the artifact
+    table — and what the lane itself decides is which credential a run needs and the refusal when
+    it is missing (``build_arv2_discovery_handler``).
+    """
+    if not settings.arv2_discovery_enabled:
+        return None
+    return build_arv2_discovery_handler(
+        settings,
+        secrets,
+        storage=storage,
+        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+    )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
@@ -889,6 +919,14 @@ async def _serve() -> None:
             if settings.arv2_account_research_enabled
             else None
         )
+        # ARV2 Track R, R4, on exactly the same terms: composed only behind
+        # ``arv2_discovery_enabled``, sharing this process's work queue so a launched run is
+        # offered through the machinery that drains it.
+        arv2_discovery_launch = (
+            DbArv2DiscoveryService(settings, storage, queue=work_queue)
+            if settings.arv2_discovery_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -920,6 +958,7 @@ async def _serve() -> None:
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
             arv2_account_launch=arv2_account_launch,
+            arv2_discovery_launch=arv2_discovery_launch,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )
@@ -1147,6 +1186,9 @@ async def _serve() -> None:
             model_provider=arv2_account_models,
             queue=work_queue,
         )
+        # R4: the discovery drain. No model provider — a discovery run is Websets plus Exa Answer
+        # and a pile of arithmetic, not an agent loop.
+        arv2_discovery_handler = _build_arv2_discovery_handler(settings, secrets, storage=storage)
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1159,6 +1201,7 @@ async def _serve() -> None:
             official_site_crawl_handler=official_site_crawl.handler,
             onboarding_handler=onboarding_handler,
             arv2_account_research_handler=arv2_account_research_handler,
+            arv2_discovery_handler=arv2_discovery_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
             queue=work_queue,

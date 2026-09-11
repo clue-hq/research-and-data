@@ -113,7 +113,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `launch_arv2_person_research@1` is pinned — so stage0-interview v21 is the profile's one
         # skill and the ARV2 trio is its one research lane. Model, workspace, delegation and limits
         # are v43's. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("5e1a2ac427d7bec5688a1e382c12da885e32bf9eccf847f5e48a6db0b337904b"),
+        # v45 (ARV2 R4) is v44 plus `launch_arv2_discovery@1` and stage0-interview v22 (§7b,
+        # discover accounts for the project); digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("7f592b6bebf1b86dca3cddb13439ac4976b4484f7e68e914915eb4a404889ba8"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -221,7 +223,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # installed and merely ungranted, so promoting it moves grants, not inventory. The pre-existing
     # 137 -> 139 drift is folded into this one re-pin. ARV2 Track R, R3 installs
     # `launch_arv2_person_research@1`, registered ungranted (141 + 1 = 142).
-    assert len(by_address) == 142
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
+    assert len(by_address) == 143
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -315,7 +318,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # 137 -> 139 drift is folded into this one re-pin.
     # ARV2 Track R, R3 installs `launch_arv2_person_research@1`, registered ungranted
     # (141 + 1 = 142).
-    assert len(by_address) == 142
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
+    assert len(by_address) == 143
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -359,11 +363,16 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # research_run@1` is the only run read; the old lane's two read tools resolve
     # `account_research_run` rows the new lane never writes, so leaving them installed-and-granted
     # would advertise a status surface that answers about nothing this agent can start.
+    #
+    # ARV2 Track R, R4 adds `launch_arv2_discovery@1`: finding candidate accounts from the
+    # project's own pinned ICP is the same act on the same lane as researching the accounts a
+    # human named, so it is granted with `head-of-abm@v45` and taught by stage0-interview v22 §7b.
     assert available == {
         "draft_account_research_directive@5",
         "get_research_view@1",
         "inspect_statement_history@1",
         "launch_arv2_account_research@1",
+        "launch_arv2_discovery@1",
         "launch_arv2_person_research@1",
         "open_design_leg@4",
         "open_directive_confirmation_gate@1",
@@ -436,9 +445,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v44"
+    assert production.profile_ref.address == "profile:head-of-abm@v45"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v21"
+        "skill:stage0-interview@v22"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -482,7 +491,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v21")
+    body = production.open_skill("skill:stage0-interview@v22")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "point the user to onboarding on the Knowledge page" in body
@@ -540,7 +549,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
     # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v21"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v22"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
@@ -633,7 +642,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v21")
+    body = head.open_skill("skill:stage0-interview@v22")
 
     assert required_guidance in body
 
@@ -681,7 +690,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
-    # v44 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
+    # v45 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
     # which is the ceiling doing its whole job rather than a weaker version of it.
     assert [item.resource.address for item in head.skill_disclosures()] == []
 

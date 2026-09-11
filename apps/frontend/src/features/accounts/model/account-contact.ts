@@ -55,7 +55,13 @@ export const ContactEvidenceSchema = z.object({
 export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   accountId: z.string().min(1),
   accountName: z.string().min(1),
-  accountLogoPath: z.string().startsWith("/").nullable(), // D0 ruling S2
+  // A rooted path to the platform's logo route (a stored LinkedIn mark), or Brandfetch's Logo
+  // API URL the browser embeds directly (that CDN is embed-only). Founder ruling 2026-09-11,
+  // superseding D0 ruling S2's "always null".
+  accountLogoPath: z
+    .string()
+    .refine((value) => value.startsWith("/") || value.startsWith("https://cdn.brandfetch.io/"))
+    .nullable(),
   recentSignalsLabel: z.string().min(1),
   linkedinLabel: z.string().min(1),
   linkedinUrl: HttpUrlSchema,

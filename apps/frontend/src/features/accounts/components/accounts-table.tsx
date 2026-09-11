@@ -195,6 +195,7 @@ function AccountTableRow({
   columnWidths,
   density,
   onToggle,
+  onOpenAccount,
   selectable,
   visibleColumns,
 }: {
@@ -205,6 +206,7 @@ function AccountTableRow({
   columnWidths: AccountColumnWidths;
   density: AccountTableDensity;
   onToggle: () => void;
+  onOpenAccount?: (account: Account) => void;
   selectable: boolean;
   visibleColumns: AccountColumnVisibility;
 }) {
@@ -265,15 +267,20 @@ function AccountTableRow({
                 aria-label={`Open ${account.name} account preview`}
                 className="flex h-full min-w-0 items-center gap-2 focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--clue-ds-color-components-button-focus-ring)]"
                 href={`/accounts/${account.id}/preview`}
+                onNavigate={onOpenAccount ? (event) => { event.preventDefault(); onOpenAccount(account); } : undefined}
                 prefetch={false}
                 title={account.name}
               >
+                {/* unoptimized: the logo route is session-authenticated behind the BFF —
+                    the Next image optimizer's server-side refetch carries no session cookie
+                    and would 401 (the gallery card documents the same). */}
                 <Image
                   alt=""
                   aria-hidden="true"
                   className="size-3 shrink-0 object-contain"
                   height={12}
                   src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+                  unoptimized={account.logoPath != null}
                   width={12}
                 />
                 <span className={`${readability.uiMedium} truncate`}>
@@ -454,6 +461,9 @@ function AccountTableRow({
 }
 
 interface AccountsTableProps {
+  /** Given, a row opens a contextual preview instead of navigating. */
+  onOpenAccount?: (account: Account) => void;
+  label?: string;
   accounts: AccountRow[];
   columnDefinitions?: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
@@ -470,6 +480,8 @@ interface AccountsTableProps {
 }
 
 export function AccountsTable({
+  onOpenAccount,
+  label = "Accounts",
   accounts,
   columnDefinitions = coreAccountColumnDefinitions,
   columnOrder,
@@ -501,7 +513,7 @@ export function AccountsTable({
 
   return (
     <div
-      aria-label="Accounts"
+      aria-label={label}
       className={`${readability.uiRegular} isolate`}
       role="grid"
       style={{
@@ -530,6 +542,7 @@ export function AccountsTable({
         >
           <AccountCheckbox
             checked={allSelected}
+            indeterminate={!allSelected && accounts.some((account) => selectedAccountIds.has(account.id))}
             label="Select all visible accounts"
             onChange={onToggleAll}
           />
@@ -563,6 +576,7 @@ export function AccountsTable({
             density={density}
             key={account.id}
             onToggle={() => onToggleAccount(account.id)}
+            onOpenAccount={onOpenAccount}
             selectable={isSelectable(account)}
             visibleColumns={visibleColumns}
           />

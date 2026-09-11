@@ -50,7 +50,10 @@ export async function addSelectedAccountsToProject(
   }: {
     accountIds: string[];
     idempotencyKey: string;
-    project: BulkProjectOption;
+    // Only the id and the name are read (the id is posted, the pair is stamped
+    // on the accepted rows), so a screen that already knows its project can
+    // submit without a picker option.
+    project: Pick<BulkProjectOption, "id" | "name">;
     rows: readonly AccountRow[];
   },
   submit: typeof addAccountsToProject = addAccountsToProject,

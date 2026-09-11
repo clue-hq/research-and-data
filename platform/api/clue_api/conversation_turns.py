@@ -119,7 +119,12 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 22
+# Revision 23 (ARV2 Track R, R4) is revision 22 plus one exact address:
+# ``launch_arv2_discovery@1``, the verified account discovery `head-of-abm@v45` grants and
+# stage0-interview v22 §7b teaches. The slot pins exact addresses, so a granted tool the
+# promoted revision does not admit is refused by plan validation; v22 stays the exact replay
+# input for turns already pinned to it.
+CONVERSATION_RECIPE_VERSION = 23
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

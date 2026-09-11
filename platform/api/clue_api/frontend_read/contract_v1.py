@@ -446,15 +446,16 @@ class ContactEvidence(V1Model):
 class AccountV1(V1Model):
     """``GET /frontend/v1/accounts`` — one row of the accounts table.
 
-    ``logo_path`` is nullable (D0 ruling S2: no logo pipeline exists in v1; the frontend renders
-    its building glyph on ``null``). ``website_url`` is nullable when the account has no
+    ``logo_path`` is nullable. D0 ruling S2 ("no logo pipeline") was superseded 2026-09-11: an
+    account with a ``core.logo_url`` mark serves the platform's logo route, and the frontend
+    renders its building glyph on ``null``. ``website_url`` is nullable when the account has no
     ``primary_domain``. ``fit_score`` and ``overall_fit`` are ``null`` **together** when the
     account has not been scored — never ``0``, never a guessed band (ruling R7).
     """
 
     id: str
     name: str
-    logo_path: RootedPath | None
+    logo_path: AssetRef | None
     website_url: HttpUrl | None
     research_status: ResearchStatus
     research_status_label: str | None = _Absent
@@ -495,7 +496,7 @@ class AccountDetailV1(V1Model):
     id: str
     name: str
     preview_title: str
-    logo_path: RootedPath | None
+    logo_path: AssetRef | None
     website_url: HttpUrl | None
     website_label: str
     research_status: ResearchStatus
@@ -586,7 +587,7 @@ class AccountContactDetailV1(AccountContactSummaryV1):
 
     account_id: str
     account_name: str
-    account_logo_path: RootedPath | None
+    account_logo_path: AssetRef | None
     recent_signals_label: str
     linkedin_label: str
     linkedin_url: HttpUrl

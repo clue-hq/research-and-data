@@ -18,6 +18,7 @@ import type {
 } from "../model/account-table-view";
 import readability from "./account-readability.module.css";
 import components from "./account-components.module.css";
+import toolbarStyles from "./accounts-toolbar.module.css";
 import { AccountColumnIcon } from "./account-column-icon";
 import {
   AccountsFilterPanel,
@@ -26,6 +27,8 @@ import {
 import { TableDensitySelector } from "./table-density-selector";
 
 interface AccountsToolbarProps {
+  embedded?: boolean;
+  onAddAccounts?: () => void;
   columnDefinitions: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
   density: AccountTableDensity;
@@ -435,6 +438,8 @@ function NewAccountModal({
 }
 
 export function AccountsToolbar({
+  embedded = false,
+  onAddAccounts,
   columnDefinitions,
   columnOrder,
   density,
@@ -466,16 +471,16 @@ export function AccountsToolbar({
   } = useAccountsToolbarController(onCreateAccount);
 
   return (
-    <header className={`${readability.uiRegular} relative z-20 flex h-[var(--clue-ds-product-dimension-header-action-bar-height)] shrink-0 items-center justify-between border-b-[0.5px] border-[var(--clue-border-table)] bg-white pr-5 pl-14 lg:px-6`}>
+    <header className={`${readability.uiRegular} ${embedded ? toolbarStyles.embedded : "relative z-20 flex h-[var(--clue-ds-product-dimension-header-action-bar-height)] shrink-0 items-center justify-between border-b-[0.5px] border-[var(--clue-border-table)] bg-white pr-5 pl-14 lg:px-6"}`}>
       <div className="flex min-w-0 items-center gap-4">
-        <h1 className={readability.pageTitle}>Accounts</h1>
+        {!embedded ? <h1 className={readability.pageTitle}>Accounts</h1> : null}
         <label className={`${components.input} flex w-[clamp(140px,20vw,240px)] shrink-0 items-center gap-1.5 px-2.5`}>
           <span className="sr-only">Search accounts</span>
           <DesignIcon name="search" size={12} />
           <input
             className={`${readability.uiRegular} min-w-0 flex-1 bg-transparent outline-none placeholder:text-[var(--clue-content-subtle)]`}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search"
+            placeholder={embedded ? "Search accounts" : "Search"}
             type="search"
             value={search}
           />
@@ -483,7 +488,7 @@ export function AccountsToolbar({
       </div>
 
       <div
-        className="relative ml-4 hidden shrink-0 items-center gap-2.5 md:flex"
+        className={embedded ? toolbarStyles.controls : "relative ml-4 hidden shrink-0 items-center gap-2.5 md:flex"}
         ref={controlsRef}
       >
         <div className="relative">
@@ -536,8 +541,8 @@ export function AccountsToolbar({
         <ToolbarButton
           expanded={openPanel === "new"}
           icon="plus"
-          label="New account"
-          onClick={() => togglePanel("new")}
+          label={onAddAccounts ? "Add accounts" : "New account"}
+          onClick={onAddAccounts ?? (() => togglePanel("new"))}
         />
       </div>
 

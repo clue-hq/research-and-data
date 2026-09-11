@@ -81,7 +81,10 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # workspace. What replaces them is the product-set gate, `open_icp_confirmation_gate@2` over
     # the ICP knowledge document, and the ARV2 launch/read pair. Model, workspace, delegation and
     # limits are v43's, unchanged.
-    AgentRole.HEAD_OF_ABM: "v44",
+    # v45 (ARV2 Track R, R4, 2026-09-10): v44 plus ONE tool — `launch_arv2_discovery@1`, verified
+    # account discovery for a project — and stage0-interview v22, whose §7b is the procedure for
+    # it. Nothing is dropped and nothing is re-pinned; everything else is v44's.
+    AgentRole.HEAD_OF_ABM: "v45",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -268,6 +271,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # stage0-interview v21's.
     "launch_arv2_person_research": (AgentRole.HEAD_OF_ABM,),
     "read_arv2_account_research_run": (AgentRole.HEAD_OF_ABM,),
+    # ARV2 Track R, R4: granted with head-of-abm@v45; stage0-interview v22 §7b teaches it.
+    # Finding candidate accounts from the ICP the project pinned is the same act on the same lane
+    # as researching accounts a human named, granted on the same terms — the human's own turn asks
+    # for it, the ICP and the gates come from the pinned document rather than the call, and a
+    # successful result means a run was queued, never that companies were found or approved.
+    "launch_arv2_discovery": (AgentRole.HEAD_OF_ABM,),
     "launch_selected_account_research": (),
     "launch_contact_research": (),
     # P3.4 (PD-part3 §1-D1/§2.3): delegating to Design is the Head of ABM's own act — the tool
@@ -422,8 +431,11 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # set or an ICP that goes nowhere. `read_arv2_account_research_run` stays
                 # installed: it is read-only, spends nothing, and addresses nobody.
                 # `launch_arv2_person_research` joins for the same sentence as its account sibling
-                # (founder ruling 3, 2026-09-10) — it queues real per-person research jobs.
+                # (founder ruling 3, 2026-09-10) — it queues real per-person research jobs — and
+                # so does `launch_arv2_discovery` (ARV2 Track R, R4): it queues a real discovery
+                # run against providers, buying a long list and verifying it company by company.
                 "launch_arv2_account_research",
+                "launch_arv2_discovery",
                 "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",

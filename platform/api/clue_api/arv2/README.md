@@ -1336,3 +1336,274 @@ declares no pin at all. All three are in `RECIPE_0_TOOL_ADDRESSES` and in `recip
 allowlist, slot requirements and node compatibility. The Stage-0 conversation *trial* withholds
 both launches and both gates (a dev harness must not queue real jobs or address a real gate); the
 run read stays installed there because it is read-only and addresses nobody.
+
+## R4 — verified account discovery
+
+R2 and R3 research accounts a human named. R4 is where the names come from: a cohort is
+**discovered** from the project's pinned ICP, every candidate is **verified gate by gate** with a
+quote and a source, and the human **approves** on the accounts table — after which the approved
+accounts launch into the R2/R3 lane and display on the existing screens with nothing new to learn.
+The plan of action is `docs/superpowers/plans/2026-09-10-arv2-r4-discovery-substance.md` (rev 5;
+its §9 is the rulings ledger this section cites); live acceptance is owed under
+`.context/arv2-r4-acceptance/`.
+
+**The ICP document is the program.** Every confirmed ICP carries `hard_gates[] {key, rule, test}`
+and `exclusions[]`, written in plain language and confirmed by a human. R4 encodes no gate in code:
+the long list is built from the ICP's wording and the verifier asks each gate's own `rule` and
+`test` as a question. A new ICP changes the questions and nothing else. Pattern code keeps one job —
+reading structured provider payloads — and one regex ever touches ICP prose (the month count in a
+gate's window).
+
+Two providers, each doing the one thing the proofs of concept showed it does well
+(`_memory/2026-09-10-arv2-r4-websets-experiment.md`): **Exa Websets** in company mode *finds*
+companies (Exa `/search` on prose queries returns content *about* an ICP, not members of it), and
+**Exa Answer** with a system prompt and an `outputSchema` *verifies* them (Websets' own criteria
+verdicts were wrong six times in fifteen). The hand-written regex probe of rev 4 was dropped.
+
+### The module map (nine modules)
+
+| module | what it owns |
+| --- | --- |
+| `discovery_store.py` | the only module that speaks SQL to `arv2_discovery_run` / `arv2_discovery_candidate`: one function per run transition (`create_discovery_run`, `begin_discovery_run`, `record_webset`, `record_relaxed_search`, `request_relaxed`, `suspend_discovery_run`, `finish_discovery_run`), the candidate writers (`upsert_candidate`, `record_verdicts`, `mark_candidates_approved`) and the readers (`list_candidates`, `unapproved_domains`) |
+| `exa_websets_client.py` | the thin Websets client — `create` / `get` / `items` / `add_search` through one private `_call` on the injected `ProviderCaller`, `is_all_green`, `newly_priced` (a webset row is billed once per run: `items(…, priced_item_ids=…)` returns every row and prices only the new ones), `websets_items_cost`, `websets_halt_rule` |
+| `exa_client.py` (`answer`) | R4's addition to the R1 client: `answer_body`, `ExaCitation`, `ExaAnswerResult`, `ANSWER_ESTIMATE_USD`, and `ExaClient.answer` — one `/answer` hop inheriting the module's existing cost reader and halt rule |
+| `discovery_brief.py` | the ICP document compiled into the brief one run executes — `Gate`, `DiscoveryBrief`, `compile_brief`, `buyer_sentence`, `parse_window_months`, and the typed `BriefError` |
+| `discovery_verifier.py` | what we send and what we trust — `system_prompt(today)`, `gate_question`, `website_question`, `OUTPUT_SCHEMA` / `WEBSITE_SCHEMA`, `apply_guards` (the three guards), `fit_score`, `disposition`; pure, with no clock, no settings, no database and no provider |
+| `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp` (the project's *current* pin, for the launch) and `read_icp_document` (a run's *own* pinned bytes, by key and sha, for the driver), `launch_arv2_discovery` (replay + lineage, rows only), `request_relaxed_pass`, `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
+| `discovery_driver.py` | the fleet handler: claim, compile, buy the long list, verify every candidate, land the run — plus `relaxed_criteria` and `revenue_band`, the two pure helpers its arithmetic lives in |
+| `fleet_task.py` | R4's three names beside R2's — `ARV2_DISCOVERY_DEDUP_PREFIX = "arv2-discovery:"`, `ARV2_DISCOVERY_TASK_PRIORITY = -90`, `arv2_discovery_work_id(run_id)` (the run id **is** the work id) — so the enqueuer and the handler never import each other |
+| `scripts/launch_arv2_discovery.py` | the operator CLI: launch, `--relaxed-pass <run>`, `--report <run>` |
+
+`FleetTaskKind.ARV2_DISCOVERY` is its **own** fleet kind (unlike R3's people, which ride the account
+kind) because a discovery run takes minutes, spends money and must survive a worker restart. Its
+priority is −90: it outranks ordinary work and **yields to account research at −100**, because
+research is work a human already approved on named accounts and discovery is looking for accounts
+nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two tables; its
+`downgrade()` refuses while any `arv2_discovery` task exists.
+
+### The run, step by step
+
+1. **Claim.** `begin_discovery_run` takes a `not_started` or `suspended` run. Nothing to claim is an
+   idempotent `completed` and not a cent spent; a stop or a lost lease parks the run `suspended`; a
+   task whose `work_id` disagrees with its `run_id` is refused before any spend.
+2. **Compile.** The **launch** resolves the project's pinned ICP with `read_pinned_icp`
+   (`project_icp_pin`; no pin is the refusal `project_icp_not_pinned`) and stamps its artifact key
+   and sha on the run row. Every **attempt** then re-reads *that* document with `read_icp_document`
+   — by the run's own key, refusing `icp_digest_mismatch` when the bytes have moved — rather than
+   the project's current pin, so a human who confirms a new ICP version while a run is queued or
+   suspended cannot silently change the gates half-way through it. `compile_brief` turns the
+   document into the query sentence, the criteria and the gates. **Which gates become the webset
+   criteria is the document's own decision**: the gates it marks `criterion: true`, in document
+   order; when it marks none, its first three gates in document order. The launch records the
+   resolved keys on the run row, so every attempt compiles the same criteria. A caller may force
+   keys (the tool's request, the CLI's `--criteria-gates`, the operator env), and those are
+   validated against the document. More than three, named or marked, is a refusal, never a silent
+   truncation of a criterion the human configured.
+3. **The long list.** One webset, `entity.type = company`, `count` = the strict ask,
+   **at most three criteria** — each a hard gate a public page can answer, worded as the ICP means
+   it. Hiring and intent are never webset criteria (3.7% and 2.7% success rates starved the search
+   to one company); they are verified in step 4. `recall: true` records Exa's estimate of the pool
+   size *before* the spend. The run polls to `idle` under a wall clock
+   (`arv2_discovery_wall_s`, → `needs_review` with `webset_wall_exceeded`), and a run that already
+   recorded a `webset_id` **reads it again instead of buying another**, whether the redelivery is a
+   human's relaxed request or a plain resume after a restart. The webset's `strict_search_id` is
+   recorded with it, so no later attempt has to guess which of a webset's searches is the strict one
+   (array position is not a provider contract); a webset carrying two searches on a run that
+   recorded no strict id refuses `webset_search_ambiguous` rather than guessing. Every read of the
+   items page names the rows this run has already been charged for, so a resumed or widened run
+   prices each row **once** — the receipt says so with `credits_priced_once`.
+4. **Per candidate**, in this order, so nothing is verified twice or paid for needlessly:
+   - **the website**, first: one Answer call for the company's own registrable domain, because
+     Websets returned `probook.com` for `probook.ai`. The announcement's domain wins and the
+     mismatch is recorded on the snapshot.
+   - **the dedupes**, before any gate: a verified domain already an account in this workspace is
+     `duplicate_of_existing`; one an earlier run of this project surfaced and the human did not
+     approve is `not_chosen_before`. Both are recorded as candidate rows and cost exactly the one
+     website answer. *Unapproved is not rejected* (ruling 1′): the row carries no "rejected" label
+     anywhere, it simply is not surfaced again. Since ruling 8′ (2026-09-11) every verified
+     candidate becomes a workspace account **and a member of the launching project** at once, so
+     within one project a re-found company is always `duplicate_of_existing` first and
+     `not_chosen_before` no longer arises; the mechanism stays for the cross-project case.
+   - **one Answer per hard gate**, asking the gate's own `rule` and `test` verbatim under a system
+     prompt that fixes today's date, ranks the company's own pages and dated news above profile
+     pages, and says that no source found is `unclear`, never `fail`. Aggregator job sites count as
+     hiring and intent evidence (ruling 5′).
+   - **the three guards**, then **fit and disposition**, then the candidate account.
+5. **The relaxed pass** — only when the strict pass came up short **and** the run allows it
+   (automatically, or on a human's later request; both triggers are supported). It drops the
+   criterion with the lowest success rate on the strict search (ties resolve to the last; an unrated
+   criterion counts as lowest), adds a second search on the **same** webset excluding the strict
+   results, asks for the shortfall, and then verifies every company it returns on **all** gates
+   exactly like a strict one — so a partial match lands Medium or Low with an honest score rather
+   than being hidden (ruling 4). The widening is bought **once per run**: its search id is recorded
+   the moment `add_search` returns, and a run that already carries a `relaxed_search_id` polls and
+   reads it instead of adding a second search (whose exclusion would name only the strict search,
+   so Exa would re-find and re-charge for the first widening's results, once per retry).
+6. **Land.** `finish_discovery_run` records a terminal status only (`completed` / `needs_review`)
+   with `asked`, `found_strict`, `found_relaxed`, `analyzed`, the recall estimate and a receipt
+   carrying the counters a human reads to decide whether the pool was exhausted or the ICP is too
+   narrow: `shown`, `target_count`, `criteria`, `criteria_relaxed` (what *this attempt* sent, so
+   null on an attempt that found the widening already bought), `relaxed_search_id` (which says a
+   widening happened at all), `credits_priced_once`, the guard hit counts, `cost_usd`,
+   `duplicates`, `not_chosen_before`, `unresolvable_domain` and `candidate_failures`. A short list is
+   information, never padded.
+7. **Containment, per candidate and per run.** `handle` never raises. One candidate that fails is
+   logged, named in `candidate_failures` and left `pending` for the next attempt — its neighbours
+   are still verified and the run lands `needs_review` keeping every counter. `ProviderHalted` and
+   the wall clock end the *run* (the candidates already paid for are kept); a cancellation suspends
+   under a shield. Every provider hop is one fresh caller inside `asyncio.to_thread` whose ledger and
+   raw sinks are drained under the run's `LedgerStamp` in a `finally` — costs are always recorded and
+   **never a gate** (ruling 3).
+
+### The three guards
+
+One guard per error kind the proof of concept actually produced, and nothing else. Each turns a
+verdict the model got wrong into one a human can trust, and every overturn is recorded on the row
+(`guard`, beside the model's own `model_verdict`):
+
+| guard | what it catches |
+| --- | --- |
+| `quote_not_on_page` | `evidence_quote` must appear verbatim — NFKC-folded, typography and case normalised — in the text of a citation Exa actually returned; otherwise `unclear` |
+| `wrong_company` | the citation carrying the quote must be on the company's verified domain, or name the company in its text on a word boundary (character containment would let a posting from same-name `infinIT` clear the guard for `INFI`); otherwise `unclear` |
+| `outside_window` | when a gate names a window, the arithmetic is **code's**: `evidence_date` is checked against it (the model called a 2023 round "within 24 months"), and a pass outside the window becomes `fail` |
+
+Plus two rules that are not guards: `no_source` (an empty quote or URL on a pass/fail is `unclear`),
+and `malformed` (an answer that is not a mapping, or a verdict word the schema forbids, is `unclear`
+with the model's word kept). Every one of them errs toward `unclear`, never toward a `fail` the
+evidence does not support.
+
+**Fit** is `(passes + ½ × unclears) / gates`, banded by the accounts list's own thresholds
+(`CLUE_ARV2_FIT_HIGH_THRESHOLD` / `CLUE_ARV2_FIT_MEDIUM_THRESHOLD`) — a full match reads High 100,
+three passes and one unclear High 88, half Medium 50, one of four Low 25. The Overall fit vocabulary
+stays exactly High / Medium / Low; an unclear account is a Medium by score (ruling (a)), and every
+discovered account is shown, Low fit included (ruling 5). `disposition` is `pass` / `partial` /
+`unclear` — never `fail`, because a company we could not verify is not a company we disproved.
+
+### What the human sees, and what approval is
+
+Every verified candidate that is not a duplicate becomes an `account_entity` (`status = candidate`,
+verified domain as the strong key, workspace-scoped) carrying one `account.scoring.fit` claim —
+project-relative through the run's `run_lineage` row, kind `discovery` — plus the ordinary
+`core.employee_count` / `core.revenue_band` claims from the Websets firmographics when they are
+there. That is the table's **Overall fit** badge and **Fit score**; research status reads "Not
+started". The per-gate verdicts, with their quotes and URLs, sit on the candidate row and are handed
+to the researcher as "already established" at launch.
+
+**Two founder rulings of 2026-09-11 changed what the table shows and what "approval" means.**
+Ruling 7′: **a fit is global to the account** — the accounts list and the account detail show the
+account's most recently scored fit whichever project scored it, membership or not
+(`frontend_read.accounts_list.account_fit`; the FI-2 §7 primary-project rule is superseded on those
+two surfaces, the detail's project sections keep the attribution). Before it, every freshly
+discovered account showed an empty fit column, because it belonged to no project until approved.
+Ruling 8′ (supersedes 6′): **a discovered account belongs to the launching project by default** —
+the driver records the `project_account` membership (`added_via = 'discovered'`) in the same
+transaction as the account row and its claims, for pass, partial and unclear alike; the human reads
+the verdicts on the table and removes what they do not want. Adding the account to any *other*
+project is the explicit human action below.
+
+**Rulings 9′ and 10′ (2026-09-11): the mark, and the owner.** Every verified candidate's account
+shows a **mark-type logo** — never a wordmark, never a banner — and the founder ruled Brandfetch's
+**Logo API only** (the Brand API is overkill). Two sources, one rule each (`logo_resolution.py`):
+Websets' `logoUrl` is **stored** as `core.logo_url` when it is LinkedIn's company mark (the PoC found
+those correct in every inspected case and site-hosted images wrong about half the time — Open Graph
+banners, team photos), and the platform's own route `/api/clue/frontend/v1/accounts/{id}/logo`
+(`frontend_read/account_logo.py`) streams it under the workspace scope. A company with no stored
+mark gets Brandfetch's Logo API URL for its domain at **display time**
+(`cdn.brandfetch.io/domain/{domain}/w/128/h/128/fallback/lettermark/type/icon?c=<client id>`,
+`CLUE_BRANDFETCH_CLIENT_ID`, public by design) — built by the reads, never fetched or stored:
+the Logo API is embed-only and answers a script's fetch `302 x-bf-error: automated_traffic`
+even with a valid client id, so the browser embeds it with its own `Referer`, and the frontend
+renders both shapes with Next's optimizer off. No client id → the placeholder. And the human
+who launched the discovery is each account's **creator and owner** (a fleet-driven launch
+resolves the turn's human; `insert_account_entity(owner_user_id=…, created_by_user_id=…)`), until
+an ownership mechanism exists. `scripts/backfill_discovery_run_logos_and_owners.py` applies both
+to a run made before the rulings.
+
+**The accounts table is the approval surface** (ruling 2), and the approval is the existing
+"Add to project" bulk action — no new screen, no new button. Since ruling 8′ it means "add to
+another project": for the launching project the membership already exists. `bulk_actions.add_accounts_to_project`
+calls `mark_candidates_approved` on the **same transaction** as the membership insert, so a
+membership and its approval land together or not at all; only the accounts that action actually
+inserted are decided, and the store's `decision IS NULL` guard means a replay or an overlapping
+second selection decides nobody twice. `decided_by_user_id` is `actor_user_id or requested_by` — the
+same fallback the rest of the lane uses for the requesting human, so a local-auth approval records
+the id that mode does carry rather than nobody. The approved cohort then launches through the
+existing `launch_arv2_account_research`; there is no research button and no new research path.
+
+### Configuration (R4's additions)
+
+Eight keys, all in `.env.example` at parity:
+
+- `CLUE_ARV2_DISCOVERY_ENABLED` (default `false`) — composes the handler and the launch service, and
+  only when `CLUE_EXA_API_KEY` is configured too (otherwise the composition warns
+  `arv2.discovery_handler_not_composed` and stays `None`). The tool registers on every deployment
+  and refuses `arv2_discovery_not_composed` where the lane is off.
+- `CLUE_ARV2_DISCOVERY_STRICT_COUNT` (default `35`) — the strict pass's ask for a target of 20,
+  while precision is being measured (ruling 4).
+- `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — run the relaxed pass automatically when the
+  strict pass falls short.
+- `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default **empty**) — operator override only. Empty means
+  the pinned ICP decides its own webset criteria (below); a comma-separated list of that document's
+  hard-gate keys forces those instead. At most three either way; a fourth is refused, not dropped.
+  There is no deployment-wide default gate set (founder ruling 2026-09-11): the first Insight Health
+  launch was refused `unknown_criteria_gate_key 'geography'` because the shipped default named the
+  Clue ICP's keys and a synthesised ICP names its own.
+- `CLUE_ARV2_DISCOVERY_ANSWER_MODEL` (default `exa`) — the Answer model the verifier asks.
+- `CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S` (default `15`) / `CLUE_ARV2_DISCOVERY_WALL_S` (default
+  `1800`) — the webset poll cadence and the run's wall clock.
+- `CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT` (default `0.00449`) — Websets bill 10 credits per
+  all-green result; this is the plan's dollar rate for the pre-spend estimate and the ledger.
+
+### Starting one
+
+```bash
+set -a; source .env; set +a
+
+# the operator path
+uv run python scripts/launch_arv2_discovery.py \
+    --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
+
+# a relaxed pass on a run that already finished, and reading what a run found
+uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --relaxed-pass <run-id>
+uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --report <run-id>
+```
+
+`--report` deliberately does not require the lane flag: an operator must be able to read what a run
+found on a deployment where discovery has since been switched off.
+
+**From the project chat**, `head-of-abm@v45` grants `launch_arv2_discovery@1` — the profile bump
+lands in R4, not at O7 (ruling 4′). v45 is v44 plus that one tool and the skill that teaches it
+(`stage0-interview@v22`, whose new **§7b "Discover accounts for this project"** is the passage the
+founder reviewed in chat), and `recipe0-stage0@23` carries the address in its allowlist, its slot
+requirements and its node compatibility. The tool declares `pin_requirements = ("project",)`, so the
+project coordinate is the execution row's, never a model-authored body field. The Stage-0
+conversation *trial* withholds it beside the other two launches: a dev harness must not queue a real
+discovery run against real providers.
+
+### What R4 deliberately does not build
+
+- **The Websets exclusion import.** Local dedupe by verified domain runs *always*; importing the
+  workspace's existing account websites into the webset's own `exclude` waits until Exa confirms the
+  per-plan cap on that list (ruling 1′). Nothing is lost meanwhile — the local dedupe catches the
+  same companies, it just catches them after the long list rather than before it.
+- **A per-run concurrency cap.** O6's per-process worker slots stand as they are; how workers are
+  shared across job kinds — and whether the AI Ark spacing rule becomes a shared limiter — is a
+  scheduling discussion of its own, taken up separately (ruling 3′). Inventing a cap here would
+  pre-empt it.
+- **Any frontend change.** Not a lifted screen, not a slot, not a marker: parity with the dummy
+  frontend is the reference, and the accounts table already shows Overall fit, Fit score and research
+  status. Suggestions live in `2026-09-10-arv2-frontend-polish-backlog.md`.
+- **A chat approval gate.** While the accounts table is the approval surface, no gate tool is needed
+  (ruling 2). ~~What the future in-project target-accounts tab reads is the founder's later
+  decision (ruling 6′).~~ **Superseded 2026-09-11 by ruling 8′:** discovered accounts are members
+  of the launching project from the moment they are verified, so the tab reads the project's
+  members and nothing is pending.
+- **The ICP's exclusion questions.** Spec §3 asks one `POST /answer` per hard gate *and per
+  page-answerable exclusion*; R4 asks the gates only. `compile_brief` still compiles
+  `DiscoveryBrief.exclusions` from the document, and nothing reads it. Two open questions make this
+  a founder decision rather than an omission to fix quietly: how an exclusion scores, given that fit
+  is `passes / gates` today and an exclusion is a disqualifier rather than a gate; and the cost —
+  the confirmed Clue ICP states eight exclusions, so asking them is about eight more Answer calls,
+  roughly **$0.04 per company**, on top of the four gate calls. Recorded as final-review finding I3;
+  until it is decided, a company that clears every hard gate but sells to consumers can still land
+  as a High-fit candidate for a human to read.

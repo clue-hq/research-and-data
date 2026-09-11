@@ -364,6 +364,35 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS``.
     arv2_person_media_max_items: int = Field(default=3, ge=0)
 
+    # --- ARV2 R4 verified account discovery (master plan §9 R4; spec §2–§4) -------------------
+    # Off by default: a worker composes the discovery handler only when this is on AND
+    # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
+    arv2_discovery_enabled: bool = False
+    #: The strict pass's Websets ask (ruling 4: 35 for a target of 20 while precision is measured).
+    arv2_discovery_strict_count: int = Field(default=35, ge=1)
+    #: Run the relaxed pass automatically when the strict pass falls short (ruling, rev 5).
+    arv2_discovery_relaxed_auto: bool = True
+    #: Operator override only — empty by default (founder ruling 2026-09-11: no deployment-wide
+    #: default gate set; every ICP decides its own). Empty means the pinned ICP document chooses
+    #: its Websets criteria: the gates it marks ``criterion: true``, else its first three gates in
+    #: document order. A comma-separated list of the document's hard-gate keys (≤ 3) forces those
+    #: instead, and is validated against the document at launch. The ICP body's buyer sentence
+    #: fills any slot left over.
+    arv2_discovery_criteria_gate_keys: str = ""
+    #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
+    arv2_discovery_answer_model: str = "exa"
+    #: Seconds between Websets polls while a discovery run is in flight (spec §3).
+    arv2_discovery_poll_interval_s: float = Field(default=15.0, gt=0)
+    #: Wall clock for one discovery run, seconds (spec §3).
+    arv2_discovery_wall_s: int = Field(default=1800, ge=60)
+    #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
+    arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
+    #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
+    #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
+    #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
+    #: Logo API only, never the Brand API. Env: ``CLUE_BRANDFETCH_CLIENT_ID``.
+    brandfetch_client_id: str = ""
+
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
     # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
     # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.

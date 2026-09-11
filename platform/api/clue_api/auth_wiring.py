@@ -413,6 +413,21 @@ def install_auth_wiring(
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
         request_id = _request_id(request)
+        # Every refusal is named in the operator log — the route, the code and, when the refusing
+        # step knew it, WHO: the provider subject (a verified Clerk user id) and the Clue user.
+        # Added 2026-09-11 after a browser session was bounced to provisioning with a bare 403
+        # and nobody could tell which account had been refused, or why. The response body stays
+        # the stable envelope below; the subject never leaves the log.
+        log.warning(
+            "auth.principal.refused",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            error_code=exc.code,
+            status=exc.status_code,
+            subject=exc.subject,
+            user_id=exc.user_id,
+        )
         if request.url.path == f"{AUTH_PREFIX}/provision":
             log.info(
                 "auth.provision.completed",

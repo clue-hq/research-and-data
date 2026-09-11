@@ -9,6 +9,8 @@ and in `scripts/dev_stack.sh` — never only in a terminal.**
 ```bash
 ./scripts/dev_stack.sh up       # starts all five processes
 ./scripts/dev_stack.sh status   # shows what's up
+./scripts/dev_stack.sh restart-api   # restarts ONLY the two platform API processes (picks up a changed .env setting; workers keep theirs until down/up)
+./scripts/dev_stack.sh restart-workers   # restarts ONLY the fleet workers, same count × concurrency as the wrapper sets; check nothing is mid-job first
 ./scripts/dev_stack.sh down     # stops everything
 ```
 
@@ -19,6 +21,29 @@ Then open **http://localhost:3020** and sign in:
 | Email | `aryan+clerk_test_design@example.com` |
 | Password | `ClueDev2026!stripe` |
 | Email code | `424242` (fixed — Clerk test-mode `+clerk_test` address, no real email is sent) |
+
+## Running the same stack from another worktree (added 2026-09-11)
+
+`scripts/dev_stack.sh` reads five `DEV_STACK_*` knobs, each defaulting to exactly what the
+istanbul checkout always did, so a lane can run the identical five processes on the identical
+ports against **its own** database without copying the script:
+
+| Knob | Meaning | istanbul default |
+|---|---|---|
+| `DEV_STACK_DB_URL` | the database every process uses | `clue_istanbul_dev` (psycopg) |
+| `DEV_STACK_WORKERS` | fleet worker **processes** | 1 |
+| `DEV_STACK_WORKER_CONCURRENCY` | drain slots per process (`CLUE_FLEET_WORKER_CONCURRENCY`) | 1 |
+| `DEV_STACK_AGENT_WORKSPACE_ROOT` | `CLUE_AGENT_WORKSPACE_ROOT` | `/private/tmp/clue-agent-workspaces` |
+| `DEV_STACK_LOG_PREFIX` | log file prefix | `/tmp/browser` |
+
+A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
+**`scripts/dev_stack_san_salvador.sh`** (the ARV2 lane on branch `track-r4`): DB from that
+checkout's `.env` (`clue_san-salvador` on :55040), 4 workers × 3 slots (the O6 exit-gate ruling),
+logs at `/tmp/san-salvador_*.log`. Because the ports are the same, **only one of the two stacks
+can run at a time** — `down` the other first. Everything else in this file (login, symptom table,
+prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must name 8020 / 8010 /
+`http://localhost:3020` like istanbul's, and its `.env` must carry
+`LUMEN_API_ORIGIN=http://127.0.0.1:8010` and 3020 in `LUMEN_API_CORS_ORIGINS`.
 
 ## The port map (memorize the first one)
 

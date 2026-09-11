@@ -117,6 +117,7 @@ export function ContactDetailsList({
               className="size-3"
               height={12}
               src={contact.accountLogoPath ?? ACCOUNT_GLYPH_PATH}
+              unoptimized={contact.accountLogoPath != null}
               width={12}
             />
             {contact.accountName}

@@ -1,0 +1,259 @@
+{
+  "requestId": "8a0c684b15a46aefe213f6fbf8f9ba1e",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.lassie.ai/",
+      "title": "Lassie \u2014 Reimagining Doctors' Offices",
+      "url": "https://www.lassie.ai/",
+      "text": "Lassie \u2014 AI That Runs the Doctor's Office\n\n# You\u2019re a doctor. Not a machine.\n\nLet Lassie do your admin\n\nConfirmed 42 appointments\n\nPosted $12,430 in payments\n\nBooked 8 hygiene recalls\n\nConfirmed 42 appointments\n\nRescheduled 3 appointments\n\nCalled Cigna for claim status\n\nCompleted Humana enrollment\n\nClosed the books for March\n\n### And answers your questions\n\nGot a question about a claim? Want to see how your week is tracking? Lassie is always ready to help.\n\n### Keeps you in the loop\n\nWatch Lassie complete your paperwork, asking for your input when needed on the most complex issues.\n\n### Lassie does your paperwork\n\nHandling enrollments, converting payments to EFTs, and posting them automatically, without delay.\n\n98%\n\n## The more Lassie learns, the less input it needs\n\n## How Lassie works\n\nEnrolls electronic payments\n\nSets up and manages enrollments automatically, so you never have to deal with physical paper again.\n\nReconciles EFTs \n\nAccurately matches payments to insurers, patients, and claims for proper tracking and resolution.\n\nPosts payments\n\nTakes the reconciled information and records it in your PMS, so your books are always up to date.\n\nWhat can Lassie help me with?\n\nLassie automates the administrative work that keeps your practice moving, from enrollments and posting to reconciliation, appeals, reporting, and follow-up work.\n\nHow do I get started?\n\nBook a demo, and we\u2019ll take a quick look at how your office runs today, then show you where Lassie can help.\n\nDo I need to change my existing systems?\n\nNo. Lassie is designed to work with the way your practice already runs. On the first call, we\u2019ll confirm your current setup and what Lassie can automate.\n\nWhat does my team still handle?\n\nYour team stays in control. Lassie takes on repetitive admin work and flags exceptions when something needs review.\n\nHow long does onboarding take?\n\nIf you\u2019re already on EFTs, we can usually get you up and running within one to two weeks. If your office still receives paper checks, full auto-posting setup can take up to about eight weeks.\n\nWhat does Lassie cost?\n\nLassie gets paid when it does work for your office. Once we understand your practice\u2019s volume and workflows, we\u2019ll show you what pricing would look like.\n\nIs Lassie secure?\n\nYes. Lassie is built for healthcare practices, enters into HIPAA business associate agreements, and follows standard healthcare data-handling expectations. We can share security details during the demo.",
+      "image": "https://lassie.ai/og-image.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/jz34bk3fck3",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Lassie",
+            "foundedYear": null,
+            "description": "Lassie enables doctors to focus on patients, not paperwork.\n\nThe average practice spends around 200 hours a month running itself. We have seen firsthand how the administrative burden is quietly breaking independent healthcare.\n \nDoctors work late into the night so that they can get through all of their paperwork by hand. Nobody taught them how to submit a claim, bill a patient, or reconcile insurance payments.\n\nOur goal is to enable these businesses to run themselves.\n\nLassie works autonomously, around the clock, reading insurance claims, reconciling payments, handling denials and appeals.\n\nOver 700 practices across 49 states trust Lassie to run their operations. In the past year alone, we have saved more than 250,000 hours of labor, time redirected entirely to patient care.\n\nLearn more or join the team: lassie.ai",
+            "workforce": {
+              "total": 23
+            },
+            "headquarters": {
+              "address": "San Francisco, US",
+              "city": "San Francisco",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 42273,
+              "countryRank": 83733,
+              "avgDurationSeconds": 789,
+              "history": [
+                {
+                  "value": 12575,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 23426,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 26826,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 34031,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 38349,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 42273,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+      "title": "Lassie Raises $35M in Series A Funding",
+      "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+      "publishedDate": "2026-06-04T08:21:48.000Z",
+      "author": "FinSMEs",
+      "text": "Lassie Raises $35M in Series A Funding\n\n# Lassie Raises $35M in Series A Funding\n\n By FinSMEs \n\nJune 4, 2026\n\nLassie, a San Francisco, CA-based company building autonomous systems for small businesses, raised $35M in Series A funding.\n\nThe round was led by Andreessen Horowitz (a16z) with participation from Night Capital, Rahul Vohra, founder and former CEO of Superhuman; Zach Perret, co-founder and CEO of Plaid; Taavet Hinrikus, co-founder and former CEO of Wise; Gokul Rajaram; and Brian Balfour, co-founder and CEO of Reforge.\n\nAlex Rampell, co-founder of Affirm and general partner of Andreessen Horowitz, will be joining Lassie\u2019s Board of Directors. In addition, Dr. Ed Zuckerberg and Jason Warnick, former chief financial officer of Robinhood, will be joining the company as advisors.\n\nThe raise brought the total amount to $47M. \n\nThe company intends to use the funds to expand operations and its development efforts.\n\nLed by CEO Steijn Pelle, Lassie is an AI company that develops autonomous systems designed to eliminate administrative back-office work for small businesses. Its AI agents automate complex, labor-intensive workflows end-to-end, including:\n\n- System Integration: automatically updating the clinic\u2019s internal patient and practice management systems.\n- Insurance Claim Management: accessing insurance portals directly to retrieve reimbursement data and submit claims.\n- Revenue Cycle Management: reconciling accounts, verifying bank funds, and matching payments without human intervention.\n\nOperating in more than 700 practices across 49 states, Lassie provides businesses owners with over 250,000 hours of labor each year.\n\nDon\u2019t just read the news. Own the data. Stop manually tracking deals. Access this round and over 100 others this week\u2014in our structured Master Database (XML) + Weekly Intelligence PDF. \ud83d\udc49 [Access FinSMEs Intelligence Hub]\n\nFinSMEs\n\n04/06/2026",
+      "image": "https://www.finsmes.com/wp-content/uploads/2026/06/Lassie.jpg"
+    },
+    {
+      "id": "https://a16z.com/announcement/investing-in-lassie/",
+      "title": "Investing in Lassie | Andreessen Horowitz",
+      "url": "https://a16z.com/announcement/investing-in-lassie/",
+      "publishedDate": "2026-06-03T00:00:00.000Z",
+      "text": "Investing in Lassie | Andreessen Horowitz\n\n# Investing in Lassie\n\nAlex Rampell and Olivia Moore Posted June 3, 2026 \n\nMost small businesses have something in common: they are run by reluctant operators. These are owners who set out to provide a service to their local community, and ended up running a business instead. They did not sign up to become finance people, HR people, recruiters, billers, or claims specialists. They became those things because someone had to.\n\nDental practices are a perfect example. Dentists go to school to practice dentistry and care for patients. Instead many are stuck doing paperwork, hiring people, training and retaining staff, negotiating insurance contracts, fighting claims, and managing cash flow.\n\nAcross roughly 160,000 dental practices in the U.S., this work is increasingly hard to staff and expensive to get wrong. AI can already do much of this work today. It is just not in the hands of these businesses yet.\n\nWe think businesses will soon run themselves, and small businesses will be among the first. Today, we are thrilled to announce that a16z is leading Lassie\u2019s $35 million Series A \u2013 and partnering with a team solving exactly this problem.\n\nLassie is building AI that runs small businesses, starting with dental practices. Co-founders Steijn Pelle and Fr\u00e9d\u00e9ric Renken did not find this problem from a distance. After working in consumer fintech at Robinhood and Coinbase, Steijn learned from his own dentist, Dr. Kwon, how complex the financial administration of an SMB dental practice can be. He and Fr\u00e9d\u00e9ric, who had built product at Superhuman and Uber, then worked inside Dr. Kwon\u2019s office, processing payments by hand to understand the workflow from the inside.\n\nThis story is emblematic of how Steijn and Fr\u00e9d\u00e9ric have approached building Lassie. Before writing a single line of code, they spent months talking to dentists, primary care doctors, and healthcare finance teams. Then they spent years building the infrastructure and integrations required for agents to operate directly within a practice\u2019s workflow: reading insurance claims, reconciling payments, posting to the ledger, and flagging claims that need action. Lassie is not a copilot that creates more work for the practice to review. It does the work.\n\nLassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year. Growth has come largely through referrals and inbound demand \u2013 a sign that customers are not just buying the product, but telling other practice owners about it. The most important benefit, customers say, is not simply doing the work faster. It is catching the underpayments, denials, and missing claims that used to slip through.\n\nDental is a strong first market because the pain is acute and the workflows are structured, repetitive, and high-value. But the larger insight is not dental-specific. Every small business is still held together",
+      "image": "https://d1lamhf6l6yk6d.cloudfront.net/uploads/2026/06/Investing-in-Lassie-Yoast-LI.png"
+    },
+    {
+      "id": "https://techfundingnews.com/ex-robinhood-and-superhuman-alums-raise-35m-in-a16z-led-round-to-let-ai-run-small-businesses-end-to-end/",
+      "title": "Ex-Robinhood and Superhuman alums raise $35M in a16z-led round to let AI run small businesses end-to-end \u2014 TFN",
+      "url": "https://techfundingnews.com/ex-robinhood-and-superhuman-alums-raise-35m-in-a16z-led-round-to-let-ai-run-small-businesses-end-to-end/",
+      "publishedDate": "2026-06-04T00:00:00.000Z",
+      "author": "Abhinaya Prabhu",
+      "text": "Ex-Robinhood and Superhuman alums raise $35M in a16z-led round to let AI run small businesses end-to-end \u2014 TFN\n\n# Ex-Robinhood and Superhuman alums raise $35M in a16z-led round to let AI run small businesses end-to-end\n\nby Abhinaya Prabhu\n\nJune 4, 2026\n\n Image credits: Lassie \n\n- Lassie has raised $35 million in a Series A led by Andreessen Horowitz, bringing its total funding to $47 million.\n- Co-founders Steijn Pelle and Fr\u00e9d\u00e9ric Renken spent months working inside a dental practice by hand before writing a single line of code.\n- The company now operates in 700+ practices across 49 states and saves owners over 250,000 hours of administrative work each year.\n\nWhen Steijn Pelle\u2019s dentist showed him what it actually takes to run a dental practice, he didn\u2019t go back to his laptop and start building. He pulled up a bar stool in the back office and spent months processing insurance claims and reconciling payments by hand. That experience \u2014 working inside Dr. Kwon\u2019s Bay Area practice \u2014 shaped every product decision that followed at Lassie.\n\nSan Francisco-based Lassie announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million. The round was led by Andreessen Horowitz, which closed a $15 billion mega-fund in January 2026 with a stated thesis of backing AI companies that replace operational drag. The round also drew support from Night Capital, Rahul Vohra (founder and former CEO of Superhuman), Zach Perret (co-founder and CEO of Plaid, valued at $8 billion in its most recent secondary), Taavet Hinrikus (co-founder and former CEO of Wise), Gokul Rajaram, and Brian Balfour (co-founder and CEO of Reforge).\n\nAlex Rampell, co-founder of Affirm and General Partner at a16z, is joining Lassie\u2019s board. Dr. Ed Zuckerberg and Jason Warnick, former CFO of Robinhood, join as advisors.\n\nLassie was founded by Steijn Pelle, an early product manager at Robinhood and Coinbase, and Fr\u00e9d\u00e9ric Renken, the first product hire at Superhuman. Previous backers include SV Angel, Homebrew, and Go Global Ventures.\n\n## The $200,000 problem\n\nA typical doctor\u2019s office loses more than 100 hours a month to administrative work and spends roughly $200,000 a year on staff that owners can barely find, let alone keep. Lassie\u2019s agent goes directly into a practice\u2019s insurance portals, pulls reimbursements, reconciles them against records, updates the system of record, and verifies funds in the bank \u2014 replacing human labour entirely rather than adding another layer of software on top of it.\n\nThe company operates in more than 700 practices across 49 states and currently provides business owners with over 250,000 hours of labour each year. It is part of a broader wave of agentic AI companies \u2014 such as octonomy, which raised $20M to automate complex enterprise workflows \u2014 that are moving the market from AI tools that assist to AI systems that execute.\n\n\u201cSmall business owners should be freed up from doing busywork, so they can focus on what they are pas",
+      "image": "https://techfundingnews.com/wp-content/uploads/2026/06/Lassie-funding.jpg"
+    },
+    {
+      "id": "https://www.businesswire.com/",
+      "title": "Lassie Raises $35M Led by Andreessen Horowitz to Build ...",
+      "url": "https://www.businesswire.com/",
+      "text": "Press Release Distribution & Investor Relations Services | Business Wire\n[\n](https://www.businesswire.com/)\nEn\n[Contact Us](https://www.businesswire.com/contact-us)\nEn\n[Contact Us](https://www.businesswire.com/contact-us)\n[\n](https://www.businesswire.com/)\n[Newsroom](https://www.businesswire.com/newsroom)\nServices & Solutions \n#### Services & Solutions \n[### Services\n](https://www.businesswire.com/services)[Press Release Distribution](https://www.businesswire.com/services/distribution)[Included Features](https://www.businesswire.com/services/press-releases/features)[Press Release Enhancements](https://www.businesswire.com/services/press-releases)[SEO & AI Visibility](https://www.businesswire.com/services/press-releases/press-release-seo-aeo-geo)[Investor Communications](https://www.businesswire.com/services/investor-relations)[Reporting & Analytics](https://www.businesswire.com/services/analytics)\n[### Solutions For\n](https://www.businesswire.com/solutions)[PR Professionals](https://www.businesswire.com/solutions/pr-corporate-comms)[IR Professionals](https://www.businesswire.com/solutions/ir-professionals)[Agencies](https://www.businesswire.com/solutions/agencies)[Public Companies](https://www.businesswire.com/solutions/public-companies)[Explore by Industry](https://www.businesswire.com/solutions/industry)\n[\n![Take Your News Global](https://www.businesswire.com/_next/image?url=https%3A%2F%2Fd1k42caodqw8lr.cloudfront.net%2Fnav_callout_services_corrected_64f5d14882.webp&w=3840&q=75)\nExpand your reach across countries, regions and languages\n](https://www.businesswire.com/services/distribution/international-distribution)\nResources\n#### Resources\n[### Education\n](https://www.businesswire.com/resources-education)[Blog](https://www.businesswire.com/blog)[Research & Reports](https://www.businesswire.com/resources-education/guides)[Webinars & Events](https://www.businesswire.com/resources-education/webinars-events)[Videos](https://www.businesswire.com/resources-education/videos)\n[### Why Business Wire\n](https://www.businesswire.com/why-business-wire)[Success Stories](https://www.businesswire.com/success-stories-testimonials)[Sample Press Releases](https://www.businesswire.com/resources-education/sample-press-release)[Our Partners](https://www.businesswire.com/partners)[Pricing](https://www.businesswire.com/pricing)[Careers](https://www.businesswire.com/careers)\n[\n![Explore ways to use Business Wire features for your next news release](https://www.businesswire.com/_next/image?url=https%3A%2F%2Fd1k42caodqw8lr.cloudfront.net%2Fsamplepr_megamenu_thumbnail_7d291bae4a.webp&w=3840&q=75)\nExplore examples and press release best practices!\n](https://www.businesswire.com/resources-education/sample-press-release)\n[For Journalists](https://www.businesswire.com/media-journalist-tools)\n[Contact Us](https://www.businesswire.com/contact-us)\nSign In\nSign Up\n#\nThe News Starts Here\nTell your story, get noticed, and deliver results with Business Wire\u2019s press release distribut",
+      "image": "https://d1k42caodqw8lr.cloudfront.net/home_og_12e5f290cb.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/w3wc5t4vyp8",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Nerium International",
+            "foundedYear": 2011,
+            "description": "Est. 2011",
+            "workforce": {
+              "total": 3402
+            },
+            "headquarters": {
+              "address": "Dallas, TX 75001, US",
+              "city": "Dallas",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": 1000000000,
+              "fundingTotal": null,
+              "fundingLatestRound": null
+            },
+            "webTraffic": null,
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://sacra.com/c/lassie/",
+      "title": "Lassie analysis | Sacra",
+      "url": "https://sacra.com/c/lassie/",
+      "text": "Lassie analysis | Sacra\n\nAutonomous AI for medical and dental practice administration that automates enrollments, payment posting, EFT reconciliation, claims follow-up, and reporting\n\nDetails\n\n Headquarters \n\n San Francisco, United States \n\n CEO \n\nSteijn Pelle\n\n Website \n\n lassie.ai \n\nMilestones\n\n FOUNDING YEAR 2020 \n\n## Valuation & Funding\n\nLassie raised a $35 million Series A in June 2026 led by Andreessen Horowitz.\n\nBefore the Series A, Lassie raised earlier rounds backed by SV Angel, Homebrew, and Go Global Ventures, bringing total disclosed funding to $47 million.\n\nThe Series A included participation from angel investors Rahul Vohra, Zach Perret, Taavet Hinrikus, Gokul Rajaram, Brian Balfour, and Night Capital.\n\n## Product\n\nLassie is an AI back-office tool for independent medical and dental practices. It automates insurance payment paperwork that often sits with an office manager or biller, including payer enrollments, EFT reconciliation, payment posting, claims follow-up, appeals, and reporting, without requiring the practice to replace its existing practice management software.\n\nThe workflow begins when an insurer sends money. Lassie ingests remittance data, matches each payment to the correct insurer, patient, and claim, applies the practice's contractual adjustment logic, and posts the result directly into the practice management system in real time. When records align, the process runs without human involvement. When they do not, such as in an underpayment, mismatched EFT, or ambiguous write-off, Lassie flags the exception for staff review instead of leaving it in a backlog.\n\nThe product integrates with the three dominant on-premise dental EHR systems, Dentrix, Eaglesoft, and Open Dental, through a local agent that connects Windows-based software to Lassie's servers. It also connects to banking rails through Plaid and MX for real-time deposit reconciliation, and to major payers including BCBS, UHC, Delta Dental, Cigna, Aetna, MetLife, and Guardian.\n\nLassie also covers claims follow-up and appeals, including autonomous payer calls to check claim status, and includes a conversational reporting layer where practice owners can ask operational questions such as how collections are tracking for the week. The company says 98% of posting is handled autonomously, with staff involved only in the most complex edge cases.\n\nGo-live timelines depend on the practice's payment setup. Offices already receiving EFTs can typically go live in one to two weeks, while practices still using paper checks may take up to eight weeks to reach full auto-posting.\n\n## Business Model\n\nLassie sells into independent practices on a usage- and workflow-based pricing model rather than a per-seat subscription. Pricing scales with a practice's claims volume and workflow complexity, so revenue per customer can expand as the practice grows or adds more insurance workflows to Lassie's scope.\n\nIts go-to-market is community-driven despite the AI-native product. Early adoption sp",
+      "image": "https://sacra-logos.s3.us-east-2.amazonaws.com/company_logos/3058.png?v=30a0bdaa"
+    }
+  ],
+  "searchTime": 3574.5,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "output": {
+    "content": {
+      "evidence_url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+      "evidence_quote": "Lassie, a San Francisco, CA-based company building autonomous systems for small businesses, raised $35M in Series A funding.",
+      "reasoning": "The company is explicitly identified as San Francisco, California-based in a funding announcement.",
+      "verdict": "pass",
+      "evidence_date": "2026-06-04"
+    },
+    "grounding": [
+      {
+        "field": "evidence_url",
+        "citations": [
+          {
+            "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+            "title": "Lassie Raises $35M in Series A Funding"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_quote",
+        "citations": [
+          {
+            "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+            "title": "Lassie Raises $35M in Series A Funding"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "reasoning",
+        "citations": [
+          {
+            "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+            "title": "Lassie Raises $35M in Series A Funding"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "verdict",
+        "citations": [
+          {
+            "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+            "title": "Lassie Raises $35M in Series A Funding"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_date",
+        "citations": [
+          {
+            "url": "https://www.finsmes.com/2026/06/lassie-raises-35m-in-series-a-funding.html",
+            "title": "Lassie Raises $35M in Series A Funding"
+          }
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 5.48,
+  "_request": {
+    "query": "Company: Lassie (website https://lassie.ai).\nTest to verify: US-headquartered.\nHow it is tested: The HQ city and state on the company's own site, its LinkedIn page, or its funding announcement dateline is in the United States.\nDecide pass, fail or unclear for THIS company today, citing the freshest relevant source.",
+    "type": "auto",
+    "numResults": 6,
+    "contents": {
+      "text": {
+        "maxCharacters": 3000
+      }
+    },
+    "systemPrompt": "Today is 2026-09-10. You are verifying one qualification test for one specific company. Use only what the sources say. The most recent dated announcement of an event is the authority on the company's current state; older announcements are history; company profile pages (LinkedIn, Crunchbase, CB Insights, Tracxn) are secondary to the company's own pages and to dated news. Never confuse the company with a same-name company on a different website. Answer pass only when a source states the fact; fail only when a source contradicts the test; otherwise unclear. The evidence_quote must be copied verbatim from the cited source.",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "reasoning",
+        "evidence_quote",
+        "evidence_url",
+        "evidence_date"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unclear"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "One or two sentences: what the freshest relevant source says and how it decides the test."
+        },
+        "evidence_quote": {
+          "type": "string",
+          "description": "A verbatim sentence or fragment from the cited source that decides the verdict; empty if unclear."
+        },
+        "evidence_url": {
+          "type": "string",
+          "description": "The URL the quote comes from; empty if unclear."
+        },
+        "evidence_date": {
+          "type": "string",
+          "description": "The date of that source as shown on it (YYYY-MM-DD if known); empty if unknown."
+        }
+      }
+    }
+  }
+}

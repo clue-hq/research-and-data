@@ -52,6 +52,7 @@ from clue_api.arv2.display.personas import (
     persona_rank,
 )
 from clue_api.arv2.display.render import render_value_text
+from clue_api.arv2.logo_resolution import brandfetch_logo_url, is_linkedin_mark
 from clue_api.frontend_read.contract_v1 import (
     AccountActivity,
     AccountCustomField,
@@ -879,6 +880,33 @@ _OWNERS_SQL = """
     FROM platform_user
     WHERE user_id IN :user_ids
 """
+
+
+#: Where the accounts screens fetch a STORED mark from: the platform's own logo route behind the
+#: frontend's BFF mount (a rooted path; session-authenticated like every other BFF path, which is
+#: why the frontend renders it with Next's optimizer off). Brandfetch's Logo API URL is the
+#: other shape ``logo_path`` can take — an absolute URL the browser embeds directly, because that
+#: CDN refuses programmatic fetches by design.
+LOGO_PATH_PREFIX = "/api/clue/frontend/v1/accounts"
+
+
+def account_logo_path(
+    account_id: object, logo_url: object, *, domain: object = None, settings: Settings | None = None
+) -> str | None:
+    """The logo the screens show for an account, or ``None`` for the placeholder.
+
+    Founder rulings 2026-09-11 (supersede D0 ruling S2): a stored LinkedIn mark
+    (``core.logo_url``) is served through the platform's logo route; an account with no stored
+    mark but a domain gets Brandfetch's **Logo API** URL for that domain (``type/icon``, a
+    lettermark when the brand has no icon) when a client id is configured; otherwise ``None``.
+    The screens never receive a stored third-party URL — only the route, or the embed-only CDN
+    URL that is a pure function of the domain.
+    """
+    if isinstance(logo_url, str) and is_linkedin_mark(logo_url):
+        return f"{LOGO_PATH_PREFIX}/{account_id}/logo"
+    if settings is not None and isinstance(domain, str) and domain:
+        return brandfetch_logo_url(domain, client_id=settings.brandfetch_client_id)
+    return None
 
 
 async def owners_for(conn: AsyncConnection, *, user_ids: Iterable[str]) -> dict[str, AccountOwner]:

@@ -74,6 +74,11 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # at `head-of-abm@v44`. It declares the same ``project`` pin as its siblings, which is what
     # this audit requires of every standing address.
     "launch_arv2_person_research@1",
+    # ARV2 Track R, R4 (added in recipe0-stage0@23): verified account discovery for the project,
+    # granted at `head-of-abm@v45`. It declares the same ``project`` pin as its launch siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "launch_arv2_discovery@1",
     "read_arv2_account_research_run@1",
 )
 

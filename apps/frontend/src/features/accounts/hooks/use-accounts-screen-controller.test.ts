@@ -16,6 +16,7 @@ import {
   type ContactEmailLookup,
 } from "../model/contact-email-lookup";
 import { createLocalAccount, isLocalDraftAccount } from "../model/create-account";
+import { accountsForProject } from "../model/project-accounts";
 import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
 import {
   EMAIL_LOOKUP_POLL_LIMIT,
@@ -602,4 +603,141 @@ test("a created account invents nothing and is marked a local draft", () => {
   assert.equal("isLocalDraft" in AccountSchema.parse(draft), false);
   // The row says so in text; no new component, no invented badge.
   assert.match(table, /Not saved yet/);
+});
+
+// ---------------------------------------------------------------------------
+// Project scoping and the real membership write (founder ruling 2)
+// ---------------------------------------------------------------------------
+
+const projectScreen = source("../components/project-target-accounts.tsx");
+
+test("a project-scoped controller reads only that project's rows", () => {
+  // The hook cannot be mounted here (no DOM, no React renderer), so the wiring
+  // is read from source — the convention this file already uses. What the
+  // scoping actually computes is `accountsForProject`'s predicate, asserted
+  // against real rows in `model/project-accounts.test.ts`.
+  assert.match(controller, /options\?: \{ project\?: AccountProject \}/);
+  assert.match(controller, /const project = options\?\.project;/);
+  assert.match(
+    controller,
+    /const scopedAccounts = useMemo\(\(\) => project\s*\n\s*\? accountRows\.filter\(\(account\) => account\.projects\.some\(\(\{ id \}\) => id === project\.id\)\)\s*\n\s*: accountRows/,
+  );
+  // Search, filters, sort and the columns all read the scoped rows.
+  assert.match(controller, /const searched = scopedAccounts\.filter\(/);
+  assert.match(
+    controller,
+    /createAccountColumnDefinitions\(scopedAccounts\),\s*\n\s*\[scopedAccounts\],/,
+  );
+  assert.match(controller, /accounts: scopedAccounts,/);
+  // Omitted, the workspace-wide screen is unscoped as before.
+  assert.match(
+    projectScreen,
+    /useAccountsScreenController\(accountsForProject\(data\.accounts, projectId\), data\.bulkCapabilities, undefined, \{ project \}\)/,
+  );
+  assert.match(screen, /useAccountsScreenController\(accounts, bulkCapabilities\)/);
+});
+
+test("addAccounts appends the rows the screen does not have, stamping nothing itself", () => {
+  // The rows arrive already reflecting what the backend accepted, so nothing
+  // here invents a membership.
+  assert.match(controller, /function addAccounts\(added: AccountRow\[\]\) \{/);
+  assert.doesNotMatch(controller, /projects: \[\.\.\.account\.projects, project\]/);
+  // Only rows the screen does not already hold are appended…
+  assert.match(
+    controller,
+    /setAccountRows\(\(current\) => \[\.\.\.current, \.\.\.added\.filter\(\(account\) => !current\.some\(\(\{ id \}\) => id === account\.id\)\)\]\);/,
+  );
+  // …and the columns widen to whatever custom variables they carry.
+  assert.match(controller, /const definitions = createAccountColumnDefinitions\(added\);/);
+  assert.match(controller, /setColumnOrder\(\(current\) => \[\.\.\.current, \.\.\.definitions\.map/);
+  assert.match(controller, /setColumnWidths\(\(current\) => \(\{ \.\.\.createAccountColumnWidths\(definitions\), \.\.\.current \}\)\);/);
+  assert.match(controller, /setVisibleColumns\(\(current\) => \(\{ \.\.\.createAccountColumnVisibility\(definitions\), \.\.\.current \}\)\);/);
+
+  // A stamped row is exactly what `accountsForProject` then keeps — the same
+  // predicate the scoped read uses, so the row appears in the project table.
+  const stamped: Account = {
+    ...servedAccount,
+    projects: [...servedAccount.projects, { id: project.id, name: project.name }],
+  };
+  assert.deepEqual(accountsForProject([servedAccount, stamped], project.id), [stamped]);
+});
+
+test("Add accounts reflects only the picks the server accepted", async () => {
+  // The dialog's local-only add is not lifted: the picks go through the same
+  // action the Accounts screen submits (`addSelectedAccountsToProject`), and
+  // the rows the controller then appends are that action's own reflection — a
+  // partially applied write shows exactly the part that applied.
+  const picked = [
+    servedAccount,
+    { ...servedAccount, id: "account-2" },
+    { ...servedAccount, id: "account-3" },
+  ];
+  const result = response({ completed: 1, unchanged: 1, failed: 1 }, [
+    { subjectId: "account-1", outcome: "completed", reasonCode: null },
+    { subjectId: "account-2", outcome: "failed_terminal", reasonCode: null },
+    { subjectId: "account-3", outcome: "unchanged", reasonCode: null },
+  ]);
+  const outcome = await addSelectedAccountsToProject(
+    {
+      accountIds: picked.map(({ id }) => id),
+      idempotencyKey: "attempt-1",
+      // The tab knows its own project; it is not a picker option.
+      project: { id: project.id, name: project.name },
+      rows: picked,
+    },
+    async () => result,
+  );
+
+  assert.equal(outcome.status, "added");
+  const rows = outcome.status === "added" ? outcome.rows : [];
+  assert.deepEqual(rows, reflectAddToProject(picked, project, result));
+  // The refused pick gains nothing, so the project's scoped view never shows it.
+  assert.deepEqual(
+    accountsForProject(rows, project.id).map(({ id }) => id),
+    ["account-1", "account-3"],
+  );
+  assert.equal(outcome.status === "added" ? outcome.notice : null, "1 added · 1 already in project · 1 failed");
+  // The controller appends that reflection and surfaces that notice.
+  assert.match(controller, /setBulkNotice\(outcome\.notice\);\s*\n\s*if \(outcome\.status === "refused"\) return false;\s*\n\s*addAccounts\(outcome\.rows\);/);
+  assert.doesNotMatch(projectScreen, /data\/bulk-actions\.repository/);
+});
+
+test("an expired session on Add accounts stamps nothing and sends the operator to sign-in", async () => {
+  const picked = [servedAccount];
+  const outcome = await addSelectedAccountsToProject(
+    {
+      accountIds: ["account-1"],
+      idempotencyKey: "attempt-1",
+      project: { id: project.id, name: project.name },
+      rows: picked,
+    },
+    async () => {
+      throw new ClueApiError("private upstream message", {
+        code: "AUTHENTICATION_REQUIRED",
+        requestId: "request-4",
+        status: 401,
+      });
+    },
+  );
+
+  // No rows come back at all, so there is nothing to stamp — the 401 is not a
+  // "try again", and the picked row keeps exactly the memberships it had.
+  assert.deepEqual(outcome, { status: "session_expired" });
+  assert.deepEqual(picked[0]?.projects, servedAccount.projects);
+  assert.match(
+    controller,
+    /if \(outcome\.status === "session_expired"\) \{\s*\n\s*window\.location\.assign\("\/sign-in\?reason=session_expired"\);\s*\n\s*return false;\s*\n\s*\}/,
+  );
+});
+
+test("the Add accounts screen reacts to the write, and nothing else", () => {
+  // A refusal changes no row, and the screen says so with the same alert block
+  // its load failure uses.
+  assert.match(
+    projectScreen,
+    /if \(await controller\.submitAddAccounts\(accounts\)\) \{\s*\n\s*setAddFailed\(false\);\s*\n\s*onReread\(\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*setAddFailed\(true\);/,
+  );
+  assert.match(projectScreen, /role="alert"[\s\S]*?Unable to add accounts/);
+  // Success re-reads the served pool so it stops offering a row now in the project.
+  assert.match(projectScreen, /setData\(ProjectAccountsResponseSchema\.parse\(await response\.json\(\)\)\);/);
 });

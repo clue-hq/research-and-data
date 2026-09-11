@@ -47,8 +47,8 @@ const accountDateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-function formatAccountDate(value: string) {
-  return accountDateFormatter.format(new Date(value));
+function formatAccountDate(value?: string) {
+  return value ? accountDateFormatter.format(new Date(value)) : "—";
 }
 
 export function FitBadge({
@@ -76,7 +76,7 @@ export function FitBadge({
   );
 }
 
-export function AccountIdentity({ account }: { account: AccountDetail }) {
+export function AccountIdentity({ account }: { account: Pick<AccountDetail, "name" | "logoPath"> }) {
   return (
     <div>
       <div className="flex size-[68px] items-center justify-center rounded-lg border border-[var(--clue-border-neutral)] bg-white">
@@ -87,6 +87,7 @@ export function AccountIdentity({ account }: { account: AccountDetail }) {
           height={36}
           priority
           src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+          unoptimized={account.logoPath != null}
           width={36}
         />
       </div>
@@ -156,11 +157,18 @@ export function ContactsInline({
   );
 }
 
+export type AccountDetailsListData = Pick<AccountDetail,
+  | "id" | "name" | "owner" | "createdBy" | "industryLabels" | "headcountLabel"
+  | "revenueLabel" | "researchStatus" | "researchStatusLabel" | "websiteUrl"
+  | "websiteLabel" | "overallFit" | "fitScore" | "fitScoreLabel" | "locationsLabel"
+  | "overviewDisplay" | "foundedLabel" | "fundingLabel" | "socials" | "contacts" | "customFields"
+> & { createdAt?: string; lastModifiedAt?: string };
+
 export function AccountDetailsList({
   account,
   showContacts = false,
 }: {
-  account: AccountDetail;
+  account: AccountDetailsListData;
   showContacts?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -362,20 +370,31 @@ export function AccountTextSection({
   );
 }
 
-export function PreviewToolbar({ account, onNavigateTo }: { account: AccountDetail; onNavigateTo: (href: string) => void }) {
+export function PreviewToolbar({ account, onClose, onNavigateTo }: {
+  account: Pick<AccountDetail, "id" | "previewTitle">;
+  onClose?: () => void;
+  onNavigateTo: (href: string) => void;
+}) {
   return (
     <header className="flex h-14 items-center justify-between border-b-[0.5px] border-[var(--clue-border-neutral)] px-6">
       <div className="flex items-center gap-2.5">
-        <Link
-          aria-label="Close account preview"
-          className={components.iconButton}
-          href="/accounts"
-          prefetch
-          onNavigate={(event) => { event.preventDefault(); onNavigateTo("/accounts"); }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
-        </Link>
+        {onClose ? (
+          <button aria-label="Close account preview" className={components.iconButton} onClick={onClose} type="button">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
+          </button>
+        ) : (
+          <Link
+            aria-label="Close account preview"
+            className={components.iconButton}
+            href="/accounts"
+            prefetch
+            onNavigate={(event) => { event.preventDefault(); onNavigateTo("/accounts"); }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
+          </Link>
+        )}
         <span className={readability.uiMedium}>
           {account.previewTitle}
         </span>

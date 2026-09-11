@@ -1034,22 +1034,24 @@ async def _build_v1(conn: AsyncConnection) -> tuple[_Fixture, EntityId]:
     await _score(
         conn,
         account_id=zafran,
-        project_id=fixture.project_a.project_id,
-        fit=0.82,
-        intent=0.5,
-        icp_key="alpha",
-        icp_version=1,
-    )
-    # A *lower* score under the non-primary project: the row must report the primary project's fit,
-    # never whichever score happens to sort first.
-    await _score(
-        conn,
-        account_id=zafran,
         project_id=fixture.project_b.project_id,
         fit=0.20,
         intent=None,
         icp_key="beta",
         icp_version=3,
+    )
+    # The lower score under project B is written FIRST and the primary project's higher score
+    # LAST, so the higher one is the newest. Founder ruling 2026-09-11: a fit is global to the
+    # account — the row shows the most recently scored fit whichever project scored it, no
+    # longer only the primary project's.
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=fixture.project_a.project_id,
+        fit=0.82,
+        intent=0.5,
+        icp_key="alpha",
+        icp_version=1,
     )
     # The v1 row's research status comes from ARV2's own rows and nothing else (D4-b decision 1),
     # so the seed is an ``arv2_research_job`` driven through the R2 store — not an M8D job.
@@ -1352,3 +1354,30 @@ def test_the_z_suffixed_timestamp_is_the_only_form_the_frontends_zod_accepts() -
     zod_validate(row, "AccountSchema")
     with pytest.raises(AssertionError):
         zod_validate({**row, "createdAt": "2026-09-08T12:00:00+00:00"}, "AccountSchema")
+
+
+def test_a_stored_mark_serves_the_platforms_route_and_a_domain_without_one_gets_brandfetch() -> (
+    None
+):
+    """Founder rulings 2026-09-11 (supersede D0 ruling S2): an account carrying a LinkedIn mark
+    serves a rooted path to the platform's logo route — never the third-party URL; an account with
+    a domain but no stored mark gets Brandfetch's embed-only Logo API URL for that domain; and
+    with no client id configured that account serves ``null`` so the frontend shows its glyph."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture, zafran = await _build_v1(conn)
+            await _neutral_claim(
+                conn,
+                account_id=zafran,
+                field_key="core.logo_url",
+                value="https://media.licdn.com/dms/image/v2/X/company-logo_200_200/0?e=2147483647",
+            )
+            without = (await _get(conn)).json()
+            rows = _rows(without)
+            assert rows["Zafran"]["logoPath"] == f"/api/clue/frontend/v1/accounts/{zafran}/logo"
+            assert "media.licdn.com" not in rows["Zafran"]["logoPath"]
+            assert rows["Seedling"]["logoPath"] is None  # no mark, no domain, no client id
+            zod_validate(rows["Zafran"], "AccountSchema")
+
+    run_async(scenario())

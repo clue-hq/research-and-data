@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|status
+# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|restart-api|restart-workers|status
 #
 # Written 2026-08-29 after a stack rebuild from memory burned an evening on
 # three separate port/origin mismatches. This file is the single source of
@@ -20,7 +20,8 @@
 #                                  the frontend proxies to (CLUE_API_BASE_URL).
 #   8030  platform API (2nd)     — historical twin of 8020; kept because some
 #                                  session flows were exercised against it.
-#   ----  fleet worker           — drives design runs; no port.
+#   ----  fleet worker(s)        — drive design runs and every fleet job kind;
+#                                  no port.
 #
 # DEV LOGIN (Clerk dev instance, test mode):
 #   email     aryan+clerk_test_design@example.com
@@ -30,23 +31,93 @@
 # Env comes from repo-root .env (CLUE_STORAGE_FS_ROOT is pinned ABSOLUTE there —
 # never remove it; a process without it silently writes blobs to
 # /private/tmp/lumen-dev-storage and the stack splits). Logs land in /tmp/browser_*.log.
+#
+# LANE KNOBS (added 2026-09-11 so a second worktree can run the SAME stack on
+# the SAME ports against ITS OWN database, without a copy of this file). Every
+# default below is exactly what this script did before the knobs existed, so
+# the istanbul checkout is unchanged. A lane sets them in a tiny wrapper script
+# next to this one (see scripts/dev_stack_san_salvador.sh) — never in a shell
+# export, which evaporates at the next rebuild.
+#   DEV_STACK_DB_URL                 the database every process uses
+#   DEV_STACK_WORKERS                how many fleet worker PROCESSES to start
+#   DEV_STACK_WORKER_CONCURRENCY     drain slots per worker process
+#                                    (CLUE_FLEET_WORKER_CONCURRENCY, O6 task 9d)
+#   DEV_STACK_AGENT_WORKSPACE_ROOT   CLUE_AGENT_WORKSPACE_ROOT for the lane
+#   DEV_STACK_LOG_PREFIX             log file prefix (default /tmp/browser)
 # =============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DB_URL="postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev"
+DB_URL="${DEV_STACK_DB_URL:-postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev}"
+WORKERS="${DEV_STACK_WORKERS:-1}"
+WORKER_CONCURRENCY="${DEV_STACK_WORKER_CONCURRENCY:-1}"
+AGENT_WORKSPACE_ROOT="${DEV_STACK_AGENT_WORKSPACE_ROOT:-/private/tmp/clue-agent-workspaces}"
+LOG="${DEV_STACK_LOG_PREFIX:-/tmp/browser}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"
   CLUE_DESIGN_RUNTIME_ENABLED=1
   CLUE_DESIGN_API_BASE_URL=http://127.0.0.1:8010
-  CLUE_AGENT_WORKSPACE_ROOT=/private/tmp/clue-agent-workspaces
+  CLUE_AGENT_WORKSPACE_ROOT="$AGENT_WORKSPACE_ROOT"
 )
 
 load_env() { set -a; source "$ROOT/.env"; set +a; }
 
+worker_log() {  # worker 1 keeps the historical name; 2..N get a suffix
+  if [ "$1" -eq 1 ]; then echo "${LOG}_fleet_worker.log"; else echo "${LOG}_fleet_worker_$1.log"; fi
+}
+
+start_platform_api() {  # both twins; a settings change (.env) needs both restarted
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
+      > "${LOG}_platform_api_8020.log" 2>&1 & )
+
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
+      > "${LOG}_platform_api.log" 2>&1 & )
+}
+
+# Restart ONLY the two platform API processes — the way to pick up a changed
+# .env setting (e.g. CLUE_VERIFICATION_ENABLED, 2026-09-11) without touching the
+# frontend, the design API or the fleet workers. Workers keep their old settings
+# until `down`/`up`.
+restart_api() {
+  load_env
+  pkill -f "uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  start_platform_api
+  echo "restarting platform API…"; sleep 6; status
+}
+
+start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, staggered (see the note in up)
+  for i in $(seq 1 "$WORKERS"); do
+    [ "$i" -gt 1 ] && sleep 6
+    ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+        CLUE_FLEET_WORKER_CONCURRENCY="$WORKER_CONCURRENCY" PYTHONUNBUFFERED=1 \
+        "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
+        > "$(worker_log "$i")" 2>&1 & )
+  done
+}
+
+# Restart ONLY the fleet workers, respawned with the SAME count and per-worker
+# concurrency the lane wrapper sets. Check nothing is mid-job first: a killed
+# worker's job is orphaned until its lease expires.
+restart_workers() {
+  load_env
+  pkill -f "clue_api.fleet_main" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    [ "$(pgrep -f "clue_api.fleet_main" | wc -l | tr -d ' ')" -eq 0 ] && break
+    sleep 0.5
+  done
+  start_workers
+  echo "restarting fleet workers…"; sleep 8; status
+}
+
 up() {
   load_env
-  mkdir -p /private/tmp/clue-agent-workspaces && chmod 700 /private/tmp/clue-agent-workspaces
+  mkdir -p "$AGENT_WORKSPACE_ROOT" && chmod 700 "$AGENT_WORKSPACE_ROOT"
 
   ( cd "$ROOT/subsystems/clue-design" && \
     env "${PLATFORM_ENV[@]}" \
@@ -55,19 +126,15 @@ up() {
         LUMEN_API_CORS_ORIGINS="http://localhost:3020,http://127.0.0.1:3020,http://localhost:3000" \
         PYTHONPATH=.:apps/api:apps/agent_runtime \
         "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port 8010 \
-        > /tmp/browser_design_api.log 2>&1 & )
+        > "${LOG}_design_api.log" 2>&1 & )
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
-      > /tmp/browser_platform_api_8020.log 2>&1 & )
+  start_platform_api
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
-      > /tmp/browser_platform_api.log 2>&1 & )
-
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
-      > /tmp/browser_fleet_worker.log 2>&1 & )
+  # Workers start one at a time, a few seconds apart: every worker seeds the
+  # field registry at boot with plain INSERTs, and two booting together race
+  # to `field_definition_pkey` — three of four died that way on 2026-09-11.
+  # The stagger is a runbook mitigation; the seed itself is not concurrency-safe.
+  start_workers
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
   # .next route graph (single routes 404 while siblings work — twice live on
@@ -75,7 +142,7 @@ up() {
   # a debugging session. Always start the frontend from a clean cache.
   rm -rf "$ROOT/apps/frontend/.next"
   ( cd "$ROOT/apps/frontend" && npm run dev -- --port 3020 \
-      > /tmp/browser_frontend.log 2>&1 & )
+      > "${LOG}_frontend.log" 2>&1 & )
 
   echo "starting…"; sleep 8; status
   echo
@@ -100,8 +167,9 @@ status() {
       echo "  $name ($port): DOWN"
     fi
   done
-  if pgrep -f "clue_api.fleet_main" >/dev/null 2>&1; then
-    echo "  fleet-worker: UP"
+  running="$(pgrep -f "clue_api.fleet_main" | wc -l | tr -d ' ')"   # macOS pgrep has no -c
+  if [ "${running:-0}" -gt 0 ]; then
+    echo "  fleet-worker: UP ($running process(es), $WORKER_CONCURRENCY slot(s) each)"
   else
     echo "  fleet-worker: DOWN"
   fi
@@ -110,6 +178,8 @@ status() {
 case "${1:-status}" in
   up) up ;;
   down) down ;;
+  restart-api) restart_api ;;
+  restart-workers) restart_workers ;;
   status) status ;;
   *) echo "usage: $0 up|down|status"; exit 2 ;;
 esac

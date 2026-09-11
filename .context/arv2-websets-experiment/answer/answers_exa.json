@@ -1,0 +1,938 @@
+{
+  "1Fort AI": {
+    "stage": {
+      "reasoning": "The company's most recent priced funding round, announced in April 2025, is explicitly identified by its lead investor as a seed round, not a Series A.",
+      "evidence_quote": "Bonfire Ventures is proud to have led 1Fort's $7.5M seed round.",
+      "evidence_url": "https://www.bonfirevc.com/news/why-we-invested-1fort---simplifying-insurance-for-brokers-and-businesses-alike",
+      "verdict": "fail",
+      "evidence_date": "2025-04-16",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.4,
+      "_citations": [
+        "2025-04-17 https://www.bonfirevc.com/news/why-we-invested-1fort---simplifying-insurance-for-brokers-and-businesses-alike",
+        "2025-04-16 https://1fort.ai/insights/1fort-raises-7-5m-to-transform-business-insurance-with-ai",
+        " https://1fort.ai/blog/1fort-raises-7-5m-to-transform-business-insurance-with-ai",
+        "2025-04-17 https://aijourn.com/1fort-raises-7-5m-to-automate-business-insurance-with-ai/",
+        "2025-04-17 https://www.pymnts.com/insurance/2025/1fort-raises-7-5-million-for-ai-powered-platform-for-business-insurance/",
+        "2025-04-18 https://www.thesaasnews.com/news/1fort-raises-7-5-million-in-funding/"
+      ]
+    },
+    "geography": {
+      "reasoning": "The company's official website and its LinkedIn page both explicitly state that its headquarters is located in New York, New York, United States.",
+      "verdict": "pass",
+      "evidence_url": "https://1fort.ai/about",
+      "evidence_date": "2026-06-12",
+      "evidence_quote": "1Fort AI 32 Mercer St, Floor 3 New York, NY 10013 USA",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        " https://1fort.ai/about",
+        "2026-06-12 https://www.linkedin.com/company/1fort",
+        "2025-04-16 https://www.cbinsights.com/company/1fort",
+        "2022-04-07 https://tracxn.com/d/companies/1fort/__KwFnV_ld2svX23rjmbY4W8vTJz0u1N2RGffn9GPCcGg",
+        "2025-04-16 https://1fort.ai/insights/1fort-raises-7-5m-to-transform-business-insurance-with-ai",
+        "2025-04-17 https://aijourn.com/1fort-raises-7-5m-to-automate-business-insurance-with-ai/"
+      ]
+    },
+    "hiring": {
+      "evidence_date": "2026-09-10",
+      "reasoning": "The company's careers page currently lists an opening for a Business Development Rep, which is a go-to-market role as defined by the test requirements.",
+      "verdict": "pass",
+      "evidence_quote": "Business Development Rep New York, NY",
+      "evidence_url": "https://1fort.ai/careers",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        " https://1fort.ai/careers",
+        " https://1fort.ai/careers/growth-lead",
+        "2026-04-09 https://www.linkedin.com/posts/1fort_welcome-caleb-cramer-to-1fort-ai-caleb-joins-activity-7448065765360041984-v3O-",
+        "2026-06-23 https://www.linkedin.com/posts/1fort_welcome-to-1fort-ai-brandon-wright-brandon-activity-7475174804942172160-1n0t",
+        " https://1fort.ai/about",
+        "2026-06-12 https://www.linkedin.com/company/1fort"
+      ]
+    },
+    "intent": {
+      "reasoning": "The company's career page for a Growth Lead explicitly describes a role that includes driving customer development, building partnerships, and leading growth initiatives, which constitutes a requisition for outbound and account research/prospecting activities.",
+      "evidence_date": "2026-01-01",
+      "verdict": "pass",
+      "evidence_url": "https://www.1fort.com/careers/growth-lead",
+      "evidence_quote": "As our first growth lead, you\u2019ll help take 1Fort from 0 to 1, shouldering the responsibilities typically expected from founders: ... Drive customer development to understand user needs and feedback ... Build partnerships to support growth and retention ... Lead growth initiatives for existing customers, including upselling and cross-selling",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        " https://www.1fort.com/careers/growth-lead",
+        "2025-04-16 https://1fort.ai/insights/1fort-raises-7-5m-to-transform-business-insurance-with-ai",
+        " https://www.tipranks.com/news/private-companies/1fort-expands-ai-focused-sales-talent-for-insurance-market",
+        "2025-04-17 https://aijourn.com/1fort-raises-7-5m-to-automate-business-insurance-with-ai/",
+        "2025-04-17 https://www.bonfirevc.com/news/why-we-invested-1fort---simplifying-insurance-for-brokers-and-businesses-alike",
+        "2025-04-21 https://theaiinsider.tech/2025/04/21/1fort-raises-7-5m-to-automate-business-insurance-with-ai/"
+      ]
+    }
+  },
+  "Snout": {
+    "stage": {
+      "evidence_url": "https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+      "verdict": "pass",
+      "evidence_date": "2026-01-28",
+      "reasoning": "The company announced a $10M Series A funding round on January 28, 2026. As of September 10, 2026, this round occurred within the last 24 months.",
+      "evidence_quote": "Today, we announced that Snout has secured over $110M in total capital: a $10M Series A led by Footwork and a $100M financing facility from Clear Haven Capital Management.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        "2026-01-28 https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+        "2026-01-28 https://www.prnewswire.com/news-releases/snout-secures-over-110-million-in-capital-to-make-preventive-pet-care-accessible-for-every-pet-302672412.html",
+        "2026-01-28 https://nbt.substack.com/p/snout",
+        "2026-01-28 https://finance.yahoo.com/news/vet-bills-jump-40-recent-105008190.html",
+        "2026-01-28 https://www.aol.com/articles/exclusive-snout-pet-wellness-plan-120000557.html",
+        "2026-02-04 https://www.crowdfundinsider.com/2026/02/259184-pet-care-financing-startup-snout-lands-100m-facility-raises-10m-series-a/"
+      ]
+    },
+    "geography": {
+      "reasoning": "The company's LinkedIn profile and CB Insights entry identify its headquarters as being in Troy, Michigan, United States.",
+      "evidence_url": "https://www.linkedin.com/company/snoutplans",
+      "evidence_date": "2026-01-28",
+      "verdict": "pass",
+      "evidence_quote": "340 E Big Beaver Rd, Suite 550, Building C, Troy, Michigan 48083 (HQ)",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.4,
+      "_citations": [
+        "2025-01-20 https://www.linkedin.com/company/snoutplans",
+        "2026-01-28 https://www.cbinsights.com/company/snoutid",
+        "2026-01-28 https://www.prnewswire.com/news-releases/snout-secures-over-110-million-in-capital-to-make-preventive-pet-care-accessible-for-every-pet-302672412.html",
+        "2026-01-28 https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+        " https://www.snout.com/about",
+        "2026-01-28 https://fortune.com/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/"
+      ]
+    },
+    "hiring": {
+      "reasoning": "The company has a Product Manager, Growth role listed, which is a role explicitly focused on growth, a GTM-related function.",
+      "evidence_url": "https://www.jobtarget.com/jobs/jt-1i3x347d8m/product-manager-growth-california",
+      "evidence_quote": "Product Manager, Growth in California at Snout ... Snout California, United States Posted on July 10, 2026",
+      "evidence_date": "2026-07-10",
+      "verdict": "pass",
+      "verdict_after_guard": "unclear",
+      "guard": "quote not found verbatim in any returned citation text",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.4,
+      "_citations": [
+        "2026-07-10 https://www.jobtarget.com/jobs/jt-1i3x347d8m/product-manager-growth-california",
+        " https://builtin.com/job/head-marketing/8879442",
+        " https://www.jobtarget.com/jobs/jt-fw3eef1qz7/go-to-market-gtm-recruiter-troy-michigan",
+        " https://builtin.com/job/product-manager-growth/10129975",
+        " https://www.jobtarget.com/jobs/jt-2jlz8fp9nh/head-of-marketing-troy-michigan",
+        "2026-06-22 https://linkedin.com/company/snoutplans"
+      ]
+    },
+    "intent": {
+      "evidence_quote": "Identify and research potential corporate clients, build pipeline through outbound outreach, network, and qualify leads to determine fit and decision-making authority",
+      "reasoning": "A job requisition for an Enterprise Account Manager at Snout explicitly tasks the role with building a pipeline through outbound outreach and researching corporate veterinary clients, which constitutes a buying-intent signal for outbound prospecting.",
+      "verdict": "pass",
+      "evidence_url": "https://builtin.com/job/enterprise-account-manager/8879445",
+      "evidence_date": "2026-09-10",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        " https://builtin.com/job/enterprise-account-manager/8879445",
+        "2026-01-28 https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+        " https://builtin.com/job/growth-marketer-demand-generation/9202983",
+        "2026-01-28 https://www.prnewswire.com/news-releases/snout-secures-over-110-million-in-capital-to-make-preventive-pet-care-accessible-for-every-pet-302672412.html",
+        "2026-01-28 https://fortune.com/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/",
+        "2026-01-28 https://fortune.com/2026/01/28/why-are-vet-bills-so-expensive-snout-pet-wellness-membership/"
+      ]
+    }
+  },
+  "Lasso MD": {
+    "stage": {
+      "verdict": "fail",
+      "evidence_date": "2023-04-27",
+      "evidence_url": "https://www.linkedin.com/posts/bunnell_lasso-md-raises-2m-to-help-dentists-grow-activity-7057731100932018176-6Tqv",
+      "evidence_quote": "After 9-months of fundraising in a down market, I am thrilled to announce that Lasso MD has closed a $2M Seed Investment with Trestle Partners.",
+      "reasoning": "Lasso MD's most recent funding round is a Seed round announced in April 2023, which does not meet the requirement of being a Series A or Series A extension announced within the last 24 months (i.e., since September 2024).",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 5.1,
+      "_citations": [
+        "2023-04-28 https://www.linkedin.com/posts/bunnell_lasso-md-raises-2m-to-help-dentists-grow-activity-7057731100932018176-6Tqv",
+        " https://fundediq.co/lasso-md-lassomd-com-funding/",
+        " https://leadiq.com/c/lasso-md/5d9e3f6e408f0cc3d91bee07",
+        "2023-04-27 https://www.businesswire.com/news/home/20230427005364/en/Lasso-MD-Raises-%242M-to-Help-Dentists-Grow-Patient-Base",
+        "2023-04-27 https://www.cbinsights.com/company/lasso-7/financials",
+        " https://www.socaltech.com/lasso_md_loops_in__m/s-0083392.html"
+      ]
+    },
+    "geography": {
+      "evidence_quote": "Headquartered in San Diego, California, United States",
+      "evidence_date": "2025-03-17",
+      "reasoning": "Multiple sources, including official company filing information and professional profiles, consistently identify Lasso MD's headquarters as San Diego, California, United States.",
+      "evidence_url": "https://www.linkedin.com/company/lassomd",
+      "verdict": "pass",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        "2025-03-17 https://www.linkedin.com/company/lassomd",
+        " https://www.bizprofile.net/ca/san-diego/lasso-md-inc",
+        " https://fundediq.co/lasso-md-lassomd-com-funding/",
+        "2023-04-27 https://www.businesswire.com/news/home/20230427005364/en/Lasso-MD-Raises-%242M-to-Help-Dentists-Grow-Patient-Base",
+        " https://www.lassomd.com/company",
+        "2023-04-27 https://www.finsmes.com/2023/04/lasso-md-raises-2m-in-funding.html"
+      ]
+    },
+    "hiring": {
+      "verdict": "pass",
+      "evidence_date": "2025-03-17",
+      "evidence_quote": "Active Job Postings: 2",
+      "evidence_url": "https://www.linkedin.com/company/lassomd",
+      "reasoning": "The company's LinkedIn profile, updated as of March 2026, explicitly confirms active job postings, and recent posts from July 2026 list GTM roles such as Performance Marketing Manager and Marketing Campaign Manager.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        "2025-03-17 https://www.linkedin.com/company/lassomd",
+        " https://www.lassomd.com/work-with-us/careers",
+        "2026-07-18 https://www.linkedin.com/posts/lassomd_hiring-activity-7484207937947844610-fhnK",
+        "2026-02-06 https://www.linkedin.com/posts/lassomd_hiring-activity-7425531228658958336-axM5",
+        "2026-07-07 https://www.linkedin.com/posts/lassomd_hiring-activity-7480219772664754176-smaC",
+        "2026-07-21 https://www.mysmartpros.com/tuition/job/remote-marketing-campaign-manager-09f56e22/"
+      ]
+    },
+    "intent": {
+      "verdict": "pass",
+      "evidence_url": "https://www.linkedin.com/posts/lassomd_hiring-activity-7484207937947844610-fhnK",
+      "evidence_date": "2026-07-18",
+      "reasoning": "Lasso MD posted a job requisition for a Performance Marketing Manager focused on SMB Demand Generation, which involves outbound-related activities such as list-building and lead generation to fuel growth.",
+      "evidence_quote": "We're a new Performance Marketing Manager - Google Ads (SMB Demand Generation) in United States. Apply today or share this post with your network.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-07-18 https://www.linkedin.com/posts/lassomd_hiring-activity-7484207937947844610-fhnK",
+        "2023-04-27 https://www.businesswire.com/news/home/20230427005364/en/Lasso-MD-Raises-%242M-to-Help-Dentists-Grow-Patient-Base",
+        "2026-06-23 https://www.linkedin.com/posts/lassomd_hiring-activity-7475151538416615424-X3pf",
+        "2026-04-10 https://petejohnsoniv.com/blog/how-we-started-lasso-md",
+        "2025-03-17 https://www.linkedin.com/company/lassomd",
+        " https://theorg.com/org/lasso-md/org-chart/pete-johnson"
+      ]
+    }
+  },
+  "&AI": {
+    "stage": {
+      "evidence_date": "2025-02-06",
+      "evidence_quote": "&AI, which provides the first AI agent for patent attorneys, announced today that it has raised a $6.5M seed round",
+      "verdict": "fail",
+      "reasoning": "The company's most recent funding round is a seed round, which contradicts the requirement that the most recent round must be a Series A or Series A extension.",
+      "evidence_url": "https://www.globenewswire.com/news-release/2025/02/06/3022324/0/en/YC-backed-AI-Raises-6-5-Million-to-Launch-the-First-AI-Agent-for-Patent-Attorneys.html",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        "2025-02-06 https://www.globenewswire.com/news-release/2025/02/06/3022324/0/en/YC-backed-AI-Raises-6-5-Million-to-Launch-the-First-AI-Agent-for-Patent-Attorneys.html",
+        "2026-04-20 https://www.tryandai.com/blog/and-ai-credit-based-pricing-model",
+        "2025-02-06 https://finance.yahoo.com/news/yc-backed-ai-raises-6-180500000.html",
+        "2025-02-06 https://www.citybiz.co/article/658375/yc-backed-ai-raises-6-5-million-to-launch-ai-agent-for-patent-attorneys/",
+        " https://www.gaebler.com/VC-Funding-9C12004D-358B-4E99-872C-65162D4274C9--AI-02-10-2025",
+        " https://raising.fi/company/tryandai"
+      ]
+    },
+    "geography": {
+      "evidence_url": "https://www.linkedin.com/company/and-ai",
+      "verdict": "pass",
+      "evidence_quote": "Headquarters: San Francisco, United States",
+      "evidence_date": "2026-06-17",
+      "reasoning": "Multiple sources, including the company's LinkedIn page and funding announcements, confirm that &AI is headquartered in San Francisco, California, United States.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2026-06-17 https://www.linkedin.com/company/and-ai",
+        "2025-02-06 https://www.cbinsights.com/company/ai-3",
+        " https://strike.fyi/c/tryandai-com",
+        "2025-02-06 https://www.globenewswire.com/news-release/2025/02/06/3022324/0/en/YC-backed-AI-Raises-6-5-Million-to-Launch-the-First-AI-Agent-for-Patent-Attorneys.html",
+        " https://www.tryandai.com/company",
+        " https://client.klazify.com/website/tryandai.com"
+      ]
+    },
+    "hiring": {
+      "evidence_date": "2026-08-28",
+      "verdict": "pass",
+      "evidence_url": "https://www.linkedin.com/posts/ai-and_hiring-ai-aiand-activity-7498907257548705792-Ol2g",
+      "evidence_quote": "AIaaS & PaaS Business Development",
+      "reasoning": "The company ai& (which is distinct from the &AI patent litigation company) lists multiple go-to-market roles on its careers page, such as AIaaS & PaaS Business Development and Account Manager. These listings are active as of August 2026.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-06-25 https://linkedin.com/company/ai-and",
+        " https://jobs.ashbyhq.com/aiand",
+        " https://jobs.ashbyhq.com/aiand/33601126-9a76-42a9-8759-1b2c6e465037",
+        " https://www.tryandai.com/company",
+        "2026-06-24 https://linkedin.com/company/and-ai",
+        "2026-03-20 https://jobs.ashbyhq.com/aiand/9e603f41-a703-4b10-a2e4-b4ef77cfb77e"
+      ]
+    },
+    "intent": {
+      "reasoning": "The company's marketing materials and outreach invitations demonstrate they are actively seeking customers, but there is no citable evidence of a specific buying-intent signal being used for their own outbound/ABM or a statement that founder-led outbound has reached its limit. The sources describe the company as having launched and seeking users, which is standard business activity rather than a specific buying-intent signal for prospecting as defined by the test.",
+      "evidence_url": "https://fondo.com/blog/and-ai-launches",
+      "verdict": "unclear",
+      "evidence_quote": "They\u2019re actively looking to onboard more tech-forward law firms and company in-houses working with patents. They\u2019d also love to hear directly from individual patent applicants and owners about how &AI tools might serve them. If you\u2019re interested, please connect with them, and they\u2019d love to talk about working together!",
+      "evidence_date": "2026-02-09",
+      "verdict_after_guard": "unclear",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        "2026-02-09 https://fondo.com/blog/and-ai-launches",
+        "2026-04-21 https://www.linkedin.com/posts/and-ai_try-ai-today-with-a-7-day-free-trial-and-activity-7452384378933891072-ry6J",
+        " https://linkedin.com/company/and-ai",
+        "2026-05-27 https://www.linkedin.com/posts/jay-bhandari-profile_gtm-is-a-top-3-priority-for-every-founder-activity-7465368479118946306-xoN6",
+        "2026-05-22 https://growjo.com/blog/2026/05/22/how-smart-revenue-teams-predict-buying-intent-before-prospects-fill-out-a-form/",
+        "2026-05-24 https://reachiq.ai/resources/blog/series-a-founders-outbound-playbook/"
+      ]
+    }
+  },
+  "DentalHQ": {
+    "stage": {
+      "evidence_url": "https://www.cbinsights.com/company/dentalhq/financials",
+      "evidence_quote": "DentalHQ's latest funding round was a Convertible Note for $1.1M on April 24, 2025.",
+      "reasoning": "The company's most recent funding round is a Convertible Note, not a Series A or Series A extension.",
+      "evidence_date": "2025-04-24",
+      "verdict": "fail",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        " https://www.cbinsights.com/company/dentalhq/financials",
+        "2025-04-24 https://www.cbinsights.com/company/dentalhq",
+        "2025-05-08 https://www.trysignalbase.com/news/funding/dentalhq-raises-11m-to-revolutionize-in-house-dental-membership-management",
+        "2021-11-23 https://tracxn.com/d/companies/dentalhq/__K5Aweu0svfU_UEBgj1PAIhIgCeN-EA6hN1NvzFamZNo/funding-and-investors",
+        "2026-06-28 https://linkedin.com/company/dentalhq",
+        "2021-11-23 https://tracxn.com/d/companies/dentalhq/__K5Aweu0svfU_UEBgj1PAIhIgCeN-EA6hN1NvzFamZNo"
+      ]
+    },
+    "geography": {
+      "evidence_quote": "Headquartered in Raleigh, North Carolina, United States.",
+      "evidence_url": "https://linkedin.com/company/dentalhq",
+      "evidence_date": "2026-06-28",
+      "verdict": "pass",
+      "reasoning": "Multiple sources, including the company's LinkedIn page and news reports about the company, confirm that DentalHQ is headquartered in Raleigh, North Carolina, which is in the United States.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-06-28 https://linkedin.com/company/dentalhq",
+        "2025-08-12 https://dentalhq.com/2025/08/12/dentalhq-joins-the-inc-5000-list-of-americas-fastest-growing-private-companies-marking-their-first-time-on-the-list/",
+        "2025-04-24 https://www.cbinsights.com/company/dentalhq",
+        "2022-02-14 https://grepbeat.com/2022/02/14/open-wide-raleigh-based-dentalhq-raises-1-5-million-seed-round/",
+        " https://getlatka.com/companies/dentalhq.com",
+        " https://www.inc.com/profile/dentalhq"
+      ]
+    },
+    "hiring": {
+      "evidence_quote": "The Customer Success Manager will own the end-to-end customer lifecycle across dental practice customers, responsible for onboarding, training, and proactive engagement to drive product adoption and customer satisfaction. ... Collaborate with Sales, Product, and Support teams to advocate for customers and close feedback loops",
+      "reasoning": "The provided sources do not list any open roles on DentalHQ's own careers page or ATS. The job listings found are on third-party aggregator sites and pertain to a Customer Success Manager role, which does not fall into the specified GTM categories (sales, marketing, growth, ABM, demand generation, SDR/BDR, partnerships, revenue operations).",
+      "evidence_date": "2026-08-19",
+      "verdict": "fail",
+      "evidence_url": "https://flexgen.zya.me/job/remote-customer-success-manager-20",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.8,
+      "_citations": [
+        "2026-08-19 https://flexgen.zya.me/job/remote-customer-success-manager-20",
+        "2025-03-31 https://www.linkedin.com/posts/dentalhq_dentalhq-is-expanding-our-amazing-customer-activity-7312570281879916545-qLRo",
+        "2026-07-14 https://www.mysmartpros.com/tuition/job/remote-customer-success-manager-92f125e1/",
+        "2026-06-28 https://linkedin.com/company/dentalhq",
+        "2026-08-17 https://jquasar.42web.io/remote-jobs/remote-customer-success-manager-20",
+        "2026-08-17 https://willow.2kool4u.net/remote-jobs/remote-customer-success-manager-20"
+      ]
+    },
+    "intent": {
+      "evidence_url": "https://www.trysignalbase.com/news/funding/dentalhq-raises-11m-to-revolutionize-in-house-dental-membership-management",
+      "evidence_date": "2025-05-08",
+      "evidence_quote": "Additional funding will also bolster our integrated marketing services, patient financing tools, and expert consultation initiatives to help dental practitioners grow their patient base.",
+      "verdict": "pass",
+      "reasoning": "The company announced a funding round in May 2025 where it explicitly earmarked capital for integrated marketing services and initiatives to help dental practitioners grow their patient base. This signals a go-to-market expansion effort, fitting the criteria for a buying-intent signal.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2025-05-08 https://www.trysignalbase.com/news/funding/dentalhq-raises-11m-to-revolutionize-in-house-dental-membership-management",
+        "2025-03-31 https://www.linkedin.com/posts/dentalhq_dentalhq-is-expanding-our-amazing-customer-activity-7312570281879916545-qLRo",
+        "2022-02-14 https://grepbeat.com/2022/02/14/open-wide-raleigh-based-dentalhq-raises-1-5-million-seed-round/",
+        "2025-08-12 https://dentalhq.com/2025/08/12/dentalhq-joins-the-inc-5000-list-of-americas-fastest-growing-private-companies-marking-their-first-time-on-the-list/",
+        "2025-04-23 https://dentalhq.com/2025/04/23/dentalhq-partners-with-great-dental-websites-to-grow-membership-plans-online/",
+        "2025-11-05 https://dentalhq.com/2025/11/05/curve-dental-announces-strategic-integration-partnership-with-dentalhq-setting-new-standard-for-connected-practice-management/"
+      ]
+    }
+  },
+  "Digs": {
+    "stage": {
+      "reasoning": "Digs announced a $25.3 million Series A funding round led by Builders FirstSource on August 25, 2026, which is within the 24-month window required by the test.",
+      "evidence_quote": "Builders FirstSource is the solo lead on Digs\u2019 $25.3 million Series A financing and has also entered into a five-year commercial agreement with Digs to accelerate product development, strengthen platform integration, and expand AI capabilities.",
+      "verdict": "pass",
+      "evidence_url": "https://www.sbcacomponents.com/media/builders-firstsource-invests-253m-in-ai-software-developer-digs",
+      "evidence_date": "2026-09-01",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        "2026-09-01 https://www.sbcacomponents.com/media/builders-firstsource-invests-253m-in-ai-software-developer-digs",
+        "2026-08-26 https://distributionstrategy.com/2026/08/builders-firstsource-leads-25-3-million-digs-funding-round-signs-five-year-ai-deal/",
+        "2026-08-29 https://www.techcompanynews.com/digs-raises-25-3-million-in-series-a-funding-round/",
+        "2026-09-02 https://www.constructionindustry.ai/funding/digs-25-3m-series-a-builders-firstsource/",
+        "2026-08-25 https://siliconflorist.com/2026/08/25/digs-raises-25m/",
+        "2026-08-26 https://app.fundz.net/fundings/digs-funding-round-series-a-644db1"
+      ]
+    },
+    "geography": {
+      "evidence_date": "2026-08-29",
+      "verdict": "pass",
+      "evidence_quote": "Digs is a Vancouver, Washington-based AI software company founded in 2022 by Ryan Fink (CEO) and Ty Frackiewicz (Chief Product Officer).",
+      "evidence_url": "https://www.techcompanynews.com/digs-raises-25-3-million-in-series-a-funding-round/",
+      "reasoning": "Multiple sources, including a recent August 2026 funding announcement, confirm that Digs is headquartered in Vancouver, Washington, which is in the United States.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.0,
+      "_citations": [
+        "2026-08-29 https://www.techcompanynews.com/digs-raises-25-3-million-in-series-a-funding-round/",
+        "2026-06-20 https://linkedin.com/company/digshq",
+        "2025-04-21 https://www.cbinsights.com/company/digs-1",
+        "2026-08-27 https://devcuration.com/articles/digs-25-3m-series-a-builders-firstsource",
+        "2024-01-25 https://techcrunch.com/2024/01/25/digs-raises-7m-for-its-collaboration-platform-for-home-builders/",
+        " https://craft.co/digs-space"
+      ]
+    },
+    "hiring": {
+      "evidence_quote": "If this role excites you and you feel aligned with our Principles, please submit your application via LinkedIn or the Digs Careers page.",
+      "evidence_date": "2026-08-25",
+      "verdict": "pass",
+      "evidence_url": "https://simplify.jobs/p/c9e6f952-66cb-4bcb-b6e7-27ce8b553161/Demand-Generation--Revenue-Lead",
+      "reasoning": "A job listing for a Demand Generation & Revenue Lead at Digs was posted on Simplify Jobs as recently as August 25, 2026, and explicitly directs candidates to apply via the Digs Careers page. Demand Generation is listed as a GTM role in the instructions.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 1.9,
+      "_citations": [
+        "2026-08-25 https://simplify.jobs/p/c9e6f952-66cb-4bcb-b6e7-27ce8b553161/Demand-Generation--Revenue-Lead",
+        "2026-05-04 https://www.linkedin.com/posts/bjbarker_im-excited-to-share-that-ive-started-a-activity-7457138250885779456-AYNX",
+        "2026-05-12 https://www.linkedin.com/posts/digshq_were-excited-to-welcome-a-few-new-faces-activity-7460047762852859904-4lBT",
+        "2025-11-18 https://www.employbl.com/jobs/customer-success-manager-digs-1523843",
+        "2026-07-09 https://hiring.camp/job/35Xn90",
+        "2026-06-20 https://linkedin.com/company/digshq"
+      ]
+    },
+    "intent": {
+      "evidence_quote": "Partner with Sales on ICPs, funnel metrics, pipeline targets, and conversion goals. Build, optimize, and manage lead scoring, routing, and lifecycle nurture programs. ... Own and execute Digs\u2019 full-funnel demand strategy, driving MQLs, SQLs, pipeline, and ARR. ... Identify new growth levers, market opportunities, and test scalable campaigns.",
+      "reasoning": "Digs is currently hiring for a Demand Generation & Revenue Lead to execute full-funnel demand strategy, including partnering with sales on ICPs, lead scoring, and pipeline targets, which constitutes clear intent for outbound/account-based prospecting.",
+      "evidence_date": "2026-08-25",
+      "evidence_url": "https://simplify.jobs/p/c9e6f952-66cb-4bcb-b6e7-27ce8b553161/Demand-Generation--Revenue-Lead",
+      "verdict": "pass",
+      "verdict_after_guard": "unclear",
+      "guard": "quote not found verbatim in any returned citation text",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.6,
+      "_citations": [
+        "2026-08-25 https://simplify.jobs/p/c9e6f952-66cb-4bcb-b6e7-27ce8b553161/Demand-Generation--Revenue-Lead",
+        " https://digs.com/post/digs-secures-20m-in-pre-series-a-funding-to-accelerate-ai-for-home-builders",
+        "2026-08-26 https://distributionstrategy.com/2026/08/builders-firstsource-leads-25-3-million-digs-funding-round-signs-five-year-ai-deal/",
+        "2026-09-02 https://www.constructionindustry.ai/funding/digs-25-3m-series-a-builders-firstsource/",
+        "2026-08-25 https://www.linkedin.com/posts/digshq_ai-homebuilding-construction-activity-7497967271328518144-Sc29",
+        "2026-08-29 https://www.techcompanynews.com/digs-raises-25-3-million-in-series-a-funding-round/"
+      ]
+    }
+  },
+  "Levanta": {
+    "stage": {
+      "evidence_quote": "Levanta, the creator affiliate platform for modern e-commerce, today announced a $22 million Series B investment led by Volition Capital, marking the firm\u2019s second major investment in the company after leading its $20 million Series A in 2024.",
+      "evidence_url": "https://levanta.io/press-release/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media/",
+      "reasoning": "The company's most recent priced funding round is a Series B, which was announced on August 27, 2026. Because the test requires the most recent round to be a Series A or Series A extension, the company fails the test.",
+      "verdict": "fail",
+      "evidence_date": "2026-08-27",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        "2026-08-27 https://levanta.io/press-release/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media/",
+        "2026-08-27 https://www.businessinsider.com/levanta-raised-22-million-round-to-grow-social-commerce-network-2026-8",
+        "2026-08-27 https://www.globenewswire.com/news-release/2026/08/27/3352054/0/en/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media.html",
+        "2024-11-19 https://levanta.io/article/driving-the-future-of-creator-commerce-levanta-secures-20m-in-series-a-funding/",
+        "2024-11-21 https://www.volitioncapital.com/news/why-we-invested-in-levanta/",
+        "2026-08-27 https://www.linkedin.com/posts/trylevanta_creator-seriesb-creatorcommerce-activity-7498759975138230272-jfwA"
+      ]
+    },
+    "geography": {
+      "verdict": "pass",
+      "evidence_quote": "SEATTLE, Aug. 27, 2026 (GLOBE NEWSWIRE) -- Levanta, the creator affiliate platform for modern e-commerce, today announced a $22 million Series B investment...",
+      "reasoning": "The company's latest funding announcement dateline and its official SEC filings confirm that Levanta is headquartered in Seattle, Washington, which is in the United States.",
+      "evidence_date": "2026-08-27",
+      "evidence_url": "https://www.globenewswire.com/news-release/2026/08/27/3352054/0/en/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media.html",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.9,
+      "_citations": [
+        "2026-08-27 https://www.globenewswire.com/news-release/2026/08/27/3352054/0/en/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media.html",
+        " https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&filenum=021-467731",
+        "2026-08-27 https://www.takeoffradar.com/f/0001956774-26-000001/",
+        " https://linkedin.com/company/trylevanta",
+        "2026-08-27 https://www.businessinsider.com/levanta-raised-22-million-round-to-grow-social-commerce-network-2026-8",
+        "2026-08-27 https://www.linkedin.com/posts/trylevanta_creator-seriesb-creatorcommerce-activity-7498759975138230272-jfwA"
+      ]
+    },
+    "hiring": {
+      "reasoning": "Levanta has an active job posting for a Manager, Product Marketing, which is a GTM (marketing) role, published on 2026-09-09.",
+      "evidence_date": "2026-09-09",
+      "evidence_url": "https://www.remoterocketship.com/us/company/levanta-io/jobs/manager-product-marketing-united-states-remote/",
+      "evidence_quote": "Manager, Product Marketing",
+      "verdict": "pass",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2026-09-09 https://www.remoterocketship.com/us/company/levanta-io/jobs/manager-product-marketing-united-states-remote/",
+        "2026-06-17 https://job-boards.greenhouse.io/levanta/jobs/5268501008",
+        "2026-04-20 https://job-boards.greenhouse.io/levanta/jobs/5194522008",
+        " https://job-boards.greenhouse.io/levanta/jobs/5315462008",
+        " https://jobright.ai/jobs/info/69ab0eb9142d5b4265fc4b7a",
+        " https://www.remoterocketship.com/us/company/levanta-io/jobs/partner-marketing-manager-united-states-remote/"
+      ]
+    },
+    "intent": {
+      "evidence_quote": "Own the full sales cycle from outbound prospecting through signed contract on new retail marketplace partnerships",
+      "evidence_date": "2026-06-17",
+      "evidence_url": "https://job-boards.greenhouse.io/levanta/jobs/5268501008",
+      "verdict": "pass",
+      "reasoning": "The company has a job requisition explicitly describing outbound prospecting and list-building activities for a Strategic Sales Executive role.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.0,
+      "_citations": [
+        "2026-06-17 https://job-boards.greenhouse.io/levanta/jobs/5268501008",
+        "2026-08-27 https://www.businessinsider.com/levanta-raised-22-million-round-to-grow-social-commerce-network-2026-8",
+        "2026-08-27 https://levanta.io/press-release/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media/",
+        "2026-01-05 https://www.zoominfo.com/about/case-studies/levanta",
+        "2026-07-13 https://venturebeat.com/business/levanta-drives-over-10x-roi-recruiting-brands-with-zoominfo",
+        "2026-01-06 https://www.linkedin.com/posts/zoominfo_at-levanta-75-of-deals-over-20k-required-activity-7414339317197819904-k2AY"
+      ]
+    }
+  },
+  "INFI": {
+    "stage": {
+      "verdict": "pass",
+      "evidence_date": "2025-02-04",
+      "evidence_quote": "INFI USA, a pioneering AI-driven self-service software platform, today announced $12 million in Series A funding to accelerate technological innovation, expand its team, and broaden market reach. The round was led by MK Capital.",
+      "reasoning": "INFI announced a $12 million Series A funding round led by MK Capital on February 4, 2025. This occurred within the last 24 months from today's date of September 10, 2026.",
+      "evidence_url": "https://www.globenewswire.com/news-release/2025/02/04/3020477/0/en/INFI-Raises-12-Million-to-Revolutionize-Self-Service-Technology.html",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.0,
+      "_citations": [
+        "2025-02-04 https://www.globenewswire.com/news-release/2025/02/04/3020477/0/en/INFI-Raises-12-Million-to-Revolutionize-Self-Service-Technology.html",
+        "2025-02-04 https://www.morningstar.com/news/globe-newswire/9352465/infi-raises-12-million-to-revolutionize-self-service-technology",
+        "2025-02-04 https://justainews.com/companies/funding-news/infi-usa-secures-12-million-in-series-a/",
+        "2025-02-09 https://pulse2.com/infi-12-million-series-a-secured-for-transforming-self-service-technology/",
+        "2025-11-25 https://infi.us/about/",
+        " https://www.vcbacked.co/company/infi"
+      ]
+    },
+    "geography": {
+      "evidence_date": "2026-06-26",
+      "verdict": "pass",
+      "reasoning": "The company's LinkedIn profile and its official contact page both identify its headquarters as being located in Chicago, Illinois, United States.",
+      "evidence_url": "https://linkedin.com/company/infinetus",
+      "evidence_quote": "Headquartered in Chicago, Illinois, United States",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-06-26 https://linkedin.com/company/infinetus",
+        " https://infi.us/contact-us/",
+        "2025-02-04 https://www.globenewswire.com/news-release/2025/02/04/3020477/0/en/INFI-Raises-12-Million-to-Revolutionize-Self-Service-Technology.html",
+        "2025-02-04 https://www.mkcapital.com/infi-newdeal/",
+        "2025-11-25 https://infi.us/about/",
+        "2025-02-04 https://www.builtinchicago.org/articles/infi-raises-12m-series-a-hiring-20250204"
+      ]
+    },
+    "hiring": {
+      "verdict": "unclear",
+      "evidence_url": "https://linkedin.com/company/infinetus",
+      "evidence_quote": "[2025-12-10 \u00b7 Posted \u00b7 2 reactions] We're #hiring a new Android Developer in Greater Chicago Area... https://www.linkedin.com/posts/infinetus_hiring-activity-7404509114535395328-Ts56",
+      "evidence_date": "2026-06-26",
+      "reasoning": "The company's LinkedIn page does not show any active job listings, including GTM roles. The only hiring information available is from December 2025.",
+      "verdict_after_guard": "unclear",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2026-06-26 https://linkedin.com/company/infinetus",
+        " https://infi.us/contact-us",
+        " https://dnsgurus.com/url-inspect/infi.us",
+        " https://aeroleads.com/c/infinetus",
+        " https://infi.us.siteindices.com/",
+        " https://www.partnerbase.com/infi"
+      ]
+    },
+    "intent": {
+      "evidence_quote": "As an Account Executive at infinIT, your job is to grow our client base. You own the full sales process, from first outreach through signed agreement. You will prospect, qualify, run discovery, build proposals, and close. ... You are building consistent pipeline through outbound activity",
+      "reasoning": "A job requisition for an Account Executive at infinIT (infinIT.us) explicitly describes responsibilities for outbound prospecting and building a consistent pipeline through outbound activity.",
+      "verdict": "pass",
+      "evidence_url": "https://jobera.com/job/infinit-us-infinit-us-0f710ed7/",
+      "evidence_date": "2026-04-03",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-04-03 https://jobera.com/job/infinit-us-infinit-us-0f710ed7/",
+        " https://www.getcyberleads.com/companies/infi",
+        "2025-08-25 https://www.linkedin.com/posts/growthinfi_most-outbound-systems-are-clunky-and-manualwasting-activity-7365747985151864832-woAb",
+        "2026-03-06 https://www.linkedin.com/posts/palashwadekar_outbound-sales-activity-7435586466774384641-L4wP",
+        "2026-08-22 https://www.linkedin.com/in/1shikagrover",
+        "2026-07-08 https://www.linkedin.com/posts/growthinfi_the-%F0%9D%97%A5%F0%9D%97%B2%F0%9D%98%83%F0%9D%97%B2%F0%9D%97%BB%F0%9D%98%82%F0%9D%97%B2-%F0%9D%97%9F%F0%9D%97%B2%F0%9D%97%AE%F0%9D%97%B8-%F0%9D%97%94%F0%9D%98%82%F0%9D%97%B1%F0%9D%97%B6%F0%9D%98%81-that-activity-7480568207003553792-2SV-"
+      ]
+    }
+  },
+  "Superorder": {
+    "stage": {
+      "reasoning": "The company's most recent priced funding round is a $10M Series A, announced on September 15, 2023. As of today, September 10, 2026, this announcement occurred within the last 24 months, satisfying the criteria.",
+      "evidence_date": "2023-09-15",
+      "evidence_url": "https://techcrunch.com/2023/09/15/superorder-raises-10m-to-help-restaurants-maintain-their-online-presence/",
+      "evidence_quote": "Superorder today announced that it raised $10 million in a funding round led by Foundation Capital with participation from Y Combinator managing director Michael Seibel, Cruise co-founders Kyle Vogt and Daniel Kan, I2BF Global Ventures and others.",
+      "verdict": "pass",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2023-09-15 https://techcrunch.com/2023/09/15/superorder-raises-10m-to-help-restaurants-maintain-their-online-presence/",
+        " https://newsdirect.com/news/superorder-successfully-closes-10m-series-a-funding-round-to-fuel-new-generative-ai-and-order-management-tools-for-restaurants-502818336",
+        "2024-11-03 https://www.superorder.com/press/superorder-raises-10m-series-a-funding-round-to-fuel-new-generative-ai-order-management-tools-for-restaurants",
+        "2023-09-17 https://www.finsmes.com/2023/09/superorder-raises-10m-in-series-a-funding.html",
+        "2023-09-20 https://foodondemand.com/09202023/amid-expansion-superorder-lands-10m-series-a/",
+        "2023-09-18 https://www.citybiz.co/article/467194/superorder-raises-10m-in-series-a/"
+      ]
+    },
+    "geography": {
+      "reasoning": "Multiple sources, including TechCrunch and the company's LinkedIn page, identify Superorder as being headquartered in New York City, United States.",
+      "evidence_url": "https://techcrunch.com/2023/09/15/superorder-raises-10m-to-help-restaurants-maintain-their-online-presence/",
+      "verdict": "pass",
+      "evidence_quote": "But New York City-based Superorder is slowly but surely growing since emerging from Y Combinator\u2019s Summer 2019 cohort.",
+      "evidence_date": "2023-09-15",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.5,
+      "_citations": [
+        "2023-09-15 https://techcrunch.com/2023/09/15/superorder-raises-10m-to-help-restaurants-maintain-their-online-presence/",
+        "2024-10-14 https://www.linkedin.com/company/superorderdotcom",
+        " https://www.ycombinator.com/companies/superorder",
+        "2024-11-03 https://www.superorder.com/press/superorder-raises-10m-series-a-funding-round-to-fuel-new-generative-ai-order-management-tools-for-restaurants",
+        "2023-09-17 https://www.finsmes.com/2023/09/superorder-raises-10m-in-series-a-funding.html",
+        " https://getlatka.com/companies/superorder.com"
+      ]
+    },
+    "hiring": {
+      "evidence_url": "https://linkedin.com/company/superorderdotcom",
+      "reasoning": "The most recent available company data from June 2026 indicates a very small headcount of 11 employees, with only one listed in the sales department. There is no evidence of active open requisitions for any GTM roles on the company's platforms today.",
+      "evidence_date": "2026-06-28",
+      "evidence_quote": "By Department: General Management: 5 (24%), Technical: 2 (10%), Administrative: 1 (5%), Customer Service: 1 (5%), Operations: 1 (5%), Sales: 1 (5%)",
+      "verdict": "fail",
+      "verdict_after_guard": "fail",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2026-06-28 https://linkedin.com/company/superorderdotcom",
+        " https://app.dover.com/apply/Superorder/f90ead41-766d-4ecb-b8f8-a7d22cc6fac0",
+        "2025-09-18 https://www.linkedin.com/posts/superorderdotcom_onboarding-specialist-hiring-form-activity-7374466523790286849-oRrY",
+        "2025-09-19 https://www.linkedin.com/posts/superorderdotcom_hiring-activity-7374778141430411264-Hxbq",
+        "2025-09-18 https://www.linkedin.com/posts/bypoddar_onboarding-specialist-hiring-form-activity-7374450915988361216-senW",
+        " https://builtin.com/job/product-engineer/10162737"
+      ]
+    },
+    "intent": {
+      "evidence_url": "https://www.superorder.com/press/superorder-raises-10m-series-a-funding-round-to-fuel-new-generative-ai-order-management-tools-for-restaurants",
+      "evidence_quote": "In 2021, Superorder announced a $2.5M seed round, which was leveraged to expand the company\u2019s footprint and to hire a team in operations, sales and engineering to help support the initial product. With a growing team of more than 70+ employees, Superorder aims to use the new funding to continue its expansion.",
+      "evidence_date": "2024-11-03",
+      "reasoning": "While the company is scaling its sales team and operations, none of the provided sources contain a citable, dated buying-intent signal as defined, such as an explicit requisition for outbound prospecting, a target-account list, or a leader stating that current outreach is at its limit.",
+      "verdict": "unclear",
+      "verdict_after_guard": "unclear",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.3,
+      "_citations": [
+        "2024-11-03 https://www.superorder.com/press/superorder-raises-10m-series-a-funding-round-to-fuel-new-generative-ai-order-management-tools-for-restaurants",
+        "2023-09-15 https://techcrunch.com/2023/09/15/superorder-raises-10m-to-help-restaurants-maintain-their-online-presence/",
+        "2024-10-14 https://www.linkedin.com/company/superorderdotcom",
+        "2023-09-15 https://simplify.jobs/c/Superorder",
+        "2023-09-20 https://pulse2.com/superorder-10-million-funding/",
+        "2023-09-16 https://www.cbinsights.com/company/superorder/financials"
+      ]
+    }
+  },
+  "Equal Parts": {
+    "stage": {
+      "verdict": "pass",
+      "reasoning": "The company announced a Series A funding round led by Inspired Capital on 2026-02-10, which is within the last 24 months.",
+      "evidence_url": "https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+      "evidence_quote": "Equal Parts, an insurance platform focused on transforming independent agencies, today announced it has raised $23M in Series A funding led by Inspired Capital.",
+      "evidence_date": "2026-02-10",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 1.9,
+      "_citations": [
+        "2026-02-10 https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+        "2026-02-10 https://www.axios.com/pro/fintech-deals/2026/02/10/equal-parts-25-million-insurance-rollup",
+        "2026-02-10 https://www.theinsurer.com/program-manager/news/equal-parts-raises-23-million-in-inspired-capital-led-series-a-2026-02-10/",
+        " https://www.equalparts.ai/blog/equal-parts-secures-23m-to-transform-independent-insurance-with-ai-and-human-relationships",
+        "2026-02-11 https://www.insurancejournal.com/news/southcentral/2026/02/11/857764.htm",
+        "2026-02-10 https://startupintros.com/news/2026-02-10-equal-parts-series-a"
+      ]
+    },
+    "geography": {
+      "evidence_date": "2026-02-10",
+      "reasoning": "Multiple sources, including the company's LinkedIn profile and funding announcements, identify Equal Parts as headquartered in Austin, Texas, which is in the United States.",
+      "evidence_quote": "AUSTIN, Texas--(BUSINESS WIRE)-- Equal Parts, an insurance platform focused on transforming independent agencies, today announced it has raised $23M in Series A funding led by Inspired Capital.",
+      "evidence_url": "https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+      "verdict": "pass",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.8,
+      "_citations": [
+        "2026-02-10 https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+        "2025-10-08 https://www.linkedin.com/company/equalparts",
+        " https://pitchbook.com/profiles/company/758461-87",
+        " https://www.equalparts.ai/",
+        "2026-02-10 https://www.theinsurer.com/program-manager/news/equal-parts-raises-23-million-in-inspired-capital-led-series-a-2026-02-10/",
+        "2026-02-10 https://www.linkedin.com/posts/equalparts_equal-parts-secures-23m-to-transform-independent-activity-7427056669249052672-WIRT"
+      ]
+    },
+    "hiring": {
+      "evidence_date": "2026-09-02",
+      "verdict": "pass",
+      "reasoning": "The company is currently hiring for an Associate, M&A Diligence & Risk role, which explicitly includes revenue operations as a core responsibility listed in the job description.",
+      "evidence_url": "https://apply.workable.com/j/1616AEDA46",
+      "evidence_quote": "- Revenue operations",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.8,
+      "_citations": [
+        "2026-09-02 https://apply.workable.com/j/1616AEDA46",
+        " https://www.equalparts.ai/careers",
+        " https://apply.workable.com/equal-parts/j/9B4C96EB16/",
+        " https://builtin.com/company/equal-parts/jobs",
+        " https://jobright.ai/jobs/info/69699ba6639b452fb57f8d34",
+        " https://jobright.ai/jobs/info/69839dc701214b4cdacb5361"
+      ]
+    },
+    "intent": {
+      "verdict": "pass",
+      "evidence_url": "https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+      "evidence_date": "2026-02-10",
+      "reasoning": "The company explicitly announced a $23M Series A funding round in February 2026, with the funds specifically earmarked for an acquisition strategy and go-to-market expansion to reach $1B in premiums.",
+      "evidence_quote": "The company\u2019s targets include acquiring 25 top-tier agencies this year and reaching $1B in premiums within the next 24 months.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.8,
+      "_citations": [
+        "2026-02-10 https://www.businesswire.com/news/home/20260210884441/en/Equal-Parts-Secures-%2423M-in-Funding-to-Transform-Independent-Insurance-With-Blend-of-AI-Tools-and-Human-Relationships",
+        "2026-02-11 https://www.insurancejournal.com/news/southcentral/2026/02/11/857764.htm",
+        "2026-02-10 https://www.pymnts.com/insurance/2026/equal-parts-wants-to-turn-independent-insurance-agencies-into-growth-network/",
+        "2026-02-10 https://www.theinsurer.com/program-manager/news/equal-parts-raises-23-million-in-inspired-capital-led-series-a-2026-02-10/",
+        "2026-02-10 https://aijourn.com/equal-parts-secures-23m-in-funding-to-transform-independent-insurance-with-blend-of-ai-tools-and-human-relationships/",
+        " https://pitchbook.com/profiles/company/758461-87"
+      ]
+    }
+  },
+  "GenHealth.ai": {
+    "stage": {
+      "evidence_date": "2026-09-08",
+      "verdict": "pass",
+      "evidence_quote": "GenHealth.ai, the healthcare AI company building AI agents that run the medical back office, today announced a $16.5 million Series A led by Flare Capital Partners.",
+      "reasoning": "GenHealth.ai announced a $16.5 million Series A funding round led by Flare Capital Partners on September 8, 2026, which is within the last 24 months.",
+      "evidence_url": "https://www.newswire.com/news/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.4,
+      "_citations": [
+        "2026-09-08 https://www.newswire.com/news/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the",
+        "2026-09-09 https://www.digitalhealthnews.com/genhealth-ai-raises-16-5-mn-in-series-a-funding-to-expand-healthcare-ai-agents",
+        "2026-09-09 https://medspark.ai/2026/09/09/genhealth-ai-banks-16-5m-for-billing-agents-trained-on-140m-patients/",
+        "2026-09-08 https://healthtechnologynet.com/2026/09/08/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the-medical-back-office/",
+        "2026-09-09 https://lapaasvoice.com/genhealth-ai-series-a-healthcare-agents/",
+        "2026-09-08 https://www.digitaljournal.com/pr/news/access-newswire/genhealth-ai-raises-16-5-million-series-1469184627.html"
+      ]
+    },
+    "geography": {
+      "evidence_date": "2026-09-08",
+      "evidence_quote": "The company is headquartered in Boston and works with medical groups, DME suppliers, and health plans.",
+      "evidence_url": "https://www.newswire.com/news/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the",
+      "verdict": "pass",
+      "reasoning": "The most recent announcement from the company states that it is headquartered in Boston, which is in the United States.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.1,
+      "_citations": [
+        "2026-09-08 https://www.newswire.com/news/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the",
+        "2026-01-06 https://www.linkedin.com/company/genhealth-ai",
+        "2024-02-15 https://aventure.vc/companies/genhealth-ai-vienna-va-us",
+        "2023-04-01 https://genhealth.ai/about",
+        " https://www.caplight.com/company/genhealthai",
+        " https://www.crunchbase.com/organization/genhealth"
+      ]
+    },
+    "hiring": {
+      "reasoning": "GenHealth.ai lists multiple active job openings on their career page that fall under go-to-market categories, including GTM Marketer & Engineer, GTM Operations Generalist, and multiple Senior BDR roles.",
+      "evidence_quote": "Build and scale GenHealth's go-to-market infrastructure through systematic experimentation, outbound automation, and data-driven campaign execution.",
+      "evidence_date": "2026-09-10",
+      "verdict": "pass",
+      "evidence_url": "https://genhealth.ai/jobs/sr-marketing",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        " https://genhealth.ai/jobs/sr-marketing",
+        " https://genhealth.ai/jobs",
+        " https://genhealth.ai/jobs/sales-and-ops",
+        " https://genhealth.ai/jobs/bdr-medical-groups",
+        " https://genhealth.ai/jobs/sr-bdr",
+        " https://jobs.genhealth.ai/sales-and-ops"
+      ]
+    },
+    "intent": {
+      "evidence_date": "2026-09-10",
+      "verdict": "pass",
+      "reasoning": "GenHealth.ai has an active job posting for a Senior BDR which explicitly tasks the role with driving growth through outbound sales and prospecting new leads.",
+      "evidence_quote": "Help drive growth in the provider and medical group market through outbound sales, conferences, and relationship-building.",
+      "evidence_url": "https://genhealth.ai/jobs/bdr-medical-groups",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 1.8,
+      "_citations": [
+        " https://genhealth.ai/jobs/bdr-medical-groups",
+        " https://genhealth.ai/jobs",
+        " https://genhealth.ai/jobs/sr-bdr",
+        "2026-09-08 https://healthtechnologynet.com/2026/09/08/genhealth-ai-raises-16-5-million-series-a-to-build-ai-agents-that-run-the-medical-back-office/",
+        "2025-12-30 https://www.linkedin.com/posts/mike-maseda-83956375_come-join-my-team-at-genhealthai-we-are-activity-7411764752999370752-zsh2",
+        "2026-09-09 https://medspark.ai/2026/09/09/genhealth-ai-banks-16-5m-for-billing-agents-trained-on-140m-patients/"
+      ]
+    }
+  },
+  "Pie": {
+    "stage": {
+      "reasoning": "The company's most recent priced funding round is a $19.5 million Series A announced on June 30, 2026, which is within the last 24 months. Although an additional undisclosed investment from Amex Ventures was announced on August 4, 2026, it is not described as a priced round that would supersede the Series A status.",
+      "evidence_quote": "Pie, a NYC-based provider of an AI-powered growth platform for small businesses, raised $19.5m in Series A funding.",
+      "verdict": "pass",
+      "evidence_url": "https://www.finsmes.com/2026/06/pie-raises-19-5m-in-series-a-funding.html",
+      "evidence_date": "2026-06-30",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.2,
+      "_citations": [
+        "2026-06-30 https://www.finsmes.com/2026/06/pie-raises-19-5m-in-series-a-funding.html",
+        "2026-08-04 https://www.morningstar.com/news/business-wire/20260804437204/pie-announces-investment-from-amex-ventures-to-help-expand-ai-powered-growth-platform-for-small-businesses",
+        "2026-08-04 https://dealroom.co/news/142849-pie-draws-amex-ventures-backing-after-19-5m-series-a/",
+        " https://getpie.com/blog/pie-raises-23.7m-to-bring-ai-powered-growth-to-main-street-businesses",
+        "2026-06-30 https://www.inc.com/lisa-bonos/two-ex-toast-engineers-just-raised-19-5-million-to-solve-a-problem-most-small-businesses-dont-know-they-have/91367470",
+        "2026-06-30 https://siliconangle.com/2026/06/30/pie-launches-19-5m-bring-ai-marketing-small-businesses/"
+      ]
+    },
+    "geography": {
+      "evidence_url": "https://www.linkedin.com/company/getpiehq",
+      "reasoning": "The company's official LinkedIn page states that it is headquartered in Houston, United States, which satisfies the requirement of being US-headquartered.",
+      "evidence_quote": "Headquartered in Houston, United States, with an office in Boston.",
+      "evidence_date": "2026-08-17",
+      "verdict": "pass",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.9,
+      "_citations": [
+        "2026-08-17 https://www.linkedin.com/company/getpiehq",
+        "2026-08-04 https://www.linkedin.com/posts/getpiehq_getpie-shopsmall-activity-7490416175319801856-LBaR",
+        " https://getpie.com/blog/pie-raises-23.7m-to-bring-ai-powered-growth-to-main-street-businesses",
+        "2026-06-30 https://www.linkedin.com/posts/getpiehq_getpie-asliceofpie-smallbusinessmarketing-activity-7477757804473241600-yHtP",
+        "2026-06-30 https://datapile.co/funding-news/pie-4905",
+        "2026-08-04 https://www.morningstar.com/news/business-wire/20260804437204/pie-announces-investment-from-amex-ventures-to-help-expand-ai-powered-growth-platform-for-small-businesses"
+      ]
+    },
+    "hiring": {
+      "reasoning": "The company is actively hiring for a Strategic Account Manager, which is a sales-related go-to-market role, as evidenced by a job posting on their Greenhouse careers page dated July 30, 2026.",
+      "evidence_url": "https://job-boards.greenhouse.io/pieinsurance/jobs/6131271004",
+      "evidence_date": "2026-07-30",
+      "verdict": "pass",
+      "evidence_quote": "Strategic Account Manager at Pieinsurance ... Department: Business Development ... Published: 2026-07-30",
+      "verdict_after_guard": "unclear",
+      "guard": "quote not found verbatim in any returned citation text",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.4,
+      "_citations": [
+        "2026-07-30 https://job-boards.greenhouse.io/pieinsurance/jobs/6131271004",
+        "2026-07-30 https://jobera.com/job/pieinsurance-strategic-account-manager-f24eb14b/",
+        "2026-05-19 https://jobera.com/job/pie-mapping-marketing-manager-28dd2c79/",
+        "2026-07-30 https://jobera.com/job/pieinsurance-digital-account-specialist-6916ad5f/",
+        " https://www.jobaaj.com/job/pie-network-gtm-engineer-sales-marketing-remote-3-to-8-years-1612185",
+        " https://startup.jobs/business-development-manager-pie-insurance-3253507"
+      ]
+    },
+    "intent": {
+      "evidence_url": "https://www.morningstar.com/news/business-wire/20260804437204/pie-announces-investment-from-amex-ventures-to-help-expand-ai-powered-growth-platform-for-small-businesses",
+      "evidence_quote": "Pie's go-to-market strategy centers on partnerships with vertical software platforms that already serve small businesses. Pie recently partnered with MoeGo, which put Pie\u2019s growth capabilities directly into software already used by over 10,000 modern pet care businesses, helping them attract prospective customers across local discovery channels and connect that activity to outcomes, including calls, bookings, and revenue.",
+      "verdict": "pass",
+      "evidence_date": "2026-08-04",
+      "reasoning": "The company explicitly outlines a go-to-market strategy based on prospecting and securing partnerships with vertical software platforms to scale distribution, which constitutes a structured, account-based approach to prospecting.",
+      "verdict_after_guard": "pass",
+      "guard": "ok",
+      "_cost_usd": 0.005,
+      "_elapsed_s": 2.9,
+      "_citations": [
+        "2026-08-04 https://www.morningstar.com/news/business-wire/20260804437204/pie-announces-investment-from-amex-ventures-to-help-expand-ai-powered-growth-platform-for-small-businesses",
+        " https://getpie.com/blog/pie-raises-23.7m-to-bring-ai-powered-growth-to-main-street-businesses",
+        "2026-06-30 https://lsvp.com/stories/america-runs-on-small-business-our-investment-in-pie/",
+        "2026-06-30 https://www.inc.com/lisa-bonos/two-ex-toast-engineers-just-raised-19-5-million-to-solve-a-problem-most-small-businesses-dont-know-they-have/91367470",
+        "2026-06-30 https://siliconangle.com/2026/06/30/pie-launches-19-5m-bring-ai-marketing-small-businesses/",
+        "2026-06-30 https://www.finsmes.com/2026/06/pie-raises-19-5m-in-series-a-funding.html"
+      ]
+    }
+  }
+}

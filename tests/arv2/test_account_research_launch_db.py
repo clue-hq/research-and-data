@@ -13,9 +13,8 @@ import dataclasses
 import inspect
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
 from typing import Any
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -42,19 +41,25 @@ from clue_api.arv2.account_research_launch import (
 )
 from clue_api.arv2.account_research_store import list_jobs, read_run
 from clue_api.arv2.display.gather import committee_members
-from clue_auth.store import create_platform_user
 from clue_config import Settings
 from clue_core import EntityId, ExtractionMethod, Persona
 from clue_fleet import FleetTaskKind
-from clue_fleet.lease import WorkId
 from clue_research.claimstore import WorkspaceScope, claims_for, load_core_pack
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.profiling import load_committee_pack, load_deep_profiling_pack
-from clue_spine import confirm_project_product_set, create_product
-from clue_storage import artifact_key, content_address
-from clue_storage.artifacts import record_artifact
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
+from tests.arv2.icp_fixture import (
+    ICP_BODY,
+    ICP_KEY,
+    USER_ID,
+    FakeQueue,
+    IcpFixture,
+    pin_icp,
+    seed_icp_document,
+    seed_icp_fixture,
+    settings_for,
+)
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -67,231 +72,8 @@ from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
-WORKSPACE = "ws_r2_launch"
-USER_ID = "usr_r2_launch"
-ICP_KEY = "clue-abm-buyers"
-ICP_BODY = "\n".join(
-    (
-        "---",
-        "kind: icp-definition",
-        f"icp_key: {ICP_KEY}",
-        "version: 1",
-        "status: confirmed",
-        "---",
-        "",
-        "# Who we sell to",
-        "",
-        "US-headquartered, Series A or later, hiring go-to-market roles now.",
-    )
-)
 
-
-@dataclass
-class _FakeQueue:
-    """Records every offer, and dedups by key the way the real queue does.
-
-    The launch itself never touches this: it is handed to ``enqueue_launched_jobs``, which the
-    caller runs *after* the launch transaction commits.
-    """
-
-    calls: list[dict[str, Any]] = field(default_factory=list)
-    trace: list[str] | None = None
-
-    async def enqueue(
-        self,
-        *,
-        kind: FleetTaskKind,
-        work_id: WorkId,
-        dedup_key: str,
-        priority: int = 0,
-        payload: dict[str, Any] | None = None,
-        reopen_terminal: bool = False,
-    ) -> bool:
-        if self.trace is not None:
-            self.trace.append("enqueue")
-        seen = any(call["dedup_key"] == dedup_key for call in self.calls)
-        self.calls.append(
-            {
-                "kind": kind,
-                "work_id": work_id,
-                "dedup_key": dedup_key,
-                "priority": priority,
-                "payload": payload,
-                "reopen_terminal": reopen_terminal,
-            }
-        )
-        # A duplicate dedup key is a pure no-op at the real queue (``reopen_terminal=False``),
-        # which is what makes re-offering a replayed run's jobs safe.
-        return not seen
-
-
-@dataclass(frozen=True)
-class _Fixture:
-    workspace_id: str
-    project_id: str
-    brand_id: str
-    accounts: tuple[EntityId, ...]
-    icp_document_id: UUID
-    icp_artifact_key: str
-    icp_artifact_sha256: str
-    selection_version: int
-
-
-def _settings(*, enabled: bool = True) -> Settings:
-    return Settings(_env_file=None, arv2_account_research_enabled=enabled)
-
-
-async def _seed_icp_document(
-    conn: AsyncConnection,
-    storage: FsStorage,
-    *,
-    workspace_id: str,
-    brand_id: str,
-    body: str = ICP_BODY,
-    kind: str = "icp-definition",
-    status: str = "confirmed",
-    path: str = "audience/icp-clue-abm-buyers.md",
-) -> tuple[UUID, str, str]:
-    """Register one ``brand_knowledge_document`` + its artifact, the way the loader does."""
-    rendered = body.encode("utf-8")
-    sha = content_address(rendered)
-    key = artifact_key(workspace_id, sha)
-    await record_artifact(
-        conn,
-        storage_key=key,
-        workspace_id=workspace_id,
-        content_sha256=sha,
-        media_type="text/markdown",
-        size_bytes=len(rendered),
-        source_key="arv2:test:knowledge_document",
-    )
-    await storage.put(key, rendered, media_type="text/markdown")
-    document_id = uuid5(UUID(int=0), f"{workspace_id}:{path}:{status}")
-    await conn.execute(
-        text(
-            """
-            INSERT INTO brand_knowledge_document
-                (document_id, workspace_id, brand_id, folder, path, kind, version, status,
-                 artifact_key, artifact_sha256)
-            VALUES
-                (:document_id, :workspace_id, :brand_id, :folder, :path, :kind, 1, :status,
-                 :artifact_key, :artifact_sha256)
-            """
-        ),
-        {
-            "document_id": document_id,
-            "workspace_id": workspace_id,
-            "brand_id": brand_id,
-            "folder": path.split("/", 1)[0],
-            "path": path,
-            "kind": kind,
-            "status": status,
-            "artifact_key": key,
-            "artifact_sha256": sha,
-        },
-    )
-    return document_id, key, sha
-
-
-async def _pin_icp(
-    conn: AsyncConnection,
-    *,
-    workspace_id: str,
-    project_id: str,
-    brand_id: str,
-    document_id: UUID,
-    artifact_key_: str,
-    artifact_sha256: str,
-    icp_key: str = ICP_KEY,
-) -> None:
-    """Append the project's ICP pin, the way the gate approval does.
-
-    Written as a row rather than through ``pin_project_icp`` so a test can pin a document the
-    approval path would never mint (a proposal, a malformed body) and prove the launch refuses it
-    by name instead of researching against it.
-    """
-    await conn.execute(
-        text(
-            "INSERT INTO project_icp_pin ("
-            "  workspace_id, project_id, pin_seq, brand_id, document_id, icp_key, "
-            "  artifact_key, artifact_sha256, product_selection_version, pinned_by_user_id"
-            ") SELECT :workspace_id, :project_id, COALESCE(MAX(pin_seq), 0) + 1, :brand_id, "
-            "  :document_id, :icp_key, :artifact_key, :artifact_sha256, NULL, :user_id "
-            "FROM project_icp_pin WHERE project_id = :project_id"
-        ),
-        {
-            "workspace_id": workspace_id,
-            "project_id": project_id,
-            "brand_id": brand_id,
-            "document_id": document_id,
-            "icp_key": icp_key,
-            "artifact_key": artifact_key_,
-            "artifact_sha256": artifact_sha256,
-            "user_id": USER_ID,
-        },
-    )
-
-
-async def _seed(conn: AsyncConnection, storage: FsStorage) -> _Fixture:
-    """The whole launch prerequisite set: spine, a confirmed product set, accounts, a confirmed ICP.
-
-    Deliberately NOT seeded: an ``icp_spec`` row, an ``account_research_directive``, or any Stage-0
-    pin on the project run — the launch must need none of them (standing rule item 5). The one pin
-    it does need is the project's own ICP pin, which is a record of a human approval, not Stage-0
-    machinery.
-    """
-    project = await seed_project(conn, WORKSPACE)
-    await create_platform_user(conn, user_id=USER_ID, display_name="R2 launch test")
-    product = await create_product(
-        conn, brand_id=project.brand_id, workspace_id=project.workspace_id, name="Clue"
-    )
-    confirmed = await confirm_project_product_set(
-        conn,
-        workspace_id=project.workspace_id,
-        project_id=project.project_id,
-        product_ids=[str(product.product_id)],
-        gate_id=uuid4(),
-        confirmed_by_user_id=USER_ID,
-    )
-    assert confirmed is not None
-    accounts: list[EntityId] = []
-    for name, domain in (("Probook", "probook.ai"), ("Zafran", "zafran.io")):
-        accounts.append(
-            await insert_account_entity(
-                conn, canonical_name=name, primary_domain=domain, workspace_id=project.workspace_id
-            )
-        )
-    document_id, key, sha = await _seed_icp_document(
-        conn,
-        storage,
-        workspace_id=project.workspace_id,
-        brand_id=str(project.brand_id),
-        path="audience/icp-clue-abm-buyers.md",
-    )
-    # The project pins that confirmed version, exactly as the ICP gate's approval does. Every
-    # launch resolves its ICP from this row (founder rulings 2026-09-10).
-    await _pin_icp(
-        conn,
-        workspace_id=project.workspace_id,
-        project_id=project.project_id,
-        brand_id=str(project.brand_id),
-        document_id=document_id,
-        artifact_key_=key,
-        artifact_sha256=sha,
-    )
-    return _Fixture(
-        workspace_id=project.workspace_id,
-        project_id=project.project_id,
-        brand_id=str(project.brand_id),
-        accounts=tuple(accounts),
-        icp_document_id=document_id,
-        icp_artifact_key=key,
-        icp_artifact_sha256=sha,
-        selection_version=confirmed.selection_version,
-    )
-
-
-def _request(fixture: _Fixture, **overrides: Any) -> Arv2LaunchRequest:
+def _request(fixture: IcpFixture, **overrides: Any) -> Arv2LaunchRequest:
     payload: dict[str, Any] = {
         "workspace_id": fixture.workspace_id,
         "project_id": fixture.project_id,
@@ -311,7 +93,7 @@ async def _launch(
     conn: AsyncConnection,
     storage: FsStorage,
     request: Arv2LaunchRequest,
-    queue: _FakeQueue,
+    queue: FakeQueue,
     *,
     settings: Settings | None = None,
     profile_sha256: str | None = None,
@@ -326,7 +108,7 @@ async def _launch(
     receipt = await launch_arv2_account_research(
         conn,
         request,
-        settings=settings or _settings(),
+        settings=settings or settings_for(arv2_account_research_enabled=True),
         storage=storage,
         profile_sha256=profile_sha256 or arv2_account_profile_sha256(),
     )
@@ -338,8 +120,8 @@ def test_launch_creates_run_jobs_lineage_and_enqueues_one_task_per_job(tmp_path:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
             request = _request(fixture)
 
             receipt = await _launch(conn, storage, request, queue)
@@ -459,12 +241,16 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
 
             with pytest.raises(Arv2LaunchRefused) as disabled:
                 await _launch(
-                    conn, storage, _request(fixture), queue, settings=_settings(enabled=False)
+                    conn,
+                    storage,
+                    _request(fixture),
+                    queue,
+                    settings=settings_for(arv2_account_research_enabled=False),
                 )
             assert disabled.value.code == "lane_disabled"
 
@@ -494,7 +280,7 @@ def test_launch_refuses_lane_disabled_unknown_account_unconfirmed_icp_and_digest
 
             # An artifact ref that is not this project's pin: the pin is the selector, and a
             # request composed against any other ICP is refused rather than researched.
-            _, proposed_key, proposed_sha = await _seed_icp_document(
+            _, proposed_key, proposed_sha = await seed_icp_document(
                 conn,
                 storage,
                 workspace_id=fixture.workspace_id,
@@ -558,8 +344,8 @@ def test_launch_refuses_an_icp_whose_front_matter_has_no_key_or_no_integer_versi
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
 
             malformed = {
                 "audience/icp-no-version.md": ICP_BODY.replace("version: 1\n", ""),
@@ -567,7 +353,7 @@ def test_launch_refuses_an_icp_whose_front_matter_has_no_key_or_no_integer_versi
                 "audience/icp-no-key.md": ICP_BODY.replace(f"icp_key: {ICP_KEY}\n", ""),
             }
             for path, body in malformed.items():
-                document_id, key, sha = await _seed_icp_document(
+                document_id, key, sha = await seed_icp_document(
                     conn,
                     storage,
                     workspace_id=fixture.workspace_id,
@@ -577,7 +363,7 @@ def test_launch_refuses_an_icp_whose_front_matter_has_no_key_or_no_integer_versi
                 )
                 # The malformed document has to BE the project's pin: the pin is what the launch
                 # reads its key and version off, so it is the only body that can be malformed.
-                await _pin_icp(
+                await pin_icp(
                     conn,
                     workspace_id=fixture.workspace_id,
                     project_id=fixture.project_id,
@@ -606,8 +392,8 @@ def test_launch_needs_only_accounts_icp_ref_and_selection_version(tmp_path: Any)
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
 
             receipt = await _launch(conn, storage, _request(fixture), queue)
 
@@ -646,8 +432,8 @@ def test_the_run_id_is_the_digest_of_what_the_human_signed_off_on(tmp_path: Any)
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
 
             first = await _launch(conn, storage, _request(fixture), queue)
             run = await read_run(conn, run_id=first.run_id)
@@ -690,9 +476,9 @@ def test_the_service_offers_the_tasks_only_after_the_launch_transaction_closes(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             trace: list[str] = []
-            queue = _FakeQueue(trace=trace)
+            queue = FakeQueue(trace=trace)
 
             @asynccontextmanager
             async def factory() -> AsyncIterator[AsyncConnection]:
@@ -704,7 +490,12 @@ def test_the_service_offers_the_tasks_only_after_the_launch_transaction_closes(
                     # the end of the case, so what is asserted is the ORDER, not the durability.
                     trace.append("transaction_closed")
 
-            service = DbArv2LaunchService(_settings(), storage, queue=queue, conn_factory=factory)
+            service = DbArv2LaunchService(
+                settings_for(arv2_account_research_enabled=True),
+                storage,
+                queue=queue,
+                conn_factory=factory,
+            )
 
             receipt = await service.launch(_request(fixture))
 
@@ -734,7 +525,7 @@ def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             dana = await insert_contact_entity(
                 conn,
                 account_entity_id=fixture.accounts[0],
@@ -744,7 +535,7 @@ def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path
             sam = await insert_contact_entity(
                 conn, account_entity_id=fixture.accounts[1], full_name="Sam Okafor"
             )
-            queue = _FakeQueue()
+            queue = FakeQueue()
             request = Arv2PersonLaunchRequest(
                 workspace_id=fixture.workspace_id,
                 project_id=fixture.project_id,
@@ -756,7 +547,7 @@ def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path
             receipt = await launch_arv2_person_research(
                 conn,
                 request,
-                settings=_settings(),
+                settings=settings_for(arv2_account_research_enabled=True),
                 storage=storage,
                 profile_sha256=arv2_person_profile_sha256(),
             )
@@ -788,7 +579,7 @@ def test_person_launch_creates_a_run_of_its_own_with_one_job_per_person(tmp_path
             replay = await launch_arv2_person_research(
                 conn,
                 request,
-                settings=_settings(),
+                settings=settings_for(arv2_account_research_enabled=True),
                 storage=storage,
                 profile_sha256=arv2_person_profile_sha256(),
             )
@@ -814,7 +605,7 @@ def test_a_person_launched_on_demand_is_seated_on_their_account_committee(tmp_pa
             await load_deep_profiling_pack(conn)
             await load_committee_pack(conn)
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             dana = await insert_contact_entity(
                 conn,
                 account_entity_id=fixture.accounts[0],
@@ -831,7 +622,7 @@ def test_a_person_launched_on_demand_is_seated_on_their_account_committee(tmp_pa
                     requested_by_user_id=USER_ID,
                     persona=Persona.CHAMPION,
                 ),
-                settings=_settings(),
+                settings=settings_for(arv2_account_research_enabled=True),
                 storage=storage,
                 profile_sha256=arv2_person_profile_sha256(),
             )
@@ -874,7 +665,7 @@ def test_a_launch_never_re_seats_a_person_who_already_holds_one(tmp_path: Any) -
             await load_deep_profiling_pack(conn)
             await load_committee_pack(conn)
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             dana = await insert_contact_entity(
                 conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
             )
@@ -889,7 +680,7 @@ def test_a_launch_never_re_seats_a_person_who_already_holds_one(tmp_path: Any) -
             await launch_arv2_person_research(
                 conn,
                 request,
-                settings=_settings(),
+                settings=settings_for(arv2_account_research_enabled=True),
                 storage=storage,
                 profile_sha256=arv2_person_profile_sha256(),
             )
@@ -898,7 +689,7 @@ def test_a_launch_never_re_seats_a_person_who_already_holds_one(tmp_path: Any) -
             await launch_arv2_person_research(
                 conn,
                 dataclasses.replace(request, persona=Persona.BLOCKER),
-                settings=_settings(),
+                settings=settings_for(arv2_account_research_enabled=True),
                 storage=storage,
                 profile_sha256=arv2_person_profile_sha256(),
             )
@@ -923,7 +714,7 @@ def test_person_launch_refuses_a_contact_this_workspace_does_not_hold(tmp_path: 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             stranger = uuid4()
             with pytest.raises(Arv2LaunchRefused) as unknown:
                 await launch_arv2_person_research(
@@ -934,7 +725,7 @@ def test_person_launch_refuses_a_contact_this_workspace_does_not_hold(tmp_path: 
                         contact_entity_ids=(stranger,),
                         requested_by_user_id=USER_ID,
                     ),
-                    settings=_settings(),
+                    settings=settings_for(arv2_account_research_enabled=True),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )
@@ -959,7 +750,7 @@ def test_person_launch_refuses_a_contact_this_workspace_does_not_hold(tmp_path: 
                         contact_entity_ids=(UUID(str(foreign)),),
                         requested_by_user_id=USER_ID,
                     ),
-                    settings=_settings(),
+                    settings=settings_for(arv2_account_research_enabled=True),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )
@@ -987,7 +778,7 @@ def test_person_launch_refuses_a_lane_that_is_off_and_a_request_naming_nobody(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             contact = await insert_contact_entity(
                 conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
             )
@@ -1001,7 +792,7 @@ def test_person_launch_refuses_a_lane_that_is_off_and_a_request_naming_nobody(
                 await launch_arv2_person_research(
                     conn,
                     request,
-                    settings=_settings(enabled=False),
+                    settings=settings_for(arv2_account_research_enabled=False),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )
@@ -1016,7 +807,7 @@ def test_person_launch_refuses_a_lane_that_is_off_and_a_request_naming_nobody(
                         contact_entity_ids=(),
                         requested_by_user_id=USER_ID,
                     ),
-                    settings=_settings(),
+                    settings=settings_for(arv2_account_research_enabled=True),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )
@@ -1037,8 +828,8 @@ def test_a_pin_whose_document_moved_refuses_loudly_on_both_launches(tmp_path: An
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
-            queue = _FakeQueue()
+            fixture = await seed_icp_fixture(conn, storage)
+            queue = FakeQueue()
             contact = await insert_contact_entity(
                 conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
             )
@@ -1053,7 +844,7 @@ def test_a_pin_whose_document_moved_refuses_loudly_on_both_launches(tmp_path: An
                 return await launch_arv2_person_research(
                     conn,
                     person_request,
-                    settings=_settings(),
+                    settings=settings_for(arv2_account_research_enabled=True),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )
@@ -1099,7 +890,7 @@ def test_a_person_launch_under_an_unpinned_project_is_refused_by_name(tmp_path: 
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            fixture = await _seed(conn, storage)
+            fixture = await seed_icp_fixture(conn, storage)
             unpinned = await seed_project(conn, fixture.workspace_id, name="R2 person unpinned")
             contact = await insert_contact_entity(
                 conn, account_entity_id=fixture.accounts[0], full_name="Dana Reyes"
@@ -1114,7 +905,7 @@ def test_a_person_launch_under_an_unpinned_project_is_refused_by_name(tmp_path: 
                         contact_entity_ids=(UUID(str(contact)),),
                         requested_by_user_id=USER_ID,
                     ),
-                    settings=_settings(),
+                    settings=settings_for(arv2_account_research_enabled=True),
                     storage=storage,
                     profile_sha256=arv2_person_profile_sha256(),
                 )

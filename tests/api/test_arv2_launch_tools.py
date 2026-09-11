@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from clue_api.arv2.account_research_launch import (
     Arv2LaunchReceipt,
@@ -33,6 +34,14 @@ from clue_api.arv2.account_research_launch import (
     build_arv2_launch_tools,
 )
 from clue_api.arv2.account_research_store import JobRow, RunRow
+from clue_api.arv2.discovery_launch import (
+    Arv2DiscoveryReceipt,
+    Arv2DiscoveryRefused,
+    Arv2DiscoveryRequest,
+    LaunchArv2DiscoveryInput,
+    LaunchArv2DiscoveryTool,
+    build_arv2_discovery_tools,
+)
 from clue_core import new_operation_id
 from clue_db import transaction
 from clue_toolbelt import PreconditionFailed, ReplayPolicy, ToolContext, ToolEffectClass
@@ -350,6 +359,117 @@ def test_a_person_launch_refusal_arrives_as_a_typed_precondition_failure() -> No
     run_async(scenario())
 
 
+# -- the discovery launch (R4 task 5) -------------------------------------------------------------
+
+
+@dataclass
+class _FakeDiscoveryService:
+    """Records what the discovery tool asked for, and answers with whatever the test wants."""
+
+    receipt: Arv2DiscoveryReceipt | None = None
+    refusal: Arv2DiscoveryRefused | None = None
+    requests: list[Arv2DiscoveryRequest] = field(default_factory=list)
+
+    async def launch(self, request: Arv2DiscoveryRequest) -> Arv2DiscoveryReceipt:
+        self.requests.append(request)
+        if self.refusal is not None:
+            raise self.refusal
+        assert self.receipt is not None
+        return self.receipt
+
+
+def _discovery_inputs(**overrides: object) -> LaunchArv2DiscoveryInput:
+    payload: dict[str, object] = {"project_id": PROJECT, "target_count": 20}
+    payload.update(overrides)
+    return LaunchArv2DiscoveryInput.model_validate(payload)
+
+
+def _discovery_receipt(*, replayed: bool = False) -> Arv2DiscoveryReceipt:
+    return Arv2DiscoveryReceipt(
+        run_id=RUN_ID,
+        replayed=replayed,
+        project_run_id=uuid4(),
+        workspace_id=WORKSPACE,
+        to_enqueue=not replayed,
+    )
+
+
+def test_the_discovery_launch_refuses_uncomposed_and_unwitnessed_before_anything() -> None:
+    async def scenario() -> None:
+        uncomposed = LaunchArv2DiscoveryTool(None)
+        failures = await uncomposed.preconditions(_discovery_inputs(), _context())
+        assert [failure.reason_code for failure in failures] == ["arv2_discovery_not_composed"]
+
+        service = _FakeDiscoveryService(receipt=_discovery_receipt())
+        composed = LaunchArv2DiscoveryTool(service)
+        assert await composed.preconditions(_discovery_inputs(), _context()) == ()
+        unwitnessed = await composed.preconditions(_discovery_inputs(), _context(action_ref=None))
+        assert [failure.reason_code for failure in unwitnessed] == ["launch_action_ref_missing"]
+        # Discovery buys a long list: nothing reached the service on either refusal.
+        assert service.requests == []
+
+    run_async(scenario())
+
+
+def test_the_discovery_launch_maps_the_ambient_context_and_returns_the_receipt() -> None:
+    async def scenario() -> None:
+        service = _FakeDiscoveryService(receipt=_discovery_receipt(replayed=True))
+        tool = LaunchArv2DiscoveryTool(service)
+
+        result = await tool.invoke(_discovery_inputs(target_count=40), _context())
+
+        request = service.requests[0]
+        # The workspace and the requesting human are AMBIENT, never model-authored inputs.
+        assert request.workspace_id == WORKSPACE
+        assert request.requested_by_user_id == "usr_founder"
+        assert request.project_id == PROJECT
+        assert request.target_count == 40 and request.relaxed_enabled is True
+        # The ICP, the gate set and the provider ask are NOT model-authored: they come from the
+        # project's pin and the deployment's settings.
+        assert request.criteria_gate_keys == () and request.strict_count is None
+        assert result.references == {"run_id": str(RUN_ID), "replayed": True}
+        assert result.replayed is True
+
+    run_async(scenario())
+
+
+def test_a_discovery_refusal_arrives_as_a_typed_precondition_failure() -> None:
+    async def scenario() -> None:
+        service = _FakeDiscoveryService(
+            refusal=Arv2DiscoveryRefused(
+                "unknown_criteria_gate_key", "unknown criteria gate key 'vertical'"
+            )
+        )
+        tool = LaunchArv2DiscoveryTool(service)
+
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(_discovery_inputs(), _context())
+
+        assert refused.value.reason_codes == ("unknown_criteria_gate_key",)
+        assert "vertical" in refused.value.failures[0].message
+
+    run_async(scenario())
+
+
+def test_the_discovery_tool_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
+    (launch,) = build_arv2_discovery_tools(_FakeDiscoveryService())
+
+    assert launch.name == "launch_arv2_discovery" and launch.version == "1"
+    assert launch.effect_class is ToolEffectClass.SPEND
+    assert launch.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
+    # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    # pin (standing rule item 5) — and the recipe-safety audit refuses a standing address with
+    # no pin at all.
+    assert launch.pin_requirements == ("project",)
+    assert launch.descriptor.recipe_safe
+    # The input model bounds the ask; the launch refuses `target_count_invalid` for callers with
+    # no model in front of them (the CLI, a direct call).
+    with pytest.raises(ValidationError):
+        _discovery_inputs(target_count=0)
+    with pytest.raises(ValidationError):
+        _discovery_inputs(target_count=501)
+
+
 # -- the operator's CLI (R2-close task 5) ---------------------------------------------------------
 
 
@@ -405,3 +525,26 @@ def test_the_person_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_trace
     assert str(exited.value) == (
         f"refused: contact_not_found:{CONTACT_ID}: resolve the person first"
     )
+
+
+def test_the_discovery_cli_prints_a_launch_refusal_as_a_refusal_rather_than_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator whose project pinned no ICP reads one line, not a stack trace."""
+    path = Path(__file__).resolve().parents[2] / "scripts" / "launch_arv2_discovery.py"
+    spec = importlib.util.spec_from_file_location("arv2_discovery_cli", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    async def refuse(args: Any) -> dict[str, Any]:
+        del args
+        raise Arv2DiscoveryRefused("project_icp_not_pinned", "confirm an ICP at the gate first")
+
+    monkeypatch.setattr(module, "_args", lambda: object())
+    monkeypatch.setattr(module, "_run", refuse)
+
+    with pytest.raises(SystemExit) as exited:
+        module.main()
+
+    assert str(exited.value) == "refused: project_icp_not_pinned: confirm an ICP at the gate first"

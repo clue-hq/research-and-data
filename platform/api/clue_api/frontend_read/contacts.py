@@ -77,6 +77,7 @@ from clue_api.frontend_read.evidence_stream import (
 )
 from clue_api.frontend_read.v1_shared import (
     Influence,
+    account_logo_path,
     contact_last_modified,
     current_position_start,
     education_label,
@@ -93,7 +94,12 @@ from clue_api.frontend_read.v1_shared import (
 from clue_api.url_safety import safe_public_url
 from clue_core import Claim, ClaimId, ContactEntity, EntityId, EntityType
 from clue_db import ConnFactory
-from clue_research.claimstore import WorkspaceScope, claims_by_ids, claims_for_entities
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    claims_for_entities,
+    current_values,
+)
 from clue_research.compliance import WorkspacePolicy, load_workspace_policy
 from clue_research.identity import get_account, get_contact, get_contacts, surviving_id
 from clue_research.profiling.committee import CURRENT_LOCATION
@@ -532,13 +538,28 @@ async def read_contact_profile(
         ),
     )
 
+    # The account's mark-type logo, if it carries one (founder ruling 2026-09-11) — one small
+    # neutral read, served through the platform's logo route like the accounts list does.
+    account_logo = await current_values(
+        conn,
+        [EntityId(canonical_account)],
+        ("core.logo_url",),
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    logo_value = account_logo.get((EntityId(canonical_account), "core.logo_url"))
+    account_row = await get_account(conn, canonical_account)
+
     return AccountContactDetailResponseV1(
         data=AccountContactDetailV1(
             **row.model_dump(by_alias=False),
             account_id=str(canonical_account),
             account_name=account_name,
-            # No logo pipeline exists (D0 ruling S2): explicitly null, never a guessed path.
-            account_logo_path=None,
+            account_logo_path=account_logo_path(
+                canonical_account,
+                None if logo_value is None else logo_value.value_json,
+                domain=None if account_row is None else account_row.primary_domain,
+                settings=display.settings,
+            ),
             recent_signals_label=_recent_signals_label(_signal_count(live)),
             linkedin_label=linkedin_chip_label,
             linkedin_url=linkedin_url,

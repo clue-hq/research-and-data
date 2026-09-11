@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.discovery_store import mark_candidates_approved
 from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
@@ -424,7 +425,7 @@ def register_bulk_action_routes(
             ),
         ],
     ) -> BulkActionResponse:
-        _requested_by, actor_user_id, membership_id = _requester(
+        requested_by, actor_user_id, membership_id = _requester(
             request, "project.write", allow_local=allow_local_mutations
         )
         account_ids = tuple(sorted(body.account_ids, key=str))
@@ -480,6 +481,19 @@ def register_bulk_action_routes(
                 project_id=body.project_id,
                 account_entity_ids=tuple(eligible),
                 added_via="manual",
+            )
+            # ARV2 R4 (ruling 2, rev 2): adding a discovered account to the project IS its
+            # approval. The candidate row learns who approved it and when; rows never added stay
+            # unapproved — not rejected (ruling 1′) — and a later run does not re-surface them.
+            # ``requested_by`` is the fallback the rest of the R4 lane uses (``actor_id or
+            # actor``): local-header development has no principal id, and an approval with no
+            # approver on it would be a worse record than the id that mode does carry.
+            await mark_candidates_approved(
+                conn,
+                workspace_id=workspace_id,
+                project_id=body.project_id,
+                account_entity_ids=tuple(inserted),
+                decided_by_user_id=actor_user_id or requested_by,
             )
             for ordinal, account_id in enumerate(account_ids):
                 if account_id not in eligible:

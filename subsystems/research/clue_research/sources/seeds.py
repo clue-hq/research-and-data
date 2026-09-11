@@ -90,13 +90,15 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
             "core.work_email",
             "core.direct_phone",
             "core.primary_tech_stack",
+            "core.logo_url",
             "account.total_funding",
             "account.recent_funding",
         ),
         provider="exa",
         auth_ref="CLUE_EXA_API_KEY",
         freshness_profile="operation_window",
-        version=3,
+        # v4 (2026-09-11): yields ``core.logo_url`` — the LinkedIn company mark Websets returns.
+        version=4,
     ),
     _entry(
         "clay",

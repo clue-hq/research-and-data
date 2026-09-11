@@ -246,6 +246,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("arv2_account_research_not_composed",),
     ),
+    # ARV2 R4: the discovery launch registers in every process for the same reason and, with
+    # no ``Arv2DiscoveryService`` composed here, refuses before it reads a row.
+    "launch_arv2_discovery": (
+        "precondition",
+        ("arv2_discovery_not_composed",),
+    ),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -609,6 +615,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_id": "prj_matrix",
             "contact_entity_ids": (_UUID(),),
         },
+        # ARV2 R4: the workspace and the requesting human are AMBIENT here too, and the ICP,
+        # the gates and the provider ask come from the project's pin and the deployment's
+        # settings — so the body is only the project and how many companies were asked for.
+        "launch_arv2_discovery": {"project_id": "prj_matrix", "target_count": 20},
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -1343,7 +1353,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
-    assert len(registry.names()) == 124
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
+    assert len(registry.names()) == 125
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1365,7 +1376,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # new, so they retain no historical contract (136 -> 140).
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
-    assert len(registry) == 142
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
+    assert len(registry) == 143
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1391,7 +1403,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
-    assert len(registry.names()) == 124
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
+    assert len(registry.names()) == 125
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1400,7 +1413,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # new, so they retain no historical contract (136 -> 140).
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
-    assert len(registry) == 142
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
+    assert len(registry) == 143
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

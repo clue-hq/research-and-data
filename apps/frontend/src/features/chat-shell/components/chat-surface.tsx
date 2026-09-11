@@ -11,6 +11,7 @@ import {
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
 } from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
+import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
@@ -32,6 +33,7 @@ import {
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
+import { galleryCardTarget } from "../model/gallery-card-target";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -95,6 +97,14 @@ export function ChatSurface({
   workspace: ProjectWorkspace;
 }) {
   const urlState = chatSurfaceUrlState(paneState);
+  // The Target accounts tab's "Add to chat": prepared against THIS project and
+  // the open thread, landing in this mount's composer (no picker, no navigation).
+  const addToOpenChat = useAddToOpenChatController({
+    onAdded: controller.addEntities,
+    onFailed: controller.failContextHandoff,
+    projectId,
+    threadId: chat.activeThreadId ?? undefined,
+  });
   const shell = useEditorShellController({
     editing: urlState.editing,
     inspectorSelection: urlState.inspectorSelection,
@@ -601,18 +611,32 @@ export function ChatSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
+        onOpenTargetAccounts={shell.openTargetAccounts}
+        onAddAccountsToChat={
+          addToOpenChat.available && workspace.composerCapabilities.contextRefs
+            ? addToOpenChat.add
+            : undefined
+        }
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}
         richTextEnabled={webEditingActive}
         richTextTheme={session.theme}
-        onOpenGalleryArtifact={(artifact) =>
-          shell.openArtifact({
+        onOpenGalleryArtifact={(artifact) => {
+          // The card's own document type decides where it lands (the pure
+          // ../model/gallery-card-target): an account-list card opens the
+          // target-accounts surface; everything else opens an artifact tab.
+          const target = galleryCardTarget({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
             title: artifact.title,
-          })
-        }
+            type: artifact.source.type,
+          });
+          if (target.surface === "target-accounts") {
+            shell.openTargetAccounts();
+            return;
+          }
+          shell.openArtifact(target.artifact);
+        }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
             shell.setArtifactTitleFor(shell.activeArtifactId, title);
@@ -624,6 +648,7 @@ export function ChatSurface({
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
+        projectId={projectId}
         // AD3.3: the header carries ONE pair of history-row disables, and the
         // artifact on screen decides which lane's stacks they describe — the
         // same kind switch that gates the two sessions above. Without it an ad

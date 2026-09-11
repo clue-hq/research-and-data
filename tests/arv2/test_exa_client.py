@@ -10,19 +10,24 @@ that the shipped schemas still match the contracts they were copied from.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
-from clue_api.arv2.calls import CallCost
+from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.exa_client import (
+    ANSWER_ESTIMATE_USD,
     THIN_MAX_COST_USD,
     THIN_MAX_RESULTS,
     THIN_MIN_REPORT_CHARS,
+    ExaClient,
     ExaDeepResult,
     ExaHit,
     _is_richer,
+    answer_body,
     contents_body,
     deep_reasoning_body,
     exa_halt_rule,
@@ -31,7 +36,20 @@ from clue_api.arv2.exa_client import (
     report_output_schema,
     search_body,
 )
-from clue_api.arv2.transport import HttpResponse
+from clue_api.arv2.provider_ledger import BufferedLedger, BufferedRawSink
+from clue_api.arv2.transport import HttpResponse, ScriptedTransport
+
+
+def _caller(responses: list[HttpResponse]) -> tuple[ProviderCaller, ScriptedTransport]:
+    """A caller over the lane's one permitted double, with in-memory raw and ledger sinks."""
+    transport = ScriptedTransport(list(responses))
+    caller = ProviderCaller(
+        transport=transport,
+        raw_sink=BufferedRawSink(),
+        ledger=BufferedLedger(),
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    return caller, transport
 
 
 def _count_properties(schema: Any) -> int:
@@ -332,3 +350,104 @@ def test_only_a_refusal_latches_the_provider() -> None:
     assert (
         exa_halt_rule(HttpResponse(status=200, body=b'{"report":"they sell credit cards"}')) is None
     )
+
+
+# -- the answer surface (R4's per-gate verifier) ------------------------------------------------
+
+
+def test_answer_body_carries_prompt_schema_and_text() -> None:
+    body = answer_body("Q?", system_prompt="S", output_schema={"type": "object"}, model="exa")
+    assert body == {
+        "query": "Q?",
+        "model": "exa",
+        "text": True,
+        "systemPrompt": "S",
+        "outputSchema": {"type": "object"},
+    }
+
+
+def test_answer_returns_the_structured_object_and_citations_with_text() -> None:
+    payload = {
+        "requestId": "r1",
+        "answer": {
+            "verdict": "fail",
+            "reasoning": "Series B",
+            "evidence_quote": "our Series B",
+            "evidence_url": "https://avoca.ai/blog",
+            "evidence_date": "2026-04-27",
+        },
+        "citations": [
+            {
+                "url": "https://avoca.ai/blog",
+                "title": "Why",
+                "publishedDate": "2026-04-27T00:00:00.000Z",
+                "text": "Today, we announced our Series B",
+            }
+        ],
+        "costDollars": {"total": 0.005},
+    }
+    caller, transport = _caller([HttpResponse(status=200, body=json.dumps(payload).encode())])
+
+    result = ExaClient(caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+
+    assert result.answer == payload["answer"]
+    assert result.citations[0].url == "https://avoca.ai/blog"
+    assert result.citations[0].text is not None and result.citations[0].text.startswith("Today")
+    assert result.citations[0].published_date == "2026-04-27T00:00:00.000Z"
+    assert result.cost_usd == Decimal("0.005") and result.request_id == "r1"
+    sent = json.loads(transport.requests[0].body)
+    assert sent["outputSchema"] == {"type": "object"} and transport.requests[0].url.endswith(
+        "/answer"
+    )
+
+
+def test_an_answer_that_is_prose_or_absent_is_reported_as_it_came() -> None:
+    """A schema-less answer is a string and a missing one is ``None`` — neither is rounded."""
+    prose_caller, _ = _caller(
+        [HttpResponse(status=200, body=json.dumps({"answer": "Series B, April 2026"}).encode())]
+    )
+    prose = ExaClient(prose_caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+    assert prose.answer == "Series B, April 2026"
+    assert prose.citations == () and prose.cost_usd is None
+
+    empty_caller, _ = _caller([HttpResponse(status=200, body=b"{}")])
+    empty = ExaClient(empty_caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+    assert empty.answer is None
+
+
+def test_the_answer_call_reserves_its_estimate_and_is_ledgered_as_metered() -> None:
+    """Law 2's pre-spend row, then law 1's metered settlement off Exa's own ``costDollars``."""
+    ledger = BufferedLedger()
+    transport = ScriptedTransport(
+        [
+            HttpResponse(
+                status=200,
+                body=json.dumps(
+                    {"answer": {"verdict": "pass"}, "costDollars": {"total": 0.005}}
+                ).encode(),
+            )
+        ]
+    )
+    caller = ProviderCaller(
+        transport=transport,
+        raw_sink=BufferedRawSink(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+    )
+
+    result = ExaClient(caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+
+    rows = ledger.drain()
+    assert [row.phase for row in rows] == ["estimate", "result"]
+    assert rows[0].estimate_usd == ANSWER_ESTIMATE_USD
+    assert rows[1].cost_usd == Decimal("0.005")
+    assert result.cost.cost_source == "metered"
+    assert result.ledger_row_id == rows[1].row_id

@@ -87,6 +87,11 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # key: a requirement set resolves one version per (kind, key), so @1 and @2 in one slot is a
     # `conflicting_requirement` that refuses promotion. v19 keeps @1 and stays its replay input.
     "recipe0-stage0-v22.json",
+    # ARV2 Track R, R4: one address joins the interaction slot — `launch_arv2_discovery@1`,
+    # verified account discovery for the project — because the slot pins EXACT addresses and
+    # would refuse the tool `head-of-abm@v45` grants without its own revision. v23 is v22 plus
+    # that address and nothing else; v22 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v23.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

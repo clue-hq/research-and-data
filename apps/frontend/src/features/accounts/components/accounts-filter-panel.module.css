@@ -81,6 +81,11 @@
   min-width: 0;
 }
 
+@container target-accounts (max-width: 750px) {
+  .rule { grid-template-columns: 54px minmax(0, 1fr) 28px; }
+  .controls { grid-template-columns: minmax(0, 1fr); }
+}
+
 .valueInput {
   background: var(--clue-background-page);
   border: 0.5px solid var(--clue-border-input);

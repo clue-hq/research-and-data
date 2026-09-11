@@ -1,0 +1,38 @@
+W5: create http=201 id=webset_01m245khk2n469ryjtjw86e15m status=running
+W3: create http=201 id=webset_01m245kjq82atj0w5040zxpvcb status=running
+W5: t=0s webset=running search=running found=0 analyzed=0 completion=0
+W5: t=16s webset=running search=running found=0 analyzed=18 completion=1.8
+W5: t=32s webset=running search=running found=0 analyzed=71 completion=7.1
+W5: t=48s webset=running search=running found=0 analyzed=77 completion=7.7
+W5: t=64s webset=running search=running found=0 analyzed=77 completion=7.7
+W5: t=79s webset=running search=running found=0 analyzed=77 completion=7.7
+W5: t=95s webset=running search=running found=0 analyzed=77 completion=7.7
+W5: t=111s webset=running search=running found=0 analyzed=77 completion=7.7
+W5: t=127s webset=running search=running found=0 analyzed=94 completion=9.4
+W5: t=144s webset=running search=running found=0 analyzed=117 completion=11.7
+W5: t=160s webset=running search=running found=1 analyzed=146 completion=14.6
+W5: t=175s webset=running search=running found=1 analyzed=166 completion=16.6
+W5: t=191s webset=running search=running found=1 analyzed=174 completion=17.4
+W5: t=207s webset=running search=running found=1 analyzed=178 completion=17.8
+W5: t=223s webset=running search=running found=1 analyzed=180 completion=18
+W5: t=238s webset=running search=running found=1 analyzed=181 completion=18.1
+W5: t=254s webset=running search=running found=1 analyzed=181 completion=18.1
+W5: t=269s webset=running search=running found=1 analyzed=208 completion=20.8
+W5: t=285s webset=running search=running found=1 analyzed=227 completion=22.7
+W5: t=300s webset=running search=running found=1 analyzed=236 completion=23.6
+W5: t=316s webset=running search=running found=1 analyzed=242 completion=24.2
+W5: t=332s webset=running search=running found=1 analyzed=253 completion=25.3
+W5: t=347s webset=running search=running found=1 analyzed=260 completion=26
+W5: t=363s webset=running search=running found=1 analyzed=261 completion=26.1
+W5: t=378s webset=running search=running found=1 analyzed=271 completion=27.1
+W5: t=394s webset=running search=running found=1 analyzed=278 completion=27.8
+W5: t=421s webset=running search=running found=1 analyzed=293 completion=29.3
+W5: t=437s webset=running search=running found=1 analyzed=309 completion=30.9
+W5: t=452s webset=running search=running found=1 analyzed=327 completion=32.7
+W5: t=468s webset=running search=running found=1 analyzed=333 completion=33.3
+W5: t=483s webset=running search=running found=1 analyzed=334 completion=33.4
+W5: t=499s webset=idle search=completed found=1 analyzed=334 completion=100
+W5: items=1 all_green=1 credits_est=10
+W3: t=0s webset=idle search=completed found=25 analyzed=449 completion=100
+W3: items=25 all_green=25 credits_est=250
+EXIT=0

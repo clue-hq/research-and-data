@@ -67,6 +67,10 @@ from clue_api.account_research_fleet import read_latest_account_fleet_for_projec
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.account_research_launch import Arv2LaunchService, build_arv2_launch_tools
+from clue_api.arv2.discovery_launch import (
+    Arv2DiscoveryService,
+    build_arv2_discovery_tools,
+)
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -2643,6 +2647,7 @@ def build_toolbelt(
     contact_content_handoff: ContactContentHandoffService | None = None,
     entity_research_launches: EntityResearchLaunchServices | None = None,
     arv2_account_launch: Arv2LaunchService | None = None,
+    arv2_discovery_launch: Arv2DiscoveryService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2788,6 +2793,12 @@ def build_toolbelt(
     # ``arv2_account_research_enabled``). Without it the pair registers and refuses
     # ``arv2_account_research_not_composed`` before any spend.
     for tool in build_arv2_launch_tools(arv2_account_launch):
+        registry.register(tool, make_default=True)
+    # ARV2 Track R, R4 (verified account discovery). Same posture as its R2 sibling: registered
+    # everywhere so the write surface and the authority audit stay complete, composed only where
+    # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
+    # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
+    for tool in build_arv2_discovery_tools(arv2_discovery_launch):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

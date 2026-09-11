@@ -150,6 +150,7 @@ function AccountWorkspaceHeader({
               className="size-3"
               height={12}
               src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+              unoptimized={account.logoPath != null}
               width={12}
             />
             {account.name}

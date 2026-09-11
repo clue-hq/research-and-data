@@ -388,6 +388,16 @@
       var(--clue-ds-product-motion-easing-entry);
 }
 
+.workspaceSurface {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.workspaceSurface[hidden] { display: none; }
+.workspaceSurface > * { flex: 1; }
+
 .shellPanelOpen .artifactWorkspace {
   opacity: 1;
   transform: translateX(0);
@@ -3102,9 +3112,13 @@
 }
 
 @media (max-width: 760px) {
-  .shellPanelOpen {
+  .shellPanelOpen,
+  .shell.shellArtifactMaximized {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .artifactTabs { padding-left: 52px; padding-right: 12px; }
+  .artifactTabActions > button:first-child { display: none; }
 
   .shellPanelOpen .chatPane {
     display: none;
