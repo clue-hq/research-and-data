@@ -102,6 +102,7 @@ from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
 from clue_research.identity import insert_account_entity
 from clue_research.identity.normalize import registrable_domain
+from clue_research.membership import ensure_project_accounts
 from clue_storage import StorageBackend
 
 log = get_logger("clue_api.arv2.discovery_driver")
@@ -661,6 +662,19 @@ class Arv2DiscoveryWorkHandler:
                 fit=fit,
                 disposition=outcome,
                 account_entity_id=UUID(str(account_id)),
+            )
+            # Founder ruling 2026-09-11 (supersedes 6′): a discovered account belongs to the
+            # project that launched the discovery, by default and from the moment it is verified —
+            # pass, partial and unclear alike, the human reads the verdicts on the table. Adding it
+            # to any OTHER project stays an explicit human action ("Add to project"). Same
+            # transaction as the account row and its claims, so a candidate is never an account
+            # without a project, nor a member without its verdicts.
+            await ensure_project_accounts(
+                conn,
+                workspace_id=run.workspace_id,
+                project_id=run.project_id,
+                account_entity_ids=[UUID(str(account_id))],
+                added_via="discovered",
             )
         state.existing.add(verified)
         if outcome in _SHOWN:

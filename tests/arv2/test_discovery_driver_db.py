@@ -333,6 +333,18 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             assert verified.fit == 1.0
             assert verified.pass_ == "strict"
             assert verified.account_entity_id is not None
+            # Ruling 2026-09-11 (supersedes 6′): the verified candidate's account is a member of
+            # the launching project by default, recorded as discovered, without any approval.
+            membership = (
+                await conn.execute(
+                    text(
+                        "SELECT project_id, added_via FROM project_account "
+                        "WHERE account_entity_id = :id"
+                    ),
+                    {"id": verified.account_entity_id},
+                )
+            ).all()
+            assert [(row[0], row[1]) for row in membership] == [(run.project_id, "discovered")]
             assert len(verified.verdicts) == 4
             assert {verdict["gate_key"] for verdict in verified.verdicts} == {
                 "geography",

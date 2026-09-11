@@ -35,8 +35,8 @@ from clue_api.arv2.display.recipes import Page
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.frontend_read.accounts_list import (
     V1_NEUTRAL_FIELD_KEYS,
-    _primary_project_fit,
     _read_scores,
+    account_fit,
     as_int,
     as_str,
 )
@@ -84,7 +84,6 @@ from clue_db import ConnFactory
 from clue_research.claimstore import WorkspaceScope, claims_by_ids, current_values
 from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, surviving_id
-from clue_research.membership import memberships_for_accounts
 from clue_storage import StorageBackend
 
 
@@ -193,12 +192,6 @@ async def read_account_detail(
         current = neutral.get((canonical, field_key))
         return None if current is None else current.value_json
 
-    memberships = (
-        await memberships_for_accounts(conn, workspace_id=workspace_id, account_ids=[account_uuid])
-    ).get(account_uuid, ())
-    # The recorded FI-2 §2 policy: element 0 of the membership read is the primary project.
-    primary_project_id = memberships[0].project_id if memberships else None
-
     scores = await _read_scores(conn, workspace_id=workspace_id, entity_ids=[account_uuid])
     # The v1 *list* row's research read, shared rather than re-written so the table and the page
     # can never report a different status for one account. Its refresh flag is dropped here: the
@@ -259,7 +252,9 @@ async def read_account_detail(
     # ``min(1)``; the domain, then the id, keep the page honest and reachable.
     name = str(account.canonical_name or account.primary_domain or account_uuid)
     location = location_label(value_of("core.hq_location"))
-    fit = _primary_project_fit(scores.get(account_uuid, ()), primary_project_id)
+    # The account's newest fit whichever project scored it (founder ruling 2026-09-11: a fit is
+    # global to the account); the per-project sections below keep the attribution.
+    fit = account_fit(scores.get(account_uuid, ()))
     return AccountDetailResponseV1(
         data=AccountDetailV1(
             id=str(account_uuid),

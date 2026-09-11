@@ -544,6 +544,23 @@ class _Accounts:
         return EntityId(uuid4())
 
 
+class _Memberships:
+    """Stands in for ``ensure_project_accounts``: records every (project, account) the driver adds.
+
+    Founder ruling 2026-09-11 (supersedes 6′): a discovered account belongs to the project that
+    launched the run, so the driver adds each verified candidate's account to ``run.project_id``.
+    """
+
+    def __init__(self) -> None:
+        self.added: list[tuple[str, str, tuple[str, ...], str]] = []
+
+    async def __call__(self, conn: Any, **kwargs: Any) -> frozenset[Any]:
+        del conn
+        ids = tuple(str(account_id) for account_id in kwargs["account_entity_ids"])
+        self.added.append((kwargs["workspace_id"], kwargs["project_id"], ids, kwargs["added_via"]))
+        return frozenset(kwargs["account_entity_ids"])
+
+
 def _clock(step_s: float = 0.0) -> Callable[[], datetime]:
     """A clock that advances ``step_s`` on every read — 0 for a run that never times out."""
     state = {"reads": 0}
@@ -571,6 +588,7 @@ def _handler(
     writer = _Writer()
     drain = _DrainRecorder()
     accounts = _Accounts(account_writes_fail_on)
+    memberships = _Memberships()
     #: Every argument set the driver read its ICP with — the pin it verified against.
     icp_reads: list[dict[str, str]] = []
 
@@ -591,6 +609,7 @@ def _handler(
     monkeypatch.setattr(driver, "read_icp_document", fake_read_icp_document)
     monkeypatch.setattr(driver, "drain_provider_calls", drain)
     monkeypatch.setattr(driver, "insert_account_entity", accounts)
+    monkeypatch.setattr(driver, "ensure_project_accounts", memberships)
 
     handler = Arv2DiscoveryWorkHandler(
         settings=settings or Settings(_env_file=None),
@@ -605,6 +624,7 @@ def _handler(
         sleep=_no_sleep,
     )
     handler.icp_reads = icp_reads  # type: ignore[attr-defined]
+    handler.memberships = memberships  # type: ignore[attr-defined]
     return handler, conn_factory, writer, drain, accounts
 
 
@@ -700,6 +720,12 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
         "probook.ai",
         "patientdesk.com",
     ]
+    # Ruling 2026-09-11: every verified candidate's account joins the launching project, marked
+    # as discovered — one membership per account, in the run's own workspace and project.
+    memberships = handler.memberships  # type: ignore[attr-defined]
+    assert [(ws, project, via) for ws, project, _ids, via in memberships.added] == [
+        (WORKSPACE, PROJECT, "discovered")
+    ] * len(accounts.created)
     snapshot = store.named("upsert_candidate")[0]["row"].provider_snapshot
     assert snapshot["websets_domain"] == "probook.com"
     assert snapshot["verified_domain"] == "probook.ai"

@@ -1420,7 +1420,10 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
      `duplicate_of_existing`; one an earlier run of this project surfaced and the human did not
      approve is `not_chosen_before`. Both are recorded as candidate rows and cost exactly the one
      website answer. *Unapproved is not rejected* (ruling 1′): the row carries no "rejected" label
-     anywhere, it simply is not surfaced again.
+     anywhere, it simply is not surfaced again. Since ruling 8′ (2026-09-11) every verified
+     candidate becomes a workspace account **and a member of the launching project** at once, so
+     within one project a re-found company is always `duplicate_of_existing` first and
+     `not_chosen_before` no longer arises; the mechanism stays for the cross-project case.
    - **one Answer per hard gate**, asking the gate's own `rule` and `test` verbatim under a system
      prompt that fixes today's date, ranks the company's own pages and dated news above profile
      pages, and says that no source found is `unclear`, never `fail`. Aggregator job sites count as
@@ -1486,8 +1489,21 @@ there. That is the table's **Overall fit** badge and **Fit score**; research sta
 started". The per-gate verdicts, with their quotes and URLs, sit on the candidate row and are handed
 to the researcher as "already established" at launch.
 
+**Two founder rulings of 2026-09-11 changed what the table shows and what "approval" means.**
+Ruling 7′: **a fit is global to the account** — the accounts list and the account detail show the
+account's most recently scored fit whichever project scored it, membership or not
+(`frontend_read.accounts_list.account_fit`; the FI-2 §7 primary-project rule is superseded on those
+two surfaces, the detail's project sections keep the attribution). Before it, every freshly
+discovered account showed an empty fit column, because it belonged to no project until approved.
+Ruling 8′ (supersedes 6′): **a discovered account belongs to the launching project by default** —
+the driver records the `project_account` membership (`added_via = 'discovered'`) in the same
+transaction as the account row and its claims, for pass, partial and unclear alike; the human reads
+the verdicts on the table and removes what they do not want. Adding the account to any *other*
+project is the explicit human action below.
+
 **The accounts table is the approval surface** (ruling 2), and the approval is the existing
-"Add to project" bulk action — no new screen, no new button. `bulk_actions.add_accounts_to_project`
+"Add to project" bulk action — no new screen, no new button. Since ruling 8′ it means "add to
+another project": for the launching project the membership already exists. `bulk_actions.add_accounts_to_project`
 calls `mark_candidates_approved` on the **same transaction** as the membership insert, so a
 membership and its approval land together or not at all; only the accounts that action actually
 inserted are decided, and the store's `decision IS NULL` guard means a replay or an overlapping
@@ -1560,9 +1576,10 @@ discovery run against real providers.
   frontend is the reference, and the accounts table already shows Overall fit, Fit score and research
   status. Suggestions live in `2026-09-10-arv2-frontend-polish-backlog.md`.
 - **A chat approval gate.** While the accounts table is the approval surface, no gate tool is needed
-  (ruling 2). What the future in-project target-accounts tab reads — candidate rows or a pending
-  membership — is the founder's later design decision (ruling 6′), which is why R4 writes nothing to
-  the project until a human approves.
+  (ruling 2). ~~What the future in-project target-accounts tab reads is the founder's later
+  decision (ruling 6′).~~ **Superseded 2026-09-11 by ruling 8′:** discovered accounts are members
+  of the launching project from the moment they are verified, so the tab reads the project's
+  members and nothing is pending.
 - **The ICP's exclusion questions.** Spec §3 asks one `POST /answer` per hard gate *and per
   page-answerable exclusion*; R4 asks the gates only. `compile_brief` still compiles
   `DiscoveryBrief.exclusions` from the document, and nothing reads it. Two open questions make this

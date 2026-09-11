@@ -148,3 +148,23 @@ turn (it reads the `user_turn` onboarding-input captures as "an upload") and is 
 executor's compatibility check — every one of the six pins it needs resolves active by hand, so
 the failing rule is most likely the duplicate-request rule on the turn's own `artifact_input`
 pin; the executor logs only the one-line summary. Ledger A11.
+
+## Addendum — rulings 7′ and 8′: global fit, default membership (founder, 2026-09-11)
+
+The first discovery run on Insight Health (`90817069…`, 34 verified, $2.55, 16 min) landed on the
+accounts table with **empty Overall fit / Fit score**: the list served only the primary project's
+score (FI-2 §7) and a discovered candidate belonged to no project until approved (ruling 6′).
+Founder rulings: **7′** a fit is global to the account (ICPs barely vary; show the newest score
+whichever project scored it, membership or not); **8′** a discovered account belongs to the
+project that launched the discovery by default, adding it to other projects stays explicit
+(supersedes 6′). No backfill — the founder added the 34 by hand.
+
+Landed: `accounts_list.account_fit` (replaces `_primary_project_fit`; the detail read uses it too
+and no longer reads memberships); the driver calls `ensure_project_accounts(...,
+added_via="discovered")` in the same transaction as the account row and claims; unit fake
+`_Memberships` + assertions; DB assertion on `project_account`; both frontend-read fixtures now
+write the lower non-primary score first so the higher primary score is the newest (the assertions
+are unchanged). Docs: substance §9 rows 7′/8′, README (dedupe paragraph, approval paragraph, the
+6′ bullet struck through), ledger A13 fixed + F2/C5 updated. Verified: driver unit 25, driver DB +
+list + detail + bulk 53 on the lane DB, ruff clean. Also: `.env.example` carries an uncommitted
+`CLUE_ONBOARDING_V2_ENABLED=true` change that is not mine — left unstaged.

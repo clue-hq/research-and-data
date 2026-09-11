@@ -13,10 +13,11 @@ surfaces and owns no research logic of its own:
    the recorded ``primaryProjectId`` policy, with each project's display name resolved by ONE
    batched :func:`project_names` read over the whole page (a per-membership lookup would be an N+1
    over a 200-row page);
-4. **the primary project's fit** — the live ``account.scoring.fit`` claim joined to its project
-   through ``run_lineage``. ``account.scoring.*`` is ``project_relative``, so the join is the whole
-   point: a score is served only under the project that produced it, and no representative run is
-   guessed;
+4. **the account's fit** — the live ``account.scoring.fit`` claims joined to their projects
+   through ``run_lineage``, the newest of which the row shows whichever project produced it
+   (founder ruling 2026-09-11: a fit is global to the account; see :func:`account_fit`). The join
+   still matters: a score arrives attributed to the project that produced it, and no
+   representative run is guessed — the detail's project sections keep that attribution;
 5. **research status** — the account's own latest ARV2 job
    (:func:`~clue_api.frontend_read.v1_shared.arv2_research_status_for`).
 
@@ -501,25 +502,24 @@ def _next_cursor(
     return encode_cursor(last_created_at, uuid.UUID(str(last_id)))
 
 
-def _primary_project_fit(
-    scores: tuple[AccountProjectScore, ...], primary_project_id: str | None
-) -> float | None:
-    """The fit the row shows: the primary project's latest scored fit, or ``None``.
+def account_fit(scores: tuple[AccountProjectScore, ...]) -> float | None:
+    """The fit the row shows: the account's most recently scored fit, whichever project scored it.
 
-    The list row has one fit column and an account can hold several scores — one per project, and
-    several per project when it was scored under more than one ICP (D5). The primary project is the
-    row's lens (it is the project whose name leads the row), so its scores are the only candidates;
-    among them the most recently scored wins, because an older ICP's verdict is not this account's
-    current fit. An account with no primary project, or none scored under it, has no fit — and
-    ``None`` is served rather than a band borrowed from another project.
+    **Founder ruling 2026-09-11 — a fit is global to the account.** A seller's ICPs vary little
+    from project to project, so a score decided once (by discovery, or by a later scorer) is the
+    account's fit everywhere: the row shows it whether the account belongs to the project that
+    scored it, to another, or to none at all. This supersedes the FI-2 §7 read rule under which
+    the row served only the *primary project's* score and a membership-less account was always
+    unscored — which left every freshly discovered account (a member of nothing until approved)
+    with an empty fit column on the very screen meant to show it.
+
+    Among the account's scores the most recently scored wins, because an older ICP's verdict is not
+    this account's current fit; the per-project attribution is kept on the account detail's project
+    sections, so nothing is lost. The scores still arrive attributed through ``run_lineage`` —
+    nothing here guesses a run — and an account with no live score has no fit: ``None`` is served,
+    never a band.
     """
-    if primary_project_id is None:
-        return None
-    candidates = [
-        score
-        for score in scores
-        if score.project_id == primary_project_id and score.fit is not None
-    ]
+    candidates = [score for score in scores if score.fit is not None]
     if not candidates:
         return None
     return max(candidates, key=lambda score: score.scored_at).fit
@@ -630,7 +630,9 @@ async def list_accounts(
         # pins its project, and hiding a finished research job because the account's primary
         # membership happens to be another project would report it as never researched.
         status, refreshing = research.get(entity_id, ("not_started", False))
-        fit = _primary_project_fit(scores.get(account_id, ()), primary_project_id)
+        # The account's newest fit, whichever project scored it (founder ruling 2026-09-11: a fit
+        # is global to the account) — see :func:`account_fit`.
+        fit = account_fit(scores.get(account_id, ()))
         location = location_label(neutral_value(entity_id, "core.hq_location"))
         owner_user_id, created_by_user_id = people.get(account_id, (None, None))
         revenue_band = as_str(neutral_value(entity_id, "core.revenue_band"))

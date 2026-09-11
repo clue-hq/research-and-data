@@ -1034,22 +1034,24 @@ async def _build_v1(conn: AsyncConnection) -> tuple[_Fixture, EntityId]:
     await _score(
         conn,
         account_id=zafran,
-        project_id=fixture.project_a.project_id,
-        fit=0.82,
-        intent=0.5,
-        icp_key="alpha",
-        icp_version=1,
-    )
-    # A *lower* score under the non-primary project: the row must report the primary project's fit,
-    # never whichever score happens to sort first.
-    await _score(
-        conn,
-        account_id=zafran,
         project_id=fixture.project_b.project_id,
         fit=0.20,
         intent=None,
         icp_key="beta",
         icp_version=3,
+    )
+    # The lower score under project B is written FIRST and the primary project's higher score
+    # LAST, so the higher one is the newest. Founder ruling 2026-09-11: a fit is global to the
+    # account — the row shows the most recently scored fit whichever project scored it, no
+    # longer only the primary project's.
+    await _score(
+        conn,
+        account_id=zafran,
+        project_id=fixture.project_a.project_id,
+        fit=0.82,
+        intent=0.5,
+        icp_key="alpha",
+        icp_version=1,
     )
     # The v1 row's research status comes from ARV2's own rows and nothing else (D4-b decision 1),
     # so the seed is an ``arv2_research_job`` driven through the R2 store — not an M8D job.
