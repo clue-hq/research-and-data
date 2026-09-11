@@ -307,3 +307,12 @@ sections now cite the research.
 Fleet workers cycled too (founder, same night): new runbook verb `restart-workers` respawns the
 wrapper's 4 × 3 with the stagger, after a `work_lease` in-flight check; all four booted clean with
 `CLUE_VERIFICATION_ENABLED=false`. The whole stack now runs on the new posture.
+
+## Close-out — PR #54 merged (2026-09-11, night)
+
+`track-r4` (48 commits: R4 discovery, the Target accounts tab + Add to chat, logos, auth refusal
+logging, the lane-aware dev stack, ledger A1–A21) merged into `integration/design-improvement` as
+PR #54 (`7949a63e6`). This worktree now sits on `track-r4-v1`, cut from that merge; the lane stack
+(`./scripts/dev_stack_san_salvador.sh`) keeps running from this checkout unchanged. Open items are
+the ledger's: A1, A2, A3–A5, A11, A12, A17, A18, A20, A21 and the owed founder walks (Target
+accounts tab, logos, the regenerated Prevea / Mid State pages under verification-off).
