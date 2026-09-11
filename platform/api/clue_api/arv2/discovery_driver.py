@@ -247,6 +247,9 @@ class _RunState:
     candidate_failures: list[dict[str, str]] = field(default_factory=list)
     criteria_relaxed: tuple[str, ...] | None = None
     cost_usd: Decimal = Decimal(0)
+    #: The one cap on verification hops in flight (Task 3): candidates verify in a pool and a
+    #: candidate's gates are asked together, all under this semaphore. Built in ``_compose``.
+    hops: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
 
     def count_guard(self, guard: str) -> None:
         self.guards[guard] = self.guards.get(guard, 0) + 1
@@ -400,6 +403,7 @@ class Arv2DiscoveryWorkHandler:
             recall_estimate=run.recall_estimate,
             found_strict=run.found_strict or 0,
             found_relaxed=run.found_relaxed or 0,
+            hops=asyncio.Semaphore(self._settings.arv2_discovery_verify_concurrency),
         )
         # What an earlier attempt of this run already verified is neither re-asked nor re-billed.
         # A candidate still ``pending`` is the exception: an attempt that died between writing the
@@ -737,26 +741,33 @@ class Arv2DiscoveryWorkHandler:
     async def _verify_gates(
         self, state: _RunState, company_name: str, verified: str
     ) -> tuple[GateVerdict, ...]:
-        """Every hard gate the document states, asked one Answer call at a time and then guarded."""
-        verdicts: list[GateVerdict] = []
-        for gate in state.brief.gates:
-            result = await self._answer(
-                state,
-                query=gate_question(company_name, f"https://{verified}", gate),
-                output_schema=OUTPUT_SCHEMA,
-                label=f"discovery-{gate.key}-{verified}",
-            )
-            verdicts.append(
-                apply_guards(
-                    gate=gate,
-                    answer=result.answer,
-                    citations=result.citations,
-                    company_domain=verified,
-                    company_name=company_name,
-                    today=state.today,
+        """Every hard gate the document states — asked together, then guarded in document order.
+
+        The verdicts are assembled only once every answer is back, so parallel questions change
+        nothing about what is decided; the semaphore on ``_answer`` decides how many are in flight.
+        """
+        answers = await asyncio.gather(
+            *(
+                self._answer(
+                    state,
+                    query=gate_question(company_name, f"https://{verified}", gate),
+                    output_schema=OUTPUT_SCHEMA,
+                    label=f"discovery-{gate.key}-{verified}",
                 )
+                for gate in state.brief.gates
             )
-        return tuple(verdicts)
+        )
+        return tuple(
+            apply_guards(
+                gate=gate,
+                answer=result.answer,
+                citations=result.citations,
+                company_domain=verified,
+                company_name=company_name,
+                today=state.today,
+            )
+            for gate, result in zip(state.brief.gates, answers, strict=True)
+        )
 
     async def _answer(
         self,
@@ -766,19 +777,24 @@ class Arv2DiscoveryWorkHandler:
         output_schema: Mapping[str, object],
         label: str,
     ) -> ExaAnswerResult:
-        """One ``/answer`` hop under this run's system prompt and configured model."""
+        """One ``/answer`` hop under this run's system prompt and configured model.
+
+        Every Answer hop this run makes — the website ask and each gate — passes through here, so
+        ``state.hops`` is the run's single cap on how many of them are in flight (Task 3).
+        """
         prompt = system_prompt(state.today)
         model = self._settings.arv2_discovery_answer_model
-        return await self._hop(
-            state,
-            lambda caller: self._clients.exa(caller).answer(
-                query,
-                system_prompt=prompt,
-                output_schema=output_schema,
-                model=model,
-                label=label,
-            ),
-        )
+        async with state.hops:
+            return await self._hop(
+                state,
+                lambda caller: self._clients.exa(caller).answer(
+                    query,
+                    system_prompt=prompt,
+                    output_schema=output_schema,
+                    model=model,
+                    label=label,
+                ),
+            )
 
     async def _owner_user(self, conn: AsyncConnection, requested_by: str) -> str | None:
         """The run's requester when it is a platform user, else ``None`` (see ``_RunState``)."""
@@ -1116,8 +1132,13 @@ class Arv2DiscoveryWorkHandler:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
-        """One connection at a time. The run is strictly sequential — a hop's drain never overlaps
-        a connection the driver is holding, so no lock is needed to keep that true."""
+        """One connection per use, opened and closed around it — never held across a hop.
+
+        The run's own steps stay sequential, so no connection the driver is holding overlaps a
+        hop's drain. A candidate's gates are asked together (Task 3), so up to
+        ``arv2_discovery_verify_concurrency`` drains can each hold their own connection at once;
+        each writes only its own call's rows, so they still need no lock between them.
+        """
         async with self._conn_factory() as conn:
             yield conn
 

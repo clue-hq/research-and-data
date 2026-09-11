@@ -18,6 +18,8 @@ driver's own module names. What is asserted is therefore the driver's own contra
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -1789,3 +1791,83 @@ def test_a_run_requested_by_the_fleets_service_principal_stamps_no_owner(
     assert asyncio.run(handler.handle(_context(run.run_id))).outcome == "completed"
     [created] = accounts.created
     assert created["owner_user_id"] is None and created["created_by_user_id"] is None
+
+
+class _CountingExa(_FakeExa):
+    """``answer`` that measures how many calls overlap — the pool's observable.
+
+    ``_hop`` runs the provider call on a worker thread, so the hold below is a real overlap
+    window: with one cap of N, at most N of these can be inside ``answer`` at once.
+    """
+
+    def __init__(self, respond: Callable[[str], ExaAnswerResult], *, hold_s: float = 0.05) -> None:
+        super().__init__(respond)
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self.max_in_flight = 0
+        self._hold_s = hold_s
+
+    def answer(self, query: str, **kwargs: Any) -> ExaAnswerResult:
+        with self._lock:
+            self._in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            time.sleep(self._hold_s)
+            return super().answer(query, **kwargs)
+        finally:
+            with self._lock:
+                self._in_flight -= 1
+
+
+def _one_company_run_under_cap(
+    monkeypatch: pytest.MonkeyPatch, *, concurrency: int
+) -> tuple[_CountingExa, _Store]:
+    """A strict pass over one all-pass company, driven to completion under a named hop cap."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _CountingExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(_item("Acme", "https://acme.com"))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=concurrency),
+    )
+    asyncio.run(handler.handle(_context(run.run_id)))
+    return exa, store
+
+
+def test_a_candidates_gates_are_asked_together_under_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exa, store = _one_company_run_under_cap(monkeypatch, concurrency=4)
+    # Four gates, one website ask; the gates overlapped (the website ask ran alone, first).
+    assert len(exa.gate_queries()) == 4
+    assert exa.max_in_flight >= 2
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "completed"
+
+
+def test_a_cap_of_one_keeps_the_serial_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    exa, _store = _one_company_run_under_cap(monkeypatch, concurrency=1)
+    assert exa.max_in_flight == 1
+    # Website first, then the gates in the ICP document's own order (``ICP_FRONT["hard_gates"]``,
+    # which ``compile_brief`` keeps as written) — the R4 DB proof's positional script.
+    assert "registrable domain" in exa.queries[0]
+    assert [_RULES[key] for key in ("geography", "stage", "hiring", "intent")] == [
+        next(rule for rule in _RULES.values() if rule in query) for query in exa.gate_queries()
+    ]
