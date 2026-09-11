@@ -3164,12 +3164,27 @@
   pointer-events: none;
 }
 
-/* The Target accounts tab's live-run spinner: the chat's own rotating loader glyph. */
+/* The Target accounts tab's live-run spinner: the chat's own rotating loader glyph, at the
+ * shell's own timing. CSS modules cannot share a class across files, so `.rotatingLoader`
+ * (project-flow.module.css) is matched here rather than imported — 900ms, centred origin, and
+ * stopped by the reduced-motion block below. */
 .galleryTabSpinner {
   margin-left: 4px;
-  animation: galleryTabSpin 1s linear infinite;
+  animation: galleryTabSpin 900ms linear infinite;
+  transform-origin: center;
 }
 
 @keyframes galleryTabSpin {
   to { transform: rotate(360deg); }
+}
+
+/* The spinner stops for a user who asked motion to stop, exactly as `.rotatingLoader` does in
+ * its own file's reduced-motion block. This block sits AFTER the rule it cancels rather than in
+ * either of the file's earlier reduced-motion blocks (:3086, :3132): a media query adds no
+ * specificity, so an `animation: none` written above `.galleryTabSpinner` would simply lose to
+ * it on source order and stop nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .galleryTabSpinner {
+    animation: none;
+  }
 }

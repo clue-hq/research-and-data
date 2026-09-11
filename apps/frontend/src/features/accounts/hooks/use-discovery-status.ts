@@ -13,8 +13,10 @@ import {
  * Reads on mount; while the run is live it re-reads every `pollMs` and bumps `tick` on each
  * read so the Target accounts tab refetches its rows. `prime` bumps once from outside (the
  * launch signal) so the first poll after a launch does not wait a whole interval. A failed
- * read keeps the last status and tries again on the next tick; polling stops on the first
- * terminal status.
+ * read keeps the last status and tries again on the next tick — including the very first read,
+ * whose failure would otherwise leave the status unresolved and the run unknowable: the interval
+ * keeps reading until one read lands, and only then does liveness decide. Polling stops on the
+ * first terminal status.
  */
 export function useDiscoveryStatus(
   projectId: string,
@@ -30,6 +32,10 @@ export function useDiscoveryStatus(
   useEffect(() => {
     liveRef.current = live;
   }, [live]);
+  // Has any read ever landed? Until one has, `status` is null and `live` is false, so gating the
+  // interval on liveness alone would let a single failed mount read (a 502 from the BFF, an
+  // offline blip) kill the poll for the life of the mount.
+  const settledRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +47,7 @@ export function useDiscoveryStatus(
         if (!response.ok) return;
         const next = DiscoveryRunStatusResponseSchema.parse(await response.json()).data;
         if (cancelled) return;
+        settledRef.current = true;
         setStatus(next);
         setTick((current) => current + 1);
       } catch {
@@ -49,7 +56,7 @@ export function useDiscoveryStatus(
     }
     void read();
     const interval = window.setInterval(() => {
-      if (liveRef.current) void read();
+      if (liveRef.current || !settledRef.current) void read();
     }, pollMs);
     return () => {
       cancelled = true;

@@ -303,6 +303,15 @@ export function ChatSurface({
   useEffect(() => {
     const known = knownLaunchIds.current;
     if (known === null) {
+      // The mount snapshot WAITS for the conversation. Unlike the gallery feed above, the
+      // transcript is not server-rendered: `useProjectChatController` starts at `messages = []`
+      // with `loading = true` and fetches the conversation in a client effect. Snapshotting on
+      // the first commit would bank an EMPTY set, so the durable backlog's own persisted
+      // `launch_arv2_discovery` part (persisted parts carry their finished `output-available`
+      // state) would read as new and hijack the rail on every visit to a thread that ever
+      // launched discovery. Residual, accepted: a launch part that arrives later still — an
+      // older page prepended by `loadOlderMessages` — opens the surface once.
+      if (chat.loading) return;
       knownLaunchIds.current = new Set(
         chat.transcript.flatMap((message) =>
           message.parts.flatMap((part) => (part.kind === "tool" ? [part.toolCallId] : [])),
@@ -317,7 +326,7 @@ export function ChatSurface({
     if (opening === null) return;
     openTargetAccounts();
     setDiscoveryPrime((current) => current + 1);
-  }, [chat.transcript, openTargetAccounts]);
+  }, [chat.loading, chat.transcript, openTargetAccounts]);
 
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything

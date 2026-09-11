@@ -13,8 +13,12 @@ const hook = source("../../accounts/hooks/use-discovery-status.ts");
 
 test("the shell polls discovery every 5 s while live and opens the surface on the launch signal", () => {
   assert.match(surface, /useDiscoveryStatus\(projectId/);
-  assert.match(surface, /discoveryLaunchToOpen\(\{/);
-  assert.match(surface, /shell\.openTargetAccounts\(\)/);
+  // The launch signal's own effect: the decision, then the open it must perform. Matched as one
+  // span so it cannot be satisfied by the pre-existing gallery-card `shell.openTargetAccounts()`
+  // call elsewhere in the file — delete the effect's open and this fails.
+  assert.match(surface, /discoveryLaunchToOpen\(\{[\s\S]*?openTargetAccounts\(\);\s*setDiscoveryPrime\(/);
+  // And the mount snapshot waits for the conversation, so a replayed backlog opens nothing.
+  assert.match(surface, /if \(chat\.loading\) return;/);
   assert.match(hook, /pollMs = 5000/);
   assert.match(hook, /discoveryRunLive\(/);
 });
@@ -25,5 +29,7 @@ test("the tab label spins while a run is live, and the tab refetches on every ti
   assert.match(stage, /targetAccountsBusy=\{targetAccountsBusy\}/);
   assert.match(stage, /refreshToken=\{targetAccountsRefreshToken\}/);
   assert.match(tabs, /targetAccountsBusy \? \(\s*<ProjectIcon className=\{styles\.galleryTabSpinner\} name="loader"/);
-  assert.match(tab, /\[active, attempt, data, projectId, refreshToken\]|refreshToken/);
+  // The refetch effect's actual deps line — `refreshToken` alone matched the prop declaration,
+  // so it could not fail while the prop existed.
+  assert.match(tab, /\}, \[active, attempt, projectId, refreshToken\]\);/);
 });
