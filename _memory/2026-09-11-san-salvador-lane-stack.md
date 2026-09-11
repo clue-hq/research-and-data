@@ -348,3 +348,20 @@ scenario runs on a lock-serialised test connection and proves both candidates la
 verdicts under a cap of 4; per-connection transaction isolation is the production factory's
 property (`clue_db.transaction`), not something that test proves. Owed: the founder's signed-in
 walk (launch discovery from chat → tab opens → rows climb → spinner stops).
+
+### Discovery streaming — close-out (2026-09-12, branch `research-streaming`, 2741b0ca9..HEAD)
+Executed plan `2026-09-12-discovery-streaming.md` under SDD (Opus implementers, controller reviews,
+one Opus whole-branch review + one fix wave). Verified locally: offline driver suite 39 green
+(pristine under warnings-as-errors), lane-DB suites green, frontend 2216 tests / lint 0 errors /
+tsc at the 50-error baseline / `npm run build` green. NOT pushed. Parked for the founder:
+1. **Connection pool sizing** — `clue_db` engine uses SQLAlchemy defaults (5 + 10 overflow, 30 s
+   timeout) per worker process; at cap 4 one run can hold ~4–6 connections and the lane runs
+   4 workers × 3 slots. A checkout timeout inside `_hop`'s shielded drain would lose a bought
+   call's ledger row (loud `needs_review`, not silent). Decide: size the pool via new env flags,
+   or keep cap × slots under 15.
+2. Follow-up options, not defects: a candidate-slot cap so rows stream steadily instead of in
+   bursts (one shared semaphore is breadth-first); list the webset only when the view's found
+   count moved (per-tick listing ≈ one ledger row + raw body per 15 s); a client ceiling for a
+   run stuck at `not_started`.
+3. Owed: the founder's signed-in walk after these fixes — launch discovery from chat → tab opens
+   → rows climb → spinner stops — including a page reload mid-run.
