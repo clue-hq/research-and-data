@@ -237,6 +237,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.contacts import register_contact_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
+    from clue_api.frontend_read.research_progress import register_research_progress_route
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
@@ -266,6 +267,8 @@ def build_frontend_read_router(
     register_account_logo_route(router, conn_factory=conn_factory)
     # The project's latest discovery run — the Target accounts tab's live poll (2026-09-12).
     register_discovery_status_route(router, conn_factory=conn_factory)
+    # The pinned research progress card's document (spec 2026-09-12).
+    register_research_progress_route(router, conn_factory=conn_factory)
     register_contact_routes(
         router,
         conn_factory=conn_factory,
