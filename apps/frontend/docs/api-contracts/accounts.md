@@ -1739,3 +1739,63 @@ Those states have distinct titles and descriptions. Adding a live Account
 artifact endpoint, sorting, grid/list presentation, and preview behavior is a
 separate integration slice; it must introduce typed repository data and real
 handlers together rather than restoring dormant controls.
+
+### Project Target Accounts tab (lift from the dummy, 2026-09-11)
+
+Lifted from the dummy frontend `clue-frontend` @ `e3bcea7`
+(`docs/api-contracts/accounts.md` § "Project Target Accounts prototype"), edited
+where this platform's seams differ. The dummy is presentation truth; the two
+edits below are the seam, not the screen.
+
+The project workspace exposes a permanent Target accounts tab next to Gallery.
+Its shareable route is `/projects/:projectId/chats/:chatId?surface=target-accounts`;
+`/projects/:projectId/accounts?thread=:chatId` redirects there. A threadless
+`/projects/:projectId/accounts` redirects to `/projects/:projectId?surface=target-accounts`
+instead: founder ruling R3 forbids the dummy's `thread-primary` fixture id in a
+production URL, so `projectTargetAccountsHref` never emits it, and the project
+landing route is the legacy absorber (ruling R1) that carries `surface` through
+its own canonicalization to the resolved thread. A gallery card whose document
+type is `table` **is** the project's account list, so it opens this surface
+rather than an artifact tab (`features/chat-shell/model/gallery-card-target.ts`).
+
+**Seam edit 1 — the BFF route composes three reads, not two.** The frontend
+route `GET /api/projects/:projectId/accounts` returns
+`{ accounts, availableAccounts, profile, bulkCapabilities }` in one uncached
+(`Cache-Control: no-store`) document. `accounts` and `availableAccounts` come
+from the accounts repository (`data/project-accounts.repository.ts`), which
+forwards `projectId` to the backend read `GET /frontend/v1/accounts?projectId=`
+and follows its cursor pages to completion before browser pagination; a repeated
+cursor throws rather than silently displaying an incomplete count.
+`availableAccounts` is the unscoped directory minus the current members.
+`profile` is derived from the session — `getWorkspaceProfile(session)` — because
+this platform has no settings feature to read a `SettingsWorkspace` from; the
+session is resolved *outside* the route's try, so an authentication redirect is
+never swallowed into a 502. `bulkCapabilities` is the existing server-declared,
+fail-closed bulk-action capability read. A failed data read returns `502` with a
+retry action; the parse contract is
+`features/accounts/model/project-accounts.ts` (`ProjectAccountsResponseSchema`).
+
+The table reuses the global account cell renderers, column controls, and density
+tokens. Project membership is applied before search, filters, sort, and paging.
+Page sizes are 25, 50, and 100; query changes reset to page 1. The header
+checkbox selects the current page, while other selected pages remain selected.
+Switching Gallery/Target accounts or opening an in-project account preview
+preserves the mounted table state. Previews reuse the global full-height account
+drawer, toolbar, contacts, and research presentation. The frontend read route
+`GET /api/accounts/:accountId` loads the same detail repository and validated
+`{ data: AccountDetail }` response as the global preview and full page. Missing
+detail records return 404; upstream failures return 502 with a retry action.
+Directory properties remain visible while details load or are unavailable.
+Closing restores focus to the project table. Open as page always navigates to
+the canonical workspace route `/accounts/:accountId`.
+
+**Seam edit 2 — Add accounts is a real membership write** (founder ruling,
+2026-09-11). It replaces the dummy's local-state-only paragraph, which is not
+kept. The picked directory accounts are submitted through the existing bulk
+action `POST /accounts/bulk-actions/add-to-project` — the screen controller's
+`submitAddAccounts`, with a fresh `Idempotency-Key` per attempt — and the rows
+learn about the additions only once the backend accepts. On success the served
+lists are re-read so the picker stops offering an account that is now a member;
+the table keeps its columns, selection and page across that re-read. A refusal
+changes nothing on screen and says so, with a Try again action. No duplicate
+account record is created: membership is the only thing written.
