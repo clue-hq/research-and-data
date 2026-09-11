@@ -60,6 +60,109 @@ was earmarked for expansion is why the economic buyer signs.
 """
 
 
+#: An ICP the onboarding synthesis agent wrote for another seller: its own gate vocabulary, five
+#: gates, nothing called ``geography`` or ``stage``. Discovery must launch on it with no
+#: configuration at all — the document decides its own criteria (founder ruling 2026-09-11).
+SYNTHESISED_ICP_TEXT = """---
+kind: icp-definition
+icp_key: specialty-ambulatory-groups
+version: 2
+status: confirmed
+hard_gates:
+  - key: industry_specialty_ambulatory
+    rule: "A specialty ambulatory group (GI, ortho, cardiology) with two or more sites"
+    test: "The company's own site lists at least two locations under one specialty."
+  - key: geography_us
+    rule: "US-headquartered"
+    test: "The HQ city and state on the company's own site is in the United States."
+  - key: referral_or_document_front_door
+    rule: "Referrals or faxed documents are the front door to the practice"
+    test: "The site names a referral form, a fax line or a document intake step."
+  - key: ehr_in_supported_set
+    rule: "Runs an EHR in the supported set"
+    test: "A careers page, a case study or a partner page names athenahealth, Epic or eCW."
+  - key: hipaa_covered_entity
+    rule: "A HIPAA covered entity"
+    test: "A notice of privacy practices is published on the company's own site."
+---
+
+# Who we sell to
+
+Specialty ambulatory groups in the United States whose front door is a referral or a faxed
+document, running an EHR we integrate with.
+"""
+
+
+def _with_criteria(text: str, *keys: str) -> tuple[dict, str]:
+    """The document with ``criterion: true`` set on the named gates — what the synthesis skill
+    will write once it marks the page-answerable gates itself."""
+    front, body = parse_front_matter(text)
+    gates = [dict(gate) for gate in front["hard_gates"]]
+    for gate in gates:
+        if gate["key"] in keys:
+            gate["criterion"] = True
+    return {**front, "hard_gates": gates}, body
+
+
+def test_with_no_keys_named_the_document_decides_its_own_criteria() -> None:
+    """No configuration anywhere: the first three gates in document order are the criteria, and
+    with all three slots taken the buyer sentence stays out of the webset."""
+    front, body = parse_front_matter(SYNTHESISED_ICP_TEXT)
+    brief = compile_brief(front, body)
+    assert brief.criteria_gate_keys == (
+        "industry_specialty_ambulatory",
+        "geography_us",
+        "referral_or_document_front_door",
+    )
+    assert brief.criteria == tuple(gate.rule for gate in brief.gates[:3])
+    assert (
+        brief.query.startswith("Specialty ambulatory groups") and brief.query not in brief.criteria
+    )
+    assert [gate.key for gate in brief.gates] == [
+        "industry_specialty_ambulatory",
+        "geography_us",
+        "referral_or_document_front_door",
+        "ehr_in_supported_set",
+        "hipaa_covered_entity",
+    ]
+
+
+def test_gates_the_document_marks_as_criteria_win_over_document_order() -> None:
+    front, body = _with_criteria(SYNTHESISED_ICP_TEXT, "geography_us", "hipaa_covered_entity")
+    brief = compile_brief(front, body)
+    assert brief.criteria_gate_keys == ("geography_us", "hipaa_covered_entity")
+    # Two marked gates leave one slot, which the buyer sentence fills.
+    assert brief.criteria == (brief.gates[1].rule, brief.gates[4].rule, brief.query)
+    assert brief.gates[1].criterion is True and brief.gates[0].criterion is False
+
+
+def test_a_document_marking_four_criteria_is_refused_not_truncated() -> None:
+    front, body = _with_criteria(
+        SYNTHESISED_ICP_TEXT,
+        "industry_specialty_ambulatory",
+        "geography_us",
+        "ehr_in_supported_set",
+        "hipaa_covered_entity",
+    )
+    with pytest.raises(BriefError, match="marks 4 gates as criteria"):
+        compile_brief(front, body)
+
+
+def test_a_document_with_fewer_than_three_gates_uses_them_all() -> None:
+    front, body = parse_front_matter(SYNTHESISED_ICP_TEXT)
+    front = {**front, "hard_gates": front["hard_gates"][:2]}
+    brief = compile_brief(front, body)
+    assert brief.criteria_gate_keys == ("industry_specialty_ambulatory", "geography_us")
+    assert brief.criteria[-1] == brief.query
+
+
+def test_named_keys_still_override_whatever_the_document_marks() -> None:
+    """The operator escape hatch: keys named on the request win, and are validated as before."""
+    front, body = _with_criteria(SYNTHESISED_ICP_TEXT, "hipaa_covered_entity")
+    brief = compile_brief(front, body, criteria_gate_keys=["ehr_in_supported_set"])
+    assert brief.criteria_gate_keys == ("ehr_in_supported_set",)
+
+
 def test_compile_brief_reads_gates_query_and_windows_from_the_document() -> None:
     front, body = parse_front_matter(ICP_TEXT)
     brief = compile_brief(front, body, criteria_gate_keys=["geography", "stage"])

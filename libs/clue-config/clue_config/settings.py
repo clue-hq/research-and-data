@@ -372,9 +372,13 @@ class Settings(BaseSettings):
     arv2_discovery_strict_count: int = Field(default=35, ge=1)
     #: Run the relaxed pass automatically when the strict pass falls short (ruling, rev 5).
     arv2_discovery_relaxed_auto: bool = True
-    #: Comma-separated ICP hard-gate keys used as Websets criteria (≤ 3, page-answerable). The
-    #: ICP body's buyer sentence fills the third slot when fewer are named.
-    arv2_discovery_criteria_gate_keys: str = "geography,stage"
+    #: Operator override only — empty by default (founder ruling 2026-09-11: no deployment-wide
+    #: default gate set; every ICP decides its own). Empty means the pinned ICP document chooses
+    #: its Websets criteria: the gates it marks ``criterion: true``, else its first three gates in
+    #: document order. A comma-separated list of the document's hard-gate keys (≤ 3) forces those
+    #: instead, and is validated against the document at launch. The ICP body's buyer sentence
+    #: fills any slot left over.
+    arv2_discovery_criteria_gate_keys: str = ""
     #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).

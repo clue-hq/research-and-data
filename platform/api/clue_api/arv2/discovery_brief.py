@@ -9,11 +9,15 @@ over the document's prose is a count of months, because a window is arithmetic a
 code's job (spec §3, guard 3).
 
 Every gate in the document is verified; the document's ``exclusions`` are compiled and, in R4,
-asked of nobody — see :attr:`DiscoveryBrief.exclusions`. Only the gates the caller names become
-**webset criteria**, because the provider takes at most :data:`MAX_CRITERIA` of them — the rest
-are asked by the verifier afterwards, where a gate costs an Answer call instead of a place in the
-long list's filter. If a criteria slot is left over, the buyer sentence from the body fills it, so
-the webset still carries the ICP's own description of who we sell to.
+asked of nobody — see :attr:`DiscoveryBrief.exclusions`. Only some gates become **webset
+criteria**, because the provider takes at most :data:`MAX_CRITERIA` of them — the rest are asked
+by the verifier afterwards, where a gate costs an Answer call instead of a place in the long
+list's filter. **Which gates is the document's decision** (founder ruling 2026-09-11: no
+deployment default, every ICP names its own gates): the gates it marks ``criterion: true``, in
+document order; when it marks none, its first :data:`MAX_CRITERIA` gates in document order. A
+caller may still name keys explicitly (the operator escape hatch), and those are validated
+against the document rather than trusted. If a criteria slot is left over, the buyer sentence from
+the body fills it, so the webset still carries the ICP's own description of who we sell to.
 
 Nothing here touches a database, a provider or an agent: a document in, a brief out.
 """
@@ -73,6 +77,10 @@ class Gate:
     rule: str
     test: str
     window_months: int | None
+    #: The document marked this gate ``criterion: true`` — it wants it in the webset filter. The
+    #: synthesis skill sets it on the gates a public page can answer; absent everywhere, the
+    #: document's first gates stand in (see :func:`compile_brief`).
+    criterion: bool = False
 
 
 @dataclass(frozen=True)
@@ -132,39 +140,68 @@ def _gate_from(entry: Any) -> Gate:
         raise BriefError(f"hard gate has no key: {entry!r}")
     if not rule:
         raise BriefError(f"hard gate {key!r} has no rule")
-    return Gate(key=key, rule=rule, test=test, window_months=parse_window_months(rule, test))
+    return Gate(
+        key=key,
+        rule=rule,
+        test=test,
+        window_months=parse_window_months(rule, test),
+        criterion=bool(entry.get("criterion", False)),
+    )
+
+
+def _criteria_gates(gates: Sequence[Gate], criteria_gate_keys: Sequence[str]) -> tuple[Gate, ...]:
+    """The gates that become webset criteria, in the order they should appear.
+
+    Named keys win and are validated against the document; otherwise the document's own marks
+    decide; otherwise its first :data:`MAX_CRITERIA` gates. Every path refuses more than
+    :data:`MAX_CRITERIA` rather than truncating, so a criterion never goes missing in silence.
+    """
+    if criteria_gate_keys:
+        if len(criteria_gate_keys) > MAX_CRITERIA:
+            raise BriefError(
+                f"at most {MAX_CRITERIA} criteria gate keys, got {len(criteria_gate_keys)}: "
+                f"{list(criteria_gate_keys)}"
+            )
+        by_key = {gate.key: gate for gate in gates}
+        chosen: list[Gate] = []
+        for key in criteria_gate_keys:
+            gate = by_key.get(key)
+            if gate is None:
+                raise BriefError(
+                    f"unknown criteria gate key {key!r}; document has {sorted(by_key)}"
+                )
+            chosen.append(gate)
+        return tuple(chosen)
+    marked = tuple(gate for gate in gates if gate.criterion)
+    if len(marked) > MAX_CRITERIA:
+        raise BriefError(
+            f"document marks {len(marked)} gates as criteria, at most {MAX_CRITERIA}: "
+            f"{[gate.key for gate in marked]}"
+        )
+    if marked:
+        return marked
+    return tuple(gates[:MAX_CRITERIA])
 
 
 def compile_brief(
-    front: Mapping[str, Any], body: str, *, criteria_gate_keys: Sequence[str]
+    front: Mapping[str, Any], body: str, *, criteria_gate_keys: Sequence[str] = ()
 ) -> DiscoveryBrief:
     """Turn a confirmed ICP document into the brief one discovery run executes.
 
-    ``front`` is the document's parsed front matter and ``body`` its markdown.
-    ``criteria_gate_keys`` names which gates become webset criteria, in the order they should
-    appear.
+    ``front`` is the document's parsed front matter and ``body`` its markdown. Which gates become
+    webset criteria is the document's decision — the gates it marks ``criterion: true``, else its
+    first :data:`MAX_CRITERIA` gates, both in document order — unless ``criteria_gate_keys`` names
+    them explicitly (the operator escape hatch; see :func:`_criteria_gates`).
 
     Raises :class:`BriefError` when the document declares no ``hard_gates``, when a named criteria
-    key is not one of them, or when more than :data:`MAX_CRITERIA` keys are named — the last of
-    which is refused rather than truncated, so a criterion never goes missing in silence.
+    key is not one of them, or when more than :data:`MAX_CRITERIA` criteria are named or marked —
+    refused rather than truncated, so a criterion never goes missing in silence.
     """
     raw_gates = front.get("hard_gates")
     if not isinstance(raw_gates, Sequence) or isinstance(raw_gates, str) or not raw_gates:
         raise BriefError("icp has no hard_gates")
     gates = tuple(_gate_from(entry) for entry in raw_gates)
-
-    if len(criteria_gate_keys) > MAX_CRITERIA:
-        raise BriefError(
-            f"at most {MAX_CRITERIA} criteria gate keys, got {len(criteria_gate_keys)}: "
-            f"{list(criteria_gate_keys)}"
-        )
-    by_key = {gate.key: gate for gate in gates}
-    chosen: list[Gate] = []
-    for key in criteria_gate_keys:
-        gate = by_key.get(key)
-        if gate is None:
-            raise BriefError(f"unknown criteria gate key {key!r}; document has {sorted(by_key)}")
-        chosen.append(gate)
+    chosen = _criteria_gates(gates, criteria_gate_keys)
 
     query = buyer_sentence(body)
     criteria = [gate.rule for gate in chosen]

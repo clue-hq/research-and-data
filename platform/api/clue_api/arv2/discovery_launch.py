@@ -371,7 +371,9 @@ async def _icp_document(
 
 
 def _criteria_gate_keys(request: Arv2DiscoveryRequest, settings: Settings) -> tuple[str, ...]:
-    """The gate keys this run filters the long list on: the request's, else the deployment's."""
+    """The gate keys a caller *forces* as webset criteria: the request's, else the operator
+    override in settings, else nothing — and nothing is the normal case, in which the pinned ICP
+    document decides for itself (founder ruling 2026-09-11; see :func:`compile_brief`)."""
     if request.criteria_gate_keys:
         return tuple(request.criteria_gate_keys)
     return tuple(
@@ -447,14 +449,19 @@ async def launch_arv2_discovery(
         conn, storage, workspace_id=request.workspace_id, project_id=request.project_id
     )
 
-    criteria_gate_keys = _criteria_gate_keys(request, settings)
     try:
-        # Compiled and thrown away: the driver compiles it again from the same pinned bytes. What
-        # matters here is that it CAN be compiled, checked before a row exists rather than by a
-        # worker that has already paid for a long list.
-        compile_brief(icp.front, icp.body, criteria_gate_keys=criteria_gate_keys)
+        # Compiled here for two reasons. It proves the document CAN be compiled before a row
+        # exists, rather than by a worker that has already paid for a long list. And it settles
+        # WHICH gates are the criteria: a caller may force keys, but normally the document decides
+        # (its ``criterion`` marks, else its first three gates), and the run row records the
+        # resolved keys so every later attempt — the driver compiles from ``run.criteria_gate_keys``
+        # — filters on exactly the gates this launch settled on.
+        brief = compile_brief(
+            icp.front, icp.body, criteria_gate_keys=_criteria_gate_keys(request, settings)
+        )
     except BriefError as unusable:
         raise Arv2DiscoveryRefused("unknown_criteria_gate_key", str(unusable)) from unusable
+    criteria_gate_keys = brief.criteria_gate_keys
 
     strict_count = (
         request.strict_count

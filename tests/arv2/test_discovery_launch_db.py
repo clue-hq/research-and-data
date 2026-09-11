@@ -94,10 +94,12 @@ def test_a_launch_creates_one_run_pinned_to_the_projects_icp_and_records_lineage
             assert run.brand_id == fixture.brand_id
             assert run.project_run_id == receipt.project_run_id
             assert run.requested_by_user_id == USER_ID
-            # The counts and the gate set come from the settings when the request names none.
+            # The counts come from the settings when the request names none; the gate set comes
+            # from the document itself — no ``criterion`` marks, so its first three gates — and
+            # the run row records that resolution for every later attempt to compile from.
             assert run.target_count == 20 and run.strict_count == 35
             assert run.relaxed_enabled is True and run.relaxed_requested is False
-            assert run.criteria_gate_keys == ("geography", "stage")
+            assert run.criteria_gate_keys == ("geography", "stage", "hiring")
             assert run.status == "not_started"
             assert receipt.replayed is False and receipt.to_enqueue is True
             assert receipt.workspace_id == fixture.workspace_id

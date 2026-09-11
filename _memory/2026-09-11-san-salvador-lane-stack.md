@@ -119,3 +119,32 @@ token whose `azp` is in `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`. Backend-API-minted
 4. `POST /v1/client/sessions/{sid}/tokens` → `jwt` with `sid`, `azp=http://localhost:3020`.
 The token lives ~60 s; the client cookie jar and dev-browser token are reusable to mint another.
 Credentials are the founder's and are never written down here.
+
+## Addendum — discovery criteria now come from the ICP itself (founder ruling 2026-09-11)
+
+First discovery launch from the Head of ABM on the Insight Health project was refused
+`unknown_criteria_gate_key 'geography'`: `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` shipped with the
+Clue ICP's keys (`geography,stage`) as a *deployment* default, the tool exposes no key argument,
+and the synthesised ICP names its gates its own way (`industry_specialty_ambulatory`,
+`geography_us`, `referral_or_document_front_door`, `ehr_in_supported_set`, `hipaa_covered_entity`).
+An R4 design mistake: a global default can only ever match one document.
+
+**Ruling:** no default gate criteria anywhere; the gates are decided per ICP. **Landed:** the
+setting defaults to empty (operator override only; `.env.example` and the lane `.env` cleared);
+`compile_brief(front, body, criteria_gate_keys=())` chooses the gates the document marks
+`criterion: true` (new optional per-gate front-matter flag, `Gate.criterion`), else its first three
+gates in document order, refusing more than three either way; named keys (request / CLI
+`--criteria-gates` / env) still win and are validated against the document; the launch now
+records the *resolved* keys on the run row so every attempt compiles the same criteria.
+Verified: `tests/arv2/test_discovery_brief.py` (10, incl. a synthesised-ICP fixture),
+`test_settings.py`, `test_discovery_driver.py` offline (47 passed, no env);
+`test_discovery_launch_db.py` + `test_discovery_driver_db.py` + `test_discovery_store_db.py` on the
+lane DB (13 passed); ruff clean. Ledger rows A10 (fixed), A11, A12 added. Follow-up A12: the ICP
+synthesis skill should mark the page-answerable gates as criteria so the choice is the author's,
+not document order.
+
+Also seen in that chat: the agent retries `submit_ingestion@1` on a *captured user message* every
+turn (it reads the `user_turn` onboarding-input captures as "an upload") and is refused by the
+executor's compatibility check — every one of the six pins it needs resolves active by hand, so
+the failing rule is most likely the duplicate-request rule on the turn's own `artifact_input`
+pin; the executor logs only the one-line summary. Ledger A11.

@@ -1392,8 +1392,13 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
    — by the run's own key, refusing `icp_digest_mismatch` when the bytes have moved — rather than
    the project's current pin, so a human who confirms a new ICP version while a run is queued or
    suspended cannot silently change the gates half-way through it. `compile_brief` turns the
-   document into the query sentence, the criteria and the gates. More than three criteria gate keys
-   is a refusal, never a silent truncation of a criterion the human configured.
+   document into the query sentence, the criteria and the gates. **Which gates become the webset
+   criteria is the document's own decision**: the gates it marks `criterion: true`, in document
+   order; when it marks none, its first three gates in document order. The launch records the
+   resolved keys on the run row, so every attempt compiles the same criteria. A caller may force
+   keys (the tool's request, the CLI's `--criteria-gates`, the operator env), and those are
+   validated against the document. More than three, named or marked, is a refusal, never a silent
+   truncation of a criterion the human configured.
 3. **The long list.** One webset, `entity.type = company`, `count` = the strict ask,
    **at most three criteria** — each a hard gate a public page can answer, worded as the ICP means
    it. Hiring and intent are never webset criteria (3.7% and 2.7% success rates starved the search
@@ -1503,8 +1508,12 @@ Eight keys, all in `.env.example` at parity:
   while precision is being measured (ruling 4).
 - `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — run the relaxed pass automatically when the
   strict pass falls short.
-- `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default `geography,stage`) — which ICP hard gates become
-  webset criteria. At most three, each page-answerable; a fourth is refused, not dropped.
+- `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default **empty**) — operator override only. Empty means
+  the pinned ICP decides its own webset criteria (below); a comma-separated list of that document's
+  hard-gate keys forces those instead. At most three either way; a fourth is refused, not dropped.
+  There is no deployment-wide default gate set (founder ruling 2026-09-11): the first Insight Health
+  launch was refused `unknown_criteria_gate_key 'geography'` because the shipped default named the
+  Clue ICP's keys and a synthesised ICP names its own.
 - `CLUE_ARV2_DISCOVERY_ANSWER_MODEL` (default `exa`) — the Answer model the verifier asks.
 - `CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S` (default `15`) / `CLUE_ARV2_DISCOVERY_WALL_S` (default
   `1800`) — the webset poll cadence and the run's wall clock.
