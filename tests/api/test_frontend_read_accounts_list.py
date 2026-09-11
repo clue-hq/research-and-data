@@ -1354,3 +1354,27 @@ def test_the_z_suffixed_timestamp_is_the_only_form_the_frontends_zod_accepts() -
     zod_validate(row, "AccountSchema")
     with pytest.raises(AssertionError):
         zod_validate({**row, "createdAt": "2026-09-08T12:00:00+00:00"}, "AccountSchema")
+
+
+def test_an_account_with_a_mark_serves_the_platforms_logo_path_and_nothing_else_does() -> None:
+    """Founder ruling 2026-09-11 (supersedes D0 ruling S2): an account carrying ``core.logo_url``
+    serves a ``/``-rooted path to the platform's logo route — never the third-party URL — and an
+    account without one still serves ``null`` so the frontend shows its placeholder."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture, zafran = await _build_v1(conn)
+            await _neutral_claim(
+                conn,
+                account_id=zafran,
+                field_key="core.logo_url",
+                value="https://media.licdn.com/dms/image/v2/X/company-logo_200_200/0?e=2147483647",
+            )
+            body = (await _get(conn)).json()
+            rows = _rows(body)
+            assert rows["Zafran"]["logoPath"] == f"/api/clue/frontend/v1/accounts/{zafran}/logo"
+            assert "media.licdn.com" not in rows["Zafran"]["logoPath"]
+            assert rows["Seedling"]["logoPath"] is None
+            zod_validate(rows["Zafran"], "AccountSchema")
+
+    run_async(scenario())

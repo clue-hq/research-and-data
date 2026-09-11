@@ -164,6 +164,10 @@ class WebsetItem:
     funding_total: int | None
     evaluations: tuple[Mapping[str, Any], ...]
     raw: Mapping[str, Any]
+    #: ``properties.company.logoUrl`` as Exa returned it — a LinkedIn company mark for most
+    #: companies, a site-hosted image (often a social banner, not a logo) for the rest. The
+    #: discovery driver keeps only the marks it trusts; see ``logo_resolution.websets_mark_url``.
+    logo_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -335,6 +339,7 @@ def _item_view(item: Mapping[str, Any]) -> WebsetItem:
         funding_total=_int(financials.get("fundingTotal")),
         evaluations=_evaluations(item),
         raw=item,
+        logo_url=_str(company.get("logoUrl")),
     )
 
 

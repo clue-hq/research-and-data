@@ -86,6 +86,7 @@ from clue_api.arv2.exa_websets_client import (
     WebsetView,
 )
 from clue_api.arv2.fleet_task import arv2_discovery_work_id
+from clue_api.arv2.logo_resolution import BrandfetchClient, websets_mark_url
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -135,6 +136,10 @@ _CANDIDATE_NS = uuid5(NAMESPACE_URL, "arv2-discovery:candidate")
 #: The claim source keys: which instrument produced the value.
 _ANSWER_SOURCE = "exa_answer"
 _WEBSETS_SOURCE = "exa_websets"
+_BRANDFETCH_SOURCE = "brandfetch"
+
+#: Is this requester a human the accounts table can name as owner? (ruling 10′)
+_IS_PLATFORM_USER = text("SELECT 1 FROM platform_user WHERE user_id = :user_id")
 
 #: ``core.revenue_band``'s closed vocabulary, as ``(upper_bound_exclusive, label)`` walked in
 #: order; the last band is open-ended. Spelled here rather than imported because the registry's
@@ -176,11 +181,17 @@ def revenue_band(revenue_annual: int | float | Decimal) -> str:
 
 
 class DiscoveryClients(Protocol):
-    """The two instruments a discovery run uses, each built around one hop's caller."""
+    """The instruments a discovery run uses, each built around one hop's caller.
+
+    ``brandfetch`` returns ``None`` on a worker with no Brandfetch key: the run then keeps only the
+    marks Websets returned and skips the fallback, rather than failing every candidate.
+    """
 
     def exa(self, caller: ProviderCaller) -> ExaClient: ...
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient: ...
+
+    def brandfetch(self, caller: ProviderCaller) -> BrandfetchClient | None: ...
 
 
 class _WallExceeded(Arv2Error):
@@ -212,6 +223,11 @@ class _RunState:
     existing: set[str]
     unapproved: frozenset[str]
     seen: set[str] = field(default_factory=set)
+    #: The human who owns and created every account this run lands (founder ruling 2026-09-11:
+    #: creator is owner) — the run's requester when that id is a real platform user, else
+    #: ``None``. A deepagent-launched run records the fleet's service principal as its requester,
+    #: which is nobody's owner and no FK target, so it is resolved once here rather than trusted.
+    owner_user_id: str | None = None
     webset_id: str | None = None
     strict_search_id: str | None = None
     #: Set once the widening search has been bought — the relaxed pass then READS it rather than
@@ -375,6 +391,7 @@ class Arv2DiscoveryWorkHandler:
                 before_run_id=run.run_id,
             )
             already = await self._store.list_candidates(conn, run_id=run.run_id)
+            owner_user_id = await self._owner_user(conn, run.requested_by_user_id)
         state = _RunState(
             run=run,
             brief=brief,
@@ -382,6 +399,7 @@ class Arv2DiscoveryWorkHandler:
             deadline=now + timedelta(seconds=self._settings.arv2_discovery_wall_s),
             existing=existing,
             unapproved=frozenset(unapproved),
+            owner_user_id=owner_user_id,
             webset_id=run.webset_id,
             strict_search_id=run.strict_search_id,
             relaxed_search_id=run.relaxed_search_id,
@@ -637,6 +655,7 @@ class Arv2DiscoveryWorkHandler:
             state.count_guard(verdict.guard)
         fit = fit_score(verdicts)
         outcome = disposition(verdicts)
+        logo = await self._resolve_logo(state, item=item, verified=verified)
         async with self._connection() as conn:
             account_id = await insert_account_entity(
                 conn,
@@ -644,6 +663,13 @@ class Arv2DiscoveryWorkHandler:
                 primary_domain=verified,
                 workspace_id=run.workspace_id,
                 status=AccountStatus.CANDIDATE,
+                # Founder ruling 2026-09-11: the creator is the owner by default — the human who
+                # launched the discovery made these accounts exist and owns them until an
+                # ownership mechanism says otherwise. Only a real platform user is stamped: a run
+                # the deepagent launched on the fleet records the service principal as its
+                # requester, and that id is no owner (and no FK target).
+                owner_user_id=state.owner_user_id,
+                created_by_user_id=state.owner_user_id,
             )
             await self._write_claims(
                 conn,
@@ -654,6 +680,7 @@ class Arv2DiscoveryWorkHandler:
                 fit=fit,
                 pass_=pass_,
                 verified=verified,
+                logo=logo,
             )
             await self._store.record_verdicts(
                 conn,
@@ -760,6 +787,11 @@ class Arv2DiscoveryWorkHandler:
             ),
         )
 
+    async def _owner_user(self, conn: AsyncConnection, requested_by: str) -> str | None:
+        """The run's requester when it is a platform user, else ``None`` (see ``_RunState``)."""
+        row = await conn.execute(_IS_PLATFORM_USER, {"user_id": requested_by})
+        return requested_by if row.first() is not None else None
+
     async def _write_claims(
         self,
         conn: AsyncConnection,
@@ -771,8 +803,13 @@ class Arv2DiscoveryWorkHandler:
         fit: float,
         pass_: Pass,
         verified: str,
+        logo: tuple[str, str] | None = None,
     ) -> None:
-        """The fit the gates produced, plus the two long-list facts worth keeping.
+        """The fit the gates produced, the two long-list facts worth keeping, and the mark.
+
+        ``logo`` is ``(url, source_key)`` from :meth:`_resolve_logo`, or ``None`` when neither
+        Websets nor Brandfetch had a mark — then no ``core.logo_url`` claim is written and the
+        screens show their placeholder.
 
         The fit claim cites the first *passing* verdict's page and quote, because that is the
         evidence a reader of the score should land on; a fit with no passing gate cites the
@@ -831,6 +868,53 @@ class Arv2DiscoveryWorkHandler:
                     markers={"discovery_run_id": str(run.run_id)},
                 ),
             )
+        if logo is not None:
+            logo_url, logo_source = logo
+            await self._writer.write(
+                conn,
+                self._draft(
+                    run,
+                    account_id=account_id,
+                    field_key="core.logo_url",
+                    value_json=logo_url,
+                    source_key=logo_source,
+                    source_url=logo_url,
+                    markers={"discovery_run_id": str(run.run_id), "logo_kind": "mark"},
+                ),
+            )
+
+    async def _resolve_logo(
+        self, state: _RunState, *, item: WebsetItem, verified: str
+    ) -> tuple[str, str] | None:
+        """The account's mark: Websets' LinkedIn company mark, else Brandfetch's icon, else none.
+
+        Founder ruling 2026-09-11, on the proof of concept's numbers (``logo_resolution``): the
+        mark only. One Brandfetch hop at most per candidate, and only when Websets gave no mark
+        we trust; a worker without a Brandfetch key skips the fallback entirely.
+        """
+        mark = websets_mark_url(item.logo_url)
+        if mark is not None:
+            return mark, _WEBSETS_SOURCE
+        try:
+            icon = await self._hop(
+                state,
+                lambda caller: (
+                    None
+                    if (client := self._clients.brandfetch(caller)) is None
+                    else client.icon_url(verified, label=f"logo:{verified}")
+                ),
+            )
+        except ProviderHalted:
+            raise
+        except Exception as error:  # noqa: BLE001 — a logo must never fail a candidate
+            log.warning(
+                "arv2.discovery_logo_lookup_failed",
+                run_id=str(state.run.run_id),
+                domain=verified,
+                error=type(error).__name__,
+            )
+            return None
+        return None if icon is None else (icon, _BRANDFETCH_SOURCE)
 
     def _draft(
         self,
@@ -1177,13 +1261,24 @@ def _scope(payload: Mapping[str, Any]) -> tuple[UUID, str] | None:
 
 @dataclass(frozen=True)
 class _LiveClients:
-    """The production instruments: one Exa key, two clients, one caller per hop."""
+    """The production instruments: one Exa key, one optional Brandfetch key, one caller per hop."""
 
     settings: Settings
     exa_api_key: SecretStr
+    brandfetch_api_key: SecretStr | None = None
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
         return ExaClient(caller, api_key=self.exa_api_key)
+
+    def brandfetch(self, caller: ProviderCaller) -> BrandfetchClient | None:
+        if self.brandfetch_api_key is None:
+            return None
+        return BrandfetchClient(
+            caller,
+            api_key=self.brandfetch_api_key,
+            base_url=self.settings.brandfetch_api_base_url,
+            timeout_s=self.settings.brandfetch_timeout_s,
+        )
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient:
         return ExaWebsetsClient(
@@ -1225,6 +1320,15 @@ def build_arv2_discovery_handler(
         conn_factory=conn_factory,
         storage=storage,
         artifacts=artifacts,
-        clients=_LiveClients(settings=settings, exa_api_key=SecretStr(key.get_secret_value())),
+        clients=_LiveClients(
+            settings=settings,
+            exa_api_key=SecretStr(key.get_secret_value()),
+            brandfetch_api_key=(
+                SecretStr(secrets.brandfetch_api_key.get_secret_value())
+                if secrets.brandfetch_api_key is not None
+                and secrets.brandfetch_api_key.get_secret_value().strip()
+                else None
+            ),
+        ),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
     )

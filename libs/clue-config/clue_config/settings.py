@@ -387,6 +387,12 @@ class Settings(BaseSettings):
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
+    #: Brandfetch Brand API base URL and per-call timeout — the platform's own copy of the design
+    #: subsystem's ``BRANDFETCH_*`` pair, under the ``CLUE_`` prefix like every platform setting.
+    #: Used by discovery's mark-type logo fallback (founder ruling 2026-09-11). Env:
+    #: ``CLUE_BRANDFETCH_API_BASE_URL`` / ``CLUE_BRANDFETCH_TIMEOUT_S``.
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = Field(default=20.0, gt=0)
 
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
     # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;

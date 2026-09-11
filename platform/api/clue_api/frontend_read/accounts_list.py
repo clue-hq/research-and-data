@@ -65,6 +65,7 @@ from clue_api.frontend_read.contract_v1 import (
 )
 from clue_api.frontend_read.v1_shared import (
     RESEARCH_STATUS_LABELS,
+    account_logo_path,
     arv2_research_status_for,
     custom_fields_for,
     employee_band,
@@ -102,6 +103,7 @@ V1_NEUTRAL_FIELD_KEYS: tuple[str, ...] = (
     "core.industries_all",
     "core.company_linkedin_url",
     "core.company_twitter_url",
+    "core.logo_url",
 )
 
 #: The ``project_relative`` scoring fields the row attributes per project. ``account.scoring.*`` is
@@ -642,8 +644,9 @@ async def list_accounts(
                 # ``canonical_name`` is NOT NULL on the spine, but a blank one would fail the
                 # contract's ``min(1)``; the domain, then the id, keep the row honest and visible.
                 name=str(canonical_name or primary_domain or account_id),
-                # No logo pipeline exists (D0 ruling S2): explicitly null, never a guessed URL.
-                logo_path=None,
+                # The platform's logo route when the account carries a mark-type logo (founder
+                # ruling 2026-09-11); null otherwise — never a guessed URL.
+                logo_path=account_logo_path(account_id, neutral_value(entity_id, "core.logo_url")),
                 website_url=website_url(primary_domain),
                 # ``arv2_research_job.status`` is the seam-1 vocabulary, which is character-for-
                 # character the ``ResearchStatus`` literal (D0 ruling S11): the row's status *is*

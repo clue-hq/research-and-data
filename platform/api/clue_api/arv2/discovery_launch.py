@@ -139,6 +139,10 @@ class Arv2DiscoveryRequest:
     workspace_id: str
     project_id: str
     requested_by_user_id: str
+    #: The ``turn-action:`` ref of the turn a fleet-driven launch acts for; when set, the human
+    #: who submitted that turn becomes the run's requester (and every discovered account's
+    #: creator and owner) in place of the service principal that invoked the tool.
+    launching_turn_ref: str | None = None
     target_count: int = 20
     #: How many the provider is asked for. ``None`` → ``settings.arv2_discovery_strict_count``.
     strict_count: int | None = None
@@ -370,6 +374,44 @@ async def _icp_document(
     )
 
 
+#: The human who submitted a turn, by the turn's own durable submission row — the same row the
+#: gate tools address a gate to. Read here with the lane's own statement: ``clue_api.arv2`` may
+#: not import ``clue_api.turn_action`` (Global Constraint 7), and the read is two columns.
+_TURN_SUBMITTER = text(
+    """
+    SELECT submitted_by_user_id FROM agent_turn_submission
+    WHERE turn_id = :turn_id AND workspace_id = :workspace_id
+    """
+)
+_TURN_ACTION_PREFIX = "turn-action:"
+
+
+async def _requesting_human(conn: AsyncConnection, request: Arv2DiscoveryRequest) -> str:
+    """Who requested this run, as the accounts table can name them (ruling 10′, 2026-09-11).
+
+    A human invoker is the requester. A fleet-driven launch names the service principal and
+    carries ``launching_turn_ref`` (``turn-action:<uuid>``); then the human who submitted that
+    turn is the requester — the same rule the gate tools use to address a gate. If the ref does
+    not resolve to a turn of this workspace with a human submitter, the invoker's id stands, and
+    the driver (which checks the id against ``platform_user``) creates the accounts unowned
+    rather than failing the run.
+    """
+    ref = request.launching_turn_ref
+    if ref is None or not ref.startswith(_TURN_ACTION_PREFIX):
+        return request.requested_by_user_id
+    try:
+        turn_id = UUID(ref[len(_TURN_ACTION_PREFIX) :])
+    except ValueError:
+        return request.requested_by_user_id
+    row = (
+        await conn.execute(
+            _TURN_SUBMITTER, {"turn_id": turn_id, "workspace_id": request.workspace_id}
+        )
+    ).first()
+    submitter = None if row is None else row[0]
+    return str(submitter) if submitter else request.requested_by_user_id
+
+
 def _criteria_gate_keys(request: Arv2DiscoveryRequest, settings: Settings) -> tuple[str, ...]:
     """The gate keys a caller *forces* as webset criteria: the request's, else the operator
     override in settings, else nothing — and nothing is the normal case, in which the pinned ICP
@@ -448,6 +490,7 @@ async def launch_arv2_discovery(
     icp = await read_pinned_icp(
         conn, storage, workspace_id=request.workspace_id, project_id=request.project_id
     )
+    requested_by = await _requesting_human(conn, request)
 
     try:
         # Compiled here for two reasons. It proves the document CAN be compiled before a row
@@ -510,7 +553,7 @@ async def launch_arv2_discovery(
             icp_artifact_sha256=icp.artifact_sha256,
             icp_key=icp.icp_key,
             icp_version=icp.icp_version,
-            requested_by_user_id=request.requested_by_user_id,
+            requested_by_user_id=requested_by,
             request_sha256=request_sha,
             target_count=request.target_count,
             strict_count=strict_count,
@@ -762,6 +805,10 @@ class LaunchArv2DiscoveryTool(Tool):
             workspace_id=ctx.workspace_id,
             project_id=inputs.project_id,
             requested_by_user_id=ctx.actor_id or ctx.actor,
+            # The turn this launch is an act of. When the deepagent launches from the fleet the
+            # invoker is a *service* principal (``svc_execution_worker``), which is nobody's owner
+            # (ruling 10′: creator is owner) — the launch resolves the turn's human from this.
+            launching_turn_ref=ctx.action_ref if ctx.principal_kind == "service" else None,
             target_count=inputs.target_count,
             relaxed_enabled=inputs.relaxed_enabled,
         )

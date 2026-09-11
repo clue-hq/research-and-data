@@ -881,6 +881,26 @@ _OWNERS_SQL = """
 """
 
 
+#: Where the accounts screens fetch an account's logo from: the platform's own logo route behind
+#: the frontend's BFF mount, never the third-party image URL itself. A ``RootedPath`` by contract
+#: (the frontend's schema requires a ``/``-rooted path), and session-authenticated like every other
+#: BFF path — which is why the frontend renders it with Next's optimizer off.
+LOGO_PATH_PREFIX = "/api/clue/frontend/v1/accounts"
+
+
+def account_logo_path(account_id: object, logo_url: object) -> str | None:
+    """The rooted logo path for an account that has a ``core.logo_url`` value, else ``None``.
+
+    Founder ruling 2026-09-11 (supersedes D0 ruling S2's "no logo pipeline"): discovered accounts
+    carry a mark-type logo URL (LinkedIn's company mark from Exa Websets, else Brandfetch's icon)
+    and the accounts list, the account detail and the contact profile show it. The screens never
+    receive the raw URL: they receive this path, and the logo route streams the image.
+    """
+    if not isinstance(logo_url, str) or not logo_url.strip():
+        return None
+    return f"{LOGO_PATH_PREFIX}/{account_id}/logo"
+
+
 async def owners_for(conn: AsyncConnection, *, user_ids: Iterable[str]) -> dict[str, AccountOwner]:
     """Resolve workspace user ids to the ``AccountOwner`` shape, in one read.
 

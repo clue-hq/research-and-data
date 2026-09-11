@@ -87,6 +87,7 @@ export function AccountIdentity({ account }: { account: AccountDetail }) {
           height={36}
           priority
           src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+          unoptimized={account.logoPath != null}
           width={36}
         />
       </div>

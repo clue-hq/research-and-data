@@ -59,6 +59,7 @@ from clue_api.frontend_read.evidence_stream import (
 from clue_api.frontend_read.v1_shared import (
     EMPTY_BAND,
     RESEARCH_STATUS_LABELS,
+    account_logo_path,
     activity_for,
     arv2_research_status_for,
     custom_fields_for,
@@ -263,8 +264,9 @@ async def read_account_detail(
             # different fields, and serving anything but the account's name in one of them would
             # be a second name for one account.
             preview_title=name,
-            # No logo pipeline exists (D0 ruling S2): explicitly null, never a guessed URL.
-            logo_path=None,
+            # The platform's logo route when the account carries a mark-type logo (founder ruling
+            # 2026-09-11); null otherwise — never a guessed URL.
+            logo_path=account_logo_path(account_uuid, value_of("core.logo_url")),
             website_url=website_url(account.primary_domain),
             website_label=website_label(account.primary_domain) or EMPTY_BAND,
             research_status=status,

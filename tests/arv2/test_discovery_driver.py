@@ -193,17 +193,27 @@ class _Store:
         return [payload for event, payload in self.events if event == name]
 
 
+class _Rows(list):
+    """A list that also answers ``first()`` — the two shapes the driver reads off a result."""
+
+    def first(self) -> Any:
+        return self[0] if self else None
+
+
 class _Conn:
-    """A connection that answers exactly one query: the workspace's existing account domains."""
+    """A connection that answers two queries: the workspace's existing account domains, and
+    "is this requester a platform user" (yes for ``usr-*`` ids, no for a service principal)."""
 
     def __init__(self, domains: Sequence[str] = ()) -> None:
         self.domains = list(domains)
         self.statements: list[str] = []
 
     async def execute(self, statement: Any, parameters: Any = None) -> Any:
-        del parameters
         self.statements.append(str(statement))
-        return [(domain,) for domain in self.domains]
+        if "platform_user" in str(statement):
+            user_id = str((parameters or {}).get("user_id", ""))
+            return _Rows([(1,)] if user_id.startswith("usr") else [])
+        return _Rows([(domain,) for domain in self.domains])
 
 
 class _ConnFactory:
@@ -287,6 +297,7 @@ def _item(
     search_id: str = "srch-strict",
     employees: int | None = None,
     revenue_annual: int | None = None,
+    logo_url: str | None = None,
 ) -> WebsetItem:
     return WebsetItem(
         item_id=item_id or f"itm-{name.lower()}",
@@ -302,6 +313,7 @@ def _item(
         funding_total=None,
         evaluations=(),
         raw={"id": item_id or f"itm-{name.lower()}", "properties": {"url": url, "name": name}},
+        logo_url=logo_url,
     )
 
 
@@ -438,11 +450,31 @@ class _FakeExa:
         return [query for query in self.queries if "Test to verify:" in query]
 
 
+class _FakeBrandfetch:
+    """Stands in for ``BrandfetchClient``: answers ``icon_url`` from a domain → url map."""
+
+    def __init__(self, icons: dict[str, str | None] | None = None) -> None:
+        self.icons = icons or {}
+        self.asked: list[str] = []
+
+    def icon_url(self, domain: str, *, label: str) -> str | None:
+        del label
+        self.asked.append(domain)
+        return self.icons.get(domain)
+
+
 class _Clients:
-    def __init__(self, exa: _FakeExa, websets: _FakeWebsets) -> None:
+    def __init__(
+        self, exa: _FakeExa, websets: _FakeWebsets, brandfetch: _FakeBrandfetch | None = None
+    ) -> None:
         self._exa = exa
         self._websets = websets
+        self._brandfetch = brandfetch
         self.callers: list[Any] = []
+
+    def brandfetch(self, caller: Any) -> Any:
+        self.callers.append(caller)
+        return self._brandfetch
 
     def exa(self, caller: Any) -> Any:
         self.callers.append(caller)
@@ -583,6 +615,7 @@ def _handler(
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
     account_writes_fail_on: frozenset[str] = frozenset(),
+    brandfetch: _FakeBrandfetch | None = None,
 ) -> tuple[Arv2DiscoveryWorkHandler, _ConnFactory, _Writer, _DrainRecorder, _Accounts]:
     conn_factory = _ConnFactory(domains)
     writer = _Writer()
@@ -616,7 +649,7 @@ def _handler(
         conn_factory=conn_factory,
         storage=object(),
         artifacts=SimpleNamespace(),
-        clients=_Clients(exa, websets),
+        clients=_Clients(exa, websets, brandfetch),
         writer=writer,
         store=store,
         transport_factory=lambda: ScriptedTransport([]),
@@ -1687,3 +1720,118 @@ def test_a_resumed_run_does_not_re_price_the_rows_an_earlier_attempt_already_pai
     assert [item.name for item in read.items] == ["Probook", "Patientdesk"]
     assert read.priced_item_ids == ("itm-patientdesk",)
     assert read.cost_usd == ITEM_COST
+
+
+# --- the mark-type logo and creator-as-owner (founder rulings 2026-09-11) ---------------------
+
+LINKEDIN_MARK = (
+    "https://media.licdn.com/dms/image/v2/C560BAQGQ7Cv/company-logo_200_200/0?e=2147483647&v=beta"
+)
+BRANDFETCH_ICON = "https://cdn.brandfetch.io/idX/w/400/h/400/theme/dark/icon.png?c=abc"
+
+
+def _one_company_run(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    logo_url: str | None,
+    brandfetch: _FakeBrandfetch | None,
+) -> tuple[_Writer, _Accounts]:
+    """One strict run over one all-passing company, ``Acme`` at ``acme.com``."""
+    run = _run_row()
+    store = _Store(run)
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        items_results=[_items(_item("Acme", "https://acme.com", logo_url=logo_url))]
+    )
+    handler, _, writer, _, accounts = _handler(
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch, brandfetch=brandfetch
+    )
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+    assert result.outcome == "completed"
+    return writer, accounts
+
+
+def _logo_drafts(writer: _Writer) -> list[tuple[Any, str]]:
+    return [(d.value_json, d.source_key) for d in writer.drafts if d.field_key == "core.logo_url"]
+
+
+def test_a_linkedin_company_mark_from_websets_is_kept_and_brandfetch_is_not_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    brandfetch = _FakeBrandfetch({"acme.com": BRANDFETCH_ICON})
+    writer, _ = _one_company_run(monkeypatch, logo_url=LINKEDIN_MARK, brandfetch=brandfetch)
+    assert _logo_drafts(writer) == [(LINKEDIN_MARK, "exa_websets")]
+    assert brandfetch.asked == []
+
+
+def test_a_site_hosted_websets_image_is_dropped_and_brandfetch_supplies_the_icon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A social banner from the company's own site is not a mark (proof of concept, 2026-09-11):
+    Websets' URL is dropped, Brandfetch's ``icon`` is the logo, and the claim says which source."""
+    brandfetch = _FakeBrandfetch({"acme.com": BRANDFETCH_ICON})
+    writer, _ = _one_company_run(
+        monkeypatch, logo_url="https://acme.com/img/opengraph.jpg", brandfetch=brandfetch
+    )
+    assert _logo_drafts(writer) == [(BRANDFETCH_ICON, "brandfetch")]
+    assert brandfetch.asked == ["acme.com"]
+
+
+def test_without_a_brandfetch_key_a_company_without_a_mark_gets_no_logo_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer, _ = _one_company_run(monkeypatch, logo_url="https://acme.com/hero.jpg", brandfetch=None)
+    assert _logo_drafts(writer) == []
+
+
+def test_brandfetch_knowing_no_icon_leaves_the_account_without_a_logo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    writer, _ = _one_company_run(
+        monkeypatch, logo_url=None, brandfetch=_FakeBrandfetch({"acme.com": None})
+    )
+    assert _logo_drafts(writer) == []
+
+
+def test_the_requesting_human_is_the_creator_and_the_owner_of_a_discovered_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, accounts = _one_company_run(monkeypatch, logo_url=None, brandfetch=None)
+    [created] = accounts.created
+    assert created["owner_user_id"] == "usr-1"
+    assert created["created_by_user_id"] == "usr-1"
+
+
+def test_a_run_requested_by_the_fleets_service_principal_stamps_no_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deepagent-launched run records ``svc_execution_worker`` as its requester; that is nobody's
+    owner and no FK target, so the account is created unowned rather than the run failing."""
+    run = _run_row(requested_by_user_id="svc_execution_worker")
+    store = _Store(run)
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(items_results=[_items(_item("Acme", "https://acme.com"))])
+    handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+    assert asyncio.run(handler.handle(_context(run.run_id))).outcome == "completed"
+    [created] = accounts.created
+    assert created["owner_user_id"] is None and created["created_by_user_id"] is None

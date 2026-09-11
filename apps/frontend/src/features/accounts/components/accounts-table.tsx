@@ -268,12 +268,16 @@ function AccountTableRow({
                 prefetch={false}
                 title={account.name}
               >
+                {/* unoptimized: the logo route is session-authenticated behind the BFF —
+                    the Next image optimizer's server-side refetch carries no session cookie
+                    and would 401 (the gallery card documents the same). */}
                 <Image
                   alt=""
                   aria-hidden="true"
                   className="size-3 shrink-0 object-contain"
                   height={12}
                   src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+                  unoptimized={account.logoPath != null}
                   width={12}
                 />
                 <span className={`${readability.uiMedium} truncate`}>

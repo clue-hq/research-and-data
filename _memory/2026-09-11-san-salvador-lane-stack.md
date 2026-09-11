@@ -181,3 +181,41 @@ gap: `PrincipalError` carries optional `subject` (verified provider subject) and
 resolver and authorizer set them; the handler logs `auth.principal.refused` (method, path,
 code, status, subject, user_id) on every refusal. Response bodies unchanged. `tests/auth` 50
 passed on the lane DB; mypy clean on the three modules. Ledger A14.
+
+## Addendum — rulings 9′ (mark-type logo) and 10′ (creator is owner), 2026-09-11
+
+PoC over the first Insight Health run (34 companies): Websets `logoUrl` present for all; 22 are
+LinkedIn company marks (`media.licdn.com/…/company-logo_…`, non-expiring `e=2147483647`), every
+one inspected correct; the site-hosted rest were wrong about half the time (Open Graph banner,
+social photo, team photo, page hero); one LinkedIn default placeholder, one 403. Brandfetch's
+**logo-link CDN redirects to its docs for our client id** (open: check the id in the Brandfetch
+dashboard); the **Brand API with `BRANDFETCH_API_KEY` works** and returned an `icon` for 5/7
+misses (Inova's symbol, Southern Ortho's tree verified by eye), wordmark-only for 2.
+
+Founder rulings: show the **mark only** on the accounts list, the account detail and the contact
+profile; Websets' LinkedIn mark first, Brandfetch `icon` second, else the placeholder; **creator
+is owner by default**. Landed: `core.logo_url` core field + `exa_websets` manifest v4 +
+`brandfetch` manifest; `arv2/logo_resolution.py` (`websets_mark_url`, `BrandfetchClient` through
+the provider caller, `icon_from_brand`); driver `_resolve_logo` (one Brandfetch hop at most per
+candidate, never fails a candidate) + `insert_account_entity(owner_user_id, created_by_user_id)`
+stamped with the run's requester; `frontend_read/account_logo.py` streams the image (https only,
+raster only, ≤2 MB, 404 otherwise) and the three reads serve `/api/clue/frontend/v1/accounts/{id}/logo`;
+four frontend `<Image>` sites get `unoptimized` (session-authenticated route). Secrets:
+`CLUE_BRANDFETCH_API_KEY`; settings `CLUE_BRANDFETCH_API_BASE_URL` / `_TIMEOUT_S`.
+`scripts/backfill_discovery_run_logos_and_owners.py` applied both to run `90817069…`: 34
+owners/creators stamped, 31 logos (22 Websets marks, 9 Brandfetch icons), 3 without a mark
+(cancerleukemia, mississippisportsmedicine, orthospecialty — Brandfetch has only wordmarks or nothing).
+Tests: driver unit (5 new), `test_logo_resolution.py`, `test_frontend_read_account_logo.py`,
+list/detail/driver DB assertions; sources suite green on a fresh DB (the lane DB's `apollo`
+manifest row is stale data, a pre-existing red like the answer-key ones). Frontend `tsc` reds in
+`features/projects/*.test.ts` are pre-existing (untouched files).
+
+**Owner backfill, second pass.** The run's ``requested_by_user_id`` was ``svc_execution_worker``
+(the deepagent launched it on the fleet; every ARV2 launch tool stamps ``ctx.actor_id or
+ctx.actor``), so the first backfill hit the ``platform_user`` FK. Fixed the discovery launch to
+resolve the launching turn's human (``agent_turn_submission.submitted_by_user_id`` via
+``ctx.action_ref`` when ``ctx.principal_kind == "service"``), the driver to stamp owner/creator
+only for a platform user, and the script to take ``--owner-user-id``; re-ran with the founder's
+user: 34 owned, 31 logos. The nine Brandfetch hops of the first pass were **not ledgered** (the
+drain failed after the claims committed) — ledger A18. R2's two launch tools carry the same
+service-principal attribution — ledger A17.

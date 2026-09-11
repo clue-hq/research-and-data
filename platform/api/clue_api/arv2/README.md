@@ -1501,6 +1501,20 @@ transaction as the account row and its claims, for pass, partial and unclear ali
 the verdicts on the table and removes what they do not want. Adding the account to any *other*
 project is the explicit human action below.
 
+**Rulings 9′ and 10′ (2026-09-11): the mark, and the owner.** Every verified candidate's account now
+carries a **mark-type logo** (`core.logo_url`, `logo_resolution.py`): Websets' `logoUrl` when it is
+LinkedIn's company mark (the PoC found those correct in every inspected case and site-hosted images
+wrong about half the time — Open Graph banners, team photos), else Brandfetch's Brand API `icon`
+(one bearer-keyed hop per company, ledgered like any other; `CLUE_BRANDFETCH_API_KEY`), else no
+claim and the screens show their placeholder. **Never a wordmark, never a banner.** The accounts
+list, the account detail and the contact profile serve `/api/clue/frontend/v1/accounts/{id}/logo`
+(`frontend_read/account_logo.py` streams the bytes under the workspace scope), never the
+third-party URL; the frontend renders that path with Next's optimizer off because the route is
+session-authenticated. And the human who launched the discovery is each account's **creator and
+owner** (`insert_account_entity(owner_user_id=…, created_by_user_id=…)`), until an ownership
+mechanism exists. `scripts/backfill_discovery_run_logos_and_owners.py` applies both to a run made
+before the rulings.
+
 **The accounts table is the approval surface** (ruling 2), and the approval is the existing
 "Add to project" bulk action — no new screen, no new button. Since ruling 8′ it means "add to
 another project": for the launching project the membership already exists. `bulk_actions.add_accounts_to_project`

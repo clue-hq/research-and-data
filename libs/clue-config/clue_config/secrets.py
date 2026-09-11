@@ -93,6 +93,10 @@ class Secrets(BaseSettings):
     builtwith_api_key: SecretStr | None = None
     duns_api_key: SecretStr | None = None
     exa_api_key: SecretStr | None = None
+    # Brandfetch Brand API — the fallback source of an account's mark-type logo when Exa Websets
+    # gives none we trust (founder ruling 2026-09-11). Env: CLUE_BRANDFETCH_API_KEY. Distinct from
+    # the design subsystem's own BRANDFETCH_API_KEY (its brand-kit ingestion); same value locally.
+    brandfetch_api_key: SecretStr | None = None
     # HMAC secret configured on the Exa Websets webhook, distinct from the API key.
     # Env: CLUE_EXA_WEBSETS_WEBHOOK_SECRET.
     exa_websets_webhook_secret: SecretStr | None = None

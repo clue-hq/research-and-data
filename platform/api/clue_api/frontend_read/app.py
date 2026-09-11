@@ -229,6 +229,7 @@ def build_frontend_read_router(
     # Imported here, not at module scope: the endpoint modules import ``WorkspaceDep`` from this
     # one, so a top-level import would be circular.
     from clue_api.frontend_read.account_detail import register_account_detail_routes
+    from clue_api.frontend_read.account_logo import register_account_logo_route
     from clue_api.frontend_read.account_workspace import register_account_workspace_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
@@ -260,6 +261,8 @@ def build_frontend_read_router(
     # segment ahead of ``/accounts/{account_id}/evidence/{claim_id}`` whatever the order, but the
     # registration order is the one place a reader can see which path wins, so it is kept explicit.
     register_account_workspace_routes(router, conn_factory=conn_factory, display=display)
+    # The account's mark-type logo, streamed by the platform (founder ruling 2026-09-11).
+    register_account_logo_route(router, conn_factory=conn_factory)
     register_contact_routes(
         router,
         conn_factory=conn_factory,

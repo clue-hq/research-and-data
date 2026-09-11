@@ -90,13 +90,29 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
             "core.work_email",
             "core.direct_phone",
             "core.primary_tech_stack",
+            "core.logo_url",
             "account.total_funding",
             "account.recent_funding",
         ),
         provider="exa",
         auth_ref="CLUE_EXA_API_KEY",
         freshness_profile="operation_window",
-        version=3,
+        # v4 (2026-09-11): yields ``core.logo_url`` — the LinkedIn company mark Websets returns.
+        version=4,
+    ),
+    # Brandfetch's Brand API: the mark-type logo (``icon``) for an account's verified domain when
+    # Websets returned no mark we trust (founder ruling 2026-09-11). Structured, keyed, one call
+    # per domain; nothing else is read from it here.
+    _entry(
+        "brandfetch",
+        modality=Modality.STRUCTURED,
+        entity_scope=EntityScope.ACCOUNT,
+        tier=2,
+        yields=("core.logo_url",),
+        provider="brandfetch",
+        auth_ref="CLUE_BRANDFETCH_API_KEY",
+        freshness_profile="operation_window",
+        version=1,
     ),
     _entry(
         "clay",

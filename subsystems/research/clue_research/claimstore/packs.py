@@ -207,6 +207,22 @@ CORE_PACK: tuple[SeedField, ...] = (
         ),
     ),
     _seed(
+        "core.logo_url",
+        "str",
+        PassKind.SCORING,
+        # The account's MARK-type logo (a square symbol, never a wordmark or a social banner) as a
+        # stable image URL: LinkedIn's company mark when Exa Websets returns one, else Brandfetch's
+        # ``icon`` (founder ruling 2026-09-11, which supersedes the D0 "no logo pipeline" posture).
+        # The accounts list, the account detail and the contact profile serve it through the
+        # platform's own logo route, never as a raw third-party URL.
+        tier_plan=("exa_websets", "brandfetch"),
+        freshness_ttl=timedelta(days=180),
+        value_schema={"type": "string"},
+        description=(
+            "Mark-type company logo image URL (a square symbol: LinkedIn mark or Brandfetch icon)."
+        ),
+    ),
+    _seed(
         "core.industry",
         "str",
         PassKind.SCORING,

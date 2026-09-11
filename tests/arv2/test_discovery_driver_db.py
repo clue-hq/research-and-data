@@ -67,6 +67,9 @@ pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 _SECRET = SecretStr("exa-test-key")
 
 PROBOOK_QUOTE = "Probook raised a $12M Series A led by Amplify and is hiring in Austin, Texas."
+PATIENTDESK_MARK = (
+    "https://media.licdn.com/dms/image/v2/D560BAQHi-klal6mKkQ/company-logo_200_200/0?e=2147483647"
+)
 PATIENTDESK_QUOTE = (
     "Patientdesk closed a $9M Series A in March 2025 and is hiring go-to-market staff in Boston."
 )
@@ -110,12 +113,15 @@ def _item_body(
     url: str,
     employees: int | None = None,
     revenue_annual: int | None = None,
+    logo_url: str | None = None,
 ) -> dict[str, Any]:
     company: dict[str, Any] = {
         "name": name,
         "headquarters": {"city": "Austin", "state": "TX", "countryCode": "US"},
         "financials": {},
     }
+    if logo_url is not None:
+        company["logoUrl"] = logo_url
     if employees is not None:
         company["employees"] = employees
     if revenue_annual is not None:
@@ -177,6 +183,7 @@ def _script() -> list[HttpResponse]:
                         url="https://patientdesk.com",
                         employees=140,
                         revenue_annual=8_000_000,
+                        logo_url=PATIENTDESK_MARK,
                     ),
                 ],
                 "hasMore": False,
@@ -358,7 +365,8 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
                 (
                     await conn.execute(
                         text(
-                            "SELECT canonical_name, primary_domain, status, workspace_id "
+                            "SELECT canonical_name, primary_domain, status, workspace_id, "
+                            " owner_user_id, created_by_user_id "
                             "FROM account_entity WHERE id = :id"
                         ),
                         {"id": verified.account_entity_id},
@@ -371,6 +379,10 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             assert account["primary_domain"] == "patientdesk.com"
             assert account["status"] == "candidate"
             assert account["workspace_id"] == fixture.workspace_id
+            # Founder ruling 2026-09-11: the human who launched the discovery created the account
+            # and owns it by default.
+            assert account["created_by_user_id"] == run.requested_by_user_id
+            assert account["owner_user_id"] == run.requested_by_user_id
 
             # The fit as the accounts list reads it: the live claim joined to its project through
             # ``run_lineage`` (``account.scoring.*`` is project-relative), banded to 0-100.
@@ -398,6 +410,24 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             assert markers["discovery_run_id"] == str(run_id)
             assert markers["pass"] == "strict"
             assert markers["gates"]["stage"] == "pass"
+
+            # The mark (founder ruling 2026-09-11): Websets' LinkedIn company mark, kept as a
+            # ``core.logo_url`` claim the accounts screens serve through the platform's logo route.
+            logo = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT value_json #>> '{}' AS url, source_key FROM claim "
+                            "WHERE entity_id = :entity_id AND field_key = 'core.logo_url' "
+                            "AND superseded_by IS NULL"
+                        ),
+                        {"entity_id": verified.account_entity_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert (logo["url"], logo["source_key"]) == (PATIENTDESK_MARK, "exa_websets")
 
             rows = (
                 (
