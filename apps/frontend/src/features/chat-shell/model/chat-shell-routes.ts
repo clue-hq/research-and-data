@@ -26,6 +26,17 @@ export function projectGalleryHref(projectId: string, threadId: string) {
   });
 }
 
+// Task-1 scaffolding for the target-accounts lift: the `/projects/{id}/accounts`
+// redirect page needs this helper to type-check before Task 3 lands the real
+// surface. It is carried over from the design build VERBATIM, including the
+// `"thread-primary"` fallback that ruling R3 removed from `projectGalleryHref`
+// directly above — so a caller that omits `threadId` puts a fixture thread id in
+// a production URL. Task 3 owns resolving a real thread id and dropping the
+// fallback; do not add a second caller before then.
+export function projectTargetAccountsHref(projectId: string, threadId?: string) {
+  return projectChatHref(projectId, threadId ?? "thread-primary", { surface: "target-accounts" });
+}
+
 export function projectChatHref(
   projectId: string,
   chatId: string,

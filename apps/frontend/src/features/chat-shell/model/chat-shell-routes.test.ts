@@ -4,6 +4,7 @@ import {
   projectArtifactHref,
   projectChatHref,
   projectGalleryHref,
+  projectTargetAccountsHref,
 } from "./chat-shell-routes";
 
 test("project-owned routes keep chats and artifacts under their durable project", () => {
@@ -28,6 +29,10 @@ test("project-owned routes keep chats and artifacts under their durable project"
 });
 
 test("route builders omit empty integration-state parameters", () => {
+  assert.equal(
+    projectTargetAccountsHref("project", "chat"),
+    "/projects/project/chats/chat?surface=target-accounts",
+  );
   assert.equal(
     projectChatHref("project", "chat", { edit: undefined, surface: "" }),
     "/projects/project/chats/chat",
