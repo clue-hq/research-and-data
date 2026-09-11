@@ -26,7 +26,7 @@ tables, blockquotes, links, bold/italic and numbered lists render as raw text.
 | # | Item | Ruling / source |
 |---|---|---|
 | B1 | Tree rows: one uniform 32 px single-line row, uniform 16 px document glyph (`flex: none`), one font. A name wider than the column is clipped; on hover it scrolls once end-to-start (marquee, single pass) then returns to the start. | founder 2026-09-12 (new hover behaviour; not in the dummy) |
-| B2 | Markdown: render the full document — GFM tables, blockquotes, links, emphasis, ordered lists, code — with the page's existing `.markdownPreview` typography; replace the hand parser with a real renderer. | ENG-183; founder 2026-09-12 |
+| B2 | Markdown: render the full document — GFM tables, blockquotes, links, emphasis, ordered lists, code — with the page's existing `.markdownPreview` typography; replace the hand parser with **react-markdown + remark-gfm** for rendering and keep **CodeMirror** (`@codemirror/lang-markdown`, as the dummy's `markdown-source-editor.tsx`) for editing — nothing in-house. | ENG-183; founder 2026-09-12 (library ruling) |
 | B3 | Typography panel shows the sample text in the extracted font (load the kit's font asset via `@font-face`). | ENG-181 |
 | B4 | Assets panel: the asset fills the display section; description beside/below it. | ENG-182 |
 | B5 | Items 1–7 above remain candidates for this branch where the founder picks them up. | — |
