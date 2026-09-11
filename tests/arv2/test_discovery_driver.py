@@ -1871,3 +1871,127 @@ def test_a_cap_of_one_keeps_the_serial_order(monkeypatch: pytest.MonkeyPatch) ->
     assert [_RULES[key] for key in ("geography", "stage", "hiring", "intent")] == [
         next(rule for rule in _RULES.values() if rule in query) for query in exa.gate_queries()
     ]
+
+
+class _WatchingDrain(_DrainRecorder):
+    """A drain that also says WHEN it ran: whether the wire call had already returned, and where
+    it falls in the store's own event order."""
+
+    def __init__(
+        self,
+        finished: threading.Event | None = None,
+        events: list[tuple[str, dict[str, Any]]] | None = None,
+    ) -> None:
+        super().__init__()
+        self._finished = finished
+        self._events = events
+        #: ``True`` for each drain that ran after the provider call's thread had returned.
+        self.after_the_call: list[bool] = []
+
+    async def __call__(self, conn: Any, **kwargs: Any) -> DrainReport:
+        if self._finished is not None:
+            self.after_the_call.append(self._finished.is_set())
+        if self._events is not None:
+            self._events.append(("drain", {}))
+        return await super().__call__(conn, **kwargs)
+
+
+def test_a_cancelled_hop_still_lands_the_money_trail_of_the_call_it_bought(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruling R8: a thread cannot be interrupted, so a cancelled hop waits for the call it already
+    put on the wire before draining. Without the wait the drain lands an empty trail and the run's
+    receipt under-reports money that was genuinely spent."""
+    run = _run_row()
+    store = _Store(run)
+    handler, _, _, _, _ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=_FakeWebsets(), monkeypatch=monkeypatch
+    )
+    returned = threading.Event()
+    drain = _WatchingDrain(finished=returned)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    def on_the_wire(caller: Any) -> str:
+        del caller
+        time.sleep(0.05)
+        returned.set()
+        return "bought"
+
+    async def cancel_it_mid_call() -> None:
+        # ``_hop`` is what is under test, so it is driven directly; ``_compose`` builds the
+        # real state it needs (run, brief, semaphore) through the same fakes.
+        state = await handler._compose(run)
+        hop = asyncio.create_task(handler._hop(state, on_the_wire))
+        await asyncio.sleep(0.01)
+        hop.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await hop
+
+    asyncio.run(cancel_it_mid_call())
+
+    # Drained exactly once, and only after the call it was buying had actually come back.
+    assert drain.after_the_call == [True]
+    assert len(drain.stamps) == 1
+
+
+class _HaltingExa(_CountingExa):
+    """Exa refuses the stage gate at once while every other ask is slow — so the halt arrives with
+    its sibling gates still on the wire, which is the case ruling R8 exists for."""
+
+    def answer(self, query: str, **kwargs: Any) -> ExaAnswerResult:
+        if STAGE_RULE in query:
+            self.queries.append(query)
+            raise ProviderHalted("exa", "rate_limited", http_status=429)
+        return super().answer(query, **kwargs)
+
+
+def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruling R8: the failing gate's siblings are cancelled AND awaited before the halt leaves the
+    verifier, so every Answer call that reached the wire is on the ledger before the receipt is
+    written. Letting them run on would land the run first and add their cost to it afterwards."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _HaltingExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        ),
+        hold_s=0.15,
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(_item("Acme", "https://acme.com"))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=4),
+    )
+    drain = _WatchingDrain(events=store.events)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["status"] == "needs_review"
+    assert finished["receipt"]["failure"] == "provider_halted"
+    assert "rate_limited" in finished["receipt"]["message"]
+    # The website ask plus all four gates reached the wire, and every provider call this run made
+    # — those five, plus the webset's create/poll/read — drained.
+    assert len(exa.queries) == 5
+    assert len(drain.stamps) == len(websets.calls) + len(exa.queries)
+    # And every drain is recorded before the run is landed — no money arrives after the receipt.
+    order = [name for name, _ in store.events]
+    assert order.index("finish_discovery_run") > max(
+        index for index, name in enumerate(order) if name == "drain"
+    )

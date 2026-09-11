@@ -48,7 +48,7 @@ gate.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
@@ -745,18 +745,28 @@ class Arv2DiscoveryWorkHandler:
 
         The verdicts are assembled only once every answer is back, so parallel questions change
         nothing about what is decided; the semaphore on ``_answer`` decides how many are in flight.
+
+        When one gate fails, the siblings are cancelled and awaited before the failure leaves this
+        method (ruling R8). Letting them run on would put their cost on the ledger after the run
+        had already landed — a receipt that under-reports what was spent — and would leave a second
+        failure unobserved. ``_hop`` makes that cancellation safe: a cancelled ask still pays.
         """
-        answers = await asyncio.gather(
-            *(
+        tasks = [
+            asyncio.create_task(
                 self._answer(
                     state,
                     query=gate_question(company_name, f"https://{verified}", gate),
                     output_schema=OUTPUT_SCHEMA,
                     label=f"discovery-{gate.key}-{verified}",
                 )
-                for gate in state.brief.gates
             )
-        )
+            for gate in state.brief.gates
+        ]
+        try:
+            answers = await asyncio.gather(*tasks)
+        except BaseException:
+            await _abort(tasks)
+            raise
         return tuple(
             apply_guards(
                 gate=gate,
@@ -1101,13 +1111,29 @@ class Arv2DiscoveryWorkHandler:
 
         The drain is shielded because a cancelled drain would lose the raw bodies and ledger rows
         of a call that already happened — the one thing money truth cannot tolerate.
+
+        Cancellation gets the same treatment, and needs more than a shield (ruling R8): a thread
+        cannot be interrupted, so a cancelled ``to_thread`` returns to the loop while the call it
+        carries is still on the wire and fills ``raw``/``ledger`` afterwards — the drain would
+        land an empty trail for a call that was bought. So the call is shielded, and on
+        cancellation it is awaited to completion BEFORE the drain runs and the cancellation is let
+        through. A sibling gate cancelled because another gate failed therefore still pays its own
+        bill onto the receipt.
         """
         raw, ledger = BufferedRawSink(), BufferedLedger()
         caller = ProviderCaller(
             transport=self._transport_factory(), raw_sink=raw, ledger=ledger, now=self._clock
         )
+        call = asyncio.ensure_future(asyncio.to_thread(fn, caller))
         try:
-            return await asyncio.to_thread(fn, caller)
+            return await asyncio.shield(call)
+        except asyncio.CancelledError:
+            # Wait for the thread that cannot be interrupted, so its raw body and ledger row are
+            # in the buffers the drain below lands, then let the cancellation through. (A second
+            # cancellation during this wait is the one residual: the drain then lands what is
+            # buffered so far.)
+            await asyncio.shield(asyncio.gather(call, return_exceptions=True))
+            raise
         finally:
             await asyncio.shield(self._drain(state, raw, ledger))
 
@@ -1227,6 +1253,18 @@ def _snapshot_item_id(candidate: CandidateRow) -> str | None:
 
 def _replace_disposition(row: CandidateRow, value: Disposition) -> CandidateRow:
     return replace(row, disposition=value)
+
+
+async def _abort(tasks: Iterable[asyncio.Task[Any]]) -> None:
+    """Cancel every task that is still running and wait for all of them to finish.
+
+    The waiting is the point (ruling R8): a cancelled hop still drains its own call, so returning
+    before the siblings are done would let their money land after the run had landed, and would
+    leave a second failure's exception unretrieved. Shared with Task 4's candidate pool.
+    """
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _failure_code(error: BaseException) -> str:
