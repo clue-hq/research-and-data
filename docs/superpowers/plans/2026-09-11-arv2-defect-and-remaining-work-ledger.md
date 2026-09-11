@@ -1,0 +1,116 @@
+# ARV2 — defect and remaining-work ledger (opened 2026-09-11)
+
+Everything observed on the ARV2 lanes up to the first browser session on the `track-r4` stack:
+O6 (Head-of-ABM integration, incl. task 9b–9e), R4 (verified account discovery), and the
+san-salvador dev-stack bring-up of 2026-09-11. One row per item. **Status** is one of
+`open` / `mitigated` (a workaround is in place, the cause is not fixed) / `fixed` / `decision`
+(needs a founder ruling before anyone builds) / `owed` (a gate that has not run). **Size** is a
+first estimate for one implementer including tests: S ≤ half a day, M ≤ two days, L longer.
+
+Sources: `_memory/2026-09-09-arv2-onboarding-o6-head-of-abm.md`,
+`_memory/2026-09-10-task-9d-fleet-worker-concurrency.md`, `_memory/2026-09-10-arv2-r4-discovery.md`,
+`_memory/2026-09-11-san-salvador-lane-stack.md`,
+`docs/superpowers/plans/2026-09-10-arv2-frontend-polish-backlog.md`. Where a row restates one of
+those, the note there carries the detail; this file is the index.
+
+---
+
+## A. Defects found live on the stack (2026-09-11)
+
+| # | Defect | Where | Effect | Status | Size | Owner |
+|---|---|---|---|---|---|---|
+| A1 | **Onboarding driver fans out one product-research step per catalog entry, not per product.** The identity ladder legitimately folds two catalog entries into already-created products (`model_reused`, high confidence); the step id is `uuid5(run, kind, product_id)`, so the second entry collides on `onboarding_step_pkey`. The insert is before the step's containment, `gather` re-raises, the run is marked **failed** after every step landed. | `platform/api/clue_api/arv2/onboarding_driver.py` (`_run` builds `background` from `links` without deduplicating by `product_id`) | Run `f4826a17…` on Insight Health: 24 documents ready, run row `failed`, `cost_usd` never stamped, the Brand-context status endpoint reports failed and the page's refresh hook stops. | open | S | onboarding lane |
+| A2 | **Fleet-worker boot seeds the field registry with read-then-INSERT and is not concurrency-safe.** Four workers booting together raced on `field_definition_pkey`; three died, one won. Only reachable when the registry is missing rows — which `tests/fleet/test_b4_composed_run_db.py` guarantees after any run on a live lane DB (its cleanup deletes the core pack). | `clue_api.composition.load_research_packs` → `clue_research.claimstore.registry.register_field` (and the same pattern in `sources.registry.register_source`, whose docstring already names the hazard) | A multi-worker start on a fresh or test-touched database silently ends with fewer workers than started. Latent first-deploy failure. | mitigated (6 s stagger in `scripts/dev_stack.sh`) | S: `pg_advisory_xact_lock` at the top of `load_research_packs` + a two-connection test | platform composition |
+| A3 | **The Welcome flow drives the old onboarding.** After provisioning, `live-setup-screen` posts `/api/clue/stage0/setup` and polls `/stage0/setup/current` — the legacy Stage-0 recon — while the Brand-context page reads the new lane's documents, so a new workspace shows an empty Knowledge tree until someone starts the new run by hand. | `apps/frontend/src/features/onboarding/data/setup.ts`; `platform/api/clue_api/stage0_setup.py` | Every new workspace runs the old recon once (wasted spend, old-lane claims) and never the new one. | open | S–M (frontend `setup.ts` + screen → `POST /onboarding` and poll `/frontend/v1/brand-context/onboarding/current`) | frontend + onboarding lane |
+| A4 | **One flag couples workspace minting with the old recon.** `CLUE_SELF_SERVE_PROVISIONING_ENABLED` both mounts `POST /auth/v1/provision` (needed by the Welcome flow) and composes the old Stage-0 scrape binder/recon in the API process and the recon handler + official-site crawl enqueuer in the worker. Turning provisioning on for browser testing turned the legacy lane on. | `libs/clue-config/clue_config/settings.py` `self_serve_provisioning_enabled`; `projections_main.py:105`, `fleet_main.py:550/1163` | Cannot run the new lane with provisioning and without the old recon. Blocks retiring the old pipeline before Phase 6. | open | S (split into a provisioning switch and a recon switch, default off; three composition sites, `.env.example`) | platform composition |
+| A5 | **No product surface starts the new onboarding run** (O6 follow-up 4). The O5 and today's walks started it with a hand POST. The Knowledge page's refresh hook arms only when the *server render* sees a live run, and stops on `failed`. | frontend brand-context feature; `onboarding_routes.py` | Manual testing needs a token and a curl; the page must be reloaded after a start. | open | folded into A3 | frontend |
+| A6 | **Backend-minted Clerk tokens are unusable against the API.** The verifier requires `sid` + `azp` (session-token contract); tokens from `api.clerk.com …/tokens[/template]` carry no `azp` → `SESSION_INVALID`. Not a defect in the API — a documented operational fact; the working recipe (dev-browser handshake → password → fixed email code → session token with `azp`) is in the lane memory note. | `platform/auth/clue_auth/providers/clerk.py:140` | Any script that must call an authenticated route needs the Frontend-API dance, or a service principal that does not exist yet. | decision (do we want a first-party operator/service credential for scripts?) | M | auth |
+| A7 | **Lane `.env` had 33 keys fewer than `.env.example`** (it had only served CLI runs), incl. `CLUE_FRONTEND_READ_ENABLED` (default false → every accounts read 404'd). Also: a parity check written as `[A-Z_]+=` silently ignores every key with a digit (`_V2_`, `_C7_`, `_ARV2_`). | `.env` (git-ignored) | Fixed locally at the example's values; the provisioning flag and `CLUE_ONBOARDING_V2_ENABLED` set `true` for this lane only. | fixed (local) | — | — |
+| A8 | **`scripts/dev_stack.sh` was hard-wired to the istanbul checkout** (DB, one worker, one slot). | `scripts/dev_stack.sh` | Fixed: `DEV_STACK_*` knobs with unchanged defaults; `scripts/dev_stack_san_salvador.sh` wrapper (4 workers × 3 slots); macOS-safe worker count in `status`. | fixed (`a5567f68e`) | — | — |
+| A9 | **The Welcome screen surfaces raw transport errors** ("Provisioning failed with status 404"). Correct behaviour, poor copy; the 404 itself was A4/A7. | `apps/frontend/src/features/onboarding/data/onboarding.repository.ts:63` | Founder-facing message names an HTTP status instead of a cause. | open | S | frontend (polish) |
+
+## B. Owed gates (built, not yet proven live)
+
+| # | Gate | What it proves | Status | Runs with |
+|---|---|---|---|---|
+| B1 | **O6 live exit gate** — a new project on Insight Health: interview → ICP pick → product-set gate → ICP confirmation → account launch; old lane off; committee cap 5, one account, 4 workers × 3 slots; target accounts seeded by domain first. | The Head-of-ABM integration end to end on the new lane. | owed (not recorded in this branch; if it ran in the track-O workspace, tick it there) | founder present |
+| B2 | **R4 Task 10 live exit gate** — a 20-account cohort on the Clue ICP: launch (ask 35), run to `completed`/`needs_review`, `--report`, candidates on the accounts table with fit band + score + one quote and source per gate (unclear shown), "Add to project" stamps the approver, approved accounts launch into R2/R3 and display, a requested relaxed pass reuses the webset. Evidence `.context/arv2-r4-acceptance/`. | Discovery end to end; spends Exa credits and R2 provider calls. | owed | founder present, Fable runs |
+| B3 | **O7 acceptance** — unseeded onboarding on Clue (cluehq.ai) and one more seller; cost/latency table per step; defect list. | The new onboarding lane is the product path; the new-lane flag's default flips to `true`. | owed (needs A1 fixed first — the Insight Health run proves the per-product fan-out trips on reused products) | both founders sign |
+| B4 | **§7b skill wording review** — the "Discover accounts for this project" passage in `stage0-interview@v22` was executed as written in the plan. Founder edits → skill v23 + profile v46. | The agent's discovery instructions are the founder's words. | owed | founder |
+
+## C. Backend remaining work — R4 (discovery)
+
+| # | Item | Status | Size |
+|---|---|---|---|
+| C1 | **ICP exclusion questions** (final-review I3). `compile_brief` compiles `exclusions`, nothing asks them. Two rulings needed: how an exclusion scores against `fit = passes / gates` (a veto vs a Low vs a flag), and whether ~8 more Answer calls (≈$0.04 per company) are worth it. Until then a gate-clean company that sells to consumers can show as High fit. | decision | S once ruled |
+| C2 | **Fit payload lacks `icp_key` / `icp_version`** (parked residual M6). The accounts list groups fit scores by those keys; discovery's score groups as ICP-less. Harmless while discovery is the only writer on ARV2 workspaces. One line in `discovery_driver._write_claims` + a test. | open | S |
+| C3 | **Websets exclusion import** — feed the workspace's existing account websites into the webset's `exclude` list once Exa confirms the per-plan cap (ruling 1′). Local dedupe already catches the same companies after the long list; this is a cost saving. | open (blocked on Exa) | S |
+| C4 | **Worker scheduling across job kinds** (ruling 3′ deferred): how per-process slots are shared between account research (−100) and discovery (−90); whether the AI Ark spacing rule becomes a shared limiter. | decision | M |
+| C5 | **Chat cohort-approval gate** — only after the founder designs the in-project target-accounts tab and rules 6′ (what that tab reads: candidate rows vs a pending membership). | decision | M |
+| C6 | **`exa-pro` comparison** for the verifier (`CLUE_ARV2_DISCOVERY_ANSWER_MODEL` is a one-key swap); measured `exa` only. | open | S (experiment) |
+| C7 | **Split the `unknown_criteria_gate_key` refusal** into `icp_has_no_hard_gates` / `too_many_criteria_gate_keys`; the message is right, the code is a misnomer for two of three causes. | open | S |
+| C8 | **Recall angles if pools prove short** — Exa `/search` signal-first queries as a later recall angle; the run already records `asked/found_strict/found_relaxed/analyzed/recall_estimate` so shortness is measured. | open (conditional) | M |
+| C9 | **Cost readers** — `ANSWER_ESTIMATE_USD` (flat cent) and `websets_items_cost` (10 credits per all-green row) are the two places to change if Exa's meter moves. | note | — |
+| C10 | Smaller, each recorded at its site: `_pre_spend_disposition` writes as a side effect of a read (deliberate); `_REVENUE_BANDS` duplicated in the driver (registry copy not importable; DB test pins one band); the tool's `relaxed_enabled=True` default overrides `arv2_discovery_relaxed_auto` for model-initiated launches; an already-member account keeps `decision NULL` when ticked (benign); `websets_halt_rule` reason is a message, not a code. | note | — |
+
+## D. Backend remaining work — O6 and the fleet (9d)
+
+| # | Item | Status | Size |
+|---|---|---|---|
+| D1 | **A steering skill on the ARV2 tools before O7.** v44 dropped `account-deep-steering@v8` (old chain); nothing teaches the agent how to steer research on the new lane (relaunch, read a run back). | open | M |
+| D2 | **`record_interview_answer@2`** admitting a paraphrased quote; until then skill text keeps the exact-quote rule and the master plan's "quote rule removed" line cannot land. | open | S–M |
+| D3 | **Qualifier-field registration (D12)** — `qualifier_fields` lives only in the confirmed ICP's front matter; registering into the field catalog is the R lane's, at launch. | open | S |
+| D4 | **Multi-project ICP confirmation** — two projects confirming different versions of one ICP path: both rows stay confirmed but `current_knowledge_documents` serves only the newest, so the older project's index card loses its confirmation. Deferred to O7 multi-project. | open | M |
+| D5 | **The ™ duplicate product pairs** — 2 `unresolved_ambiguous` entries from older runs surface at the product-set gate flagged `model_unsure`; a human merges them there. Data cleanup on the lane DBs. | open | S |
+| D6 | **Pinned-file naming rule** — the pinned ICP version keeps the plain path, a newer sibling materialises as `<stem>.v<N>.md`. Adopted in 9b; worth a founder confirmation. | decision | — |
+| D7 | **Worker lease does not fence two slots of one process** — all slots share one `worker_id`; `_ACQUIRE_SQL` re-issues a live lease to its own id without bumping `generation`. Reachable only via the stale-reclaim branch (heartbeat normally prevents). `drive_run` is serialised because of it. Real fix = per-slot lease identity (changes `claimed_by`/orphan-sweep). | open | M |
+| D8 | **Per-task caps become per-process × N** (`recipe_executor_max_concurrency`, crawl `worker_concurrency` + extraction semaphore, `onboarding_max_parallel_runs`). Size the slot knob against provider rate limits, not CPU. | note | — |
+| D9 | **Default `asyncio.to_thread` executor** (`min(32, cpu+4)`) shared by design turns, onboarding Exa hops and ARV2 provider hops; saturation presents as "the provider got slow". | open | S–M |
+| D10 | **Onboarding holds `_db_lock` across the catalog-reconcile model call** (120 s) and across `persist_body` in `_settle`; under concurrency a cross-run stall. | open | S |
+| D11 | **Design `_CHECKPOINTER_SETUP_DONE`** check-then-act across `to_thread` threads (`lumen_api/fleet_handler.py:~604`); `setup()` is idempotent DDL, recorded not locked. | note | — |
+| D12 | **`tests/api/test_production_context_s31_fleet_db.py` rewrite** — targets the four cards D5 retired; owner = v44 fallout / Phase 6. | open | S |
+| D13 | **Toolbelt `_MATRIX` drift** — `launch_arv2_account_research`, `read_arv2_account_research_run`, `design_set_web_noindex` registered but unmatrixed (`test_out_of_order_matrix`, `test_build_toolbelt_registers_the_full_set`). | open | S |
+
+## E. Pre-existing test reds (not caused by these lanes; each named so nobody re-triages)
+
+| # | Test | Cause | Owner |
+|---|---|---|---|
+| E1 | `tests/api/test_agent_registry_wiring.py::test_design_profile_resolves_with_the_full_granted_write_surface` and `tests/api/test_project_read_surfaces_db.py::test_project_shell_is_scoped_real_and_fixture_free` | both assert `openai/gpt-5.6-terra`; the composed `design@v1` model id is the malformed double-prefix `openai/x-ai/grok-4.6` (recorded at O4). Fix the profile, not the assertions. | design profile |
+| E2 | `tests/execution/test_recipes.py::test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded`, `::test_latest_recipe0_is_the_only_promoted_executable_stage0_revision` | replay-only list size; recipe0 version contiguity across the v16–v18 gap. | execution substrate |
+| E3 | `tests/arv2/test_answer_key_loader_db.py::test_repair_gives_a_bare_work_email_claim_the_providers_verdict`, `::test_repair_writes_the_research_rows_once_on_an_already_loaded_database` | red only on the lane DB, which carries real rows from live R2/R3 runs (15 `core.work_email` claims where the test plants one). Green on a fresh DB. | — (lane data) |
+| E4 | `tests/api/test_production_context_s31_fleet_db.py` | see D12. | v44 fallout |
+| E5 | `tests/api/test_toolbelt_wiring.py::test_out_of_order_matrix`, `::test_build_toolbelt_registers_the_full_set` | see D13. | toolbelt |
+
+## F. Frontend remaining work (no frontend change was made in R4 by ruling; O6 changed only the product-set gate card, the active-only sidebar and the Knowledge title wrap)
+
+| # | Item | What the store already has | Status | Size |
+|---|---|---|---|---|
+| F1 | **Welcome flow → new onboarding** (A3/A5): post the domain to `/onboarding`, poll the brand-context status route, arm the refresh hook without a reload, and show a `failed` run as failed with its reason rather than freezing. | `onboarding_run` / `onboarding_step` rows; `GET /frontend/v1/brand-context/onboarding/current` | open | S–M |
+| F2 | **Target-accounts tab beside Gallery** inside a project (founder's design intent). | `project_account.added_via='discovered'`; `arv2_discovery_candidate.decision` | decision (ruling 6′) | M |
+| F3 | **Chat gate card for cohort approval** (set-valued, pre-checked = Best fit), same shape as the product-set gate. | candidate rows + verdicts; gate pattern exists | decision | M |
+| F4 | **"Unclear" tone on the ICP-qualification badge** (`badge` renders positive only for "High"). | `client.icp_qualification` = "Unclear" | open | S |
+| F5 | **Qualification section on account detail** — one row per hard gate: verdict, reason, source link. | `arv2_discovery_candidate.verdicts_json` | open | S–M |
+| F6 | **Overall-fit filter value "Unclear"** in the filter panel. | fit score honest; badge value "Unclear" | open | S |
+| F7 | **Discovery provenance on the detail rail** (Websets item URL, the run). | `provider_snapshot_json`, `source` | open | S |
+| F8 | **Hover-card quote clamped to 4 lines** (`account-research.module.css:371-380`) — show the full quote; it is the evidence. (Master plan §8 R4 row.) | — | open | S |
+| F9 | **Welcome-screen error copy** (A9). | — | open | S |
+| F10 | **Knowledge titles wrap** — visual check owed after O6's CSS change. | — | owed | — |
+
+## G. Retirement of the old onboarding pipeline (asked 2026-09-11)
+
+Not a phase in any plan today. The pieces, in order:
+
+1. A4 — split the provisioning flag from the old-recon flag (backend, S).
+2. A3/F1 — the Welcome flow posts to the new lane and polls the new status (frontend, S–M).
+3. Flip `CLUE_ONBOARDING_V2_ENABLED` default to `true` at O7 sign-off (`.env.example`, plan §10).
+4. Phase 6 — the stub-and-delete PR for all quarantined code (inventory already written:
+   `docs/specs/ARV2-PHASE6-LEGACY-DELETION-INVENTORY.md`, 83 tables / ~38 kLOC), gated on D5 and
+   the R2/R3 exit gates passing.
+
+Recommendation recorded 2026-09-11: land 1–2 as one named slice right after the O6 walk so the O7
+acceptance run goes through the real Welcome flow. Brand-kit ingestion already runs from the new
+lane's start route (first-time-only, fail-soft) and needs nothing.
+
+---
+
+*Maintained by hand. When an item closes, set its status and name the commit; do not delete rows.*
