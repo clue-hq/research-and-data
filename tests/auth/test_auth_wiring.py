@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
+import structlog
 from fastapi import FastAPI
 from httpx import ASGITransport
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -59,28 +60,32 @@ def test_session_and_principal_routes_expose_internal_values_and_stable_errors()
             )
             app = FastAPI()
             install_auth_wiring(app, service=service)
-            async with httpx.AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                missing = await client.get("/auth/v1/session")
-                session = await client.get(
-                    "/auth/v1/session",
-                    headers={"X-Clue-Local-Auth-Subject": "api-subject"},
-                )
-                principal = await client.get(
-                    "/auth/v1/principal",
-                    headers={
-                        "X-Clue-Local-Auth-Subject": "api-subject",
-                        "X-Clue-Workspace-Id": workspace.workspace_id,
-                    },
-                )
-                forbidden = await client.get(
-                    "/auth/v1/principal",
-                    headers={
-                        "X-Clue-Local-Auth-Subject": "api-subject",
-                        "X-Clue-Workspace-Id": "ws_not_a_member",
-                    },
-                )
+            transport = ASGITransport(app=app)
+            with structlog.testing.capture_logs() as events:
+                async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                    missing = await client.get("/auth/v1/session")
+                    unknown = await client.get(
+                        "/auth/v1/session",
+                        headers={"X-Clue-Local-Auth-Subject": "nobody-we-know"},
+                    )
+                    session = await client.get(
+                        "/auth/v1/session",
+                        headers={"X-Clue-Local-Auth-Subject": "api-subject"},
+                    )
+                    principal = await client.get(
+                        "/auth/v1/principal",
+                        headers={
+                            "X-Clue-Local-Auth-Subject": "api-subject",
+                            "X-Clue-Workspace-Id": workspace.workspace_id,
+                        },
+                    )
+                    forbidden = await client.get(
+                        "/auth/v1/principal",
+                        headers={
+                            "X-Clue-Local-Auth-Subject": "api-subject",
+                            "X-Clue-Workspace-Id": "ws_not_a_member",
+                        },
+                    )
 
             assert missing.status_code == 401
             assert missing.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
@@ -94,5 +99,20 @@ def test_session_and_principal_routes_expose_internal_values_and_stable_errors()
             assert "local_fixture" not in principal.text
             assert forbidden.status_code == 403
             assert forbidden.json()["error"]["code"] == "WORKSPACE_FORBIDDEN"
+            # A verified-but-unlinked subject is refused 403 and the response never names it…
+            assert unknown.status_code == 403
+            assert unknown.json()["error"]["code"] == "IDENTITY_NOT_PROVISIONED"
+            assert "nobody-we-know" not in unknown.text
+            # …but the operator log does (2026-09-11): every refusal is logged with the route,
+            # the code and who was refused, so a bounced browser session is diagnosable.
+            refusals = [e for e in events if e["event"] == "auth.principal.refused"]
+            by_code = {(e["error_code"], e["path"]): e for e in refusals}
+            assert by_code[("AUTHENTICATION_REQUIRED", "/auth/v1/session")]["subject"] is None
+            assert by_code[("IDENTITY_NOT_PROVISIONED", "/auth/v1/session")]["subject"] == (
+                "nobody-we-know"
+            )
+            assert by_code[("WORKSPACE_FORBIDDEN", "/auth/v1/principal")]["user_id"] == (
+                user.user_id
+            )
 
     run_async(scenario())

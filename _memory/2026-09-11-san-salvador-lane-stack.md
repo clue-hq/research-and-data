@@ -168,3 +168,16 @@ are unchanged). Docs: substance §9 rows 7′/8′, README (dedupe paragraph, ap
 6′ bullet struck through), ledger A13 fixed + F2/C5 updated. Verified: driver unit 25, driver DB +
 list + detail + bulk 53 on the lane DB, ruff clean. Also: `.env.example` carries an uncommitted
 `CLUE_ONBOARDING_V2_ENABLED=true` change that is not mine — left unstaged.
+
+## Addendum — auth refusals are now named in the log (founder request, 2026-09-11)
+
+The founder's browser was bounced from `/` to `/onboarding/profile` (the *provisioning* screen,
+not the research onboarding) although the `arv2` user is linked, active and an owner: the API
+answered the session probe 403 and logged only the status line, so which Clerk subject was
+refused — and why — could not be read. A fresh token for the linked subject probed 200, so the
+browser had presented a token for a subject the lane DB does not know (Clerk keeps several
+signed-in accounts per browser; the dev instance is shared across every checkout). Closed the
+gap: `PrincipalError` carries optional `subject` (verified provider subject) and `user_id`; the
+resolver and authorizer set them; the handler logs `auth.principal.refused` (method, path,
+code, status, subject, user_id) on every refusal. Response bodies unchanged. `tests/auth` 50
+passed on the lane DB; mypy clean on the three modules. Ledger A14.
