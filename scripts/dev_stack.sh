@@ -91,9 +91,8 @@ restart_api() {
   echo "restarting platform API…"; sleep 6; status
 }
 
-start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, staggered (see the note in up)
+start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, launched together
   for i in $(seq 1 "$WORKERS"); do
-    [ "$i" -gt 1 ] && sleep 6
     ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
         CLUE_FLEET_WORKER_CONCURRENCY="$WORKER_CONCURRENCY" PYTHONUNBUFFERED=1 \
         "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
@@ -130,10 +129,9 @@ up() {
 
   start_platform_api
 
-  # Workers start one at a time, a few seconds apart: every worker seeds the
-  # field registry at boot with plain INSERTs, and two booting together race
-  # to `field_definition_pkey` — three of four died that way on 2026-09-11.
-  # The stagger is a runbook mitigation; the seed itself is not concurrency-safe.
+  # Workers may boot together: since 2026-09-12 the registry seed takes a
+  # transaction-scoped advisory lock (ledger A2), so concurrent boots queue on
+  # it instead of racing to `field_definition_pkey`.
   start_workers
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the

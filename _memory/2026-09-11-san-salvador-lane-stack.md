@@ -316,3 +316,21 @@ PR #54 (`7949a63e6`). This worktree now sits on `track-r4-v1`, cut from that mer
 (`./scripts/dev_stack_san_salvador.sh`) keeps running from this checkout unchanged. Open items are
 the ledger's: A1, A2, A3–A5, A11, A12, A17, A18, A20, A21 and the owed founder walks (Target
 accounts tab, logos, the regenerated Prevea / Mid State pages under verification-off).
+
+## 2026-09-12 — planning session on `research-streaming`; A2 fixed
+
+Six items discussed with the founder; three approved designs written as specs under
+`docs/superpowers/specs/2026-09-12-*`: discovery streaming (verified rows land on the Target
+accounts tab as Exa finds them; polling both ends; gates parallel + candidate pool with
+`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`), the research progress card (pinned above the
+composer, one per project, four stage quarters, real stage order deep→synthesis→committee→member),
+and onboarding-v2-as-default (setting-up screen on `POST/GET /onboarding`, release after the four
+fast steps, legacy recon behind its own flag). Brand-context polish moved to branch
+`brand-context-polish` (local, off the base) with rulings: uniform 32 px rows + single-pass hover
+marquee, react-markdown + remark-gfm for rendering, CodeMirror for editing (ENG-181/182/183).
+Media question answered: podcasts DID run (5 feeds, 2 transcriptions) — hidden by the verification
+posture and only surfaced on contact pages; YouTube path never transcribes by design.
+
+**A2 fixed:** `load_research_packs` takes `pg_advisory_xact_lock(2794525886)` and refuses to run
+outside a transaction; `tests/api/test_research_pack_seed_race_db.py` red-proofs the race (a probe
+loader that sleeps after its insert); the runbook's 6 s worker stagger is removed.
