@@ -372,14 +372,19 @@ async def record_discovery_progress(
 ) -> None:
     """The §4 counters as they stand mid-run, written on every poll tick (spec 2026-09-12 §2).
 
-    Only the numbers move. Status, the receipt and ``finished_at`` belong to
-    :func:`finish_discovery_run`, so a reader that sees counters climbing on an ``in_progress``
-    row is watching a run, not a run that landed twice.
+    Only the numbers move, and only forward. ``GREATEST`` makes the durable counters monotonic in
+    SQL, so a zombie attempt's late tick cannot walk them backwards for a tick — a guarantee that
+    holds whoever writes and whatever the status happens to be. (The columns are nullable, hence
+    the ``COALESCE``: a run that has never ticked starts from 0, not from NULL.) Status, the
+    receipt and ``finished_at`` belong to :func:`finish_discovery_run`, so a reader that sees
+    counters climbing on an ``in_progress`` row is watching a run, not a run that landed twice.
     """
     await conn.execute(
         text(
-            "UPDATE arv2_discovery_run SET found_strict = :found_strict, "
-            " found_relaxed = :found_relaxed, analyzed = :analyzed WHERE run_id = :run_id"
+            "UPDATE arv2_discovery_run "
+            "SET found_strict = GREATEST(COALESCE(found_strict, 0), :found_strict), "
+            " found_relaxed = GREATEST(COALESCE(found_relaxed, 0), :found_relaxed), "
+            " analyzed = GREATEST(COALESCE(analyzed, 0), :analyzed) WHERE run_id = :run_id"
         ),
         {
             "found_strict": int(found_strict),

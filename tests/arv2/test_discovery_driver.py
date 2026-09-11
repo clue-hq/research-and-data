@@ -2069,6 +2069,57 @@ def test_items_verify_as_they_arrive_and_a_relisted_item_is_never_verified_twice
     assert (landed["found_strict"], landed["status"]) == (2, "completed")
 
 
+def test_two_long_list_rows_that_verify_to_one_company_are_one_account_and_one_gate_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R4(c): the cross-item guard, the one claiming rule the long list cannot enforce.
+
+    Two websets rows with *different* registrable domains (``acme-corp.com``, ``acme-inc.com``)
+    both turn out to be ``acme.com`` once their own websites are asked. Dispatch cannot know that,
+    so both are claimed and both buy their website ask; the post-``_verify_website`` check is what
+    stops the second from buying a full gate set and then colliding on the account strong key.
+
+    Either row may win the race under the default cap, so the assertions are about the *company*,
+    not about which row got there: one account, one set of verdicts, and six Answer calls — two
+    website asks and exactly one gate set.
+    """
+    run = _run_row()
+    store = _Store(run)
+    # Both companies are scripted all-pass to the SAME domain: whichever task wins the claim, the
+    # gates it then buys are answerable, and the loser's website ask is the last thing it buys.
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme Corp": _all_pass("Acme Corp", "acme.com"),
+                "Acme Inc": _all_pass("Acme Inc", "acme.com"),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[
+            _items(
+                _item("Acme Corp", "https://acme-corp.com"),
+                _item("Acme Inc", "https://acme-inc.com"),
+            )
+        ],
+    )
+    handler, *_rest, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    # One company, so one account and one set of verdicts — never two rows racing the strong key.
+    assert [created["primary_domain"] for created in accounts.created] == ["acme.com"]
+    assert len(store.named("record_verdicts")) == 1
+    # The second row bought its website ask and nothing more: 1 website + 4 gates + 1 website.
+    assert len(exa.queries) == 6
+    assert len(exa.gate_queries()) == 4
+    # And the run lands normally: a row that turns out to be a company already taken is not a
+    # failure, it is a row with nothing left to buy.
+    assert result.outcome == "completed"
+    assert store.named("finish_discovery_run")[0]["status"] == "completed"
+
+
 def test_the_pool_never_exceeds_the_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Five companies verify at once, and the one semaphore still bounds every Answer call."""
     run = _run_row(criteria_gate_keys=("geography", "stage"))

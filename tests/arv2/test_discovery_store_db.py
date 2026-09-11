@@ -291,5 +291,13 @@ def test_progress_updates_counters_without_landing_the_run() -> None:
             later = await read_discovery_run(conn, run_id=row.run_id)
             assert later is not None
             assert (later.found_strict, later.found_relaxed, later.analyzed) == (12, 3, 300)
+            # A zombie attempt's late tick carries smaller numbers; GREATEST keeps the larger
+            # ones, so the counters a poller is watching never walk backwards.
+            await record_discovery_progress(
+                conn, run_id=row.run_id, found_strict=2, found_relaxed=0, analyzed=9
+            )
+            stale = await read_discovery_run(conn, run_id=row.run_id)
+            assert stale is not None
+            assert (stale.found_strict, stale.found_relaxed, stale.analyzed) == (12, 3, 300)
 
     run_async(scenario())

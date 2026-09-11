@@ -14,7 +14,7 @@ contract discipline without the aliasing.
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import cast
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
@@ -38,7 +38,7 @@ class DiscoveryRunStatusV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     run_id: str
-    status: Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
+    status: DiscoveryStatus
     asked: int | None
     found: int
     verified: int
