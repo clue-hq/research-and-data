@@ -156,6 +156,10 @@ class _Store:
         del conn
         self.events.append(("record_relaxed_search", kwargs))
 
+    async def record_discovery_progress(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("record_discovery_progress", kwargs))
+
     async def finish_discovery_run(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("finish_discovery_run", kwargs))
@@ -1020,7 +1024,10 @@ def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "needs_review"
-    assert websets.named("items") == []  # nothing was read, so nothing was billed
+    # Behaviour change 2026-09-12: every tick lists the webset, so a run that never reaches idle
+    # DOES read it — but this webset holds no rows, so the wall clock still costs nothing. What
+    # the assertion keeps is the money, not the call: not one row was billed.
+    assert all(read.priced_item_ids == () for read in websets.returned_items)
     finished = store.named("finish_discovery_run")[0]
     assert finished["status"] == "needs_review"
     assert finished["receipt"]["failure"] == "webset_wall_exceeded"
@@ -1995,3 +2002,112 @@ def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
     assert order.index("finish_discovery_run") > max(
         index for index, name in enumerate(order) if name == "drain"
     )
+
+
+# --- verify as items arrive: the watch loop and the pool (spec 2026-09-12 §2) ------------------
+
+
+def _two_tick_websets(first: WebsetItem, second: WebsetItem) -> _FakeWebsets:
+    """Tick 1: running, one item listed. Tick 2: idle, both items listed (the first re-listed)."""
+    return _FakeWebsets(
+        get_views=[_view(status="running"), _view(status="idle")],
+        items_results=[_items(first), _items(first, second)],
+    )
+
+
+def _all_pass(company: str, domain: str) -> dict[str, ExaAnswerResult]:
+    return _company_answers(
+        company, domain, {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    )
+
+
+def test_items_verify_as_they_arrive_and_a_relisted_item_is_never_verified_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run does not wait for ``idle`` to start buying: every tick lists and dispatches.
+
+    The webset is listed on the running tick AND on the idle one, and the item both lists carry is
+    claimed at dispatch — so it is verified exactly once, and the run row's counters climb while
+    the search is still going rather than all at once at the end.
+    """
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _FakeExa(
+        _responder({"Acme": _all_pass("Acme", "acme.com"), "Bolt": _all_pass("Bolt", "bolt.com")})
+    )
+    acme, bolt = _item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com")
+    websets = _two_tick_websets(acme, bolt)
+    handler, _conn, _writer, _drain, accounts = _handler(
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    # Items were read on BOTH ticks (the running one and the idle one), not only after idle.
+    assert [call for call, _ in websets.calls] == ["create", "get", "items", "get", "items"]
+    # Acme was verified once although it was listed twice; Bolt once.
+    assert [w["primary_domain"] for w in accounts.created] == ["acme.com", "bolt.com"]
+    assert len(store.named("record_verdicts")) == 2
+    # And it was claimed at DISPATCH, so the re-listed row cost nothing: two companies, each one
+    # website ask plus one answer per gate, and not an eleventh answer for the repeat.
+    assert len(exa.queries) == 10
+    # Progress was recorded on every tick, before the run landed.
+    progress = store.named("record_discovery_progress")
+    assert [p["found_strict"] for p in progress] == [1, 2]
+    landed = store.named("finish_discovery_run")[0]
+    assert (landed["found_strict"], landed["status"]) == (2, "completed")
+
+
+def test_the_pool_never_exceeds_the_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Five companies verify at once, and the one semaphore still bounds every Answer call."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    names = ["Acme", "Bolt", "Cove", "Dune", "Echo"]
+    exa = _CountingExa(
+        _responder({n: _all_pass(n, f"{n.lower()}.com") for n in names}), hold_s=0.02
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(*(_item(n, f"https://{n.lower()}.com") for n in names))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=2),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert exa.max_in_flight == 2
+    assert len(store.named("record_verdicts")) == 5
+
+
+def test_a_provider_halt_in_one_task_suspends_the_whole_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Containment is per candidate, but a halted provider is the run's: it leaves the pool."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+
+    def respond(query: str) -> ExaAnswerResult:
+        if "Bolt" in query:
+            raise ProviderHalted("exa", "rate_limited", http_status=429)
+        return _responder({"Acme": _all_pass("Acme", "acme.com")})(query)
+
+    exa = _FakeExa(respond)
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[
+            _items(_item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com"))
+        ],
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["receipt"]["failure"] == "provider_halted"
+    assert result.outcome == "needs_review"

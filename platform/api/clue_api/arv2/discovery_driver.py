@@ -53,7 +53,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue, SecretStr
@@ -250,6 +250,9 @@ class _RunState:
     #: The one cap on verification hops in flight (Task 3): candidates verify in a pool and a
     #: candidate's gates are asked together, all under this semaphore. Built in ``_compose``.
     hops: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
+    #: Item ids this attempt has handed to the pool — claimed when a task is taken, never when it
+    #: finishes, so a re-listed item on the next tick is not verified twice.
+    claimed: set[str] = field(default_factory=set)
 
     def count_guard(self, guard: str) -> None:
         self.guards[guard] = self.guards.get(guard, 0) + 1
@@ -456,11 +459,7 @@ class Arv2DiscoveryWorkHandler:
                 # durable from the first write — a resumed attempt never has to guess it.
                 strict_search_id=state.strict_search_id,
             )
-        view = await self._poll(state, view.webset_id)
-        items = await self._read_items(state, view.webset_id)
-        state.found_strict = len(items)
-        for item in items:
-            await self._verify_contained(state, item, pass_="strict")
+        await self._watch_and_verify(state, view.webset_id, pass_="strict")
 
     async def _resume_webset(self, state: _RunState, *, verify: bool) -> None:
         """Pick a recorded webset back up instead of buying a second one.
@@ -489,25 +488,13 @@ class Arv2DiscoveryWorkHandler:
                 already=state.shown,
             )
             return
-        view = await self._poll(state, webset_id)
-        items = await self._read_items(state, view.webset_id)
-        strict = tuple(item for item in items if self._is_strict_item(state, item))
-        # The counters are what the list HELD, not what this attempt happened to verify — a resumed
-        # run that finds nothing left to do still reports the companies its webset found.
-        state.found_strict = len(strict)
-        if len(items) > len(strict):
-            state.found_relaxed = len(items) - len(strict)
         log.info(
             "arv2.discovery_resume",
             run_id=str(state.run.run_id),
             webset_id=webset_id,
-            items=len(items),
             already=len(state.seen),
         )
-        for item in items:
-            await self._verify_contained(
-                state, item, pass_="strict" if item in strict else "relaxed"
-            )
+        await self._watch_and_verify(state, webset_id, pass_="resume")
 
     @staticmethod
     def _is_strict_item(state: _RunState, item: WebsetItem) -> bool:
@@ -516,22 +503,6 @@ class Arv2DiscoveryWorkHandler:
         if item.search_id is None or state.strict_search_id is None:
             return True
         return item.search_id == state.strict_search_id
-
-    async def _poll(self, state: _RunState, webset_id: str) -> WebsetView:
-        """Poll the webset to ``idle``, or give up at the wall clock with a named refusal."""
-        while True:
-            if self._clock() > state.deadline:
-                raise _WallExceeded(
-                    f"webset {webset_id} did not reach idle within "
-                    f"{self._settings.arv2_discovery_wall_s}s"
-                )
-            view = await self._hop(
-                state, lambda caller: self._clients.websets(caller).get(webset_id)
-            )
-            self._read_searches(state, view)
-            if view.status == "idle":
-                return view
-            await self._sleep(self._settings.arv2_discovery_poll_interval_s)
 
     async def _read_items(self, state: _RunState, webset_id: str) -> tuple[WebsetItem, ...]:
         """The billed read of the long list. ``all_green`` is Exa's *bill*, never a verdict.
@@ -555,6 +526,105 @@ class Arv2DiscoveryWorkHandler:
             newly_priced=len(result.priced_item_ids),
         )
         return result.items
+
+    async def _watch_and_verify(
+        self, state: _RunState, webset_id: str, *, pass_: Literal["strict", "relaxed", "resume"]
+    ) -> None:
+        """Poll the webset to ``idle`` and verify every new item on every tick (spec §2).
+
+        Each tick lists the webset (a row is priced once per run, so re-listing costs nothing),
+        hands every unclaimed item to a task, records the counters, and sleeps. On ``idle`` one
+        last list catches stragglers, and the pool is drained before returning. ``pass_`` decides
+        the candidate's recorded pass: a resume labels each item by the search that found it.
+
+        A company is claimed **at dispatch**, by item id and by registrable domain: two rows of one
+        company — the same row re-listed on the next tick, or the strict row the widened webset
+        returns again — must never be two verifications, which would be two bills and two accounts.
+
+        Containment is per task (``_verify_contained``); ``ProviderHalted`` and the wall clock
+        are not contained — the first of either cancels the pool and re-raises, so ``_run`` lands
+        the run ``needs_review`` exactly as it does today.
+        """
+        tasks: set[asyncio.Task[None]] = set()
+
+        def _label(item: WebsetItem) -> Pass:
+            if pass_ == "resume":
+                return "strict" if self._is_strict_item(state, item) else "relaxed"
+            return pass_
+
+        async def _tick(final: bool) -> None:
+            items = await self._read_items(state, webset_id)
+            # What the list HOLDS, not what this attempt happened to verify — and monotonic, so a
+            # tick that lists fewer rows than the one before it cannot walk a counter backwards.
+            strict = [item for item in items if self._is_strict_item(state, item)]
+            state.found_strict = max(state.found_strict, len(strict))
+            state.found_relaxed = max(state.found_relaxed, len(items) - len(strict))
+            for item in items:
+                domain = registrable_domain(item.url) or ""
+                if item.item_id in state.claimed:
+                    continue
+                if domain and domain in state.seen:
+                    continue
+                state.claimed.add(item.item_id)
+                if domain:
+                    state.seen.add(domain)
+                tasks.add(
+                    asyncio.create_task(self._verify_contained(state, item, pass_=_label(item)))
+                )
+            async with self._connection() as conn:
+                await self._store.record_discovery_progress(
+                    conn,
+                    run_id=state.run.run_id,
+                    found_strict=state.found_strict,
+                    found_relaxed=state.found_relaxed,
+                    analyzed=state.analyzed,
+                )
+            if final:
+                await self._drain_pool(tasks)
+            else:
+                await self._reap(tasks)
+
+        try:
+            while True:
+                if self._clock() > state.deadline:
+                    raise _WallExceeded(
+                        f"webset {webset_id} did not reach idle within "
+                        f"{self._settings.arv2_discovery_wall_s}s"
+                    )
+                view = await self._hop(
+                    state, lambda caller: self._clients.websets(caller).get(webset_id)
+                )
+                self._read_searches(state, view)
+                if view.status == "idle":
+                    await _tick(final=True)
+                    return
+                await _tick(final=False)
+                await self._sleep(self._settings.arv2_discovery_poll_interval_s)
+        except BaseException:
+            await _abort(tasks)
+            raise
+
+    @staticmethod
+    async def _reap(tasks: set[asyncio.Task[None]]) -> None:
+        """Surface a finished task's uncontained exception now, not at the end of the run."""
+        done = {task for task in tasks if task.done()}
+        tasks.difference_update(done)
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                raise task.exception()  # type: ignore[misc]
+
+    @staticmethod
+    async def _drain_pool(tasks: set[asyncio.Task[None]]) -> None:
+        """Wait for every task; the first uncontained exception cancels the rest and propagates."""
+        if not tasks:
+            return
+        done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                await _abort(tasks)
+                raise task.exception()  # type: ignore[misc]
+        await asyncio.gather(*tasks)
+        tasks.clear()
 
     def _read_searches(self, state: _RunState, view: WebsetView) -> None:
         """Keep the strict search's id, rates and counters from the view that last reported them."""
@@ -598,10 +668,6 @@ class Arv2DiscoveryWorkHandler:
         """One company: its website, the dedupes, every gate, the account and its claims."""
         run = state.run
         websets_domain = registrable_domain(item.url)
-        if websets_domain is not None and websets_domain in state.seen:
-            # A company an earlier pass of this run already verified. Not a duplicate account and
-            # not a refusal — just nothing left to buy.
-            return
         verified, evidence_url = await self._verify_website(state, item, websets_domain)
         if verified is None:
             state.unresolvable += 1
@@ -611,6 +677,11 @@ class Arv2DiscoveryWorkHandler:
                 name=item.name,
                 url=item.url,
             )
+            return
+        if verified != websets_domain and verified in state.seen:
+            # Another in-flight task already owns this company — nothing left to buy. The long
+            # list's domain was claimed at dispatch, so this can only be a row whose *verified*
+            # domain turned out to belong to a company the run has already taken.
             return
         state.seen.add(verified)
         if websets_domain is not None:
@@ -988,12 +1059,7 @@ class Arv2DiscoveryWorkHandler:
                 webset_id=webset_id,
                 relaxed_search_id=state.relaxed_search_id,
             )
-        view = await self._poll(state, webset_id)
-        items = await self._read_items(state, view.webset_id)
-        fresh = [item for item in items if (registrable_domain(item.url) or "") not in state.seen]
-        state.found_relaxed += len(fresh)
-        for item in fresh:
-            await self._verify_contained(state, item, pass_="relaxed")
+        await self._watch_and_verify(state, webset_id, pass_="relaxed")
 
     async def _buy_relaxed_search(
         self, state: _RunState, webset_id: str, strict_search_id: str
@@ -1158,13 +1224,9 @@ class Arv2DiscoveryWorkHandler:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
-        """One connection per use, opened and closed around it — never held across a hop.
-
-        The run's own steps stay sequential, so no connection the driver is holding overlaps a
-        hop's drain. A candidate's gates are asked together (Task 3), so up to
-        ``arv2_discovery_verify_concurrency`` drains can each hold their own connection at once;
-        each writes only its own call's rows, so they still need no lock between them.
-        """
+        """A pooled connection per caller. Since 2026-09-12 candidates verify concurrently, each in
+        its own transaction; the engine hands every task its own connection, so nothing here is
+        shared between them."""
         async with self._conn_factory() as conn:
             yield conn
 
