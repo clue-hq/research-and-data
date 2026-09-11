@@ -235,6 +235,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
+    from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
 
     allow_local_mutations = (
@@ -263,6 +264,8 @@ def build_frontend_read_router(
     register_account_workspace_routes(router, conn_factory=conn_factory, display=display)
     # The account's mark-type logo, streamed by the platform (founder ruling 2026-09-11).
     register_account_logo_route(router, conn_factory=conn_factory)
+    # The project's latest discovery run — the Target accounts tab's live poll (2026-09-12).
+    register_discovery_status_route(router, conn_factory=conn_factory)
     register_contact_routes(
         router,
         conn_factory=conn_factory,
