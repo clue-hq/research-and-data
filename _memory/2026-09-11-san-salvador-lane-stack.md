@@ -245,3 +245,21 @@ probe was bounced `302 x-bf-error: automated_traffic`, which a valid client id d
 Tests: logo_resolution 8, driver unit 30, settings, requester 3, import guard offline; driver /
 launch / store / list / logo route / detail / contacts / field registry DB suites 95 on the lane
 DB; mypy and ruff clean; frontend lint + tsc clean on the touched files.
+
+## Addendum — the Target accounts tab lifted from the dummy (SDD, 2026-09-11)
+
+Plan `docs/superpowers/plans/2026-09-11-target-accounts-tab-lift.md`; Opus implementers, controller
+reviews, one Opus whole-branch review + one fix wave: commits ea76c9c32..15a875c83 on `track-r4`.
+The dummy (`clue-frontend/port-of-spain` @ `e3bcea7`) is presentation truth — every copied file
+byte-diffed against it by the final reviewer; only the seams changed: the BFF route composes our
+accounts repository (`projectId` filter), the session-derived workspace profile (no settings
+feature here) and the bulk capabilities; "Add accounts" writes real memberships through
+`addSelectedAccountsToProject` (per-subject reflection, session-expired redirect, server notice);
+`projectTargetAccountsHref` never emits `thread-primary` (R3) — threadless → `/projects/:id?surface=target-accounts`
+and the landing route canonicalises; a `table` gallery card opens the surface (`gallery-card-target.ts`).
+Two pitfalls worth remembering: `git apply` from a subdirectory silently ignores patch paths outside
+it (use `--directory=` from the repo root), and `npm test`'s glob cannot match a `[segment]` test
+directory (a test there collects zero tests — keep route tests beside the segment dir). Gates:
+2203 tests, lint, tsc (50 pre-existing errors outside the two features), build, all green. The
+founder's signed-in walk is owed (Task 4 report's 10 steps; the tab, preview, Open as page, Add
+accounts + reload); the dev stack serves the new routes (307 to sign-in when signed out).
