@@ -228,8 +228,42 @@ test("the honest-empty workspace is schema-valid and carries no fixture content"
 
 test("typefaces come from the kit's font assets, sourced honestly", () => {
   assert.deepEqual(workspace.typefaces, [
-    { family: "SourceCodePro", id: "brand", source: "custom" },
+    {
+      family: "SourceCodePro", id: "brand", source: "custom",
+      previewFamily: `clue-brand-${encodeURIComponent(kit.brand_kit.id)}-${kit.brand_kit.version}-brand`,
+      faces: [{
+        url: "https://stripe.com/mkt-ssr-statics/assets/_next/static/media/SourceCodePro-Medium.f5ba3e6a.woff2",
+        weight: 500,
+        style: "normal",
+      }],
+    },
   ]);
+});
+
+test("font previews prefer authenticated stored bytes, preserve faces and discard unusable URLs", () => {
+  const detail = BrandKitDetailSchema.parse({
+    brand_kit: { id: "kit", version: 2, name: "Fonts" },
+    brand_kit_json: {
+      id: "kit", name: "Fonts", version: 2,
+      assets: { fonts: { body: {
+        family: "Brand font", source: { kind: "uploaded" },
+        faces: [
+          { asset_id: "font/id", source_url: "https://example.com/old.woff2", weight: 500, style: "normal" },
+          { source_url: "https://example.com/italic.woff2", weight: 700, style: "italic" },
+          { source_url: "javascript:alert(1)", weight: 400, style: "normal" },
+          { source_url: "data:text/html,invalid", weight: 400, style: "normal" },
+          { source_url: "https://example.com/broken.woff2", weight: "invalid" },
+        ],
+      } } },
+    },
+  });
+  const [font] = toBrandContextWorkspace(detail).typefaces;
+  assert.equal(font.previewFamily, "clue-brand-kit-2-body");
+  assert.deepEqual(font.faces, [
+    { url: "/api/clue/design/assets/font%2Fid/bytes", weight: 500, style: "normal" },
+    { url: "https://example.com/italic.woff2", weight: 700, style: "italic" },
+  ]);
+  assert.notEqual(toBrandContextWorkspace({ ...detail, brand_kit: { ...detail.brand_kit, version: 3 } }).typefaces[0].previewFamily, font.previewFamily);
 });
 
 test("a system font family is a library typeface, a brand's own webfont is custom", () => {

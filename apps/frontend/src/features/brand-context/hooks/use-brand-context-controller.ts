@@ -11,7 +11,6 @@ import type {
   BrandContextWorkspace,
   BrandTextStyle,
 } from "../model/brand-context";
-import { parseKnowledgeMarkdown } from "../model/brand-context";
 
 type BrandDialog = "new-style" | "new-typeface" | null;
 type AssetEditingField = "description" | "name" | null;
@@ -131,12 +130,6 @@ export function useBrandContextController({
   const selectedDocument =
     allDocuments.find((document) => document.id === selectedDocumentId)
     ?? allDocuments[0];
-  // The body is the document the store served, full stop — there is no local
-  // draft to prefer over it now that the page cannot be edited.
-  const markdownBlocks = useMemo(
-    () => parseKnowledgeMarkdown(selectedDocument?.body ?? ""),
-    [selectedDocument?.body],
-  );
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
@@ -345,7 +338,6 @@ export function useBrandContextController({
     filteredAssets,
     filteredTypefaces,
     fontSearch,
-    markdownBlocks,
     newStyle,
     editAssetDetails,
     openAsset,

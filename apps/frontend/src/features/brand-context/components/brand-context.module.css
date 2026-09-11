@@ -105,9 +105,7 @@
 .documentItem {
   display: flex;
   width: 100%;
-  /* A minimum, never a fixed height: a long document title wraps onto a second
-     line, and a fixed 32px made those lines overlap the next item in the tree. */
-  min-height: 32px;
+  height: 32px;
   align-items: center;
   border: 0;
   border-radius: 4px;
@@ -126,7 +124,6 @@
 }
 
 .documentItem {
-  align-items: flex-start;
   padding: 0 0 0 16px;
   font: 400 13px/18px "Satoshi", Arial, sans-serif;
 }
@@ -142,14 +139,43 @@
 .documentItemContent {
   display: flex;
   min-width: 0;
-  min-height: 32px;
+  height: 32px;
   flex: 1;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  /* 7 + 18 (one line) + 7 = the 32px row a single-line title still occupies. */
-  padding: 7px 8px 7px 16px;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  padding: 0 8px 0 16px;
+}
+
+.documentIcon {
+  flex: none;
+}
+
+.documentTitle {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.documentTitleText {
+  display: block;
+  width: max-content;
+  white-space: nowrap;
+}
+
+.documentItem:is(:hover, :focus-visible) .documentTitleText {
+  animation: document-title-scroll 5s ease-in-out 1;
+}
+
+@keyframes document-title-scroll {
+  0%, 15%, 100% { transform: translateX(0); }
+  75%, 85% { transform: translateX(min(0px, calc(100cqw - 100%))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .documentItem:is(:hover, :focus-visible) .documentTitleText {
+    animation: none;
+  }
 }
 
 .contextNavItem:hover,
@@ -1291,25 +1317,32 @@
   max-width: 720px;
   margin: 0 auto;
   padding: 48px 48px 96px;
+  overflow-wrap: anywhere;
 }
 
+.markdownPreview h1,
 .markdownPreview h2,
 .markdownPreview h3,
-.markdownPreview h4 {
+.markdownPreview h4,
+.markdownPreview h5,
+.markdownPreview h6 {
   color: var(--clue-ds-color-content-neutral);
 }
 
-.markdownPreview h2 {
+.markdownPreview h1 {
   margin: 0 0 24px;
   font: 700 24px/36px "Satoshi", Arial, sans-serif;
 }
 
-.markdownPreview h3 {
+.markdownPreview h2 {
   margin: 32px 0 12px;
   font: 500 16px/20px "Satoshi", Arial, sans-serif;
 }
 
-.markdownPreview h4 {
+.markdownPreview h3,
+.markdownPreview h4,
+.markdownPreview h5,
+.markdownPreview h6 {
   margin: 24px 0 8px;
   font: 500 14px/20px "Satoshi", Arial, sans-serif;
 }
@@ -1324,10 +1357,72 @@
   margin: 0 0 20px;
 }
 
-.markdownPreview ul {
+.markdownPreview ul,
+.markdownPreview ol {
   margin: 0 0 22px;
   padding-left: 22px;
 }
+
+.markdownPreview ul { list-style: disc; }
+.markdownPreview ol { list-style: decimal; }
+.markdownPreview li > :is(ul, ol) { margin: 5px 0; }
+.markdownPreview :global(.contains-task-list) { list-style: none; }
+.markdownPreview input[type="checkbox"] { margin-right: 6px; }
+
+.markdownPreview a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdownPreview blockquote {
+  margin: 20px 0;
+  border-left: 3px solid var(--clue-ds-color-border-neutral);
+  padding-left: 16px;
+}
+
+.markdownPreview table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 20px 0;
+  border-collapse: collapse;
+  font: 400 14px/20px "Satoshi", Arial, sans-serif;
+}
+
+.markdownPreview th,
+.markdownPreview td {
+  border: 1px solid var(--clue-ds-color-border-neutral);
+  padding: 8px 12px;
+}
+
+.markdownPreview th {
+  background: var(--clue-ds-color-bg-subtle);
+  font-weight: 700;
+}
+
+.markdownPreview code {
+  border-radius: 4px;
+  background: var(--clue-ds-color-bg-subtle);
+  padding: 2px 4px;
+  font-family: "DM Mono", monospace;
+  font-size: 0.9em;
+}
+
+.markdownPreview pre {
+  overflow-x: auto;
+  margin: 20px 0;
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-subtle);
+  padding: 16px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.markdownPreview pre code { padding: 0; }
+.markdownPreview img { max-width: 100%; height: auto; }
+.markdownPreview hr { margin: 24px 0; border-top: 1px solid var(--clue-ds-color-border-neutral); }
 
 .markdownPreview li + li {
   margin-top: 5px;
@@ -1398,15 +1493,9 @@
 
 .assetDialogPreview img {
   display: block;
-  width: min(280px, 70%);
-  max-height: 70%;
-  object-fit: contain;
-}
-
-.assetDialogPreview img[src$="abm-campaign.png"] {
   width: 100%;
-  max-height: 100%;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
 }
 
 .assetDialogDetails {

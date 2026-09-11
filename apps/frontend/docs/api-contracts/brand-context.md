@@ -545,3 +545,30 @@ accounts screens):
   configured deployment.
 
 The proposed mutation endpoints remain proposals.
+
+## Resolution (2026-09-12) — Brand Context presentation repairs
+
+The Knowledge tree uses fixed 32 px rows and non-shrinking 16 px document icons.
+Long titles clip to the column and scroll once on hover or keyboard focus, returning
+to the start; reduced-motion disables the animation and the full name remains
+available as the button's accessible name and tooltip.
+
+Knowledge bodies pass directly to `react-markdown` with `remark-gfm`. The custom
+block parser and inline renderer are removed. CSS supplies the existing typography
+for the library's semantic HTML, including tables, quotes, lists, links and code.
+The page remains read-only: CodeMirror is the agreed library for future editing;
+no document mutation endpoint or local editor is introduced by this repair.
+
+The frontend font wire schema now retains the existing kit's `faces[]` fields:
+`asset_id`, `source_url`, `weight`, and `style`. The typeface model adds optional
+`faces: [{url, weight, style}]` and `previewFamily`. Stored faces use
+`/api/clue/design/assets/{asset_id}/bytes`; when no stored asset exists, a recorded
+HTTP(S) `source_url` is loaded by the browser (subject to that host's CORS policy).
+Malformed faces and unusable URLs are omitted individually. `@font-face` registers
+the actual bytes under a kit/version-specific family, so two kits cannot replace
+each other's sample. A font with no loadable face keeps its existing family fallback.
+No backend endpoint or stored brand-kit format changes.
+
+Asset-detail images use the available preview width and height with `object-fit:
+contain`; the 280 px cap and fixture-specific exception are removed. Description
+and metadata remain alongside the preview on desktop and below it on narrow screens.

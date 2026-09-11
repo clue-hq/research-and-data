@@ -21,7 +21,8 @@ titles wrap (`min-height`, `align-items: flex-start`, `white-space: normal` on `
 which also lets the flex layout squeeze the 16 px document glyph on wrapped rows; the dummy keeps
 every row a fixed 32 px single line. The document body uses the dummy's own
 `parseKnowledgeMarkdown`, which knows only `#`–`###` headings, `-`/`*` bullets and paragraphs, so
-tables, blockquotes, links, bold/italic and numbered lists render as raw text.
+tables, blockquotes, links, italic and numbered lists render as raw text. Simple
+bold in paragraphs and bullet items was already supported by a separate inline helper.
 
 | # | Item | Ruling / source |
 |---|---|---|
@@ -30,3 +31,24 @@ tables, blockquotes, links, bold/italic and numbered lists render as raw text.
 | B3 | Typography panel shows the sample text in the extracted font (load the kit's font asset via `@font-face`). | ENG-181 |
 | B4 | Assets panel: the asset fills the display section; description beside/below it. | ENG-182 |
 | B5 | Items 1–7 above remain candidates for this branch where the founder picks them up. | — |
+
+### B1–B4 implemented (2026-09-12)
+
+Founder selected these four repairs first and explicitly required removal of all
+locally built Markdown rendering. The block parser and inline renderer are deleted;
+Knowledge uses react-markdown + remark-gfm directly. Rendering is this slice's scope;
+the existing read-only page remains so, with CodeMirror reserved for the agreed editor.
+
+B1 uses fixed rows, protected icons, and a single CSS animation measured against the
+title column; keyboard focus and reduced-motion are covered. B3 carries the existing
+kit face references through the frontend schema/mapper into namespaced `@font-face`
+rules. B4 fills the preview proportionally without cropping, retaining responsive details.
+
+Validation: 89 Brand Context tests pass; design-system build, lint and production
+build pass (two unchanged design-editor lint warnings). Browser evidence in
+`.context/brand-context-polish-2026-09-12/`: 32 px rows / 16 px icons, one-pass
+overflow scroll and return, reduced-motion, semantic Markdown, a loaded font face,
+full-frame asset sizing, desktop/mobile layout, normal Brand Context and Home routes.
+The browser run used fixtures and a temporary sample-data route, subsequently removed;
+it did not exercise a real tenant's stored font or external font-host availability.
+All other frontend defects remain deferred.
