@@ -263,3 +263,28 @@ directory (a test there collects zero tests — keep route tests beside the segm
 2203 tests, lint, tsc (50 pre-existing errors outside the two features), build, all green. The
 founder's signed-in walk is owed (Task 4 report's 10 steps; the tab, preview, Open as page, Add
 accounts + reload); the dev stack serves the new routes (307 to sign-in when signed out).
+
+## Addendum — Target accounts tab: "Add to chat" into the open chat (2026-09-11, evening)
+
+Founder request after the tab lift: the tab's selection bar gets an "Add to chat"
+button (global bar's `Button` token at size `md`, but the filled default variant —
+"black CTA" — per the founder; the dummy has no such button on this tab). Done
+directly (founder: "if it's a small thing do it yourself").
+
+Design: the global action minus its destination picker. New hook
+`features/projects/hooks/use-add-to-open-chat-controller.ts` runs the same
+`composer-context/prepare` against the current project + `chat.activeThreadId`
+and hands the prepared entities to the workspace controller's new `addEntities`
+(pure merge `addComposerContextEntities` in `model/chat-context-handoff.ts`);
+a refusal goes to the new `failContextHandoff`, i.e. the conversation's existing
+handoff-error line, worded by the now-exported `addToChatFailureMessage`. The
+callback rides `chat-surface → ArtifactStage.onAddAccountsToChat →
+ProjectTargetAccounts.onAddToChat`; absent (artifact route, fixture transport,
+no `composerCapabilities.contextRefs`) the button is not rendered. Selection
+clears only on acceptance. No handoff record, no navigation.
+
+Gates: 2208 tests green, lint 0 errors (2 pre-existing warnings in
+`design-editor/engine/scene/canvasOperations.ts`), tsc at the 50-error baseline,
+`next build` green. Contract: `apps/frontend/docs/api-contracts/accounts.md`
+§ "Seam edit 3". Owed: the founder's signed-in walk (select rows on the tab →
+Add to chat → chips in the composer → send).

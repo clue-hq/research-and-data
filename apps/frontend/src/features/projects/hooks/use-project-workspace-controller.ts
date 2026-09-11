@@ -141,8 +141,33 @@ export function useProjectWorkspaceController(
   ]);
 
   return {
+    /**
+     * "Add to chat" from a surface inside this open chat (the project Target
+     * accounts tab): the server-prepared entities land in the composer exactly
+     * as a restored handoff would — as selected context, versions pinned — with
+     * no navigation and no handoff record unless one is already live for this
+     * mount, in which case it is kept in step like every other selection edit.
+     */
+    addEntities(entities: readonly ProjectEntity[]) {
+      setSelectedEntities((current) => {
+        const next = mergeComposerContextEntities(current, entities);
+        if (typeof window !== "undefined" && initial.handoffId) {
+          updateChatContextHandoffEntities(
+            window.sessionStorage,
+            initial.handoffId,
+            next,
+          );
+        }
+        return next;
+      });
+      setContextHandoffError(null);
+    },
     composerEntities,
     contextHandoffError,
+    /** A refused in-chat add states itself where a failed restore does. */
+    failContextHandoff(message: string) {
+      setContextHandoffError(message);
+    },
     focusPane,
     modelPickerOpen,
     prompt,

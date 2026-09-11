@@ -34,6 +34,12 @@ export type PreparedComposerContext = z.infer<
   typeof PreparedComposerContextSchema
 >;
 
+/**
+ * Later entries win by id, order kept. Two callers: the composer's catalog
+ * merged with its selection, and — the same rule — a selection merged with
+ * entities the server just prepared for an in-chat "Add to chat" (a prepared
+ * entity replaces a same-id selection, carrying the version just pinned).
+ */
 export function mergeComposerContextEntities(
   catalog: readonly z.infer<typeof ProjectEntitySchema>[],
   selected: readonly z.infer<typeof ProjectEntitySchema>[],

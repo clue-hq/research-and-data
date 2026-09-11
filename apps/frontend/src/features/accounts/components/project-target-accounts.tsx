@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { Button } from "@/components/ui/button";
 import { ProjectIcon } from "@/features/projects/components/project-icon";
+import type { ChatContextRef } from "@/features/projects/model/chat-context-handoff";
 import type { Account } from "../model/account";
 import { createDefaultAccountFilterRules } from "../model/account-query";
 import { accountPageSizes, accountsForProject, paginateAccounts, ProjectAccountsResponseSchema, type AccountPageSize, type ProjectAccountsResponse } from "../model/project-accounts";
@@ -26,8 +27,11 @@ function ProjectAccountsBreadcrumb({ count, projectTitle }: { count?: number; pr
   );
 }
 
-function ProjectAccountsTable({ data, onReread, projectId, projectTitle }: {
+type AddToChat = (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
+
+function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectTitle }: {
   data: ProjectAccountsResponse;
+  onAddToChat?: AddToChat;
   onReread: () => void;
   projectId: string;
   projectTitle: string;
@@ -38,12 +42,20 @@ function ProjectAccountsTable({ data, onReread, projectId, projectTitle }: {
   const [pageRequest, setPageRequest] = useState({ key: "", page: 1 });
   const [adding, setAdding] = useState(false);
   const [addFailed, setAddFailed] = useState(false);
+  const [addingToChat, setAddingToChat] = useState(false);
   const [preview, setPreview] = useState<Account | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const queryKey = JSON.stringify([controller.search, controller.filters, controller.sort, pageSize]);
   const pagination = paginateAccounts(controller.visibleAccounts, pageRequest.key === queryKey ? pageRequest.page : 1, pageSize);
   const available = data.availableAccounts.filter((account) => !controller.accounts.some(({ id }) => id === account.id));
   const isEmpty = controller.accounts.length === 0;
+  // "Add to chat" (founder request 2026-09-11; not in the design build): the
+  // global table's action, minus its destination picker — this tab already sits
+  // beside the chat it targets. Same gate as the global bar (a real chat
+  // transport and the server's capability), same limit, same context refs.
+  const selectedCount = controller.selectedAccountIds.size;
+  const addToChatShown = onAddToChat !== undefined && controller.chatHandoffAvailable && data.bulkCapabilities.addToChat.allowed;
+  const overAddToChatLimit = selectedCount > data.bulkCapabilities.addToChat.maxItems;
 
   function clearFilters() {
     controller.setSearch("");
@@ -68,6 +80,20 @@ function ProjectAccountsTable({ data, onReread, projectId, projectTitle }: {
       return;
     }
     setAddFailed(true);
+  }
+  // The selection is cleared only once the chat has the accounts (the global
+  // table's `onTransferred` rule); a refusal leaves it in place to retry.
+  async function addSelectionToChat() {
+    if (!onAddToChat || addingToChat) return;
+    setAddingToChat(true);
+    try {
+      const accepted = await onAddToChat(
+        [...controller.selectedAccountIds].map((accountId) => ({ objectId: accountId, objectType: "account" as const, version: null })),
+      );
+      if (accepted) controller.clearSelection();
+    } finally {
+      setAddingToChat(false);
+    }
   }
 
   return (
@@ -94,10 +120,18 @@ function ProjectAccountsTable({ data, onReread, projectId, projectTitle }: {
         sort={controller.sort}
         visibleColumns={controller.visibleColumns}
       />
-      {controller.selectedAccountIds.size ? (
+      {selectedCount ? (
         <div className={styles.selection}>
-          <span>{controller.selectedAccountIds.size} selected in this project</span>
+          <span>{selectedCount} selected in this project</span>
+          {addToChatShown ? (
+            <Button disabled={overAddToChatLimit || addingToChat} onClick={() => { void addSelectionToChat(); }} size="md" type="button">
+              {addingToChat ? "Adding…" : "Add to chat"}
+            </Button>
+          ) : null}
           <Button onClick={() => controller.toggleAccounts(controller.accounts.filter(({ id }) => controller.selectedAccountIds.has(id)))} size="sm" variant="transparent">Clear selection</Button>
+          {addToChatShown && overAddToChatLimit ? (
+            <span className="text-[var(--clue-content-subtle)]" role="alert">Select at most {data.bulkCapabilities.addToChat.maxItems} Accounts.</span>
+          ) : null}
         </div>
       ) : null}
       {addFailed ? (
@@ -152,7 +186,7 @@ function ProjectAccountsTable({ data, onReread, projectId, projectTitle }: {
   );
 }
 
-export function ProjectTargetAccounts({ active, projectId, projectTitle }: { active: boolean; projectId: string; projectTitle: string }) {
+export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle }: { active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string }) {
   const [data, setData] = useState<ProjectAccountsResponse | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -183,7 +217,7 @@ export function ProjectTargetAccounts({ active, projectId, projectTitle }: { act
 
   if (data) return (
     <WorkspaceProfileProvider profile={data.profile}>
-      <ProjectAccountsTable data={data} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
+      <ProjectAccountsTable data={data} onAddToChat={onAddToChat} onReread={() => { void reread(); }} projectId={projectId} projectTitle={projectTitle} />
     </WorkspaceProfileProvider>
   );
   return (

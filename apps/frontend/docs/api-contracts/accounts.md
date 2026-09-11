@@ -1804,3 +1804,21 @@ lists are re-read so the picker stops offering an account that is now a member;
 the table keeps its columns, selection and page across that re-read. A refusal
 changes nothing on screen and says so, with a Try again action. No duplicate
 account record is created: membership is the only thing written.
+
+**Seam edit 3 — Add to chat, into the open chat** (founder request,
+2026-09-11; not in the dummy, which has no such button on this tab). The tab's
+selection bar carries an "Add to chat" button in the global bar's token (the
+`Button` at size `md`) in the filled default variant, the founder's choice for
+this placement. It is the global table's action minus its destination picker:
+the tab already sits beside the chat it targets, so the selected accounts are
+prepared through the same `POST /projects/:projectId/composer-context/prepare`
+(every reference validated, its version pinned) against the current project and
+the open thread — `thread_id: null` on a threadless project page, where the
+composer's first send creates the thread — and the prepared entities land in
+that mount's composer as selected context, exactly as a restored handoff would.
+No handoff record is written and nothing navigates. The gate and the limit are
+the global bar's (`bulkCapabilities.addToChat`, a real chat transport, and the
+workspace's `composerCapabilities.contextRefs`); the selection clears only once
+the chat holds the accounts, and a refusal is worded as the destination dialog
+words it, shown in the conversation's existing context-handoff error line.
+Frontend-only: the backend contract is unchanged.

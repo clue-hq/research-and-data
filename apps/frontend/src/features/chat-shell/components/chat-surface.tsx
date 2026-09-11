@@ -11,6 +11,7 @@ import {
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
 } from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
+import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
@@ -96,6 +97,14 @@ export function ChatSurface({
   workspace: ProjectWorkspace;
 }) {
   const urlState = chatSurfaceUrlState(paneState);
+  // The Target accounts tab's "Add to chat": prepared against THIS project and
+  // the open thread, landing in this mount's composer (no picker, no navigation).
+  const addToOpenChat = useAddToOpenChatController({
+    onAdded: controller.addEntities,
+    onFailed: controller.failContextHandoff,
+    projectId,
+    threadId: chat.activeThreadId ?? undefined,
+  });
   const shell = useEditorShellController({
     editing: urlState.editing,
     inspectorSelection: urlState.inspectorSelection,
@@ -603,6 +612,11 @@ export function ChatSurface({
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
         onOpenTargetAccounts={shell.openTargetAccounts}
+        onAddAccountsToChat={
+          addToOpenChat.available && workspace.composerCapabilities.contextRefs
+            ? addToOpenChat.add
+            : undefined
+        }
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}

@@ -34,6 +34,7 @@ import type {
 import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
 import { ProjectTargetAccounts } from "@/features/accounts/components/project-target-accounts";
+import type { ChatContextRef } from "@/features/projects/model/chat-context-handoff";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
@@ -67,6 +68,7 @@ export function ArtifactStage({
   richTextBusy,
   richTextEnabled,
   richTextTheme,
+  onAddAccountsToChat,
   onCloseArtifact,
   onOpenGallery,
   onOpenTargetAccounts,
@@ -150,6 +152,11 @@ export function ArtifactStage({
    * project in hand — absent, the tab is simply not rendered, which is the
    * same gate the branch expresses through `projectId`. */
   onOpenTargetAccounts?: () => void;
+  /** The Target accounts tab's "Add to chat" (founder request 2026-09-11):
+   * prepares the selected accounts against the open chat and lands them in
+   * its composer. Absent when no chat is in hand (the artifact route, fixture
+   * transport, a workspace without context refs) — the button is not shown. */
+  onAddAccountsToChat?: (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
@@ -254,7 +261,7 @@ export function ArtifactStage({
       />
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
-          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} projectId={projectId} projectTitle={projectTitle ?? "Project"} />
+          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} />
         </div>
       ) : null}
       {showingArtifact ? (

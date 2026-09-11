@@ -15,7 +15,7 @@ import type { SidebarProject } from "../model/sidebar-project";
 
 export const NEW_CHAT_DESTINATION = "__new_chat__";
 
-function safeError(error: unknown) {
+export function addToChatFailureMessage(error: unknown) {
   if (error instanceof ClueChatApiError) {
     if (error.code === "CONTEXT_REF_STALE") {
       return "One or more selected records changed. Refresh the table and select them again.";
@@ -91,7 +91,7 @@ export function useAddToChatController({
     setError(null);
     setLoading(true);
     void loadDestinations()
-      .catch((failure) => setError(safeError(failure)))
+      .catch((failure) => setError(addToChatFailureMessage(failure)))
       .finally(() => setLoading(false));
   }, [contextRefs.length, loadDestinations, repositories.transport.mode]);
 
@@ -154,7 +154,7 @@ export function useAddToChatController({
         }),
       );
     } catch (failure) {
-      setError(safeError(failure));
+      setError(addToChatFailureMessage(failure));
     } finally {
       setSubmitting(false);
     }

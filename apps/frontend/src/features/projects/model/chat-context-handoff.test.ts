@@ -119,3 +119,13 @@ test("accepted submission cleanup removes only the submitted context", () => {
     [contact],
   );
 });
+
+test("an in-chat add appends prepared entities to the selection, a same-id one taking the pinned version", () => {
+  const contact = { ...account, id: "contact-1", label: "Dana Buyer", type: "contact" as const, version: 4 };
+  const repinned = { ...account, version: 9 };
+  assert.deepEqual(
+    mergeComposerContextEntities([account, contact], [repinned, contact]),
+    [repinned, contact],
+  );
+  assert.deepEqual(mergeComposerContextEntities([], [contact]), [contact]);
+});
