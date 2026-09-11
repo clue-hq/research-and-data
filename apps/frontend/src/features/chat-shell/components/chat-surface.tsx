@@ -32,6 +32,7 @@ import {
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
+import { galleryCardTarget } from "../model/gallery-card-target";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -607,13 +608,21 @@ export function ChatSurface({
         richTextBusy={session.writes.busy}
         richTextEnabled={webEditingActive}
         richTextTheme={session.theme}
-        onOpenGalleryArtifact={(artifact) =>
-          shell.openArtifact({
+        onOpenGalleryArtifact={(artifact) => {
+          // The card's own document type decides where it lands (the pure
+          // ../model/gallery-card-target): an account-list card opens the
+          // target-accounts surface; everything else opens an artifact tab.
+          const target = galleryCardTarget({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
             title: artifact.title,
-          })
-        }
+            type: artifact.source.type,
+          });
+          if (target.surface === "target-accounts") {
+            shell.openTargetAccounts();
+            return;
+          }
+          shell.openArtifact(target.artifact);
+        }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
             shell.setArtifactTitleFor(shell.activeArtifactId, title);
