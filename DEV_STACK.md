@@ -10,6 +10,7 @@ and in `scripts/dev_stack.sh` — never only in a terminal.**
 ./scripts/dev_stack.sh up       # starts all five processes
 ./scripts/dev_stack.sh status   # shows what's up
 ./scripts/dev_stack.sh restart-api   # restarts ONLY the two platform API processes (picks up a changed .env setting; workers keep theirs until down/up)
+./scripts/dev_stack.sh restart-workers   # restarts ONLY the fleet workers, same count × concurrency as the wrapper sets; check nothing is mid-job first
 ./scripts/dev_stack.sh down     # stops everything
 ```
 

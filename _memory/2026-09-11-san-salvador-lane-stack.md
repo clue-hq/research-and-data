@@ -304,3 +304,6 @@ files to `false`; I added `restart-api` to `scripts/dev_stack.sh` (restarts only
 and their contacts by hand so the next open regenerates. Ledger: A19 (posture), A20 (posture ≠ stale),
 A21 (fit verdicts reach no recipe). Owed: founder opens Prevea / Mid State and confirms the
 sections now cite the research.
+Fleet workers cycled too (founder, same night): new runbook verb `restart-workers` respawns the
+wrapper's 4 × 3 with the stagger, after a `work_lease` in-flight check; all four booted clean with
+`CLUE_VERIFICATION_ENABLED=false`. The whole stack now runs on the new posture.

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|restart-api|status
+# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|restart-api|restart-workers|status
 #
 # Written 2026-08-29 after a stack rebuild from memory burned an evening on
 # three separate port/origin mismatches. This file is the single source of
@@ -91,6 +91,30 @@ restart_api() {
   echo "restarting platform API…"; sleep 6; status
 }
 
+start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, staggered (see the note in up)
+  for i in $(seq 1 "$WORKERS"); do
+    [ "$i" -gt 1 ] && sleep 6
+    ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+        CLUE_FLEET_WORKER_CONCURRENCY="$WORKER_CONCURRENCY" PYTHONUNBUFFERED=1 \
+        "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
+        > "$(worker_log "$i")" 2>&1 & )
+  done
+}
+
+# Restart ONLY the fleet workers, respawned with the SAME count and per-worker
+# concurrency the lane wrapper sets. Check nothing is mid-job first: a killed
+# worker's job is orphaned until its lease expires.
+restart_workers() {
+  load_env
+  pkill -f "clue_api.fleet_main" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    [ "$(pgrep -f "clue_api.fleet_main" | wc -l | tr -d ' ')" -eq 0 ] && break
+    sleep 0.5
+  done
+  start_workers
+  echo "restarting fleet workers…"; sleep 8; status
+}
+
 up() {
   load_env
   mkdir -p "$AGENT_WORKSPACE_ROOT" && chmod 700 "$AGENT_WORKSPACE_ROOT"
@@ -110,13 +134,7 @@ up() {
   # field registry at boot with plain INSERTs, and two booting together race
   # to `field_definition_pkey` — three of four died that way on 2026-09-11.
   # The stagger is a runbook mitigation; the seed itself is not concurrency-safe.
-  for i in $(seq 1 "$WORKERS"); do
-    [ "$i" -gt 1 ] && sleep 6
-    ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-        CLUE_FLEET_WORKER_CONCURRENCY="$WORKER_CONCURRENCY" PYTHONUNBUFFERED=1 \
-        "$ROOT/.venv/bin/python" -m clue_api.fleet_main \
-        > "$(worker_log "$i")" 2>&1 & )
-  done
+  start_workers
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
   # .next route graph (single routes 404 while siblings work — twice live on
@@ -161,6 +179,7 @@ case "${1:-status}" in
   up) up ;;
   down) down ;;
   restart-api) restart_api ;;
+  restart-workers) restart_workers ;;
   status) status ;;
   *) echo "usage: $0 up|down|status"; exit 2 ;;
 esac
