@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|status
+# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|restart-api|status
 #
 # Written 2026-08-29 after a stack rebuild from memory burned an evening on
 # three separate port/origin mismatches. This file is the single source of
@@ -66,6 +66,31 @@ worker_log() {  # worker 1 keeps the historical name; 2..N get a suffix
   if [ "$1" -eq 1 ]; then echo "${LOG}_fleet_worker.log"; else echo "${LOG}_fleet_worker_$1.log"; fi
 }
 
+start_platform_api() {  # both twins; a settings change (.env) needs both restarted
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
+      > "${LOG}_platform_api_8020.log" 2>&1 & )
+
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
+      > "${LOG}_platform_api.log" 2>&1 & )
+}
+
+# Restart ONLY the two platform API processes — the way to pick up a changed
+# .env setting (e.g. CLUE_VERIFICATION_ENABLED, 2026-09-11) without touching the
+# frontend, the design API or the fleet workers. Workers keep their old settings
+# until `down`/`up`.
+restart_api() {
+  load_env
+  pkill -f "uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  start_platform_api
+  echo "restarting platform API…"; sleep 6; status
+}
+
 up() {
   load_env
   mkdir -p "$AGENT_WORKSPACE_ROOT" && chmod 700 "$AGENT_WORKSPACE_ROOT"
@@ -79,13 +104,7 @@ up() {
         "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port 8010 \
         > "${LOG}_design_api.log" 2>&1 & )
 
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
-      > "${LOG}_platform_api_8020.log" 2>&1 & )
-
-  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
-      > "${LOG}_platform_api.log" 2>&1 & )
+  start_platform_api
 
   # Workers start one at a time, a few seconds apart: every worker seeds the
   # field registry at boot with plain INSERTs, and two booting together race
@@ -141,6 +160,7 @@ status() {
 case "${1:-status}" in
   up) up ;;
   down) down ;;
+  restart-api) restart_api ;;
   status) status ;;
   *) echo "usage: $0 up|down|status"; exit 2 ;;
 esac

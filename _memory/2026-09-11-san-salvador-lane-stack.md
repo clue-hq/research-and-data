@@ -288,3 +288,19 @@ Gates: 2208 tests green, lint 0 errors (2 pre-existing warnings in
 `next build` green. Contract: `apps/frontend/docs/api-contracts/accounts.md`
 § "Seam edit 3". Owed: the founder's signed-in walk (select rows on the tab →
 Add to chat → chips in the composer → send).
+
+## Addendum — verification posture hid the research from the pages (2026-09-11, night)
+
+After the first real deep-research run (run `143d86bf…`, 2 accounts + 10 committee people,
+$12.77, all completed) the account pages stayed thin. Cause: the lane `.env` had
+`CLUE_VERIFICATION_ENABLED=true`; `arv2/display/gather.py` drops every tier-4 claim that is not
+`verified` under that posture, and no ARV2 verifier exists, so all `agent`/`structuring` claims were
+filtered before the writer model saw them (Prevea why-they-fit prompt: 5 claims of 79). Proof is in
+the raw prompts under `.artifacts/arv2/raw/openrouter/…display-overview-why-they-fit…`. R0 step 5
+had set the flag off; the 2026-09-09 parity commit propagated it back on. Founder flipped both env
+files to `false`; I added `restart-api` to `scripts/dev_stack.sh` (restarts only the two
+`projections_main` twins; workers keep their settings until down/up) and restarted. Because
+`stale_sections` has no posture reason, I retired the 16 live blocks of the two researched accounts
+and their contacts by hand so the next open regenerates. Ledger: A19 (posture), A20 (posture ≠ stale),
+A21 (fit verdicts reach no recipe). Owed: founder opens Prevea / Mid State and confirms the
+sections now cite the research.

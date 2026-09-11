@@ -9,6 +9,7 @@ and in `scripts/dev_stack.sh` — never only in a terminal.**
 ```bash
 ./scripts/dev_stack.sh up       # starts all five processes
 ./scripts/dev_stack.sh status   # shows what's up
+./scripts/dev_stack.sh restart-api   # restarts ONLY the two platform API processes (picks up a changed .env setting; workers keep theirs until down/up)
 ./scripts/dev_stack.sh down     # stops everything
 ```
 

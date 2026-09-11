@@ -7,7 +7,7 @@
 # with FOUR fleet worker processes at THREE drain slots each (founder ruling 2026-09-10 for the
 # exit-gate walks), the lane's own agent-workspace root, and logs under /tmp/san-salvador_*.log.
 #
-#   ./scripts/dev_stack_san_salvador.sh up|down|status
+#   ./scripts/dev_stack_san_salvador.sh up|down|restart-api|status
 #
 # It cannot share the box with the istanbul stack (same ports): stop one before starting the other.
 set -euo pipefail
