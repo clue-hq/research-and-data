@@ -63,6 +63,32 @@ test("opening the gallery switches surface and leaves edit mode", () => {
   assert.equal(state.activeArtifactId, "b");
 });
 
+test("opening target accounts switches surface, opens the rail, and leaves edit mode", () => {
+  const state = editorShellReducer(
+    stateWith({ editing: true, panelOpen: false, surface: "artifact" }),
+    { type: "open-target-accounts" },
+  );
+  assert.equal(state.surface, "target-accounts");
+  assert.equal(state.panelOpen, true);
+  assert.equal(state.editing, false);
+  // The open tabs survive the trip — the table is a surface, not a tab.
+  assert.deepEqual(state.openArtifacts, artifacts);
+  assert.equal(state.activeArtifactId, "b");
+});
+
+test("opening an artifact or the gallery leaves the target-accounts surface", () => {
+  const fromTable = stateWith({ surface: "target-accounts" });
+  assert.equal(
+    editorShellReducer(fromTable, { type: "open-gallery" }).surface,
+    "gallery",
+  );
+  assert.equal(
+    editorShellReducer(fromTable, { artifactId: "c", type: "activate-artifact" })
+      .surface,
+    "artifact",
+  );
+});
+
 test("opening an artifact appends once and activates it", () => {
   const next: ChatShellOpenArtifact = { id: "d", kind: "web", title: "New page" };
   const opened = editorShellReducer(

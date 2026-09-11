@@ -33,6 +33,13 @@ test("route builders omit empty integration-state parameters", () => {
     projectTargetAccountsHref("project", "chat"),
     "/projects/project/chats/chat?surface=target-accounts",
   );
+  // Ruling R3: no fixture thread id ever reaches a production URL. A threadless
+  // caller lands on the project absorber, which canonicalizes to the real
+  // thread and carries `surface` along.
+  assert.equal(
+    projectTargetAccountsHref("project"),
+    "/projects/project?surface=target-accounts",
+  );
   assert.equal(
     projectChatHref("project", "chat", { edit: undefined, surface: "" }),
     "/projects/project/chats/chat",

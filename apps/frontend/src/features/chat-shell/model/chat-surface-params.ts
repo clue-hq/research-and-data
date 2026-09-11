@@ -19,13 +19,16 @@ export interface ChatSurfaceUrlState {
   editing: boolean;
   inspectorSelection: ChatShellInspectorSelection;
   panelOpen: boolean;
-  surface: "artifact" | "gallery" | undefined;
+  surface: "artifact" | "gallery" | "target-accounts" | undefined;
 }
 
 function parseChatSurface(
   raw: string | undefined,
-): "artifact" | "gallery" | undefined {
+): "artifact" | "gallery" | "target-accounts" | undefined {
   if (raw === "gallery") return "gallery";
+  // The target-accounts rail surface is addressable by its own name — the
+  // shareable route is /projects/:id/chats/:chatId?surface=target-accounts.
+  if (raw === "target-accounts") return "target-accounts";
   if (raw === "web" || raw === "ad") return "artifact";
   // `chat` is the ratified alias of the conversation-only resting state (rail
   // closed, nothing editing) — deliberately the SAME state an absent param
@@ -59,7 +62,7 @@ export interface ChatSurfacePaneState {
   panelOpen: boolean;
   /** The raw incoming `surface` param — the kind-unknown tiebreak only. */
   rawSurface: string | undefined;
-  surface: "artifact" | "gallery";
+  surface: "artifact" | "gallery" | "target-accounts";
 }
 
 export interface ChatSurfacePaneParams {
@@ -84,6 +87,11 @@ export function chatSurfacePaneParams(
     // edit/selection are artifact-surface vocabulary — the parse only honors
     // them there, so the gallery never carries them.
     return { ...NO_PANE_PARAMS, surface: "gallery" };
+  }
+  if (state.surface === "target-accounts") {
+    // Same rule as the gallery: the surface names itself and carries no
+    // artifact vocabulary.
+    return { ...NO_PANE_PARAMS, surface: "target-accounts" };
   }
   const surface =
     state.artifactKind ??

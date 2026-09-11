@@ -15,7 +15,11 @@ import type {
 // gallery surface, and an empty shell starts there. There is deliberately no
 // default-tab fabrication: the artifact list is the source of tab truth.
 
-export type EditorShellSurface = "artifact" | "gallery";
+// The target-accounts surface joins the pair as a third resting surface of the
+// rail (the branch's own `ChatShellSurface` gained it the same way): it is not
+// an artifact, carries no editing, and — like the gallery — never opens the
+// editor dock.
+export type EditorShellSurface = "artifact" | "gallery" | "target-accounts";
 
 export interface EditorShellInitialState {
   artifactId?: string;
@@ -45,6 +49,7 @@ export type EditorShellAction =
   | { type: "activate-artifact"; artifactId: string }
   | { type: "open-artifact"; artifact: ChatShellOpenArtifact }
   | { type: "open-gallery" }
+  | { type: "open-target-accounts" }
   | { type: "close-artifact"; artifactId: string }
   | { type: "rename-artifact"; artifactId: string; title: string }
   | { type: "toggle-panel" }
@@ -98,6 +103,13 @@ export function editorShellReducer(
       };
     case "open-gallery":
       return { ...state, editing: false, panelOpen: true, surface: "gallery" };
+    case "open-target-accounts":
+      return {
+        ...state,
+        editing: false,
+        panelOpen: true,
+        surface: "target-accounts",
+      };
     case "close-artifact": {
       const closedIndex = state.openArtifacts.findIndex(
         (artifact) => artifact.id === action.artifactId,
@@ -169,6 +181,7 @@ export interface EditorShellController {
   openArtifact: (artifact: ChatShellOpenArtifact) => void;
   openArtifacts: ChatShellOpenArtifact[];
   openGallery: () => void;
+  openTargetAccounts: () => void;
   panelOpen: boolean;
   projectId?: string;
   toggleArtifactPanel: () => void;
@@ -204,6 +217,9 @@ export function useEditorShellController(
   }, []);
   const openGallery = useCallback(() => {
     dispatch({ type: "open-gallery" });
+  }, []);
+  const openTargetAccounts = useCallback(() => {
+    dispatch({ type: "open-target-accounts" });
   }, []);
   const setArtifactTitleFor = useCallback((artifactId: string, title: string) => {
     dispatch({ artifactId, title, type: "rename-artifact" });
@@ -251,6 +267,7 @@ export function useEditorShellController(
       openArtifact,
       openArtifacts: state.openArtifacts,
       openGallery,
+      openTargetAccounts,
       panelOpen: state.panelOpen,
       projectId: initial.projectId,
       selectInspectorElement,
@@ -267,6 +284,7 @@ export function useEditorShellController(
       initial.projectId,
       openArtifact,
       openGallery,
+      openTargetAccounts,
       selectInspectorElement,
       setArtifactTitleFor,
       setEditing,

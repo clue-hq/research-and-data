@@ -26,15 +26,20 @@ export function projectGalleryHref(projectId: string, threadId: string) {
   });
 }
 
-// Task-1 scaffolding for the target-accounts lift: the `/projects/{id}/accounts`
-// redirect page needs this helper to type-check before Task 3 lands the real
-// surface. It is carried over from the design build VERBATIM, including the
-// `"thread-primary"` fallback that ruling R3 removed from `projectGalleryHref`
-// directly above — so a caller that omits `threadId` puts a fixture thread id in
-// a production URL. Task 3 owns resolving a real thread id and dropping the
-// fallback; do not add a second caller before then.
+// The target-accounts rail surface, addressable. Ruling R3 forbids the design
+// build's `threadId ?? "thread-primary"` fallback in a production URL, and a
+// caller like the `/projects/{id}/accounts` redirect genuinely may not know a
+// thread id — so a threadless call points at the project landing route instead
+// of inventing a thread. `/projects/{id}` is the legacy absorber (ruling R1):
+// it carries the whole query — `surface` included — through its client-side
+// canonicalization to `/chats/{resolved}`, so the surface survives the hop.
 export function projectTargetAccountsHref(projectId: string, threadId?: string) {
-  return projectChatHref(projectId, threadId ?? "thread-primary", { surface: "target-accounts" });
+  if (threadId) {
+    return projectChatHref(projectId, threadId, { surface: "target-accounts" });
+  }
+  return withQuery(`/projects/${routeSegment(projectId)}`, {
+    surface: "target-accounts",
+  });
 }
 
 export function projectChatHref(

@@ -5,6 +5,7 @@ import type { KeyboardEvent } from "react";
 import type { ChatShellOpenArtifact, ChatShellSurface } from "../model/chat-shell";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
 import { ChatShellIcon } from "./chat-shell-icon";
+import { ProjectIcon } from "@/features/projects/components/project-icon";
 import styles from "./chat-shell.module.css";
 
 function ArtifactTab({
@@ -106,6 +107,7 @@ export function ArtifactTabs({
   onActivateArtifact,
   onCloseArtifact,
   onOpenGallery,
+  onOpenTargetAccounts,
   onRenameArtifact,
   onToggleMaximized,
   onTogglePanel,
@@ -118,6 +120,7 @@ export function ArtifactTabs({
   onActivateArtifact: (artifactId: string) => void;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery?: () => void;
+  onOpenTargetAccounts?: () => void;
   onRenameArtifact: (artifactId: string, title: string) => void;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
@@ -165,6 +168,19 @@ export function ArtifactTabs({
               <ChatShellIcon name="layout-grid" size={12} />
               <span>Gallery</span>
             </button>
+            {onOpenTargetAccounts ? (
+              <button
+                aria-selected={surface === "target-accounts"}
+                className={`${styles.galleryTab} ${surface === "target-accounts" ? styles.galleryTabActive : ""}`}
+                onClick={onOpenTargetAccounts}
+                role="tab"
+                tabIndex={surface === "target-accounts" ? 0 : -1}
+                type="button"
+              >
+                <ProjectIcon name="target-accounts" size={12} />
+                <span>Target accounts</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div className={styles.artifactTabScroller}>

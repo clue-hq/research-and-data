@@ -601,6 +601,7 @@ export function ChatSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
+        onOpenTargetAccounts={shell.openTargetAccounts}
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}
@@ -624,6 +625,7 @@ export function ChatSurface({
         onToggleEditing={() => shell.setEditing(!shell.editing)}
         openArtifacts={shell.openArtifacts}
         projectTitle={workspace.title}
+        projectId={projectId}
         // AD3.3: the header carries ONE pair of history-row disables, and the
         // artifact on screen decides which lane's stacks they describe — the
         // same kind switch that gates the two sessions above. Without it an ad

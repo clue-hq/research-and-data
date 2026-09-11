@@ -33,6 +33,7 @@ import type {
 } from "@/features/design-editor/engine/webDocuments";
 import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
+import { ProjectTargetAccounts } from "@/features/accounts/components/project-target-accounts";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
@@ -68,6 +69,7 @@ export function ArtifactStage({
   richTextTheme,
   onCloseArtifact,
   onOpenGallery,
+  onOpenTargetAccounts,
   onOpenGalleryArtifact,
   onRenameArtifact,
   onRenameArtifactFor,
@@ -90,6 +92,7 @@ export function ArtifactStage({
   onToggleEditing,
   openArtifacts,
   projectTitle,
+  projectId,
   redoDisabled,
   selectedCanvasNodeId,
   surface,
@@ -142,6 +145,11 @@ export function ArtifactStage({
   richTextTheme?: WebTheme | null;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery: () => void;
+  /** The Target accounts tab's handler. Optional (the branch's stage makes it
+   * required) because the ARTIFACT route mounts this same stage with no
+   * project in hand — absent, the tab is simply not rendered, which is the
+   * same gate the branch expresses through `projectId`. */
+  onOpenTargetAccounts?: () => void;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
   onRenameArtifact: (title: string) => void;
   onRenameArtifactFor: (artifactId: string, title: string) => void;
@@ -213,6 +221,9 @@ export function ArtifactStage({
   onToggleEditing: () => void;
   openArtifacts: ChatShellOpenArtifact[];
   projectTitle?: string;
+  /** The project the Target accounts surface is scoped to. Absent (the
+   * artifact route) → no tab and no surface. */
+  projectId?: string;
   /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
   redoDisabled?: boolean;
   surface: EditorShellSurface;
@@ -235,11 +246,17 @@ export function ArtifactStage({
         onActivateArtifact={onActivateArtifact}
         onCloseArtifact={onCloseArtifact}
         onOpenGallery={onOpenGallery}
+        onOpenTargetAccounts={projectId ? onOpenTargetAccounts : undefined}
         onRenameArtifact={onRenameArtifactFor}
         onToggleMaximized={onToggleMaximized}
         onTogglePanel={onTogglePanel}
         surface={surface}
       />
+      {projectId ? (
+        <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
+          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} projectId={projectId} projectTitle={projectTitle ?? "Project"} />
+        </div>
+      ) : null}
       {showingArtifact ? (
         <>
           <ArtifactHeader
@@ -312,13 +329,17 @@ export function ArtifactStage({
             )}
           </div>
         </>
-      ) : (
+      ) : null}
+      <div
+        className={styles.workspaceSurface}
+        hidden={showingArtifact || surface === "target-accounts"}
+      >
         <ProjectGallery
           artifacts={artifacts}
           onOpenArtifact={onOpenGalleryArtifact}
           projectTitle={projectTitle}
         />
-      )}
+      </div>
     </section>
   );
 }

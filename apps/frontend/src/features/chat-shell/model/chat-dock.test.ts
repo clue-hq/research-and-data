@@ -38,6 +38,12 @@ test("the dock needs the artifact surface with the panel open", () => {
   );
 });
 
+test("the target-accounts surface docks nothing — it behaves like the gallery", () => {
+  const targetAccounts: ChatDockState = { ...editingWeb, surface: "target-accounts" };
+  assert.equal(chatDockOpen(targetAccounts), false);
+  assert.equal(chatDockContent(targetAccounts), "conversation");
+});
+
 test("the docked inspector branches on the artifact kind", () => {
   assert.equal(chatDockContent(editingWeb), "web-inspector");
   assert.equal(
