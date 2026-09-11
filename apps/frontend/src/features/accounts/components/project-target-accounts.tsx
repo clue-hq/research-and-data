@@ -186,12 +186,15 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   );
 }
 
-export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle }: { active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string }) {
+export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectTitle, refreshToken }: { active: boolean; onAddToChat?: AddToChat; projectId: string; projectTitle: string; refreshToken?: number }) {
   const [data, setData] = useState<ProjectAccountsResponse | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!active || data) return;
+    // First load when the tab becomes active; afterwards every discovery tick (`refreshToken`)
+    // re-reads without dropping `data`, so the table keeps its columns, selection and page
+    // while verified rows climb in (spec 2026-09-12 §3).
+    if (!active) return;
     const request = new AbortController();
     fetch(`/api/projects/${encodeURIComponent(projectId)}/accounts`, { signal: request.signal })
       .then(async (response) => {
@@ -199,9 +202,11 @@ export function ProjectTargetAccounts({ active, onAddToChat, projectId, projectT
         return ProjectAccountsResponseSchema.parse(await response.json());
       })
       .then((result) => { if (!request.signal.aborted) { setData(result); setError(false); } })
-      .catch(() => { if (!request.signal.aborted) setError(true); });
+      .catch(() => { if (!request.signal.aborted && data === null) setError(true); });
     return () => request.abort();
-  }, [active, attempt, data, projectId]);
+    // `data` is deliberately not a dependency: it changes on every read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, attempt, projectId, refreshToken]);
 
   // Re-read the served lists after a membership write, without dropping `data`:
   // the table keeps its columns, selection and page while the pool catches up.

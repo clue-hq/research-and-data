@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
@@ -29,6 +30,7 @@ import {
   chatSurfacePaneParams,
   chatSurfaceUrlState,
 } from "../model/chat-surface-params";
+import { discoveryLaunchToOpen } from "../model/discovery-launch-signal";
 import {
   editTargetChips,
   editTargetContextRefs,
@@ -105,6 +107,10 @@ export function ChatSurface({
     projectId,
     threadId: chat.activeThreadId ?? undefined,
   });
+  // The Target accounts tab's live poll (spec 2026-09-12 §3): the status decides the spinner,
+  // each read bumps the token the tab refetches on, and the launch signal primes the first read.
+  const [discoveryPrime, setDiscoveryPrime] = useState(0);
+  const discovery = useDiscoveryStatus(projectId, { prime: discoveryPrime });
   const shell = useEditorShellController({
     editing: urlState.editing,
     inspectorSelection: urlState.inspectorSelection,
@@ -288,6 +294,30 @@ export function ChatSurface({
     if (opening === null) return;
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
+
+  // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
+  // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only
+  // transports it, banking every tool call id it has seen so a replayed backlog opens nothing.
+  const knownLaunchIds = useRef<Set<string> | null>(null);
+  const openTargetAccounts = shell.openTargetAccounts;
+  useEffect(() => {
+    const known = knownLaunchIds.current;
+    if (known === null) {
+      knownLaunchIds.current = new Set(
+        chat.transcript.flatMap((message) =>
+          message.parts.flatMap((part) => (part.kind === "tool" ? [part.toolCallId] : [])),
+        ),
+      );
+      return;
+    }
+    const opening = discoveryLaunchToOpen({ transcript: chat.transcript, knownToolCallIds: known });
+    for (const message of chat.transcript) {
+      for (const part of message.parts) if (part.kind === "tool") known.add(part.toolCallId);
+    }
+    if (opening === null) return;
+    openTargetAccounts();
+    setDiscoveryPrime((current) => current + 1);
+  }, [chat.transcript, openTargetAccounts]);
 
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
@@ -612,6 +642,8 @@ export function ChatSurface({
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
         onOpenTargetAccounts={shell.openTargetAccounts}
+        targetAccountsBusy={discovery.live}
+        targetAccountsRefreshToken={discovery.tick}
         onAddAccountsToChat={
           addToOpenChat.available && workspace.composerCapabilities.contextRefs
             ? addToOpenChat.add

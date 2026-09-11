@@ -98,6 +98,8 @@ export function ArtifactStage({
   redoDisabled,
   selectedCanvasNodeId,
   surface,
+  targetAccountsBusy,
+  targetAccountsRefreshToken,
   undoDisabled,
 }: {
   activeArtifactId: string | null;
@@ -234,6 +236,10 @@ export function ArtifactStage({
   /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
   redoDisabled?: boolean;
   surface: EditorShellSurface;
+  /** True while the project's discovery run is live: the Target accounts tab label spins. */
+  targetAccountsBusy?: boolean;
+  /** Bumped on every discovery poll read: the tab refetches its rows (spec 2026-09-12 §3). */
+  targetAccountsRefreshToken?: number;
   undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
@@ -258,10 +264,11 @@ export function ArtifactStage({
         onToggleMaximized={onToggleMaximized}
         onTogglePanel={onTogglePanel}
         surface={surface}
+        targetAccountsBusy={targetAccountsBusy}
       />
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
-          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} />
+          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
         </div>
       ) : null}
       {showingArtifact ? (

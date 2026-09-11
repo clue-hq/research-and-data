@@ -3163,3 +3163,13 @@
   cursor: default;
   pointer-events: none;
 }
+
+/* The Target accounts tab's live-run spinner: the chat's own rotating loader glyph. */
+.galleryTabSpinner {
+  margin-left: 4px;
+  animation: galleryTabSpin 1s linear infinite;
+}
+
+@keyframes galleryTabSpin {
+  to { transform: rotate(360deg); }
+}

@@ -112,6 +112,7 @@ export function ArtifactTabs({
   onToggleMaximized,
   onTogglePanel,
   surface,
+  targetAccountsBusy,
 }: {
   activeArtifactId: string | null;
   artifactMaximized: boolean;
@@ -125,6 +126,8 @@ export function ArtifactTabs({
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   surface: ChatShellSurface;
+  /** True while the project's discovery run is live: the Target accounts label spins. */
+  targetAccountsBusy?: boolean;
 }) {
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -179,6 +182,9 @@ export function ArtifactTabs({
               >
                 <ProjectIcon name="target-accounts" size={12} />
                 <span>Target accounts</span>
+                {targetAccountsBusy ? (
+                  <ProjectIcon className={styles.galleryTabSpinner} name="loader" size={12} />
+                ) : null}
               </button>
             ) : null}
           </div>
