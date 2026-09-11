@@ -39,7 +39,12 @@ from clue_api.arv2.account_research_launch import (
     launch_arv2_account_research,
     launch_arv2_person_research,
 )
-from clue_api.arv2.account_research_store import list_jobs, read_run
+from clue_api.arv2.account_research_store import (
+    list_jobs,
+    read_job,
+    read_run,
+    set_job_stage,
+)
 from clue_api.arv2.display.gather import committee_members
 from clue_config import Settings
 from clue_core import EntityId, ExtractionMethod, Persona
@@ -924,5 +929,46 @@ def test_a_person_launch_under_an_unpinned_project_is_refused_by_name(tmp_path: 
                 )
             ).scalar_one()
             assert confirmed == 1
+
+    run_async(scenario())
+
+
+def test_set_job_stage_moves_the_stage_and_updated_at_only(tmp_path: Any) -> None:
+    """The stage is a progress stamp: it moves, and it moves nothing else about the job."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            receipt = await _launch(conn, storage, _request(fixture), FakeQueue())
+            jobs = await list_jobs(conn, run_id=receipt.run_id)
+            job_id = jobs[0].job_id
+
+            async def updated_at() -> Any:
+                return (
+                    await conn.execute(
+                        text("SELECT updated_at FROM arv2_research_job WHERE job_id = :id"),
+                        {"id": job_id},
+                    )
+                ).scalar_one()
+
+            before = await read_job(conn, job_id=job_id)
+            before_updated_at = await updated_at()
+            assert before is not None and before.stage is None
+
+            await set_job_stage(conn, job_id=job_id, stage="deep_research")
+
+            after = await read_job(conn, job_id=job_id)
+            assert after is not None
+            assert after.stage == "deep_research"
+            assert after.status == before.status
+            assert after.attempt == before.attempt
+            assert after.started_at == before.started_at
+            assert after.finished_at == before.finished_at
+            assert await updated_at() >= before_updated_at
+
+            await set_job_stage(conn, job_id=job_id, stage="member_research")
+            moved = await read_job(conn, job_id=job_id)
+            assert moved is not None and moved.stage == "member_research"
 
     run_async(scenario())

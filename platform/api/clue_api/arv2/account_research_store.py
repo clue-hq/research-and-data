@@ -36,6 +36,7 @@ __all__ = [
     "AnnotationRow",
     "JobRow",
     "JobSpend",
+    "JobStage",
     "JobStatus",
     "JobSubject",
     "RunRow",
@@ -58,6 +59,7 @@ __all__ = [
     "read_run",
     "record_annotations",
     "refresh_run_status",
+    "set_job_stage",
     "suspend_job",
 ]
 
@@ -66,6 +68,11 @@ JobStatus = Literal["not_started", "in_progress", "needs_review", "completed", "
 
 #: What a job researches: the account (R2) or one of its committee members (R3).
 JobSubject = Literal["account", "person"]
+
+#: Where a job is (spec 2026-09-12 §1, the research progress card). An account job walks
+#: ``deep_research`` → ``synthesis`` → ``committee`` → ``member_research``; a person job stamps
+#: only the first two. The database CHECK carries the same four values.
+JobStage = Literal["deep_research", "synthesis", "committee", "member_research"]
 
 #: The two statuses a job can *finish* on. ``suspended`` is a pause, not a terminal.
 TerminalJob = Literal["completed", "needs_review"]
@@ -174,6 +181,9 @@ class JobRow:
     cost_usd: Decimal
     credits: Decimal
     media_seconds: int
+    #: Where the job is (spec 2026-09-12 §1); ``None`` before its first claim or on rows that
+    #: predate the column. Stamped by the driver, read by the research progress card.
+    stage: JobStage | None = None
 
 
 @dataclass(frozen=True)
@@ -364,6 +374,16 @@ async def suspend_job(conn: AsyncConnection, *, job_id: UUID) -> None:
             "WHERE job_id = :job_id AND status NOT IN ('completed', 'needs_review')"
         ),
         {"job_id": job_id},
+    )
+
+
+async def set_job_stage(conn: AsyncConnection, *, job_id: UUID, stage: JobStage) -> None:
+    """Stamp where the job is (spec 2026-09-12 §1). Never touches status or the receipt."""
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET stage = :stage, updated_at = now() WHERE job_id = :job_id"
+        ),
+        {"stage": stage, "job_id": job_id},
     )
 
 
@@ -827,4 +847,5 @@ def _job(row: RowMapping) -> JobRow:
         cost_usd=row["cost_usd"],
         credits=row["credits"],
         media_seconds=row["media_seconds"],
+        stage=row["stage"],
     )
