@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKnowledgeEditor } from "./use-knowledge-editor";
 import type {
   BrandAssetCategory,
   BrandAssetSortDirection,
@@ -130,6 +131,7 @@ export function useBrandContextController({
   const selectedDocument =
     allDocuments.find((document) => document.id === selectedDocumentId)
     ?? allDocuments[0];
+  const knowledgeEditor = useKnowledgeEditor(selectedDocument);
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
@@ -338,6 +340,7 @@ export function useBrandContextController({
     filteredAssets,
     filteredTypefaces,
     fontSearch,
+    knowledgeEditor,
     newStyle,
     editAssetDetails,
     openAsset,

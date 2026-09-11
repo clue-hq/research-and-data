@@ -410,6 +410,8 @@
 .documentTitleBar {
   min-height: 84px;
   padding: 24px 24px 24px 32px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .documentTitleBar h1 {
@@ -1318,6 +1320,36 @@
   margin: 0 auto;
   padding: 48px 48px 96px;
   overflow-wrap: anywhere;
+}
+
+.markdownEditor {
+  margin: 24px 32px 48px;
+  overflow: hidden;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: 8px;
+}
+
+.documentEditNotice {
+  margin: 16px 32px 0;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.markdownEditor :global(.cm-editor) {
+  min-height: 420px;
+  background: var(--clue-ds-color-bg-neutral);
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 14px;
+}
+
+.markdownEditor :global(.cm-scroller) { font-family: ui-monospace, monospace; }
+.markdownEditor :global(.cm-content) { padding: 16px 0; }
+.markdownEditor :global(.cm-line) { padding: 0 16px; }
+.markdownEditor :global(.cm-gutters) {
+  border-color: var(--clue-ds-color-border-subtle);
+  background: var(--clue-ds-color-bg-subtle);
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .markdownPreview h1,

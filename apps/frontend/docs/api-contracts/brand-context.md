@@ -572,3 +572,21 @@ No backend endpoint or stored brand-kit format changes.
 Asset-detail images use the available preview width and height with `object-fit:
 contain`; the 280 px cap and fixture-specific exception are removed. Description
 and metadata remain alongside the preview on desktop and below it on narrow screens.
+
+### Follow-up (2026-09-12) — Markdown Edit/Preview toggle
+
+The founder subsequently requested a Markdown editing toggle. Knowledge now has
+Preview and Edit controls. Edit lazy-loads CodeMirror with `@codemirror/lang-markdown`;
+Preview passes the current draft directly to react-markdown + remark-gfm.
+Discard changes restores the document read from the server. Drafts stay separate
+per document path and survive switches between documents or Brand Context sections.
+Switching Preview/Edit retains the current editor's undo history.
+
+This remains a **frontend-only draft editor**, pending the founder's decision on
+adding a persistent document-write contract. The UI explicitly states that edits
+are temporary and will be lost when leaving or reloading the page. It does not
+display a Save action or claim that an update has been stored. No local-storage,
+browser database, or backend mutation is used. The document's original Markdown,
+front matter, provenance, status, version and generated Design brief are unchanged.
+A browser unload warning applies while drafts exist. The older O5 removal of the
+Preview/Edit controls is superseded by this follow-up.

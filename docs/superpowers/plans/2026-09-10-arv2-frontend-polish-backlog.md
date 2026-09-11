@@ -39,6 +39,13 @@ locally built Markdown rendering. The block parser and inline renderer are delet
 Knowledge uses react-markdown + remark-gfm directly. Rendering is this slice's scope;
 the existing read-only page remains so, with CodeMirror reserved for the agreed editor.
 
+Follow-up, founder 2026-09-12: add the Markdown Edit/Preview toggle. CodeMirror now
+provides source editing with temporary per-document drafts and Discard changes;
+Preview remains react-markdown + remark-gfm. The UI states that drafts are not saved.
+Backend persistence is a pending scope decision for this frontend-only branch;
+no document-write endpoint is implemented. See the matching follow-up in
+`apps/frontend/docs/api-contracts/brand-context.md`.
+
 B1 uses fixed rows, protected icons, and a single CSS animation measured against the
 title column; keyboard focus and reduced-motion are covered. B3 carries the existing
 kit face references through the frontend schema/mapper into namespaced `@font-face`
