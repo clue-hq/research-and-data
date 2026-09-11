@@ -387,6 +387,11 @@ class Settings(BaseSettings):
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
+    #: How many Exa Answer calls one discovery run may have in flight while verifying (spec
+    #: 2026-09-12 §2). One semaphore serves both levels: candidates verify in a pool, and one
+    #: candidate's gate questions are asked together. ``1`` reproduces the serial order the R4
+    #: DB proof scripts by position. Env: ``CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY``.
+    arv2_discovery_verify_concurrency: int = Field(default=4, ge=1)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the

@@ -170,6 +170,7 @@ ARV2_DISCOVERY_SETTINGS = (
     "arv2_discovery_poll_interval_s",
     "arv2_discovery_wall_s",
     "arv2_discovery_websets_usd_per_credit",
+    "arv2_discovery_verify_concurrency",
     "brandfetch_client_id",
 )
 
@@ -189,15 +190,20 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
     assert settings.arv2_discovery_poll_interval_s == 15.0
     assert settings.arv2_discovery_wall_s == 1800
     assert settings.arv2_discovery_websets_usd_per_credit == Decimal("0.00449")
+    # One cap for every Answer call a run has in flight (spec §2): candidates verify in a pool
+    # and one candidate's gates are asked together, all under this semaphore.
+    assert settings.arv2_discovery_verify_concurrency == 4
     # Empty on purpose: no Brandfetch fallback until a Logo API client id is configured.
     assert settings.brandfetch_client_id == ""
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_ENABLED", "true")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_STRICT_COUNT", "12")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS", "geography")
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY", "2")
     loaded = Settings(_env_file=None)
     assert loaded.arv2_discovery_enabled is True
     assert loaded.arv2_discovery_strict_count == 12
     assert loaded.arv2_discovery_criteria_gate_keys == "geography"
+    assert loaded.arv2_discovery_verify_concurrency == 2
 
 
 def test_every_discovery_setting_is_in_env_example() -> None:
@@ -211,6 +217,7 @@ def test_every_discovery_setting_is_in_env_example() -> None:
         "CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S=15",
         "CLUE_ARV2_DISCOVERY_WALL_S=1800",
         "CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT=0.00449",
+        "CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY=4",
         "CLUE_BRANDFETCH_CLIENT_ID=\n",
     ):
         assert key in example, key
