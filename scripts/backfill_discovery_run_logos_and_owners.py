@@ -1,18 +1,17 @@
 """Backfill one discovery run's accounts with the two rulings of 2026-09-11.
 
-For every candidate of the run that has an account row: stamp the run's requester as the
-account's creator and owner (creator is the owner by default), and write a ``core.logo_url``
-claim by the same rule the driver now applies — Websets' LinkedIn company mark from the
-candidate's stored snapshot, else Brandfetch's icon, else nothing. Accounts that already carry a
-logo claim are left alone, so the script is safe to re-run.
+For every candidate of the run that has an account row: stamp the named human as the account's
+creator and owner (creator is the owner by default), and write a ``core.logo_url`` claim by the
+same rule the driver now applies — Websets' LinkedIn company mark from the candidate's stored
+snapshot, else nothing (Brandfetch's Logo API is an embed-only URL the reads build at display
+time; it is never fetched or stored). Accounts that already carry a logo claim are left alone, so
+the script is safe to re-run.
 
 Usage (from the repo root, the lane's .env sourced for the DSN and keys):
 
     set -a; source .env; set +a
     uv run python scripts/backfill_discovery_run_logos_and_owners.py --run-id <uuid> [--dry-run]
 
-Every Brandfetch hop goes through the lane's provider caller, so it is ledgered and raw-sunk like
-a discovery run's own calls, under the run's project run.
 """
 
 from __future__ import annotations
@@ -21,24 +20,12 @@ import argparse
 import asyncio
 import json
 import uuid
-from datetime import UTC, datetime
 
-from pydantic import SecretStr
 from sqlalchemy import text
 
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
-from clue_api.arv2.logo_resolution import BrandfetchClient, websets_mark_url
-from clue_api.arv2.provider_ledger import (
-    BufferedLedger,
-    BufferedRawSink,
-    LedgerStamp,
-    drain_provider_calls,
-)
-from clue_api.arv2.transport import HttpxTransport
-from clue_api.storage_wiring import build_storage_backend
-from clue_config import Secrets, load_settings
+from clue_api.arv2.logo_resolution import websets_mark_url
+from clue_config import load_settings
 from clue_core import EntityId, EntityType, ExtractionMethod, ResearchMode, RunId
 from clue_db import db_lifespan, transaction
 
@@ -66,8 +53,6 @@ _IS_USER = text("SELECT 1 FROM platform_user WHERE user_id = :user_id")
 
 async def _main(run_id: uuid.UUID, *, dry_run: bool, owner_user_id: str | None) -> None:
     settings = load_settings()
-    secrets = Secrets()
-    key = secrets.brandfetch_api_key
     async with db_lifespan():
         async with transaction() as conn:
             rows = (await conn.execute(_CANDIDATES, {"run_id": run_id})).mappings().all()
@@ -83,26 +68,6 @@ async def _main(run_id: uuid.UUID, *, dry_run: bool, owner_user_id: str | None) 
                     f"{owner!r} is not a platform user; pass --owner-user-id <the human who "
                     "launched this run> (the turn's submitted_by_user_id)"
                 )
-        raw_sink, ledger = BufferedRawSink(), BufferedLedger()
-        caller = ProviderCaller(
-            transport=HttpxTransport(),
-            raw_sink=raw_sink,
-            ledger=ledger,
-            now=lambda: datetime.now(UTC),
-        )
-        artifacts = DurableAgentArtifactStore(
-            storage=build_storage_backend(settings), conn_factory=transaction
-        )
-        brandfetch = (
-            None
-            if key is None or not key.get_secret_value().strip()
-            else BrandfetchClient(
-                caller,
-                api_key=SecretStr(key.get_secret_value()),
-                base_url=settings.brandfetch_api_base_url,
-                timeout_s=settings.brandfetch_timeout_s,
-            )
-        )
         writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
         stamped = logos = skipped = 0
         for row in rows:
@@ -121,11 +86,6 @@ async def _main(run_id: uuid.UUID, *, dry_run: bool, owner_user_id: str | None) 
                     skipped += 1
                     continue
                 mark, source = websets_mark_url(websets_logo), "exa_websets"
-                if mark is None and brandfetch is not None:
-                    icon = await asyncio.to_thread(
-                        brandfetch.icon_url, row["domain"], label=f"logo:{row['domain']}"
-                    )
-                    mark, source = icon, "brandfetch"
                 print(f"{row['domain']:34} {'-' if mark is None else source:12} {mark or ''}")
                 if mark is None or dry_run:
                     continue
@@ -152,23 +112,6 @@ async def _main(run_id: uuid.UUID, *, dry_run: bool, owner_user_id: str | None) 
                     ),
                 )
                 logos += 1
-        # The Brandfetch hops are ledgered under the run's own project run, like the run's calls.
-        first = rows[0]
-        if not dry_run:
-            async with transaction() as conn:
-                report = await drain_provider_calls(
-                    conn,
-                    raw=raw_sink,
-                    ledger=ledger,
-                    artifacts=artifacts,
-                    stamp=LedgerStamp(
-                        workspace_id=first["workspace_id"],
-                        project_id=first["project_id"],
-                        project_run_id=str(first["project_run_id"]),
-                        job_id=uuid.UUID(str(first["run_id"])),
-                    ),
-                )
-            print(f"ledgered {report}")
         print(
             f"owner/creator stamped: {stamped}; logos written: {logos}; already had one: {skipped}"
             + (" (dry run: nothing written)" if dry_run else "")

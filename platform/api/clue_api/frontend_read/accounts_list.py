@@ -646,7 +646,12 @@ async def list_accounts(
                 name=str(canonical_name or primary_domain or account_id),
                 # The platform's logo route when the account carries a mark-type logo (founder
                 # ruling 2026-09-11); null otherwise — never a guessed URL.
-                logo_path=account_logo_path(account_id, neutral_value(entity_id, "core.logo_url")),
+                logo_path=account_logo_path(
+                    account_id,
+                    neutral_value(entity_id, "core.logo_url"),
+                    domain=primary_domain,
+                    settings=settings,
+                ),
                 website_url=website_url(primary_domain),
                 # ``arv2_research_job.status`` is the seam-1 vocabulary, which is character-for-
                 # character the ``ResearchStatus`` literal (D0 ruling S11): the row's status *is*

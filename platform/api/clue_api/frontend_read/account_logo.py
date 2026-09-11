@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 from fastapi import APIRouter, HTTPException, Response
 
+from clue_api.arv2.logo_resolution import is_linkedin_mark
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_core import EntityId
 from clue_db import ConnFactory
@@ -82,7 +83,10 @@ def register_account_logo_route(
             )
         current = values.get((entity_id, "core.logo_url"))
         url = None if current is None else current.value_json
-        if not isinstance(url, str) or not url:
+        # Only a stored LinkedIn mark is streamed. Brandfetch's Logo API is embed-only (its CDN
+        # refuses programmatic fetches as ``automated_traffic``), so the reads hand the browser
+        # that URL directly and this route never proxies it.
+        if not isinstance(url, str) or not is_linkedin_mark(url):
             raise HTTPException(status_code=404, detail="no logo")
         fetched = await (fetcher or fetch_image)(url)
         if fetched is None:

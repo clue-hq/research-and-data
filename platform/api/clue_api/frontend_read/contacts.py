@@ -547,6 +547,7 @@ async def read_contact_profile(
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
     logo_value = account_logo.get((EntityId(canonical_account), "core.logo_url"))
+    account_row = await get_account(conn, canonical_account)
 
     return AccountContactDetailResponseV1(
         data=AccountContactDetailV1(
@@ -554,7 +555,10 @@ async def read_contact_profile(
             account_id=str(canonical_account),
             account_name=account_name,
             account_logo_path=account_logo_path(
-                canonical_account, None if logo_value is None else logo_value.value_json
+                canonical_account,
+                None if logo_value is None else logo_value.value_json,
+                domain=None if account_row is None else account_row.primary_domain,
+                settings=display.settings,
             ),
             recent_signals_label=_recent_signals_label(_signal_count(live)),
             linkedin_label=linkedin_chip_label,

@@ -46,7 +46,13 @@ export const AccountCustomFieldSchema = z.object({
 export const AccountSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  logoPath: z.string().startsWith("/").nullable(), // D0 ruling S2
+  // A rooted path to the platform's logo route (a stored LinkedIn mark), or Brandfetch's Logo
+  // API URL the browser embeds directly (that CDN is embed-only). Founder ruling 2026-09-11,
+  // superseding D0 ruling S2's "always null".
+  logoPath: z
+    .string()
+    .refine((value) => value.startsWith("/") || value.startsWith("https://cdn.brandfetch.io/"))
+    .nullable(),
   websiteUrl: HttpUrlSchema.nullable(), // D3 ruling (source map: null when no primary_domain)
   researchStatus: ResearchStatusSchema,
   researchStatusLabel: z.string().min(1).optional(),

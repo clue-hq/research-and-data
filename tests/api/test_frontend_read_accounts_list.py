@@ -1356,10 +1356,13 @@ def test_the_z_suffixed_timestamp_is_the_only_form_the_frontends_zod_accepts() -
         zod_validate({**row, "createdAt": "2026-09-08T12:00:00+00:00"}, "AccountSchema")
 
 
-def test_an_account_with_a_mark_serves_the_platforms_logo_path_and_nothing_else_does() -> None:
-    """Founder ruling 2026-09-11 (supersedes D0 ruling S2): an account carrying ``core.logo_url``
-    serves a ``/``-rooted path to the platform's logo route — never the third-party URL — and an
-    account without one still serves ``null`` so the frontend shows its placeholder."""
+def test_a_stored_mark_serves_the_platforms_route_and_a_domain_without_one_gets_brandfetch() -> (
+    None
+):
+    """Founder rulings 2026-09-11 (supersede D0 ruling S2): an account carrying a LinkedIn mark
+    serves a rooted path to the platform's logo route — never the third-party URL; an account with
+    a domain but no stored mark gets Brandfetch's embed-only Logo API URL for that domain; and
+    with no client id configured that account serves ``null`` so the frontend shows its glyph."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1370,11 +1373,11 @@ def test_an_account_with_a_mark_serves_the_platforms_logo_path_and_nothing_else_
                 field_key="core.logo_url",
                 value="https://media.licdn.com/dms/image/v2/X/company-logo_200_200/0?e=2147483647",
             )
-            body = (await _get(conn)).json()
-            rows = _rows(body)
+            without = (await _get(conn)).json()
+            rows = _rows(without)
             assert rows["Zafran"]["logoPath"] == f"/api/clue/frontend/v1/accounts/{zafran}/logo"
             assert "media.licdn.com" not in rows["Zafran"]["logoPath"]
-            assert rows["Seedling"]["logoPath"] is None
+            assert rows["Seedling"]["logoPath"] is None  # no mark, no domain, no client id
             zod_validate(rows["Zafran"], "AccountSchema")
 
     run_async(scenario())

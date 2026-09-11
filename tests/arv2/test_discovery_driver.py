@@ -450,31 +450,11 @@ class _FakeExa:
         return [query for query in self.queries if "Test to verify:" in query]
 
 
-class _FakeBrandfetch:
-    """Stands in for ``BrandfetchClient``: answers ``icon_url`` from a domain → url map."""
-
-    def __init__(self, icons: dict[str, str | None] | None = None) -> None:
-        self.icons = icons or {}
-        self.asked: list[str] = []
-
-    def icon_url(self, domain: str, *, label: str) -> str | None:
-        del label
-        self.asked.append(domain)
-        return self.icons.get(domain)
-
-
 class _Clients:
-    def __init__(
-        self, exa: _FakeExa, websets: _FakeWebsets, brandfetch: _FakeBrandfetch | None = None
-    ) -> None:
+    def __init__(self, exa: _FakeExa, websets: _FakeWebsets) -> None:
         self._exa = exa
         self._websets = websets
-        self._brandfetch = brandfetch
         self.callers: list[Any] = []
-
-    def brandfetch(self, caller: Any) -> Any:
-        self.callers.append(caller)
-        return self._brandfetch
 
     def exa(self, caller: Any) -> Any:
         self.callers.append(caller)
@@ -615,7 +595,6 @@ def _handler(
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
     account_writes_fail_on: frozenset[str] = frozenset(),
-    brandfetch: _FakeBrandfetch | None = None,
 ) -> tuple[Arv2DiscoveryWorkHandler, _ConnFactory, _Writer, _DrainRecorder, _Accounts]:
     conn_factory = _ConnFactory(domains)
     writer = _Writer()
@@ -649,7 +628,7 @@ def _handler(
         conn_factory=conn_factory,
         storage=object(),
         artifacts=SimpleNamespace(),
-        clients=_Clients(exa, websets, brandfetch),
+        clients=_Clients(exa, websets),
         writer=writer,
         store=store,
         transport_factory=lambda: ScriptedTransport([]),
@@ -1727,14 +1706,10 @@ def test_a_resumed_run_does_not_re_price_the_rows_an_earlier_attempt_already_pai
 LINKEDIN_MARK = (
     "https://media.licdn.com/dms/image/v2/C560BAQGQ7Cv/company-logo_200_200/0?e=2147483647&v=beta"
 )
-BRANDFETCH_ICON = "https://cdn.brandfetch.io/idX/w/400/h/400/theme/dark/icon.png?c=abc"
 
 
 def _one_company_run(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    logo_url: str | None,
-    brandfetch: _FakeBrandfetch | None,
+    monkeypatch: pytest.MonkeyPatch, *, logo_url: str | None
 ) -> tuple[_Writer, _Accounts]:
     """One strict run over one all-passing company, ``Acme`` at ``acme.com``."""
     run = _run_row()
@@ -1754,7 +1729,7 @@ def _one_company_run(
         items_results=[_items(_item("Acme", "https://acme.com", logo_url=logo_url))]
     )
     handler, _, writer, _, accounts = _handler(
-        store, exa=exa, websets=websets, monkeypatch=monkeypatch, brandfetch=brandfetch
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch
     )
     result = asyncio.run(handler.handle(_context(run.run_id)))
     assert result.outcome == "completed"
@@ -1765,48 +1740,27 @@ def _logo_drafts(writer: _Writer) -> list[tuple[Any, str]]:
     return [(d.value_json, d.source_key) for d in writer.drafts if d.field_key == "core.logo_url"]
 
 
-def test_a_linkedin_company_mark_from_websets_is_kept_and_brandfetch_is_not_asked(
+def test_a_linkedin_company_mark_from_websets_is_stored_as_the_accounts_logo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    brandfetch = _FakeBrandfetch({"acme.com": BRANDFETCH_ICON})
-    writer, _ = _one_company_run(monkeypatch, logo_url=LINKEDIN_MARK, brandfetch=brandfetch)
+    writer, _ = _one_company_run(monkeypatch, logo_url=LINKEDIN_MARK)
     assert _logo_drafts(writer) == [(LINKEDIN_MARK, "exa_websets")]
-    assert brandfetch.asked == []
 
 
-def test_a_site_hosted_websets_image_is_dropped_and_brandfetch_supplies_the_icon(
+def test_a_site_hosted_websets_image_is_not_stored_and_nothing_else_is_fetched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A social banner from the company's own site is not a mark (proof of concept, 2026-09-11):
-    Websets' URL is dropped, Brandfetch's ``icon`` is the logo, and the claim says which source."""
-    brandfetch = _FakeBrandfetch({"acme.com": BRANDFETCH_ICON})
-    writer, _ = _one_company_run(
-        monkeypatch, logo_url="https://acme.com/img/opengraph.jpg", brandfetch=brandfetch
-    )
-    assert _logo_drafts(writer) == [(BRANDFETCH_ICON, "brandfetch")]
-    assert brandfetch.asked == ["acme.com"]
-
-
-def test_without_a_brandfetch_key_a_company_without_a_mark_gets_no_logo_claim(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    writer, _ = _one_company_run(monkeypatch, logo_url="https://acme.com/hero.jpg", brandfetch=None)
-    assert _logo_drafts(writer) == []
-
-
-def test_brandfetch_knowing_no_icon_leaves_the_account_without_a_logo(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    writer, _ = _one_company_run(
-        monkeypatch, logo_url=None, brandfetch=_FakeBrandfetch({"acme.com": None})
-    )
+    no claim is written; the reads fall back to Brandfetch's embed-only Logo API URL at display
+    time, which the driver never fetches."""
+    writer, _ = _one_company_run(monkeypatch, logo_url="https://acme.com/img/opengraph.jpg")
     assert _logo_drafts(writer) == []
 
 
 def test_the_requesting_human_is_the_creator_and_the_owner_of_a_discovered_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, accounts = _one_company_run(monkeypatch, logo_url=None, brandfetch=None)
+    _, accounts = _one_company_run(monkeypatch, logo_url=None)
     [created] = accounts.created
     assert created["owner_user_id"] == "usr-1"
     assert created["created_by_user_id"] == "usr-1"

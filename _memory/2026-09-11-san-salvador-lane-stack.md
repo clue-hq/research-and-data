@@ -219,3 +219,29 @@ only for a platform user, and the script to take ``--owner-user-id``; re-ran wit
 user: 34 owned, 31 logos. The nine Brandfetch hops of the first pass were **not ledgered** (the
 drain failed after the claims committed) — ledger A18. R2's two launch tools carry the same
 service-principal attribution — ledger A17.
+
+## Addendum — Brandfetch: the Logo API only (founder, 2026-09-11, same day)
+
+Founder: "for Brandfetch we only want to use the Logo API … do not use the Brand API, it is
+overkill." The Logo API docs (https://docs.brandfetch.com/logo-api/overview) settle the design:
+it is a **free, embed-only CDN** keyed by a public client id (`?c=`), `type/icon` is the mark,
+`fallback/lettermark` a first-letter tile; **programmatic fetches are refused** — our earlier
+probe was bounced `302 x-bf-error: automated_traffic`, which a valid client id does not exempt
+(so the client id we hold is fine; the CDN just refuses scripts). Consequences landed:
+- The Brand API client, `CLUE_BRANDFETCH_API_KEY`, `_API_BASE_URL`, `_TIMEOUT_S` and the
+  `brandfetch` source manifest are gone; `CLUE_BRANDFETCH_CLIENT_ID` (a setting, public) is new.
+- `logo_resolution.py` is now two pure functions: `websets_mark_url` (LinkedIn company mark →
+  stored `core.logo_url`, streamed by the platform route) and `brandfetch_logo_url(domain,
+  client_id)` (`cdn.brandfetch.io/domain/{domain}/w/128/h/128/fallback/lettermark/type/icon?c=…`),
+  built by the reads at display time for any account with a domain and no stored mark — never
+  fetched, never stored. The driver stores LinkedIn marks only; the logo route streams LinkedIn
+  marks only.
+- The contract's `logo_path`/`account_logo_path` are `AssetRef` (rooted path OR absolute URL); the
+  three frontend Zod models admit `https://cdn.brandfetch.io/…`; `<Image unoptimized>` already
+  covers the external host. `DisplayPages.settings` exposed so the contacts read can build the URL.
+- The nine Brand-API claims of the first backfill were retired (`verification_status='rejected'`);
+  the lane DB's `core.logo_url` field row was corrected by hand to the shipped one-source seed (a
+  fresh DB seeds that shape; the registry refuses a same-version redefinition). Ledger A16/A18.
+Tests: logo_resolution 8, driver unit 30, settings, requester 3, import guard offline; driver /
+launch / store / list / logo route / detail / contacts / field registry DB suites 95 on the lane
+DB; mypy and ruff clean; frontend lint + tsc clean on the touched files.

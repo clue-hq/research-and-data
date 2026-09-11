@@ -266,7 +266,12 @@ async def read_account_detail(
             preview_title=name,
             # The platform's logo route when the account carries a mark-type logo (founder ruling
             # 2026-09-11); null otherwise — never a guessed URL.
-            logo_path=account_logo_path(account_uuid, value_of("core.logo_url")),
+            logo_path=account_logo_path(
+                account_uuid,
+                value_of("core.logo_url"),
+                domain=account.primary_domain,
+                settings=settings,
+            ),
             website_url=website_url(account.primary_domain),
             website_label=website_label(account.primary_domain) or EMPTY_BAND,
             research_status=status,

@@ -86,7 +86,7 @@ from clue_api.arv2.exa_websets_client import (
     WebsetView,
 )
 from clue_api.arv2.fleet_task import arv2_discovery_work_id
-from clue_api.arv2.logo_resolution import BrandfetchClient, websets_mark_url
+from clue_api.arv2.logo_resolution import websets_mark_url
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -136,7 +136,6 @@ _CANDIDATE_NS = uuid5(NAMESPACE_URL, "arv2-discovery:candidate")
 #: The claim source keys: which instrument produced the value.
 _ANSWER_SOURCE = "exa_answer"
 _WEBSETS_SOURCE = "exa_websets"
-_BRANDFETCH_SOURCE = "brandfetch"
 
 #: Is this requester a human the accounts table can name as owner? (ruling 10′)
 _IS_PLATFORM_USER = text("SELECT 1 FROM platform_user WHERE user_id = :user_id")
@@ -181,17 +180,11 @@ def revenue_band(revenue_annual: int | float | Decimal) -> str:
 
 
 class DiscoveryClients(Protocol):
-    """The instruments a discovery run uses, each built around one hop's caller.
-
-    ``brandfetch`` returns ``None`` on a worker with no Brandfetch key: the run then keeps only the
-    marks Websets returned and skips the fallback, rather than failing every candidate.
-    """
+    """The two instruments a discovery run uses, each built around one hop's caller."""
 
     def exa(self, caller: ProviderCaller) -> ExaClient: ...
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient: ...
-
-    def brandfetch(self, caller: ProviderCaller) -> BrandfetchClient | None: ...
 
 
 class _WallExceeded(Arv2Error):
@@ -807,9 +800,9 @@ class Arv2DiscoveryWorkHandler:
     ) -> None:
         """The fit the gates produced, the two long-list facts worth keeping, and the mark.
 
-        ``logo`` is ``(url, source_key)`` from :meth:`_resolve_logo`, or ``None`` when neither
-        Websets nor Brandfetch had a mark — then no ``core.logo_url`` claim is written and the
-        screens show their placeholder.
+        ``logo`` is ``(url, source_key)`` from :meth:`_resolve_logo`, or ``None`` when Websets
+        returned no LinkedIn mark — then no ``core.logo_url`` claim is written and the reads fall
+        back to Brandfetch's Logo API URL for the domain (or the placeholder).
 
         The fit claim cites the first *passing* verdict's page and quote, because that is the
         evidence a reader of the score should land on; a fit with no passing gate cites the
@@ -886,35 +879,16 @@ class Arv2DiscoveryWorkHandler:
     async def _resolve_logo(
         self, state: _RunState, *, item: WebsetItem, verified: str
     ) -> tuple[str, str] | None:
-        """The account's mark: Websets' LinkedIn company mark, else Brandfetch's icon, else none.
+        """The account's stored mark: Websets' LinkedIn company mark, else nothing.
 
-        Founder ruling 2026-09-11, on the proof of concept's numbers (``logo_resolution``): the
-        mark only. One Brandfetch hop at most per candidate, and only when Websets gave no mark
-        we trust; a worker without a Brandfetch key skips the fallback entirely.
+        Founder rulings 2026-09-11, on the proof of concept's numbers (``logo_resolution``): the
+        mark only, and Brandfetch through its Logo API only — which is an embed-only CDN the
+        platform never fetches, so a company without a LinkedIn mark stores no logo here and the
+        reads hand the browser Brandfetch's URL for its domain at display time.
         """
+        del state, verified
         mark = websets_mark_url(item.logo_url)
-        if mark is not None:
-            return mark, _WEBSETS_SOURCE
-        try:
-            icon = await self._hop(
-                state,
-                lambda caller: (
-                    None
-                    if (client := self._clients.brandfetch(caller)) is None
-                    else client.icon_url(verified, label=f"logo:{verified}")
-                ),
-            )
-        except ProviderHalted:
-            raise
-        except Exception as error:  # noqa: BLE001 — a logo must never fail a candidate
-            log.warning(
-                "arv2.discovery_logo_lookup_failed",
-                run_id=str(state.run.run_id),
-                domain=verified,
-                error=type(error).__name__,
-            )
-            return None
-        return None if icon is None else (icon, _BRANDFETCH_SOURCE)
+        return None if mark is None else (mark, _WEBSETS_SOURCE)
 
     def _draft(
         self,
@@ -1261,24 +1235,13 @@ def _scope(payload: Mapping[str, Any]) -> tuple[UUID, str] | None:
 
 @dataclass(frozen=True)
 class _LiveClients:
-    """The production instruments: one Exa key, one optional Brandfetch key, one caller per hop."""
+    """The production instruments: one Exa key, two clients, one caller per hop."""
 
     settings: Settings
     exa_api_key: SecretStr
-    brandfetch_api_key: SecretStr | None = None
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
         return ExaClient(caller, api_key=self.exa_api_key)
-
-    def brandfetch(self, caller: ProviderCaller) -> BrandfetchClient | None:
-        if self.brandfetch_api_key is None:
-            return None
-        return BrandfetchClient(
-            caller,
-            api_key=self.brandfetch_api_key,
-            base_url=self.settings.brandfetch_api_base_url,
-            timeout_s=self.settings.brandfetch_timeout_s,
-        )
 
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient:
         return ExaWebsetsClient(
@@ -1320,15 +1283,6 @@ def build_arv2_discovery_handler(
         conn_factory=conn_factory,
         storage=storage,
         artifacts=artifacts,
-        clients=_LiveClients(
-            settings=settings,
-            exa_api_key=SecretStr(key.get_secret_value()),
-            brandfetch_api_key=(
-                SecretStr(secrets.brandfetch_api_key.get_secret_value())
-                if secrets.brandfetch_api_key is not None
-                and secrets.brandfetch_api_key.get_secret_value().strip()
-                else None
-            ),
-        ),
+        clients=_LiveClients(settings=settings, exa_api_key=SecretStr(key.get_secret_value())),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
     )

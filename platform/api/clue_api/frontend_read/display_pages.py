@@ -168,6 +168,12 @@ class DisplayPages:
         self._regenerating: dict[tuple[str, str, str, str], asyncio.Task[None]] = {}
 
     @property
+    def settings(self) -> Settings:
+        """The deployment settings this composer was built with — the fit thresholds and the
+        Brandfetch client id the reads need, exposed so a read can share them without a second
+        ``Settings`` in the same process."""
+        return self._settings
+
     def generates(self) -> bool:
         """Whether this seam can write a page at all (a key is configured and generation is on)."""
         return self._runner_factory is not None

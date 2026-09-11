@@ -1501,19 +1501,23 @@ transaction as the account row and its claims, for pass, partial and unclear ali
 the verdicts on the table and removes what they do not want. Adding the account to any *other*
 project is the explicit human action below.
 
-**Rulings 9′ and 10′ (2026-09-11): the mark, and the owner.** Every verified candidate's account now
-carries a **mark-type logo** (`core.logo_url`, `logo_resolution.py`): Websets' `logoUrl` when it is
-LinkedIn's company mark (the PoC found those correct in every inspected case and site-hosted images
-wrong about half the time — Open Graph banners, team photos), else Brandfetch's Brand API `icon`
-(one bearer-keyed hop per company, ledgered like any other; `CLUE_BRANDFETCH_API_KEY`), else no
-claim and the screens show their placeholder. **Never a wordmark, never a banner.** The accounts
-list, the account detail and the contact profile serve `/api/clue/frontend/v1/accounts/{id}/logo`
-(`frontend_read/account_logo.py` streams the bytes under the workspace scope), never the
-third-party URL; the frontend renders that path with Next's optimizer off because the route is
-session-authenticated. And the human who launched the discovery is each account's **creator and
-owner** (`insert_account_entity(owner_user_id=…, created_by_user_id=…)`), until an ownership
-mechanism exists. `scripts/backfill_discovery_run_logos_and_owners.py` applies both to a run made
-before the rulings.
+**Rulings 9′ and 10′ (2026-09-11): the mark, and the owner.** Every verified candidate's account
+shows a **mark-type logo** — never a wordmark, never a banner — and the founder ruled Brandfetch's
+**Logo API only** (the Brand API is overkill). Two sources, one rule each (`logo_resolution.py`):
+Websets' `logoUrl` is **stored** as `core.logo_url` when it is LinkedIn's company mark (the PoC found
+those correct in every inspected case and site-hosted images wrong about half the time — Open Graph
+banners, team photos), and the platform's own route `/api/clue/frontend/v1/accounts/{id}/logo`
+(`frontend_read/account_logo.py`) streams it under the workspace scope. A company with no stored
+mark gets Brandfetch's Logo API URL for its domain at **display time**
+(`cdn.brandfetch.io/domain/{domain}/w/128/h/128/fallback/lettermark/type/icon?c=<client id>`,
+`CLUE_BRANDFETCH_CLIENT_ID`, public by design) — built by the reads, never fetched or stored:
+the Logo API is embed-only and answers a script's fetch `302 x-bf-error: automated_traffic`
+even with a valid client id, so the browser embeds it with its own `Referer`, and the frontend
+renders both shapes with Next's optimizer off. No client id → the placeholder. And the human
+who launched the discovery is each account's **creator and owner** (a fleet-driven launch
+resolves the turn's human; `insert_account_entity(owner_user_id=…, created_by_user_id=…)`), until
+an ownership mechanism exists. `scripts/backfill_discovery_run_logos_and_owners.py` applies both
+to a run made before the rulings.
 
 **The accounts table is the approval surface** (ruling 2), and the approval is the existing
 "Add to project" bulk action — no new screen, no new button. Since ruling 8′ it means "add to
