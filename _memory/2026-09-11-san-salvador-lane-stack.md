@@ -69,3 +69,27 @@ The worker log does not list its registered kinds, so "the `arv2_discovery` hand
 these four processes" rests on `CLUE_ARV2_DISCOVERY_ENABLED=true` in `.env` and the offline fleet
 wiring tests, not on a live line. The first discovery launch (`scripts/launch_arv2_discovery.py`)
 proves it.
+
+## Addendum — .env parity and the provisioning flag (founder, 2026-09-11)
+
+First browser walk hit `Provisioning failed with status 404` on the Welcome screen: the Clerk dev
+user has no membership in `clue_san-salvador`, the frontend posts to `/auth/v1/provision`, and that
+route is mounted only under `CLUE_SELF_SERVE_PROVISIONING_ENABLED`, which was **absent** from the
+lane `.env` (default false). Founder ruling: bring `.env` to full parity with `.env.example` and
+set `CLUE_SELF_SERVE_PROVISIONING_ENABLED=true` for this lane.
+
+- 33 keys were missing from the lane `.env` (it had only ever served CLI-driven live runs), among
+  them `CLUE_FRONTEND_READ_ENABLED` (default false → every `/frontend/v1` accounts read 404'd),
+  `CLUE_MEMORY_ENABLED`, `CLUE_ONBOARDING_V2_ENABLED`, the `CLUE_ARV2_FIT_*` thresholds and the
+  `CLUE_ARV2_DISPLAY_*` block. All appended at the example's values in a dated block at the end of
+  `.env`; the provisioning flag alone set `true`. Parity now 207 = 207 keys, no extras, no
+  duplicates. `.env.example` untouched — its posture line stays `false` (standing checklist item 7
+  / master plan §11); the lane's `true` is a local testing choice, not a default change.
+- **Pitfall in the parity check:** `grep -oE '^[A-Z_]+='` silently drops every key with a digit
+  (`…_V2_…`, `…_C7_…`, `…_ARV2_…`) — use `[A-Z0-9_]+`. The first pass reported 0 missing while ten
+  keys were still absent.
+- With the flag on, the API process composes the old Stage-0 scrape binder and recon (sync LLM
+  calls on the web loop — the CLAUDE.md backlog bullet), and the worker composes the recon handler
+  and the official-site crawl enqueuer. That is the old lane's onboarding, on only so a browser
+  user can mint a workspace; the new onboarding lane stays behind `CLUE_ONBOARDING_V2_ENABLED=false`.
+- Every process reads `.env`, so the whole stack was restarted through the wrapper.
