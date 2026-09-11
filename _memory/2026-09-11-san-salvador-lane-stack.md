@@ -334,3 +334,17 @@ posture and only surfaced on contact pages; YouTube path never transcribes by de
 **A2 fixed:** `load_research_packs` takes `pg_advisory_xact_lock(2794525886)` and refuses to run
 outside a transaction; `tests/api/test_research_pack_seed_race_db.py` red-proofs the race (a probe
 loader that sleeps after its insert); the runbook's 6 s worker stagger is removed.
+
+## Discovery streaming landed (plan 2026-09-12-discovery-streaming)
+
+Driver: per-tick `items()` + task pool under one semaphore (`arv2_discovery_verify_concurrency`,
+default 4; 1 = the old serial order, which the positional DB script pins), gates of one candidate
+gathered, `record_discovery_progress` per tick. Read: `/frontend/v1/projects/{id}/discovery/current`
+— its wire models live in `frontend_read/discovery_status.py`, not `contract_v1.py`, because this
+document is snake_case on the wire. Frontend: `useDiscoveryStatus` (5 s while live) in chat-surface
+→ spinner on the tab label + `refreshToken` refetch in `ProjectTargetAccounts`;
+`discoveryLaunchToOpen` opens the surface on a completed launch part. The DB proof's concurrent
+scenario runs on a lock-serialised test connection and proves both candidates land with their
+verdicts under a cap of 4; per-connection transaction isolation is the production factory's
+property (`clue_db.transaction`), not something that test proves. Owed: the founder's signed-in
+walk (launch discovery from chat → tab opens → rows climb → spinner stops).

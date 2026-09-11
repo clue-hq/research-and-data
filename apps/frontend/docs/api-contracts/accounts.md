@@ -1822,3 +1822,17 @@ workspace's `composerCapabilities.contextRefs`); the selection clears only once
 the chat holds the accounts, and a refusal is worded as the destination dialog
 words it, shown in the conversation's existing context-handoff error line.
 Frontend-only: the backend contract is unchanged.
+
+**Seam edit 4 — the tab streams a live discovery run** (spec
+`docs/superpowers/specs/2026-09-12-discovery-streaming-design.md`). A new read,
+`GET /frontend/v1/projects/:projectId/discovery/current` (BFF mirror
+`GET /api/projects/:projectId/discovery`), serves the project's latest discovery run:
+`{ run_id, status, asked, found, verified, shown, started_at, finished_at }` or `null`. While
+`status` is `not_started`/`in_progress` the chat shell polls it every 5 s, the "Target accounts"
+tab label carries the chat's rotating loader glyph, and the tab re-reads
+`/api/projects/:projectId/accounts` on every tick without dropping its rows, so verified
+accounts appear as the driver lands them. A completed `launch_arv2_discovery` tool part on the
+open thread opens the surface once (`chat-shell/model/discovery-launch-signal.ts`). Backend:
+the driver now lists the webset on every poll tick and verifies new items in a bounded pool
+(`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
+a row still appears only after every gate is verified.
