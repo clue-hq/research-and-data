@@ -39,6 +39,9 @@ htmlcov/
 # Design-API runtime byproduct (asset blobs written during live editor browser sessions)
 .artifacts/
 
+# Worktree-local services, agent workspaces, logs, and process records.
+.runtime/
+
 # Founder ruling 2026-08-30: .context (session artifacts, sample-run evidence) is tracked.
 # Conductor may re-add ".context/" to .git/info/exclude; this negation keeps it tracked anyway.
 !.context/
