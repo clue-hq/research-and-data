@@ -50,6 +50,7 @@ __all__ = [
     "list_candidates",
     "mark_candidates_approved",
     "read_discovery_run",
+    "record_discovery_progress",
     "record_relaxed_search",
     "record_verdicts",
     "record_webset",
@@ -358,6 +359,34 @@ async def record_relaxed_search(
             "WHERE run_id = :run_id"
         ),
         {"relaxed_search_id": relaxed_search_id, "run_id": run_id},
+    )
+
+
+async def record_discovery_progress(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    found_strict: int,
+    found_relaxed: int,
+    analyzed: int,
+) -> None:
+    """The §4 counters as they stand mid-run, written on every poll tick (spec 2026-09-12 §2).
+
+    Only the numbers move. Status, the receipt and ``finished_at`` belong to
+    :func:`finish_discovery_run`, so a reader that sees counters climbing on an ``in_progress``
+    row is watching a run, not a run that landed twice.
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run SET found_strict = :found_strict, "
+            " found_relaxed = :found_relaxed, analyzed = :analyzed WHERE run_id = :run_id"
+        ),
+        {
+            "found_strict": int(found_strict),
+            "found_relaxed": int(found_relaxed),
+            "analyzed": int(analyzed),
+            "run_id": run_id,
+        },
     )
 
 

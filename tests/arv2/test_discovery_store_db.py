@@ -18,6 +18,7 @@ from clue_api.arv2.discovery_store import (
     list_candidates,
     mark_candidates_approved,
     read_discovery_run,
+    record_discovery_progress,
     record_relaxed_search,
     record_verdicts,
     record_webset,
@@ -264,5 +265,31 @@ def test_candidates_upsert_by_domain_record_verdicts_and_remember_the_unapproved
             assert approved.decided_by_user_id == "user-1"
             assert approved.decided_at is not None
             assert approved.account_entity_id == UUID(str(account))
+
+    run_async(scenario())
+
+
+def test_progress_updates_counters_without_landing_the_run() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project)
+            assert await create_discovery_run(conn, row) is True
+            assert await begin_discovery_run(conn, run_id=row.run_id) is not None
+            await record_discovery_progress(
+                conn, run_id=row.run_id, found_strict=7, found_relaxed=0, analyzed=120
+            )
+            mid = await read_discovery_run(conn, run_id=row.run_id)
+            assert mid is not None
+            assert (mid.found_strict, mid.found_relaxed, mid.analyzed) == (7, 0, 120)
+            assert mid.status == "in_progress"
+            assert mid.finished_at is None and mid.receipt is None
+            # A later tick only moves the numbers forward; landing still owns status + receipt.
+            await record_discovery_progress(
+                conn, run_id=row.run_id, found_strict=12, found_relaxed=3, analyzed=300
+            )
+            later = await read_discovery_run(conn, run_id=row.run_id)
+            assert later is not None
+            assert (later.found_strict, later.found_relaxed, later.analyzed) == (12, 3, 300)
 
     run_async(scenario())
