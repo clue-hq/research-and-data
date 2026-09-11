@@ -41,7 +41,9 @@ fetches once and never refetches. Both halves change.
 `GET /frontend/v1/projects/{project_id}/discovery/current` (new module
 `frontend_read/discovery_status.py`, registered in `frontend_read/app.py`) returns the latest
 `arv2_discovery_run` for the project in this workspace:
-`{ run_id, status, asked, found, verified, shown, started_at, finished_at }` or `{ run: null }`.
+everything under a `data` envelope —
+`{ "data": { run_id, status, asked, found, verified, shown, started_at, finished_at } }`, or
+`{ "data": null }` when the project has never launched a run.
 `verified` counts candidate rows with a disposition; `shown` counts pass/partial/unclear. It reads
 ARV2's own tables only. Mirrored by a BFF route `GET /api/projects/[projectId]/discovery`.
 
