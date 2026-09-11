@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
-import { typefacePreviewCss, typefacePreviewFamily } from "../model/typeface-preview";
+import { TypefaceSample } from "./typeface-sample";
 import { BrandContextIcon } from "./brand-context-icon";
 import styles from "./brand-context.module.css";
 
@@ -14,7 +14,6 @@ export function TypographyPanel({
   const empty = !controller.typefaces.length && !controller.textStyles.length;
   return (
     <div className={styles.typographyPanel}>
-      <style>{typefacePreviewCss(controller.typefaces)}</style>
       {empty ? <div className={styles.emptyState}>{emptyMessage}</div> : null}
       {!empty ? (
         <>
@@ -30,9 +29,7 @@ export function TypographyPanel({
                     <span>{typeface.family}</span>
                     {typeface.source === "custom" ? <small>Custom</small> : null}
                   </div>
-                  <p style={{ fontFamily: typefacePreviewFamily(typeface) }}>
-                    a quick brown fox jumps over a lazy dog
-                  </p>
+                  <TypefaceSample typeface={typeface} />
                   <button
                     aria-expanded={controller.typefaceMenuId === typeface.id}
                     aria-label={`${typeface.family} actions`}

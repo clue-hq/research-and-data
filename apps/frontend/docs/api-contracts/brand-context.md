@@ -564,9 +564,16 @@ The frontend font wire schema now retains the existing kit's `faces[]` fields:
 `faces: [{url, weight, style}]` and `previewFamily`. Stored faces use
 `/api/clue/design/assets/{asset_id}/bytes`; when no stored asset exists, a recorded
 HTTP(S) `source_url` is loaded by the browser (subject to that host's CORS policy).
-Malformed faces and unusable URLs are omitted individually. `@font-face` registers
-the actual bytes under a kit/version-specific family, so two kits cannot replace
-each other's sample. A font with no loadable face keeps its existing family fallback.
+Malformed faces and unusable URLs are omitted individually. The browser's `FontFace`
+API registers the actual bytes under a kit/version-specific family, so two kits
+cannot replace each other's sample. The sample waits for a successful font load;
+missing or invalid files show “Font preview unavailable” instead of fallback glyphs.
+An upright face closest to 400 is preferred, with its actual weight and style applied
+without synthetic bold or italics. Every captured file for that variant is retained
+so script subsets can load together. Unsourced library names must resolve to an
+already registered or locally installed font. Replaced or unmounted previews release
+their own registrations. Refreshed kit props update the typefaces without retaining
+the initial font list; local additions and removals remain separate UI state.
 No backend endpoint or stored brand-kit format changes.
 
 Asset-detail images use the available preview width and height with `object-fit:

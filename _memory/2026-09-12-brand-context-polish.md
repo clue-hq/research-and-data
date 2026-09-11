@@ -79,3 +79,43 @@ Final gate: lint and production build pass on the cleaned final tree (the two in
 canvasOperations unused-function warnings remain). Prior Markdown release gate also passed
 its design-system build, 92 frontend tests and 16 backend tests. Asset follow-up changes only
 CSS and documentation; desktop, mobile and landscape visual checks cover the layout change.
+
+## ENG-181 extracted-font follow-up — in progress
+
+Founder requested the typography sample issue and retained authorization to commit/push.
+Earlier B3 loaded font files, but the controller cached the initial typefaces across refreshed
+kit props, and font loading errors silently displayed unrelated fallback glyphs. Replaced the
+CSS-only loading path with browser FontFace loading, actual recorded weight/style selection,
+neutral loading/unavailable states, and per-instance cleanup. Unsourced names must resolve a
+registered or installed face; unknown names no longer masquerade as successful previews.
+Typography now derives server fonts from current props and keeps local additions/removals
+separately. No extraction, font guessing, or sibling worktree data is required.
+
+ENG-181 browser verification: authenticated upload of a temporary local Satoshi Medium file
+through /api/clue/design/assets; the sample loaded its bytes through the same BFF route used
+by real extracted assets. Also verified a recorded HTTP font URL, missing local font, and
+invalid font bytes. Successful registrations matched the rendered CSS family; measured glyph
+widths were 324.97 px (stored Medium), 316.13 px (URL Regular), versus 294.93 px for fallback.
+The browser check caught an early quoted-family mismatch in the FontFace constructor; fixed
+it to receive the raw family name while CSS receives an escaped string. Rechecked exact face
+matches and glyph metrics. The temporary check route was removed after verification.
+- Refreshing the test kit changed the same typeface ID to the new family/bytes/weight, added
+  a newly available font, and left zero registrations from the old kit. Installed Arial also
+  loaded correctly. No failed font produced a fake sample.
+- The complete sample sentence now wraps instead of being ellipsized. Desktop and 390 px
+  mobile checks show full text, no clipping/horizontal overflow or framework error overlay.
+- Screenshots: .runtime/eng-181-typography.png and .runtime/eng-181-typography-mobile.png.
+- Test setup: one test-file write used the wrong relative working directory and was corrected;
+  a browser metrics expression had an extra parenthesis and was corrected. Intentional invalid
+  font bytes generated expected browser font decode warnings; normal font loads succeeded.
+
+Closing cleanup: the one temporary font asset was archived and deleted through the normal
+API; deletion confirmed its unreferenced stored digest was removed. The normal Typography
+route loaded, no preview registrations remained after navigation, and the verification
+browser was closed. No brand kit or extraction job was created. Semarang remains isolated.
+
+Final ENG-181 gate: all 96 Brand Context tests pass; design-system build, lint and production
+build pass. Only the two pre-existing canvasOperations unused-function warnings remain.
+React review checked loading/unmount races, raw FontFace names versus escaped CSS names,
+current-prop font derivation, per-instance registration cleanup, and missing-font states.
+The change remains frontend-only; committing and pushing under the founder's standing request.
