@@ -9,10 +9,7 @@ import {
   isLocalDraftAccount,
   type AccountRow,
 } from "../model/create-account";
-import {
-  addAccountsToProject,
-  addSelectedAccountsToProject,
-} from "../data/bulk-actions.repository";
+import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
 import {
   createAccountColumnDefinitions,
   createAccountColumnOrder,
@@ -284,17 +281,16 @@ export function useAccountsScreenController(
   }
 
   /**
-   * Show accounts the server has just placed in this project.
+   * Show accounts the server has just spoken for.
    *
-   * Called only after the write succeeded, so nothing here is optimistic: the
-   * membership stamped on each row is the one the backend now holds. Rows the
-   * screen already has are left alone, and the columns widen to cover any
-   * custom variable the new rows carry that the old ones did not.
+   * Nothing is stamped here: the rows arrive already reflecting what the
+   * backend accepted (`reflectAddToProject`), so a row the write did not place
+   * in the project carries no membership and simply never enters the project's
+   * scoped view. Rows the screen already has are left alone, and the columns
+   * widen to cover any custom variable the new rows carry that the old ones did
+   * not.
    */
-  function addAccounts(accounts: Account[]) {
-    const added = accounts.map((account) => project && !account.projects.some(({ id }) => id === project.id)
-      ? { ...account, projects: [...account.projects, project] }
-      : account);
+  function addAccounts(added: AccountRow[]) {
     setAccountRows((current) => [...current, ...added.filter((account) => !current.some(({ id }) => id === account.id))]);
     const definitions = createAccountColumnDefinitions(added);
     setColumnOrder((current) => [...current, ...definitions.map(({ key }) => key).filter((key) => !current.includes(key))]);
@@ -306,23 +302,30 @@ export function useAccountsScreenController(
    * Founder ruling 2: adding accounts to a project is a real membership write.
    *
    * The design build added the picked accounts to its own state and stopped
-   * there. Here the backend decides: the rows are reflected only once the write
-   * is accepted, and a refusal returns `false` with nothing touched, so the
-   * screen can say so rather than show a membership the platform does not hold.
-   * It is the same bulk action the workspace-wide selection bar submits.
+   * there. Here the backend decides, through the very same action the
+   * workspace-wide selection bar submits: each picked account gains the
+   * membership only if the server's own per-subject outcome says so
+   * (`reflectAddToProject`), so a partially applied write shows exactly the
+   * part that applied. The server's counts become the bulk notice, an expired
+   * session is a redirect rather than a "try again", and a refusal returns
+   * `false` with nothing touched.
    */
   async function submitAddAccounts(accounts: Account[]): Promise<boolean> {
     if (!project) return false;
-    try {
-      await addAccountsToProject({
-        accountIds: accounts.map(({ id }) => id),
-        idempotencyKey: crypto.randomUUID(),
-        projectId: project.id,
-      });
-    } catch {
+    const outcome = await submitAddToProject({
+      accountIds: accounts.map(({ id }) => id),
+      // A fresh key per attempt: each press of Add is its own operation.
+      idempotencyKey: crypto.randomUUID(),
+      project,
+      rows: accounts,
+    });
+    if (outcome.status === "session_expired") {
+      window.location.assign("/sign-in?reason=session_expired");
       return false;
     }
-    addAccounts(accounts);
+    setBulkNotice(outcome.notice);
+    if (outcome.status === "refused") return false;
+    addAccounts(outcome.rows);
     return true;
   }
 

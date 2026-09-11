@@ -1763,9 +1763,14 @@ route `GET /api/projects/:projectId/accounts` returns
 `{ accounts, availableAccounts, profile, bulkCapabilities }` in one uncached
 (`Cache-Control: no-store`) document. `accounts` and `availableAccounts` come
 from the accounts repository (`data/project-accounts.repository.ts`), which
-forwards `projectId` to the backend read `GET /frontend/v1/accounts?projectId=`
-and follows its cursor pages to completion before browser pagination; a repeated
-cursor throws rather than silently displaying an incomplete count.
+forwards `projectId` to the backend read `GET /frontend/v1/accounts?projectId=`.
+The cursor walk belongs to the list read itself (`data/accounts.repository.ts`):
+it follows `meta.nextCursor` for at most `ACCOUNTS_PAGE_CAP` (25) pages of
+`ACCOUNTS_PAGE_LIMIT` (200) rows and then returns what it has with
+`meta.nextCursor: null`. A workspace or project larger than those 5,000 rows is
+therefore **silently truncated** — the screen shows the first 5,000 and says
+nothing; the honest fix at that size is server-side paging on the screen, not a
+longer walk. Browser pagination runs over whatever that one read returned.
 `availableAccounts` is the unscoped directory minus the current members.
 `profile` is derived from the session — `getWorkspaceProfile(session)` — because
 this platform has no settings feature to read a `SettingsWorkspace` from; the

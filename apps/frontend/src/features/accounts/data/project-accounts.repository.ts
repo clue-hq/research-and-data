@@ -1,21 +1,17 @@
 import { getAccounts, type AccountsQuery, type AccountsRepository } from "./accounts.repository";
 import { accountsForProject } from "../model/project-accounts";
-import type { Account } from "../model/account";
 
-// Browser pagination operates on the complete result, even when the HTTP
-// adapter behind the directory supplies cursor pages.
+/**
+ * The whole list the browser paginates over.
+ *
+ * Browser pagination operates on the complete result, and the list read is
+ * already that whole result: the HTTP adapter follows the backend's cursor
+ * pages itself, up to `ACCOUNTS_PAGE_CAP` × `ACCOUNTS_PAGE_LIMIT` rows, and
+ * returns `meta.nextCursor: null`. So there is no second cursor loop here —
+ * one call is the read.
+ */
 export async function readAccountDirectory(query: AccountsQuery = {}, list: AccountsRepository["list"] = getAccounts) {
-  const rows = new Map<string, Account>();
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    const result = await list({ ...query, limit: 100, cursor });
-    result.data.forEach((account) => rows.set(account.id, account));
-    cursor = result.meta.nextCursor ?? undefined;
-    if (cursor && cursors.has(cursor)) throw new Error("Accounts API repeated a pagination cursor");
-    if (cursor) cursors.add(cursor);
-  } while (cursor);
-  return [...rows.values()];
+  return (await list(query)).data;
 }
 
 export async function getProjectAccountDirectory(projectId: string) {

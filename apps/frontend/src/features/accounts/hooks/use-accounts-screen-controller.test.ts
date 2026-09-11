@@ -637,11 +637,11 @@ test("a project-scoped controller reads only that project's rows", () => {
   assert.match(screen, /useAccountsScreenController\(accounts, bulkCapabilities\)/);
 });
 
-test("addAccounts stamps the project membership on rows the screen does not have", () => {
-  assert.match(
-    controller,
-    /function addAccounts\(accounts: Account\[\]\) \{\s*\n\s*const added = accounts\.map\(\(account\) => project && !account\.projects\.some\(\(\{ id \}\) => id === project\.id\)\s*\n\s*\? \{ \.\.\.account, projects: \[\.\.\.account\.projects, project\] \}\s*\n\s*: account\);/,
-  );
+test("addAccounts appends the rows the screen does not have, stamping nothing itself", () => {
+  // The rows arrive already reflecting what the backend accepted, so nothing
+  // here invents a membership.
+  assert.match(controller, /function addAccounts\(added: AccountRow\[\]\) \{/);
+  assert.doesNotMatch(controller, /projects: \[\.\.\.account\.projects, project\]/);
   // Only rows the screen does not already hold are appended…
   assert.match(
     controller,
@@ -662,20 +662,77 @@ test("addAccounts stamps the project membership on rows the screen does not have
   assert.deepEqual(accountsForProject([servedAccount, stamped], project.id), [stamped]);
 });
 
-test("Add accounts is a real membership write, and a refusal changes no row", () => {
-  // The dialog's local-only add is not lifted: the write goes through the same
-  // bulk action the Accounts screen uses, with its own idempotency key. It
-  // lives in the controller because a presentation component may not reach a
-  // repository (the feature's import boundary), and the screen only reacts.
-  assert.match(controller, /addAccountsToProject,\s*\n\s*addSelectedAccountsToProject,\s*\n\} from "\.\.\/data\/bulk-actions\.repository";/);
+test("Add accounts reflects only the picks the server accepted", async () => {
+  // The dialog's local-only add is not lifted: the picks go through the same
+  // action the Accounts screen submits (`addSelectedAccountsToProject`), and
+  // the rows the controller then appends are that action's own reflection — a
+  // partially applied write shows exactly the part that applied.
+  const picked = [
+    servedAccount,
+    { ...servedAccount, id: "account-2" },
+    { ...servedAccount, id: "account-3" },
+  ];
+  const result = response({ completed: 1, unchanged: 1, failed: 1 }, [
+    { subjectId: "account-1", outcome: "completed", reasonCode: null },
+    { subjectId: "account-2", outcome: "failed_terminal", reasonCode: null },
+    { subjectId: "account-3", outcome: "unchanged", reasonCode: null },
+  ]);
+  const outcome = await addSelectedAccountsToProject(
+    {
+      accountIds: picked.map(({ id }) => id),
+      idempotencyKey: "attempt-1",
+      // The tab knows its own project; it is not a picker option.
+      project: { id: project.id, name: project.name },
+      rows: picked,
+    },
+    async () => result,
+  );
+
+  assert.equal(outcome.status, "added");
+  const rows = outcome.status === "added" ? outcome.rows : [];
+  assert.deepEqual(rows, reflectAddToProject(picked, project, result));
+  // The refused pick gains nothing, so the project's scoped view never shows it.
+  assert.deepEqual(
+    accountsForProject(rows, project.id).map(({ id }) => id),
+    ["account-1", "account-3"],
+  );
+  assert.equal(outcome.status === "added" ? outcome.notice : null, "1 added · 1 already in project · 1 failed");
+  // The controller appends that reflection and surfaces that notice.
+  assert.match(controller, /setBulkNotice\(outcome\.notice\);\s*\n\s*if \(outcome\.status === "refused"\) return false;\s*\n\s*addAccounts\(outcome\.rows\);/);
+  assert.doesNotMatch(projectScreen, /data\/bulk-actions\.repository/);
+});
+
+test("an expired session on Add accounts stamps nothing and sends the operator to sign-in", async () => {
+  const picked = [servedAccount];
+  const outcome = await addSelectedAccountsToProject(
+    {
+      accountIds: ["account-1"],
+      idempotencyKey: "attempt-1",
+      project: { id: project.id, name: project.name },
+      rows: picked,
+    },
+    async () => {
+      throw new ClueApiError("private upstream message", {
+        code: "AUTHENTICATION_REQUIRED",
+        requestId: "request-4",
+        status: 401,
+      });
+    },
+  );
+
+  // No rows come back at all, so there is nothing to stamp — the 401 is not a
+  // "try again", and the picked row keeps exactly the memberships it had.
+  assert.deepEqual(outcome, { status: "session_expired" });
+  assert.deepEqual(picked[0]?.projects, servedAccount.projects);
   assert.match(
     controller,
-    /await addAccountsToProject\(\{\s*\n\s*accountIds: accounts\.map\(\(\{ id \}\) => id\),\s*\n\s*idempotencyKey: crypto\.randomUUID\(\),\s*\n\s*projectId: project\.id,\s*\n\s*\}\);/,
+    /if \(outcome\.status === "session_expired"\) \{\s*\n\s*window\.location\.assign\("\/sign-in\?reason=session_expired"\);\s*\n\s*return false;\s*\n\s*\}/,
   );
-  // A refusal returns before any row is reflected…
-  assert.match(controller, /\} catch \{\s*\n\s*return false;\s*\n\s*\}\s*\n\s*addAccounts\(accounts\);\s*\n\s*return true;/);
-  assert.doesNotMatch(projectScreen, /data\/bulk-actions\.repository/);
-  // …and the screen says so with the same alert block its load failure uses.
+});
+
+test("the Add accounts screen reacts to the write, and nothing else", () => {
+  // A refusal changes no row, and the screen says so with the same alert block
+  // its load failure uses.
   assert.match(
     projectScreen,
     /if \(await controller\.submitAddAccounts\(accounts\)\) \{\s*\n\s*setAddFailed\(false\);\s*\n\s*onReread\(\);\s*\n\s*return;\s*\n\s*\}\s*\n\s*setAddFailed\(true\);/,

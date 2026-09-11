@@ -88,7 +88,10 @@ export function addToProjectNotice(
  */
 export function reflectAddToProject(
   accounts: readonly AccountRow[],
-  project: BulkProjectOption,
+  // The membership a row gains is an id and a name; the option's `status` is a
+  // picker concern. Taking only those two lets a screen that already knows its
+  // project (the project Target accounts tab) reflect without inventing one.
+  project: Pick<BulkProjectOption, "id" | "name">,
   result: BulkActionResponse,
 ): AccountRow[] {
   const reflected = new Set(

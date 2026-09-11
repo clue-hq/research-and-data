@@ -3,21 +3,18 @@ import test from "node:test";
 import { readAccountDirectory, getProjectAccountDirectory } from "./project-accounts.repository";
 import { accountFixtures } from "./accounts.fixture";
 
-test("the directory resolves backend cursor pages before browser pagination", async () => {
-  const requests: Array<string | undefined> = [];
+// The cursor walk is the list read's own (`accounts.repository.ts` follows
+// `meta.nextCursor` up to `ACCOUNTS_PAGE_CAP` pages and answers with
+// `nextCursor: null`), so the directory is one call: it forwards the project
+// and hands back that read's rows as they came.
+test("the directory forwards the project and returns the list read's rows in one call", async () => {
+  const queries: Array<unknown> = [];
   const rows = await readAccountDirectory({ projectId: "campaign" }, async (query) => {
-    assert.equal(query?.projectId, "campaign");
-    requests.push(query?.cursor);
-    return query?.cursor
-      ? { data: [accountFixtures[1], accountFixtures[2]], meta: { total: 3, nextCursor: null } }
-      : { data: [accountFixtures[0], accountFixtures[1]], meta: { total: 3, nextCursor: "next" } };
+    queries.push(query);
+    return { data: [accountFixtures[0], accountFixtures[1]], meta: { total: 2, nextCursor: null } };
   });
-  assert.deepEqual(requests, [undefined, "next"]);
-  assert.equal(rows.length, 3);
-});
-
-test("a repeated backend cursor fails rather than looping or presenting a partial count", async () => {
-  await assert.rejects(readAccountDirectory({}, async () => ({ data: [], meta: { total: 10, nextCursor: "same" } })), /repeated/);
+  assert.deepEqual(queries, [{ projectId: "campaign" }]);
+  assert.deepEqual(rows, [accountFixtures[0], accountFixtures[1]]);
 });
 
 // The default list read is the platform's own `getAccounts`, which chooses
