@@ -277,7 +277,12 @@ def build_frontend_read_router(
         allow_local_mutations=allow_local_mutations,
         display=display,
     )
-    register_brand_knowledge_routes(router, conn_factory=conn_factory, storage=evidence_storage)
+    register_brand_knowledge_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+    )
     return router
 
 

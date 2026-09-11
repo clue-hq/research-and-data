@@ -16,11 +16,8 @@ export function KnowledgePanel({ controller }: { controller: BrandContextControl
 
   return (
     <>
-      {controller.knowledgeEditor.mode === "edit" || controller.knowledgeEditor.dirty ? (
-        <p className={styles.documentEditNotice} role="status">
-          {controller.knowledgeEditor.dirty ? "Unsaved changes. " : ""}
-          Edits are temporary and will be lost when you leave or reload this page.
-        </p>
+      {controller.knowledgeEditor.error ? (
+        <p className={styles.documentSaveError} role="alert">{controller.knowledgeEditor.error}</p>
       ) : null}
       {controller.knowledgeEditor.editorOpened ? (
         <div hidden={controller.knowledgeEditor.mode !== "edit"}>
@@ -28,6 +25,7 @@ export function KnowledgePanel({ controller }: { controller: BrandContextControl
             key={controller.selectedDocument.path}
             value={controller.knowledgeEditor.body}
             onChange={controller.knowledgeEditor.setBody}
+            readOnly={controller.knowledgeEditor.busy}
           />
         </div>
       ) : null}

@@ -1,16 +1,26 @@
 import { useEffect, useRef } from "react";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { basicSetup } from "codemirror";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { minimalSetup } from "codemirror";
+
+const markdownHighlight = HighlightStyle.define([
+  { tag: [tags.heading, tags.strong], fontWeight: "600", color: "var(--clue-ds-color-content-neutral)" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: [tags.link, tags.url], color: "var(--clue-ds-color-content-subtle)", textDecoration: "underline" },
+  { tag: [tags.processingInstruction, tags.meta, tags.monospace], color: "var(--clue-ds-color-content-subtle)" },
+]);
 
 /** React owns the Markdown string; CodeMirror owns source editing and its history. */
-export function useMarkdownSourceEditor(value: string, onChange: (value: string) => void) {
+export function useMarkdownSourceEditor(value: string, onChange: (value: string) => void, readOnly: boolean) {
   const container = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const initialValue = useRef(value);
   const syncing = useRef(false);
+  const access = useRef(new Compartment());
 
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
@@ -21,7 +31,9 @@ export function useMarkdownSourceEditor(value: string, onChange: (value: string)
       state: EditorState.create({
         doc: initialValue.current,
         extensions: [
-          basicSetup,
+          minimalSetup,
+          access.current.of(EditorState.readOnly.of(false)),
+          syntaxHighlighting(markdownHighlight),
           markdown({ base: markdownLanguage }),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": "Markdown source" }),
@@ -39,6 +51,10 @@ export function useMarkdownSourceEditor(value: string, onChange: (value: string)
       view.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    editor.current?.dispatch({ effects: access.current.reconfigure(EditorState.readOnly.of(readOnly)) });
+  }, [readOnly]);
 
   useEffect(() => {
     const view = editor.current;

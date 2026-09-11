@@ -10,14 +10,17 @@ function Segment({
   active,
   children,
   onClick,
+  disabled = false,
 }: {
   active: boolean;
   children: React.ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       aria-pressed={active}
+      disabled={disabled}
       className={`${styles.segment} ${active ? styles.segmentActive : ""}`}
       onClick={onClick}
       type="button"
@@ -88,13 +91,19 @@ export function BrandContextHeader({
               <Segment active={controller.knowledgeEditor.mode === "preview"} onClick={() => controller.knowledgeEditor.setMode("preview")}>
                 <BrandContextIcon name="eye" size={12} /> Preview
               </Segment>
-              <Segment active={controller.knowledgeEditor.mode === "edit"} onClick={() => controller.knowledgeEditor.setMode("edit")}>
-                <BrandContextIcon name="code" size={12} /> Edit
+              <Segment active={controller.knowledgeEditor.mode === "edit"} disabled={!controller.knowledgeEditor.canEdit} onClick={() => controller.knowledgeEditor.setMode("edit")}>
+                <BrandContextIcon name="edit" size={12} /> Edit
               </Segment>
             </div>
             {controller.knowledgeEditor.dirty ? (
-              <button className={styles.secondaryButton} onClick={controller.knowledgeEditor.discard} type="button">Discard changes</button>
+              <>
+                <button className={styles.secondaryButton} disabled={controller.knowledgeEditor.busy} onClick={controller.knowledgeEditor.discard} type="button">Discard changes</button>
+                <button className={styles.primaryButton} disabled={controller.knowledgeEditor.busy} onClick={controller.knowledgeEditor.save} type="button">
+                  {controller.knowledgeEditor.saving ? "Saving…" : "Save changes"}
+                </button>
+              </>
             ) : null}
+            {controller.knowledgeEditor.saved ? <span className={styles.documentSaveStatus} role="status">Saved</span> : null}
           </div>
         </header>
       </div>

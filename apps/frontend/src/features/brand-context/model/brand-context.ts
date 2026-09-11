@@ -86,6 +86,9 @@ export const BrandKnowledgeDocumentSchema = z.object({
   name: z.string(),
   path: z.string(),
   updatedLabel: z.string(),
+  /** Only persisted Knowledge documents have a version; generated Design briefs do not. */
+  version: z.number().int().positive().optional(),
+  bodyLoaded: z.boolean().optional(),
 });
 
 export const BrandKnowledgeFolderSchema = z.object({

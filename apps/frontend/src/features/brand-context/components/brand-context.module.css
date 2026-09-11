@@ -464,6 +464,9 @@
   box-shadow: none;
 }
 
+.segment:disabled { cursor: not-allowed; opacity: 0.5; }
+.documentSaveStatus { color: var(--clue-ds-color-content-subtle); font-size: 12px; }
+
 .colorModeControl .segment {
   width: auto;
   height: 34px;
@@ -1329,7 +1332,7 @@
   border-radius: 8px;
 }
 
-.documentEditNotice {
+.documentSaveError {
   margin: 16px 32px 0;
   color: var(--clue-ds-color-content-subtle);
   font-size: 13px;
@@ -1346,10 +1349,12 @@
 .markdownEditor :global(.cm-scroller) { font-family: ui-monospace, monospace; }
 .markdownEditor :global(.cm-content) { padding: 16px 0; }
 .markdownEditor :global(.cm-line) { padding: 0 16px; }
-.markdownEditor :global(.cm-gutters) {
-  border-color: var(--clue-ds-color-border-subtle);
-  background: var(--clue-ds-color-bg-subtle);
-  color: var(--clue-ds-color-content-subtle);
+.markdownEditor :global(.cm-editor.cm-focused) { outline: none; }
+.markdownEditor:focus-within { border-color: var(--clue-ds-color-border-neutral); }
+.markdownEditor :global(.cm-cursor) { border-left-color: var(--clue-ds-color-content-neutral); }
+.markdownEditor :global(.cm-selectionBackground),
+.markdownEditor :global(.cm-focused .cm-selectionBackground) {
+  background: var(--clue-ds-color-bg-neutral-pressed);
 }
 
 .markdownPreview h1,

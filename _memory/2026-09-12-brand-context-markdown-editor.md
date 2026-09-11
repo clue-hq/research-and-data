@@ -43,3 +43,30 @@ before implementation. Current Knowledge reads expose per-version UUID IDs, body
 version/status, and immutable artifact custody. Design.md is a projection of the brand kit;
 confirmed ICP documents participate in confirmation gates. Do not overwrite artifacts or
 pretend a generated projection is independently writable. No persistence is shipped here.
+
+## Persistent editing follow-up — 2026-09-12
+
+The founder explicitly authorized persistent user edits and requested removal of the temporary
+notice, line numbers, and developer-style theme. This supersedes the earlier pending decision.
+- Added workspace-scoped PUT through the existing BFF/repository seam. Requires project.write;
+  local-header development follows the existing explicit mutation setting. No new env flag.
+- New immutable artifact/document version per changed save, expectedRevision conflict checks,
+  original bytes/provenance retained. Confirmed ICP edits become proposals; old approvals remain
+  valid on the old row. Design brief projections and failed body reads remain read-only.
+- Save/Discard controls and quiet Saved status; failed/conflicting saves retain drafts. Selection
+  uses stable paths across new version UUIDs. Editing pauses while a save is in flight.
+- CodeMirror minimal setup, neutral design tokens and monospace; no gutter or active-line color.
+  Preview continues using react-markdown + remark-gfm only. Body whitespace round-trips exactly.
+- Checks: 92 Brand Context frontend tests; design-system build, lint, production build pass
+  (only the two existing canvasOperations warnings). 16 focused backend tests pass on the
+  separate clue_semarang_markdown_test database: reads, writes, permission/tenant checks,
+  conflicts, unchanged/empty saves, approval retention, storage rollback and whitespace.
+- Authenticated browser verified zero gutters/active-line styles/no temporary notice, then
+  Save -> Saved -> reload retained rendered GFM table/quote. SQL and verified artifact bytes
+  confirmed original superseded v1 and new ready v2. Used only a temporary verification document.
+- Restarted only the owned Semarang platform API on :8070. Other services and sibling worktrees
+  unchanged. No external research/extraction launched.
+- Test setup failures: login comment parser initially assumed a colon; adjusted to the existing
+  comment format. Temporary seed initially used an unsupported kind and rolled back; removed
+  its orphan blob, used supported company-overview instead. Permission test initially lacked
+  real auth error wiring; installed the production handler and verified 403. All now pass.

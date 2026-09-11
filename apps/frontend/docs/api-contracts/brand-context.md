@@ -582,11 +582,26 @@ Discard changes restores the document read from the server. Drafts stay separate
 per document path and survive switches between documents or Brand Context sections.
 Switching Preview/Edit retains the current editor's undo history.
 
-This remains a **frontend-only draft editor**, pending the founder's decision on
-adding a persistent document-write contract. The UI explicitly states that edits
-are temporary and will be lost when leaving or reloading the page. It does not
-display a Save action or claim that an update has been stored. No local-storage,
-browser database, or backend mutation is used. The document's original Markdown,
-front matter, provenance, status, version and generated Design brief are unchanged.
-A browser unload warning applies while drafts exist. The older O5 removal of the
-Preview/Edit controls is superseded by this follow-up.
+The founder subsequently authorized persistent edits (2026-09-12). **Save changes**
+now calls `PUT /frontend/v1/brand-context/knowledge/documents/:documentId` through
+the existing `/api/clue` BFF with `{ body, expectedRevision }`. It returns the same
+detail shape as GET, with the new version and document ID. Selection stays anchored
+to the document path. The repository owns transport and response validation.
+
+Saving requires the workspace's authenticated `project.write` permission (or the
+existing explicit local-header development mode). The backend records new immutable
+artifact bytes, the editing user and source revision, and appends a document version.
+It keeps original bytes and provenance. Stale revisions receive 409 and keep the
+draft in the editor. An unchanged body creates no extra version. Failed reads and
+the generated Design brief cannot be saved through this endpoint.
+
+Editing a confirmed ICP creates a proposed version, clears the new version's old
+approval fields, and retains the previously confirmed row for pinned projects.
+Other replaced versions become superseded. No schema migration or new runtime
+flag is required. Save failures preserve the draft; only a successful response
+marks it Saved. Editing pauses during an in-flight save to keep its snapshot stable.
+A browser unload warning applies while unsaved drafts exist.
+
+CodeMirror uses its minimal setup and neutral design-token syntax styles: monospace
+text, no line numbers, no folding gutter, no active-line color. The temporary-edit
+banner is removed. The older O5 removal of Preview/Edit is superseded by this follow-up.

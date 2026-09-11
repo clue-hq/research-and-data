@@ -1,11 +1,12 @@
 """The brand-context Knowledge reads (ARV2-ONBOARDING-PLAN.md §7; O5).
 
-Three workspace-scoped, read-only endpoints on the ``/frontend/v1`` router: the folder tree of the
+Three workspace-scoped reads on the ``/frontend/v1`` router: the folder tree of the
 brand's *servable* knowledge documents (``ready`` / ``proposed`` / ``confirmed``, highest such
 version per path — founder ruling 2026-09-08: no status chip, so nothing else is listed), one
 document with its markdown, front matter and flattened sources, and the onboarding run's status
 (the O3 read, mirrored here so the page has one surface). Folder order and labels are the
 dummy's. The ``design`` folder is the brand kit's and is never served here.
+Human edits append immutable document versions through the matching PUT route.
 """
 
 from __future__ import annotations
@@ -13,20 +14,30 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import Field
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_api.arv2.onboarding_store import read_current_run
+from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_db import ConnFactory
 from clue_obs import get_logger
-from clue_storage import StorageBackend, read_verified_artifact
+from clue_storage import (
+    StorageBackend,
+    artifact_key,
+    content_address,
+    read_verified_artifact,
+    record_artifact,
+)
 
 log = get_logger("clue_api.frontend_read.brand_knowledge")
 
@@ -99,6 +110,156 @@ class KnowledgeDocumentDetailWire(WireModel):
     markdown: str
     front_matter: dict[str, Any]
     sources: list[KnowledgeSourceWire]
+
+
+class KnowledgeDocumentUpdate(WireModel):
+    body: str = Field(max_length=1_000_000)
+    expected_revision: int = Field(ge=1, strict=True)
+
+
+def _revision_conflict() -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "DOCUMENT_REVISION_CONFLICT",
+            "message": "A newer version exists or is being prepared. The draft was not saved.",
+        },
+    )
+
+
+async def save_knowledge_document(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    document_id: UUID,
+    update: KnowledgeDocumentUpdate,
+    user_id: str,
+) -> KnowledgeDocumentDetailWire:
+    """Append human-edited Markdown. Never mutate bytes pinned by an existing turn or gate."""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT * FROM brand_knowledge_document "
+                    "WHERE workspace_id = :ws AND document_id = :id "
+                    "AND folder IN ('company', 'product', 'audience', 'proof') FOR UPDATE"
+                ),
+                {"ws": workspace_id, "id": document_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "KNOWLEDGE_DOCUMENT_NOT_FOUND", "message": "Document not found."},
+        )
+    # Serialize competing human saves for this brand. Other publishers may race to insert the
+    # next version; the database unique constraint remains the final arbiter (409 at the route).
+    await conn.execute(
+        text(
+            "SELECT brand_id FROM brand WHERE workspace_id = :ws AND brand_id = :brand FOR UPDATE"
+        ),
+        {"ws": workspace_id, "brand": row["brand_id"]},
+    )
+    latest = await conn.scalar(
+        text(
+            "SELECT MAX(version) FROM brand_knowledge_document WHERE workspace_id = :ws "
+            "AND brand_id = :brand AND path = :path"
+        ),
+        {"ws": workspace_id, "brand": row["brand_id"], "path": row["path"]},
+    )
+    if (
+        row["status"] not in SERVABLE_STATUSES
+        or row["version"] != update.expected_revision
+        or latest != row["version"]
+    ):
+        raise _revision_conflict()
+    front, original = await _front_and_body(conn, storage, workspace_id=workspace_id, row=row)
+    if original == update.body:
+        existing = await read_knowledge_document(
+            conn, storage, workspace_id=workspace_id, document_id=document_id
+        )
+        assert existing is not None
+        return existing
+    status = "proposed" if row["status"] == "confirmed" else row["status"]
+    # A human text edit cannot carry forward another version's approval stamp. Retain the
+    # old confirmed row for projects already pinned to it; this version returns to review.
+    if row["status"] == "confirmed":
+        for key in (
+            "confirmed_by",
+            "confirmed_at",
+            "confirmed_for_project_id",
+            "product_selection_version",
+        ):
+            front.pop(key, None)
+    front["status"] = status
+    front["user_edit"] = {
+        "user_id": user_id,
+        "edited_at": datetime.now(UTC).isoformat(),
+        "source_document_id": str(document_id),
+        "source_version": row["version"],
+    }
+    data = render_markdown(
+        KnowledgeDocument(
+            kind=row["kind"],
+            folder=row["folder"],
+            path=row["path"],
+            front_matter=front,
+            body=update.body,
+            cost=None,
+        )
+    ).encode("utf-8")
+    sha = content_address(data)
+    key = artifact_key(workspace_id, sha)
+    await record_artifact(
+        conn,
+        storage_key=key,
+        workspace_id=workspace_id,
+        content_sha256=sha,
+        media_type="text/markdown",
+        size_bytes=len(data),
+        source_key="brand_knowledge_user_edit",
+    )
+    await storage.put(key, data, media_type="text/markdown")
+    new_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO brand_knowledge_document "
+            "(document_id, workspace_id, brand_id, folder, path, kind, "
+            "version, status, artifact_key, artifact_sha256, supersedes_document_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, "
+            ":version, :status, :key, :sha, :previous)"
+        ),
+        {
+            "id": new_id,
+            "ws": workspace_id,
+            "brand": row["brand_id"],
+            "folder": row["folder"],
+            "path": row["path"],
+            "kind": row["kind"],
+            "version": row["version"] + 1,
+            "status": status,
+            "key": key,
+            "sha": sha,
+            "previous": document_id,
+        },
+    )
+    if row["status"] != "confirmed":
+        await conn.execute(
+            text(
+                "UPDATE brand_knowledge_document SET status = 'superseded', updated_at = now() "
+                "WHERE document_id = :id"
+            ),
+            {"id": document_id},
+        )
+    saved = await read_knowledge_document(
+        conn, storage, workspace_id=workspace_id, document_id=new_id
+    )
+    assert saved is not None
+    return saved
 
 
 class OnboardingStepWire(WireModel):
@@ -245,11 +406,13 @@ async def _front_and_body(
     workspace_id: str,
     row: RowMapping,
 ) -> tuple[dict[str, Any], str]:
-    _, raw = await read_verified_artifact(
+    record, raw = await read_verified_artifact(
         conn, storage, storage_key=str(row["artifact_key"]), workspace_id=workspace_id
     )
+    if record.content_sha256 != row["artifact_sha256"]:
+        raise ValueError("Knowledge document digest does not match its artifact")
     try:
-        return parse_front_matter(raw.decode("utf-8"))
+        return parse_front_matter(raw.decode("utf-8"), preserve_body=True)
     except (UnicodeDecodeError, ValueError):
         return {}, raw.decode("utf-8", errors="replace")
 
@@ -382,8 +545,56 @@ async def read_onboarding_status(
 
 
 def register_brand_knowledge_routes(
-    router: APIRouter, *, conn_factory: ConnFactory, storage: StorageBackend | None
+    router: APIRouter,
+    *,
+    conn_factory: ConnFactory,
+    storage: StorageBackend | None,
+    allow_local_mutations: bool = False,
 ) -> None:
+    @router.put(
+        "/brand-context/knowledge/documents/{document_id}",
+        response_model=KnowledgeDocumentDetailWire,
+    )
+    async def put_knowledge_document(
+        request: Request,
+        workspace_id: WorkspaceDep,
+        document_id: UUID,
+        body: KnowledgeDocumentUpdate,
+    ) -> KnowledgeDocumentDetailWire:
+        principal = principal_from_request(request)
+        if principal is not None:
+            principal.require("project.write")
+            user_id = principal.user_id
+        elif allow_local_mutations:
+            user_id = "local-development-user"
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail={"code": "UNAUTHORIZED", "message": "An authenticated session is required."},
+            )
+        if storage is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "KNOWLEDGE_STORAGE_UNAVAILABLE",
+                    "message": "Document storage is unavailable.",
+                },
+            )
+        try:
+            async with conn_factory() as conn:
+                return await save_knowledge_document(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    update=body,
+                    user_id=user_id,
+                )
+        except IntegrityError as exc:
+            if "brand_knowledge_document_path_version" in str(exc.orig):
+                raise _revision_conflict() from exc
+            raise
+
     @router.get("/brand-context/knowledge", response_model=KnowledgeTreeWire)
     async def get_knowledge_tree(
         workspace_id: WorkspaceDep,

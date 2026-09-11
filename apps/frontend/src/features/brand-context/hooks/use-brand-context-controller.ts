@@ -48,7 +48,7 @@ export function useBrandContextController({
   const [section, setSection] = useState(initial.section);
   const [colorMode, setColorModeState] = useState(initial.colorMode);
   const [assetView, setAssetViewState] = useState(initial.assetView);
-  const [selectedDocumentId, setSelectedDocumentId] = useState(defaultDocument?.id ?? "");
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState(defaultDocument?.path ?? "");
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(
     () => new Set(defaultDocument ? [defaultDocument.folderId] : []),
   );
@@ -129,7 +129,7 @@ export function useBrandContextController({
     [workspace.knowledgeFolders],
   );
   const selectedDocument =
-    allDocuments.find((document) => document.id === selectedDocumentId)
+    allDocuments.find((document) => document.path === selectedDocumentPath)
     ?? allDocuments[0];
   const knowledgeEditor = useKnowledgeEditor(selectedDocument);
   const selectedAsset = selectedAssetId
@@ -199,7 +199,7 @@ export function useBrandContextController({
   function selectDocument(documentId: string) {
     const document = allDocuments.find((item) => item.id === documentId);
     if (!document) return;
-    setSelectedDocumentId(documentId);
+    setSelectedDocumentPath(document.path);
     setSection("knowledge");
     setOpenFolderIds((current) => new Set(current).add(document.folderId));
     syncRoute({ filePath: document.path, section: "knowledge" });
