@@ -605,3 +605,11 @@ A browser unload warning applies while unsaved drafts exist.
 CodeMirror uses its minimal setup and neutral design-token syntax styles: monospace
 text, no line numbers, no folding gutter, no active-line color. The temporary-edit
 banner is removed. The older O5 removal of Preview/Edit is superseded by this follow-up.
+
+### ENG-182 asset preview follow-up (2026-09-12)
+
+The asset dialog uses the available viewport up to 1440 × 960 px. The image fills
+its display region with proportional `contain` sizing, preserving all artwork.
+Desktop reserves 280–360 px for the description; mobile stacks the details below
+the preview. Long names wrap and long descriptions scroll within the details pane.
+This is presentation-only and does not change the asset write contract above.

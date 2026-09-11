@@ -70,3 +70,8 @@ notice, line numbers, and developer-style theme. This supersedes the earlier pen
   comment format. Temporary seed initially used an unsupported kind and rolled back; removed
   its orphan blob, used supported company-overview instead. Permission test initially lacked
   real auth error wiring; installed the production handler and verified 403. All now pass.
+
+Closing cleanup: the temporary browser-test document, both versions and their verified blobs
+were removed by exact workspace/brand/path and UUID checks. The isolated test database was
+also dropped after confirming it had no active connections. User documents are unchanged.
+Persistent editing remains live on :3040 / :8070; browser verification session was closed.
