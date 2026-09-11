@@ -613,6 +613,10 @@ class Arv2AccountResearchWorkHandler:
                     f"run {job.run_id}"
                 )
             composition = await self._compose(conn, job)
+            # Spec 2026-09-12 §1: the job is claimed and composed, so what happens next is the
+            # research itself. The stamp rides the claiming connection — a job that shows
+            # ``deep_research`` is a job whose row was already won.
+            await self._store.set_job_stage(conn, job_id=job.job_id, stage="deep_research")
 
         media_budget = MediaBudget(self._settings.arv2_media_seconds_ceiling)
         runtime = ToolRuntime(
@@ -927,7 +931,14 @@ class Arv2AccountResearchWorkHandler:
                 media_seconds=spend.media_seconds,
             )
             if composition.job.subject_type == "account":
+                await self._store.set_job_stage(
+                    conn, job_id=composition.job.job_id, stage="committee"
+                )
                 committee = await self._fan_out_committee(conn, composition, runtime)
+                if committee.jobs:
+                    await self._store.set_job_stage(
+                        conn, job_id=composition.job.job_id, stage="member_research"
+                    )
             await self._store.refresh_run_status(conn, run_id=composition.run.run_id)
             await self._record_activity(conn, composition, outcome=outcome, claims=len(claims))
         await self._offer_committee(composition, committee)

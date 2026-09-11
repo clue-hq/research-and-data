@@ -699,11 +699,27 @@ class FakeArtifacts:
         raise AssertionError("no raw body is buffered by an in-memory client double")
 
 
+class MemoryConn:
+    """A connection that records the statements a tool writes itself, and answers nothing.
+
+    Only the stage stamp reaches it today: every other tool body here goes through the writer or a
+    client double, so a returned ``None`` is a truthful answer to the one statement that lands.
+    """
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, Any]] = []
+
+    async def execute(self, statement: Any, parameters: Any = None) -> None:
+        self.statements.append((str(statement), parameters))
+        return None
+
+
 class MemoryConnFactory:
-    """A connection factory whose connection is never spoken to (nothing here touches SQL)."""
+    """A connection factory whose one connection records what was executed on it."""
 
     def __init__(self) -> None:
         self.opened = 0
+        self.conn = MemoryConn()
 
     def __call__(self) -> Any:
         return self._open()
@@ -711,7 +727,7 @@ class MemoryConnFactory:
     @asynccontextmanager
     async def _open(self) -> AsyncIterator[Any]:
         self.opened += 1
-        yield object()
+        yield self.conn
 
 
 def _runtime(
@@ -1976,6 +1992,48 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     ]
 
 
+def test_finalize_stamps_the_synthesis_stage_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, and the job row
+    says so *before* the finalization's claims land."""
+    stamped: list[tuple[UUID, str, int]] = []
+    runtime, _, writer, _ = _runtime()
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        # The draft count at stamp time is what proves "before writing".
+        stamped.append((job_id, stage, len(writer.drafts)))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+
+    accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert stamped == [(runtime.scope.job_id, "synthesis", 0)]
+    assert writer.drafts, "and the claims did land after it"
+
+
+def test_finalize_does_not_stamp_the_stage_when_it_refuses_a_second_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal comes first: a job already finalized is not walked back to ``synthesis``."""
+    stamped: list[tuple[UUID, str]] = []
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        stamped.append((job_id, stage))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+    runtime, _, _, _ = _runtime()
+    _call(runtime, "finalize_research", **_finalize_args())
+
+    refused = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert refused["code"] == "finalization_already_proposed"
+    assert stamped == [(runtime.scope.job_id, "synthesis")], "the first call's stamp, and only it"
+
+
 def test_finalize_admits_the_candidate_rationale_and_influence_and_writes_them() -> None:
     """``CommitteeCandidate`` forbids extra keys, so the two optional ones have to be declared for
     the agent to be able to send them at all — and the mapper carries them onto the claim the
@@ -3059,6 +3117,27 @@ def _person_finalize_args(**overrides: Any) -> dict[str, Any]:
         "gaps": ["no podcast appearance found"],
         **overrides,
     }
+
+
+def test_person_finalize_stamps_the_synthesis_stage_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The person tool stamps the same stage as the account one — a person job's last act is its
+    synthesis too, and the progress card reads one column for both subjects."""
+    stamped: list[tuple[UUID, str]] = []
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        stamped.append((job_id, stage))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert stamped == [(runtime.scope.job_id, "synthesis")]
 
 
 def test_person_finalize_writes_the_openers_hooks_and_lookalikes_and_drops_the_quoteless_opener(

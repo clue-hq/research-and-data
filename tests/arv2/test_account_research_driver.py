@@ -168,6 +168,10 @@ class FakeStore:
         del conn
         self.events.append(("suspend_job", {"job_id": job_id}))
 
+    async def set_job_stage(self, conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        self.events.append(("set_job_stage", {"job_id": job_id, "stage": stage}))
+
     async def finish_job(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("finish_job", kwargs))
@@ -487,6 +491,11 @@ def test_handle_marks_job_completed_with_a_receipt_and_never_raises(
     assert receipt["model_id"] == "x-ai/grok-4.6"
 
     assert store.named("refresh_run_status")
+    # The stage stamps: the claim opens ``deep_research``, the settle stamps ``committee`` before
+    # the fan-out — and stops there, because this finalization named no candidates, so no person
+    # job was ever born for ``member_research`` to describe.
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    assert stamps == ["deep_research", "committee"]
     # The model is built through the gateway boundary, with the ARV2 role so its effort env applies.
     assert models.builds[0]["role"] == "arv2_account"
     assert models.builds[0]["model_id"] == "x-ai/grok-4.6"
@@ -1115,12 +1124,21 @@ def test_an_account_job_fans_its_committee_out_inside_the_settle_and_offers_afte
 
     assert result.outcome == "completed"
     order = [name for name, _ in store.events]
-    assert order[order.index("finish_job") :][:4] == [
+    # The two stage stamps ride this same transaction, so the order now reads: the terminal row,
+    # then ``committee`` before the step, then ``member_research`` once the step returned person
+    # jobs, and only then the run's status and the offer.
+    assert order[order.index("finish_job") :][:6] == [
         "finish_job",
+        "set_job_stage",
         "committee_step",
+        "set_job_stage",
         "refresh_run_status",
         "enqueue",
     ]
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    # Claim → (finalize stamps synthesis inside the tool; see the tools test) → committee →
+    # member_research once the person jobs exist. The order is the driver's real order.
+    assert stamps == ["deep_research", "committee", "member_research"]
     # The step is handed the finalization's own candidates, the job, the run and the job's scope.
     assert calls[0]["candidates"][0]["name"] == "Dana Reyes"
     assert calls[0]["job"] is job and calls[0]["run"] is run
@@ -1390,6 +1408,11 @@ def test_a_person_job_lands_the_person_receipt_and_never_runs_the_committee_step
 
     assert result.outcome == "completed"
     assert not store.named("enqueue")
+    # A person job has no committee, so the driver stamps only the claim's ``deep_research``; its
+    # ``synthesis`` stamp belongs to the finalize tool, which this test's model double stands in
+    # for (and is asserted in the tools suite).
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    assert stamps == ["deep_research"]
     receipt = store.named("finish_job")[0]["finalization"]
     assert receipt["reason"] == "finalized"
     assert receipt["summary"].startswith("Dana Reyes runs product marketing")

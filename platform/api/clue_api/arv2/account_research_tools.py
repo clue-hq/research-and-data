@@ -72,6 +72,7 @@ from clue_api.arv2.account_research_store import (
     AnnotationRow,
     find_contact_by_name,
     record_annotations,
+    set_job_stage,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import (
@@ -2045,6 +2046,11 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
 
+    # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
+    # so before a single finalization claim lands.
+    async with runtime._conn_factory() as conn:  # noqa: SLF001 - the runtime's own seam
+        await set_job_stage(conn, job_id=runtime.scope.job_id, stage="synthesis")
+
     keyed = _key_verdicts_to_icp_gates(
         runtime.scope.icp_gate_keys, [verdict.model_dump() for verdict in args.fit_verdicts]
     )
@@ -2093,6 +2099,11 @@ async def _finalize_person_research(
     """
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
+
+    # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
+    # so before a single finalization claim lands.
+    async with runtime._conn_factory() as conn:  # noqa: SLF001 - the runtime's own seam
+        await set_job_stage(conn, job_id=runtime.scope.job_id, stage="synthesis")
 
     reports_to = args.reports_to.model_dump() if args.reports_to is not None else None
     if reports_to is not None and not reports_to.get("contact_id"):
