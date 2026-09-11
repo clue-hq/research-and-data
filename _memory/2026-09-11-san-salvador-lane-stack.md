@@ -93,3 +93,29 @@ set `CLUE_SELF_SERVE_PROVISIONING_ENABLED=true` for this lane.
   and the official-site crawl enqueuer. That is the old lane's onboarding, on only so a browser
   user can mint a workspace; the new onboarding lane stays behind `CLUE_ONBOARDING_V2_ENABLED=false`.
 - Every process reads `.env`, so the whole stack was restarted through the wrapper.
+
+## Addendum — the new onboarding lane on, and the run started by hand (2026-09-11 06:48)
+
+`CLUE_ONBOARDING_V2_ENABLED=true` in the lane `.env` (founder), stack restarted; the API mounts
+`/onboarding` and the workers compose the driver. No frontend surface starts the run yet (O6
+follow-up 4), so it was posted by hand for the provisioned workspace
+`ws_2875e9e3dc5c452885db3774076de8c4` (Insight Health AI): run `f4826a17-03a6-4645-9c13-155773921c83`,
+lane `onboarding-v2`, fast steps overview / lineup / reviews running at 06:48:09.
+
+**Getting a bearer the API accepts, without a browser.** `POST /onboarding` runs behind the
+authenticated resolver: header `X-Clue-Workspace-Id` (not `X-Workspace-Id`) plus a Clerk *session*
+token whose `azp` is in `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`. Backend-API-minted tokens
+(`api.clerk.com /v1/sessions/{sid}/tokens[/template]`) carry **no `azp`** and are refused
+(`SESSION_INVALID`). What works, against the dev instance's Frontend API
+(`https://precise-lamb-56.clerk.accounts.dev`), browser mode with a cookie jar and
+`Origin: http://localhost:3020` and **no** Authorization header (Clerk forbids both):
+1. `POST /v1/dev_browser` → `token`; pass it as `?__clerk_db_jwt=<token>` on every call
+   (without it every call is `dev_browser_unauthenticated`).
+2. `POST /v1/client/sign_ins` (`identifier`, `password`, `strategy=password`) → `needs_second_factor`
+   with an `email_code` factor (the `email_address_id` is in the response).
+3. `POST …/sign_ins/{id}/prepare_first_factor` (`strategy=email_code`, `email_address_id`), then
+   `attempt_first_factor` (`strategy=email_code`, `code=424242`, the fixed `+clerk_test` code)
+   → `complete`, `created_session_id`.
+4. `POST /v1/client/sessions/{sid}/tokens` → `jwt` with `sid`, `azp=http://localhost:3020`.
+The token lives ~60 s; the client cookie jar and dev-browser token are reusable to mint another.
+Credentials are the founder's and are never written down here.
