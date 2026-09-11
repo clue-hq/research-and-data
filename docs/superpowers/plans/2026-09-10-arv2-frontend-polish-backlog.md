@@ -13,3 +13,20 @@ what discovery (R4) already stores so the polish is a display change only.
 | 5 | An **Overall-fit filter value for "Unclear"** in the filter panel. | fit score already honest; badge value "Unclear" | `accounts-filter-panel.tsx` |
 | 6 | Show the **discovery source** (Websets item URL, the run) as provenance on the account detail rail. | `arv2_discovery_candidate.provider_snapshot_json`, `source` | detail rail |
 | 7 | Frontend follow-ups already recorded by O6 (wrapped Knowledge titles visual check; refresh hook arming). | — | see `_memory/2026-09-09-arv2-onboarding-o6-head-of-abm.md` |
+
+## Brand context polish — scope for branch `brand-context-polish` (founder, 2026-09-12)
+
+Findings from the code (2026-09-12): the Knowledge tree rows drift because the O6 lift let long
+titles wrap (`min-height`, `align-items: flex-start`, `white-space: normal` on `.documentItem*`),
+which also lets the flex layout squeeze the 16 px document glyph on wrapped rows; the dummy keeps
+every row a fixed 32 px single line. The document body uses the dummy's own
+`parseKnowledgeMarkdown`, which knows only `#`–`###` headings, `-`/`*` bullets and paragraphs, so
+tables, blockquotes, links, bold/italic and numbered lists render as raw text.
+
+| # | Item | Ruling / source |
+|---|---|---|
+| B1 | Tree rows: one uniform 32 px single-line row, uniform 16 px document glyph (`flex: none`), one font. A name wider than the column is clipped; on hover it scrolls once end-to-start (marquee, single pass) then returns to the start. | founder 2026-09-12 (new hover behaviour; not in the dummy) |
+| B2 | Markdown: render the full document — GFM tables, blockquotes, links, emphasis, ordered lists, code — with the page's existing `.markdownPreview` typography; replace the hand parser with a real renderer. | ENG-183; founder 2026-09-12 |
+| B3 | Typography panel shows the sample text in the extracted font (load the kit's font asset via `@font-face`). | ENG-181 |
+| B4 | Assets panel: the asset fills the display section; description beside/below it. | ENG-182 |
+| B5 | Items 1–7 above remain candidates for this branch where the founder picks them up. | — |
