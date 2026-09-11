@@ -700,7 +700,14 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
         ]
     )
     handler, _, writer, drain, accounts = _handler(
-        store, exa=exa, websets=websets, monkeypatch=monkeypatch
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
+        # the document order. Under the shipped cap of 4 the candidates verify concurrently and
+        # the order below would be decided by which thread finished first.
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -1361,6 +1368,10 @@ def test_a_failing_candidate_is_contained_and_named_while_its_neighbours_still_l
         websets=websets,
         monkeypatch=monkeypatch,
         account_writes_fail_on=frozenset({"zafran.io"}),
+        # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
+        # the document order. Under the shipped cap of 4 the three candidates verify concurrently
+        # and the order below would be decided by which thread finished first.
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -2111,3 +2122,69 @@ def test_a_provider_halt_in_one_task_suspends_the_whole_pool(
     assert landed["status"] == "needs_review"
     assert landed["receipt"]["failure"] == "provider_halted"
     assert result.outcome == "needs_review"
+
+
+class _SlowListing(_FakeWebsets):
+    """Lists the webset slowly, so the tasks the PREVIOUS tick dispatched have finished by the
+    time this tick reaps them — which is how ``_reap``, not ``_drain_pool``, sees their failures."""
+
+    def items(
+        self, webset_id: str, *, priced_item_ids: frozenset[str] = frozenset()
+    ) -> WebsetItemsResult:
+        time.sleep(0.2)
+        return super().items(webset_id, priced_item_ids=priced_item_ids)
+
+
+def test_reap_retrieves_every_finished_tasks_failure_before_it_raises_the_first() -> None:
+    """Two candidates halting in the same tick is two exceptions, and ``_reap`` raises one of them.
+
+    It must still READ the other off its task: an exception nobody retrieved makes asyncio log
+    "Task exception was never retrieved" when the task is collected — noise in a run whose real
+    story (the provider refused to sell) is already on the receipt.
+    """
+
+    async def halt() -> None:
+        raise ProviderHalted("exa", "rate_limited", http_status=429)
+
+    async def drive() -> None:
+        tasks = {asyncio.create_task(halt()) for _ in range(2)}
+        await asyncio.wait(tasks)
+        reaped = set(tasks)
+        with pytest.raises(ProviderHalted):
+            await Arv2DiscoveryWorkHandler._reap(tasks)
+        # Both failures were read off their tasks, so neither is left to be logged at collection.
+        assert [task._log_traceback for task in reaped] == [False, False]
+        # And a reaped task leaves the pool, so nothing waits for it again.
+        assert tasks == set()
+
+    asyncio.run(drive())
+
+
+def test_two_candidates_halting_on_the_same_tick_land_the_run_needs_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole-run shape of the case above: both website asks halt while the webset is still
+    running, so the failures are surfaced by ``_reap`` on the next tick rather than by the final
+    ``_drain_pool``, and the run still lands ``needs_review`` naming the provider."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+
+    def halt(query: str) -> ExaAnswerResult:
+        del query
+        raise ProviderHalted("exa", "rate_limited", http_status=429)
+
+    acme, bolt = _item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com")
+    websets = _SlowListing(
+        get_views=[_view(status="running"), _view(status="running"), _view(status="idle")],
+        items_results=[_items(acme, bolt), _items(acme, bolt)],
+    )
+    handler, *_ = _handler(store, exa=_FakeExa(halt), websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["receipt"]["failure"] == "provider_halted"
+    # Both website asks reached the wire before either failure left the pool.
+    assert len(store.named("record_verdicts")) == 0

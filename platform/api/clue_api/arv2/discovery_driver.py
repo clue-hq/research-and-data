@@ -606,12 +606,19 @@ class Arv2DiscoveryWorkHandler:
 
     @staticmethod
     async def _reap(tasks: set[asyncio.Task[None]]) -> None:
-        """Surface a finished task's uncontained exception now, not at the end of the run."""
+        """Surface a finished task's uncontained exception now, not at the end of the run.
+
+        Every finished task's failure is READ before the first one is raised: two candidates
+        halting on the same tick is two exceptions, and an exception nobody retrieved makes asyncio
+        log "Task exception was never retrieved" when the task is collected — noise in a run whose
+        real story is already named on its receipt.
+        """
         done = {task for task in tasks if task.done()}
         tasks.difference_update(done)
-        for task in done:
-            if not task.cancelled() and task.exception() is not None:
-                raise task.exception()  # type: ignore[misc]
+        failures = [task.exception() for task in done if not task.cancelled()]
+        first = next((error for error in failures if error is not None), None)
+        if first is not None:
+            raise first
 
     @staticmethod
     async def _drain_pool(tasks: set[asyncio.Task[None]]) -> None:
