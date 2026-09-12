@@ -31,7 +31,7 @@ from clue_api.arv2.icp_authoring import (
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
-from tests.arv2.icp_fixture import seed_icp_document
+from tests.arv2.icp_fixture import pin_icp, seed_icp_document
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -422,5 +422,112 @@ def test_a_lineage_that_names_nothing_is_refused_by_name(tmp_path: Any) -> None:
                     {"w": workspace_id},
                 )
             ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_a_revision_over_a_pinned_path_is_named_at_its_version_qualified_file(
+    tmp_path: Any,
+) -> None:
+    """The receipt names the file the *next turn* opens, not the path's plain name (review I3).
+
+    The materializer gives the **pinned** version of a path the plain name and offers every other
+    version beside it as ``…/icp-<key>.v<n>.md`` (``brand_knowledge_context.workspace_paths``). An
+    authored row is always born ``proposed``, so it is never the pin — which means the moment a
+    project has pinned anything at that path, a new version of it lands at the qualified name.
+
+    Skill v23 §5b tells the model in as many words that *"the receipt names the path the file will
+    have on your next turn"*. A receipt promising the plain name therefore sends the agent to
+    re-read the **pinned, older** profile as though it were its own new draft: it either concludes
+    the write failed and authors again, or reports the stale profile back to the human as the new
+    one. Not reachable before the project has a pin, which is why the first tests did not see it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            await seed_icp_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                path="audience/icp-gi.md",
+                status="superseded",
+                version=1,
+                body=DOCUMENT.replace("icp_key: gi-dac", "icp_key: gi"),
+            )
+            pinned_id, pinned_key, pinned_sha = await seed_icp_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                path="audience/icp-gi.md",
+                status="confirmed",
+                version=2,
+                body=DOCUMENT.replace("icp_key: gi-dac", "icp_key: gi") + "\nv2\n",
+            )
+            await pin_icp(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                brand_id=brand_id,
+                document_id=pinned_id,
+                artifact_key_=pinned_key,
+                artifact_sha256=pinned_sha,
+                icp_key="gi",
+            )
+
+            authored = await author_icp_document(
+                conn,
+                storage,
+                _request(
+                    workspace_id,
+                    brand_id,
+                    project_id,
+                    icp_key="gi",
+                    scope="brand",
+                    document_text=DOCUMENT.replace("icp_key: gi-dac", "icp_key: gi"),
+                ),
+            )
+
+            assert (authored.version, authored.status) == (3, "proposed")
+            assert authored.path == "audience/icp-gi.md"
+            assert authored.workspace_path == "inputs/brand/knowledge/audience/icp-gi.v3.md"
+            # The pin still owns the plain name, so nothing this act wrote moved the human's ICP.
+            assert (
+                await conn.execute(
+                    text("SELECT status FROM brand_knowledge_document WHERE document_id = :d"),
+                    {"d": pinned_id},
+                )
+            ).scalar_one() == "confirmed"
+
+    run_async(scenario())
+
+
+def test_an_unpinned_path_keeps_the_plain_name_in_the_receipt(tmp_path: Any) -> None:
+    """The other half of I3: version-qualification is the pin's doing, not a new default.
+
+    With no pin on the path, the authored version *is* what the workspace serves at the plain
+    name, and a qualified receipt would send the agent to a file nothing materializes.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            authored = await author_icp_document(
+                conn,
+                storage,
+                _request(
+                    workspace_id,
+                    brand_id,
+                    project_id,
+                    icp_key="gi",
+                    scope="brand",
+                    document_text=DOCUMENT.replace("icp_key: gi-dac", "icp_key: gi"),
+                ),
+            )
+            assert authored.workspace_path == "inputs/brand/knowledge/audience/icp-gi.md"
 
     run_async(scenario())

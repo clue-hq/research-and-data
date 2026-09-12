@@ -337,6 +337,23 @@ def test_project_documents_are_invisible_to_brand_readers_and_seed_under_inputs_
                 "inputs/brand/knowledge/audience/icp-gi.md"
             ]
 
+            # …and the brand's index card lists only what the brand seeds (review M4). The
+            # project's own card carries the variant, off the project's own rows; listing it in
+            # both spends the brand card's budget twice on one file, and — once the pinned and
+            # current versions of one path differ — puts two disagreeing descriptions of that file
+            # in one turn's opening context.
+            card = compile_brand_knowledge_index_card(
+                brand_id=project.brand_id,
+                documents=pinned,
+                confirmed_icp=confirmed_icp_for_project(pinned, pinned_document_id=project_doc),
+                product_set=None,
+            )
+            assert [entry.document_id for entry in card.documents] == [str(brand_doc)]
+            # The pin is unchanged: naming the project's pinned document is still this card's job,
+            # whatever that document's scope.
+            assert card.confirmed_icp is not None
+            assert card.confirmed_icp.document_id == project_doc
+
     run_async(scenario())
 
 

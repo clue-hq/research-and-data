@@ -152,6 +152,7 @@ async def seed_icp_document(
     status: str = "confirmed",
     path: str = "audience/icp-clue-abm-buyers.md",
     project_id: str | None = None,
+    version: int = 1,
 ) -> tuple[UUID, str, str]:
     """Register one ``brand_knowledge_document`` + its artifact, the way the loader does.
 
@@ -159,6 +160,10 @@ async def seed_icp_document(
     authoring writes for a project-local variant. It is part of the document's identity here, so a
     brand row and a project's variant of one path get different ids and coexist, exactly as the
     scoped unique index allows.
+
+    ``version`` seeds a later link of one path's version chain (a pinned v2 with a superseded v1
+    behind it). It joins the derived id only when it is not 1, so every existing caller's document
+    id is exactly the id it was before this parameter existed.
     """
     rendered = body.encode("utf-8")
     sha = content_address(rendered)
@@ -173,7 +178,11 @@ async def seed_icp_document(
         source_key="arv2:test:knowledge_document",
     )
     await storage.put(key, rendered, media_type="text/markdown")
-    document_id = uuid5(UUID(int=0), f"{workspace_id}:{project_id or ''}:{path}:{status}")
+    document_id = uuid5(
+        UUID(int=0),
+        f"{workspace_id}:{project_id or ''}:{path}:{status}"
+        + ("" if version == 1 else f":v{version}"),
+    )
     await conn.execute(
         text(
             """
@@ -181,8 +190,8 @@ async def seed_icp_document(
                 (document_id, workspace_id, brand_id, project_id, folder, path, kind, version,
                  status, artifact_key, artifact_sha256)
             VALUES
-                (:document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind, 1,
-                 :status, :artifact_key, :artifact_sha256)
+                (:document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind,
+                 :version, :status, :artifact_key, :artifact_sha256)
             """
         ),
         {
@@ -193,6 +202,7 @@ async def seed_icp_document(
             "folder": path.split("/", 1)[0],
             "path": path,
             "kind": kind,
+            "version": version,
             "status": status,
             "artifact_key": key,
             "artifact_sha256": sha,

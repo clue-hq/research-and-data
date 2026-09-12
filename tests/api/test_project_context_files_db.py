@@ -19,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_submission import insert_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
+from clue_api.arv2.onboarding_store import create_persona_run
+from clue_api.brand_knowledge_context import current_project_knowledge_refs
 from clue_api.project_context_files import (
     CompiledProjectFile,
     ProjectFileRef,
@@ -918,5 +921,221 @@ def test_a_project_document_whose_stored_digest_moved_is_a_typed_refusal() -> No
                     workspace_id=project.workspace_id,
                     project_id=project.project_id,
                 )
+
+    run_async(scenario())
+
+
+_PINNED_ICP = (
+    "---\nkind: icp-definition\nicp_key: gi-dac\nstatus: confirmed\n---\n\n"
+    "The profile the human said yes to.\n"
+)
+_NEWER_ICP = (
+    "---\nkind: icp-definition\nicp_key: gi-dac\nstatus: proposed\n---\n\n"
+    "The revision the agent drafted afterwards.\n"
+)
+
+
+async def _pin_project_icp(
+    conn: AsyncConnection, project: Project, document_id: UUID, *, icp_key: str
+) -> None:
+    """Pin an already-seeded document, the way the confirmation gate's approval does."""
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT version, artifact_key, artifact_sha256 "
+                    "FROM brand_knowledge_document WHERE document_id = :id"
+                ),
+                {"id": document_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    await pin_project_icp(
+        conn,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        brand_id=project.brand_id,
+        document=ConfirmedIcp(
+            document_id=document_id,
+            icp_key=icp_key,
+            version=int(row["version"]),
+            artifact_key=str(row["artifact_key"]),
+            artifact_sha256=str(row["artifact_sha256"]),
+            supersedes_document_id=document_id,
+            product_selection_version=1,
+        ),
+        product_selection_version=1,
+        pinned_by_user_id=_USER,
+    )
+
+
+def test_a_pinned_project_icp_is_seeded_beside_the_newer_version_of_its_path() -> None:
+    """The brand scope's pin-vs-current rule, on the project side (review I2).
+
+    The project confirms and pins its variant, the human asks for a change, and the agent authors
+    the next version at the *same* path in the *same* scope. ``current_project_knowledge_refs`` is
+    ``DISTINCT ON (path) … version DESC`` — current, not pinned — so compiling only that set would
+    seed v2 at the plain path while the brand card still named v1 there, and the version the human
+    actually confirmed (the one every launch researches against) would be readable nowhere in the
+    workspace.
+
+    So both are compiled, exactly as ``workspace_paths`` does it for the brand: the pinned version
+    keeps the plain name and the newer one is offered beside it version-qualified. The mirror of
+    ``test_brand_knowledge_context_db``'s
+    ``test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirmed``.
+    """
+
+    async def scenario() -> None:
+        storage = _MemoryStorage()
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            ws, project_id = project.workspace_id, project.project_id
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            pinned_id = await _seed_project_document(
+                conn,
+                project,
+                artifacts,
+                path="audience/icp-gi-dac.md",
+                body=_PINNED_ICP,
+                version=1,
+                status="confirmed",
+            )
+            await _pin_project_icp(conn, project, pinned_id, icp_key="gi-dac")
+            await _seed_project_document(
+                conn,
+                project,
+                artifacts,
+                path="audience/icp-gi-dac.md",
+                body=_NEWER_ICP,
+                version=2,
+                status="proposed",
+            )
+
+            # The project's *current* set serves only the newest version of the path…
+            refs = await current_project_knowledge_refs(
+                conn, workspace_id=ws, project_id=project_id
+            )
+            assert [(ref.path, ref.version) for ref in refs] == [("audience/icp-gi-dac.md", 2)]
+
+            # …and status.md lists BOTH, each at the name it is really materialized under.
+            facts = await load_project_status_facts(conn, workspace_id=ws, project_id=project_id)
+            assert [(d.path, d.version, d.status) for d in facts.documents] == [
+                ("audience/icp-gi-dac.md", 1, "confirmed"),
+                ("audience/icp-gi-dac.v2.md", 2, "proposed"),
+            ]
+            rendered = render_status_markdown(facts)
+            assert "- Key: `gi-dac` (version 1) — `inputs/project/audience/icp-gi-dac.md`" in (
+                rendered
+            )
+            assert "`inputs/project/audience/icp-gi-dac.md` — version 1, confirmed" in rendered
+            assert "`inputs/project/audience/icp-gi-dac.v2.md` — version 2, proposed" in rendered
+
+            files = await current_project_documents(
+                conn, storage, workspace_id=ws, project_id=project_id
+            )
+            assert [(f.path, f.version, f.status) for f in files] == [
+                ("audience/icp-gi-dac.md", 1, "confirmed"),
+                ("audience/icp-gi-dac.v2.md", 2, "proposed"),
+            ]
+
+            # Composition: the file the agent opens at the plain path holds the PINNED bytes.
+            turn_id = await _seed_submission(conn, project, artifacts, label="pinned-icp")
+
+            async def compile() -> list[CompiledProjectFile]:
+                return files
+
+            pin, created = await load_or_create_project_files_pin(
+                conn,
+                artifacts,
+                workspace_id=ws,
+                turn_id=turn_id,
+                project_id=project_id,
+                compile=compile,
+            )
+            assert created is True
+            seeded = {
+                seed.path: seed.content
+                for seed in project_seed_files(
+                    await read_pinned_project_files(conn, storage, pin=pin)
+                )
+            }
+            assert seeded["inputs/project/audience/icp-gi-dac.md"] == _PINNED_ICP.encode()
+            assert seeded["inputs/project/audience/icp-gi-dac.v2.md"] == _NEWER_ICP.encode()
+
+    run_async(scenario())
+
+
+def test_the_personas_section_reads_this_projects_personas_runs_only() -> None:
+    """M3: status.md is where a personas run becomes visible, and it is scoped like every read.
+
+    ``read_current_run`` filters ``kind = 'full'``, so nothing else in the platform surfaces a
+    personas run. These rows are therefore the only place a failed or gap-filled persona turn can
+    be seen — and they are read by workspace *and* project, so another project's run (or another
+    tenant's) can never appear under this project's heading.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            other = await seed_project(conn, project.workspace_id, name="Another project")
+            ws, project_id = project.workspace_id, project.project_id
+            artifacts = DurableAgentArtifactStore(
+                storage=_MemoryStorage(), conn_factory=conn_session_factory(conn)
+            )
+            principal = await seed_principal(conn, workspace_id=ws, user_id=f"{_USER}-personas")
+            document_id = await _seed_project_document(
+                conn, project, artifacts, path="audience/icp-gi-dac.md", body=_PROJECT_ICP
+            )
+            other_document_id = await _seed_project_document(
+                conn, other, artifacts, path="audience/icp-other.md", body=_PROJECT_ICP
+            )
+
+            facts = await load_project_status_facts(conn, workspace_id=ws, project_id=project_id)
+            assert facts.personas == ()
+            assert "No persona run yet." in render_status_markdown(facts)
+
+            settled = uuid4()
+            await create_persona_run(
+                conn,
+                run_id=settled,
+                workspace_id=ws,
+                brand_id=project.brand_id,
+                project_id=project_id,
+                persona_icp_document_id=document_id,
+                company_domain="acme.example",
+                requested_by_user_id=principal.user_id,
+            )
+            await conn.execute(
+                text(
+                    "UPDATE onboarding_run SET status = 'completed_with_gaps', "
+                    "finished_at = now() WHERE run_id = :id"
+                ),
+                {"id": settled},
+            )
+            # Another project's personas run, in the same workspace, must stay out of this file.
+            await create_persona_run(
+                conn,
+                run_id=uuid4(),
+                workspace_id=ws,
+                brand_id=other.brand_id,
+                project_id=other.project_id,
+                persona_icp_document_id=other_document_id,
+                company_domain="acme.example",
+                requested_by_user_id=principal.user_id,
+            )
+
+            facts = await load_project_status_facts(conn, workspace_id=ws, project_id=project_id)
+            assert [(run.run_id, run.status) for run in facts.personas] == [
+                (settled, "completed_with_gaps")
+            ]
+            assert facts.personas[0].finished_at is not None
+            rendered = render_status_markdown(facts)
+            assert f"- Run `{settled}`: completed_with_gaps, requested " in rendered
+            assert "No persona run yet." not in rendered
 
     run_async(scenario())

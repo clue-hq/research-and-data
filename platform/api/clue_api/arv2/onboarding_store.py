@@ -35,6 +35,7 @@ __all__ = [
     "open_persona_run",
     "publish_document",
     "read_current_run",
+    "read_run_status",
     "start_step",
 ]
 
@@ -171,6 +172,23 @@ async def open_persona_run(conn: AsyncConnection, *, persona_icp_document_id: UU
                 "AND status IN ('queued', 'running') LIMIT 1"
             ),
             {"document_id": persona_icp_document_id},
+        )
+    ).scalar_one_or_none()
+
+
+async def read_run_status(conn: AsyncConnection, *, run_id: UUID) -> str | None:
+    """The status of one run by id, or ``None`` when no such run exists.
+
+    The companion to :func:`open_persona_run`, which by design only matches an *open* run. A caller
+    whose run id is derived (a personas request derives one per turn) needs to tell "this turn has
+    not opened its run yet" from "this turn's run has already settled" — and without this read the
+    two are the same ``None``, so a same-turn retry after a completed run would re-offer a terminal
+    row and report the failure as if the queue were broken.
+    """
+    return (
+        await conn.execute(
+            text("SELECT status FROM onboarding_run WHERE run_id = :run_id"),
+            {"run_id": run_id},
         )
     ).scalar_one_or_none()
 

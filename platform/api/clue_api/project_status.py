@@ -30,6 +30,8 @@ from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
     KnowledgeDocumentRef,
     current_project_knowledge_refs,
+    document_ref,
+    version_qualified_path,
 )
 from clue_api.project_context_files import (
     CompiledProjectFile,
@@ -46,6 +48,7 @@ from clue_storage import StorageBackend, read_verified_artifact
 __all__ = [
     "DecisionItem",
     "DiscoveryFacts",
+    "PersonaRunFacts",
     "ProjectDocumentFacts",
     "ProjectStatusFacts",
     "ResearchJobFacts",
@@ -98,10 +101,28 @@ class ResearchRunFacts:
 
 @dataclass(frozen=True, slots=True)
 class ProjectDocumentFacts:
+    #: The **name** the document materializes under below ``inputs/project/`` — its row path, or
+    #: the version-qualified spelling when another version of that path owns the plain name.
     path: str
     version: int
     status: str
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PersonaRunFacts:
+    """One personas-only onboarding run this project asked for.
+
+    The agent opens these through ``request_persona_synthesis@1`` and is told "it is running"; the
+    run then lives entirely on the fleet. Without a line here, a run that failed, stalled or
+    finished with gaps is visible to nobody — not the agent that asked, not the human waiting for
+    the document — and the agent keeps reporting work that will never land.
+    """
+
+    run_id: UUID
+    status: str
+    requested_at: datetime
+    finished_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +135,7 @@ class ProjectStatusFacts:
     discovery: DiscoveryFacts | None
     research: tuple[ResearchRunFacts, ...]
     documents: tuple[ProjectDocumentFacts, ...]
+    personas: tuple[PersonaRunFacts, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,20 +198,80 @@ _RESEARCH_JOBS = text(
 )
 
 
+#: The personas runs listed in status.md, newest first. Older ones are history, not status.
+_PERSONA_RUNS_SHOWN = 3
+
+# Workspace-scoped as well as project-scoped: ``onboarding_run.project_id`` is part of a composite
+# FK to ``project``, but this read is a scan, and every scan in this module names the tenant.
+_PERSONA_RUNS = text(
+    """
+    SELECT run_id, status, requested_at, finished_at
+    FROM onboarding_run
+    WHERE workspace_id = :ws AND kind = 'personas' AND project_id = :project
+    ORDER BY requested_at DESC, run_id DESC
+    LIMIT :limit
+    """
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ScopedProjectDocument:
+    """One project document plus the name it materializes under. Both users read these pairs."""
+
+    ref: KnowledgeDocumentRef
+    name: str
+
+
 async def _project_document_refs(
     conn: AsyncConnection, *, workspace_id: str, project_id: str
-) -> tuple[KnowledgeDocumentRef, ...]:
-    """This project's current servable documents, in path order — the one read both users share.
+) -> tuple[_ScopedProjectDocument, ...]:
+    """This project's servable documents with their workspace names, in name order.
 
     ``status.md`` lists them and the turn seeds them; reading the same rows through one function
     is what keeps the file from naming a document the workspace does not carry, or carrying one
     the file never mentions.
+
+    **The pinned ICP is one of them, even when it is no longer current.** A project confirms its
+    variant, then asks for a change, and the agent authors the next version at the same path: the
+    project's *current* set now serves v2 while ``project_icp_pin`` still holds v1 — the version
+    the human agreed to and every launch researches against. Serving only the current set would
+    leave the confirmed bytes readable nowhere while the brand card still named them at that path.
+
+    So both are compiled, by the rule ``brand_knowledge_context.workspace_paths`` already applies
+    on the brand's side of the scope: the **pinned** version keeps the plain name, because that is
+    what this project's ICP *is*, and the newer version is offered beside it under
+    :func:`version_qualified_path`. Two real files, neither hidden, neither overwriting the other.
     """
 
     refs = await current_project_knowledge_refs(
         conn, workspace_id=workspace_id, project_id=project_id
     )
-    return tuple(sorted(refs, key=lambda ref: ref.path))
+    pin = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
+    pinned: KnowledgeDocumentRef | None = None
+    if (
+        pin is not None
+        # A brand-scoped pin is the brand card's and the brand seeds' business, not this folder's.
+        and pin.project_id == project_id
+        and all(ref.document_id != pin.document_id for ref in refs)
+    ):
+        candidate = await document_ref(conn, workspace_id=workspace_id, document_id=pin.document_id)
+        # A pinned row with no bytes is honestly absent: there is nothing to verify or seed.
+        if candidate is not None and candidate.project_id == project_id:
+            pinned = candidate
+    scoped = [
+        _ScopedProjectDocument(
+            ref=ref,
+            name=(
+                version_qualified_path(ref.path, ref.version)
+                if pinned is not None and ref.path == pinned.path
+                else ref.path
+            ),
+        )
+        for ref in refs
+    ]
+    if pinned is not None:
+        scoped.append(_ScopedProjectDocument(ref=pinned, name=pinned.path))
+    return tuple(sorted(scoped, key=lambda item: item.name))
 
 
 async def current_project_documents(
@@ -212,10 +294,17 @@ async def current_project_documents(
     refusal is :class:`ProjectFilesPinConflict` for the same reason the pinned read raises it —
     seeding a file whose bytes are not the bytes the document row names would hand the model a
     document this project never authored, under a name it trusts.
+
+    The set is :func:`_project_document_refs`', so a project-scoped ICP the project pinned is
+    compiled here under the plain name even after a newer version superseded it, and the newer
+    version rides beside it version-qualified.
     """
 
     files: list[CompiledProjectFile] = []
-    for ref in await _project_document_refs(conn, workspace_id=workspace_id, project_id=project_id):
+    for item in await _project_document_refs(
+        conn, workspace_id=workspace_id, project_id=project_id
+    ):
+        ref = item.ref
         record, body = await read_verified_artifact(
             conn,
             storage,
@@ -228,7 +317,7 @@ async def current_project_documents(
             )
         files.append(
             CompiledProjectFile(
-                path=ref.path,
+                path=item.name,
                 kind=ref.kind,
                 body=body,
                 version=ref.version,
@@ -291,6 +380,17 @@ async def load_project_status_facts(
             started_at=row["started_at"],
             finished_at=row["finished_at"],
         )
+    )
+    personas = tuple(
+        PersonaRunFacts(
+            run_id=row["run_id"],
+            status=str(row["status"]),
+            requested_at=row["requested_at"],
+            finished_at=row["finished_at"],
+        )
+        for row in (await conn.execute(_PERSONA_RUNS, {**params, "limit": _PERSONA_RUNS_SHOWN}))
+        .mappings()
+        .all()
     )
     runs = (
         (await conn.execute(_RESEARCH_RUNS, {**params, "limit": _RESEARCH_RUNS_SHOWN}))
@@ -370,13 +470,14 @@ async def load_project_status_facts(
         research=tuple(research),
         documents=tuple(
             ProjectDocumentFacts(
-                path=ref.path,
-                version=ref.version,
-                status=ref.status,
-                updated_at=ref.updated_at,
+                path=item.name,
+                version=item.ref.version,
+                status=item.ref.status,
+                updated_at=item.ref.updated_at,
             )
-            for ref in document_refs
+            for item in document_refs
         ),
+        personas=personas,
     )
 
 
@@ -427,10 +528,16 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
     if facts.icp is None:
         lines += ["Not confirmed."]
     else:
-        lines += [
-            f"- Key: `{facts.icp.icp_key}` (version {facts.icp.version}) — "
-            f"`{INPUT_PREFIX}{facts.icp.path}`"
-        ]
+        # The pin carries its document's scope, and the two scopes materialize under two different
+        # prefixes. A project-local variant named under the brand's prefix is a path nothing seeds
+        # — and this file is the first thing the agent opens on a thread, so it would send it to
+        # read a file that does not exist and then report its own ICP as missing.
+        icp_path = (
+            INPUT_PREFIX + facts.icp.path
+            if facts.icp.project_id is None
+            else project_workspace_path(facts.icp.path)
+        )
+        lines += [f"- Key: `{facts.icp.icp_key}` (version {facts.icp.version}) — `{icp_path}`"]
     lines += ["", "## Products"]
     if facts.product_set is None:
         lines += ["Not confirmed."]
@@ -471,6 +578,15 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
         for job in run.jobs:
             stage = "" if job.stage is None else f" ({job.stage})"
             lines += [f"  - {job.account_name}: {job.status}{stage}, {job.person_jobs} person jobs"]
+    lines += ["", "## Personas"]
+    if not facts.personas:
+        lines += ["No persona run yet."]
+    for persona_run in facts.personas:
+        lines += [
+            f"- Run `{persona_run.run_id}`: {persona_run.status}, "
+            f"requested {_iso(persona_run.requested_at)}, "
+            f"finished {_iso(persona_run.finished_at)}"
+        ]
     lines += ["", "## Project documents"]
     if not facts.documents:
         lines += ["None yet."]

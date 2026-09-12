@@ -1626,7 +1626,12 @@ grew a scope.
   project. The FK is composite (`(project_id, workspace_id) → project`), so a document cannot scope
   itself into another tenant's project.
 - **`derived_from_document_id uuid NULL`** — the brand-level document this one was written from
-  (self-FK). Lineage, not currency: it says what the author read, never what is served.
+  (self-FK). Lineage, not currency: it says what the author read, never what is served. **The FK is
+  single-column, so it carries no tenancy component**: it is resolved inside one workspace at write
+  time (`icp_authoring._derived_from` reads through `current_icp_document` with the request's
+  `workspace_id`), and that is the only thing making a link same-tenant. Every reader that *follows*
+  lineage must therefore re-check the target's own `workspace_id` against the reader's rather than
+  trusting the pointer — the column does not guarantee it.
 - The old `brand_knowledge_document_path_version` UNIQUE is replaced by the **scope-aware unique
   index** `brand_knowledge_document_scope_path_version (workspace_id, brand_id,
   COALESCE(project_id, ''), path, version)` — one path may exist once per scope per version, so a
@@ -1667,6 +1672,21 @@ lets the project win.**
   owns everything under `inputs/project/`. `project_status.current_project_documents` compiles those
   rows onto the lease beside `status.md`/`decisions.md`, and `status.md` lists them under *Project
   documents* off the same read, so the card cannot name a file the turn does not seed.
+- **Pin vs current, one rule in both scopes.** A path can carry two live versions at once: the one
+  the project **pinned** and a newer one published since. The pinned version keeps the plain name
+  and the other is offered beside it as `…/icp-<key>.v<n>.md`
+  (`brand_knowledge_context.version_qualified_path`). The brand's side does this in
+  `workspace_paths`; the project's side does it in `project_status._project_document_refs`, which
+  reads `current_project_icp_pin` and compiles **both** versions when the pinned project-scoped
+  document is no longer the current one. `author_icp_document`'s receipt resolves `workspace_path`
+  by the same rule, so the file the receipt names is the file the next turn opens.
+- **The brand index card lists brand rows only.** A project-scoped document rides the pinned set
+  (that is how its bytes reach the turn, and how `confirmed_icp` names it) but is listed by the
+  project's own card. `status.md`'s *Confirmed ICP* line likewise renders under the prefix of the
+  pin's own scope (`ProjectIcpPin.project_id`), never unconditionally under the brand's.
+- **The gate's catalog lookup is brand-only.** `product_set_selection_gate_tools._current_catalog`
+  filters `project_id IS NULL`: the ICP lookup beside it must find the project's variant, but what
+  the brand sells is the brand's fact.
 
 ### The two tools
 
@@ -1694,10 +1714,19 @@ with the lane off no worker would drive it and the row would hold that document'
 forever). It takes the `icp_key`, checks it against the project's **pinned** ICP, and offers a
 **personas-only onboarding run** through `DbOnboardingEnqueuer` — one place knows the task shape.
 `persona_run_id = uuid5("arv2-persona-run:{ws}:{document_id}:{turn}")`.
+A second call inside one turn is answered from the run at that turn's own derived id rather than
+re-offered: still open or `completed`/`completed_with_gaps` → the same receipt with `replayed=true`;
+`failed` → `persona_run_settled` ("ask again on a new turn"), because a terminal work row can never
+be re-offered and the old fall-through reported that as `enqueue_failed`.
 Refusals: `persona_synthesis_not_composed`, `icp_not_pinned_for_project` (covers both "no pin" and
-"not this key" — one fact from the agent's side), `persona_run_already_open`, `brand_not_onboarded`
-(no completed `full` walk to copy the company domain from), `enqueue_failed` (which leaves the run
-`failed`, so the document is free again), plus the turn-binding trio.
+"not this key" — one fact from the agent's side), `persona_run_already_open`, `persona_run_settled`,
+`brand_not_onboarded` (no completed `full` walk to copy the company domain from), `enqueue_failed`
+(which leaves the run `failed`, so the document is free again), plus the turn-binding trio.
+
+`status.md` grows a **Personas** section off this project's `personas` `onboarding_run` rows (the
+newest three: status, `requested_at`, `finished_at`), so a run that failed, stalled or finished with
+gaps is visible to the agent that asked and to the human waiting for the document — `read_current_run`
+deliberately filters `kind = 'full'`, so nothing else surfaced it.
 
 ### The personas-only run
 

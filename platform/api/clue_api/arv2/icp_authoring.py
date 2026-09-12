@@ -46,6 +46,7 @@ from clue_api.arv2.icp_confirmation import (
     ICP_ARTIFACT_MEDIA_TYPE,
     ICP_KIND,
     current_icp_document,
+    current_project_icp_pin,
 )
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
@@ -150,7 +151,8 @@ class AuthoredIcp:
     version: int
     path: str
     #: Where the document is readable in the agent's workspace — the brand's knowledge prefix for a
-    #: brand profile, the project's for a variant.
+    #: brand profile, the project's for a variant, and the version-qualified file name when the
+    #: project's pin already owns the plain name of this path (see :func:`_receipt_name`).
     workspace_path: str
     status: str
     replayed: bool
@@ -178,6 +180,51 @@ def _workspace_path(path: str, *, project_scoped: bool) -> str:
     # folder name, not a directory under the prefix. An ICP is in ``audience/``, so nothing is
     # stripped here — the rule is restated so the two surfaces name one document identically.
     return _PROJECT_INPUT_PREFIX + path.removeprefix("project/")
+
+
+def _version_qualified(path: str, version: int) -> str:
+    """``audience/icp-gi.md`` at v3 → ``audience/icp-gi.v3.md``.
+
+    ``brand_knowledge_context.version_qualified_path``, restated for the Global Constraint 7 reason
+    the two prefixes above are restated. The materializer gives the *pinned* version of a path the
+    plain name and every other version this one, so a receipt that ignored the rule would name the
+    file the pin owns rather than the file this act just wrote.
+    """
+
+    stem, dot, suffix = path.rpartition(".")
+    return f"{stem}.v{version}.{suffix}" if dot else f"{path}.v{version}"
+
+
+async def _receipt_name(
+    conn: AsyncConnection,
+    request: IcpAuthoringRequest,
+    *,
+    document_id: UUID,
+    path: str,
+    version: int,
+    row_project_id: str | None,
+) -> str:
+    """The name this version really materializes under — plain, or version-qualified by the pin.
+
+    A document owns the plain name of its path unless *another* version of that same path, in that
+    same scope, is the project's pin: the pin keeps the natural name and everything else is offered
+    beside it under :func:`_version_qualified` (``brand_knowledge_context.workspace_paths``). An
+    authored row is always born ``proposed``, so it is never the pin itself — which means the very
+    first authoring over a pinned path lands at the qualified name, and a receipt promising the
+    plain one would send the agent to re-read the *pinned* (older) profile as its own new draft.
+    """
+
+    pin = await current_project_icp_pin(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
+    )
+    if (
+        pin is not None
+        and pin.document_id != document_id
+        and pin.path == path
+        and pin.project_id == row_project_id
+    ):
+        return _version_qualified(path, version)
+    return path
 
 
 def _validate_key(icp_key: str) -> None:
@@ -227,12 +274,14 @@ def _validate_front(front: Mapping[str, Any], *, icp_key: str) -> None:
         )
 
 
-async def _stored(conn: AsyncConnection, *, document_id: UUID, icp_key: str) -> AuthoredIcp | None:
+async def _stored(
+    conn: AsyncConnection, request: IcpAuthoringRequest, *, document_id: UUID
+) -> AuthoredIcp | None:
     """The row this act already wrote, or ``None``. Read before anything is rendered or stored.
 
     The status is the row's own rather than a repeated ``"proposed"``: by the time a call is
     replayed a later version may have superseded this one, and reporting what is at rest is the
-    honest answer.
+    honest answer. ``workspace_path`` is resolved the same way, against the pin as it stands now.
     """
 
     row = (
@@ -251,12 +300,22 @@ async def _stored(conn: AsyncConnection, *, document_id: UUID, icp_key: str) -> 
     if row is None:
         return None
     path = str(row["path"])
+    version = int(row["version"])
+    row_project_id = None if row["project_id"] is None else str(row["project_id"])
+    name = await _receipt_name(
+        conn,
+        request,
+        document_id=document_id,
+        path=path,
+        version=version,
+        row_project_id=row_project_id,
+    )
     return AuthoredIcp(
         document_id=document_id,
-        icp_key=icp_key,
-        version=int(row["version"]),
+        icp_key=request.icp_key,
+        version=version,
         path=path,
-        workspace_path=_workspace_path(path, project_scoped=row["project_id"] is not None),
+        workspace_path=_workspace_path(name, project_scoped=row_project_id is not None),
         status=str(row["status"]),
         replayed=True,
     )
@@ -275,6 +334,16 @@ async def _refuse_cross_scope(
     Only servable rows own a key — a superseded document is history, and its name is free again.
     Another *project's* variant is invisible here on purpose: it is not this project's to collide
     with, and the scoped unique index already keeps the two rows apart.
+
+    **The rule is this writer's, not the schema's.** The synthesis writer does not apply it:
+    ``onboarding_synthesis_wiring._register_documents`` writes the brand's ICPs unscoped with no
+    cross-scope check, so a full re-onboarding can mint a brand-level ``audience/icp-foo.md`` after
+    a project has already taken ``foo`` for a variant, and the invariant this function asserts is
+    then false at rest. That state is survivable rather than corrupting: the two rows occupy two
+    different workspace paths, and ``icp_confirmation.current_icp_document``'s scoped lookup orders
+    project-local first, so the project keeps reading its own row wherever it looks. Enforcing the
+    rule on the synthesis path too would mean refusing a brand's own re-onboarding because of one
+    project's private key, which is the worse trade.
     """
 
     rows = (
@@ -389,7 +458,7 @@ async def author_icp_document(
     document_id = authored_document_id(
         turn_id=request.turn_id, scope=request.scope, icp_key=request.icp_key
     )
-    replayed = await _stored(conn, document_id=document_id, icp_key=request.icp_key)
+    replayed = await _stored(conn, request, document_id=document_id)
     if replayed is not None:
         return replayed
 
@@ -425,7 +494,6 @@ async def author_icp_document(
         size_bytes=len(rendered),
         source_key=ICP_AUTHORING_SOURCE_KEY,
     )
-    await storage.put(key, rendered, media_type=ICP_ARTIFACT_MEDIA_TYPE)
 
     scope_params = {
         "workspace_id": request.workspace_id,
@@ -508,9 +576,16 @@ async def author_icp_document(
         ),
         {**scope_params, "document_id": document_id, "statuses": list(_RETIRABLE_STATUSES)},
     )
+    # The blob goes out last, after every refusable condition has passed and the row is in this
+    # transaction. ``record_artifact`` stays above the INSERT because the document's FK-less
+    # ``artifact_key`` is only meaningful once the artifact row exists, and both roll back
+    # together; the blob does not, so writing it before a refusal (a version race, an integrity
+    # failure) would leave bytes in object storage that nothing references and nothing reaps —
+    # and this is the one write path an agent can retry in a loop.
+    await storage.put(key, rendered, media_type=ICP_ARTIFACT_MEDIA_TYPE)
     # Read the row back rather than trusting the version just computed: the stored one is what
     # every later reader, gate and pin will cite.
-    stored = await _stored(conn, document_id=document_id, icp_key=request.icp_key)
+    stored = await _stored(conn, request, document_id=document_id)
     if stored is None:  # pragma: no cover - the INSERT above either landed or raised
         raise IcpAuthoringRefused(
             "icp_document_version_race", "the authored ICP document did not persist"

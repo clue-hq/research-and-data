@@ -68,10 +68,12 @@ __all__ = [
     "confirmed_icp_for_project",
     "current_knowledge_documents",
     "current_project_knowledge_refs",
+    "document_ref",
     "get_knowledge_pin",
     "knowledge_seed_files",
     "load_or_create_knowledge_pin",
     "read_pinned_documents",
+    "version_qualified_path",
     "workspace_paths",
 ]
 
@@ -234,7 +236,7 @@ async def current_project_knowledge_refs(
     return tuple(_ref_from_row(row) for row in rows.all())
 
 
-async def _document_ref(
+async def document_ref(
     conn: AsyncConnection,
     *,
     workspace_id: str,
@@ -245,6 +247,11 @@ async def _document_ref(
     Status is deliberately not filtered: this reads the version a *project pinned*, and a pin is
     not undone by a later publish on the same path. A row with no bytes is honestly absent, because
     there is nothing to seed or verify.
+
+    Public because the project's own compiler (``project_status.current_project_documents``) needs
+    exactly this read for exactly this reason: a pinned project-scoped document that a newer
+    version has superseded is no longer "current", yet it is still the document the project agreed
+    to and still has to reach the workspace.
     """
 
     row = (
@@ -342,7 +349,7 @@ async def load_or_create_knowledge_pin(
     )
     pin = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
     if pin is not None and all(ref.document_id != pin.document_id for ref in documents):
-        pinned_ref = await _document_ref(
+        pinned_ref = await document_ref(
             conn, workspace_id=workspace_id, document_id=pin.document_id
         )
         if pinned_ref is not None:
@@ -434,8 +441,13 @@ async def read_pinned_documents(
     return tuple(documents)
 
 
-def _version_qualified(path: str, version: int) -> str:
-    """``audience/icp-gi.md`` at v3 → ``audience/icp-gi.v3.md``."""
+def version_qualified_path(path: str, version: int) -> str:
+    """``audience/icp-gi.md`` at v3 → ``audience/icp-gi.v3.md``.
+
+    The one spelling of the name a *non-pinned* version of a pinned path takes, shared with the
+    project compiler (``project_status.current_project_documents``) so a project's two versions
+    are named here exactly as the brand's two are.
+    """
 
     stem, dot, suffix = path.rpartition(".")
     return f"{stem}.v{version}.{suffix}" if dot else f"{path}.v{version}"
@@ -476,7 +488,7 @@ def workspace_paths(
             name = (
                 path
                 if document.ref.document_id == keeper.ref.document_id
-                else _version_qualified(path, document.ref.version)
+                else version_qualified_path(path, document.ref.version)
             )
             resolved[document.ref.document_id] = (
                 INPUT_PREFIX + name if project_id is None else project_workspace_path(name)
@@ -694,10 +706,19 @@ def compile_brand_knowledge_index_card(
     riding the opening context. Nothing else is droppable — the company, catalog, proof, ICP and
     persona lines are what the Stage-0 procedure is written against — so a budget below that floor
     yields a card that is as small as it can honestly be rather than a card missing its spine.
+
+    **The entries are the brand's documents only.** A project-scoped document rides the pinned set
+    (that is how its bytes reach the turn, and how ``confirmed_icp`` names it) but it is listed by
+    the *project's* index card, off the project's own rows. Listing it in both cards spends the
+    brand card's budget on a line the project card already carries, and — when the pinned version
+    and the project's current version of one path differ — puts two disagreeing descriptions of one
+    file in one turn's opening context. ``confirmed_icp`` is unchanged: naming the pinned document
+    is this card's job whatever that document's scope.
     """
 
     ordered = sorted(
-        documents, key=lambda document: (_card_rank(document.ref.path), document.ref.version)
+        (document for document in documents if document.ref.project_id is None),
+        key=lambda document: (_card_rank(document.ref.path), document.ref.version),
     )
     # The same paths the seeds materialize under, so every line of the index names a file that is
     # really there — including both versions of a pinned path.

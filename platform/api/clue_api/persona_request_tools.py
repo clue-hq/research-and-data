@@ -37,7 +37,12 @@ from sqlalchemy import text
 from clue_api.arv2.icp_authoring import ICP_KEY_MAX_LENGTH, ICP_KEY_PATTERN
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.onboarding_driver import IcpRef
-from clue_api.arv2.onboarding_store import create_persona_run, fail_run, open_persona_run
+from clue_api.arv2.onboarding_store import (
+    create_persona_run,
+    fail_run,
+    open_persona_run,
+    read_run_status,
+)
 from clue_api.onboarding_routes import DbOnboardingEnqueuer
 from clue_api.turn_action import (
     TurnActionUnresolvable,
@@ -192,6 +197,23 @@ class DbPersonaRequestService:
                 # This turn's own run, still open — so its offer succeeded (a failed offer fails
                 # the run below, which is no longer open). Nothing left to do but say so.
                 return PersonaSynthesisReceipt(run_id=run_id, icp_key=pin.icp_key, replayed=True)
+            # No *open* run — which is two different facts, and telling them apart is the whole
+            # point of this read. A run at this turn's own derived id that has already **settled**
+            # must not fall through to the offer path below: ``create_persona_run`` is a no-op on
+            # its own id, and ``enqueue_personas`` on a terminal work row is refused
+            # (``reopen_terminal=False``), so the agent would be told the job "could not be queued;
+            # ask again" — the opposite of the truth, forever, because the run can never leave a
+            # terminal state.
+            settled = await read_run_status(conn, run_id=run_id)
+            if settled in ("completed", "completed_with_gaps"):
+                # This turn did open that run and the work is done. ``replayed`` is the honest
+                # word: the request is this turn's, and it has already been served.
+                return PersonaSynthesisReceipt(run_id=run_id, icp_key=pin.icp_key, replayed=True)
+            if settled == "failed":
+                raise PersonaSynthesisRefused(
+                    "persona_run_settled",
+                    "that request already failed; ask again on a new turn",
+                )
             company_domain = (
                 await conn.execute(
                     _ONBOARDED_DOMAIN,

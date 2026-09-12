@@ -18,6 +18,7 @@ from clue_api.arv2.icp_confirmation import ProjectIcpPin
 from clue_api.project_status import (
     DecisionItem,
     DiscoveryFacts,
+    PersonaRunFacts,
     ProjectDocumentFacts,
     ProjectStatusFacts,
     ResearchJobFacts,
@@ -40,6 +41,7 @@ def _facts(**overrides: Any) -> ProjectStatusFacts:
         discovery=None,
         research=(),
         documents=(),
+        personas=(),
     )
     return replace(base, **overrides)
 
@@ -57,12 +59,14 @@ def test_an_empty_project_renders_every_section_with_its_honest_absence() -> Non
         "## Accounts",
         "## Discovery",
         "## Research",
+        "## Personas",
         "## Project documents",
     ):
         assert heading in text
     assert "Not confirmed." in text
     assert "No discovery run yet." in text
     assert "No research run yet." in text
+    assert "No persona run yet." in text
     assert "Not written." in text
     assert "now" not in text.lower()
 
@@ -181,6 +185,78 @@ def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() ->
     assert (
         "- `inputs/project/audience/icp-gi.md` — version 1, ready, "
         "updated 2026-09-12T08:30:00+00:00" in text
+    )
+
+
+def test_the_confirmed_icp_line_names_the_prefix_of_the_pins_own_scope() -> None:
+    """I1: a project-local pinned ICP is not in the brand's folder, and must not be named there.
+
+    ``ProjectIcpPin`` carries the pinned document's scope. A project-scoped variant materializes
+    under ``inputs/project/`` — ``knowledge_seed_files`` skips it and the project files pin seeds
+    it — so rendering it under the brand prefix advertises a path nothing seeds. status.md is the
+    first file the agent opens on a thread, so it would send it to read a file that does not
+    exist, and the agent would then report its own confirmed ICP as missing.
+    """
+
+    def _pin(project_id: str | None) -> ProjectIcpPin:
+        return ProjectIcpPin(
+            document_id=UUID(int=1),
+            icp_key="gi-dac",
+            artifact_key="ws/aa",
+            artifact_sha256="a" * 64,
+            product_selection_version=1,
+            version=2,
+            path="audience/icp-gi-dac.md",
+            project_id=project_id,
+        )
+
+    brand = render_status_markdown(_facts(icp=_pin(None)))
+    assert "- Key: `gi-dac` (version 2) — `inputs/brand/knowledge/audience/icp-gi-dac.md`" in brand
+    assert "inputs/project/audience/icp-gi-dac.md" not in brand
+
+    project = render_status_markdown(_facts(icp=_pin("prj_1")))
+    assert "- Key: `gi-dac` (version 2) — `inputs/project/audience/icp-gi-dac.md`" in project
+    assert "inputs/brand/knowledge/" not in project
+
+
+def test_the_personas_section_lists_this_projects_persona_runs_or_says_there_are_none() -> None:
+    """M3: a personas run that failed or finished with gaps has to be visible somewhere.
+
+    The agent opens one through ``request_persona_synthesis@1``, is told "it is running", and the
+    run then lives entirely on the fleet: ``read_current_run`` filters ``kind = 'full'``, and the
+    tool returned long before the run settled. Without this section a run that failed is visible
+    to nobody — the agent keeps reporting work that will never land, and the human waits for a
+    document that will never appear.
+    """
+
+    text = render_status_markdown(
+        _facts(
+            personas=(
+                PersonaRunFacts(
+                    run_id=UUID(int=11),
+                    status="completed_with_gaps",
+                    requested_at=_T,
+                    finished_at=_T,
+                ),
+                PersonaRunFacts(
+                    run_id=UUID(int=12), status="running", requested_at=_T, finished_at=None
+                ),
+            )
+        )
+    )
+    assert "No persona run yet." not in text
+    assert (
+        "- Run `00000000-0000-0000-0000-00000000000b`: completed_with_gaps, requested "
+        "2026-09-12T08:30:00+00:00, finished 2026-09-12T08:30:00+00:00" in text
+    )
+    # An open run is honestly open: an em dash, not a guessed finish time.
+    assert (
+        "- Run `00000000-0000-0000-0000-00000000000c`: running, requested "
+        "2026-09-12T08:30:00+00:00, finished —" in text
+    )
+    # The section sits between Research and Project documents, so the file stays one story.
+    assert (
+        text.index("## Research") < text.index("## Personas") < text.index("## Project documents")
     )
 
 

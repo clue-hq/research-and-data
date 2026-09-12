@@ -447,7 +447,16 @@ class OpenProductSetSelectionGateTool(Tool):
 def _current_catalog(
     documents: Sequence[KnowledgeDocumentRef],
 ) -> KnowledgeDocumentRef | None:
-    catalogs = [ref for ref in documents if ref.kind == _CATALOG_KIND]
+    """The **brand's** product catalog. A project-scoped row is never the product catalog.
+
+    ``documents`` is a union of both scopes, because the ICP lookup beside this one must find the
+    project's own variant. The catalog is the other kind of question: what this brand sells is the
+    brand's fact, and the gate confirms a selection *from* it. A project-scoped `product/catalog.md`
+    would otherwise silently become the authority for that project's product set — nothing in the
+    schema forbids one, and the set of project-scoped kinds keeps growing.
+    """
+
+    catalogs = [ref for ref in documents if ref.kind == _CATALOG_KIND and ref.project_id is None]
     if not catalogs:
         return None
     return min(catalogs, key=lambda ref: ref.path)

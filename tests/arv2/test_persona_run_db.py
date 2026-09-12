@@ -35,6 +35,7 @@ from clue_api.arv2.onboarding_driver import (
 from clue_api.arv2.onboarding_store import (
     create_persona_run,
     create_run,
+    fail_run,
     finish_run,
     open_persona_run,
     read_current_run,
@@ -568,5 +569,79 @@ def test_a_run_that_could_not_be_offered_is_failed_not_stranded(tmp_path: Any) -
                 await open_persona_run(conn, persona_icp_document_id=fixture.icp_document_id)
                 is None
             )
+
+    run_async(scenario())
+
+
+def test_a_same_turn_retry_after_the_run_completed_is_replayed_not_re_offered(
+    tmp_path: Any,
+) -> None:
+    """FW1 / review I4: a settled run at this turn's own id is answered honestly.
+
+    ``open_persona_run`` matches ``queued``/``running`` only, so once the run this turn opened has
+    finished it returns ``None`` — and the old code fell through to the offer path.
+    ``create_persona_run`` is a no-op on its own id, ``enqueue_personas`` is refused on a terminal
+    work row (``reopen_terminal=False``), and the agent was told the job *could not be queued; ask
+    again* — the opposite of the truth, and following it produced the same refusal forever, because
+    a terminal run can never leave its status. ``completed_with_gaps`` is the same fact: the work
+    is done, the document may be partial, and that is the persona document's story to tell.
+    """
+
+    async def scenario() -> None:
+        for terminal in ("completed", "completed_with_gaps"):
+            async with rollback_conn() as conn:
+                fixture = await seed_icp_fixture(conn, FsStorage(tmp_path))
+                await _completed_full_run(conn, fixture, "clue.dev")
+                queue = FakeQueue()
+                first = await _service(conn, queue).request(_request(fixture))
+                await conn.execute(
+                    text(
+                        "UPDATE onboarding_run SET status = :status, finished_at = now() "
+                        "WHERE run_id = :run_id"
+                    ),
+                    {"status": terminal, "run_id": first.run_id},
+                )
+
+                again = await _service(conn, queue).request(_request(fixture))
+
+                assert (again.run_id, again.icp_key) == (first.run_id, ICP_KEY)
+                assert again.replayed is True
+                # Nothing was re-offered, and the settled row was not walked back.
+                assert len(queue.calls) == 1
+                assert (await _run_row(conn, first.run_id))["status"] == terminal
+
+    run_async(scenario())
+
+
+def test_a_same_turn_retry_after_the_run_failed_is_refused_persona_run_settled(
+    tmp_path: Any,
+) -> None:
+    """The other settled branch: a failed run cannot be re-offered on the turn that opened it.
+
+    ``fail_run`` is guarded on an open run, so the row can never be revived, and the fleet's
+    ``reopen_terminal=False`` means this turn's work id is spent. Saying so by name — with "ask
+    again on a new turn", which derives a different ``run_id`` — is the only instruction that can
+    actually succeed; ``enqueue_failed``'s "ask again" could not, and carried an ERROR log line for
+    a benign path.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await seed_icp_fixture(conn, FsStorage(tmp_path))
+            await _completed_full_run(conn, fixture, "clue.dev")
+            queue = FakeQueue()
+            first = await _service(conn, queue).request(_request(fixture))
+            await fail_run(conn, run_id=first.run_id)
+
+            with pytest.raises(PersonaSynthesisRefused) as refused:
+                await _service(conn, queue).request(_request(fixture))
+            assert refused.value.code == "persona_run_settled"
+            assert "new turn" in str(refused.value)
+            assert len(queue.calls) == 1
+
+            # A *new* turn derives a new run id, so the honest instruction actually works.
+            later = await _service(conn, queue).request(_request(fixture, turn_id=OTHER_TURN))
+            assert later.run_id == _run_id(fixture, OTHER_TURN) != first.run_id
+            assert later.replayed is False
 
     run_async(scenario())
