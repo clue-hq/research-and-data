@@ -27,12 +27,11 @@ The approved AI Elements state primitives are limited to:
 
 1. `Reasoning`;
 2. `Shimmer`;
-3. `ChainOfThought`;
-4. `Tool`;
-5. `Task`;
-6. `Plan`;
-7. `Confirmation`;
-8. `Sources`.
+3. `Tool`;
+4. `Task`;
+5. `Plan`;
+6. `Confirmation`;
+7. `Sources`.
 
 `Conversation`, `Message`, `PromptInput`, `Agent`, `Artifact`, `CodeBlock`, and
 other catalog components are not part of the current implementation.
@@ -106,7 +105,7 @@ does not merely mean the agent is thinking.
 | Stream transport | `src/features/projects/data/chat-stream.repository.ts` |
 | Message timeline | `src/features/projects/components/chat-transcript.tsx` |
 | Part renderer | `src/features/projects/components/chat-message-part.tsx` |
-| Reasoning + activity adapters | `src/features/projects/components/chat-agent-activity.tsx` |
+| Consolidated reasoning disclosure | `src/features/projects/components/chat-reasoning.tsx` |
 | Tool adapter | `src/features/projects/components/chat-tool-call.tsx` |
 | Task adapter | `src/features/projects/components/chat-research-task.tsx` |
 | Confirmation (gate) adapter | `src/features/projects/components/chat-gate-card.tsx` |
@@ -131,7 +130,7 @@ part id and never merges two half-cards. The union is:
 ```ts
 type ChatPart =
   | ChatTextPart        // accumulated from text.start / text.delta / text.end
-  | ChatReasoningPart   // a safe per-round status, never raw model reasoning
+  | ChatReasoningPart   // model-round state, plus optional backend-supplied trace
   | ChatActivityPart    // ordered, durably-recorded observed steps
   | ChatToolPart        // toolName, toolCallId, structured input/output/error
   | ChatTaskPart        // one detached run as one visible task
@@ -176,14 +175,31 @@ text.start | text.delta | text.end | stream.hello | stream.reset
 is monotone within one turn. Part lifecycle events carry a full snapshot;
 `text.delta` is append-only and index-ordered.
 
-The UI exposes user-visible activity summaries. It does not require or display
-private raw model chain-of-thought, and the backend sends none: the `reasoning`
-part carries no text at all.
+**Presentation ruling, 2026-09-12:** one inline `Reasoning` disclosure per
+assistant response replaces the per-round completion labels and `ChainOfThought`
+activity list. Round text is joined in stream order, without interpreting Markdown.
+Backticks, fences and other syntax remain ordinary text in the Clue body font.
+The disclosure is present only when the backend supplied non-empty trace text;
+otherwise an active model round shows one shimmering Thinking label and a
+completed round adds no status receipt. Tool results, tasks, gates, failures and
+sources retain their own components.
+
+Trace availability and retention are unchanged: the backend's development-only
+`CLUE_CHAT_REASONING_TRACE_MODE=raw` may supply ephemeral provider text. It is not
+saved in the durable conversation, and reload or stream reset can remove it.
+This presentation change does not enable raw traces in production or persist them.
 
 ## Disclosure and scroll behavior
 
-Each reasoning block owns independent disclosure state. Expanding a completed
-step must not expand earlier reasoning blocks.
+Each assistant response owns one disclosure. It opens when trace text first
+arrives during a running turn. Manual collapse remains respected as more text
+and model rounds arrive. It closes after the turn finishes, and can be reopened
+while the text remains available. Historical disclosures start collapsed.
+
+Trace text uses `white-space: pre-wrap` and `overflow-wrap: anywhere`, with a
+256px vertical scroll limit. Final-answer Markdown remains formatted, but inline
+code, fenced blocks and long strings wrap inside the available message width.
+No code block or trace should create horizontal scrolling in the chat panel.
 
 The transcript follows the reader:
 
@@ -232,15 +248,10 @@ option are local editor interaction state—not page or backend business state.
 removable reference containing stable artifact and node IDs. That editor work
 remains separate from this AI Elements state integration.
 
-Active reasoning and task labels use the shared `Shimmer` primitive. Its
-background position loops continuously; task and tool loader SVGs rotate while
-running. Completed states use the compact Clue status check rather than a large
-bare tick.
-
-Every streaming reasoning status, including the initial `Thinking` state and
-`landing agent is running...`, places the same rotating loader immediately
-before the shimmer label. A disclosure chevron is rendered only when the status
-has detail or an activity trace to expand.
+Active reasoning uses `Shimmer` with no rotating loader or completion checkmark.
+The chevron appears only when there is trace text to expand. Reduced motion
+disables shimmer emphasis and disclosure animation. Task/tool presentation is
+independent of reasoning and keeps its existing lifecycle indicators.
 
 ## Lightfield evidence limit
 
@@ -256,6 +267,12 @@ implementation uses Clue data contracts, Figma assets, and locally owned AI
 Elements primitives.
 
 ## Validation record
+
+Validated on 2026-09-12: consolidated disclosure lifecycle and transcript tests,
+real-component browser checks at a 320px panel width with long backticks, URLs,
+Markdown and fenced JSON (no horizontal overflow), plus the design-system build,
+lint and production build. Test samples are isolated at the local preview; no
+provider calls or backend trace-retention changes were made.
 
 Validated on 2026-08-01:
 

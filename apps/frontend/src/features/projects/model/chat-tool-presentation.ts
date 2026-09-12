@@ -99,15 +99,6 @@ export function toolDisplayLabel(toolName: string): string {
   return TOOL_LABELS[toolName] ?? "Complete a project step";
 }
 
-export function activityStepLabel(kind: string, wireLabel: string): string {
-  if (kind === "model_round") return "Think through the next step";
-  if (kind === "tool_call") {
-    const [toolName] = wireLabel.split("@", 1);
-    return toolDisplayLabel(toolName);
-  }
-  return "Work on the project";
-}
-
 function outputValues(part: ChatToolPart): Record<string, unknown> {
   const output = part.output ?? {};
   return record(output.reference_values) ?? output;

@@ -17,8 +17,6 @@ import {
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
-import type { TranscriptTurnState } from "../model/chat-transcript";
-import { ChatAgentActivity, ChatReasoning } from "./chat-agent-activity";
 import { ChatGateCard } from "./chat-gate-card";
 import { ChatResearchTask } from "./chat-research-task";
 import { ChatToolCall } from "./chat-tool-call";
@@ -45,11 +43,9 @@ export interface ChatPartActions {
 export function ChatMessagePartView({
   actions,
   part,
-  turnState,
 }: {
   actions: ChatPartActions;
   part: ChatPart;
-  turnState: TranscriptTurnState;
 }) {
   switch (part.kind) {
     case "text":
@@ -67,9 +63,10 @@ export function ChatMessagePartView({
         </div>
       );
     case "reasoning":
-      return <ChatReasoning part={part} turnState={turnState} />;
     case "agent_activity":
-      return <ChatAgentActivity part={part} turnState={turnState} />;
+      // Reasoning is consolidated at the message level. Activity receipts stay
+      // in the stream/inspector, without duplicating the same rounds in chat.
+      return null;
     case "tool":
       return <ChatToolCall part={part} />;
     case "task":
