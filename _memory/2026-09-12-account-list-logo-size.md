@@ -14,3 +14,18 @@ Frontend design-system build, lint and production build passed; only the existin
 canvasOperations unused-function warnings remain. No backend/runtime changes or new
 unit tests for this three-line presentation change. Founder also sent a truncated
 additional request; asked for the missing text asynchronously, with no answer yet.
+
+## Follow-up: account preview logo
+
+Founder clarified the next change with an account-preview screenshot: enlarge that
+logo too and reduce its surrounding space. In shared AccountIdentity, increased
+the image from 36px to 56px inside the existing 68px tile, reducing each inset from
+16px to 6px. CSS and intrinsic dimensions match; contain preserves proportions and
+shrink-0 prevents compression. The shared component also covers account details,
+research overview and the project account preview.
+
+Live Semarang browser confirmed loaded 56x56 image, 68x68 tile, 6px insets and contain;
+screenshot reviewed. Design-system build, lint and production build passed, with
+only the same two existing canvasOperations warnings. git diff --check passed.
+An initial file search failed because zsh expanded an unmatched wildcard; reran
+the search against the components directory. No backend, data or server changes.

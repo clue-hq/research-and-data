@@ -83,12 +83,12 @@ export function AccountIdentity({ account }: { account: Pick<AccountDetail, "nam
         <Image
           alt=""
           aria-hidden="true"
-          className="size-9 object-contain"
-          height={36}
+          className="size-14 shrink-0 object-contain"
+          height={56}
           priority
           src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
           unoptimized={account.logoPath != null}
-          width={36}
+          width={56}
         />
       </div>
       <h1 className={`${readability.detailTitle} mt-2`}>{account.name}</h1>
