@@ -1753,6 +1753,11 @@ at all four sites; `CONVERSATION_RECIPE_VERSION = 24`;
 `STAGE0_CONVERSATION_TRIAL_SURFACE.withheld_tools` — this is a project-conversation capability.
 v22 / v45 / `recipe0-stage0-v23.json` are byte-untouched.
 
+> **Superseded as the current versions (2026-09-12).** The project chat now runs
+> **`head-of-abm@v47` / `stage0-interview@v24` / `recipe0-stage0-v25.json`
+> (`CONVERSATION_RECIPE_VERSION = 25`)** — see § "Project plan document" below. v46 / v23 / v24
+> remain exactly as described here, for replay.
+
 ### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
 
 Run at this stage, all seven answered:
@@ -1770,3 +1775,74 @@ Run at this stage, all seven answered:
 6. **Static guard** — `tests/arv2/test_import_guard.py` green, `lint-imports` 26 kept / 0 broken. ✔
 7. **`.env.example` posture** — unchanged; no new flag (`author_icp_document` needs none,
    `request_persona_synthesis` rides `onboarding_v2_enabled`). ✔
+
+## Project plan document (2026-09-12)
+
+A project's **plan** is the execution plan in the human's terms — the outcome, the confirmed profile
+and products by name, the account motion, the channels and sequence, what day ninety looks like. It
+lives at `project/plan.md` as a `project-plan` knowledge document with `project_id` set (the scope
+column the ICP-authoring migration added), so everything above about scope, lineage and
+materialization applies to it unchanged: it compiles onto the lease as `inputs/project/plan.md` and
+lists in `status.md` under *Project documents*.
+
+**Current versions:** `head-of-abm@v47` (pins `stage0-interview@v24`) and
+`recipe0-stage0-v25.json`, with `CONVERSATION_RECIPE_VERSION = 25` and
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v47"`.
+
+### The tool
+
+`write_project_document@1` (`platform/api/clue_api/project_document_tools.py`, at the `clue_api`
+root because turn binding lives outside `arv2/`; the store is `arv2/project_documents.py`). WRITE,
+`DOMAIN_IDEMPOTENT` ("presenting turn + document + expected version"), free, **no flag**. Input:
+`document: "plan"`, `body`, `expected_version: int | None`, plus the engine-injected trusted
+`source_turn_ref`; `pin_requirements = ("project",)`, resolved through
+`stage0_recipe._presenting_turn_project_pin` — the presenting turn supplies the project and the
+human it credits, so the model cannot address another project's plan.
+
+The write is one immutable version per save. The document id is
+`uuid5("arv2-project-plan:{turn_id}:{expected_version or 0}")`, so a replay inside one turn returns
+the stored row **before** anything is rendered, addressed or stored. `expected_version` must equal
+the version the writer read (omitted when the file does not exist); anything else is refused rather
+than overwritten. The new row supersedes the servable one and retires the other `ready`/`proposed`
+rows **in this project's scope only**.
+
+**Refusals** — tool-level: `project_documents_not_composed`, `project_document_turn_ref_malformed`,
+`project_document_turn_not_found`, `project_document_addressee_missing`. Store-level (raised as
+`PreconditionFailed`): `project_document_body_empty`, `project_document_revision_conflict` (the
+message names `inputs/project/plan.md`; the skill's §6b tells the agent to re-read, keep the human's
+edits and write again), `project_document_version_race`, `project_document_not_found`.
+
+### The routes
+
+`frontend_read/project_documents.py` registers three routes on the workspace-scoped `/frontend/v1`
+router (tenancy by `X-Workspace-Id`), the HTTP face of the same store:
+`GET /projects/{project_id}/documents` (list), `GET …/documents/{document_id}` (markdown + front
+matter), `PUT …/documents/{document_id}` with `{body, expected_revision}` — the human's edit, which
+mints the next version with `user_edit` provenance exactly as the brand-knowledge PUT does. Scope is
+the store's, so another project's or another tenant's document is *absent*, never refused
+differently. Refusal map: `not_found` → 404 `PROJECT_DOCUMENT_NOT_FOUND`, `revision_conflict` and
+`version_race` → 409 `DOCUMENT_REVISION_CONFLICT`, `body_empty` → 422 `DOCUMENT_BODY_EMPTY`; an
+unknown code defaults to the 409 rather than escaping as a 500. Ruling I: this PUT demotes a
+`confirmed` project-local ICP to `proposed` like its brand sibling, while a `project-plan` row stays
+`ready` — plans have no approval stamp. Wire shapes are contracted in
+`apps/frontend/docs/api-contracts/projects.md` § "Project documents".
+
+### The plan part
+
+`conversation_turns._PLAN_OBJECT_TYPES` includes `project_document`: a finalize carrying
+`{object_type: "project_document", object_id, version}` in `domain_refs` projects exactly one `PLAN`
+part titled **"Plan"** with `revision_label = f"v{version}"`. Skill §6b tells the agent to include
+that ref. **Founder ruling R12 (2026-09-12)** defers the Plan tab, the editor, the card's
+click-through, the auto-open and the gallery document cards to
+`docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` — so today the card renders and opens
+nothing, and the three routes have no frontend consumer.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Re-run at this stage, all seven answered: v47 pins no readiness / Stage-0 / Client-KB / Product-KB
+tool (the one added pin is this write); the product-set gate source is untouched and the new modules
+call no card compiler; the pin is `_presenting_turn_project_pin` off the trusted `source_turn_ref`,
+with no Client-KB pin and no new `AgentTurnScopePinConflict` path; a plan is a read-only materialized
+`.md` plus an index row, so no card compiles for it; `launch_arv2_account_research` gained no
+precondition; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0 broken;
+`.env.example` posture unchanged with **no new flag**.

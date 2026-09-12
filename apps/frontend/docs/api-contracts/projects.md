@@ -2250,3 +2250,54 @@ attention[{account_name, reason}] } | null`. Backend: the account driver stamps
 only when every job is terminal; Completed lingers 60 s). Frontend polls every 5 s while a card
 is served and rotates the status line every 4 s (`model/research-progress-line.ts`). No chevron,
 no dismiss, no per-account detail (founder rulings 2026-09-12).
+
+### Project documents — the plan and the project's own knowledge (2026-09-12)
+
+Spec `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
+project owns documents of its own — the plan the Head of ABM writes (`write_project_document@1` →
+`project/plan.md`), and any ICP or persona document authored local to the project. They are served
+by three routes on the workspace-scoped `/frontend/v1` router
+(`platform/api/clue_api/frontend_read/project_documents.py`), registered after the research-progress
+route. Wire is **snake_case** in a `{ "data": … }` envelope — the `discovery/current` and
+`research/progress` neighbours' shape, not the camelCase `WireModel` the accounts contract uses.
+Timestamps are `Z`-suffixed ISO. Tenancy is the router's `X-Workspace-Id` header (401 without it).
+
+| route | answer |
+| --- | --- |
+| `GET /frontend/v1/projects/:projectId/documents` | `{ data: { documents: Doc[] } }` |
+| `GET /frontend/v1/projects/:projectId/documents/:documentId` | `{ data: DocDetail }` |
+| `PUT /frontend/v1/projects/:projectId/documents/:documentId` | `{ data: DocDetail }` |
+
+```
+Doc        = { id, path, kind, title, version, status, updated_at, icp_key }   // icp_key: string | null
+DocDetail  = Doc & { markdown, front_matter }
+PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
+```
+
+- **Scope is the store's, not a check re-applied at the route.** Every read and write is
+  `(workspace, project)`-keyed, so another project's — or another tenant's — document is *absent*,
+  never refused differently; a probe cannot tell "not yours" from "not there".
+- **`title` is the one composed value**: `kind = "project-plan"` → `"Plan"`;
+  `kind = "audience-persona"` → `` `Personas — ${icp_key}` ``; everything else is titled by its own
+  text (front-matter `title`, else its first heading) through the same rule the ICP gate uses. A
+  document whose blob cannot be read is still listed, named by its file path.
+- **The PUT is the Knowledge editor's contract.** `expected_revision` is the version the human typed
+  over; a successful save mints the **next immutable version** (`status: "ready"` for a plan) with
+  `user_edit` provenance in `front_matter` (`source_document_id`, `source_version`, the saver) and
+  retires the predecessor. An identical body is a no-op returning the same row. Auth: an
+  authenticated principal with `project.write`, else `local-development-user` when the router allows
+  local mutations, else `401 UNAUTHORIZED`.
+- **Errors** (`{ detail: { code, message } }`): `404 PROJECT_DOCUMENT_NOT_FOUND` (absent, or not this
+  project's), `409 DOCUMENT_REVISION_CONFLICT` (stale `expected_revision`, or a concurrent version
+  race — someone else wrote first; re-read and re-apply), `422 DOCUMENT_BODY_EMPTY`,
+  `503 KNOWLEDGE_STORAGE_UNAVAILABLE` (detail GET and PUT, when the process has no blob storage).
+- **CORS on this router is `["GET", "OPTIONS"]`**, so the PUT is same-origin/BFF-only — exactly like
+  the brand-knowledge PUT. The Plan tab reaches it through the BFF, not the browser.
+- **The chat side:** a finalize carrying `{ object_type: "project_document", object_id, version }`
+  in `domain_refs` projects one `PLAN` part titled `"Plan"` with `revision_label` `v{version}`, and
+  the tool reads as **"Write the project plan"** in the transcript.
+- **Deferred (founder ruling R12, 2026-09-12):** the Plan tab, the document editor, the plan card's
+  click-through, the auto-open on a write, the gallery document cards **and the `?surface=plan` deep
+  link** are `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`, to be built with the
+  markdown-toolbar slice. Until then the plan card renders but opens nothing, and no frontend
+  repository consumes these three routes.

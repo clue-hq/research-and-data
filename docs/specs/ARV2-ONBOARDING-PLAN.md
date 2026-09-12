@@ -685,6 +685,25 @@ conversation, and can ask for the **personas** of a profile the human has confir
   `platform/api/clue_api/arv2/README.md` § "ICP authoring and project-scoped documents"; close-out:
   `_memory/2026-09-12-icp-authoring.md`.
 
+### Addendum 2026-09-12 — the project plan document (profile v47, skill v24, recipe v25)
+
+The plan itself is now written down. `write_project_document@1` (WRITE, free, no flag) stores the
+project's execution plan as `project/plan.md` — a `project-plan` knowledge document with `project_id`
+set, materialized as `inputs/project/plan.md` and listed in `status.md` — one immutable version per
+save, refused (`project_document_revision_conflict`) when the version the writer read is no longer
+current, so a human edit is never silently overwritten; skill `stage0-interview@v24` §6b says when to
+write it (after the section-2 questions, a confirmed pinned ICP and a confirmed product set, never on
+a first turn) and to re-read and keep the human's edits after a refusal. The human's own edit path is
+the project-documents surface on `/frontend/v1` (list, detail, and a `{body, expected_revision}` PUT
+that mints the next version with `user_edit` provenance; 404/409/422 refusals), contracted in
+`apps/frontend/docs/api-contracts/projects.md` § "Project documents". The grant is
+`head-of-abm@v47` / `recipe0-stage0-v25.json` / `CONVERSATION_RECIPE_VERSION = 25`, with the tool
+withheld from the Stage-0 trial surface; v46 / v23 / recipe v24 are byte-untouched. Founder ruling
+**R12** defers the Plan tab, the editor, the plan card's click-through and the gallery document cards
+to `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`. Standing rule re-run, 7/7; env posture
+unchanged, no new flag. Engineering detail: `platform/api/clue_api/arv2/README.md` § "Project plan
+document"; close-out: `_memory/2026-09-12-project-plan-document.md` (live walk owed).
+
 ---
 
 ## 9. Phases, exit gates, ownership, timeline
