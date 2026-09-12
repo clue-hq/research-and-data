@@ -4,188 +4,168 @@ import {
   SetupApiError,
   SetupStatusSchema,
   readSetupStatus,
+  setupStatusFromOnboarding,
   startWorkspaceSetup,
+  FAST_STEP_KINDS,
 } from "./setup";
-import { FIXTURE_OFFICIAL_SITE_PROGRESS } from "./setup-progress.fixture";
 
-function stubFetch(response: Response): () => void {
-  const original = globalThis.fetch;
-  globalThis.fetch = async () => response;
-  return () => {
-    globalThis.fetch = original;
+function step(kind: string, status: string, phase = "fast") {
+  return {
+    kind,
+    subjectRef: null,
+    phase,
+    status,
+    startedAt: null,
+    finishedAt: null,
+    costUsd: "0",
+    failureCode: null,
   };
 }
 
-test("a minimal status payload parses with null defaults", () => {
-  const parsed = SetupStatusSchema.parse({ status: "none" });
-  assert.equal(parsed.recon_run_id, null);
-  assert.equal(parsed.fast_status, null);
-  assert.equal(parsed.fact_count, null);
-  assert.equal(parsed.brand_kit_ingestion, null);
-});
+const running = {
+  schema_version: "1",
+  runId: "run-1",
+  status: "running",
+  costUsd: "0.10",
+  steps: [] as unknown[],
+};
 
-test("a pre-brand-kit-slice-3 payload parses: no ingestion field is honest null", () => {
-  const parsed = SetupStatusSchema.parse({ status: "running", fast_status: "running" });
-  // An older backend simply does not serve the key; that must not fail the poll loop, and the
-  // checklist row then reports no job rather than a fabricated one.
-  assert.equal(parsed.brand_kit_ingestion, null);
-  assert.equal(SetupStatusSchema.parse({ status: "none", brand_kit_ingestion: null }).brand_kit_ingestion, null);
-});
-
-test("a live ingestion job parses, and an unknown job status degrades to in-flight", () => {
-  const parsed = SetupStatusSchema.parse({
-    status: "starting",
-    brand_kit_ingestion: { job_id: "ingest_abc", status: "succeeded" },
-  });
-  assert.equal(parsed.brand_kit_ingestion?.job_id, "ingest_abc");
-  assert.equal(parsed.brand_kit_ingestion?.status, "succeeded");
-
-  const future = SetupStatusSchema.parse({
-    status: "starting",
-    brand_kit_ingestion: { job_id: "ingest_abc", status: "some-future-status" },
-  });
-  // Never `succeeded` by accident: an unrecognized status may not claim a published kit.
-  assert.equal(future.brand_kit_ingestion?.status, "running");
-});
-
-test("a pre-slice-3 payload still parses: no fields, no fabricated budget verdict", () => {
-  const parsed = SetupStatusSchema.parse({ status: "running", fast_status: "running" });
-  assert.deepEqual(parsed.fields, []);
-  // null = "we do not know yet" — never a fabricated false (backend BE contract).
-  assert.equal(parsed.fast_budget_exhausted, null);
-  assert.equal(parsed.background_budget_exhausted, null);
-  assert.equal(parsed.official_site, null);
-});
-
-test("the C8 official-site fixture and live wire parse through the same additive schema", () => {
-  const parsed = SetupStatusSchema.parse({
-    status: "complete",
-    future_top_level_field: true,
-    official_site: {
-      ...FIXTURE_OFFICIAL_SITE_PROGRESS,
-      future_crawl_field: "ignored",
-    },
-  });
-  assert.equal(parsed.official_site?.run_status, "background_active");
-  assert.equal(parsed.official_site?.fetch_spend_unknown, 1);
-  assert.equal(parsed.official_site?.partial, true);
-  assert.equal(parsed.official_site?.last_event_seq, 42);
-  assert.equal(parsed.official_site?.expansion_completed, 7);
-});
-
-test("pre-expansion official-site payload receives additive zero defaults", () => {
-  const parsed = SetupStatusSchema.parse({
-    status: "running",
-    official_site: {
-      ...FIXTURE_OFFICIAL_SITE_PROGRESS,
-      expansion_queued: undefined,
-      expansion_leased: undefined,
-      expansion_retry_wait: undefined,
-      expansion_completed: undefined,
-      expansion_failed: undefined,
-    },
-  });
-  assert.equal(parsed.official_site?.expansion_queued, 0);
-  assert.equal(parsed.official_site?.expansion_completed, 0);
-});
-
-test("an unknown per-field status degrades to started rather than failing the parse", () => {
-  const parsed = SetupStatusSchema.parse({
-    status: "running",
-    fields: [
-      { field_key: "client.product", lane: "fast", status: "resolved" },
-      { field_key: "client.value_prop", lane: "background", status: "some-future-status" },
-    ],
-  });
-  assert.equal(parsed.fields.length, 2);
-  assert.equal(parsed.fields[0]?.status, "resolved");
-  // An additive backend status must never kill the poll loop (review FE-N2, per-field).
-  assert.equal(parsed.fields[1]?.status, "started");
-  assert.equal(parsed.fields[1]?.lane, "background");
-});
-
-test("additive fields are tolerated; an unknown status degrades loudly, not silently", () => {
-  const parsed = SetupStatusSchema.parse({
-    status: "some-future-status",
-    fast_status: "completed",
-    future_field: 1,
-  });
-  // The catch pins the decided behaviour (review FE-N2): unknown → surfaced terminal.
-  assert.equal(parsed.status, "unavailable");
-  assert.equal(parsed.fast_status, "completed");
-});
-
-test("start maps the backend 409 detail envelope onto a typed error", async () => {
-  const restore = stubFetch(
-    new Response(
-      JSON.stringify({ detail: { error: "setup_unavailable", reason: "no record" } }),
-      { status: 409, headers: { "content-type": "application/json" } },
-    ),
+test("no run yet is none; a queued run is starting", () => {
+  assert.equal(
+    setupStatusFromOnboarding({
+      schema_version: "1",
+      runId: null,
+      status: "none",
+      steps: [],
+      costUsd: "0",
+    }).status,
+    "none",
   );
-  try {
-    await assert.rejects(
-      startWorkspaceSetup(),
-      (error: unknown) =>
-        error instanceof SetupApiError &&
-        error.status === 409 &&
-        error.code === "setup_unavailable" &&
-        error.message === "no record",
-    );
-  } finally {
-    restore();
-  }
+  assert.equal(setupStatusFromOnboarding({ ...running, status: "queued" }).status, "starting");
 });
 
-test("status reads surface BFF auth envelopes with their code", async () => {
-  const restore = stubFetch(
-    new Response(
-      JSON.stringify({
-        error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue" },
+test("the run is complete for the screen when every fast step is terminal and none failed", () => {
+  const steps = FAST_STEP_KINDS.map((kind) => step(kind, "completed"));
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "complete");
+  // `empty` is a correct outcome, not a failure.
+  steps[2] = step("reviews", "empty");
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "complete");
+  // Background work still running does not hold the release.
+  assert.equal(
+    setupStatusFromOnboarding({
+      ...running,
+      steps: [...steps, step("persona", "running", "background")],
+    }).status,
+    "complete",
+  );
+});
+
+test("a fast step still running keeps the screen running; a failed fast step fails it", () => {
+  const steps = [
+    step("overview", "completed"),
+    step("lineup", "running"),
+    step("reviews", "queued"),
+    step("synthesis", "queued"),
+  ];
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "running");
+  steps[1] = step("lineup", "failed");
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "failed");
+});
+
+test("an unknown run status degrades to unavailable rather than breaking the poll", () => {
+  assert.equal(setupStatusFromOnboarding({ ...running, status: "paused" }).status, "unavailable");
+});
+
+test("start posts the company domain to the new lane and read parses the new shape", async (t) => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    if (url.endsWith("/api/clue/onboarding"))
+      return new Response(
+        JSON.stringify({ schema_version: "1", run_id: "run-1", status: "queued" }),
+        { status: 202 },
+      );
+    return new Response(JSON.stringify(running), { status: 200 });
+  });
+  await startWorkspaceSetup({ companyWebsite: "https://Insighthealth.ai/" });
+  assert.equal(calls[0].url, "/api/clue/onboarding");
+  assert.equal(calls[0].init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(calls[0].init?.body)), {
+    company_domain: "insighthealth.ai",
+    brand_id: null,
+  });
+  const status = await readSetupStatus();
+  assert.equal(calls[1].url, "/api/clue/onboarding/current");
+  assert.equal(status.status, "running");
+  assert.equal(status.run_id, "run-1");
+});
+
+test("a 409 onboarding_in_progress on start is not a failure: the run is already running", async (t) => {
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(JSON.stringify({ detail: { error: "onboarding_in_progress", reason: "run-0" } }), {
+        status: 409,
       }),
-      { status: 401, headers: { "content-type": "application/json" } },
-    ),
   );
-  try {
-    await assert.rejects(
-      readSetupStatus(),
-      (error: unknown) =>
-        error instanceof SetupApiError &&
-        error.status === 401 &&
-        error.code === "AUTHENTICATION_REQUIRED",
-    );
-  } finally {
-    restore();
-  }
+  await startWorkspaceSetup({ companyWebsite: "insighthealth.ai" }); // resolves, does not throw
 });
 
-test("a healthy status read parses end to end", async () => {
-  const restore = stubFetch(
-    new Response(
-      JSON.stringify({
-        status: "complete",
-        recon_run_id: "run-1",
-        fast_status: "completed",
-        background_status: "running",
-        fast_client_kb_version: 1,
-        fact_count: 0,
-        fields: [{ field_key: "client.product", lane: "fast", status: "resolved" }],
-        fast_budget_exhausted: false,
-        official_site: FIXTURE_OFFICIAL_SITE_PROGRESS,
-        brand_kit_ingestion: { job_id: "ingest_1", status: "running" },
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    ),
+test("a missing company website never posts: a live run means the start already happened", async (t) => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify(running), { status: 200 });
+  });
+  await startWorkspaceSetup({ companyWebsite: "  " }); // resolves quietly
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/clue/onboarding/current");
+  assert.equal(calls[0].init?.method, undefined);
+});
+
+test("a missing company website with no run is a typed refusal, not a blind 422 post", async (t) => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(
+      JSON.stringify({ schema_version: "1", runId: null, status: "none", steps: [], costUsd: "0" }),
+      { status: 200 },
+    );
+  });
+  await assert.rejects(
+    startWorkspaceSetup({ companyWebsite: "" }),
+    (error: unknown) =>
+      error instanceof SetupApiError &&
+      error.status === 422 &&
+      error.code === "company_domain_missing",
   );
-  try {
-    const status = await readSetupStatus();
-    assert.equal(status.status, "complete");
-    assert.equal(status.fact_count, 0);
-    assert.equal(status.fields[0]?.field_key, "client.product");
-    assert.equal(status.fast_budget_exhausted, false);
-    assert.equal(status.background_budget_exhausted, null);
-    assert.equal(status.official_site?.states.includes("persisted"), true);
-    assert.equal(status.brand_kit_ingestion?.status, "running");
-  } finally {
-    restore();
-  }
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "/api/clue/onboarding/current");
+  assert.equal(calls[0].init?.method, undefined);
+});
+
+test("status reads surface BFF auth envelopes with their code", async (t) => {
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue" },
+        }),
+        { status: 401, headers: { "content-type": "application/json" } },
+      ),
+  );
+  await assert.rejects(
+    readSetupStatus(),
+    (error: unknown) =>
+      error instanceof SetupApiError &&
+      error.status === 401 &&
+      error.code === "AUTHENTICATION_REQUIRED",
+  );
+});
+
+test("the parsed status validates through the schema", () => {
+  assert.ok(SetupStatusSchema.safeParse(setupStatusFromOnboarding(running)).success);
 });
