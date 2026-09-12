@@ -16,15 +16,36 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.project_status import load_project_status_facts
-from clue_core import EntityId, new_project_run_id
+from clue_api.agent_turn_submission import insert_submission
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.project_context_files import (
+    CompiledProjectFile,
+    ProjectFilesPinConflict,
+    compile_project_files_index_card,
+    load_or_create_project_files_pin,
+    project_seed_files,
+    read_pinned_project_files,
+    summary_of,
+)
+from clue_api.project_status import (
+    load_project_decisions,
+    load_project_status_facts,
+    render_decisions_markdown,
+)
+from clue_api.thread_store import create_thread
+from clue_core import EntityId, OnboardingInputKind, new_project_run_id
 from clue_research.durable import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
+from clue_research.stage0 import StatementRoute, record_statement, submit_onboarding_input
 from clue_spine import Project
+from clue_storage import mark_erased
+from tests._identity import seed_principal
 from tests._workspace import seed_project
+from tests.api.test_stage0_setup_db import _MemoryStorage
 from tests.db.conftest import run_async
 from tests.profiling.conftest import (
+    conn_session_factory,
     migrated_db,  # noqa: F401 -- exposes the fixture to this test module
     rollback_conn,
 )
@@ -277,5 +298,230 @@ def test_status_facts_read_the_pin_the_product_set_and_the_arv2_rows() -> None:
                 "synthesis",
                 2,
             )
+
+    run_async(scenario())
+
+
+async def _seed_submission(
+    conn: AsyncConnection,
+    project: Project,
+    artifacts: DurableAgentArtifactStore,
+    *,
+    label: str,
+) -> UUID:
+    """One really-submitted turn, because the pin's anchor is a submission row."""
+
+    principal = await seed_principal(
+        conn,
+        workspace_id=project.workspace_id,
+        user_id=f"usr-pcf-{label}",
+    )
+    thread_id = f"thr-pcf-{label}-{uuid4().hex[:8]}"
+    await create_thread(
+        conn,
+        thread_id=thread_id,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        created_by_user_id=principal.user_id,
+        created_via_membership_id=principal.membership_id,
+    )
+    message = await artifacts.persist_body(
+        workspace_id=project.workspace_id,
+        data=f"project files turn {label}".encode(),
+        media_type="text/plain",
+    )
+    captured = await submit_onboarding_input(
+        conn,
+        workspace_id=project.workspace_id,
+        brand_id=project.brand_id,
+        project_id=project.project_id,
+        kind=OnboardingInputKind.USER_TURN,
+        artifact_key=message.artifact_key,
+        content_sha256=message.sha256,
+        actor="human",
+    )
+    turn_id = uuid4()
+    _, created = await insert_submission(
+        conn,
+        turn_id=turn_id,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        thread_id=thread_id,
+        submitted_by_user_id=principal.user_id,
+        submitted_via_membership_id=principal.membership_id,
+        onboarding_input_id=captured.onboarding_input_id,
+        message_artifact_key=message.artifact_key,
+        message_sha256=message.sha256,
+        idempotency_key=f"pcf-{label}-{turn_id}",
+    )
+    assert created is True
+    return turn_id
+
+
+def test_the_project_files_pin_is_insert_once_and_serves_verified_bytes() -> None:
+    async def scenario() -> None:
+        storage = _MemoryStorage()
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            ws, project_id = project.workspace_id, project.project_id
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            turn_id = await _seed_submission(conn, project, artifacts, label="pin")
+            calls = 0
+
+            async def compile_v1() -> list[CompiledProjectFile]:
+                nonlocal calls
+                calls += 1
+                return [
+                    CompiledProjectFile(
+                        "status.md",
+                        "project-status",
+                        b"# Project status\n\nv1\n",
+                        None,
+                        "compiled",
+                        "v1",
+                    ),
+                    CompiledProjectFile(
+                        "decisions.md",
+                        "project-decisions",
+                        b"# Project decisions\n\nnone\n",
+                        None,
+                        "compiled",
+                        "none",
+                    ),
+                ]
+
+            async def compile_v2() -> list[CompiledProjectFile]:
+                raise AssertionError("a pinned turn never recompiles")
+
+            pin, created = await load_or_create_project_files_pin(
+                conn,
+                artifacts,
+                workspace_id=ws,
+                turn_id=turn_id,
+                project_id=project_id,
+                compile=compile_v1,
+            )
+            assert created and calls == 1
+            assert [f.path for f in pin.files] == ["decisions.md", "status.md"]
+
+            again, created_again = await load_or_create_project_files_pin(
+                conn,
+                artifacts,
+                workspace_id=ws,
+                turn_id=turn_id,
+                project_id=project_id,
+                compile=compile_v2,
+            )
+            assert not created_again and again == pin
+
+            files = await read_pinned_project_files(conn, storage, pin=pin)
+            assert [f.body for f in files] == [
+                b"# Project decisions\n\nnone\n",
+                b"# Project status\n\nv1\n",
+            ]
+            seeds = project_seed_files(files)
+            assert [s.path for s in seeds] == [
+                "inputs/project/decisions.md",
+                "inputs/project/status.md",
+            ]
+            assert all(s.media_type == "text/markdown" for s in seeds)
+
+            card = compile_project_files_index_card(project_id=project_id, files=files)
+            assert card.card_kind == "project_files_index"
+            assert card.files[1].workspace_path == "inputs/project/status.md"
+            assert card.files[1].summary == "v1"
+            assert card.content_sha256().startswith("sha256:")
+            # The one summary rule, exported so the compiler and the card cannot disagree.
+            assert summary_of(b"# Project status\n\n" + b"x" * 200) == "x" * 159 + "…"
+            assert summary_of(b"# Only a heading\n") == ""
+
+            # The pin, not the store, says what this turn's bytes are: a ref whose digest is
+            # not the digest of the blob it names is refused even though the blob is intact.
+            swapped = pin.model_copy(
+                update={
+                    "files": (
+                        pin.files[0].model_copy(
+                            update={"artifact_sha256": pin.files[1].artifact_sha256}
+                        ),
+                        pin.files[1],
+                    )
+                }
+            )
+            with pytest.raises(ProjectFilesPinConflict, match="pinned digest"):
+                await read_pinned_project_files(conn, storage, pin=swapped)
+
+            # a moved blob is a loud refusal, not a silently different seed
+            storage.blobs[pin.files[0].artifact_key] = b"tampered"
+            with pytest.raises(ProjectFilesPinConflict, match="read as it was pinned"):
+                await read_pinned_project_files(conn, storage, pin=pin)
+
+    run_async(scenario())
+
+
+_ANSWER = "We only want independent GI groups in the Midwest, and hospital-owned practices are out."
+_QUOTE = "independent GI groups in the Midwest"
+
+
+def test_project_decisions_quote_a_recorded_statement_and_drop_erased_evidence() -> None:
+    """The real write path, end to end: ``record_statement`` → ``load_project_decisions``.
+
+    ``volunteered_statement`` stores offsets and a hash, never the words, so the only proof the
+    decisions file says what the client said is a round trip through the captured artifact. The
+    erasure half is the other half of that contract: DSAR must shorten the file, never break it.
+    """
+
+    async def scenario() -> None:
+        storage = _MemoryStorage()
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            ws, project_id = project.workspace_id, project.project_id
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            ref = await artifacts.persist_body(
+                workspace_id=ws, data=_ANSWER.encode(), media_type="text/plain"
+            )
+            captured = await submit_onboarding_input(
+                conn,
+                workspace_id=ws,
+                brand_id=project.brand_id,
+                project_id=project_id,
+                kind=OnboardingInputKind.USER_TURN,
+                artifact_key=ref.artifact_key,
+                content_sha256=ref.sha256,
+                actor="human",
+            )
+            start = _ANSWER.index(_QUOTE)
+            await record_statement(
+                conn,
+                onboarding_input_id=captured.onboarding_input_id,
+                workspace_id=ws,
+                brand_id=project.brand_id,
+                project_id=project_id,
+                route_kind=StatementRoute.PROJECT_STATE,
+                route_key="target_segment",
+                quote=_QUOTE,
+                quote_start=start,
+                quote_end=start + len(_QUOTE),
+                created_by_actor="human",
+            )
+
+            items = await load_project_decisions(
+                conn, artifacts, workspace_id=ws, project_id=project_id
+            )
+            assert [(item.route_key, item.quote) for item in items] == [("target_segment", _QUOTE)]
+            assert f'- **target_segment** — "{_QUOTE}"' in render_decisions_markdown(items)
+
+            # DSAR erases the captured turn: the item drops, the file still compiles.
+            await mark_erased(conn, ref.artifact_key)
+            assert (
+                await load_project_decisions(
+                    conn, artifacts, workspace_id=ws, project_id=project_id
+                )
+                == ()
+            )
+            assert "Nothing recorded yet." in render_decisions_markdown(())
 
     run_async(scenario())
