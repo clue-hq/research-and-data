@@ -85,6 +85,7 @@ __all__ = [
     "ReadProjectAccountsInput",
     "ReadProjectAccountsOutput",
     "ReadProjectAccountsTool",
+    "build_arv2_read_tools",
     "list_project_accounts",
     "read_account_research",
     "read_discovery_run",
@@ -953,3 +954,20 @@ class ReadDiscoveryRunTool(Tool):
             candidate_total=run.candidate_total,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
+def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
+    """The lane's read surface. Registered always; composed wherever there is a database.
+
+    Registering it uncomposed is deliberate, for the reason its ARV2 neighbours give: the
+    platform's tool surface stays complete (the authority audit sees every tool), and an agent that
+    reaches for a read on a deployment without the lane gets the named ``arv2_reads_not_composed``
+    refusal rather than an ``UnknownTool`` it cannot explain. Unlike its launching neighbours these
+    three have no flag: they read rows that already exist and spend nothing to do it.
+    """
+
+    return (
+        ReadProjectAccountsTool(service),
+        ReadAccountResearchTool(service),
+        ReadDiscoveryRunTool(service),
+    )

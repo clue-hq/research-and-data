@@ -72,6 +72,7 @@ from clue_api.arv2.discovery_launch import (
     build_arv2_discovery_tools,
 )
 from clue_api.arv2.icp_authoring import IcpAuthoringService
+from clue_api.arv2.read_tools import Arv2ReadService, build_arv2_read_tools
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -2656,6 +2657,7 @@ def build_toolbelt(
     entity_research_launches: EntityResearchLaunchServices | None = None,
     arv2_account_launch: Arv2LaunchService | None = None,
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
+    arv2_reads: Arv2ReadService | None = None,
     icp_authoring: IcpAuthoringService | None = None,
     persona_requests: PersonaRequestService | None = None,
     project_documents: ProjectDocumentService | None = None,
@@ -2810,6 +2812,13 @@ def build_toolbelt(
     # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
+        registry.register(tool, make_default=True)
+    # The other side of the lane: what the project's rows already say. Registered everywhere like
+    # its launching neighbours, but composed with no flag of its own — these three read
+    # ``project_account``, the display blocks, the claim store and the discovery run, all of which
+    # exist wherever there is a database, and reading them spends nothing. Without a service they
+    # refuse ``arv2_reads_not_composed`` before they touch a row.
+    for tool in build_arv2_read_tools(arv2_reads):
         registry.register(tool, make_default=True)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
     # the gate that confirms one. Registered on every deployment for the same reason as its

@@ -119,7 +119,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # is the procedure that says when a plan may be written (after the section-2 answers, a
     # confirmed and pinned ICP and a confirmed product set) and what a call does NOT do — it
     # decides nothing new, and the human's own edits in the Plan tab win over a stale write.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 129
+    # The three ARV2 reads register (129 -> 132) and are granted to nobody: the read surface
+    # stays complete and the audit sees it, but no model surface names them yet — the profile
+    # that pins them lands with the read flow.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 132
+    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("write_project_document@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == (AgentRole.HEAD_OF_ABM,)

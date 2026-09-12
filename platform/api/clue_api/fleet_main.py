@@ -86,6 +86,7 @@ from clue_api.arv2.onboarding_driver import (
     build_onboarding_provider_caller,
 )
 from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
+from clue_api.arv2.read_tools import DbArv2ReadService
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -950,6 +951,11 @@ async def _serve() -> None:
         # confirms nothing, and it needs only the storage the knowledge documents live in.
         # Without a service the tool registers and refuses by name.
         project_documents = DbProjectDocumentService(storage)
+        # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
+        # every deployment (account membership, display blocks, claims, discovery runs) and reading
+        # them spends nothing. Composed unconditionally; the tools refuse by name only where the
+        # read surface itself is absent.
+        arv2_reads = DbArv2ReadService()
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -982,6 +988,7 @@ async def _serve() -> None:
             entity_research_launches=entity_research_launches,
             arv2_account_launch=arv2_account_launch,
             arv2_discovery_launch=arv2_discovery_launch,
+            arv2_reads=arv2_reads,
             icp_authoring=icp_authoring,
             persona_requests=persona_requests,
             project_documents=project_documents,

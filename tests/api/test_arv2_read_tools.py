@@ -28,10 +28,17 @@ from clue_api.arv2.read_tools import (
     ReadDiscoveryRunTool,
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
+    build_arv2_read_tools,
 )
 from clue_core import new_operation_id
 from clue_db import transaction
-from clue_toolbelt import PreconditionFailed, ReplayPolicy, ToolContext, ToolEffectClass
+from clue_toolbelt import (
+    PreconditionFailed,
+    ReplayPolicy,
+    ToolContext,
+    ToolEffectClass,
+    ToolInput,
+)
 from tests.db.conftest import run_async
 
 WORKSPACE = "ws_arv2_read_tools"
@@ -445,3 +452,38 @@ def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_
     # pin (standing rule item 5); the recipe-safety audit refuses a standing address with no pin.
     assert tool.pin_requirements == ("project",)
     assert tool.descriptor.recipe_safe
+
+
+# -- the registered surface ------------------------------------------------------------------------
+
+
+def test_the_builder_yields_the_three_reads_and_an_uncomposed_one_refuses_by_name() -> None:
+    """Registered on every deployment, composed where the lane is — the ARV2 registration posture.
+
+    Uncomposed the three still register, so an agent that reaches for a read gets the named
+    ``arv2_reads_not_composed`` refusal rather than an ``UnknownTool`` it cannot explain.
+    """
+
+    async def scenario() -> None:
+        tools = build_arv2_read_tools(None)
+
+        assert [tool.name for tool in tools] == [
+            "read_project_accounts",
+            "read_account_research",
+            "read_discovery_run",
+        ]
+        inputs: dict[str, ToolInput] = {
+            "read_project_accounts": ReadProjectAccountsInput(project_id=PROJECT),
+            "read_account_research": ReadAccountResearchInput(account_entity_id=ACCOUNT_ID),
+            "read_discovery_run": ReadDiscoveryRunInput(project_id=PROJECT),
+        }
+        for tool in tools:
+            failures = await tool.preconditions(inputs[tool.name], _context())
+            assert [failure.reason_code for failure in failures] == ["arv2_reads_not_composed"]
+
+        # Composed, the same three are ready to read.
+        service = _FakeService(page=_page(), research=_research(), discovery=_discovery())
+        for tool in build_arv2_read_tools(service):
+            assert await tool.preconditions(inputs[tool.name], _context()) == ()
+
+    run_async(scenario())

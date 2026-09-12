@@ -262,6 +262,11 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # The project plan writes through storage the matrix does not compose, so the tool refuses
     # before it resolves the presenting turn.
     "write_project_document": ("precondition", ("project_documents_not_composed",)),
+    # The three ARV2 reads register in every process too; with no ``Arv2ReadService`` composed
+    # here each refuses before it touches a row.
+    "read_project_accounts": ("precondition", ("arv2_reads_not_composed",)),
+    "read_account_research": ("precondition", ("arv2_reads_not_composed",)),
+    "read_discovery_run": ("precondition", ("arv2_reads_not_composed",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -646,6 +651,9 @@ def _bodies() -> dict[str, dict[str, object]]:
             "expected_version": 1,
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
+        "read_project_accounts": {"project_id": "prj_matrix"},
+        "read_account_research": {"account_entity_id": _UUID()},
+        "read_discovery_run": {"project_id": "prj_matrix"},
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -1384,8 +1392,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Human project-label rename adds one governed tool (125 -> 126).
     # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
     # `request_persona_synthesis@1` the same way (127 -> 128).
-    # The project plan's `write_project_document@1` registers ungranted (128 -> 129).
-    assert len(registry.names()) == 129
+    # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
+    # three ARV2 reads register on the same terms (129 -> 132).
+    assert len(registry.names()) == 132
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1411,8 +1420,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project rename tool has one version and no agent grant (143 -> 144).
     # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
     # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
-    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147).
-    assert len(registry) == 147
+    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
+    # neither do the three ARV2 reads (147 -> 150).
+    assert len(registry) == 150
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1442,8 +1452,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Human project-label rename adds one governed tool (125 -> 126).
     # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
     # `request_persona_synthesis@1` the same way (127 -> 128).
-    # The project plan's `write_project_document@1` registers ungranted (128 -> 129).
-    assert len(registry.names()) == 129
+    # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
+    # three ARV2 reads register on the same terms (129 -> 132).
+    assert len(registry.names()) == 132
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1456,8 +1467,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project rename tool has one version and no agent grant (143 -> 144).
     # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
     # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
-    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147).
-    assert len(registry) == 147
+    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
+    # neither do the three ARV2 reads (147 -> 150).
+    assert len(registry) == 150
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

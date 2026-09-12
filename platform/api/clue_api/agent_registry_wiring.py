@@ -138,6 +138,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # in the Plan tab, so the write carries the version it was authored against and a stale one is
     # refused by name: the model re-reads, keeps the human's edits, and writes again.
     "write_project_document": (AgentRole.HEAD_OF_ABM,),
+    # The ARV2 reads: what this project's own rows already say — its accounts and their research
+    # status, one account's overview or claims, one discovery run and its candidates. Registered so
+    # the surface stays complete and the authority audit sees them, granted to nobody yet; the
+    # profile that pins them and the skill text that says when to read land with the read flow
+    # itself. They spend nothing, approve nothing and launch nothing.
+    "read_project_accounts": (),
+    "read_account_research": (),
+    "read_discovery_run": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
