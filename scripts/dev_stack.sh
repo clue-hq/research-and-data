@@ -82,7 +82,7 @@ start_platform_api() {  # both twins; a settings change (.env) needs both restar
 # until `down`/`up`.
 restart_api() {
   load_env
-  pkill -f "uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   for _ in $(seq 1 20); do
     lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
@@ -103,11 +103,16 @@ start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, launched t
 # Restart ONLY the fleet workers, respawned with the SAME count and per-worker
 # concurrency the lane wrapper sets. Check nothing is mid-job first: a killed
 # worker's job is orphaned until its lease expires.
+#
+# Every pkill/pgrep pattern in this file is anchored on THIS workspace's
+# interpreter ("$ROOT/.venv/bin/python -m …"): sibling worktrees (semarang,
+# istanbul, …) run the same module names on the same box against their own
+# databases, and a bare "clue_api.fleet_main" match killed theirs (2026-09-12).
 restart_workers() {
   load_env
-  pkill -f "clue_api.fleet_main" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
   for _ in $(seq 1 20); do
-    [ "$(pgrep -f "clue_api.fleet_main" | wc -l | tr -d ' ')" -eq 0 ] && break
+    [ "$(pgrep -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" | wc -l | tr -d ' ')" -eq 0 ] && break
     sleep 0.5
   done
   start_workers
@@ -149,9 +154,9 @@ up() {
 }
 
 down() {
-  pkill -f "uvicorn lumen_api.main:app" 2>/dev/null || true
-  pkill -f "uvicorn clue_api.projections_main:app" 2>/dev/null || true
-  pkill -f "clue_api.fleet_main" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m uvicorn lumen_api.main:app" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
   pkill -f "next dev.*3020" 2>/dev/null || true
   echo "stack stopped"
 }
@@ -165,7 +170,7 @@ status() {
       echo "  $name ($port): DOWN"
     fi
   done
-  running="$(pgrep -f "clue_api.fleet_main" | wc -l | tr -d ' ')"   # macOS pgrep has no -c
+  running="$(pgrep -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" | wc -l | tr -d ' ')"   # macOS pgrep has no -c
   if [ "${running:-0}" -gt 0 ]; then
     echo "  fleet-worker: UP ($running process(es), $WORKER_CONCURRENCY slot(s) each)"
   else
