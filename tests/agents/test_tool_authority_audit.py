@@ -106,7 +106,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # procedure that says what must be confirmed first — a project whose ICP and product set are
     # confirmed — and what a successful result does and does not mean (the run is queued; no
     # account is found or approved by the call).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 125
+    # Project rename is installed for the human UI, ungranted to all agents.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 126
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)
@@ -181,6 +182,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     )
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["rename_project"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a

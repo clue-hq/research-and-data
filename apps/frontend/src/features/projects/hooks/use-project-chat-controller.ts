@@ -798,13 +798,20 @@ export function useProjectChatController({
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
       try {
-        await repositories.threads.update({ projectId, threadId, title });
-        await loadThreads();
+        const saved = await repositories.threads.update({
+          projectId, threadId, title,
+        });
+        if (mounted.current) {
+          setThreads((current) => current.map((thread) =>
+            thread.id === saved.id ? saved : thread,
+          ));
+        }
+        invalidateProjectCatalog();
       } catch (failure) {
         report(failure);
       }
     },
-    [loadThreads, projectId, repositories, report],
+    [invalidateProjectCatalog, projectId, repositories, report],
   );
 
   const setThreadPinned = useCallback(

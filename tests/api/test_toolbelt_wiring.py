@@ -192,6 +192,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # refusal, never a 500 and never a silent write into somebody else's tenant.
     "create_thread": ("precondition", ("project_not_found",)),
     "rename_thread": ("precondition", ("thread_not_found",)),
+    "rename_project": ("precondition", ("project_not_found",)),
     "set_thread_pinned": ("precondition", ("thread_not_found",)),
     "archive_thread": ("precondition", ("thread_not_found",)),
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
@@ -545,6 +546,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "retry_ingestion": {"ingestion_job_id": _UUID()},
         "create_thread": {"project_id": "prj_absent_from_this_workspace"},
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
+        "rename_project": {"project_id": "project_missing", "title": "renamed"},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
         "finish_design_leg": {
@@ -1354,7 +1356,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
-    assert len(registry.names()) == 125
+    # Human project-label rename adds one governed tool.
+    assert len(registry.names()) == 126
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1377,7 +1380,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
-    assert len(registry) == 143
+    # The project rename tool has one version and no agent grant.
+    assert len(registry) == 144
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1404,7 +1408,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
-    assert len(registry.names()) == 125
+    # Human project-label rename adds one governed tool.
+    assert len(registry.names()) == 126
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1414,7 +1419,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
-    assert len(registry) == 143
+    # The project rename tool has one version and no agent grant.
+    assert len(registry) == 144
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

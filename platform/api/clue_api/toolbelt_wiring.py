@@ -115,6 +115,7 @@ from clue_api.product_set_selection_gate_tools import (
     build_product_set_selection_gate_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
+from clue_api.project_tools import RenameProjectTool
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
@@ -2875,6 +2876,7 @@ def build_toolbelt(
     # durable state (Doc A — the toolbelt is the only write path), registered from its own wiring
     # module per the chokepoint protocol.
     register_thread_tools(registry, conn_factory=conn_factory)
+    registry.register(RenameProjectTool(conn_factory=conn_factory), make_default=True)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
     register_agent_gate_tools(

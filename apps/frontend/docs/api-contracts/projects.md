@@ -1603,6 +1603,30 @@ the backend is connected.
 
 ---
 
+## Project and chat rename amendment — founder-requested 2026-09-12
+
+This amendment supersedes earlier statements that project renaming is unsupported. The
+founder requested persistent project labels from the sidebar three-dot menu and verification
+that chat names survive refreshes and new sessions.
+
+- `PATCH /api/v1/projects/:projectId` accepts exactly `{ "title": string }` and returns
+  `200 { "data": { "id": string, "title": string } }`. Titles are trimmed, nonblank, and
+  limited to 200 characters. Unknown fields (including `pinned`) are rejected with 422.
+- Requires the active membership's `project.write` permission. The HTTP boundary invokes
+  `rename_project@1` through the existing journaled toolbelt. The spine updates `project.name`
+  only where both project and workspace IDs match. Foreign and missing projects both return
+  404; permission refusals return 403. Optional Idempotency-Key follows the chat tool convention.
+  Identity, brand/product associations, status, threads and contents remain unchanged.
+- The frontend uses the project repository and authenticated same-origin `/api/clue` BFF.
+  Rename project opens a name field with Save/Cancel; saving blocks repeated submission, and a
+  failed save retains the draft with an error. Labels update only from the successful server
+  response. The sidebar and project reads reload through the shared catalog invalidation.
+- Chat renaming continues to use `PATCH …/threads/:threadId` and `rename_thread@1`, persisting
+  `agent_thread.title`. Its saved response updates the header and invalidates the sidebar.
+  All fresh reads use server state, with no browser-storage title override.
+- This adds no project pin/delete operation, no agent-profile grants, and no new runtime flag.
+  Fixture mode does not offer project rename; it requires a connected workspace.
+
 ## As-built thread-shell contract — founder-ratified 2026-08-08 (Lane D D0–D2)
 
 **This section is authoritative over the historical proposal above and subordinate only to the

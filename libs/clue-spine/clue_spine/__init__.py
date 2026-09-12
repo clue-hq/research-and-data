@@ -30,6 +30,7 @@ from clue_spine.spine import (
     new_product_id,
     new_project_id,
     new_workspace_id,
+    set_project_name,
 )
 
 __all__ = [
@@ -62,4 +63,5 @@ __all__ = [
     "list_projects",
     "current_project_product_set",
     "list_project_product_sets",
+    "set_project_name",
 ]

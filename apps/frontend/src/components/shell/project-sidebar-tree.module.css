@@ -331,6 +331,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
+}
+
+.renameError {
+  margin: 0;
+  color: var(--clue-ds-color-content-utility-critical);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .dialogButton {

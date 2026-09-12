@@ -224,7 +224,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # 137 -> 139 drift is folded into this one re-pin. ARV2 Track R, R3 installs
     # `launch_arv2_person_research@1`, registered ungranted (141 + 1 = 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
-    assert len(by_address) == 143
+    # Project-label renaming is registered for the human UI and granted to no agent (143 -> 144).
+    assert len(by_address) == 144
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -319,10 +320,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # ARV2 Track R, R3 installs `launch_arv2_person_research@1`, registered ungranted
     # (141 + 1 = 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
-    assert len(by_address) == 143
+    # Human project-label rename adds one ungranted address.
+    assert len(by_address) == 144
     for address in (
         "create_thread@1",
         "rename_thread@1",
+        "rename_project@1",
         "set_thread_pinned@1",
         "archive_thread@1",
     ):

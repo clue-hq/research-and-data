@@ -351,6 +351,22 @@ async def get_project_for_workspace(
     return Project(**dict(row)) if row is not None else None
 
 
+async def set_project_name(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, name: str
+) -> Project | None:
+    """Rename only the project owned by this workspace; preserve its identity and contents."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET name = :name "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id, "name": name},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
 async def confirm_project_product(
     conn: AsyncConnection,
     *,

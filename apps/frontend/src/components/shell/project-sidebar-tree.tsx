@@ -70,7 +70,7 @@ export function ProjectSidebarTree({
                 {menuOpen ? (
                   <ProjectSidebarActionsMenu
                     onArchive={() => controller.archiveProjectChats(project.id)}
-                    onEdit={controller.projectMutationsAvailable
+                    onEdit={controller.projectRenameAvailable
                       ? () => controller.beginEditProject(project.id)
                       : undefined}
                     onNewChat={() => controller.createConversation(project.id)}

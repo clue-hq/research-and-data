@@ -130,6 +130,9 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    RenameProjectRequest,
+    RenameProjectResponse,
+    RenameProjectWire,
     ResearchTaskListResponse,
     SidebarConversationWire,
     SidebarPageMeta,
@@ -1226,6 +1229,22 @@ def build_chat_router(
                 composer_capabilities=_composer_capabilities(),
             )
         )
+
+    @router.patch("/projects/{project_id}")
+    async def rename_project_route(
+        project_id: str,
+        body: RenameProjectRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> RenameProjectResponse:
+        _require(who, PERMISSION_PROJECT_WRITE)
+        references = await _invoke(
+            "rename_project",
+            {"project_id": project_id, "title": body.title},
+            who=who,
+            idempotency_key=idempotency_key,
+        )
+        return RenameProjectResponse(data=RenameProjectWire.model_validate(references))
 
     @router.post("/projects/{project_id}/composer-context/prepare")
     async def prepare_project_composer_context_route(

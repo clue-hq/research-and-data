@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatRepositories } from "../data/projects-transport";
 import type { SidebarProject } from "../model/sidebar-project";
@@ -22,26 +22,40 @@ export function useSidebarProjectsController() {
   const catalogInvalidation = useProjectCatalogInvalidation();
   const sidebar = repositories.sidebar;
   const projectMutationsAvailable = repositories.transport.mode === "fixture";
+  const projectRenameAvailable = repositories.transport.mode === "http";
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectError, setEditProjectError] = useState<string | null>(null);
+  const [savingProject, setSavingProject] = useState(false);
+  const saveInFlight = useRef(false);
+
+  const receiveProjects = useCallback((data: SidebarProject[]) => {
+    setProjects((current) => {
+      const expanded = new Map(current.map((project) => [project.id, project.expanded]));
+      return data.map((project) => ({
+        ...project,
+        expanded: expanded.get(project.id) ?? project.expanded,
+      }));
+    });
+  }, []);
 
   const reload = useCallback(async () => {
     const response = await sidebar.list();
-    setProjects(response.data);
-  }, [sidebar]);
+    receiveProjects(response.data);
+  }, [receiveProjects, sidebar]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const response = await sidebar.list();
-      if (!cancelled) setProjects(response.data);
+      if (!cancelled) receiveProjects(response.data);
     })();
     return () => {
       cancelled = true;
     };
-  }, [catalogInvalidation.revision, pathname, sidebar]);
+  }, [catalogInvalidation.revision, pathname, receiveProjects, sidebar]);
 
   const editProject = useMemo(
     () => projects.find((project) => project.id === editProjectId) ?? null,
@@ -54,6 +68,7 @@ export function useSidebarProjectsController() {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       setMenuProjectId(null);
+      if (saveInFlight.current) return;
       setEditProjectId(null);
     }
 
@@ -121,31 +136,45 @@ export function useSidebarProjectsController() {
   }
 
   function beginEditProject(projectId: string) {
-    if (!projectMutationsAvailable) return;
+    if (!projectRenameAvailable) return;
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
     setEditProjectId(project.id);
     setEditProjectName(project.title);
+    setEditProjectError(null);
     setMenuProjectId(null);
   }
 
   function cancelEditProject() {
+    if (saveInFlight.current) return;
     setEditProjectId(null);
     setEditProjectName("");
+    setEditProjectError(null);
   }
 
-  function saveEditProject() {
-    if (!projectMutationsAvailable) return;
+  async function saveEditProject() {
+    if (!projectRenameAvailable || saveInFlight.current) return;
     const nextName = editProjectName.trim();
-    if (!editProjectId || !nextName) return;
-    // Project rename is not served: the as-built contract keeps project
-    // lifecycle outside the chat shell (item 9), so this stays a local edit
-    // until a project surface exists. It is not written anywhere.
-    updateProject(editProjectId, (project) => ({
-      ...project,
-      title: nextName,
-    }));
-    cancelEditProject();
+    if (!editProjectId || !nextName || nextName.length > 200) return;
+    saveInFlight.current = true;
+    setSavingProject(true);
+    setEditProjectError(null);
+    try {
+      const saved = await repositories.projects.rename(editProjectId, nextName);
+      updateProject(saved.id, (project) => ({ ...project, title: saved.title }));
+      setEditProjectId(null);
+      setEditProjectName("");
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Unable to rename this project. Please try again.",
+      );
+    } finally {
+      saveInFlight.current = false;
+      setSavingProject(false);
+    }
   }
 
   async function archiveProjectChats(projectId: string) {
@@ -160,16 +189,6 @@ export function useSidebarProjectsController() {
     }
     await reload();
   }
-
-  function removeProject() {
-    if (!projectMutationsAvailable) return;
-    if (!editProjectId) return;
-    setProjects((current) =>
-      current.filter((project) => project.id !== editProjectId),
-    );
-    cancelEditProject();
-  }
-
   return {
     activePathname: pathname,
     archiveProjectChats: (projectId: string) => {
@@ -183,11 +202,18 @@ export function useSidebarProjectsController() {
     },
     editProject,
     editProjectName,
+    editProjectError,
+    savingProject,
+    canSaveProject: Boolean(editProjectName.trim())
+      && editProjectName.trim().length <= 200
+      && !savingProject,
     menuProjectId,
     projects,
     projectMutationsAvailable,
-    removeProject,
-    saveEditProject,
+    projectRenameAvailable,
+    saveEditProject: () => {
+      void saveEditProject();
+    },
     setEditProjectName,
     toggleMenu,
     togglePinned,

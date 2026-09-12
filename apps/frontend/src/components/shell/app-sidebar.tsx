@@ -124,10 +124,12 @@ export function AppSidebar({
 
       {projectsController.editProject ? (
         <EditProjectDialog
+          canSave={projectsController.canSaveProject}
+          error={projectsController.editProjectError}
+          saving={projectsController.savingProject}
           name={projectsController.editProjectName}
           onCancel={projectsController.cancelEditProject}
           onChangeName={projectsController.setEditProjectName}
-          onRemove={projectsController.removeProject}
           onSave={projectsController.saveEditProject}
         />
       ) : null}

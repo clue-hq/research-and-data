@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const ProjectRenameResponseSchema = z.object({
+  data: z.object({ id: z.string().min(1), title: z.string().min(1).max(200) }),
+}).transform(({ data }) => data);
+
+export type RenamedProject = z.infer<typeof ProjectRenameResponseSchema>;
+
 export const ProjectEntitySchema = z.object({
   accountName: z.string().optional(),
   id: z.string().min(1),

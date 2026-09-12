@@ -114,6 +114,19 @@ class CreateThreadRequest(_Request):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class RenameProjectRequest(_Request):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class RenameProjectWire(_Wire):
+    id: str
+    title: str
+
+
+class RenameProjectResponse(_Wire):
+    data: RenameProjectWire
+
+
 class UpdateThreadRequest(_Request):
     """``PATCH /api/v1/projects/:projectId/threads/:threadId`` — rename and/or pin.
 

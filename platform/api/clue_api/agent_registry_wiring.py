@@ -112,6 +112,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "archive_thread": (),
     "create_thread": (),
     "rename_thread": (),
+    "rename_project": (),
     "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,
