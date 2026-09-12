@@ -376,3 +376,23 @@ snake_case on the wire — card pinned in the composer dock. The card is primed 
 `launch_arv2_account_research` or `launch_arv2_person_research` tool part (the old lane's
 `launch_account_research` is superseded and is not matched). Owed: the founder's walk (launch
 research → card appears within 5 s → bar and line move → Completed for 60 s → gone).
+
+### Research progress card — close-out (2026-09-12, branch `research-streaming`, 1d033d924..HEAD)
+Executed plan `2026-09-12-research-progress-card.md` under SDD (Opus implementers, controller
+reviews, one Opus whole-branch review + one fix wave). Verified locally: offline arv2 suites 178
+green, lane-DB suites green (migration `c90aaea30a88` applied to the lane DB), frontend 2224
+tests / lint 0 errors / tsc at the 50-error baseline / build green. NOT pushed. For the founder:
+1. **Provisional ruling R11** — a run kept alive only by `needs_review`/`suspended` jobs drops off
+   the card 24 h after its last job finished (`ATTENTION_LINGER_S`); nothing in the system moves a
+   job out of `needs_review` and the card has no dismiss control, so the spec's exit was
+   unreachable. One constant to move if a different window is wanted.
+2. **Spec-faithful but static bar (I5)** — `committee`/`member_research` commit with `finish_job`,
+   so a running account job shows 0 % through the whole deep-research phase, then jumps; the
+   "Finding the buying committee" line is unreachable for account agents. An earlier stamp is a
+   spec change; decide on the walk.
+3. **C1 fix unseen in a browser** — the composer dock now sizes to content when the card shows
+   (`composerDockWithResearchCard`), proven by the flex chain and a contract test only. The walk
+   must confirm: card visible, composer usable, 8 px gap and full-frame width acceptable.
+4. Owed walk: launch research → card within 5 s → bar and line move → Completed for 60 s → gone;
+   a person-only launch (card scores by people); a worker restart mid-run (paused jobs score only
+   their walked quarters, pill "Needs attention"). Workers need a restart to pick up the stamps.
