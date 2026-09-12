@@ -630,6 +630,17 @@ that actually landed. The **live** exit gate in §9 is still owed (founder-trigg
 
 ---
 
+### Addendum 2026-09-12 — the project folder beside the brand folder
+
+Every production turn also seeds `inputs/project/status.md` (compiled from the project's ARV2 rows:
+pin, product set, accounts, discovery, research) and `inputs/project/decisions.md` (the project's
+current-effective `project_state` statements with their quotes), pinned once per turn in
+`agent_turn_project_files` and indexed by a second L3 card `ProjectFilesIndexCard@1`. Spec:
+`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.1. Project-scoped
+documents (`inputs/project/audience/…`, `inputs/project/plan.md`) follow in the next slices.
+
+---
+
 ## 9. Phases, exit gates, ownership, timeline
 
 | # | Phase | Builds | Exit gate | Owner |
