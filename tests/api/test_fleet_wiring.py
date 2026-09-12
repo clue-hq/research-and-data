@@ -468,7 +468,8 @@ def test_the_onboarding_handler_is_off_unless_the_lane_flag_is_set(tmp_path: Pat
     secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
     storage = FsStorage(tmp_path)
 
-    assert _build_onboarding_handler(_settings(), secrets, storage=storage) is None
+    off = _settings(onboarding_v2_enabled=False)  # on by default since 2026-09-12
+    assert _build_onboarding_handler(off, secrets, storage=storage) is None
 
     composed = _build_onboarding_handler(
         _settings(onboarding_v2_enabled=True), secrets, storage=storage

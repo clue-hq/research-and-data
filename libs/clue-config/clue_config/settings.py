@@ -399,10 +399,10 @@ class Settings(BaseSettings):
     brandfetch_client_id: str = ""
 
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
-    # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
-    # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.
-    # Env: ``CLUE_ONBOARDING_V2_ENABLED``.
-    onboarding_v2_enabled: bool = False
+    # Routes ``POST /onboarding`` to the new fleet driver (O3). ON by default since 2026-09-12
+    # (spec 2026-09-12-onboarding-v2-default): the Welcome flow's setting-up screen runs this
+    # lane. Env: ``CLUE_ONBOARDING_V2_ENABLED``.
+    onboarding_v2_enabled: bool = True
     # Exa Agent effort for the company-overview run (ARV2-COMPANY-OVERVIEW-CONTRACT.md §1).
     # Env: ``CLUE_ONBOARDING_OVERVIEW_EFFORT``.
     onboarding_overview_effort: str = "high"
@@ -706,6 +706,12 @@ class Settings(BaseSettings):
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
     self_serve_provisioning_enabled: bool = False
+    # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
+    # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
+    # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
+    # default off, until section G of the ledger retires the code. Env:
+    # ``CLUE_LEGACY_STAGE0_RECON_ENABLED``.
+    legacy_stage0_recon_enabled: bool = False
 
     # --- Lane E E3 value-narrative synthesis ------------------------------------------------
     # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind

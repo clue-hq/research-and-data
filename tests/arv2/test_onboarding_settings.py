@@ -14,7 +14,8 @@ ENV_EXAMPLE = REPO / ".env.example"
 
 #: ARV2-ONBOARDING-PLAN.md §10 — every onboarding knob and the default the lane ships with.
 ONBOARDING_SETTING_DEFAULTS: dict[str, object] = {
-    "onboarding_v2_enabled": False,
+    # On by default since 2026-09-12 (spec 2026-09-12-onboarding-v2-default).
+    "onboarding_v2_enabled": True,
     "onboarding_overview_effort": "high",
     "onboarding_reviews_effort": "medium",
     "onboarding_product_effort": "medium",
@@ -48,9 +49,9 @@ def test_every_onboarding_setting_has_its_shipped_default(unset_onboarding_env: 
         assert getattr(settings, field_name) == expected, field_name
 
 
-def test_the_lane_flag_ships_off() -> None:
-    """Flips only after O7 acceptance (plan §10)."""
-    assert Settings.model_fields["onboarding_v2_enabled"].default is False
+def test_the_lane_flag_ships_on() -> None:
+    """Flipped on 2026-09-12 after O7 acceptance (plan §10); the Welcome flow runs this lane."""
+    assert Settings.model_fields["onboarding_v2_enabled"].default is True
 
 
 def test_reviews_phase_loads_from_its_env_string(monkeypatch: pytest.MonkeyPatch) -> None:
