@@ -362,3 +362,102 @@ def test_a_process_without_local_mutations_refuses_the_put(tmp_path: Any) -> Non
             assert response.json()["error"]["code"] == "UNAUTHORIZED"
 
     run_async(scenario())
+
+
+class _CountingStorage(FsStorage):
+    """Filesystem storage that remembers which blobs the route actually read."""
+
+    def __init__(self, root: Any) -> None:
+        super().__init__(root)
+        self.reads: list[str] = []
+
+    async def get(self, key: str) -> bytes:
+        self.reads.append(key)
+        return await super().get(key)
+
+
+def test_the_detail_serves_a_superseded_version_so_its_editor_can_rebase(tmp_path: Any) -> None:
+    """M3. A version this project has since superseded still exists, and the editor holding it is
+    told so — with its real status — rather than being told the document is gone.
+
+    The PUT already answers a stale revision with "a newer version exists"; a 404 on the same row
+    from the GET would leave the Plan tab rendering "document not found" instead of the rebase the
+    409 is designed for. Only a document this project does not own — or one that never existed —
+    is absent.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, ids = await _seed(conn, storage)
+            saved = await _put(
+                conn,
+                storage,
+                f"/projects/{project_id}/documents/{ids['plan']}",
+                body="# Edited plan\n",
+                expected_revision=1,
+            )
+            assert saved.status_code == 200, saved.text
+
+            superseded = await _get(
+                conn, storage, f"/projects/{project_id}/documents/{ids['plan']}"
+            )
+
+            assert superseded.status_code == 200, superseded.text
+            document = superseded.json()["data"]
+            assert (document["id"], document["version"]) == (ids["plan"], 1)
+            assert document["status"] == "superseded"
+            assert document["markdown"] == PLAN_BODY
+            # It is still only the servable version that the list serves.
+            listed = (await _get(conn, storage, f"/projects/{project_id}/documents")).json()
+            assert [
+                row["version"] for row in listed["data"]["documents"] if row["path"] == PLAN_PATH
+            ] == [2]
+            # Another project's superseded version is absent, exactly as its servable one is.
+            other = await seed_project(conn, workspace_id, name="Another project")
+            assert (
+                await _get(conn, storage, f"/projects/{other.project_id}/documents/{ids['plan']}")
+            ).status_code == 404
+            assert (
+                await _get(conn, storage, f"/projects/{project_id}/documents/{uuid4()}")
+            ).status_code == 404
+
+    run_async(scenario())
+
+
+def test_the_list_reads_only_the_blobs_whose_titles_need_them(tmp_path: Any) -> None:
+    """M5. A plan and a persona set are titled by what they *are*, so listing them costs no blob
+    read; only the ICP-shaped document is opened for the title its own text carries.
+
+    The unreadable-blob case stays covered by the narrowed ``except``: a missing object is a
+    storage error, so the document is still listed by the name on its path.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = _CountingStorage(tmp_path)
+            _, project_id, _ids = await _seed(conn, storage)
+            storage.reads.clear()
+
+            listed = await _get(conn, storage, f"/projects/{project_id}/documents")
+
+            assert listed.status_code == 200, listed.text
+            documents = listed.json()["data"]["documents"]
+            assert [row["title"] for row in documents] == [
+                "GI-focused ambulatory surgery centers",
+                "Personas — gi-dac",
+                "Plan",
+            ]
+            assert len(storage.reads) == 1, storage.reads
+
+            # The ICP's bytes vanish: the tab still lists every document, by path-derived name.
+            await storage.delete(storage.reads[0])
+            degraded = await _get(conn, storage, f"/projects/{project_id}/documents")
+            assert degraded.status_code == 200, degraded.text
+            assert [row["title"] for row in degraded.json()["data"]["documents"]] == [
+                "gi-dac",
+                "Personas — gi-dac",
+                "Plan",
+            ]
+
+    run_async(scenario())

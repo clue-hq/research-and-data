@@ -20,6 +20,9 @@ What the platform owns, and the model does not:
   still be pinned to precisely those bytes.
 * **scope** — every read and every write here is inside one project. Another project's document is
   not an error, it is *absent*, which is also the answer another tenant's document gets.
+* **version** — the number this write mints, stamped into the front matter by both hands, so the
+  version of the file the agent reads is legible *in* the file it reads (ruling P) rather than
+  only on the index card beside it.
 * **authorship** — the turn and the human on it for the agent's write, ``user_edit`` for the
   human's, stamped into the front matter so the provenance survives in the bytes themselves.
 
@@ -33,6 +36,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -52,6 +56,8 @@ from clue_storage import (
 )
 
 __all__ = [
+    "ICP_DEFINITION_KIND",
+    "PERSONA_KIND",
     "PLAN_FOLDER",
     "PLAN_KIND",
     "PLAN_PATH",
@@ -75,6 +81,10 @@ __all__ = [
 PLAN_PATH = "project/plan.md"
 PLAN_FOLDER = "project"
 PLAN_KIND = "project-plan"
+#: The two audience kinds a project authors for itself, named here because the human's edit surface
+#: is gated on kinds and this module owns that gate.
+ICP_DEFINITION_KIND = "icp-definition"
+PERSONA_KIND = "audience-persona"
 #: Where the plan is readable in the agent's workspace. This is
 #: ``project_context_files.project_workspace_path(PLAN_PATH)`` — one leading ``project/`` segment is
 #: the folder name, not a directory under ``inputs/project/``. It is restated here rather than
@@ -96,9 +106,11 @@ _SERVABLE_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
 #: What a new version retires. ``confirmed`` is deliberately absent: a human's yes is some project's
 #: pinned ICP, and a later version stands beside it rather than retiring it.
 _RETIRABLE_STATUSES: tuple[str, ...] = ("ready", "proposed")
-#: The folders a human may edit through this surface: the project's own files, and the audience
-#: documents (ICP variants and their personas) a project authored for itself.
-_EDITABLE_FOLDERS: tuple[str, ...] = ("project", "audience")
+#: The kinds a human may edit through this surface: the project's plan, and the audience documents
+#: (ICP variants and their personas) a project authored for itself. Gated by *kind* rather than by
+#: folder, so a later document in one of those folders is not human-editable by accident — admitting
+#: one is a decision, taken by adding its kind here.
+_EDITABLE_KINDS: tuple[str, ...] = (PLAN_KIND, ICP_DEFINITION_KIND, PERSONA_KIND)
 #: The approval stamp a confirmation writes. A text edit is not a re-confirmation, so these are
 #: dropped from the version it mints (ruling I; the brand Knowledge PUT drops the same four).
 _APPROVAL_KEYS: tuple[str, ...] = (
@@ -176,15 +188,26 @@ class ProjectDocumentRow:
     icp_key: str | None
 
 
-def plan_document_id(*, turn_id: UUID, expected_version: int | None) -> UUID:
-    """The one id this turn's write of the plan at this version will ever have.
+def plan_document_id(*, turn_id: UUID, expected_version: int | None, body_sha256: str) -> UUID:
+    """The one id this turn's write of *these bytes* at this version will ever have.
 
     Derived rather than minted so a retried tool call finds its own row instead of publishing the
-    same plan twice. The expected version is in the key because the *same* turn writing again after
-    re-reading a newer plan is a genuinely new version, which is what the version chain is for.
+    same plan twice. A replay re-sends identical arguments, so it lands on its own row exactly as
+    before. Three things are in the key, and each of them is a genuinely different write:
+
+    * the **turn**, so one turn's plan is not another's;
+    * the **expected version**, because the same turn writing again after re-reading a newer plan
+      is a new link in the version chain;
+    * the **body digest**, because the same turn writing *different words* against the same version
+      is a rewrite, not a replay. Without it that second body was silently discarded and the agent
+      was told it had been stored; with it, the rewrite mints a new id, fails the revision check
+      against the version it just wrote, and comes back as the named revision conflict the agent
+      already knows how to recover from.
     """
 
-    return uuid5(NAMESPACE_URL, f"{_PLAN_NAMESPACE}:{turn_id}:{expected_version or 0}")
+    return uuid5(
+        NAMESPACE_URL, f"{_PLAN_NAMESPACE}:{turn_id}:{expected_version or 0}:{body_sha256}"
+    )
 
 
 def _icp_key_of(path: str) -> str | None:
@@ -231,17 +254,28 @@ async def current_plan_version(
     return None if version is None else int(version)
 
 
-async def _stored_plan(conn: AsyncConnection, *, document_id: UUID) -> WrittenDocument | None:
-    """The row this write already produced, or ``None``. Read before anything is rendered."""
+async def _stored_plan(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, document_id: UUID
+) -> WrittenDocument | None:
+    """The row this write already produced, or ``None``. Read before anything is rendered.
+
+    Scoped like every other read here: a row found by id alone would let one project's write be
+    answered with another's row, and scope is part of a document's identity in this module.
+    """
 
     row = (
         (
             await conn.execute(
                 text(
                     "SELECT path, version FROM brand_knowledge_document "
-                    "WHERE document_id = :document_id"
+                    "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                    "  AND document_id = :document_id"
                 ),
-                {"document_id": document_id},
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "document_id": document_id,
+                },
             )
         )
         .mappings()
@@ -258,15 +292,20 @@ async def _stored_plan(conn: AsyncConnection, *, document_id: UUID) -> WrittenDo
     )
 
 
-async def _put_document(
+async def _record_document(
     conn: AsyncConnection,
-    storage: StorageBackend,
     *,
     workspace_id: str,
     document: KnowledgeDocument,
     source_key: str,
-) -> tuple[str, str]:
-    """Render, record and store one version's bytes. Returns ``(artifact_key, sha256)``."""
+) -> tuple[str, str, bytes]:
+    """Render one version's bytes and record their artifact row. Returns ``(key, sha256, bytes)``.
+
+    The row is written here because the document row's ``artifact_key`` references it, so it must
+    exist before the INSERT. The *bytes* are not written here: they are handed back for
+    :func:`_store_bytes` to put once the version has actually landed, so a refused write leaves no
+    unreferenced object behind.
+    """
 
     data = render_markdown(document).encode("utf-8")
     sha = content_address(data)
@@ -280,8 +319,33 @@ async def _put_document(
         size_bytes=len(data),
         source_key=source_key,
     )
+    return key, sha, data
+
+
+async def _store_bytes(storage: StorageBackend, key: str, data: bytes) -> None:
+    """Write the version's bytes, after the row that cites them is at rest."""
+
     await storage.put(key, data, media_type=_DOCUMENT_MEDIA_TYPE)
-    return key, sha
+
+
+async def _lock_project(conn: AsyncConnection, *, workspace_id: str, project_id: str) -> None:
+    """Take this project's row lock. **The first lock either writer takes, always.**
+
+    Both hands write one version chain — the agent through :func:`write_project_plan`, the human
+    through :func:`save_project_document` — and two writers that take the same two locks in
+    opposite orders deadlock. Postgres then aborts one of them with ``40P01``, which is an
+    ``OperationalError`` rather than an ``IntegrityError``, so it would escape both of this
+    module's typed handlers and surface as a 500 instead of "someone wrote first". One total order
+    — project row, then document rows — removes the cycle.
+    """
+
+    await conn.execute(
+        text(
+            "SELECT project_id FROM project "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id FOR UPDATE"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id},
+    )
 
 
 async def _retire(
@@ -319,10 +383,11 @@ async def write_project_plan(
 ) -> WrittenDocument:
     """Store one plan as the next ``ready`` version of ``project/plan.md`` in its project's scope.
 
-    **Replay.** The document id is derived from ``(turn, expected version)``, so a retried call
-    finds its own row and returns it *before* anything is rendered or stored — no orphan artifact
-    per attempt. ``authored_at`` is the one non-deterministic value in the bytes, and that
-    short-circuit is what keeps a replay from becoming a different document.
+    **Replay.** The document id is derived from ``(turn, expected version, body digest)``, so a
+    retried call — identical arguments — finds its own row and returns it *before* anything is
+    rendered or stored, and a rewrite within one turn is refused by name rather than discarded.
+    ``authored_at`` is the one non-deterministic value in the bytes, and that short-circuit is what
+    keeps a replay from becoming a different document.
 
     Raises :class:`ProjectDocumentRefused` — never a partial write — for every refusable condition.
     """
@@ -332,13 +397,23 @@ async def write_project_plan(
             "project_document_body_empty",
             "the plan body is empty; write the plan as markdown",
         )
+    body_sha256 = sha256(request.body.encode("utf-8")).hexdigest()
     document_id = plan_document_id(
-        turn_id=request.turn_id, expected_version=request.expected_version
+        turn_id=request.turn_id,
+        expected_version=request.expected_version,
+        body_sha256=body_sha256,
     )
-    replayed = await _stored_plan(conn, document_id=document_id)
+    replayed = await _stored_plan(
+        conn,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        document_id=document_id,
+    )
     if replayed is not None:
         return replayed
 
+    # The one lock order both writers take (see :func:`_lock_project`); a replay above costs none.
+    await _lock_project(conn, workspace_id=request.workspace_id, project_id=request.project_id)
     current = await current_plan_version(
         conn, workspace_id=request.workspace_id, project_id=request.project_id
     )
@@ -349,9 +424,12 @@ async def write_project_plan(
             f"Re-read {PLAN_WORKSPACE_PATH} and write again.",
         )
 
-    key, sha = await _put_document(
+    # Known before the bytes are rendered, so the version this write mints is *in* the front
+    # matter: the skill tells the agent to pass "the version of the file you read", and this is
+    # what makes that readable in the file it reads (ruling P).
+    version = (current or 0) + 1
+    key, sha, data = await _record_document(
         conn,
-        storage,
         workspace_id=request.workspace_id,
         document=KnowledgeDocument(
             kind=PLAN_KIND,
@@ -361,6 +439,7 @@ async def write_project_plan(
                 "kind": PLAN_KIND,
                 "project_id": request.project_id,
                 "brand_id": request.brand_id,
+                "version": version,
                 "status": "ready",
                 "authored_by": {"turn_id": str(request.turn_id), "user_id": request.user_id},
                 "authored_at": now().isoformat(),
@@ -389,9 +468,8 @@ async def write_project_plan(
             },
         )
     ).scalar_one_or_none()
-    version = (current or 0) + 1
     try:
-        await conn.execute(
+        result = await conn.execute(
             text(
                 "INSERT INTO brand_knowledge_document ("
                 "  document_id, workspace_id, brand_id, project_id, folder, path, kind, version, "
@@ -425,15 +503,33 @@ async def write_project_plan(
                 f"re-read {PLAN_WORKSPACE_PATH} and write again",
             ) from exc
         raise
-    await _retire(
+    # ``DO NOTHING`` matched: a concurrent twin of this exact call inserted the row first, so this
+    # call published nothing. That is the same logical event as the replay short-circuit above and
+    # is reported the same way — the caller is never told it wrote a version it did not write.
+    inserted = result.rowcount != 0
+    if inserted:
+        await _retire(
+            conn,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            path=PLAN_PATH,
+            keeping=document_id,
+        )
+    # The bytes land only now, with the row that cites them at rest: a refused write above leaves
+    # no unreferenced object behind, because its artifact row rolls back with the transaction. The
+    # twin above still stores its bytes, so the artifact row it did record is never a dangling
+    # promise of an object that was never written.
+    await _store_bytes(storage, key, data)
+    stored = await _stored_plan(
         conn,
         workspace_id=request.workspace_id,
         project_id=request.project_id,
-        path=PLAN_PATH,
-        keeping=document_id,
+        document_id=document_id,
     )
-    stored = await _stored_plan(conn, document_id=document_id)
-    if stored is None:  # pragma: no cover - the INSERT above either landed or raised
+    if stored is None:
+        # Nothing landed in *this* scope: the derived id is held by a row this project does not
+        # own, so the version was not published here and the caller is told so rather than handed
+        # another scope's row.
         raise ProjectDocumentRefused(
             "project_document_version_race", "the written plan did not persist"
         )
@@ -442,7 +538,7 @@ async def write_project_plan(
         path=stored.path,
         version=stored.version,
         workspace_path=PLAN_WORKSPACE_PATH,
-        replayed=False,
+        replayed=not inserted,
     )
 
 
@@ -549,13 +645,24 @@ async def read_project_document(
     workspace_id: str,
     project_id: str,
     document_id: UUID,
+    servable_only: bool = True,
 ) -> tuple[ProjectDocumentRow, dict[str, Any], str] | None:
-    """One of this project's servable documents with its front matter and body, or ``None``."""
+    """One of this project's documents with its front matter and body, or ``None``.
+
+    ``servable_only=False`` is the editor's read, for the reason :func:`_document` gives: a version
+    this project *has* superseded still exists, and serving it with its real ``superseded`` status
+    lets an editor holding it rebase, where a 404 would only say it is gone. A row whose bytes were
+    never written has nothing to serve and is absent either way.
+    """
 
     row = await _document(
-        conn, workspace_id=workspace_id, project_id=project_id, document_id=document_id
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        document_id=document_id,
+        servable_only=servable_only,
     )
-    if row is None:
+    if row is None or row["artifact_key"] is None:
         return None
     front, body = await _front_and_body(conn, storage, workspace_id=workspace_id, row=row)
     return _row(row), front, body
@@ -568,6 +675,7 @@ def _edited_front_matter(
     was_confirmed: bool,
     document_id: UUID,
     version: int,
+    new_version: int,
     user_id: str,
     edited_at: datetime,
 ) -> dict[str, Any]:
@@ -575,12 +683,15 @@ def _edited_front_matter(
 
     A text edit cannot carry another version's approval forward, so the stamp is dropped when the
     version being edited was the confirmed one; everything the document itself says survives.
+    ``version`` is the platform's, restated as the version *this* edit mints, so the number in the
+    file is always the number of the file (ruling P).
     """
 
     stamped = dict(front)
     if was_confirmed:
         for key in _APPROVAL_KEYS:
             stamped.pop(key, None)
+    stamped["version"] = new_version
     stamped["status"] = status
     stamped["user_edit"] = {
         "user_id": user_id,
@@ -619,6 +730,11 @@ async def save_project_document(
         raise ProjectDocumentRefused(
             "project_document_body_empty", "the document body is empty; nothing was saved"
         )
+    # Serialize competing human saves for this project, and take this lock *before* the document
+    # row's: one order for both writers is what keeps the agent's write and this one from
+    # deadlocking (see :func:`_lock_project`). Other publishers may still race to insert the next
+    # version; the unique index remains the final arbiter.
+    await _lock_project(conn, workspace_id=workspace_id, project_id=project_id)
     row = await _document(
         conn,
         workspace_id=workspace_id,
@@ -627,7 +743,7 @@ async def save_project_document(
         servable_only=False,
         for_update=True,
     )
-    if row is None or str(row["folder"]) not in _EDITABLE_FOLDERS:
+    if row is None or str(row["kind"]) not in _EDITABLE_KINDS:
         raise ProjectDocumentRefused(
             "project_document_not_found", "this project has no such editable document"
         )
@@ -638,15 +754,6 @@ async def save_project_document(
             "project_document_revision_conflict",
             f"{row['path']} has a newer version than the one you edited. The draft was not saved.",
         )
-    # Serialize competing human saves for this project. Other publishers (the agent's write) may
-    # still race to insert the next version; the unique index remains the final arbiter.
-    await conn.execute(
-        text(
-            "SELECT project_id FROM project "
-            "WHERE workspace_id = :workspace_id AND project_id = :project_id FOR UPDATE"
-        ),
-        {"workspace_id": workspace_id, "project_id": project_id},
-    )
     latest = await conn.scalar(
         text(
             "SELECT MAX(version) FROM brand_knowledge_document "
@@ -665,9 +772,9 @@ async def save_project_document(
         return _row(row)
 
     status = "proposed" if row["status"] == "confirmed" else str(row["status"])
-    key, sha = await _put_document(
+    new_version = int(row["version"]) + 1
+    key, sha, data = await _record_document(
         conn,
-        storage,
         workspace_id=workspace_id,
         document=KnowledgeDocument(
             kind=str(row["kind"]),
@@ -679,6 +786,7 @@ async def save_project_document(
                 was_confirmed=row["status"] == "confirmed",
                 document_id=document_id,
                 version=int(row["version"]),
+                new_version=new_version,
                 user_id=user_id,
                 edited_at=now(),
             ),
@@ -712,7 +820,7 @@ async def save_project_document(
                 "folder": row["folder"],
                 "path": row["path"],
                 "kind": row["kind"],
-                "version": int(row["version"]) + 1,
+                "version": new_version,
                 "status": status,
                 "artifact_key": key,
                 "artifact_sha256": sha,
@@ -723,7 +831,7 @@ async def save_project_document(
         if "brand_knowledge_document_scope_path_version" in str(exc.orig):
             raise ProjectDocumentRefused(
                 "project_document_version_race",
-                f"another writer published version {int(row['version']) + 1} of "
+                f"another writer published version {new_version} of "
                 f"{row['path']}; the draft was not saved",
             ) from exc
         raise
@@ -735,6 +843,9 @@ async def save_project_document(
             ),
             {"document_id": document_id},
         )
+    # The bytes land with the row that cites them at rest, and after the version it replaces has
+    # been retired: a refused save above leaves no unreferenced object behind.
+    await _store_bytes(storage, key, data)
     saved = await _document(
         conn, workspace_id=workspace_id, project_id=project_id, document_id=new_id
     )

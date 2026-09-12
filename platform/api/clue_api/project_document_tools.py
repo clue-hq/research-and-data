@@ -154,7 +154,7 @@ class WriteProjectDocumentTool(Tool):
     effect_class = ToolEffectClass.WRITE
     replay = ReplaySafety(
         policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
-        durable_identity="presenting turn + document + expected version",
+        durable_identity="presenting turn + document + expected version + body",
         external_boundary=ExternalReplayBoundary.NONE,
     )
     parameter_policy = JournalParameterPolicy(

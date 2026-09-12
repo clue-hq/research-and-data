@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # is private there only because the gate is its single caller until now.
 from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
 from clue_api.arv2.project_documents import (
+    PERSONA_KIND,
     PLAN_KIND,
     ProjectDocumentRefused,
     ProjectDocumentRow,
@@ -44,7 +45,7 @@ from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.v1_shared import iso_utc
 from clue_db import ConnFactory
 from clue_obs import get_logger
-from clue_storage import StorageBackend
+from clue_storage import StorageBackend, StorageError
 
 log = get_logger("clue_api.frontend_read.project_documents")
 
@@ -58,12 +59,12 @@ __all__ = [
     "register_project_document_routes",
 ]
 
-#: The persona document one ICP owns. Restated rather than imported: the kind is written by the
-#: ``audience-persona`` skill's front matter and has no Python home to import it from.
-PERSONA_KIND = "audience-persona"
 #: A project has exactly one plan, so its title is a constant rather than its heading — the tab it
 #: is drawn in is called Plan, and the document's own H1 is the campaign's name, not the file's.
 PLAN_TITLE = "Plan"
+#: The kinds whose title is known from the row alone — the project's one plan, and the persona set
+#: named for its ICP. Listing them costs no blob read at all.
+_TITLED_WITHOUT_THEIR_BYTES: tuple[str, ...] = (PLAN_KIND, PERSONA_KIND)
 
 #: The store's refusal vocabulary, mapped onto this surface's statuses and codes. A version race
 #: and a stale revision are the same answer to the human: someone else wrote first.
@@ -202,17 +203,17 @@ async def _listed(
 ) -> list[ProjectDocumentV1]:
     """This project's documents, each read once for the title its own bytes carry.
 
-    One blob per document, sequentially: a project owns a plan and its audience documents, so the
-    list is a handful of rows rather than a page. A document whose bytes cannot be read is still
-    listed — by the name on its path — because a missing blob is a reason to show less, never a
-    reason to fail the whole tab.
+    Only the documents that *need* their bytes are read: a plan and a persona set are titled by
+    what they are, so the list costs one query and a blob read per ICP-shaped document rather than
+    per row. A document whose bytes cannot be read is still listed — by the name on its path —
+    because a missing blob is a reason to show less, never a reason to fail the whole tab.
     """
 
     wires: list[ProjectDocumentV1] = []
     for row in await list_project_documents(conn, workspace_id=workspace_id, project_id=project_id):
         front: Mapping[str, Any] = {}
         body = ""
-        if storage is not None:
+        if storage is not None and row.kind not in _TITLED_WITHOUT_THEIR_BYTES:
             try:
                 read = await read_project_document(
                     conn,
@@ -221,7 +222,11 @@ async def _listed(
                     project_id=project_id,
                     document_id=row.document_id,
                 )
-            except Exception:  # noqa: BLE001 — an unreadable blob lists the document, never 500s
+            except (StorageError, ValueError):
+                # Exactly what reading a verified artifact can raise: a missing, foreign, erased or
+                # corrupt blob, and the digest mismatch this module's reader raises itself. A
+                # *database* error is not caught here — the transaction is aborted, so continuing
+                # the loop would only produce N misleading failures instead of one true one.
                 read = None
                 log.warning(
                     "project_documents.document_unreadable",
@@ -271,6 +276,10 @@ def register_project_document_routes(
                 workspace_id=workspace_id,
                 project_id=project_id,
                 document_id=document_id,
+                # A version this project has since superseded is served with its real status, so an
+                # editor holding it can rebase; only a document this project does not own — or one
+                # that never existed — is absent.
+                servable_only=False,
             )
         if found is None:
             raise _not_found()

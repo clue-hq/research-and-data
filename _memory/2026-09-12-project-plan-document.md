@@ -245,3 +245,26 @@ curl -sS -X PUT \
   pure helper.
 - The lane DB still carries committed rows from earlier walks (`agent_gate_answer`,
   `arv2_research_job`, `recipe0-stage0@2`) behind several pre-existing reds; a reset clears them.
+
+## Final-review fix wave — 2026-09-13 (base `b55a858b2`)
+
+Applied I1, I2 and M1–M8 from `.superpowers/sdd/2026-09-12-project-plan-document/final-review.md`
+(adjudication in `progress.md`); full record in that folder's `fix-report.md`.
+
+- **I1** replay key = `turn : expected_version : sha256(body)` — a same-turn rewrite is now a named
+  revision conflict instead of a silent discard; an identical retry is still a replay.
+- **I2** one lock order for both writers: the `project` row `FOR UPDATE` first (agent: after the
+  replay short-circuit, before `MAX(version)`; human: before the document row's `FOR UPDATE`). No
+  two-connection deadlock test is achievable with `rollback_conn`; the order is pinned with a
+  statement-recording connection wrapper instead — noted in the test's docstring.
+- **M1** `_stored_plan` scoped by workspace+project. **M2** `storage.put` after the INSERT/retire in
+  both writers (`record_artifact` stays before). **M3** the detail GET serves a superseded version of
+  this project with its real status. **M4** new `tests/arv2/test_servable_statuses_agree.py` guards
+  the six restated servable tuples. **M5** no blob read for plan/persona titles; `except` narrowed to
+  `(StorageError, ValueError)`. **M6** the human PUT is gated by kind, not folder. **M7** the plan's
+  front matter carries `version` on both write paths. **M8** a no-op INSERT reports `replayed=True`.
+
+Gates: the five named suites pass (41), ruff format/check clean, mypy clean on the three touched
+modules, `lint-imports` 26/0. Each item has a test proven RED against its own revert.
+`platform/api/clue_api/arv2/read_tools.py` deliberately untouched (parallel plan-4 review).
+**Still owed:** the live walk (I3) — unchanged by this wave.

@@ -14,7 +14,8 @@ project is not an error here, it is *absent* — the same answer a document that
 
 from __future__ import annotations
 
-from typing import Any
+from hashlib import sha256
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -34,6 +35,7 @@ from clue_api.arv2.project_documents import (
     save_project_document,
     write_project_plan,
 )
+from clue_storage import StorageBackend
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
 from tests.arv2.icp_fixture import seed_icp_document
@@ -164,7 +166,9 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
             assert written.path == PLAN_PATH
             assert written.workspace_path == PLAN_WORKSPACE_PATH == "inputs/project/plan.md"
             assert written.document_id == plan_document_id(
-                turn_id=request.turn_id, expected_version=None
+                turn_id=request.turn_id,
+                expected_version=None,
+                body_sha256=sha256(BODY.encode("utf-8")).hexdigest(),
             )
             row = await _row(conn, written.document_id)
             assert (row["project_id"], row["folder"], row["kind"], row["status"]) == (
@@ -538,5 +542,418 @@ def test_a_confirmed_project_icp_the_human_edits_returns_to_proposed(tmp_path: A
             # The model's own content survives the edit.
             assert front["icp_key"] == "gi-dac"
             assert front["product_ids"] == ["prd_aura"]
+
+    run_async(scenario())
+
+
+# =================================================================================================
+# what the two writers may not do to each other (final-review I1, I2, M2, M6, M7, M8)
+# =================================================================================================
+
+
+def _sql(statement: Any) -> str:
+    """One statement as a single line, for order assertions."""
+
+    return " ".join(str(statement).split())
+
+
+class _RecordingConn:
+    """The real connection, with every statement it runs written down in order.
+
+    Lock *order* is the property under test and it is invisible in results — the only evidence is
+    which statement ran before which. A two-connection deadlock test would be the stronger proof,
+    but the DB harness here hands out one rolled-back connection, and a real deadlock would either
+    hang the suite or depend on ``deadlock_timeout``; recording the order proves the same
+    invariant deterministically.
+    """
+
+    def __init__(self, conn: AsyncConnection, log: list[str]) -> None:
+        self._conn = conn
+        self._log = log
+
+    async def execute(self, statement: Any, parameters: Any = None, *args: Any, **kw: Any) -> Any:
+        self._log.append(_sql(statement))
+        return await self._conn.execute(statement, parameters, *args, **kw)
+
+    async def scalar(self, statement: Any, parameters: Any = None, *args: Any, **kw: Any) -> Any:
+        self._log.append(_sql(statement))
+        return await self._conn.scalar(statement, parameters, *args, **kw)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
+class _RecordingStorage:
+    """The real storage, with each ``put`` written into the same log as the SQL around it."""
+
+    def __init__(self, storage: StorageBackend, log: list[str]) -> None:
+        self._storage = storage
+        self._log = log
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self._log.append(f"STORAGE PUT {key}")
+        await self._storage.put(key, data, media_type=media_type)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._storage, name)
+
+
+class _NoRows:
+    """An empty result, for the reads a concurrent twin made before the winner committed."""
+
+    def mappings(self) -> _NoRows:
+        return self
+
+    def one_or_none(self) -> None:
+        return None
+
+
+class _TwinWonTheInsert:
+    """Both calls read before either inserted: this one's pre-insert reads see the earlier state.
+
+    It hides exactly two reads — the replay lookup and ``MAX(version)`` — which is what the loser
+    of a genuine race sees. Everything after them is the real connection, so the INSERT really does
+    hit ``ON CONFLICT (document_id) DO NOTHING`` against the row the winner already wrote.
+    """
+
+    def __init__(self, conn: AsyncConnection) -> None:
+        self._conn = conn
+        self._hid_replay = False
+        self._hid_max = False
+
+    async def execute(self, statement: Any, parameters: Any = None, *args: Any, **kw: Any) -> Any:
+        if not self._hid_replay and "SELECT path, version FROM brand_knowledge_document" in _sql(
+            statement
+        ):
+            self._hid_replay = True
+            return _NoRows()
+        return await self._conn.execute(statement, parameters, *args, **kw)
+
+    async def scalar(self, statement: Any, parameters: Any = None, *args: Any, **kw: Any) -> Any:
+        if not self._hid_max and "SELECT MAX(version)" in _sql(statement):
+            self._hid_max = True
+            return None
+        return await self._conn.scalar(statement, parameters, *args, **kw)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+
+def _index(log: list[str], needle: str) -> int:
+    for position, statement in enumerate(log):
+        if needle in statement:
+            return position
+    raise AssertionError(f"no statement matching {needle!r} in {log}")
+
+
+def test_a_second_body_in_one_turn_is_refused_rather_than_silently_discarded(
+    tmp_path: Any,
+) -> None:
+    """I1. The same turn, the same ``expected_version``, *different words* is a rewrite.
+
+    The replay key carries the body's digest, so the corrected plan is not mistaken for a retry of
+    the first one: it mints its own id, fails the revision check against the version it just wrote,
+    and comes back as the named conflict the agent recovers from by re-reading. Before the digest
+    was in the key this returned ``replayed=True`` with a version number, i.e. told the agent its
+    correction was stored while the first body stayed at rest.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            request = _write(workspace_id, brand_id, project_id)
+
+            first = await write_project_plan(conn, storage, request)
+
+            corrected = ProjectPlanWrite(
+                workspace_id=request.workspace_id,
+                brand_id=request.brand_id,
+                project_id=request.project_id,
+                turn_id=request.turn_id,
+                user_id=request.user_id,
+                body=BODY + "\n2. Name Aura and Lumen.\n",
+                expected_version=request.expected_version,
+            )
+            with pytest.raises(ProjectDocumentRefused) as excinfo:
+                await write_project_plan(conn, storage, corrected)
+
+            assert excinfo.value.code == "project_document_revision_conflict"
+            assert "version 1" in str(excinfo.value)
+            # An honest retry — the identical call — is still a replay, on its own row.
+            again = await write_project_plan(conn, storage, request)
+            assert again.replayed is True
+            assert (again.document_id, again.version) == (first.document_id, 1)
+            assert [row["version"] for row in await _rows_at(conn, workspace_id, PLAN_PATH)] == [1]
+
+    run_async(scenario())
+
+
+def test_both_writers_take_the_projects_lock_before_any_document_row(tmp_path: Any) -> None:
+    """I2. One total lock order — project row first, always — or the two writers deadlock.
+
+    The agent used to take no lock and retire the previous version last, while the human locked the
+    document row first and the project row second; that cycle aborts one side with ``40P01``, which
+    is an ``OperationalError`` neither writer's ``IntegrityError`` handler catches, so the human
+    gets a 500 and the agent an untyped exception instead of "someone wrote first".
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+
+            agent_log: list[str] = []
+            written = await write_project_plan(
+                cast("AsyncConnection", _RecordingConn(conn, agent_log)),
+                storage,
+                _write(workspace_id, brand_id, project_id),
+            )
+            project_lock = _index(agent_log, "FROM project WHERE workspace_id")
+            assert "FOR UPDATE" in agent_log[project_lock]
+            assert project_lock < _index(agent_log, "SELECT MAX(version)")
+            assert project_lock < _index(agent_log, "INSERT INTO brand_knowledge_document")
+
+            human_log: list[str] = []
+            await save_project_document(
+                cast("AsyncConnection", _RecordingConn(conn, human_log)),
+                storage,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                document_id=written.document_id,
+                body="# The human's plan\n",
+                expected_revision=1,
+                user_id=USER_ID,
+            )
+            human_project_lock = _index(human_log, "FROM project WHERE workspace_id")
+            assert "FOR UPDATE" in human_log[human_project_lock]
+            document_lock = _index(
+                human_log,
+                "FROM brand_knowledge_document WHERE workspace_id = :workspace_id "
+                "AND project_id = :project_id AND document_id = :document_id FOR UPDATE",
+            )
+            assert human_project_lock < document_lock
+
+    run_async(scenario())
+
+
+def test_the_bytes_are_stored_only_after_the_row_that_cites_them(tmp_path: Any) -> None:
+    """M2. ``storage.put`` last, so a refused write leaves no unreferenced object behind.
+
+    The artifact *row* still precedes the INSERT — the document row references it — but it lives
+    inside the transaction and rolls back with it, while an object already written to the store
+    does not and nothing sweeps it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace_id, project_id, brand_id = await _seed(conn)
+
+            agent_log: list[str] = []
+            storage = cast("StorageBackend", _RecordingStorage(FsStorage(tmp_path), agent_log))
+            written = await write_project_plan(
+                cast("AsyncConnection", _RecordingConn(conn, agent_log)),
+                storage,
+                _write(workspace_id, brand_id, project_id),
+            )
+            document_insert = _index(agent_log, "INSERT INTO brand_knowledge_document")
+            assert _index(agent_log, "INSERT INTO artifact") < document_insert
+            assert document_insert < _index(agent_log, "STORAGE PUT")
+
+            human_log: list[str] = []
+            human_storage = cast(
+                "StorageBackend", _RecordingStorage(FsStorage(tmp_path), human_log)
+            )
+            await save_project_document(
+                cast("AsyncConnection", _RecordingConn(conn, human_log)),
+                human_storage,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                document_id=written.document_id,
+                body="# The human's plan\n",
+                expected_revision=1,
+                user_id=USER_ID,
+            )
+            human_insert = _index(human_log, "INSERT INTO brand_knowledge_document")
+            put = _index(human_log, "STORAGE PUT")
+            assert human_insert < put
+            # ...and after the version it replaces has been retired.
+            assert _index(human_log, "SET status = 'superseded'") < put
+
+    run_async(scenario())
+
+
+def test_a_project_folder_document_of_another_kind_is_not_human_editable(tmp_path: Any) -> None:
+    """M6. The human's surface is gated by *kind*, not by folder.
+
+    A later ``project/`` document is not human-editable by accident: admitting one is a decision,
+    taken by naming its kind. Under the folder gate this save succeeded and demoted a document
+    nobody had decided to hand the human.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            brief, _, _ = await seed_icp_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                project_id=project_id,
+                path="project/brief.md",
+                kind="design-brief",
+                status="ready",
+                body="# Brief\n\nBody.\n",
+            )
+
+            with pytest.raises(ProjectDocumentRefused) as excinfo:
+                await save_project_document(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    document_id=brief,
+                    body="# Edited by the human\n",
+                    expected_revision=1,
+                    user_id=USER_ID,
+                )
+
+            assert excinfo.value.code == "project_document_not_found"
+            assert [
+                row["version"] for row in await _rows_at(conn, workspace_id, "project/brief.md")
+            ] == [1]
+
+    run_async(scenario())
+
+
+def test_the_front_matter_states_the_version_the_row_holds(tmp_path: Any) -> None:
+    """M7 / ruling P. The skill tells the agent to pass "the version of the file you read"; this
+    is what puts that number in the file, on both writers' versions."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+
+            async def front_of(document_id: UUID) -> dict[str, Any]:
+                found = await read_project_document(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    document_id=document_id,
+                )
+                assert found is not None
+                return found[1]
+
+            first = await write_project_plan(
+                conn, storage, _write(workspace_id, brand_id, project_id)
+            )
+            assert (await front_of(first.document_id))["version"] == first.version == 1
+
+            second = await write_project_plan(
+                conn,
+                storage,
+                _write(workspace_id, brand_id, project_id, expected_version=1, body="# v2\n"),
+            )
+            assert (await front_of(second.document_id))["version"] == second.version == 2
+
+            saved = await save_project_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                document_id=second.document_id,
+                body="# Edited by the human\n",
+                expected_revision=2,
+                user_id=USER_ID,
+            )
+            assert (await front_of(saved.document_id))["version"] == saved.version == 3
+
+    run_async(scenario())
+
+
+def test_a_twin_that_lost_the_insert_reports_a_replay(tmp_path: Any) -> None:
+    """M8. ``ON CONFLICT DO NOTHING`` matched: this call published nothing, and says so.
+
+    It is the same logical event as the sequential replay short-circuit, and used to be reported as
+    its opposite — ``replayed=False``, i.e. "I wrote this version" — for a version another call
+    wrote.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            request = _write(workspace_id, brand_id, project_id)
+            winner = await write_project_plan(conn, storage, request)
+
+            loser = await write_project_plan(
+                cast("AsyncConnection", _TwinWonTheInsert(conn)), storage, request
+            )
+
+            assert loser.replayed is True
+            assert (loser.document_id, loser.version) == (winner.document_id, 1)
+            assert [row["version"] for row in await _rows_at(conn, workspace_id, PLAN_PATH)] == [1]
+
+    run_async(scenario())
+
+
+async def _versions_in(
+    conn: AsyncConnection, workspace_id: str, project_id: str, path: str
+) -> list[int]:
+    return [
+        int(row["version"])
+        for row in (
+            await conn.execute(
+                text(
+                    "SELECT version FROM brand_knowledge_document "
+                    "WHERE workspace_id = :w AND project_id = :p AND path = :path "
+                    "ORDER BY version"
+                ),
+                {"w": workspace_id, "p": project_id, "path": path},
+            )
+        )
+        .mappings()
+        .all()
+    ]
+
+
+def test_the_replay_read_cannot_answer_one_project_with_another_projects_row(tmp_path: Any) -> None:
+    """M1. The replay lookup is scoped like every other read here — scope is part of identity.
+
+    Read by id alone, a row belonging to another project answered this project's write: the caller
+    was handed a path and a version for a document its project does not own, while its own scope
+    stayed empty. Scoped, the write is refused by name and the project is still, honestly, without
+    a plan.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            other = await seed_project(conn, workspace_id, name="Another project")
+            request = _write(workspace_id, brand_id, project_id)
+            await write_project_plan(conn, storage, request)
+
+            with pytest.raises(ProjectDocumentRefused) as excinfo:
+                await write_project_plan(
+                    conn,
+                    storage,
+                    ProjectPlanWrite(
+                        workspace_id=workspace_id,
+                        brand_id=str(other.brand_id),
+                        project_id=other.project_id,
+                        turn_id=request.turn_id,
+                        user_id=request.user_id,
+                        body=request.body,
+                        expected_version=None,
+                    ),
+                )
+
+            assert excinfo.value.code == "project_document_version_race"
+            assert await _versions_in(conn, workspace_id, other.project_id, PLAN_PATH) == []
+            assert await _versions_in(conn, workspace_id, project_id, PLAN_PATH) == [1]
 
     run_async(scenario())
