@@ -510,7 +510,7 @@ export function ChatSurface({
         <div
           className={`${styles.composerDock} ${
             targetChips.length ? styles.composerDockWithTargets : ""
-          }`}
+          } ${research.card ? styles.composerDockWithResearchCard : ""}`}
         >
           <div className={styles.composerFrame}>
             {research.card ? (

@@ -8,6 +8,9 @@
   border-radius: 12px;
   background: var(--clue-ds-color-bg-neutral);
   font-family: "Satoshi", Arial, sans-serif;
+  /* The one sibling the composer frame already has above the composer — the edit-target bar —
+     separates itself the same way and by the same amount. */
+  margin-bottom: 8px;
 }
 .header {
   display: flex;
@@ -15,9 +18,10 @@
   gap: 16px;
 }
 .glyph {
+  /* No colour: `ProjectIcon` renders a `next/image` <img>, not an inline SVG, so `color` would
+     style nothing. */
   flex: none;
   margin-top: 4px;
-  color: var(--clue-ds-color-content-neutral);
 }
 .titles {
   flex: 1;
@@ -62,6 +66,10 @@
   flex: 1;
   color: var(--clue-ds-color-content-neutral);
 }
+/* Sits at the row's end, in the row's own subtle font — it only has to refuse to shrink. */
+.queuedLabel {
+  flex: none;
+}
 .bar {
   height: 6px;
   border-radius: 3px;
@@ -75,8 +83,14 @@
   background: var(--clue-ds-color-content-neutral);
   transition: width 400ms ease-out;
 }
+/* One row, always: the failure text behind this line is the driver's raw message, and a card
+   that grows with it would push the composer down again. The fold clips the string at 140
+   characters; this clips whatever still does not fit the width. */
 .line {
   margin: 0;
   font: 400 14px/20px "Satoshi", Arial, sans-serif;
   color: var(--clue-ds-color-content-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

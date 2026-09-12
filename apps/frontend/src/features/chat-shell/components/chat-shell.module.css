@@ -278,6 +278,15 @@
   flex-basis: 210px;
 }
 
+/* The research progress card is ~186px on its own — taller than the dock's whole hand-budgeted
+   content box — so a fixed basis would push the composer past the bottom of `.chatPane`, which
+   clips it. With `auto` the dock sizes to its content and `.chatBody` (the only `flex: 1 1 auto`
+   child, and the one that scrolls) gives up the height instead. Declared AFTER the targets basis
+   so it wins when a card and the edit-target bar are on screen together. */
+.composerDockWithResearchCard {
+  flex-basis: auto;
+}
+
 .shellPanelOpen .composerDock {
   flex-basis: 174px;
   padding: 24px 16px;
@@ -285,6 +294,10 @@
 
 .shellPanelOpen .composerDockWithTargets {
   flex-basis: 210px;
+}
+
+.shellPanelOpen .composerDockWithResearchCard {
+  flex-basis: auto;
 }
 
 .composerFrame {
