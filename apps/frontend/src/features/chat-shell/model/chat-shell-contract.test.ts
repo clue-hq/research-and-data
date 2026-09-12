@@ -29,7 +29,9 @@ test("the shell polls discovery every 5 s while live and opens the surface on th
 
 test("the tab label spins while a run is live, and the tab refetches on every tick", () => {
   assert.match(surface, /targetAccountsBusy=\{discovery\.live\}/);
-  assert.match(surface, /targetAccountsRefreshToken=\{discovery\.tick\}/);
+  // Discovery ticks AND research-progress reads both refetch the tab: a researched account's
+  // status and fields appear without a reload (live walk, 2026-09-12).
+  assert.match(surface, /targetAccountsRefreshToken=\{discovery\.tick \+ research\.tick\}/);
   assert.match(stage, /targetAccountsBusy=\{targetAccountsBusy\}/);
   assert.match(stage, /refreshToken=\{targetAccountsRefreshToken\}/);
   assert.match(tabs, /targetAccountsBusy \? \(\s*<ProjectIcon className=\{styles\.galleryTabSpinner\} name="loader"/);

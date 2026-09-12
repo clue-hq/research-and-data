@@ -700,7 +700,7 @@ export function ChatSurface({
         onOpenGallery={shell.openGallery}
         onOpenTargetAccounts={shell.openTargetAccounts}
         targetAccountsBusy={discovery.live}
-        targetAccountsRefreshToken={discovery.tick}
+        targetAccountsRefreshToken={discovery.tick + research.tick}
         onAddAccountsToChat={
           addToOpenChat.available && workspace.composerCapabilities.contextRefs
             ? addToOpenChat.add

@@ -17,9 +17,12 @@ export function useResearchProgressController(
     rotateMs = 4000,
     prime = 0,
   }: { pollMs?: number; rotateMs?: number; prime?: number } = {},
-): { card: ResearchProgress | null; line: string; headline: string } {
+): { card: ResearchProgress | null; line: string; headline: string; tick: number } {
   const [card, setCard] = useState<ResearchProgress | null>(null);
   const [tick, setTick] = useState(0);
+  // Bumped on every read that lands (a card or `null`): the Target accounts tab refetches its
+  // rows on it, so "Researched" and the researched fields appear without a page reload.
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +40,7 @@ export function useResearchProgressController(
         if (cancelled) return;
         live = next !== null;
         setCard(next);
+        setReads((current) => current + 1);
       } catch {
         // Keep the last card; the next tick tries again.
       }
@@ -64,5 +68,6 @@ export function useResearchProgressController(
     card,
     line: card ? researchProgressLine(card, tick) : "",
     headline: card ? researchProgressHeadline(card) : "",
+    tick: reads,
   };
 }
