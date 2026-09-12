@@ -18,10 +18,14 @@ from clue_api.arv2.read_tools import (
     AccountOverviewSection,
     AccountResearch,
     Arv2ReadRefused,
+    DiscoveryCandidateView,
+    DiscoveryRunView,
     ProjectAccountsPage,
     ProjectAccountView,
     ReadAccountResearchInput,
     ReadAccountResearchTool,
+    ReadDiscoveryRunInput,
+    ReadDiscoveryRunTool,
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
 )
@@ -34,6 +38,7 @@ WORKSPACE = "ws_arv2_read_tools"
 PROJECT = "prj_arv2_read_tools"
 ACCOUNT_ID = "33333333-3333-5333-8333-333333333333"
 CLAIM_ID = "44444444-4444-5444-8444-444444444444"
+DISCOVERY_RUN_ID = "55555555-5555-5555-8555-555555555555"
 
 
 def _context() -> ToolContext:
@@ -73,9 +78,11 @@ class _FakeService:
 
     page: ProjectAccountsPage | None = None
     research: AccountResearch | None = None
+    discovery: DiscoveryRunView | None = None
     refusal: Arv2ReadRefused | None = None
     account_reads: list[tuple[str, str, int]] = field(default_factory=list)
     research_reads: list[tuple[str, str, str, str | None]] = field(default_factory=list)
+    discovery_reads: list[tuple[str, str, str | None, int]] = field(default_factory=list)
 
     async def list_project_accounts(
         self, *, workspace_id: str, project_id: str, limit: int
@@ -99,6 +106,15 @@ class _FakeService:
             raise self.refusal
         assert self.research is not None
         return self.research
+
+    async def read_discovery_run(
+        self, *, workspace_id: str, project_id: str, run_id: str | None, candidate_limit: int
+    ) -> DiscoveryRunView:
+        self.discovery_reads.append((workspace_id, project_id, run_id, candidate_limit))
+        if self.refusal is not None:
+            raise self.refusal
+        assert self.discovery is not None
+        return self.discovery
 
 
 def test_an_uncomposed_read_surface_refuses_before_it_touches_anything() -> None:
@@ -300,6 +316,131 @@ def test_the_account_read_declares_the_effect_and_replay_classes_the_registry_ad
     assert tool.name == "read_account_research" and tool.version == "1"
     assert tool.effect_class is ToolEffectClass.READ
     assert tool.replay.policy is ReplayPolicy.EFFECT_FREE
+    # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    # pin (standing rule item 5); the recipe-safety audit refuses a standing address with no pin.
+    assert tool.pin_requirements == ("project",)
+    assert tool.descriptor.recipe_safe
+
+
+# -- read 3: one discovery run --------------------------------------------------------------------
+
+
+def _discovery() -> DiscoveryRunView:
+    return DiscoveryRunView(
+        run_id=DISCOVERY_RUN_ID,
+        status="completed",
+        icp_key="gi-groups",
+        icp_version=1,
+        target_count=20,
+        asked=35,
+        found=13,
+        verified=11,
+        shown=8,
+        approved=3,
+        relaxed_requested=True,
+        started_at="2026-09-12T12:00:00+00:00",
+        finished_at="2026-09-12T12:30:00+00:00",
+        candidates=(
+            DiscoveryCandidateView(
+                name="Alpha Health",
+                domain="alpha.example",
+                pass_="relaxed",
+                disposition="pass",
+                decision="approved",
+                fit=0.9,
+            ),
+        ),
+        candidate_total=42,
+    )
+
+
+def test_the_discovery_read_asks_about_the_ambient_workspace_and_serves_the_run() -> None:
+    async def scenario() -> None:
+        service = _FakeService(discovery=_discovery())
+        tool = ReadDiscoveryRunTool(service)
+
+        result = await tool.invoke(
+            ReadDiscoveryRunInput(project_id=PROJECT, run_id=DISCOVERY_RUN_ID, candidate_limit=10),
+            _context(),
+        )
+
+        # The tenant is AMBIENT, never a model-authored input.
+        assert service.discovery_reads == [(WORKSPACE, PROJECT, DISCOVERY_RUN_ID, 10)]
+        assert result.references["run_id"] == DISCOVERY_RUN_ID
+        assert result.references["status"] == "completed"
+        assert (result.references["asked"], result.references["found"]) == (35, 13)
+        assert (
+            result.references["verified"],
+            result.references["shown"],
+            result.references["approved"],
+        ) == (11, 8, 3)
+        assert result.references["relaxed_requested"] is True
+        assert result.references["finished_at"] == "2026-09-12T12:30:00+00:00"
+        # ``pass`` is the schema's word; the trailing underscore is Python's and stays in Python.
+        assert result.references["candidates"] == (
+            {
+                "name": "Alpha Health",
+                "domain": "alpha.example",
+                "pass": "relaxed",
+                "disposition": "pass",
+                "decision": "approved",
+                "fit": 0.9,
+            },
+        )
+        # The bounded page and the whole run are two numbers, never one.
+        assert result.references["candidate_total"] == 42
+
+    run_async(scenario())
+
+
+def test_an_uncomposed_discovery_read_refuses_before_it_touches_anything() -> None:
+    async def scenario() -> None:
+        failures = await ReadDiscoveryRunTool(None).preconditions(
+            ReadDiscoveryRunInput(project_id=PROJECT), _context()
+        )
+        assert [failure.reason_code for failure in failures] == ["arv2_reads_not_composed"]
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize(
+    "code", ["project_not_found", "discovery_run_not_found", "no_discovery_run"]
+)
+def test_a_missing_run_is_typed_rather_than_an_empty_success(code: str) -> None:
+    """ "No run" and "not your run" are different answers, and neither is an empty run."""
+
+    async def scenario() -> None:
+        service = _FakeService(refusal=Arv2ReadRefused(code, "there is no such run here"))
+        tool = ReadDiscoveryRunTool(service)
+
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(ReadDiscoveryRunInput(project_id=PROJECT), _context())
+
+        assert refused.value.reason_codes == (code,)
+
+    run_async(scenario())
+
+
+def test_the_discovery_read_s_inputs_are_bounded_by_the_schema() -> None:
+    defaults = ReadDiscoveryRunInput(project_id=PROJECT)
+    # No run id means the latest run — the run "how did discovery go?" is about.
+    assert (defaults.run_id, defaults.candidate_limit) == (None, 25)
+    # Zero is a legitimate ask: the tallies without the company list.
+    assert ReadDiscoveryRunInput(project_id=PROJECT, candidate_limit=0).candidate_limit == 0
+    with pytest.raises(ValueError):
+        ReadDiscoveryRunInput(project_id=PROJECT, candidate_limit=51)
+    with pytest.raises(ValueError):
+        ReadDiscoveryRunInput(project_id=PROJECT, candidate_limit=-1)
+
+
+def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
+    tool = ReadDiscoveryRunTool(_FakeService())
+
+    assert tool.name == "read_discovery_run" and tool.version == "1"
+    assert tool.effect_class is ToolEffectClass.READ
+    assert tool.replay.policy is ReplayPolicy.EFFECT_FREE
+    # A read approves nothing, so the description says so where the model reads it.
+    assert "approves nothing" in tool.model_description
     # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
     # pin (standing rule item 5); the recipe-safety audit refuses a standing address with no pin.
     assert tool.pin_requirements == ("project",)

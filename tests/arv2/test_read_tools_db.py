@@ -7,7 +7,8 @@ so the rows are seeded by hand and the derived answers are asserted against them
 
 The same standard governs one account's research: a superseded claim served as current truth, a
 retired page section served as this week's words, or an unwritten overview served as an empty one
-are all sentences the agent would say without hesitating.
+are all sentences the agent would say without hesitating. And the same again for a discovery run,
+whose verified/shown/approved tallies are three derivations over one candidate table.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from clue_api.arv2.read_tools import (
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
+    read_discovery_run,
 )
 from clue_core import EntityId, EntityType, new_project_run_id
 from clue_research.durable import ensure_project_run
@@ -621,5 +623,317 @@ def test_an_unwritten_overview_and_an_unresearched_account_refuse_rather_than_re
                 )
             assert narrowed.value.code == "account_not_researched"
             assert "account.resonance" in str(narrowed.value)
+
+    run_async(scenario())
+
+
+# -- read 3: one discovery run --------------------------------------------------------------------
+
+
+async def _seed_discovery_run(
+    conn: AsyncConnection,
+    project: Project,
+    *,
+    status: str = "completed",
+    asked: int | None = 35,
+    found_strict: int | None = 10,
+    found_relaxed: int | None = 3,
+    relaxed_requested: bool = False,
+    created_at: datetime = _NOW,
+) -> UUID:
+    """One ``arv2_discovery_run`` (plus the ``project_run`` it hangs off)."""
+
+    project_run_id = new_project_run_id()
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        icp_key="gi-groups",
+        icp_version=1,
+    )
+    run_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO arv2_discovery_run (run_id, workspace_id, project_id, brand_id, "
+            "project_run_id, icp_artifact_key, icp_artifact_sha256, icp_key, icp_version, "
+            "requested_by_user_id, request_sha256, target_count, strict_count, relaxed_enabled, "
+            "relaxed_requested, criteria_gate_keys, status, asked, found_strict, found_relaxed, "
+            "created_at, started_at, finished_at) "
+            "VALUES (:run, :ws, :project, :brand, :project_run, :key, :sha, 'gi-groups', 1, "
+            ":user, :request_sha, 20, 35, true, :relaxed_requested, CAST(:gates AS jsonb), "
+            ":status, :asked, :found_strict, :found_relaxed, CAST(:created_at AS timestamptz), "
+            "CAST(:created_at AS timestamptz), "
+            "CASE WHEN :status = 'completed' THEN CAST(:created_at AS timestamptz) END)"
+        ),
+        {
+            "run": run_id,
+            "ws": project.workspace_id,
+            "project": project.project_id,
+            "brand": project.brand_id,
+            "project_run": project_run_id,
+            "key": f"{project.workspace_id}/icp",
+            "sha": _SHA,
+            "user": USER_ID,
+            "request_sha": uuid4().hex + uuid4().hex,
+            "relaxed_requested": relaxed_requested,
+            "gates": json.dumps(["geography"]),
+            "status": status,
+            "asked": asked,
+            "found_strict": found_strict,
+            "found_relaxed": found_relaxed,
+            "created_at": created_at,
+        },
+    )
+    return run_id
+
+
+async def _seed_candidate(
+    conn: AsyncConnection,
+    project: Project,
+    run_id: UUID,
+    name: str,
+    *,
+    disposition: str,
+    decision: str | None = None,
+    fit: float | None = None,
+    candidate_pass: str = "strict",
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO arv2_discovery_candidate (candidate_id, run_id, workspace_id, "
+            "project_id, pass, domain, name, provider_snapshot_json, fit, disposition, decision) "
+            "VALUES (:candidate, :run, :ws, :project, :pass, :domain, :name, "
+            "CAST(:snapshot AS jsonb), :fit, :disposition, :decision)"
+        ),
+        {
+            "candidate": uuid4(),
+            "run": run_id,
+            "ws": project.workspace_id,
+            "project": project.project_id,
+            "pass": candidate_pass,
+            "domain": f"{name.lower().replace(' ', '-')}.example",
+            "name": name,
+            "snapshot": json.dumps({"name": name}),
+            "fit": fit,
+            "disposition": disposition,
+            "decision": decision,
+        },
+    )
+
+
+def test_the_latest_discovery_run_is_read_with_its_three_tallies() -> None:
+    """Verified, shown and approved are three derivations over one candidate table."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            older = await _seed_discovery_run(
+                conn, project, created_at=_NOW - timedelta(days=3), found_strict=1
+            )
+            await _seed_candidate(conn, project, older, "Old Health", disposition="pass")
+            latest = await _seed_discovery_run(
+                conn, project, relaxed_requested=True, found_strict=10, found_relaxed=3
+            )
+            await _seed_candidate(
+                conn,
+                project,
+                latest,
+                "Alpha Health",
+                disposition="pass",
+                decision="approved",
+                fit=0.9,
+            )
+            await _seed_candidate(
+                conn, project, latest, "Beta Clinic", disposition="partial", fit=0.4
+            )
+            await _seed_candidate(conn, project, latest, "Gamma Surgery", disposition="unclear")
+            # Verified but not shown, and pending: the complement of "pending" is "verified".
+            await _seed_candidate(
+                conn, project, latest, "Delta Labs", disposition="duplicate_of_existing", fit=0.1
+            )
+            await _seed_candidate(conn, project, latest, "Epsilon Group", disposition="pending")
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                candidate_limit=25,
+            )
+
+            # The newest run, not the first one seeded.
+            assert run.run_id == str(latest)
+            assert (run.status, run.icp_key, run.icp_version) == ("completed", "gi-groups", 1)
+            assert (run.target_count, run.asked) == (20, 35)
+            # strict + relaxed, coalesced.
+            assert run.found == 13
+            assert (run.verified, run.shown, run.approved) == (4, 3, 1)
+            assert run.relaxed_requested is True
+            assert run.started_at is not None and run.started_at.startswith("2026-09-12")
+            assert run.finished_at is not None
+            assert run.candidate_total == 5
+            # The other run's candidate is not this run's.
+            assert "Old Health" not in {candidate.name for candidate in run.candidates}
+
+    run_async(scenario())
+
+
+def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() -> None:
+    """An unscored candidate is unknown, not bad: it sorts after every scored one."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            # Seeded in an order that is wrong for every rule at once.
+            await _seed_candidate(
+                conn, project, run_id, "Zeta Rehab", disposition="not_chosen_before", fit=1.0
+            )
+            await _seed_candidate(conn, project, run_id, "Unscored Clinic", disposition="pass")
+            await _seed_candidate(
+                conn, project, run_id, "Beta Clinic", disposition="partial", fit=0.5
+            )
+            await _seed_candidate(
+                conn,
+                project,
+                run_id,
+                "Alpha Health",
+                disposition="unclear",
+                fit=0.8,
+                candidate_pass="relaxed",
+            )
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                candidate_limit=25,
+            )
+
+            assert [candidate.name for candidate in run.candidates] == [
+                "Alpha Health",  # shown, fit 0.8
+                "Beta Clinic",  # shown, fit 0.5
+                "Unscored Clinic",  # shown, no fit
+                "Zeta Rehab",  # not shown, even at fit 1.0
+            ]
+            alpha = run.candidates[0]
+            assert (alpha.domain, alpha.pass_, alpha.disposition) == (
+                "alpha-health.example",
+                "relaxed",
+                "unclear",
+            )
+            assert (alpha.fit, alpha.decision) == (0.8, None)
+
+            bounded = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                candidate_limit=2,
+            )
+            assert [candidate.name for candidate in bounded.candidates] == [
+                "Alpha Health",
+                "Beta Clinic",
+            ]
+            # A bounded list never reads as a small run.
+            assert bounded.candidate_total == 4
+
+            tallies_only = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                candidate_limit=0,
+            )
+            assert tallies_only.candidates == ()
+            assert (tallies_only.candidate_total, tallies_only.verified) == (4, 4)
+
+    run_async(scenario())
+
+
+def test_a_run_can_be_read_by_id_and_an_unfinished_one_reads_honestly() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            older = await _seed_discovery_run(
+                conn,
+                project,
+                created_at=_NOW - timedelta(days=3),
+                status="in_progress",
+                asked=None,
+                found_strict=None,
+                found_relaxed=None,
+            )
+            await _seed_candidate(conn, project, older, "Old Health", disposition="pending")
+            await _seed_discovery_run(conn, project)
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=str(older),
+                candidate_limit=25,
+            )
+
+            # The run asked for, not the newest one.
+            assert run.run_id == str(older)
+            assert run.status == "in_progress"
+            assert run.asked is None
+            # Neither counter is written yet: "found nothing so far", never a crash.
+            assert run.found == 0
+            assert (run.verified, run.shown, run.approved) == (0, 0, 0)
+            assert run.finished_at is None
+            assert run.candidate_total == 1
+
+    run_async(scenario())
+
+
+def test_another_project_s_run_and_a_project_without_discovery_refuse_by_name() -> None:
+    """A run of a project you can see is still not *this* project's run."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            other = await seed_project(conn, WORKSPACE, name="Other project")
+            elsewhere = await _seed_discovery_run(conn, other)
+            foreign = await seed_project(conn, "ws_arv2_read_tools_other", name="Foreign")
+            foreign_run = await _seed_discovery_run(conn, foreign)
+
+            # No run of this project at all.
+            with pytest.raises(Arv2ReadRefused) as none_yet:
+                await read_discovery_run(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    run_id=None,
+                    candidate_limit=25,
+                )
+            assert none_yet.value.code == "no_discovery_run"
+
+            # A sibling project's run, another tenant's run, an unknown id and a malformed one all
+            # read the same: absent.
+            for run_id in (str(elsewhere), str(foreign_run), str(uuid4()), "not-a-uuid"):
+                with pytest.raises(Arv2ReadRefused) as refused:
+                    await read_discovery_run(
+                        conn,
+                        workspace_id=project.workspace_id,
+                        project_id=project.project_id,
+                        run_id=run_id,
+                        candidate_limit=25,
+                    )
+                assert refused.value.code == "discovery_run_not_found"
+
+            # And the project check comes first: another tenant's project is not ours to read.
+            with pytest.raises(Arv2ReadRefused) as not_ours:
+                await read_discovery_run(
+                    conn,
+                    workspace_id=WORKSPACE,
+                    project_id=foreign.project_id,
+                    run_id=str(foreign_run),
+                    candidate_limit=25,
+                )
+            assert not_ours.value.code == "project_not_found"
 
     run_async(scenario())
