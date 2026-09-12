@@ -237,6 +237,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.contacts import register_contact_routes
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
+    from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
 
     allow_local_mutations = (
@@ -269,6 +270,13 @@ def build_frontend_read_router(
     register_discovery_status_route(router, conn_factory=conn_factory)
     # The pinned research progress card's document (spec 2026-09-12).
     register_research_progress_route(router, conn_factory=conn_factory)
+    # The project's own documents — the plan the agent writes and the human edits (2026-09-12).
+    register_project_document_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+    )
     register_contact_routes(
         router,
         conn_factory=conn_factory,
