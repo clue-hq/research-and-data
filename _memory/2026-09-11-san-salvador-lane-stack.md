@@ -408,3 +408,22 @@ re-attaches to a live run via the seam's probe but cannot start one — founder 
 persist the website. Ledger A3/A4/A5 closed. Owed: a fresh-workspace walk (sign up → profile →
 setting-up fills from the new lane → released → Brand context shows the documents, personas
 landing after).
+
+### Onboarding v2 default — close-out (2026-09-12, branch `research-streaming`, a4e5675b5..HEAD)
+Executed plan `2026-09-12-onboarding-v2-default.md` under SDD (Opus implementers, controller
+reviews, one Opus whole-branch review + one fix wave). Verified locally: offline composition/flag
+suites green, lane-DB stage0/brand-kit/onboarding-route suites green, frontend 2207 tests /
+lint 0 errors / tsc at the 50-error baseline / build green. NOT pushed. Restart the platform API
+and workers to pick up the flag split (the lane `.env` now carries
+`CLUE_LEGACY_STAGE0_RECON_ENABLED=false`, so the old recon no longer composes).
+Fix-wave outcomes worth knowing on the walk: `completed_with_gaps` now reads as complete (it was
+"unavailable"); a fast kind moved to the background phase never gates the release; a failed fast
+step shows the failure only once all four fast steps have settled (R6); `GET /onboarding/current`
+gained an additive `brandKitIngestion` so the "Creating brand kit" row moves again (R5); the
+audience row's "personas continue" note now shows from the release tick.
+Owed walk: fresh workspace → sign up → profile → setting-up fills from the new lane → released on
+the four fast steps → Brand context shows the documents, personas landing after; plus a hard
+reload on the setting-up screen (memory-only draft → the seam re-attaches to the live run).
+Parked: the fixture (design-review) preview now shows the five live rows; the official-site crawl
+fleet still composes unconditionally (inert without the recon handler); persisting the profile
+website across reloads is a founder call.
