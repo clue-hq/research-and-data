@@ -2,19 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The Head of ABM writes the project's `plan.md` once the strategy, ICP and product set are settled; the user reads and edits it in a Plan tab beside Gallery and Target accounts; a "proposed a plan" card in the chat opens the tab; the same document surface renders project-scoped ICP and persona documents opened from the gallery.
+**Goal:** The Head of ABM writes the project's `plan.md` once the strategy, ICP and product set are settled, on a versioned path the user can also edit through a project-documents PUT. (The Plan tab and editor are the deferred frontend plan.)
 
-**Architecture:** A root-level write tool stores `project/plan.md` as a `project-plan` knowledge document with `project_id` set (plan 2's schema), refusing when the version it read is no longer current. A project-documents read/write router under `frontend_read` mirrors the Knowledge editor's PUT contract. The frontend gains a `"plan"` rail surface, a `ProjectDocumentSurface` (breadcrumb header, Preview / Edit, Save / Discard, markdown article) built from lifted Knowledge-editor pieces, a pure `planWriteToOpen` signal, and a click-through from the plan card. Skill v24 / profile v47 / recipe v25 grant the tool.
+**Architecture:** A root-level write tool stores `project/plan.md` as a `project-plan` knowledge document with `project_id` set (plan 2's schema), refusing when the version it read is no longer current. A project-documents read/write router under `frontend_read` mirrors the Knowledge editor's PUT contract, so the deferred Plan tab plugs in at the repository seam later. Skill v24 / profile v47 / recipe v25 grant the tool.
 
-**Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async), the `clue_toolbelt` `Tool` envelope; Next.js App Router + TypeScript, Zod, CSS modules with `@clue/design-system` tokens, `react-markdown` + `remark-gfm`, CodeMirror; `node --test` via `tsx` for `.test.ts` only (no DOM).
+**Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async), the `clue_toolbelt` `Tool` envelope, pytest on the lane DB. (Frontend: deferred plan.)
 
-**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3, R6, R7). Depends on plans 1 and 2.
+**Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R3, R7, R12). Depends on plans 1 and 2. The frontend half is `2026-09-12-plan-tab-frontend.md` (deferred).
 
 ## Global Constraints
 
-- Presentation truth is the dummy's Plan tab (ruling R6): tab label "Plan" with the `file-text` icon beside Gallery and Target accounts; a slim header with the file icon and the document's name; a centred markdown article. Every style uses `--clue-ds-*` tokens; no raw hex, no raw `"Satoshi"` font stacks (use `--clue-ds-typography-*`); `src/design-system-tokens.test.ts` must stay green.
-- Frontend architecture: presentation components never import repositories, fixtures, env or transport; every payload has a Zod schema in `model/` and a repository in `data/`; the check gate is `npm run design-system:build && npm run lint && npm run build`, plus `npm test`.
-- Tests are `.test.ts` only, `node:test` + `node:assert/strict`, no DOM: pure rules live in `model/` and are unit-tested; component wiring is pinned by source-regex contract tests (`chat-shell-contract.test.ts` style). Touching the auto-open effects in `chat-surface.tsx` means updating that test.
 - The write path is one immutable version per save with `expectedRevision`; a `confirmed`-style approval stamp does not exist for plans, but `user_edit` provenance is recorded exactly as the Knowledge PUT does.
 - Skill/profile/recipe immutability and the two-commit grant recipe as in plan 2.
 - No `git push`, no PRs, no AI attribution; offline suites without `.env`; DB suites on the lane DB with `--ignore-glob='*_live.py' -p no:cacheprovider`.
@@ -33,10 +30,9 @@
 | `platform/api/clue_api/conversation_turns.py` | `_PLAN_OBJECT_TYPES` gains `project_document`; the plan part title for it is "Plan". |
 | Registration + grant | `toolbelt_wiring.py`, `agent_registry_wiring.py`, `fleet_main.py`, `projections_main.py`, `frontend_read/app.py`; skill v24, profile v47, recipe v25 and the pinned tests. |
 
-**Frontend (`apps/frontend/src`)**
+**Frontend:** deferred — see `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`. The one frontend line in this plan is the tool label in `apps/frontend/src/features/projects/model/chat-tool-presentation.ts` (Task 9).
 
-| File | Responsibility |
-|---|---|
+---|---|
 | `features/projects/model/project-documents.ts` | Zod schemas: `ProjectDocumentSummarySchema`, `ProjectDocumentDetailSchema`, `ProjectDocumentsResponseSchema`; `ProjectDocument` types; `planDocumentOf(list)`. |
 | `features/projects/data/project-documents.repository.ts` | Server-side reads via `fetchRead`; `saveProjectDocument(document, body)` client PUT with the 409/401/403 messages. |
 | `app/api/projects/[projectId]/documents/route.ts`, `app/api/projects/[projectId]/documents/[documentId]/route.ts` | BFF: list; detail + PUT. |
@@ -173,167 +169,21 @@ PUT  /frontend/v1/projects/{project_id}/documents/{document_id}   body {body, ex
 
 ---
 
-### Task 4: Frontend model, repository, BFF
+### Tasks 4–8: DEFERRED — the frontend surface
 
-**Files:**
-- Create: `apps/frontend/src/features/projects/model/project-documents.ts` (+ `.test.ts`), `apps/frontend/src/features/projects/data/project-documents.repository.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/route.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/[documentId]/route.ts`
-- Delete: `apps/frontend/src/features/projects/components/project-plan.tsx`; remove `ProjectPlanSchema` and `export type ProjectPlan` from `model/project-workspace.ts`
-
-**Interfaces:**
-
-```ts
-// model/project-documents.ts
-export const ProjectDocumentKindSchema = z.enum(["project-plan", "icp-definition", "audience-persona"]);
-export const ProjectDocumentSummarySchema = z.object({
-  id: z.string().min(1), path: z.string().min(1), kind: ProjectDocumentKindSchema,
-  title: z.string().min(1), version: z.number().int().positive(), status: z.string().min(1),
-  updated_at: z.string().min(1), icp_key: z.string().nullable(),
-});
-export const ProjectDocumentDetailSchema = ProjectDocumentSummarySchema.extend({
-  markdown: z.string(), front_matter: z.record(z.string(), z.unknown()),
-});
-export const ProjectDocumentsResponseSchema = z.object({ data: z.object({ documents: z.array(ProjectDocumentSummarySchema) }) });
-export const ProjectDocumentDetailResponseSchema = z.object({ data: ProjectDocumentDetailSchema });
-export interface ProjectDocument { id; path; kind; title; version; status; updatedAt; icpKey }   // camelCase view
-export interface ProjectDocumentDetail extends ProjectDocument { markdown: string }
-export function toProjectDocument(wire): ProjectDocument
-export function planDocumentOf(documents: readonly ProjectDocument[]): ProjectDocument | null   // path === "project/plan.md"
-export function documentEditedLabel(updatedAt: string, now: Date): string   // "Edited just now" | "Edited 5 min ago" | "Edited today at 14:02" | "Edited 12 Sep" — pure, tested
-```
-
-```ts
-// data/project-documents.repository.ts
-export async function listProjectDocuments(projectId, read = fetchRead): Promise<ProjectDocument[]>
-export async function getProjectDocument(projectId, documentId, read = fetchRead): Promise<ProjectDocumentDetail>
-export async function saveProjectDocument(projectId, document: ProjectDocument, body: string, clueFetch = fetch): Promise<ProjectDocumentDetail>
-//   PUT /api/projects/{projectId}/documents/{id} with { body, expectedRevision: document.version }
-//   409 → "A newer version of the plan exists. Your changes are still here; copy them before loading the latest version."
-//   401/403 → "You do not have permission to edit this document."
-```
-
-BFF routes copy `app/api/projects/[projectId]/discovery/route.ts`: `GET` list; `GET` detail; `PUT` forwards `{ body, expected_revision: expectedRevision }` through the authenticated backend client used by the accounts bulk-action route (find the mutation helper that route uses; it already enforces origin and workspace stamping), returns the backend status and body verbatim on 409/401/403.
-
-- [ ] **Step 1: Failing model tests** — schema parse of a list payload; `planDocumentOf`; `documentEditedLabel` for the four cases.
-- [ ] **Step 2–4: implement; run `npm test`, `npm run lint`.**
-- [ ] **Step 5: Commit** — `git commit -m "feat(frontend): project documents model, repository and BFF routes; drop the orphaned dummy plan lift"`.
-
----
-
-### Task 5: Shared markdown pieces lifted from Brand Context
-
-**Files:**
-- Create: `apps/frontend/src/components/markdown/markdown-article.tsx`, `components/markdown/markdown-source-editor.tsx`, `components/markdown/markdown.module.css`, `components/markdown/use-markdown-source-editor.ts`
-- Modify: `features/brand-context/components/knowledge-panel.tsx` and `brand-context-header.tsx` to import the shared pieces; delete `features/brand-context/components/markdown-source-editor.tsx` and `hooks/use-markdown-source-editor.ts`; move the `.markdownPreview` and `.markdownEditor` blocks out of `brand-context.module.css` into `markdown.module.css`
-
-**Interfaces:**
-
-```tsx
-export function MarkdownArticle({ markdown, className }: { markdown: string; className?: string })   // <article className={styles.markdownArticle}><Markdown remarkPlugins={[remarkGfm]}>…</Markdown></article>
-export default function MarkdownSourceEditor({ value, onChange, readOnly }: {...})   // default export for next/dynamic
-export function useMarkdownSourceEditor(value, onChange, readOnly): RefObject<HTMLDivElement>
-```
-
-`markdown.module.css` = the `.markdownPreview` rules (renamed `.markdownArticle`) and `.markdownEditor` rules, with every `font: … "Satoshi", Arial, sans-serif` shorthand replaced by the typography tokens: h1 → `--clue-ds-typography-tittle-default-*`, h2 → `--clue-ds-typography-text-lg-medium-*`, h3–h6 → `--clue-ds-typography-text-default-medium-*`, p/li/table → `--clue-ds-typography-text-default-*`, code/pre → `--clue-ds-typography-code-*`. Colours and borders keep their existing semantic tokens. Verify each token name exists in `packages/design-system/generated/tokens.css` before use (the token test fails otherwise).
-
-- [ ] **Step 1: Move the files; update the two brand-context imports; run the 92 brand-context tests, `npm run lint`, `npm run build`, `npm test` (token test).**
-- [ ] **Step 2: Browser check** on this lane's frontend (:3020): the Knowledge page still renders and edits a document (Preview → Edit → type → Preview → Discard).
-- [ ] **Step 3: Commit** — `git commit -m "refactor(frontend): shared markdown article + source editor under components/markdown, typography on design tokens"`.
-
----
-
-### Task 6: The Plan surface — shell state, tab, pane, editor hook
-
-**Files:**
-- Modify: `features/chat-shell/model/chat-shell.ts` (`ChatShellSurface` adds `"plan"`), `features/chat-shell/hooks/use-editor-shell-controller.ts` (`EditorShellSurface` adds `"plan"`; action `{ type: "open-plan" }` → `{ ...state, editing: false, panelOpen: true, surface: "plan" }`; `openPlan` on the controller), `features/chat-shell/model/chat-surface-params.ts` (`parseChatSurface("plan")`; `chatSurfacePaneParams` returns `{ ...NO_PANE_PARAMS, surface: "plan" }`; both `surface` unions add `"plan"`) + `chat-surface-params.test.ts`
-- Create: `features/projects/hooks/use-project-documents.ts`, `features/projects/hooks/use-project-document-editor.ts`, `features/projects/components/project-document-surface.tsx`, `project-document-surface.module.css`
-- Modify: `features/chat-shell/components/artifact-tabs.tsx` (third tab), `artifact-stage.tsx` (the pane), `chat-surface.tsx` (props)
-
-**Interfaces:**
-
-```ts
-// hooks/use-project-documents.ts
-export function useProjectDocuments(projectId: string, { active, refreshToken }: { active: boolean; refreshToken?: number }): { documents: ProjectDocument[]; plan: ProjectDocument | null; loading: boolean; reload: () => void }
-//   first load when `active` becomes true; refetch on `refreshToken` change (the plan-write signal bumps it)
-
-// hooks/use-project-document-editor.ts — the Knowledge editor's state machine with an injected save
-export function useProjectDocumentEditor(
-  document: ProjectDocumentDetail | undefined,
-  save: (document: ProjectDocument, body: string) => Promise<ProjectDocumentDetail>,
-): { body; canEdit; dirty; discard; editorOpened; mode: "preview" | "edit"; error; save; setBody; saving; busy; saved; setMode }
-
-// components/project-document-surface.tsx
-export function ProjectDocumentSurface({ active, documentId, projectId, refreshToken }: { active: boolean; documentId: string | null; projectId: string; refreshToken?: number })
-//   documentId null → the plan (planDocumentOf); renders the empty state "No plan yet. Once the strategy, the profile and the products are settled, the plan is written here." when absent.
-```
-
-Layout (from the screenshot, tokens only): `.surface` grid `auto minmax(0,1fr)`; `.header` height 58px, `border-bottom: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle)`, padding `16px 24px 12px`, flex, space-between; `.name` inline-flex gap 4px with `<ProjectIcon name="file-text" size={12} />` and the title in `--clue-ds-typography-text-sm-medium-*`; `.controls` reuse the segmented control + primary/secondary button rules from `brand-context.module.css` (copy the blocks; they are token-based); `.scroll` `overflow-y: auto`; the article is `<MarkdownArticle>` centred with `max-width: 720px; margin: 0 auto; padding: 48px 48px 96px`; background `var(--clue-ds-color-bg-neutral)`; surface entry animation `surface-in var(--clue-ds-product-motion-duration-view) var(--clue-ds-product-motion-easing-entry)` like `.projectPlan` had.
-
-`artifact-tabs.tsx`: after the Target accounts button, when `onOpenPlan` is provided:
-
-```tsx
-{onOpenPlan ? (
-  <button aria-selected={surface === "plan"} className={`${styles.galleryTab} ${surface === "plan" ? styles.galleryTabActive : ""}`} onClick={onOpenPlan} role="tab" tabIndex={surface === "plan" ? 0 : -1} type="button">
-    <ProjectIcon name="file-text" size={12} />
-    <span>Plan</span>
-  </button>
-) : null}
-```
-
-`artifact-stage.tsx`: `onOpenPlan?: () => void; planRefreshToken?: number; planDocumentId?: string | null` props; the pane after the Target accounts pane:
-
-```tsx
-{projectId ? (
-  <div className={styles.workspaceSurface} hidden={surface !== "plan"}>
-    <ProjectDocumentSurface active={surface === "plan"} documentId={planDocumentId ?? null} key={projectId} projectId={projectId} refreshToken={planRefreshToken} />
-  </div>
-) : null}
-```
-
-`chat-surface.tsx`: pass `onOpenPlan={shell.openPlan}`, `planRefreshToken={planPrime}`, `planDocumentId={openDocumentId}` (Task 8 sets the latter for gallery-opened documents; `null` here).
-
-- [ ] **Step 1: Failing tests** — `chat-surface-params.test.ts`: `?surface=plan` hydrates `surface: "plan"`, `panelOpen: true`; pane params serialize back to `surface: "plan"` with no artifact vocabulary. A new `features/projects/hooks/use-project-document-editor.test.ts` is not possible (hooks need React); instead test the pure reducer pieces if you extract them (`draftAfterChange(drafts, path, base, body)` returns the drafts map with the entry removed when `body === base.body`) — put that pure function in `model/project-document-draft.ts` with a test.
-- [ ] **Step 2–3: implement.** Run `npm test`, `npm run lint`, `npm run build`.
-- [ ] **Step 4: Browser check** (:3020): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
-- [ ] **Step 5: Commit** — `git commit -m "feat(chat-shell): the Plan surface — tab, pane, URL state, and the project document editor on shared markdown pieces"`.
-
----
-
-### Task 7: Auto-open on write, the plan card click, labels
-
-**Files:**
-- Create: `features/chat-shell/model/plan-write-signal.ts` + `plan-write-signal.test.ts`
-- Modify: `features/chat-shell/components/chat-surface.tsx` (the effect; `planPrime` state; `onOpenPlan` in the part actions), `features/projects/components/chat-message-part.tsx` (`ChatPartActions.onOpenPlan?: () => void`; the `case "plan"` arm wraps the header in a button when `part.planRef.objectType === "project_document"` and `actions.onOpenPlan` exists: `<PlanTitle>` becomes `<button type="button" className={styles.planOpenButton} onClick={actions.onOpenPlan}>{part.title}</button>`), `features/projects/components/project-flow.module.css` (`.planOpenButton`: inherit typography, `color: var(--clue-ds-color-content-neutral)`, underline on hover, no background/border), `features/projects/model/chat-tool-presentation.ts` (+ test) (`write_project_document: "Write the project plan"`), `features/chat-shell/model/chat-shell-contract.test.ts` (pin the new effect)
-
-**Interfaces:**
-
-```ts
-export const PLAN_WRITE_TOOL = "write_project_document";
-export function planWriteToOpen({ transcript, knownToolCallIds }): string | null   // identical rule to discoveryLaunchToOpen, keyed on PLAN_WRITE_TOOL
-```
-
-The effect in `chat-surface.tsx` copies the discovery effect (lines 341–370) with its own `knownPlanWriteIds` ref, calling `shell.openPlan()` and `setPlanPrime(c => c + 1)`; both invariants hold (wait on `chat.loading`; bank only `output-available`). Where `ChatPartActions` is built (in `use-project-chat-controller.ts` or `chat-surface.tsx` — find the object literal that supplies `gateFor`), add `onOpenPlan: shell.openPlan`.
-
-- [ ] **Step 1: Failing tests** — `plan-write-signal.test.ts` (copy `discovery-launch-signal.test.ts`'s cases against the new tool name); the contract test asserts `/planWriteToOpen\(\{[\s\S]*?openPlan\(\);\s*setPlanPrime\(/` in `chat-surface.tsx` and that `chat-message-part.tsx` matches `/planRef\.objectType === "project_document"/`; the label test.
-- [ ] **Step 2–3: implement; run `npm test`, lint, build.**
-- [ ] **Step 4: Commit** — `git commit -m "feat(chat-shell): the Plan tab opens itself when the agent writes the plan, and the plan card opens it on click"`.
-
----
-
-### Task 8: Project documents in the gallery
-
-**Files:**
-- Modify: `features/gallery/model/project-gallery.ts` (`GalleryArtifact` gains `documentKind?: "icp-definition" | "audience-persona" | "project-plan"` and `documentId?: string`), `features/gallery/components/gallery-artifact-card.tsx` (a document card: `file-text` icon in the preview frame, no image; title; `editedLabel`), `features/chat-shell/model/gallery-card-target.ts` (+ test) (`documentKind` present → `{ surface: "plan", documentId }`), `features/chat-shell/components/chat-surface.tsx` (`onOpenGalleryArtifact`: `if (target.surface === "plan") { setOpenDocumentId(target.documentId); shell.openPlan(); return; }`), the gallery feed composition (`app/(protected)/projects/[projectId]/chats/[chatId]/page.tsx`): merge `listProjectDocuments(projectId)` (ICP and persona kinds only; the plan has its own tab) into the feed's cards as document cards, mapped by `toDocumentCard(document): ProjectArtifact`-shaped `GalleryArtifact`
-- Test: `gallery-card-target.test.ts` (document → plan surface), `project-gallery.test.ts` (document cards sort by `updatedAt` with the rest; the type filter "Documents" appears only when a document card exists)
-
-- [ ] **Step 1: Failing tests. Step 2–3: implement; `npm test`, lint, build.**
-- [ ] **Step 4: Browser check**: with a project-local ICP present (plan 2's walk), the gallery shows a document card; clicking it opens the Plan surface on that document, with the header naming it ("GI-focused ASCs"), Preview/Edit working, and Save minting a new version (verify with `SELECT version, status FROM brand_knowledge_document WHERE project_id = :p AND path = 'audience/icp-gi-dac.md' ORDER BY version`).
-- [ ] **Step 5: Commit** — `git commit -m "feat(gallery): project ICP and persona documents appear as document cards and open on the document surface"`.
+Founder ruling 2026-09-12 (R12): this pass ships the backend and the agent capabilities only. The
+Plan tab, the document editor, the plan-card click, auto-open and the gallery document cards are
+`docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` (deferred, executed later together with the
+markdown toolbar slice). Task 7's tool label (`write_project_document: "Write the project plan"`) is
+the one frontend line kept in this plan: it lands in Task 9 so the transcript names the tool.
 
 ---
 
 ### Task 9: The grant — skill v24, profile v47, recipe v25
 
 **Files:** as plan 2 Task 6, one version further: `skills/stage0-interview/v24`, `profiles/head-of-abm/v47`, `recipe0-stage0-v25.json`, `CONVERSATION_RECIPE_VERSION = 25`, `PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v47"`, authority row `(AgentRole.HEAD_OF_ABM,)`, trial surface withheld set, `stage0_recipe.py` `_presenting_turn_project_pin` branch, all pinned tests and the new manifest digest.
+
+Also in this task: `apps/frontend/src/features/projects/model/chat-tool-presentation.ts` gains `write_project_document: "Write the project plan"` (+ its test line); run `cd apps/frontend && npm test && npm run lint`.
 
 **Skill v24 — new §6b after §6 (everything else v23 verbatim; `summary` appends ", and write the project plan once the strategy is settled"):**
 
@@ -355,8 +205,8 @@ When the human changes course later — a new profile, a different channel, a di
 
 ### Task 10: Live proof and close-out
 
-- [ ] **Step 1:** Restart this lane's API twins, workers and frontend (`./scripts/dev_stack_san_salvador.sh restart-api > /tmp/san-salvador_restart.log 2>&1; … restart-workers …; … restart-frontend …` — use the wrapper's actual subcommands from `scripts/dev_stack_san_salvador.sh`; never pipe).
-- [ ] **Step 2:** On the project from plan 2's walk (ICP confirmed, products confirmed): ask the agent for the plan → `write_project_document` in the transcript → the Plan tab opens by itself → the plan card in the chat → click the card from a fresh page load opens the tab → Edit, change a line, Save → `SELECT version, status FROM brand_knowledge_document WHERE project_id = :p AND path = 'project/plan.md' ORDER BY version` shows v1 superseded, v2 ready with `user_edit` → in a **new thread**, ask the agent to add a step → it re-reads, writes v3 keeping your edit → `status.md`'s Plan line shows version 3.
+- [ ] **Step 1:** Restart this lane's API twins and workers (`./scripts/dev_stack_san_salvador.sh restart-api > /tmp/san-salvador_restart.log 2>&1; … restart-workers …; … restart-frontend …` — use the wrapper's actual subcommands from `scripts/dev_stack_san_salvador.sh`; never pipe).
+- [ ] **Step 2:** On the project from plan 2's walk (ICP confirmed, products confirmed): ask the agent for the plan → `write_project_document` in the transcript and the plan card in the chat (the `plan` part; its click-through is deferred) → `SELECT version, status FROM brand_knowledge_document WHERE project_id = :p AND path = 'project/plan.md' ORDER BY version` shows v1 ready → `PUT /frontend/v1/projects/{id}/documents/{document_id}` with `{body, expected_revision: 1}` through `curl` on this lane's API (an edited line) → v1 superseded, v2 ready with `user_edit` → in a **new thread**, ask the agent to add a step → it re-reads `inputs/project/plan.md`, writes v3 keeping the edit → `status.md`'s Plan line shows version 3.
 - [ ] **Step 3:** `_memory/2026-09-12-project-plan-document.md` close-out, README row, `apps/frontend/docs/api-contracts/projects.md` gains the documents contract (the three routes and the `?surface=plan` deep link), `docs/specs/ARV2-ONBOARDING-PLAN.md` §8 addendum line.
 - [ ] **Step 4: Commit** — `git commit -m "docs(project-plan): close-out — contract, memory, live proof"`.
 

@@ -10,7 +10,9 @@ rulings). **Lane:** `research-streaming`, worktree `san-salvador`.
 2. `docs/superpowers/plans/2026-09-12-icp-authoring.md` — project-scoped knowledge documents,
    the ICP authoring tool, the persona synthesis request, skill v23 / profile v46.
 3. `docs/superpowers/plans/2026-09-12-project-plan-document.md` — the agent-written,
-   user-editable `plan.md`, the Plan tab, the plan card, auto-open.
+   user-editable `plan.md` (backend, tool, read/write routes, grant).
+   `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` — the Plan tab, the plan card,
+   auto-open, gallery document cards (DEFERRED, ruling R12).
 4. `docs/superpowers/plans/2026-09-12-head-of-abm-read-tools.md` — three read tools over ARV2
    rows so the agent can answer about accounts, research and discovery from the claim store.
 
@@ -83,6 +85,9 @@ Two things the founder saw on 2026-09-12 while walking the project conversation:
 - **R8 — the read tools serve ARV2 rows only** (standing rule "ARV2 schema is the only truth").
   No bridge to the old lane's tables.
 - **R9 — build order:** project files → ICP authoring → plan document → read tools.
+- **R10 — external libraries only for markdown.** Rendering is `react-markdown` + `remark-gfm`; editing is CodeMirror 6. No in-house markdown parser, renderer or editor is ever built.
+- **R11 — the editor toolbar is its own slice.** A formatting toolbar (undo/redo; H1–H3; bold, italic, strikethrough, inline code; bullet, numbered and task lists; blockquote, code block, horizontal rule; link; table — image and video left out for v1) is designed and built once, as a shared component, after this work. `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md` holds the brief.
+- **R12 — this pass ships the backend and the agent capabilities only.** The Plan tab, the document surface and the gallery document cards are the deferred plan `2026-09-12-plan-tab-frontend.md`, executed later with the toolbar slice.
 
 ## 4. Design
 
