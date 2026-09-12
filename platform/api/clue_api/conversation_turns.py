@@ -128,7 +128,10 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # ``author_icp_document@1`` and ``request_persona_synthesis@1``, the ICP-authoring pair
 # `head-of-abm@v46` grants and stage0-interview v23 §5b/§5c teach. v23 stays the exact replay
 # input for turns already pinned to it.
-CONVERSATION_RECIPE_VERSION = 24
+# Revision 25 (the project plan) is revision 24 plus one exact address:
+# ``write_project_document@1``, the plan tool `head-of-abm@v47` grants and stage0-interview v24
+# §6b teaches. v24 stays the exact replay input for turns already pinned to it.
+CONVERSATION_RECIPE_VERSION = 25
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

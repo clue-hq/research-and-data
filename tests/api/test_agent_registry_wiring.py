@@ -116,8 +116,10 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # v45 (ARV2 R4) is v44 plus `launch_arv2_discovery@1` and stage0-interview v22 (§7b,
         # discover accounts for the project). v46 (ARV2 context and authoring) is v45 plus
         # `author_icp_document@1` and `request_persona_synthesis@1` and stage0-interview v23
-        # (§5b authoring, §5c personas); digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("f4707a55276953b63ed95beb1abac50d9c1a4a406017ebc7a3abee2d23d640f5"),
+        # (§5b authoring, §5c personas). v47 (the project plan) is v46 plus
+        # `write_project_document@1` and stage0-interview v24 (§6b, write the plan); digest
+        # measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("9383b456e0ef825e60ff489601073e9e76caf2fb1cffca394d247d54e2b8e091"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -383,6 +385,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # writing the profile down and asking for its personas are the two halves of the ICP flow the
     # agent may perform itself, granted with `head-of-abm@v46` and taught by stage0-interview v23
     # §5b/§5c. Neither confirms anything — the ICP gate is still the human's.
+    #
+    # The project plan adds `write_project_document@1`: writing the plan down is the same act
+    # as saying it in the reply, except that the written version is a durable document the
+    # human can edit. Granted with `head-of-abm@v47` and taught by stage0-interview v24 §6b.
     assert available == {
         "author_icp_document@1",
         "draft_account_research_directive@5",
@@ -401,6 +407,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "record_interview_answer@1",
         "request_persona_synthesis@1",
         "submit_ingestion@1",
+        "write_project_document@1",
     }
     # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
     # stops it inventing a workaround — and every one of them names WHY.
@@ -463,9 +470,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v46"
+    assert production.profile_ref.address == "profile:head-of-abm@v47"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v23"
+        "skill:stage0-interview@v24"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -509,7 +516,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v23")
+    body = production.open_skill("skill:stage0-interview@v24")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "point the user to onboarding on the Knowledge page" in body
@@ -567,7 +574,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
     # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v23"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v24"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
@@ -650,6 +657,11 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("icp_revised", "draft the revised profile (section 5b) in the same scope"),
         ("author_icp", "Call `author_icp_document` with `icp_key`, `document`, `scope`"),
         ("personas_after_confirmation", "call `request_persona_synthesis` with the `icp_key`"),
+        # The project plan: the one situation v24 creates. The plan is written once the strategy
+        # is settled, and a stale write loses to the human's own edits rather than overwriting
+        # them — both are governed behaviours, not inferences.
+        ("write_plan", 'Call `write_project_document` with `document: "plan"`'),
+        ("plan_revision_conflict", "re-read the file, keep their edits, and write again"),
         ("prose_is_not_a_receipt", 'Ordinary prose such as "looks good" confirms nothing.'),
         ("contradictory_correction", "**Corrections carry lineage.**"),
         ("upload", "goes through `submit_ingestion` with its material context"),
@@ -666,7 +678,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v23")
+    body = head.open_skill("skill:stage0-interview@v24")
 
     assert required_guidance in body
 
@@ -714,7 +726,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
-    # v46 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
+    # v47 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
     # which is the ceiling doing its whole job rather than a weaker version of it.
     assert [item.resource.address for item in head.skill_disclosures()] == []
 

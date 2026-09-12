@@ -429,11 +429,14 @@ class Stage0StepPinProvider:
         # ARV2 context and authoring: the ICP-authoring pair derives its project the same way and
         # for the same reason — each carries only the trusted `source_turn_ref`, never a
         # model-authored project, so the presenting turn is the coordinate the pin resolves from.
+        # The project plan derives its project the same way and for the same reason: the tool
+        # carries only the trusted `source_turn_ref` and never a model-authored project.
         if step.tool_name in {
             "author_icp_document",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",
+            "write_project_document",
         }:
             requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
         # The artifact-shaped ICP gate (``@2``) derives its project the same way. ``@1`` keeps the

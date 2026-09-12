@@ -97,6 +97,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v21",
         "skill:stage0-interview@v22",
         "skill:stage0-interview@v23",
+        "skill:stage0-interview@v24",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -164,6 +165,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # ARV2 context and authoring: v45 plus `author_icp_document@1` and
         # `request_persona_synthesis@1`, and stage0-interview v23.
         "profile:head-of-abm@v46",
+        # The project plan: v46 plus `write_project_document@1`, and stage0-interview v24.
+        "profile:head-of-abm@v47",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",

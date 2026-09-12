@@ -80,6 +80,9 @@ _WITHHELD = {
     # version, and a queued background persona run that spends — so both are withheld.
     "author_icp_document",
     "request_persona_synthesis",
+    # The project plan writes a durable document version and puts a plan card in the chat, so
+    # it is withheld with them.
+    "write_project_document",
 }
 
 # The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
@@ -312,7 +315,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v23" in base_disclosures
+    assert "skill:stage0-interview@v24" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -333,9 +336,12 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # taught by stage0-interview v23 §5b/§5c; the trial withholds both for the same sentence.
         "author_icp_document",
         "request_persona_synthesis",
+        # The project plan is granted at `head-of-abm@v47` and taught by stage0-interview v24
+        # §6b; the trial withholds it for the same sentence.
+        "write_project_document",
     }
 
-    body = base.open_skill("skill:stage0-interview@v23")
+    body = base.open_skill("skill:stage0-interview@v24")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

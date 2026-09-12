@@ -87,6 +87,11 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # standing address.
     "author_icp_document@1",
     "request_persona_synthesis@1",
+    # The project plan (added in recipe0-stage0@25): the one plan document the agent writes for
+    # a project, version-checked against the human's own edits. Granted at `head-of-abm@v47`
+    # and declaring the same ``project`` pin as its siblings — the spine row the execution is
+    # bound to — which is what this audit requires of every standing address.
+    "write_project_document@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

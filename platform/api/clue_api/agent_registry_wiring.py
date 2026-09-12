@@ -89,7 +89,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # a project-local variant) and ask the platform for its personas — and stage0-interview v23,
     # whose §5b and §5c are the procedures and whose §1 names the project's own files. Neither
     # tool confirms anything: the ICP gate is still the human's. Everything else is v45's.
-    AgentRole.HEAD_OF_ABM: "v46",
+    # v47 (project plan, 2026-09-12): v46 plus ONE tool — `write_project_document@1`, the
+    # project's one plan written with a revision check — and stage0-interview v24, whose §6b says
+    # when the plan is written (after the section-2 answers, a confirmed ICP and a confirmed
+    # product set) and what it contains. The human edits the same file in the Plan tab, so a
+    # stale write is refused by name rather than overwriting their words. Everything else is v46's.
+    AgentRole.HEAD_OF_ABM: "v47",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -127,10 +132,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # asking for them queues a background onboarding turn rather than writing a document here.
     # Granted with `head-of-abm@v46`; stage0-interview v23 §5c is the procedure.
     "request_persona_synthesis": (AgentRole.HEAD_OF_ABM,),
-    # The project plan: registered so the platform's write surface stays complete and the
-    # authority audit sees it, granted to nobody yet — the Head-of-ABM profile that pins it and
-    # the skill text that teaches when a plan is ready to write land with the plan flow itself.
-    "write_project_document": (),
+    # The project plan: granted with `head-of-abm@v47`; stage0-interview v24 §6b is the procedure.
+    # A project has one plan and this agent writes it, in the human's terms, out of the decisions
+    # the conversation already reached — it decides nothing new. The human edits the same document
+    # in the Plan tab, so the write carries the version it was authored against and a stale one is
+    # refused by name: the model re-reads, keeps the human's edits, and writes again.
+    "write_project_document": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
@@ -467,6 +474,10 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # is a thing a manual-conversation-only dev harness may leave behind.
                 "author_icp_document",
                 "request_persona_synthesis",
+                # The project plan writes a durable document version off this surface and puts a
+                # plan card in the project's own chat — a manual-conversation-only dev harness
+                # may not leave one behind either.
+                "write_project_document",
             }
         ),
         withheld_delegation_roles=frozenset(

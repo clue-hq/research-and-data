@@ -33,6 +33,7 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   synthesize_icps: "Create an ideal customer profile proposal",
   author_icp_document: "Draft an ideal customer profile",
   request_persona_synthesis: "Write the buyer personas",
+  write_project_document: "Write the project plan",
   open_icp_confirmation_gate: "Prepare the profile for your review",
   start_confirmed_project_run: "Start the project",
   draft_account_research_directive: "Prepare the research plan",

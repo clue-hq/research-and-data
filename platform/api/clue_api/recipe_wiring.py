@@ -99,6 +99,12 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # revision. v24 is v23 plus those two addresses and nothing else; v23 stays the exact
     # replay input for turns pinned to it.
     "recipe0-stage0-v24.json",
+    # The project plan: one address joins the interaction slot — `write_project_document@1`,
+    # the project's one plan written with a revision check — because the slot pins EXACT
+    # addresses and would refuse the tool `head-of-abm@v47` grants without its own revision.
+    # v25 is v24 plus that address and nothing else; v24 stays the exact replay input for turns
+    # pinned to it.
+    "recipe0-stage0-v25.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
