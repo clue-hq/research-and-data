@@ -7,9 +7,11 @@ from uuid import uuid4
 
 from clue_api.arv2.research_progress import (
     LINGER_S,
+    ProgressAttention,
     ProgressJob,
     account_score,
     fold_progress,
+    person_group_score,
 )
 
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -212,3 +214,121 @@ def test_a_suspended_run_flips_the_pill_even_with_a_healthy_job() -> None:
 
 def test_nothing_live_and_nothing_recent_is_no_card() -> None:
     assert fold_progress([], run_statuses={}, now=NOW) is None
+
+
+def test_a_suspended_job_is_paused_not_finished() -> None:
+    """A worker restart suspends every in-flight job. That is a PAUSE: nothing has been researched,
+    so the bar reads 0 %, nothing is counted finished, and the pill asks for a human."""
+    jobs = [
+        job(f"Account {n}", status="suspended", stage="deep_research", account_id=uuid4())
+        for n in range(10)
+    ]
+    card = fold_progress(jobs, run_statuses={RUN: "in_progress"}, now=NOW)
+    assert card is not None
+    assert card.progress_pct == 0
+    assert (card.requested_accounts, card.queued, card.running, card.finished) == (10, 0, 0, 0)
+    assert card.pill == "needs_attention"
+    # ... and a job paused further along still keeps the quarters it walked, and only those.
+    paused_late = job("Late", status="suspended", stage="committee", account_id=uuid4())
+    assert account_score(paused_late, []) == 0.5
+
+
+def test_a_person_only_run_scores_on_its_people() -> None:
+    """``launch_arv2_person_research`` makes a run with no account job at all (I3)."""
+    acc = uuid4()
+    people = [
+        job(
+            "Acme",
+            subject="person",
+            status="completed",
+            stage="synthesis",
+            account_id=acc,
+            finished_at=NOW,
+        ),
+        *(job("Acme", subject="person", account_id=acc) for _ in range(3)),
+    ]
+    assert person_group_score(people) == 0.25
+    card = fold_progress(people, run_statuses={RUN: "in_progress"}, now=NOW)
+    assert card is not None
+    assert card.progress_pct == 25
+    assert (card.requested_accounts, card.queued, card.running, card.finished) == (1, 0, 3, 0)
+    assert card.pill == "running"
+
+
+def test_a_person_only_group_is_queued_until_one_of_its_people_starts() -> None:
+    acc = uuid4()
+    waiting = [
+        job("Acme", subject="person", status="not_started", stage=None, account_id=acc)
+        for _ in range(2)
+    ]
+    card = fold_progress(waiting, run_statuses={RUN: "not_started"}, now=NOW)
+    assert card is not None
+    assert (card.requested_accounts, card.queued, card.finished) == (1, 1, 0)
+    assert card.progress_pct == 0
+
+
+def test_the_same_account_in_two_runs_is_two_groups_each_with_its_own_people() -> None:
+    """People are keyed by ``(run, account)``: one run's members never fill another's bar (M5)."""
+    acc = uuid4()
+    other_run = uuid4()
+    first = job("Acme", stage="member_research", status="in_progress", account_id=acc)
+    second = ProgressJob(
+        **{
+            **job("Acme", stage="deep_research", status="in_progress", account_id=acc).__dict__,
+            "run_id": other_run,
+        }
+    )
+    # The first run's one member is done; the second run has no people at all.
+    member = job(
+        "Acme",
+        subject="person",
+        status="completed",
+        stage="synthesis",
+        account_id=acc,
+        finished_at=NOW,
+    )
+    jobs = [first, second, member]
+    card = fold_progress(jobs, run_statuses={RUN: "in_progress", other_run: "in_progress"}, now=NOW)
+    assert card is not None
+    assert card.requested_accounts == 2
+    # first: member_research with 1/1 people done → 1.0; second: deep_research → 0. Mean 50 %.
+    assert card.progress_pct == 50
+    assert account_score(second, []) == 0.0
+
+
+def test_one_account_failing_eight_members_is_one_attention_row() -> None:
+    """Deduped by ``(account, reason)`` so the line does not rotate through the same sentence."""
+    acc = uuid4()
+    failed = [
+        job(
+            "Acme",
+            subject="person",
+            status="needs_review",
+            stage="synthesis",
+            account_id=acc,
+            finished_at=NOW,
+            failure="the model errored",
+        )
+        for _ in range(2)
+    ]
+    card = fold_progress(failed, run_statuses={RUN: "needs_review"}, now=NOW)
+    assert card is not None
+    assert card.attention == (ProgressAttention(account_name="Acme", reason="the model errored"),)
+
+
+def test_a_long_failure_message_is_clipped_to_one_line() -> None:
+    """The driver stores ``outcome.error[:1000]``; the card shows at most 140 characters (M3)."""
+    acc = uuid4()
+    bad = job(
+        "Acme",
+        stage="synthesis",
+        status="needs_review",
+        account_id=acc,
+        finished_at=NOW,
+        failure="x" * 500,
+    )
+    card = fold_progress([bad], run_statuses={RUN: "needs_review"}, now=NOW)
+    assert card is not None
+    reason = card.attention[0].reason
+    assert len(reason) == 140
+    assert reason.endswith("\u2026") and reason.startswith("x" * 139)

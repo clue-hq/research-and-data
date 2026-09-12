@@ -26,6 +26,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import structlog.testing
 
 from clue_api.arv2 import account_research_tools as tools
 from clue_api.arv2.account_research_claims import JobScope
@@ -730,14 +731,32 @@ class MemoryConnFactory:
         yield self.conn
 
 
+class RaisingConn:
+    """A connection that fails every statement, the way an exhausted pool or a lock wait does."""
+
+    async def execute(self, statement: Any, parameters: Any = None) -> None:
+        del statement, parameters
+        raise RuntimeError("connection pool exhausted")
+
+
+class RaisingConnFactory:
+    def __call__(self) -> Any:
+        return self._open()
+
+    @asynccontextmanager
+    async def _open(self) -> AsyncIterator[Any]:
+        yield RaisingConn()
+
+
 def _runtime(
     scope: JobScope = SCOPE,
     *,
     settings: Settings | None = None,
-) -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
+    conn_factory: Any | None = None,
+) -> tuple[ToolRuntime, FakeClients, FakeWriter, Any]:
     clients = FakeClients()
     writer = FakeWriter()
-    conn_factory = MemoryConnFactory()
+    conn_factory = conn_factory or MemoryConnFactory()
     runtime = ToolRuntime(
         scope=scope,
         settings=settings or Settings(),
@@ -2012,6 +2031,39 @@ def test_finalize_stamps_the_synthesis_stage_before_writing(
     assert accepted["accepted"] is True
     assert stamped == [(runtime.scope.job_id, "synthesis", 0)]
     assert writer.drafts, "and the claims did land after it"
+
+
+def test_the_stage_stamp_is_the_only_sql_a_finalize_issues_itself() -> None:
+    """The recording double accepts any statement, so this is the guard that used to be implicit
+    in a conn that accepted none: one finalize writes exactly one statement of its own, and it is
+    the stage UPDATE. Everything else a tool body writes goes through the claim writer."""
+    runtime, _, _, factory = _runtime()
+
+    accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert len(factory.conn.statements) == 1
+    statement, parameters = factory.conn.statements[0]
+    assert "UPDATE arv2_research_job SET stage" in statement
+    assert parameters == {"stage": "synthesis", "job_id": runtime.scope.job_id}
+
+
+def test_a_failing_stage_stamp_never_costs_the_finalization() -> None:
+    """A progress pixel is not worth a job: the stamp's failure is logged and swallowed, and the
+    finalization lands exactly as it would have (I2)."""
+    runtime, _, _, _ = _runtime(conn_factory=RaisingConnFactory())
+
+    with structlog.testing.capture_logs() as events:
+        accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True, "the finalization is unharmed"
+    assert runtime.finalization is not None
+    warned = [event for event in events if event["event"] == "arv2.stage_stamp_failed"]
+    assert len(warned) == 1
+    assert warned[0]["log_level"] == "warning"
+    assert warned[0]["stage"] == "synthesis"
+    assert warned[0]["job_id"] == str(runtime.scope.job_id)
+    assert "connection pool exhausted" in warned[0]["error"]
 
 
 def test_finalize_does_not_stamp_the_stage_when_it_refuses_a_second_finalization(

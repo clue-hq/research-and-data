@@ -21,7 +21,12 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_store import JobStage, JobSubject
-from clue_api.arv2.research_progress import LINGER_S, ProgressJob, fold_progress
+from clue_api.arv2.research_progress import (
+    ATTENTION_LINGER_S,
+    LINGER_S,
+    ProgressJob,
+    fold_progress,
+)
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.v1_shared import iso_utc
 from clue_db import ConnFactory
@@ -77,9 +82,20 @@ class ResearchProgressResponseV1(BaseModel):
 
 
 #: Every job of every run the card still has something to say about. A run qualifies when it has a
-#: job that is not finished, a job that wants a human, a run-level suspension, or a last job that
-#: finished inside the linger window (the fold decides what the card then *says*; the linger bound
-#: is repeated here only so a long-finished run is not loaded at all).
+#: job that is not finished, a recent job that wants a human, a run-level suspension, or a last job
+#: that finished inside the linger window (the fold decides what the card then *says*; the linger
+#: bound is repeated here only so a long-finished run is not loaded at all).
+#:
+#: Ruling R11 (provisional, 2026-09-12) — the ATTENTION clause is time-bounded. Nothing in the
+#: system moves a job out of ``needs_review`` (``begin_job`` re-claims only ``not_started`` and
+#: ``suspended``) and the card has no dismiss control, so an unbounded clause would pin "Needs
+#: attention" above a project's composer forever and dilute every later run's percentage. A job
+#: that wants a human keeps its run loaded for ``ATTENTION_LINGER_S``, measured from when it
+#: finished; a ``suspended`` job has no ``finished_at`` by construction (the row CHECK) and counts
+#: as happening NOW, so a genuinely paused run is never hidden while it waits for a worker.
+#: ``max(COALESCE(...))`` rather than ``COALESCE(max(...))`` on purpose: it makes a *single*
+#: still-paused job keep the run, and it stays NULL (→ not qualifying) when the run has no such
+#: job at all.
 _JOBS = text(
     """
     WITH runs AS (
@@ -89,8 +105,9 @@ _JOBS = text(
           AND (
             EXISTS (SELECT 1 FROM arv2_research_job j WHERE j.run_id = r.run_id
                      AND j.status NOT IN ('completed', 'needs_review', 'suspended'))
-            OR EXISTS (SELECT 1 FROM arv2_research_job j WHERE j.run_id = r.run_id
-                     AND j.status IN ('needs_review', 'suspended'))
+            OR (SELECT max(COALESCE(j.finished_at, now())) FROM arv2_research_job j
+                 WHERE j.run_id = r.run_id AND j.status IN ('needs_review', 'suspended'))
+               > now() - make_interval(secs => :attention_linger_s)
             OR r.status = 'suspended'
             OR (SELECT max(j.finished_at) FROM arv2_research_job j WHERE j.run_id = r.run_id)
                > now() - make_interval(secs => :linger_s)
@@ -126,6 +143,7 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
                             "workspace_id": workspace_id,
                             "project_id": project_id,
                             "linger_s": LINGER_S,
+                            "attention_linger_s": ATTENTION_LINGER_S,
                         },
                     )
                 )

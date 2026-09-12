@@ -70,6 +70,7 @@ from clue_api.arv2.account_research_refusals import (
 )
 from clue_api.arv2.account_research_store import (
     AnnotationRow,
+    JobStage,
     find_contact_by_name,
     record_annotations,
     set_job_stage,
@@ -581,6 +582,26 @@ class ToolRuntime:
         annotation is a check result beside the claim, never an edit to append-only history."""
         async with self._conn_factory() as conn:
             return await record_annotations(conn, job_id=self.scope.job_id, rows=rows)
+
+    async def stamp_stage(self, stage: JobStage) -> None:
+        """Say where the job is (spec 2026-09-12 §1), and never let that cost the job.
+
+        The stamp is a progress pixel: the card reads it and nothing else does. Every tool body
+        runs under a wrapper that turns ANY exception into ``tool_error``, so an unguarded
+        ``UPDATE`` here — a pool timeout, a lock wait, a statement timeout — would be reported to
+        the model as a failed finalization and could leave the job short or in ``needs_review``.
+        A display column is never worth that, so the failure is logged and swallowed.
+        """
+        try:
+            async with self._conn_factory() as conn:
+                await set_job_stage(conn, job_id=self.scope.job_id, stage=stage)
+        except Exception as error:  # noqa: BLE001 — a progress pixel never costs a finalization
+            log.warning(
+                "arv2.stage_stamp_failed",
+                job_id=str(self.scope.job_id),
+                stage=stage,
+                error=str(error),
+            )
 
     def now(self) -> datetime:
         """The job's clock, injected so a finalization timestamp is testable."""
@@ -2048,8 +2069,7 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
 
     # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
     # so before a single finalization claim lands.
-    async with runtime._conn_factory() as conn:  # noqa: SLF001 - the runtime's own seam
-        await set_job_stage(conn, job_id=runtime.scope.job_id, stage="synthesis")
+    await runtime.stamp_stage("synthesis")
 
     keyed = _key_verdicts_to_icp_gates(
         runtime.scope.icp_gate_keys, [verdict.model_dump() for verdict in args.fit_verdicts]
@@ -2102,8 +2122,7 @@ async def _finalize_person_research(
 
     # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
     # so before a single finalization claim lands.
-    async with runtime._conn_factory() as conn:  # noqa: SLF001 - the runtime's own seam
-        await set_job_stage(conn, job_id=runtime.scope.job_id, stage="synthesis")
+    await runtime.stamp_stage("synthesis")
 
     reports_to = args.reports_to.model_dump() if args.reports_to is not None else None
     if reports_to is not None and not reports_to.get("contact_id"):

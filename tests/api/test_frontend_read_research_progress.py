@@ -3,7 +3,9 @@
 One project, one launched run, two account jobs — the shape the card is actually drawn from.
 The walk is the card's whole life: nothing launched yet (``null``, so the frontend draws no
 card), one job claimed and stamped ``synthesis`` (a running card with its live agent row), then
-that job failing into ``needs_review`` (the attention pill, with the driver's own failure text).
+that job failing into ``needs_review`` (the attention pill, with the driver's own failure text),
+and finally that same run aged a day (ruling R11: nothing moves a job out of ``needs_review`` and
+the card has no dismiss control, so the attention clause is time-bounded and the card goes away).
 Workspace scoping is asserted the way the sibling discovery-status test asserts it: another
 tenant's header never sees this project's run.
 """
@@ -36,7 +38,7 @@ pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 FIRST_ACCOUNT = "Probook"
 
 
-def test_null_then_a_running_card_then_needs_attention(tmp_path: Any) -> None:
+def test_null_then_running_then_needs_attention_then_aged_out(tmp_path: Any) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
@@ -95,5 +97,27 @@ def test_null_then_a_running_card_then_needs_attention(tmp_path: Any) -> None:
             ]
             assert body["agents"] == []
             assert body["last_finished_at"] is not None
+
+            # Ruling R11: a day later the whole run is settled and the attention has aged out —
+            # the card is gone rather than pinned above the composer forever. (The run's other job
+            # is finished too, because a single unfinished job keeps its run loaded on its own.)
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job "
+                    "SET status = 'completed', finished_at = now() - interval '25 hours' "
+                    "WHERE run_id = :run AND job_id <> :id"
+                ),
+                {"run": receipt.run_id, "id": first},
+            )
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET finished_at = now() - interval '25 hours' "
+                    "WHERE job_id = :id"
+                ),
+                {"id": first},
+            )
+            async with _client(_app(conn)) as client:
+                aged = await client.get(path, headers=headers)
+            assert aged.status_code == 200 and aged.json()["data"] is None
 
     run_async(scenario())
