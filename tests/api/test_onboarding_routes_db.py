@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport
 from sqlalchemy import text
 
+from clue_api.arv2.onboarding_store import create_persona_run
 from clue_api.onboarding_routes import create_onboarding_router
 from clue_design import ingestion as design_ingestion
 from tests._identity import seed_principal
@@ -135,6 +136,60 @@ def test_a_blank_domain_or_foreign_brand_is_refused() -> None:
                 )
                 assert foreign.status_code == 409
                 assert foreign.json()["detail"]["error"] == "brand_unavailable"
+
+    run_async(scenario())
+
+
+def test_an_open_personas_run_does_not_block_the_whole_brand_walk() -> None:
+    """The one-run-at-a-time rule is about the *walk*, not about every row in the table.
+
+    A personas run is a narrow, project-scoped turn for one ICP document. It races nothing the
+    onboarding walk writes, so letting it hold the workspace's only start slot would mean a human
+    who asked for personas could not re-onboard their brand until that turn finished.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-route-personas"
+            project = await seed_project(conn, ws, name="O3 route personas")
+            await seed_principal(conn, workspace_id=ws, user_id="usr_o3_personas")
+            document_id = (
+                await conn.execute(
+                    text(
+                        "INSERT INTO brand_knowledge_document (document_id, workspace_id, "
+                        " brand_id, project_id, folder, path, kind, version, status) "
+                        "VALUES (gen_random_uuid(), :ws, :brand, :project, 'audience', "
+                        " 'audience/icp-gi.md', 'icp-definition', 1, 'running') "
+                        "RETURNING document_id"
+                    ),
+                    {"ws": ws, "brand": project.brand_id, "project": project.project_id},
+                )
+            ).scalar_one()
+            await create_persona_run(
+                conn,
+                run_id=uuid4(),
+                workspace_id=ws,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+                persona_icp_document_id=document_id,
+                company_domain="insighthealth.ai",
+                requested_by_user_id="usr_o3_personas",
+            )
+            enqueuer = _RecordingEnqueuer()
+            app = FastAPI()
+            app.include_router(
+                create_onboarding_router(conn_factory=conn_session_factory(conn), enqueuer=enqueuer)
+            )
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                started = await client.post(
+                    "/onboarding",
+                    headers={"X-Workspace-Id": ws, "X-Test-User-Id": "usr_o3_personas"},
+                    json={"company_domain": "insighthealth.ai"},
+                )
+            assert started.status_code == 202, started.text
+            assert len(enqueuer.calls) == 1
 
     run_async(scenario())
 

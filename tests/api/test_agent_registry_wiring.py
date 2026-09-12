@@ -225,8 +225,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `launch_arv2_person_research@1`, registered ungranted (141 + 1 = 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
     # Project-label renaming is registered for the human UI and granted to no agent (143 -> 144).
-    # ICP authoring installs `author_icp_document@1`, registered ungranted (144 -> 145).
-    assert len(by_address) == 145
+    # ICP authoring installs `author_icp_document@1`, registered ungranted (144 -> 145), and
+    # the persona request `request_persona_synthesis@1` on the same terms (145 -> 146).
+    assert len(by_address) == 146
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -321,9 +322,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # ARV2 Track R, R3 installs `launch_arv2_person_research@1`, registered ungranted
     # (141 + 1 = 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
-    # Human project-label rename adds one ungranted address (143 -> 144), and ICP authoring's
-    # `author_icp_document@1` adds the next one on the same terms (144 -> 145).
-    assert len(by_address) == 145
+    # Human project-label rename adds one ungranted address (143 -> 144), ICP authoring's
+    # `author_icp_document@1` adds the next one on the same terms (144 -> 145), and the persona
+    # request `request_persona_synthesis@1` the one after (145 -> 146).
+    assert len(by_address) == 146
     for address in (
         "create_thread@1",
         "rename_thread@1",

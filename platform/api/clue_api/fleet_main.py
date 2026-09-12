@@ -137,6 +137,7 @@ from clue_api.onboarding_synthesis_wiring import (
     RegisteredIcp,
     build_onboarding_synthesis_launcher,
 )
+from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
@@ -572,7 +573,9 @@ class _SynthesisSeam:
 
     Both turns cross here. The ICP turn's ``RegisteredIcp`` rows become the driver's ``IcpRef``s on
     the way out, and each one comes back as its own ``RegisteredIcp`` when the driver opens that
-    ICP's persona turn — the same four fields, copied in both directions.
+    ICP's persona turn — the same fields, copied in both directions. ``project_id`` is one of them:
+    a persona is written in the scope of the ICP it is about, and a personas-only run carries that
+    scope in from its fleet payload rather than deriving it here.
     """
 
     def __init__(self, launcher: OnboardingSynthesisLauncher) -> None:
@@ -595,6 +598,7 @@ class _SynthesisSeam:
                     icp_key=icp.icp_key,
                     version=icp.version,
                     path=icp.path,
+                    project_id=icp.project_id,
                 )
                 for icp in result.icps
             ),
@@ -613,6 +617,7 @@ class _SynthesisSeam:
                 icp_key=icp.icp_key,
                 version=icp.version,
                 path=icp.path,
+                project_id=icp.project_id,
             ),
         )
         return SynthesisOutcome(
@@ -934,6 +939,12 @@ async def _serve() -> None:
         # nothing. What it needs is the storage the knowledge documents live in, so it composes
         # where the composed backend is. Without a service the tool registers and refuses by name.
         icp_authoring = DbIcpAuthoringService(storage)
+        # The persona request DOES need the onboarding flag: what it opens is an onboarding run,
+        # and with the lane off no worker would ever drive it — the row would sit ``queued``
+        # forever, holding that ICP document's one open slot. Off, the tool refuses by name.
+        persona_requests = (
+            DbPersonaRequestService(queue=work_queue) if settings.onboarding_v2_enabled else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -967,6 +978,7 @@ async def _serve() -> None:
             arv2_account_launch=arv2_account_launch,
             arv2_discovery_launch=arv2_discovery_launch,
             icp_authoring=icp_authoring,
+            persona_requests=persona_requests,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )

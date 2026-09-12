@@ -111,6 +111,7 @@ from clue_api.independent_contact_research import IndependentContactResearchRunn
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
+from clue_api.persona_request_tools import PersonaRequestService, build_persona_request_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.product_set_selection_gate_tools import (
@@ -2652,6 +2653,7 @@ def build_toolbelt(
     arv2_account_launch: Arv2LaunchService | None = None,
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
     icp_authoring: IcpAuthoringService | None = None,
+    persona_requests: PersonaRequestService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2811,6 +2813,12 @@ def build_toolbelt(
     # confirms nothing. Without a service it refuses ``icp_authoring_not_composed`` before it reads
     # a row.
     for tool in build_icp_authoring_tools(icp_authoring, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The other half of the same flow: authoring writes the profile, this asks for the personas of
+    # the version the project pinned. Registered everywhere, composed where the onboarding fleet
+    # lane is; without a service it refuses ``persona_synthesis_not_composed`` before it reads a
+    # row.
+    for tool in build_persona_request_tools(persona_requests, conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

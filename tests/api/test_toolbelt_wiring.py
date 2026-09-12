@@ -256,6 +256,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # ICP authoring registers in every process for the same reason as its ARV2 neighbours and,
     # with no ``IcpAuthoringService`` composed here, refuses before it reads a row.
     "author_icp_document": ("precondition", ("icp_authoring_not_composed",)),
+    # Its sibling: the matrix composes no persona-request service, so the request refuses before
+    # it reads the project's pin.
+    "request_persona_synthesis": ("precondition", ("persona_synthesis_not_composed",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -628,6 +631,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "icp_key": "matrix",
             "document": "---\nkind: icp-definition\nicp_key: matrix\n---\n\nBody.\n",
             "scope": "project",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "request_persona_synthesis": {
+            "icp_key": "matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "read_arv2_account_research_run": {"run_id": _UUID()},
@@ -1366,8 +1373,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
     # Human project-label rename adds one governed tool (125 -> 126).
-    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127).
-    assert len(registry.names()) == 127
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
+    # `request_persona_synthesis@1` the same way (127 -> 128).
+    assert len(registry.names()) == 128
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1392,8 +1400,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
     # The project rename tool has one version and no agent grant (143 -> 144).
     # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
-    # (144 -> 145).
-    assert len(registry) == 145
+    # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
+    assert len(registry) == 146
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1421,8 +1429,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
     # Human project-label rename adds one governed tool (125 -> 126).
-    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127).
-    assert len(registry.names()) == 127
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
+    # `request_persona_synthesis@1` the same way (127 -> 128).
+    assert len(registry.names()) == 128
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1434,8 +1443,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
     # The project rename tool has one version and no agent grant (143 -> 144).
     # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
-    # (144 -> 145).
-    assert len(registry) == 145
+    # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
+    assert len(registry) == 146
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

@@ -20,6 +20,7 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read.contact_email_lookup import build_contact_email_lookup_service
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
+from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.projections_app import create_projections_app
@@ -136,12 +137,18 @@ def build_application(
     # nothing. What it needs is the storage the knowledge documents live in, so it composes where
     # the composed backend is. Without a service the tool registers and refuses by name.
     icp_authoring = DbIcpAuthoringService(storage)
+    # The persona request DOES need the onboarding flag: what it opens is an onboarding run, and
+    # with the lane off no worker would ever drive it — the row would sit ``queued`` forever,
+    # holding that ICP document's one open slot. Off, the tool refuses by name. The queue is this
+    # app's default ``DbWorkQueue``, exactly as ``DbOnboardingEnqueuer``'s is.
+    persona_requests = DbPersonaRequestService() if resolved.onboarding_v2_enabled else None
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
         arv2_account_launch=arv2_account_launch,
         arv2_discovery_launch=arv2_discovery_launch,
         icp_authoring=icp_authoring,
+        persona_requests=persona_requests,
         stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),

@@ -110,8 +110,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # ICP authoring registers `author_icp_document@1` (126 -> 127) and grants it to nobody: the
     # write surface stays complete and the audit sees it, but no model surface names it yet — the
     # profile that pins it and the skill text that teaches it land with the authoring flow.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 127
+    # `request_persona_synthesis@1` lands on the same terms beside it (127 -> 128): the ICP
+    # flow's other half, registered so the audit sees it, granted to nobody yet.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 128
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)

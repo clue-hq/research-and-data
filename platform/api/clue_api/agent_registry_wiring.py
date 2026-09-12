@@ -114,6 +114,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # audit sees it, granted to nobody yet — the Head-of-ABM profile that pins it, and the skill
     # text that teaches when an ICP is ready to write down, land with the authoring flow itself.
     "author_icp_document": (),
+    # The persona request is the same kind of capability and lands on the same terms: registered
+    # so the audience-persona half of the ICP flow is visible to the authority audit, granted to
+    # nobody until the profile and skill text that teach it land with the flow.
+    "request_persona_synthesis": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
