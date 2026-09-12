@@ -268,3 +268,15 @@ Gates: the five named suites pass (41), ruff format/check clean, mypy clean on t
 modules, `lint-imports` 26/0. Each item has a test proven RED against its own revert.
 `platform/api/clue_api/arv2/read_tools.py` deliberately untouched (parallel plan-4 review).
 **Still owed:** the live walk (I3) — unchanged by this wave.
+
+## Final review + fix wave (2026-09-13)
+
+Opus whole-plan review: 0 Critical / 3 Important / 8 Minor / 6 Nit. Fix wave `5547c3e10`: the plan's
+replay key now includes the body digest (a second same-turn write is a real write, or a revision
+conflict); both writers lock the project row first (`_lock_project`) so the agent write and the
+human PUT cannot deadlock; the replay read is scoped; the blob is stored after the row in both
+paths; the detail GET serves a superseded version of this project with its real status (the editor
+can rebase); the human save is gated by kind (plan, ICP, persona); the plan's front matter carries
+`version:` (ruling P) so skill §6b's "the version of the file you read" is literally in the file; a
+no-op INSERT reports `replayed=True`; a drift-guard test pins the servable-status tuples equal
+across the six modules that restate them. I3 = the owed live walk.
