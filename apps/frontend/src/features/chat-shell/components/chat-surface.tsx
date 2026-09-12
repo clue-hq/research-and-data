@@ -74,6 +74,15 @@ import { WebInspector } from "./web-inspector";
  * the auto-open effect a new array identity on every render. */
 const NO_ARTIFACTS: ProjectArtifact[] = [];
 
+/** Every tool call id in the transcript whose part has landed (`output-available`). */
+function completedToolCallIds(transcript: ProjectChatController["transcript"]): string[] {
+  return transcript.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      part.kind === "tool" && part.state === "output-available" ? [part.toolCallId] : [],
+    ),
+  );
+}
+
 export function ChatSurface({
   artifacts,
   chat,
@@ -346,17 +355,15 @@ export function ChatSurface({
       // launched discovery. Residual, accepted: a launch part that arrives later still — an
       // older page prepended by `loadOlderMessages` — opens the surface once.
       if (chat.loading) return;
-      knownLaunchIds.current = new Set(
-        chat.transcript.flatMap((message) =>
-          message.parts.flatMap((part) => (part.kind === "tool" ? [part.toolCallId] : [])),
-        ),
-      );
+      knownLaunchIds.current = new Set(completedToolCallIds(chat.transcript));
       return;
     }
     const opening = discoveryLaunchToOpen({ transcript: chat.transcript, knownToolCallIds: known });
-    for (const message of chat.transcript) {
-      for (const part of message.parts) if (part.kind === "tool") known.add(part.toolCallId);
-    }
+    // Bank only COMPLETED parts. A tool part is delivered first as `input-streaming` /
+    // `input-available` and flips to `output-available` when it lands; banking it on first sight
+    // would make its completion read as already known, and the launch would never open the tab
+    // (live walk, 2026-09-12).
+    for (const id of completedToolCallIds(chat.transcript)) known.add(id);
     if (opening === null) return;
     openTargetAccounts();
     setDiscoveryPrime((current) => current + 1);

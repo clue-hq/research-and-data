@@ -19,6 +19,10 @@ test("the shell polls discovery every 5 s while live and opens the surface on th
   assert.match(surface, /discoveryLaunchToOpen\(\{[\s\S]*?openTargetAccounts\(\);\s*setDiscoveryPrime\(/);
   // And the mount snapshot waits for the conversation, so a replayed backlog opens nothing.
   assert.match(surface, /if \(chat\.loading\) return;/);
+  // Only landed tool parts are banked: a launch seen while still running must still open the
+  // surface when it completes (live walk, 2026-09-12).
+  assert.match(surface, /part\.kind === "tool" && part\.state === "output-available" \? \[part\.toolCallId\]/);
+  assert.match(surface, /for \(const id of completedToolCallIds\(chat\.transcript\)\) known\.add\(id\);/);
   assert.match(hook, /pollMs = 5000/);
   assert.match(hook, /discoveryRunLive\(/);
 });
