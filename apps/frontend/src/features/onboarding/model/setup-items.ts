@@ -26,7 +26,10 @@ export interface SetupBrandKitJobSnapshot {
  * truth.
  */
 export const FAILED_MEMBER_ANNOTATION = " — part of this hit a problem";
-export const CONTINUING_ANNOTATION = " — personas continue in the background";
+/** The audience row's continuing-work note, re-exported from the table that now owns its text
+ * (`SetupGroup.continuingNote`) so tests keep one name for it. */
+export const CONTINUING_ANNOTATION =
+  SETUP_GROUPS.find((group) => group.continuingNote)?.continuingNote ?? "";
 
 /** A step is done when it answered, or when nobody could find an answer — `empty` is a CORRECT
  * outcome, not a failure. Neither is pending work. */
@@ -73,23 +76,21 @@ export function groupStatus(
  * Pick the single honest annotation for a row, in priority order.
  *
  * 1. Any step of this row failed — the most consequential thing that can have happened to it.
- * 2. The lead step is done while trailing kinds are still queued or running: the row's promise is
- *    kept, but work continues past it. Only the audience row says so, because only there is the
- *    continuing work (per-persona research) something the user asked for and will come back to.
+ * 2. The lead step is done and the row carries a `continuingNote`: the row's promise is kept,
+ *    but work continues past it. The note stands until that trailing work has FINISHED — not
+ *    until it appears. Persona steps are created only after `synthesis` completes, which is
+ *    usually the very tick that releases the user, so requiring a live trailing step would mean
+ *    the promise is made exactly when it cannot be rendered. An absent trailing step is
+ *    "not finished", the same as a running one.
  */
 function annotationFor(steps: readonly SetupStep[], group: SetupGroup): string {
   const mine = steps.filter((s) => group.stepKinds.includes(s.kind));
   if (mine.some((s) => s.status === "failed")) return FAILED_MEMBER_ANNOTATION;
   const lead = leadStep(steps, group);
+  if (!lead || !STEP_DONE.has(lead.status) || !group.continuingNote) return "";
   const trailing = mine.filter((s) => s.kind !== group.stepKinds[0]);
-  if (
-    lead &&
-    STEP_DONE.has(lead.status) &&
-    trailing.some((s) => s.status === "running" || s.status === "queued")
-  ) {
-    return group.id === "audience" ? CONTINUING_ANNOTATION : "";
-  }
-  return "";
+  const finished = trailing.length > 0 && trailing.every((s) => STEP_DONE.has(s.status));
+  return finished ? "" : group.continuingNote;
 }
 
 /**
@@ -124,9 +125,9 @@ function brandKitItem(row: SetupItem, job: SetupBrandKitJobSnapshot | null): Set
  * Rows are the checklist groups (passed in, defaulting to the ratified table) plus the brand-kit
  * row. Row ids are constants, so the `aria-live` list keeps stable keys across every tick.
  *
- * - `starting` with no step yet renders the FIRST group as running: the run row is durably
- *   captured and the drive is in flight (review FE-M1/BE-M6). It is a real durable signal, not a
- *   timer — and the first real step supersedes it.
+ * - An in-flight run (`starting` or `running`) with no step yet renders the FIRST group as
+ *   running: the run row is durably captured and the drive is in flight (review FE-M1/BE-M6).
+ *   It is a real durable signal, not a timer — and the first real step supersedes it.
  * - The brand-kit row reports the workspace's real ingestion job (`brandKitItem`), and is dropped
  *   cleanly if the fixture no longer carries it. It is deliberately outside the group reduction:
  *   the ingestion is separate work from the lane, so neither the step truth nor the index-0
@@ -139,8 +140,11 @@ export function deriveSetupItems(
 ): SetupItem[] {
   const steps = progress?.steps ?? [];
   // The warm-up placeholder only stands in for the absence of steps; once ANY step has reported,
-  // step truth drives every row.
-  const warmingUp = progress?.status === "starting" && steps.length === 0;
+  // step truth drives every row. Both in-flight statuses count: between `mark_run_running` and
+  // the first `start_step` the run reports `running` with zero steps, and a checklist where
+  // every row is queued and nothing spins would claim the lane had stalled.
+  const warmingUp =
+    (progress?.status === "starting" || progress?.status === "running") && steps.length === 0;
 
   const items: SetupItem[] = groups.map((group, index) => {
     const status = groupStatus(steps, group, progress ?? { status: "" });

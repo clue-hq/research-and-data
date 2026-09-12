@@ -21,6 +21,10 @@
  *    script **ends here**, where the screen's life ends: the hook releases on this frame and
  *    never polls again.
  *
+ * The release frame also carries a `succeeded` brand-kit ingestion job — the design ingestion
+ * fires with the run and has normally published its draft kit by the release, so the checklist's
+ * brand-kit row really does reach `complete` on the preview path too.
+ *
  * The release frame deliberately carries the background work that outlives it — a `persona` step
  * running and a `product_research` step queued — because that is what the lane really serves at
  * release, and it is what makes the audience row say personas continue. Nothing past the release
@@ -49,8 +53,17 @@ function step(
   };
 }
 
-const frame = (status: SetupStatus["status"], steps: SetupStep[]): SetupStatus =>
-  SetupStatusSchema.parse({ status, run_id: "run-fixture", steps, brand_kit_ingestion: null });
+const frame = (
+  status: SetupStatus["status"],
+  steps: SetupStep[],
+  brandKit: SetupStatus["brand_kit_ingestion"] = null,
+): SetupStatus =>
+  SetupStatusSchema.parse({
+    status,
+    run_id: "run-fixture",
+    steps,
+    brand_kit_ingestion: brandKit,
+  });
 
 /**
  * A scripted new-lane run: queued → the three fast reads in parallel → the ICP turn → release,
@@ -73,13 +86,21 @@ export const FIXTURE_SETUP_PROGRESS_SCRIPT: readonly SetupStatus[] = [
     step("reviews", "empty"),
     step("synthesis", "running"),
   ]),
-  frame("complete", [
-    step("overview", "completed"),
-    step("lineup", "completed"),
-    step("catalog_sync", "completed"),
-    step("reviews", "empty"),
-    step("synthesis", "completed"),
-    step("persona", "running", "background", "clue-abm-buyers"),
-    step("product_research", "queued", "background", "prd-1"),
-  ]),
+  frame(
+    "complete",
+    [
+      step("overview", "completed"),
+      step("lineup", "completed"),
+      step("catalog_sync", "completed"),
+      step("reviews", "empty"),
+      step("synthesis", "completed"),
+      step("persona", "running", "background", "clue-abm-buyers"),
+      step("product_research", "queued", "background", "prd-1"),
+    ],
+    // The release frame carries a PUBLISHED brand kit: `POST /onboarding` fires the ingestion
+    // at the same moment the run starts, and `GET /onboarding/current` serves the job, so by
+    // the release the row has really moved. A fixture that left it null would preview a row
+    // that never moves — the exact defect the live read exists to close.
+    { job_id: "job-fixture", status: "succeeded" },
+  ),
 ];

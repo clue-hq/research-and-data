@@ -54,45 +54,90 @@ export type SetupStatus = z.infer<typeof SetupStatusSchema>;
 
 /** The steps whose completion releases the user (founder ruling 2026-09-12). */
 export const FAST_STEP_KINDS = ["overview", "lineup", "reviews", "synthesis"] as const;
-/** `empty` is a correct outcome for a step, not a failure — it counts as done. */
-const STEP_DONE = new Set(["completed", "empty"]);
+/** A step that will never report again. `empty` is a CORRECT outcome, not a failure — the
+ * failed/complete split below is made on `failed` alone. */
+const STEP_TERMINAL = new Set(["completed", "empty", "failed"]);
+
+/**
+ * The run statuses that mean the run finished its work, from the migration's own CHECK
+ * (`alembic/versions/0aa95f87eb49_arv2_onboarding_substrate.py:70` — the run vocabulary is
+ * `queued | running | completed | completed_with_gaps | failed`).
+ *
+ * `completed_with_gaps` is the lane's ORDINARY terminal, not a degraded one: `finish_run`
+ * settles there whenever any step came back `empty` or `failed`, and `empty` is a correct
+ * outcome (nobody could find reviews for this company). Anything not listed here falls to
+ * `unavailable`, which is a hard terminal with no "Try again" — so a new run status must be a
+ * decision taken here, never an accident.
+ */
+const RUN_TERMINAL_OK = new Set(["completed", "completed_with_gaps"]);
 
 const OnboardingCurrentWireSchema = z.object({
   runId: z.string().nullable().optional().default(null),
   status: z.string(),
   steps: z.array(SetupStepSchema).optional().default([]),
+  // Additive and nullable: a backend that does not serve the job (or a workspace with none)
+  // is honest null, and the checklist row then claims nothing.
+  brandKitIngestion: z
+    .object({ jobId: z.string().min(1), status: z.string() })
+    .nullable()
+    .optional()
+    .default(null),
 });
 
 /** `GET /onboarding/current` → the screen's status. Pure; the release rule lives here. */
 export function setupStatusFromOnboarding(wire: unknown): SetupStatus {
   const body = OnboardingCurrentWireSchema.parse(wire);
-  const fast = FAST_STEP_KINDS.map((kind) => body.steps.find((s) => s.kind === kind) ?? null);
+  // What each fast kind owes the release. The PHASE is the backend's to decide
+  // (`CLUE_ONBOARDING_REVIEWS_PHASE=background` moves `reviews` off the fast lane), and
+  // background work NEVER holds the release — so a fast kind the backend reported only in the
+  // background phase owes nothing, and its failure is not the screen's failure either.
+  const gating = FAST_STEP_KINDS.map((kind) => {
+    const fast = body.steps.find((s) => s.kind === kind && s.phase !== "background") ?? null;
+    return { fast, backgrounded: fast === null && body.steps.some((s) => s.kind === kind) };
+  });
+  // "Nothing is still owed" — not "every step exists": an unreported kind is still to come,
+  // while a backgrounded one is never coming to this screen.
+  const settled = gating.every(
+    (g) => g.backgrounded || (g.fast !== null && STEP_TERMINAL.has(g.fast.status)),
+  );
   let status: SetupStatus["status"];
   if (body.status === "none") status = "none";
   else if (body.status === "queued") status = "starting";
-  else if (body.status === "completed") status = "complete";
+  else if (RUN_TERMINAL_OK.has(body.status)) status = "complete";
   else if (body.status === "failed") status = "failed";
   else if (body.status === "running") {
-    if (fast.some((s) => s?.status === "failed")) status = "failed";
-    else if (fast.every((s) => s !== null && STEP_DONE.has(s.status))) status = "complete";
+    // The verdict waits for every gating step to settle (ruling R6). A provider error is a
+    // STEP outcome and the run carries on, so calling the screen failed on the first failure
+    // would strand a user whose other three steps were about to release them — the poll stops
+    // on a terminal, and no control here can restart a run.
+    if (settled && gating.some((g) => g.fast?.status === "failed")) status = "failed";
+    else if (settled) status = "complete";
     else status = "running";
   } else status = "unavailable";
   return SetupStatusSchema.parse({
     status,
     run_id: body.runId,
     steps: body.steps,
-    brand_kit_ingestion: null,
+    brand_kit_ingestion:
+      body.brandKitIngestion === null
+        ? null
+        : { job_id: body.brandKitIngestion.jobId, status: body.brandKitIngestion.status },
   });
 }
 
-/** The profile's website as the lane wants it: a bare registrable host. */
+/**
+ * The profile's website as the lane wants it: a bare registrable host.
+ *
+ * Scheme, `www.`, path, query, fragment and port are all folded away — anything after the host
+ * is the page the user happened to copy, not the company the lane researches.
+ */
 export function companyDomainOf(companyWebsite: string): string {
   return companyWebsite
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
-    .replace(/\/.*$/, "");
+    .replace(/[/?#:].*$/, "");
 }
 
 export class SetupApiError extends Error {

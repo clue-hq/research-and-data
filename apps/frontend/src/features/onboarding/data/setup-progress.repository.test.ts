@@ -12,7 +12,7 @@ import {
   createFixtureSetupProgressSource,
   httpSetupProgressSource,
 } from "./setup-progress.repository";
-import { CONTINUING_ANNOTATION, deriveSetupItems } from "../model/setup-items";
+import { BRAND_KIT_ITEM_ID, CONTINUING_ANNOTATION, deriveSetupItems } from "../model/setup-items";
 import type { OnboardingFlow, SetupItem } from "../model/onboarding";
 
 const STATUS_RANK: Record<SetupItem["status"], number> = {
@@ -26,6 +26,15 @@ const FIXTURE_SETUP: OnboardingFlow["setup"] = {
   finalizingDetail: "Finalizing",
   // No brand-kit row: this test is about the durable groups, not the ratified dummy.
   items: [{ id: "unused", label: "unused", detail: "unused", status: "queued" }],
+};
+
+/** The same fixture WITH the brand-kit row, for the one assertion that is about that row. */
+const FIXTURE_SETUP_WITH_BRAND_KIT: OnboardingFlow["setup"] = {
+  ...FIXTURE_SETUP,
+  items: [
+    ...FIXTURE_SETUP.items,
+    { id: BRAND_KIT_ITEM_ID, label: "Creating brand kit", detail: "Colours and type", status: "queued" },
+  ],
 };
 
 /** The checklist as the screen would render it for a given frame, keyed by row id. */
@@ -143,6 +152,13 @@ test("the scripted run walks the checklist from warm-up to release, through the 
     ),
     "only the audience row promises continuing work",
   );
+
+  // The brand-kit row moves on the same truth the live read now serves: the ingestion fires
+  // with the run and has published its draft kit by the release.
+  const releaseFrame = FIXTURE_SETUP_PROGRESS_SCRIPT[FIXTURE_SETUP_PROGRESS_SCRIPT.length - 1]!;
+  assert.equal(releaseFrame.brand_kit_ingestion?.status, "succeeded");
+  const withBrandKit = deriveSetupItems(FIXTURE_SETUP_WITH_BRAND_KIT, releaseFrame);
+  assert.equal(withBrandKit.find((item) => item.id === BRAND_KIT_ITEM_ID)?.status, "complete");
 
   // The stream sticks on the release frame: the hook releases here and never polls again.
   assert.deepEqual(rowsOf(await source.read()), released);

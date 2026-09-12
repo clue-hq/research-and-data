@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   SetupApiError,
   SetupStatusSchema,
+  companyDomainOf,
   readSetupStatus,
   setupStatusFromOnboarding,
   startWorkspaceSetup,
@@ -69,11 +70,107 @@ test("a fast step still running keeps the screen running; a failed fast step fai
   ];
   assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "running");
   steps[1] = step("lineup", "failed");
-  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "failed");
+  // R6: one failure does not end the screen while its neighbours are still working.
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "running");
 });
 
-test("an unknown run status degrades to unavailable rather than breaking the poll", () => {
-  assert.equal(setupStatusFromOnboarding({ ...running, status: "paused" }).status, "unavailable");
+test("the failed verdict waits for every fast step to settle (ruling R6)", () => {
+  // A provider error is a STEP outcome; the run carries on. Declaring the screen failed here
+  // would stop the poll on a run that was about to release the user.
+  const inFlight = [
+    step("overview", "failed"),
+    step("lineup", "running"),
+    step("reviews", "completed"),
+    step("synthesis", "queued"),
+  ];
+  assert.equal(setupStatusFromOnboarding({ ...running, steps: inFlight }).status, "running");
+
+  const settled = [
+    step("overview", "failed"),
+    step("lineup", "completed"),
+    step("reviews", "empty"),
+    step("synthesis", "completed"),
+  ];
+  assert.equal(setupStatusFromOnboarding({ ...running, steps: settled }).status, "failed");
+});
+
+test("a fast kind moved to the background phase never gates the release", () => {
+  // `CLUE_ONBOARDING_REVIEWS_PHASE=background` moves `reviews` off the fast lane; the step
+  // keeps its kind, and background work must never hold the release.
+  const steps = [
+    step("overview", "completed"),
+    step("lineup", "completed"),
+    step("reviews", "running", "background"),
+    step("synthesis", "completed"),
+  ];
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "complete");
+  // Nor does its failure fail the screen.
+  steps[2] = step("reviews", "failed", "background");
+  assert.equal(setupStatusFromOnboarding({ ...running, steps }).status, "complete");
+});
+
+test("every run status the backend can emit maps to a named screen status", () => {
+  // The run vocabulary is the migration's CHECK (0aa95f87eb49 — `queued | running |
+  // completed | completed_with_gaps | failed`), plus the route's synthetic `none`. A raw wire
+  // body per case, so this table exercises the real parse.
+  const done = FAST_STEP_KINDS.map((kind) => step(kind, "completed"));
+  const cases: [string, unknown[], string][] = [
+    ["none", [], "none"],
+    ["queued", [], "starting"],
+    ["running", [], "running"],
+    ["running", done, "complete"],
+    ["completed", [], "complete"],
+    // The lane's ORDINARY terminal: any `empty` or `failed` step settles the run here, and
+    // `empty` is a correct outcome. It is a release, not "setup isn't available".
+    ["completed_with_gaps", [], "complete"],
+    ["failed", [], "failed"],
+    ["paused", [], "unavailable"],
+  ];
+  for (const [wireStatus, steps, expected] of cases) {
+    assert.equal(
+      setupStatusFromOnboarding({
+        schema_version: "1",
+        runId: wireStatus === "none" ? null : "run-1",
+        status: wireStatus,
+        steps,
+        costUsd: "0",
+      }).status,
+      expected,
+      `run status ${wireStatus} with ${steps.length} steps`,
+    );
+  }
+});
+
+test("the brand-kit ingestion job is carried through from the wire, or honest null", () => {
+  assert.deepEqual(
+    setupStatusFromOnboarding({
+      ...running,
+      brandKitIngestion: { jobId: "job-1", status: "succeeded" },
+    }).brand_kit_ingestion,
+    { job_id: "job-1", status: "succeeded" },
+  );
+  // A future job status degrades to in-flight, never to a kit that exists (FE-N2).
+  assert.equal(
+    setupStatusFromOnboarding({
+      ...running,
+      brandKitIngestion: { jobId: "job-1", status: "who-knows" },
+    }).brand_kit_ingestion?.status,
+    "running",
+  );
+  // Absent (a backend that does not serve it) and explicit null are both "no job".
+  assert.equal(setupStatusFromOnboarding(running).brand_kit_ingestion, null);
+  assert.equal(
+    setupStatusFromOnboarding({ ...running, brandKitIngestion: null }).brand_kit_ingestion,
+    null,
+  );
+});
+
+test("companyDomainOf folds everything after the host away", () => {
+  assert.equal(
+    companyDomainOf("  HTTPS://www.Insighthealth.ai:8443/pricing?ref=x#plans  "),
+    "insighthealth.ai",
+  );
+  assert.equal(companyDomainOf("insighthealth.ai"), "insighthealth.ai");
 });
 
 test("start posts the company domain to the new lane and read parses the new shape", async (t) => {
