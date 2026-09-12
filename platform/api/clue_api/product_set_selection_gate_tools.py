@@ -51,6 +51,7 @@ from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.brand_knowledge_context import (
     KnowledgeDocumentRef,
     current_knowledge_documents,
+    current_project_knowledge_refs,
 )
 from clue_api.turn_action import (
     TurnActionUnresolvable,
@@ -264,8 +265,17 @@ class OpenProductSetSelectionGateTool(Tool):
                     "this brand has no products to choose between",
                     reason_code="product_set_no_candidates",
                 )
-            documents = await current_knowledge_documents(
-                conn, workspace_id=ctx.workspace_id, brand_id=brand_id
+            # Both scopes, because the ICP pre-check below must find the document this project
+            # would actually be asked about: its own variant when it authored one, the brand's
+            # otherwise. The brand reader no longer returns project rows, so they are unioned in
+            # rather than filtered out.
+            documents = (
+                *await current_knowledge_documents(
+                    conn, workspace_id=ctx.workspace_id, brand_id=brand_id
+                ),
+                *await current_project_knowledge_refs(
+                    conn, workspace_id=ctx.workspace_id, project_id=turn.project_id
+                ),
             )
             catalog = _current_catalog(documents)
             catalog_front = (

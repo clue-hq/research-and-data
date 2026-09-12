@@ -1971,6 +1971,9 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     brand_id=brand_id,
                     icp_key=icp_key,
+                    # Same scope the gate was opened in, so a project-local variant revalidates
+                    # against itself rather than against the brand's document at that path.
+                    project_id=project_id,
                 )
                 if (
                     current is None
@@ -2597,6 +2600,7 @@ def build_chat_router(
                             workspace_id=who.workspace_id,
                             brand_id=brand_id,
                             icp_key=str(snapshot["icp_key"]),
+                            project_id=project_id,
                         )
                         product_set = await current_project_product_set(
                             conn,

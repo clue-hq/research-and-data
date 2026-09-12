@@ -136,14 +136,19 @@ async def save_knowledge_document(
     update: KnowledgeDocumentUpdate,
     user_id: str,
 ) -> KnowledgeDocumentDetailWire:
-    """Append human-edited Markdown. Never mutate bytes pinned by an existing turn or gate."""
+    """Append human-edited Markdown. Never mutate bytes pinned by an existing turn or gate.
+
+    Brand-level rows only: this surface edits the brand's knowledge, so a project-scoped document
+    is a 404 here, and the version it appends is the next **brand** version of that path.
+    """
     row = (
         (
             await conn.execute(
                 text(
                     "SELECT * FROM brand_knowledge_document "
                     "WHERE workspace_id = :ws AND document_id = :id "
-                    "AND folder IN ('company', 'product', 'audience', 'proof') FOR UPDATE"
+                    "AND folder IN ('company', 'product', 'audience', 'proof') "
+                    "AND project_id IS NULL FOR UPDATE"
                 ),
                 {"ws": workspace_id, "id": document_id},
             )
@@ -167,7 +172,7 @@ async def save_knowledge_document(
     latest = await conn.scalar(
         text(
             "SELECT MAX(version) FROM brand_knowledge_document WHERE workspace_id = :ws "
-            "AND brand_id = :brand AND path = :path"
+            "AND brand_id = :brand AND path = :path AND project_id IS NULL"
         ),
         {"ws": workspace_id, "brand": row["brand_id"], "path": row["path"]},
     )
@@ -376,10 +381,10 @@ _CURRENT_SERVABLE_SQL = text(
     " d.artifact_key, d.artifact_sha256 "
     "FROM brand_knowledge_document d "
     "WHERE d.workspace_id = :ws AND d.brand_id = :brand AND d.folder IN :folders "
-    " AND d.status IN :servable "
+    " AND d.status IN :servable AND d.project_id IS NULL "
     " AND d.version = (SELECT MAX(d2.version) FROM brand_knowledge_document d2 "
     "   WHERE d2.workspace_id = d.workspace_id AND d2.brand_id = d.brand_id "
-    "     AND d2.path = d.path AND d2.status IN :servable) "
+    "     AND d2.path = d.path AND d2.status IN :servable AND d2.project_id IS NULL) "
     "ORDER BY d.folder, d.path"
 ).bindparams(bindparam("folders", expanding=True), bindparam("servable", expanding=True))
 
@@ -479,9 +484,10 @@ async def read_knowledge_document(
 ) -> KnowledgeDocumentDetailWire | None:
     """One servable document with its markdown, front matter and flattened sources.
 
-    ``None`` when the row is missing, belongs to another workspace, is not servable, or lives in a
-    folder this surface does not serve — the caller turns all four into the same 404, so a probe
-    cannot distinguish "not yours" from "not there".
+    ``None`` when the row is missing, belongs to another workspace, is not servable, lives in a
+    folder this surface does not serve, or is scoped to a project — the caller turns all of them
+    into the same 404, so a probe cannot distinguish "not yours" from "not there". This is the
+    *brand* knowledge surface; a project's own documents are read through the project surface.
     """
     row = (
         (
@@ -490,7 +496,7 @@ async def read_knowledge_document(
                     "SELECT document_id, folder, path, kind, version, status, updated_at, "
                     " artifact_key, artifact_sha256 FROM brand_knowledge_document "
                     "WHERE workspace_id = :ws AND document_id = :id AND status IN :servable "
-                    " AND folder IN :folders"
+                    " AND folder IN :folders AND project_id IS NULL"
                 ).bindparams(
                     bindparam("servable", expanding=True), bindparam("folders", expanding=True)
                 ),
@@ -591,7 +597,7 @@ def register_brand_knowledge_routes(
                     user_id=user_id,
                 )
         except IntegrityError as exc:
-            if "brand_knowledge_document_path_version" in str(exc.orig):
+            if "brand_knowledge_document_scope_path_version" in str(exc.orig):
                 raise _revision_conflict() from exc
             raise
 

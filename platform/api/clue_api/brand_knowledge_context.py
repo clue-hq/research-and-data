@@ -41,11 +41,13 @@ from uuid import UUID
 import yaml
 from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import WorkspaceSeedFile
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
+from clue_api.project_context_files import project_workspace_path
 from clue_core import UtcDatetime
 from clue_spine import ProjectProductSet
 from clue_storage import StorageBackend, read_verified_artifact
@@ -65,6 +67,7 @@ __all__ = [
     "compile_brand_knowledge_index_card",
     "confirmed_icp_for_project",
     "current_knowledge_documents",
+    "current_project_knowledge_refs",
     "get_knowledge_pin",
     "knowledge_seed_files",
     "load_or_create_knowledge_pin",
@@ -85,7 +88,8 @@ _PRODUCT_RESEARCH_KIND = "product-research"
 #: One index line per document: long enough to tell two ICPs apart, short enough to stay an index.
 _SUMMARY_MAX_CHARS = 160
 _DOCUMENT_COLUMNS = (
-    "document_id, path, kind, version, status, artifact_key, artifact_sha256, updated_at"
+    "document_id, path, kind, version, status, artifact_key, artifact_sha256, updated_at, "
+    "project_id"
 )
 _PIN_COLUMNS = "turn_id, workspace_id, brand_id, documents, documents_sha256, pinned_at"
 
@@ -106,6 +110,28 @@ class KnowledgeDocumentRef:
     artifact_key: str
     artifact_sha256: str
     updated_at: datetime
+    #: ``None`` for a brand-level document; set for a document scoped to one project (a
+    #: project-local ICP variant, its personas, the project plan). It defaults because the pinned
+    #: sets already at rest in ``agent_turn_knowledge_pin.documents`` were written without it, and
+    #: every one of those rows is brand-level.
+    project_id: str | None = None
+
+
+def _ref_from_row(row: RowMapping) -> KnowledgeDocumentRef:
+    """One ``brand_knowledge_document`` row as a ref — the single decode every reader shares."""
+
+    project_id = row["project_id"]
+    return KnowledgeDocumentRef(
+        document_id=row["document_id"],
+        path=str(row["path"]),
+        kind=str(row["kind"]),
+        version=int(row["version"]),
+        status=str(row["status"]),
+        artifact_key=str(row["artifact_key"]),
+        artifact_sha256=str(row["artifact_sha256"]),
+        updated_at=row["updated_at"],
+        project_id=None if project_id is None else str(project_id),
+    )
 
 
 def _canonical_json(value: object) -> bytes:
@@ -128,6 +154,7 @@ def _ref_payload(ref: KnowledgeDocumentRef) -> dict[str, Any]:
         "artifact_key": ref.artifact_key,
         "artifact_sha256": ref.artifact_sha256,
         "updated_at": ref.updated_at.isoformat(),
+        "project_id": ref.project_id,
     }
 
 
@@ -148,7 +175,12 @@ async def current_knowledge_documents(
     workspace_id: str,
     brand_id: str,
 ) -> tuple[KnowledgeDocumentRef, ...]:
-    """The brand's current servable knowledge documents — the max version of each path."""
+    """The brand's current servable knowledge documents — the max version of each path.
+
+    **Brand-level rows only.** A project-scoped document belongs to one project, and this reader
+    answers "what does this *brand* know" — a question no project's private variant may change.
+    Its own reader is :func:`current_project_knowledge_refs`.
+    """
 
     rows = (
         await conn.execute(
@@ -157,6 +189,7 @@ async def current_knowledge_documents(
                 "FROM brand_knowledge_document "
                 "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                 "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
+                "  AND project_id IS NULL "
                 "ORDER BY path, version DESC"
             ),
             {
@@ -166,19 +199,39 @@ async def current_knowledge_documents(
             },
         )
     ).mappings()
-    return tuple(
-        KnowledgeDocumentRef(
-            document_id=row["document_id"],
-            path=str(row["path"]),
-            kind=str(row["kind"]),
-            version=int(row["version"]),
-            status=str(row["status"]),
-            artifact_key=str(row["artifact_key"]),
-            artifact_sha256=str(row["artifact_sha256"]),
-            updated_at=row["updated_at"],
+    return tuple(_ref_from_row(row) for row in rows.all())
+
+
+async def current_project_knowledge_refs(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> tuple[KnowledgeDocumentRef, ...]:
+    """One project's own servable knowledge documents — the max version of each path.
+
+    The mirror of :func:`current_knowledge_documents` on the other side of the scope: the ICP
+    variants, personas and plan a project authored for itself. Read inside one workspace, so
+    another tenant's project rows are indistinguishable from absence.
+    """
+
+    rows = (
+        await conn.execute(
+            text(
+                f"SELECT DISTINCT ON (path) {_DOCUMENT_COLUMNS} "
+                "FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
+                "ORDER BY path, version DESC"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "statuses": list(SERVABLE_STATUSES),
+            },
         )
-        for row in rows.all()
-    )
+    ).mappings()
+    return tuple(_ref_from_row(row) for row in rows.all())
 
 
 async def _document_ref(
@@ -210,16 +263,7 @@ async def _document_ref(
     )
     if row is None:
         return None
-    return KnowledgeDocumentRef(
-        document_id=row["document_id"],
-        path=str(row["path"]),
-        kind=str(row["kind"]),
-        version=int(row["version"]),
-        status=str(row["status"]),
-        artifact_key=str(row["artifact_key"]),
-        artifact_sha256=str(row["artifact_sha256"]),
-        updated_at=row["updated_at"],
-    )
+    return _ref_from_row(row)
 
 
 class KnowledgePinRow(BaseModel):
@@ -411,23 +455,31 @@ def workspace_paths(
     name, because it is what this project's ICP *is*, and the other version is offered beside it
     under a version-qualified name. Both are real, readable files; neither is silently dropped and
     neither overwrites the other.
+
+    A project-scoped document materializes under the project's prefix instead, by the one rule in
+    ``project_context_files.project_workspace_path``. Scope is therefore part of the grouping key:
+    a brand document and a project's variant of the same path occupy two different workspace paths
+    and do not collide, so neither has to be version-qualified out of the other's way.
     """
 
-    grouped: dict[str, list[PinnedDocument]] = {}
+    grouped: dict[tuple[str | None, str], list[PinnedDocument]] = {}
     for document in documents:
-        grouped.setdefault(document.ref.path, []).append(document)
+        grouped.setdefault((document.ref.project_id, document.ref.path), []).append(document)
     resolved: dict[UUID, str] = {}
-    for path, group in grouped.items():
+    for (project_id, path), group in grouped.items():
         keeper = next(
             (item for item in group if item.ref.document_id == pinned_document_id),
             # No pin on this path: the newest version answers to the plain name.
             max(group, key=lambda item: item.ref.version),
         )
         for document in group:
-            resolved[document.ref.document_id] = INPUT_PREFIX + (
+            name = (
                 path
                 if document.ref.document_id == keeper.ref.document_id
                 else _version_qualified(path, document.ref.version)
+            )
+            resolved[document.ref.document_id] = (
+                INPUT_PREFIX + name if project_id is None else project_workspace_path(name)
             )
     return resolved
 
@@ -437,7 +489,12 @@ def knowledge_seed_files(
     *,
     pinned_document_id: UUID | None = None,
 ) -> tuple[WorkspaceSeedFile, ...]:
-    """The read-only workspace files the model reads by path, one per pinned document."""
+    """The read-only workspace files the model reads by path, one per pinned **brand** document.
+
+    A project-scoped document is skipped here and seeded by the project files pin instead, which
+    owns everything under ``inputs/project/``. Two seeds for one path would be a materialization
+    conflict; one owner per prefix is the rule that prevents it.
+    """
 
     paths = workspace_paths(documents, pinned_document_id=pinned_document_id)
     return tuple(
@@ -448,6 +505,7 @@ def knowledge_seed_files(
             media_type=KNOWLEDGE_DOCUMENT_MEDIA_TYPE,
         )
         for document in documents
+        if document.ref.project_id is None
     )
 
 

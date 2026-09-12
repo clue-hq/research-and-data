@@ -77,6 +77,7 @@ def test_pinned_icp_products_discovery_and_research_render_from_the_rows() -> No
             product_selection_version=2,
             version=3,
             path="audience/icp-gi-groups.md",
+            project_id=None,
         ),
         product_set=ProjectProductSet(
             workspace_id="ws",

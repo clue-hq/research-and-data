@@ -165,13 +165,18 @@ async def open_document(
 
     Both FKs in the step ↔ document cycle are NOT DEFERRABLE, so the write order is fixed:
     the step already exists, the document names it, and only then does the step name the document.
+
+    The onboarding walk writes the **brand's** knowledge, so the version chain it continues is the
+    brand-level one: a project's own variant at the same path has its own history and must not
+    push the brand's next version along.
     """
     version = int(
         (
             await conn.execute(
                 text(
                     "SELECT COALESCE(MAX(version), 0) + 1 FROM brand_knowledge_document "
-                    "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path"
+                    "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path "
+                    "  AND project_id IS NULL"
                 ),
                 {"ws": workspace_id, "brand": brand_id, "path": path},
             )
@@ -215,13 +220,17 @@ async def publish_document(
     served fact — the driver writes an ``empty`` catalog document with its rendered "nothing found"
     body, which ``brand_knowledge_document_body_when_served`` permits (that CHECK binds only the
     served statuses).
+
+    Brand-level only, on both reads: this publishes what the brand walk opened, and it retires the
+    brand's previous version of that path. A project-scoped document id has no row here and raises
+    rather than being published through a walk that never opened it.
     """
     row = (
         (
             await conn.execute(
                 text(
                     "SELECT workspace_id, brand_id, path, version FROM brand_knowledge_document "
-                    "WHERE document_id = :id"
+                    "WHERE document_id = :id AND project_id IS NULL"
                 ),
                 {"id": document_id},
             )
@@ -235,7 +244,8 @@ async def publish_document(
                 text(
                     "SELECT document_id FROM brand_knowledge_document WHERE workspace_id = :ws "
                     "AND brand_id = :brand AND path = :path AND version < :version "
-                    "AND status IN :served ORDER BY version DESC LIMIT 1"
+                    "AND status IN :served AND project_id IS NULL "
+                    "ORDER BY version DESC LIMIT 1"
                 ).bindparams(bindparam("served", expanding=True)),
                 {
                     "ws": row["workspace_id"],
@@ -440,12 +450,13 @@ async def list_documents(
     """The brand's knowledge documents — the current version of each path, or every version.
 
     O5's read endpoint and O4's materialization both take the default (current) view; the history
-    is only for callers that need to see what a path used to be.
+    is only for callers that need to see what a path used to be. Brand-level rows only, in both
+    views: a project's own documents are that project's, and are read through the project reader.
     """
     current_only = (
         " AND version = (SELECT MAX(d2.version) FROM brand_knowledge_document d2 "
         " WHERE d2.workspace_id = d.workspace_id AND d2.brand_id = d.brand_id "
-        " AND d2.path = d.path)"
+        " AND d2.path = d.path AND d2.project_id IS NULL)"
     )
     where = "" if all_versions else current_only
     rows = (
@@ -454,7 +465,7 @@ async def list_documents(
                 text(
                     "SELECT document_id, folder, path, kind, version, status, artifact_key, "
                     " artifact_sha256 FROM brand_knowledge_document d "
-                    f"WHERE workspace_id = :ws AND brand_id = :brand{where} "
+                    f"WHERE workspace_id = :ws AND brand_id = :brand AND project_id IS NULL{where} "
                     "ORDER BY folder, path, version"
                 ),
                 {"ws": workspace_id, "brand": brand_id},

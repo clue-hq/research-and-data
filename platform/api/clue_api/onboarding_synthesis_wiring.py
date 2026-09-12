@@ -263,6 +263,9 @@ class RegisteredIcp:
     icp_key: str
     version: int
     path: str
+    #: The ICP's scope: ``None`` for the brand's own ICP, a project id for a project-local variant.
+    #: A persona written for that ICP is written in the same scope (Task 4 threads it through).
+    project_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1270,6 +1273,11 @@ class OnboardingSynthesisLauncher:
                 continue
             prefix, status = naming
             path = f"audience/{prefix}-{icp_key}.md"
+            # An ICP turn writes the brand's ICPs; a persona turn writes in the scope of the ICP it
+            # was asked about, so a project-local ICP's personas are that project's too. The whole
+            # version chain below — the next version, the row it supersedes, the rows it retires —
+            # is read and written inside that one scope.
+            project_id = None if icp is None else icp.project_id
             document_id = uuid5(
                 NAMESPACE_URL,
                 f"onboarding-synthesis-doc:{turn_id}:{path}",
@@ -1289,11 +1297,13 @@ class OnboardingSynthesisLauncher:
                                 "     FROM brand_knowledge_document"
                                 "    WHERE workspace_id = :workspace_id"
                                 "      AND brand_id = :brand_id AND path = :path"
+                                "      AND project_id IS NOT DISTINCT FROM :project_id"
                                 "  ) AS next_version,"
                                 "  (SELECT document_id"
                                 "     FROM brand_knowledge_document"
                                 "    WHERE workspace_id = :workspace_id"
                                 "      AND brand_id = :brand_id AND path = :path"
+                                "      AND project_id IS NOT DISTINCT FROM :project_id"
                                 "      AND status = ANY(:statuses)"
                                 "    ORDER BY version DESC LIMIT 1"
                                 "  ) AS supersedes_document_id"
@@ -1302,6 +1312,7 @@ class OnboardingSynthesisLauncher:
                                 "workspace_id": workspace_id,
                                 "brand_id": brand_id,
                                 "path": path,
+                                "project_id": project_id,
                                 "statuses": list(SERVABLE_STATUSES),
                             },
                         )
@@ -1314,11 +1325,12 @@ class OnboardingSynthesisLauncher:
                 await conn.execute(
                     text(
                         "INSERT INTO brand_knowledge_document ("
-                        "  document_id, workspace_id, brand_id, folder, path, kind, version, "
-                        "  status, artifact_key, artifact_sha256, produced_by_turn_id, "
+                        "  document_id, workspace_id, brand_id, project_id, folder, path, kind, "
+                        "  version, status, artifact_key, artifact_sha256, produced_by_turn_id, "
                         "  supersedes_document_id"
                         ") VALUES ("
-                        "  :document_id, :workspace_id, :brand_id, 'audience', :path, :kind, "
+                        "  :document_id, :workspace_id, :brand_id, :project_id, 'audience', "
+                        "  :path, :kind, "
                         "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, "
                         "  :supersedes"
                         ") ON CONFLICT (document_id) DO NOTHING"
@@ -1327,6 +1339,7 @@ class OnboardingSynthesisLauncher:
                         "document_id": document_id,
                         "workspace_id": workspace_id,
                         "brand_id": brand_id,
+                        "project_id": project_id,
                         "path": path,
                         "kind": kind,
                         "version": version,
@@ -1350,12 +1363,14 @@ class OnboardingSynthesisLauncher:
                         "  updated_at = now() "
                         "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                         "  AND path = :path AND document_id <> :document_id "
-                        "  AND status = ANY(:statuses)"
+                        "  AND status = ANY(:statuses) "
+                        "  AND project_id IS NOT DISTINCT FROM :project_id"
                     ),
                     {
                         "workspace_id": workspace_id,
                         "brand_id": brand_id,
                         "path": path,
+                        "project_id": project_id,
                         "document_id": document_id,
                         "statuses": list(RETIRABLE_STATUSES),
                     },
