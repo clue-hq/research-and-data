@@ -63,14 +63,6 @@
   box-shadow: inset 0 0 0 1px var(--clue-ds-color-border-neutral);
 }
 
-.projectTitle,
-.conversationTitle {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .projectRowActions {
   display: flex;
   flex: none;
