@@ -194,3 +194,17 @@ SELECT document_id, path, version, status, project_id, derived_from_document_id
   reaches it today (it filters `folder IN ('company','product','audience','proof')`).
 - The lane DB carries committed rows from earlier work (`agent_gate_answer`, `arv2_research_job`,
   `recipe0-stage0@2`) behind several of the pre-existing reds; a reset would clear them.
+
+## Final review + fix wave (2026-09-12, later)
+
+Opus whole-plan review: 0 Critical / 4 Important / 8 Minor / 6 Nit. Fix wave `92cf5cc84` applied I1–I4,
+M3–M8: `status.md`'s Confirmed ICP path follows the pin's scope; a pinned project-local ICP is seeded
+under the plain name beside its newer version (`audience/icp-<key>.v<n>.md`); the authoring receipt's
+`workspace_path` applies the same pin rule; a settled persona run answers `replayed=True` (completed)
+or `persona_run_settled` (failed) instead of `enqueue_failed`; `status.md` gains a `## Personas`
+section; the brand index card lists brand rows only; the product-set gate's catalog is brand-only;
+`storage.put` happens after the INSERT on the authoring path; README states lineage is re-checked
+against the reader's workspace. Parked: M1 (skill §5b key wording — lands in plan 3's skill v24:
+"keep the existing key for a brand-level revision"), M2's staleness bound on open persona runs, nits.
+Two `test_chat_gate_answers_o6_db.py` tests are red on this lane DB only because of four
+`agent_gate_answer` rows from live walks (they assert a global zero count) — not this work.
