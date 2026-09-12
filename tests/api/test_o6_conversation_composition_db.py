@@ -6,10 +6,11 @@ seven-layer assembler and the real workspace lease. Four properties are asserted
 and from the lease's own bytes, never from an in-memory convenience:
 
 * the turn writes exactly one ``agent_turn_knowledge_pin`` row naming the brand's current documents;
-* L3 carries exactly one composed project artifact — ``brand_knowledge_index`` — and none of the
-  four cards the old production envelope compiled;
+* L3 carries exactly two composed project artifacts — ``brand_knowledge_index`` and
+  ``project_files_index`` — and none of the four cards the old production envelope compiled;
 * the pinned documents are on the lease, read-only, under ``inputs/brand/knowledge/`` at the digest
-  the pin recorded;
+  the pin recorded, and the turn's compiled project files are beside them under
+  ``inputs/project/`` at the digest their own pin recorded;
 * publishing a newer document after the pin cannot change what a retry of that turn seeds;
 * the resource manifest the turn committed to discloses the new lane's surface and not the old
   one's — no ``account-deep-steering`` skill and none of the five old-research-lane tools, and the
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -519,11 +521,14 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "product/aura.md",
                 ]
 
-                # 2. L3 carries the index and none of the four retired cards.
+                # 2. L3 carries both indexes and none of the four retired cards. Every path here
+                # is ``context/project/<constitution artifact name>.json``, so this is also the
+                # assertion that ``project_context_artifacts`` names both index cards.
                 assert await _l3_paths(conn, submission.turn_id) == (
                     "context/project/brand_knowledge_index.json",
                     "context/project/budget.json",
                     "context/project/project_card.json",
+                    "context/project/project_files_index.json",
                 )
 
                 # 3. the pinned documents are on the lease, read-only, at the pinned digest.
@@ -534,6 +539,32 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert entry.read_only is True
                 for path in ("audience/icp-gi-groups.md", "product/aura.md"):
                     assert lease.backend.stat_entry_sync(f"{INPUT_PREFIX}{path}").read_only is True
+
+                # 3b. the compiled project files are seeded read-only beside them, and the opening
+                # index names exactly the two paths the model can open.
+                for path in ("inputs/project/status.md", "inputs/project/decisions.md"):
+                    assert lease.backend.stat_entry_sync(path).read_only is True
+                status_body = lease.backend.read_text_sync("inputs/project/status.md")
+                assert status_body.startswith("# Project status\n")
+                assert "## Confirmed ICP" in status_body
+                project_index = json.loads(
+                    lease.backend.read_text_sync("context/project/project_files_index.json")
+                )
+                assert project_index["card_kind"] == "project_files_index"
+                assert sorted(item["workspace_path"] for item in project_index["files"]) == [
+                    "inputs/project/decisions.md",
+                    "inputs/project/status.md",
+                ]
+                files_digest = (
+                    await conn.execute(
+                        text(
+                            "SELECT files_sha256 FROM agent_turn_project_files "
+                            "WHERE turn_id = :turn"
+                        ),
+                        {"turn": submission.turn_id},
+                    )
+                ).scalar_one()
+                assert re.fullmatch(r"[0-9a-f]{64}", str(files_digest))
 
                 # 4. the index card itself — three entries, no confirmed ICP for this project.
                 index_key = (
