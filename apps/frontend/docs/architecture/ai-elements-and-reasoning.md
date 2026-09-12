@@ -204,14 +204,111 @@ records that actual state; it does not authorize further changes automatically.
 | 2. Apply the approved inline design | Use existing AI Elements Reasoning and Shimmer with Clue typography, a chevron and a subtle left rule. Render traces as literal text with line breaks, without Markdown parsing. | Landed. |
 | 3. Handle the lifecycle | Open when trace text arrives during a running turn, respect manual collapse across subsequent deltas/rounds, close after termination and allow reopening while text remains available. Show no empty disclosure; retain stopped/failed receipts. | Landed; synthetic lifecycle checks passed. |
 | 4. Contain long content | Wrap long identifiers, URLs, inline monospace values and fenced code inside the message width. Keep Markdown formatting in final answers and limit trace height with vertical scrolling. | Landed; actual-component browser checks passed at 320px panel width. |
-| 5. Verify a real conversation | After agreement, exercise an actual provider-backed turn in Semarang: multiple rounds, collapse/reopen while streaming, final answer, scrolling, and reload/reconnect. Also check keyboard operation and reduced-motion behavior. Record separately what the provider sends and what survives reload. | Pending. Existing history was smoke-tested; no new provider-backed turn was run for this change. |
+| 5. Verify a real conversation | Exercise an actual provider-backed turn in Semarang: multiple rounds, collapse/reopen while streaming, final answer, scrolling, and reload/reconnect. Also check keyboard operation and reduced-motion behavior. Record separately what the provider sends and what survives reload. | Incomplete. A founder-triggered Grok turn had four reasoning rounds but zero reasoning-text events. The gateway adapter defect below must be fixed before claiming real delivery. |
 
 The remaining product decision is trace availability and retention. The current
 backend permits provider trace text only in development and does not persist it.
 Making traces customer-visible in production or available after refresh requires
 a separate agreed backend contract; the frontend must not fabricate missing text
-or silently persist it in browser storage. Stop controls, composer changes and
-research-card polishing remain separate discussion items.
+or silently persist it in browser storage. Stop controls and the minimal queued-
+message Resume surface are now planned in
+[Projects §6A](../api-contracts/projects.md#chat-polish-delivery-plan).
+Research-card polishing and other textbox layout changes remain separate.
+
+<a id="provider-reasoning-delivery-repair"></a>
+
+### Provider reasoning delivery repair — planned, 2026-09-12
+
+**Status: explicitly included by the founder in the plan of action; development
+has not started.** This is CP1 in the combined chat-polish delivery plan. Preserve
+the approved inline/plain-text view; the missing part is real data delivery.
+
+**Verified local defect:** the Semarang worker already has trace mode `raw` and
+uses Grok through OpenRouter. The gateway's non-OpenAI chat-completions branch
+constructs `ChatOpenAI` from pinned `langchain-openai==1.4.1`. That adapter drops
+third-party reasoning fields before `TurnStreamCallbackHandler` can read them.
+An offline reproduction using its actual chunk converter discarded synthetic
+`reasoning`, `reasoning_content`, and `reasoning_details` fields. The live turn
+had reasoning status events but no reasoning-text deltas or snapshots. Its raw
+provider response was not captured; this is not evidence that the provider
+actually returned text for that particular turn.
+
+**Adapter direction:** use the maintained `ChatOpenRouter` integration for the
+existing OpenRouter chat-completions branch, after a compatibility test against
+our governed wrapper. Its documentation covers streaming, tool calling, native
+async, usage and standard reasoning content blocks. Pin a compatible version
+and update the lockfile when implementing; do not broadly upgrade LangChain or
+monkey-patch dependency internals. This is a proposed fit, not locally proven
+compatibility. [LangChain's OpenRouter integration](https://docs.langchain.com/oss/python/integrations/chat/openrouter).
+
+| Step | Work and ownership | Required evidence |
+| --- | --- | --- |
+| CP1.1 — Reproduce the loss | `tests/gateway/test_agent_model.py`, existing dev-lens tests; use fake HTTP streaming responses through the real configured adapter, not only hand-built normalized chunks | A failing regression demonstrates the current loss on the exact route; ordinary final-answer/tool streaming still works |
+| CP1.2 — Replace the lossy adapter | `libs/clue-gateway/clue_gateway/agent_model.py`, its `pyproject.toml`, `uv.lock` | The provider-specific implementation works with `GovernedAgentChatModel`, injected HTTP clients, sync/async streaming, tool binding and interruption; no separate model egress |
+| CP1.3 — Normalize once and project | `platform/api/clue_api/chat/turn_stream.py`; a gateway helper only if needed by the stable model seam | Provider-exposed text reaches existing reasoning part IDs in order, with correct round/attempt ownership and no duplicate characters |
+| CP1.4 — Real conversation acceptance | Existing `ChatReasoning` and transcript, live Semarang worker/API/browser | A supported-provider turn shows incremental real text in the approved disclosure; manually collapse/reopen across rounds, finish and Stop, with bounded widths |
+
+Implementation constraints:
+
+- Keep OpenAI's existing Responses path and the configured design routing scope
+  unchanged. Preserve model selection, effort/budget configuration, timeouts,
+  retries, usage attribution, cost accounting and provider routing. The shared
+  chat-completions branch has other consumers: run relevant ARV2/gateway contract
+  regressions rather than assume this affects only the visual chat. If the
+  provider-specific package cannot satisfy an existing wrapper requirement,
+  record the concrete incompatibility before choosing a narrow gateway-owned
+  adapter alternative; do not silently fork the model pipeline.
+- Inspect the actual normalized chunk shape from the selected pinned version.
+  Support standard `content_blocks` reasoning text as well as the retained
+  Responses-summary shape where applicable. The current extractor looks only
+  at selected `content` members and `additional_kwargs.reasoning_content`; merely
+  changing the constructor is insufficient if the normalized shape changes.
+- Choose one canonical source per chunk. If normalized blocks are derived from
+  additional kwargs, do not append both copies. Preserve legitimate repeated
+  words/fragments; do not deduplicate by comparing text values. Handle indexed
+  fragments, partial blocks, streaming versus final snapshots, and reconnect
+  replay using their actual event/part identity.
+- Display only text or summaries the provider explicitly exposes. OpenRouter
+  also carries structured and encrypted reasoning details; preserve required
+  provider metadata through tool continuations within the adapter, but never
+  render encrypted data, signatures or raw JSON as trace text. This follows the
+  provider's distinction between displayable reasoning and continuation data.
+  [OpenRouter reasoning format and preservation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+- Keep the existing `part_kind=reasoning` event path and closing snapshots.
+  Regular provider content and tool arguments cannot become trace text; the
+  assistant answer still comes only from the existing finalize-argument path.
+  Tests must include a single chunk containing both tool-call and reasoning
+  fields, ordinary text without reasoning, and encrypted-only/no-trace output.
+- Keep plain-text reasoning rendering, one minimizable disclosure, manual
+  collapse respected while streaming, Shimmer only during active reasoning,
+  and safe wrapping of backticks/Markdown-looking strings. Retain final-answer
+  Markdown rendering with its overflow guards.
+- Preserve the existing development-only trace gate. Fixing delivery in
+  Semarang does not silently enable customer-facing production traces or make
+  them permanent history. Provider-only metadata also must not bypass existing
+  artifact/log/checkpoint retention rules. Audit what the new adapter retains;
+  do not add raw payload logging as a debugging shortcut.
+- On Stop, close active reasoning state and flush already-received displayable
+  fragments through the same stream policy; do not fabricate text. Ephemeral
+  traces may disappear after a cold reset. The separate CP2 guarantee covers
+  the partial user-facing answer, not the provider's reasoning internals.
+
+Validation order: gateway wire-shape regression → emitter/dev-lens integration
+(`tests/api/test_lane_d_dev_lens_db.py`) → controller/actual-component checks →
+real provider-backed turn in Semarang. Include Grok's configured route and a
+regression for the preserved Responses path. Test request cancellation, tool
+continuations, retry/fallback ownership, Unicode and long backtick values, and
+prove usage/cost events are not doubled by observing the same chunk twice.
+
+For live acceptance, correlate model/request identity with reasoning event counts
+and a visible updating disclosure. Do not infer trace delivery from nonzero
+reasoning-token usage alone. Capture metadata/counts instead of proprietary trace
+text in the evidence log. If the chosen provider returns no displayable text,
+record that result honestly and verify delivery with a supported route; do not
+claim Grok success or silently change the user's selected model. No-trace output
+keeps the honest existing fallback and cannot be represented by illustrative POC
+text. After the adapter passes, run the combined Stop/queue/persistence scenario
+from Projects §6A and keep provider availability separate from retention.
 
 ### Agreed behavior
 
