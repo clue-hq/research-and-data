@@ -71,6 +71,7 @@ from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryService,
     build_arv2_discovery_tools,
 )
+from clue_api.arv2.icp_authoring import IcpAuthoringService
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -105,6 +106,7 @@ from clue_api.exa_targeted_enrichment import (
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.icp_artifact_gate_tools import build_icp_artifact_gate_tools
+from clue_api.icp_authoring_tools import build_icp_authoring_tools
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
@@ -2649,6 +2651,7 @@ def build_toolbelt(
     entity_research_launches: EntityResearchLaunchServices | None = None,
     arv2_account_launch: Arv2LaunchService | None = None,
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
+    icp_authoring: IcpAuthoringService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2800,6 +2803,14 @@ def build_toolbelt(
     # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
+        registry.register(tool, make_default=True)
+    # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
+    # the gate that confirms one. Registered on every deployment for the same reason as its
+    # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and
+    # the projections app root), with no flag of its own — writing a proposal spends nothing and
+    # confirms nothing. Without a service it refuses ``icp_authoring_not_composed`` before it reads
+    # a row.
+    for tool in build_icp_authoring_tools(icp_authoring, conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

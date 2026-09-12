@@ -110,6 +110,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
     # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
     "archive_thread": (),
+    # ICP authoring: registered so the platform's write surface stays complete and the authority
+    # audit sees it, granted to nobody yet — the Head-of-ABM profile that pins it, and the skill
+    # text that teaches when an ICP is ready to write down, land with the authoring flow itself.
+    "author_icp_document": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

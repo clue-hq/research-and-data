@@ -253,6 +253,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("arv2_discovery_not_composed",),
     ),
+    # ICP authoring registers in every process for the same reason as its ARV2 neighbours and,
+    # with no ``IcpAuthoringService`` composed here, refuses before it reads a row.
+    "author_icp_document": ("precondition", ("icp_authoring_not_composed",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -621,6 +624,12 @@ def _bodies() -> dict[str, dict[str, object]]:
         # the gates and the provider ask come from the project's pin and the deployment's
         # settings — so the body is only the project and how many companies were asked for.
         "launch_arv2_discovery": {"project_id": "prj_matrix", "target_count": 20},
+        "author_icp_document": {
+            "icp_key": "matrix",
+            "document": "---\nkind: icp-definition\nicp_key: matrix\n---\n\nBody.\n",
+            "scope": "project",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -1356,8 +1365,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
-    # Human project-label rename adds one governed tool.
-    assert len(registry.names()) == 126
+    # Human project-label rename adds one governed tool (125 -> 126).
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127).
+    assert len(registry.names()) == 127
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1380,8 +1390,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
-    # The project rename tool has one version and no agent grant.
-    assert len(registry) == 144
+    # The project rename tool has one version and no agent grant (143 -> 144).
+    # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
+    # (144 -> 145).
+    assert len(registry) == 145
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1408,8 +1420,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
     # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
-    # Human project-label rename adds one governed tool.
-    assert len(registry.names()) == 126
+    # Human project-label rename adds one governed tool (125 -> 126).
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127).
+    assert len(registry.names()) == 127
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1419,8 +1432,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
     # at @2 beside its replayable @1 (140 -> 142).
     # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
-    # The project rename tool has one version and no agent grant.
-    assert len(registry) == 144
+    # The project rename tool has one version and no agent grant (143 -> 144).
+    # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
+    # (144 -> 145).
+    assert len(registry) == 145
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

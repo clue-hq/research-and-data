@@ -106,8 +106,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # procedure that says what must be confirmed first — a project whose ICP and product set are
     # confirmed — and what a successful result does and does not mean (the run is queued; no
     # account is found or approved by the call).
-    # Project rename is installed for the human UI, ungranted to all agents.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 126
+    # Project rename is installed for the human UI, ungranted to all agents (125 -> 126).
+    # ICP authoring registers `author_icp_document@1` (126 -> 127) and grants it to nobody: the
+    # write surface stays complete and the audit sees it, but no model surface names it yet — the
+    # profile that pins it and the skill text that teaches it land with the authoring flow.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 127
+    assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)

@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
 )
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
     IcpSynthesisOutcome,
@@ -929,6 +930,10 @@ async def _serve() -> None:
             if settings.arv2_discovery_enabled
             else None
         )
+        # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
+        # nothing. What it needs is the storage the knowledge documents live in, so it composes
+        # where the composed backend is. Without a service the tool registers and refuses by name.
+        icp_authoring = DbIcpAuthoringService(storage)
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -961,6 +966,7 @@ async def _serve() -> None:
             entity_research_launches=entity_research_launches,
             arv2_account_launch=arv2_account_launch,
             arv2_discovery_launch=arv2_discovery_launch,
+            icp_authoring=icp_authoring,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )

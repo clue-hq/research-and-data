@@ -151,8 +151,15 @@ async def seed_icp_document(
     kind: str = "icp-definition",
     status: str = "confirmed",
     path: str = "audience/icp-clue-abm-buyers.md",
+    project_id: str | None = None,
 ) -> tuple[UUID, str, str]:
-    """Register one ``brand_knowledge_document`` + its artifact, the way the loader does."""
+    """Register one ``brand_knowledge_document`` + its artifact, the way the loader does.
+
+    ``project_id`` seeds the row in a *project's* scope rather than the brand's — the shape ICP
+    authoring writes for a project-local variant. It is part of the document's identity here, so a
+    brand row and a project's variant of one path get different ids and coexist, exactly as the
+    scoped unique index allows.
+    """
     rendered = body.encode("utf-8")
     sha = content_address(rendered)
     key = artifact_key(workspace_id, sha)
@@ -166,22 +173,23 @@ async def seed_icp_document(
         source_key="arv2:test:knowledge_document",
     )
     await storage.put(key, rendered, media_type="text/markdown")
-    document_id = uuid5(UUID(int=0), f"{workspace_id}:{path}:{status}")
+    document_id = uuid5(UUID(int=0), f"{workspace_id}:{project_id or ''}:{path}:{status}")
     await conn.execute(
         text(
             """
             INSERT INTO brand_knowledge_document
-                (document_id, workspace_id, brand_id, folder, path, kind, version, status,
-                 artifact_key, artifact_sha256)
+                (document_id, workspace_id, brand_id, project_id, folder, path, kind, version,
+                 status, artifact_key, artifact_sha256)
             VALUES
-                (:document_id, :workspace_id, :brand_id, :folder, :path, :kind, 1, :status,
-                 :artifact_key, :artifact_sha256)
+                (:document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind, 1,
+                 :status, :artifact_key, :artifact_sha256)
             """
         ),
         {
             "document_id": document_id,
             "workspace_id": workspace_id,
             "brand_id": brand_id,
+            "project_id": project_id,
             "folder": path.split("/", 1)[0],
             "path": path,
             "kind": kind,

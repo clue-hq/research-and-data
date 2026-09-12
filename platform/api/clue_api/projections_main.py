@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.auth_wiring import build_principal_service
 from clue_api.chat import StartupDevPrincipalResolver
@@ -131,11 +132,16 @@ def build_application(
     arv2_discovery_launch = (
         DbArv2DiscoveryService(resolved, storage) if resolved.arv2_discovery_enabled else None
     )
+    # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
+    # nothing. What it needs is the storage the knowledge documents live in, so it composes where
+    # the composed backend is. Without a service the tool registers and refuses by name.
+    icp_authoring = DbIcpAuthoringService(storage)
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
         arv2_account_launch=arv2_account_launch,
         arv2_discovery_launch=arv2_discovery_launch,
+        icp_authoring=icp_authoring,
         stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),
