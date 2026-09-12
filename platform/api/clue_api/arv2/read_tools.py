@@ -17,8 +17,8 @@ Three properties are deliberate, and each one is a test:
   the model; the project id is an untrusted input, checked against that workspace before any row
   is read.
 
-Tasks 2 and 3 of this plan add ``read_account_research@1`` and ``read_discovery_run@1`` to this
-module, behind the same :class:`Arv2ReadService` seam: one protocol the toolbelt tools call, one
+Task 3 of this plan adds ``read_discovery_run@1`` to this module, behind the same
+:class:`Arv2ReadService` seam: one protocol the toolbelt tools call, one
 :class:`DbArv2ReadService` that opens one transaction per call.
 """
 
@@ -26,14 +26,19 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Literal, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.display.blocks import live_blocks
+from clue_api.arv2.display.recipes import read_recipes
 from clue_api.arv2.errors import Arv2Error
+from clue_core import EntityId
 from clue_db import ConnFactory, transaction
+from clue_research.claimstore import WorkspaceScope, claims_for_entities
 from clue_spine import get_project
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -51,16 +56,25 @@ from clue_toolbelt import (
 )
 
 __all__ = [
+    "EVIDENCE_CHARS",
     "MAX_ACCOUNTS",
+    "MAX_CLAIMS",
+    "AccountClaimView",
+    "AccountOverviewSection",
+    "AccountResearch",
     "Arv2ReadRefused",
     "Arv2ReadService",
     "DbArv2ReadService",
     "ProjectAccountView",
     "ProjectAccountsPage",
+    "ReadAccountResearchInput",
+    "ReadAccountResearchOutput",
+    "ReadAccountResearchTool",
     "ReadProjectAccountsInput",
     "ReadProjectAccountsOutput",
     "ReadProjectAccountsTool",
     "list_project_accounts",
+    "read_account_research",
 ]
 
 #: The hard ceiling on one read. A tool result is context the model pays for on every later turn,
@@ -72,7 +86,8 @@ class Arv2ReadRefused(Arv2Error):
     """A read cannot be served, and the caller is told exactly which prerequisite is missing.
 
     ``code`` is stable and machine-readable; the toolbelt tools turn it straight into a
-    :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``.
+    :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
+    ``account_not_found``, ``overview_not_written``, ``account_not_researched``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -142,10 +157,16 @@ _LIST_PROJECT_ACCOUNTS = text(
     """
 )
 
-#: The total counts memberships, not the page — including any merge loser still on the roster, so
-#: the number matches the project's own membership rows rather than a filtered view of them.
+#: The total counts the rows the listing *can show*, which is why it repeats the listing's own
+#: ``merged_into IS NULL`` join: "showing 100 of 240" must be two measurements of one population,
+#: and counting a merge loser the page can never serve would make the remainder unreachable.
 _COUNT_PROJECT_ACCOUNTS = text(
-    "SELECT count(*) FROM project_account WHERE workspace_id = :ws AND project_id = :project"
+    """
+    SELECT count(*)
+    FROM project_account pa
+    JOIN account_entity a ON a.id = pa.account_entity_id AND a.merged_into IS NULL
+    WHERE pa.workspace_id = :ws AND pa.project_id = :project
+    """
 )
 
 
@@ -183,6 +204,220 @@ async def list_project_accounts(
 
 
 # =================================================================================================
+# read 2: one account's research
+# =================================================================================================
+
+
+class AccountOverviewSection(BaseModel, frozen=True):
+    """One written section of an account's overview page, as it was stored."""
+
+    section_key: str
+    #: ``display_block.body_json`` verbatim — the same body the app renders, not a second shape.
+    body: dict[str, Any]
+    cited_claim_ids: tuple[str, ...]
+    generated_at: str
+
+
+class AccountClaimView(BaseModel, frozen=True):
+    """One live claim about an account: the value, and what stands behind it."""
+
+    claim_id: str
+    field_key: str
+    value: Any
+    source_url: str | None
+    #: The evidence span, clipped — a quote is here to be *checked*, not reproduced whole.
+    evidence: str
+    tier: int
+    collected_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class AccountResearch:
+    """What research holds about one account, in whichever of the two shapes was asked for."""
+
+    account_entity_id: str
+    account_name: str
+    section: str
+    overview: tuple[AccountOverviewSection, ...]
+    claims: tuple[AccountClaimView, ...]
+    truncated: bool
+
+
+#: The hard ceiling on one claims read, for the same reason as :data:`MAX_ACCOUNTS`: a researched
+#: account can hold hundreds of claims, and the model pays for every one of them on every later
+#: turn. Over the cap the read says so (``truncated``) instead of quietly dropping the tail.
+MAX_CLAIMS = 120
+
+#: An evidence span is a quotation the reader may *check*; a whole article is not. Clipped rather
+#: than dropped, because a truncated quote still tells the reader what kind of sentence it came
+#: from — and the full span is one evidence read away.
+EVIDENCE_CHARS = 240
+
+_OVERVIEW_PAGE = "overview"
+
+#: The account, as this workspace may see it. ``merged_into IS NULL`` refuses a merge loser by
+#: name rather than serving the wrong company's research under the id the caller asked about.
+_ACCOUNT_IN_WORKSPACE = text(
+    """
+    SELECT id, canonical_name FROM account_entity
+    WHERE id = :id AND workspace_id = :ws AND merged_into IS NULL
+    """
+)
+
+
+async def _account_in_workspace(
+    conn: AsyncConnection, *, workspace_id: str, account_entity_id: str
+) -> tuple[UUID, str]:
+    """The account's id and name, or the refusal that says it is not ours to read."""
+
+    try:
+        account_uuid = UUID(account_entity_id)
+    except ValueError:
+        # A malformed id is indistinguishable from an absent one on purpose: both mean "there is
+        # no such account here", and the model does not need to learn the id format from an error.
+        raise Arv2ReadRefused(
+            "account_not_found", f"no account {account_entity_id} in this workspace"
+        ) from None
+    row = (
+        (await conn.execute(_ACCOUNT_IN_WORKSPACE, {"id": account_uuid, "ws": workspace_id}))
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise Arv2ReadRefused(
+            "account_not_found", f"no account {account_entity_id} in this workspace"
+        )
+    return account_uuid, str(row["canonical_name"])
+
+
+async def _overview_sections(
+    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
+) -> tuple[AccountOverviewSection, ...]:
+    """The account's written overview, in the order the overview page itself serves it."""
+
+    blocks = await live_blocks(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind="account",
+        subject_id=str(account_uuid),
+        page=_OVERVIEW_PAGE,
+    )
+    if not blocks:
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account's overview has not been written yet; read section='claims' or open "
+            "the account in the app",
+        )
+    # The recipes are the page's own running order (this workspace's overrides included), so the
+    # agent reads the sections in the order the marketer sees them. A block whose section the
+    # recipes no longer carry still gets served — it was written, so it is research — and sorts
+    # after the known ones by key, which is also the whole order when no recipes are loaded.
+    recipes = await read_recipes(conn, _OVERVIEW_PAGE, workspace_id=workspace_id)
+    position = {recipe.section_key: index for index, recipe in enumerate(recipes)}
+    ordered = sorted(
+        blocks.values(),
+        key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
+    )
+    return tuple(
+        AccountOverviewSection(
+            section_key=block.section_key,
+            body=block.body_json,
+            cited_claim_ids=block.cited_claim_ids,
+            generated_at=block.generated_at.isoformat(),
+        )
+        for block in ordered
+    )
+
+
+async def _account_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_uuid: UUID,
+    field_prefix: str | None,
+) -> tuple[tuple[AccountClaimView, ...], bool]:
+    """The account's live claims under ``field_prefix``, bounded, plus whether the tail was cut."""
+
+    # Scoped by the claim store's own tenant filter, never by a hand-written workspace predicate:
+    # the scope object is the one place that knows public-footprint claims are shared and private
+    # ones are not.
+    claims = await claims_for_entities(
+        conn,
+        [EntityId(account_uuid)],
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    # ``claims_for_entities`` already orders by ``(field_key, collected_at DESC, id)``, which is
+    # the grouping the agent reads: one field's newest value first.
+    matching = [
+        claim
+        for claim in claims
+        if field_prefix is None or claim.field_key.startswith(field_prefix)
+    ]
+    if not matching:
+        raise Arv2ReadRefused(
+            "account_not_researched",
+            f"no claims about this account{f' under {field_prefix}' if field_prefix else ''} yet",
+        )
+    return (
+        tuple(
+            AccountClaimView(
+                claim_id=str(claim.id),
+                field_key=str(claim.field_key),
+                value=claim.value_json,
+                source_url=claim.source_url,
+                evidence=(claim.evidence_span or "")[:EVIDENCE_CHARS],
+                tier=int(claim.source_tier),
+                collected_at=claim.collected_at.isoformat(),
+            )
+            for claim in matching[:MAX_CLAIMS]
+        ),
+        len(matching) > MAX_CLAIMS,
+    )
+
+
+async def read_account_research(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: str,
+    section: str,
+    field_prefix: str | None = None,
+) -> AccountResearch:
+    """What research found about one account: its written overview, or its live claims.
+
+    The two sections answer two different questions — "what do we say about them?" and "what do we
+    actually know, and who says so?" — so one read never serves both: the unasked half is empty,
+    and an unwritten overview is a refusal rather than an account that looks unresearched.
+    """
+
+    account_uuid, name = await _account_in_workspace(
+        conn, workspace_id=workspace_id, account_entity_id=account_entity_id
+    )
+    overview: tuple[AccountOverviewSection, ...] = ()
+    claims: tuple[AccountClaimView, ...] = ()
+    truncated = False
+    if section == "overview":
+        overview = await _overview_sections(
+            conn, workspace_id=workspace_id, account_uuid=account_uuid
+        )
+    else:
+        claims, truncated = await _account_claims(
+            conn,
+            workspace_id=workspace_id,
+            account_uuid=account_uuid,
+            field_prefix=field_prefix,
+        )
+    return AccountResearch(
+        account_entity_id=str(account_uuid),
+        account_name=name,
+        section=section,
+        overview=overview,
+        claims=claims,
+        truncated=truncated,
+    )
+
+
+# =================================================================================================
 # the service seam + its production implementation
 # =================================================================================================
 
@@ -193,6 +428,15 @@ class Arv2ReadService(Protocol):
     async def list_project_accounts(
         self, *, workspace_id: str, project_id: str, limit: int
     ) -> ProjectAccountsPage: ...
+
+    async def read_account_research(
+        self,
+        *,
+        workspace_id: str,
+        account_entity_id: str,
+        section: str,
+        field_prefix: str | None,
+    ) -> AccountResearch: ...
 
 
 class DbArv2ReadService:
@@ -208,6 +452,23 @@ class DbArv2ReadService:
         async with self._conn_factory() as conn:
             return await list_project_accounts(
                 conn, workspace_id=workspace_id, project_id=project_id, limit=limit
+            )
+
+    async def read_account_research(
+        self,
+        *,
+        workspace_id: str,
+        account_entity_id: str,
+        section: str,
+        field_prefix: str | None,
+    ) -> AccountResearch:
+        async with self._conn_factory() as conn:
+            return await read_account_research(
+                conn,
+                workspace_id=workspace_id,
+                account_entity_id=account_entity_id,
+                section=section,
+                field_prefix=field_prefix,
             )
 
 
@@ -287,5 +548,85 @@ class ReadProjectAccountsTool(Tool):
             project_id=page.project_id,
             total=page.total,
             accounts=tuple(account.model_dump() for account in page.accounts),
+        )
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
+class ReadAccountResearchInput(ToolInput):
+    account_entity_id: str
+    section: Literal["overview", "claims"] = "overview"
+    #: Claims only: ``account.resonance`` narrows a researched account's claims to one family
+    #: rather than making the model read all of them to find three.
+    field_prefix: str | None = Field(default=None, max_length=80)
+
+
+class ReadAccountResearchOutput(ToolOutput):
+    account_entity_id: str
+    account_name: str
+    section: str
+    #: ``AccountOverviewSection`` rows when ``section='overview'``, else empty.
+    overview: tuple[dict[str, Any], ...]
+    #: ``AccountClaimView`` rows when ``section='claims'``, else empty.
+    claims: tuple[dict[str, Any], ...]
+    #: The account holds more claims than one read serves; narrow with ``field_prefix``.
+    truncated: bool
+
+
+class ReadAccountResearchTool(Tool):
+    """Read one account's written overview, or the claims underneath it."""
+
+    name = "read_account_research"
+    version = "1"
+    model_description = (
+        "Read what research found about one account: section='overview' returns the written "
+        "overview sections (prose with the claim ids they cite); section='claims' returns the "
+        "account's verified claims grouped by field (value, source, evidence, tier), optionally "
+        "under a field prefix. Read this before saying anything specific about an account. "
+        "Effect-free."
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
+    output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
+    effect_class = ToolEffectClass.READ
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="the account's live display_block rows and its live claims",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("account_entity_id", "section", "field_prefix")
+    )
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
+
+    def __init__(self, service: Arv2ReadService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        del inputs, ctx
+        return _not_composed() if self._service is None else ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadAccountResearchInput)
+        assert self._service is not None
+        try:
+            research = await self._service.read_account_research(
+                # The tenant is AMBIENT authority, never model-authored.
+                workspace_id=ctx.workspace_id,
+                account_entity_id=inputs.account_entity_id,
+                section=inputs.section,
+                field_prefix=inputs.field_prefix,
+            )
+        except Arv2ReadRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        output = ReadAccountResearchOutput(
+            account_entity_id=research.account_entity_id,
+            account_name=research.account_name,
+            section=research.section,
+            overview=tuple(section.model_dump() for section in research.overview),
+            claims=tuple(claim.model_dump() for claim in research.claims),
+            truncated=research.truncated,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
