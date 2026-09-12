@@ -460,6 +460,7 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     # address and the two pins must still agree. v45 (ARV2 Track R, R4) carries it forward again:
     # that bump adds `launch_arv2_discovery@1` and nothing else, and v46 (ARV2 context and
     # authoring) adds only `author_icp_document@1` and `request_persona_synthesis@1`. v47 (the
-    # project plan) adds only `write_project_document@1`.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v47"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v47"
+    # project plan) adds only `write_project_document@1`, and v48 (the ARV2 reads) only
+    # `read_project_accounts@1`, `read_account_research@1` and `read_discovery_run@1`.
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v48"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v48"

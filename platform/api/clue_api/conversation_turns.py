@@ -131,7 +131,11 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 25 (the project plan) is revision 24 plus one exact address:
 # ``write_project_document@1``, the plan tool `head-of-abm@v47` grants and stage0-interview v24
 # §6b teaches. v24 stays the exact replay input for turns already pinned to it.
-CONVERSATION_RECIPE_VERSION = 25
+# Revision 26 (the ARV2 reads) is revision 25 plus three exact addresses:
+# ``read_project_accounts@1``, ``read_account_research@1`` and ``read_discovery_run@1``, the
+# effect-free reads `head-of-abm@v48` grants and stage0-interview v25 §7b/§7c teach. v25 stays the
+# exact replay input for turns already pinned to it.
+CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

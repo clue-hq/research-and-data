@@ -92,6 +92,14 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # and declaring the same ``project`` pin as its siblings — the spine row the execution is
     # bound to — which is what this audit requires of every standing address.
     "write_project_document@1",
+    # The ARV2 reads (added in recipe0-stage0@26): the project's accounts, one account's
+    # research, and the discovery run — effect-free reads over rows that already exist.
+    # Granted at `head-of-abm@v48` and declaring the same ``project`` pin as their siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "read_project_accounts@1",
+    "read_account_research@1",
+    "read_discovery_run@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

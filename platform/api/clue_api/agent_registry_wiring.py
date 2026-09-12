@@ -94,7 +94,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # when the plan is written (after the section-2 answers, a confirmed ICP and a confirmed
     # product set) and what it contains. The human edits the same file in the Plan tab, so a
     # stale write is refused by name rather than overwriting their words. Everything else is v46's.
-    AgentRole.HEAD_OF_ABM: "v47",
+    # v48 (read tools, 2026-09-13): v47 plus THREE effect-free reads over the project's own ARV2
+    # rows — `read_project_accounts@1` (the accounts in the project and each one's research
+    # status), `read_account_research@1` (one account's written overview, or its live claims) and
+    # `read_discovery_run@1` (the latest or a named discovery run with its candidates) — and
+    # stage0-interview v25, whose §7c says to read before speaking about accounts and whose §7b
+    # says to read the last discovery run before proposing another. None of them spends, approves
+    # or launches: they replace "what my own thread happened to start" with what the rows say.
+    # Everything else is v47's.
+    AgentRole.HEAD_OF_ABM: "v48",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -139,13 +147,14 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # refused by name: the model re-reads, keeps the human's edits, and writes again.
     "write_project_document": (AgentRole.HEAD_OF_ABM,),
     # The ARV2 reads: what this project's own rows already say — its accounts and their research
-    # status, one account's overview or claims, one discovery run and its candidates. Registered so
-    # the surface stays complete and the authority audit sees them, granted to nobody yet; the
-    # profile that pins them and the skill text that says when to read land with the read flow
-    # itself. They spend nothing, approve nothing and launch nothing.
-    "read_project_accounts": (),
-    "read_account_research": (),
-    "read_discovery_run": (),
+    # status, one account's overview or claims, one discovery run and its candidates. Granted with
+    # `head-of-abm@v48`; stage0-interview v25 §7c is the procedure and its §7b says to read the
+    # last discovery run before proposing another. They spend nothing, approve nothing and launch
+    # nothing, so the only thing a call can do is make an answer true: a fact about an account now
+    # comes from a claim the read returned rather than from an earlier thread's memory.
+    "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research": (AgentRole.HEAD_OF_ABM,),
+    "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

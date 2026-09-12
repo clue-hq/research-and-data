@@ -105,6 +105,12 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # v25 is v24 plus that address and nothing else; v24 stays the exact replay input for turns
     # pinned to it.
     "recipe0-stage0-v25.json",
+    # The ARV2 reads: three addresses join the interaction slot — `read_project_accounts@1`,
+    # `read_account_research@1` and `read_discovery_run@1` — because the slot pins EXACT
+    # addresses and would refuse the tools `head-of-abm@v48` grants without its own revision.
+    # v26 is v25 plus those three addresses and nothing else; v25 stays the exact replay input
+    # for turns pinned to it.
+    "recipe0-stage0-v26.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

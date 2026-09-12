@@ -452,11 +452,18 @@ class Stage0StepPinProvider:
         # siblings. An execution with no project pins explicitly absent and each tool's own
         # preconditions refuse it, rather than the plan failing to validate.
         # ARV2 Track R, R4 adds the discovery launch on exactly the person launch's terms.
+        # The three ARV2 reads join them for the same reason: two name a `project_id` in their
+        # body and the third names no project at all (it is keyed on an account), and a body field
+        # is model-authored, so the execution's own project — which is not — is the coordinate
+        # their ``project`` pin resolves from.
         if step.tool_name in {
             "launch_arv2_account_research",
             "launch_arv2_discovery",
             "launch_arv2_person_research",
+            "read_account_research",
             "read_arv2_account_research_run",
+            "read_discovery_run",
+            "read_project_accounts",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

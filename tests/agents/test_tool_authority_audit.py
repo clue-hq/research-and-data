@@ -119,13 +119,18 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # is the procedure that says when a plan may be written (after the section-2 answers, a
     # confirmed and pinned ICP and a confirmed product set) and what a call does NOT do — it
     # decides nothing new, and the human's own edits in the Plan tab win over a stale write.
-    # The three ARV2 reads register (129 -> 132) and are granted to nobody: the read surface
-    # stays complete and the audit sees it, but no model surface names them yet — the profile
-    # that pins them lands with the read flow.
+    # The three ARV2 reads registered (129 -> 132) ungranted, and this is the version that grants
+    # them: they are pinned by `head-of-abm@v48`, and stage0-interview v25 §7c is the procedure
+    # that says to read before speaking about accounts (§7b before proposing another discovery).
+    # A call does NOT spend, approve or launch — each one only returns what the project's own rows
+    # already say, which is what makes it safe to require before an answer.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 132
-    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_account_research@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_discovery_run@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("write_project_document@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == (AgentRole.HEAD_OF_ABM,)

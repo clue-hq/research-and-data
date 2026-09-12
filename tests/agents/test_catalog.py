@@ -98,6 +98,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v22",
         "skill:stage0-interview@v23",
         "skill:stage0-interview@v24",
+        "skill:stage0-interview@v25",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -167,6 +168,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v46",
         # The project plan: v46 plus `write_project_document@1`, and stage0-interview v24.
         "profile:head-of-abm@v47",
+        # The ARV2 reads: v47 plus `read_project_accounts@1`, `read_account_research@1` and
+        # `read_discovery_run@1`, and stage0-interview v25.
+        "profile:head-of-abm@v48",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",

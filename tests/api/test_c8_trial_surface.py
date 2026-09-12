@@ -315,7 +315,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v24" in base_disclosures
+    assert "skill:stage0-interview@v25" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -341,7 +341,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "write_project_document",
     }
 
-    body = base.open_skill("skill:stage0-interview@v24")
+    body = base.open_skill("skill:stage0-interview@v25")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
