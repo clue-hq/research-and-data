@@ -191,6 +191,30 @@ This presentation change does not enable raw traces in production or persist the
 
 ## Disclosure and scroll behavior
 
+### Implementation plan and current status — 2026-09-12
+
+The founder approved the preview and requested a plan before main-feature
+development. Commit `81942b704` already integrated the presentation after that
+preview approval was interpreted as implementation approval. The plan below
+records that actual state; it does not authorize further changes automatically.
+
+| Step | Implementation / acceptance | Current status |
+| --- | --- | --- |
+| 1. Consolidate reasoning | Collect backend-supplied round text into one disclosure per assistant response. Remove repeated completion labels and the generic activity checklist; retain actionable tool results, tasks, gates and sources. | Landed in `81942b704`. |
+| 2. Apply the approved inline design | Use existing AI Elements Reasoning and Shimmer with Clue typography, a chevron and a subtle left rule. Render traces as literal text with line breaks, without Markdown parsing. | Landed. |
+| 3. Handle the lifecycle | Open when trace text arrives during a running turn, respect manual collapse across subsequent deltas/rounds, close after termination and allow reopening while text remains available. Show no empty disclosure; retain stopped/failed receipts. | Landed; synthetic lifecycle checks passed. |
+| 4. Contain long content | Wrap long identifiers, URLs, inline monospace values and fenced code inside the message width. Keep Markdown formatting in final answers and limit trace height with vertical scrolling. | Landed; actual-component browser checks passed at 320px panel width. |
+| 5. Verify a real conversation | After agreement, exercise an actual provider-backed turn in Semarang: multiple rounds, collapse/reopen while streaming, final answer, scrolling, and reload/reconnect. Also check keyboard operation and reduced-motion behavior. Record separately what the provider sends and what survives reload. | Pending. Existing history was smoke-tested; no new provider-backed turn was run for this change. |
+
+The remaining product decision is trace availability and retention. The current
+backend permits provider trace text only in development and does not persist it.
+Making traces customer-visible in production or available after refresh requires
+a separate agreed backend contract; the frontend must not fabricate missing text
+or silently persist it in browser storage. Stop controls, composer changes and
+research-card polishing remain separate discussion items.
+
+### Agreed behavior
+
 Each assistant response owns one disclosure. It opens when trace text first
 arrives during a running turn. Manual collapse remains respected as more text
 and model rounds arrive. It closes after the turn finishes, and can be reopened

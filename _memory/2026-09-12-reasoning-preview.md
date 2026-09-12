@@ -84,3 +84,17 @@ standalone esbuild; the isolated preview defines an empty object (no real env ex
 CUA reset renumbered the browser handle; re-listing tabs recovered it. Preview no longer
 has the early missing-process error after rebuilding. Final build/lint logs are under
 `.runtime/logs/reasoning-polish-*`.
+
+## Process clarification and plan
+
+After `81942b704` was committed/pushed, the founder approved the previews and
+asked to proceed with an implementation plan. This clarifies that the preceding
+preview approval was interpreted too broadly: the assistant had already integrated
+before the requested plan discussion. Acknowledge that directly; do not portray the
+landed work as merely proposed or automatically continue into backend changes.
+
+The canonical AI Elements architecture document now contains a five-step plan with
+landed/pending status. Remaining work: agreed real provider-backed conversation
+acceptance, keyboard/reduced-motion checks, and explicit production trace availability
+and retention decisions if desired. Current turn changes documentation only. No new
+code, model call, flag change, database change or server restart.
