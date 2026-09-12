@@ -304,3 +304,20 @@ wave. Report: `.superpowers/sdd/2026-09-12-head-of-abm-read-tools/fix-report.md`
   `offset`), so four digests changed. The skill's §7b/§7c prose is byte-identical to v25 — the
   `query`/`offset` teaching lives in the tool's own `model_description`, which is where the model
   reads it.
+
+## Final review + fix wave (2026-09-13)
+
+Opus whole-plan review: 0 Critical / 4 Important / 9 Minor / 4 Nit. Fix wave `abdc1a063`: the claims
+read mirrors the display gate (sensitive, unverified tier-4 when verification is on, and
+outreach-unsafe claims are held back and counted in `excluded`; each claim carries
+`verification_status` and `outreach_safe`; the description no longer says "verified"); `verified`
+means "has a verdict" — `discovery_store.VERIFIED_PREDICATE`, shared by `read_discovery_run`,
+`status.md` and the Target accounts tab's read, so all three agree; `read_project_accounts` gains
+`query` (name/domain) and `offset`; served candidates are filtered to the caller's workspace;
+evidence clipping is marked; overview bodies are capped at 6000 chars; `no_claims_under_prefix`;
+the trial surface withholds the reads; outputs use typed rows, which moved the schema digests →
+skill `stage0-interview@v26` and profile `head-of-abm@v49` (recipe stays v26: it pins addresses
+only). Parked: M6 (candidate deserialization at limit 0), M7 (the account read has no project
+input; `ctx` carries no project), nits. Live walk owed (see the checklist above); the stack was
+restarted on v49 afterwards. Note for tests: `account_entity.created_at` defaults to transaction
+time, so rows seeded in one transaction tie — `_seed_account` stamps ascending timestamps.
