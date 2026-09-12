@@ -152,3 +152,14 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | `up` reports every process UP, but a route/endpoint that exists on this branch 404s from the API (e.g. `/documents/{id}/thumbnail` missing from `/openapi.json`) | **A stale process from an earlier session still owns the port.** `up` does not `down` first, so the new uvicorn dies with `[Errno 48] address already in use` while the OLD one keeps serving — and `status` only checks that *something* listens, so it reports UP. Check: `grep -c "address already in use" /tmp/browser_design_api.log` and `ps -o lstart -p $(pgrep -f "uvicorn lumen_api.main:app")`. Fix: always `down` before `up`, and if a port survives it, `lsof -iTCP:<port> -sTCP:LISTEN -t \| xargs kill -9`. Found live 2026-08-31. |
 | Gallery cards are grey/empty for **web** documents only (ads are fine) | No Playwright Chromium, or no vendored Tailwind runtime, on the design-API process — see the prerequisites above. The API log names which: `thumbnail.capture_failed` vs `thumbnail.tailwind_runtime_missing`. Nothing is poisoned — fix the prerequisite and the next gallery read regenerates. |
 | ONE route 404s while its siblings work (e.g. `/projects/…/chats/…` → Next 404, but `/projects/…` 307s to sign-in; page.tsx exists on disk; DB rows exist) | Corrupted Next dev build cache — repeated `down` cycles pkill the dev server mid-write and its route graph can drop a route. Fix: `down` → `rm -rf apps/frontend/.next` → `up`. Found live 2026-08-30. |
+
+## Two rules learned the hard way (2026-09-12)
+
+* **Never pipe the wrapper's output** (`… restart-workers | tail`). The `( … & )` subshells that
+  spawn the API twins and the workers stay alive as their parents and keep the pipe's write end
+  open, so `tail` never sees end-of-file and the caller hangs for as long as the stack runs.
+  Redirect to a file instead: `./scripts/dev_stack_san_salvador.sh restart-workers > /tmp/x.log 2>&1`.
+* **Every kill pattern is anchored on this workspace's interpreter path.** Sibling worktrees
+  (semarang, istanbul, …) run the same module names on the same box; a bare
+  `pkill -f clue_api.fleet_main` from any launcher kills every worktree's workers. This lane's
+  workers were stopped that way at 14:18 on 2026-09-12 by a launcher outside this workspace.
