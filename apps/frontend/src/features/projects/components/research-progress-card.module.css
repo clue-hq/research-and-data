@@ -1,0 +1,82 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  padding: 20px 24px;
+  border: 1px solid var(--clue-ds-color-border-neutral);
+  border-radius: 12px;
+  background: var(--clue-ds-color-bg-neutral);
+  font-family: "Satoshi", Arial, sans-serif;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.glyph {
+  flex: none;
+  margin-top: 4px;
+  color: var(--clue-ds-color-content-neutral);
+}
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  font: 500 18px/24px "Satoshi", Arial, sans-serif;
+  color: var(--clue-ds-color-content-neutral);
+}
+.subtitle {
+  margin: 4px 0 0;
+  font: 400 14px/20px "Satoshi", Arial, sans-serif;
+  color: var(--clue-ds-color-content-subtle);
+}
+.pill {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--clue-ds-color-bg-neutral-hover);
+  font: 400 14px/20px "Satoshi", Arial, sans-serif;
+  color: var(--clue-ds-color-content-neutral);
+}
+.pill[data-pill="needs_attention"] {
+  background: var(--clue-ds-color-primitives-warning-alpha-100);
+  color: var(--clue-ds-color-content-utility-warning);
+}
+.queuedRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 400 16px/22px "Satoshi", Arial, sans-serif;
+  color: var(--clue-ds-color-content-subtle);
+}
+.queuedDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--clue-ds-color-border-neutral);
+}
+.queuedCount {
+  flex: 1;
+  color: var(--clue-ds-color-content-neutral);
+}
+.bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--clue-ds-color-bg-neutral-hover);
+  overflow: hidden;
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--clue-ds-color-content-neutral);
+  transition: width 400ms ease-out;
+}
+.line {
+  margin: 0;
+  font: 400 14px/20px "Satoshi", Arial, sans-serif;
+  color: var(--clue-ds-color-content-subtle);
+}

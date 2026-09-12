@@ -13,6 +13,8 @@ import {
 } from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
+import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
+import { useResearchProgressController } from "@/features/projects/hooks/use-research-progress-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
@@ -111,6 +113,38 @@ export function ChatSurface({
   // each read bumps the token the tab refetches on, and the launch signal primes the first read.
   const [discoveryPrime, setDiscoveryPrime] = useState(0);
   const discovery = useDiscoveryStatus(projectId, { prime: discoveryPrime });
+  // The pinned research card (spec 2026-09-12): one per project, above the composer, alive
+  // while the read returns a card. A completed ARV2 research launch primes the read — both
+  // `launch_arv2_account_research` and `launch_arv2_person_research` create research jobs, so
+  // either one is enough to make the next read find a card (the old lane's
+  // `launch_account_research` is superseded and is NOT matched).
+  const [researchPrime, setResearchPrime] = useState(0);
+  const research = useResearchProgressController(projectId, { prime: researchPrime });
+  const knownResearchLaunchIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const known = knownResearchLaunchIds.current;
+    const ids = chat.transcript.flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "tool" &&
+        (part.toolName === "launch_arv2_account_research" ||
+          part.toolName === "launch_arv2_person_research") &&
+        part.state === "output-available"
+          ? [part.toolCallId]
+          : [],
+      ),
+    );
+    if (known === null) {
+      // Same discipline as the discovery launch signal above: the transcript is fetched in a
+      // client effect, so snapshotting before it lands would bank an EMPTY set and the replayed
+      // backlog's own persisted launch part would read as new on every visit.
+      if (chat.loading) return;
+      knownResearchLaunchIds.current = new Set(ids);
+      return;
+    }
+    const fresh = ids.filter((id) => !known.has(id));
+    for (const id of ids) known.add(id);
+    if (fresh.length) setResearchPrime((current) => current + 1);
+  }, [chat.loading, chat.transcript]);
   const shell = useEditorShellController({
     editing: urlState.editing,
     inspectorSelection: urlState.inspectorSelection,
@@ -479,6 +513,13 @@ export function ChatSurface({
           }`}
         >
           <div className={styles.composerFrame}>
+            {research.card ? (
+              <ResearchProgressCard
+                card={research.card}
+                headline={research.headline}
+                line={research.line}
+              />
+            ) : null}
             {targetChips.length ? (
               <div aria-label="Edit targets" className={styles.editTargetBar}>
                 <span className={styles.editTargetLabel}>Editing</span>
