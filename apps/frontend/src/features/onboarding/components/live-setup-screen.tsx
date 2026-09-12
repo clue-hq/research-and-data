@@ -8,22 +8,25 @@ import styles from "./onboarding.module.css";
 
 /**
  * The real setting-up screen (clerk mode only): the frozen SetupScreen visuals fed by durable
- * recon truth (useSetupProgress + the pure deriveSetupItems, which since slice 3 derives the
- * four D-6 checklist groups from per-field progress events). This component only threads the
- * poll status through — the derivation and every word of copy live in the model. Terminal
- * failures render inside the same grid cell as the frozen block (no geometry displacement)
+ * lane truth (useSetupProgress + the pure deriveSetupItems, which derives the four checklist
+ * groups from the onboarding lane's steps). This component only threads the company website
+ * down and the poll status back up — the derivation and every word of copy live in the model.
+ * Terminal failures render inside the same grid cell as the frozen block (no geometry displacement)
  * with real recovery controls: "Try again" re-runs setup (meaningful — a failed lane
  * releases its dedupe slot and a retry mints a fresh attempt) and "Continue anyway"
  * releases into the app, which the failure copy promises.
  */
 export function LiveSetupScreen({
+  companyWebsite,
   compact,
   setup,
 }: {
+  /** The profile step's own value — the company the onboarding run is started for. */
+  companyWebsite: string;
   compact: boolean;
   setup: OnboardingFlow["setup"];
 }) {
-  const { status, failure, terminal } = useSetupProgress();
+  const { status, failure, terminal } = useSetupProgress({ companyWebsite });
   const items = deriveSetupItems(setup, status);
 
   return (
