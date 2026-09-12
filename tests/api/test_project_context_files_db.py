@@ -31,9 +31,11 @@ from clue_api.project_context_files import (
     summary_of,
 )
 from clue_api.project_status import (
+    current_project_documents,
     load_project_decisions,
     load_project_status_facts,
     render_decisions_markdown,
+    render_status_markdown,
 )
 from clue_api.thread_store import create_thread
 from clue_core import EntityId, OnboardingInputKind, new_project_run_id
@@ -769,6 +771,152 @@ def test_a_compiled_file_whose_bytes_were_erased_is_a_typed_project_files_refusa
                     turn_id=turn_id,
                     project_id=project.project_id,
                     compile=compile_erased,
+                )
+
+    run_async(scenario())
+
+
+_PROJECT_ICP = (
+    "---\nkind: icp-definition\nicp_key: gi-dac\nstatus: proposed\n---\n\n"
+    "Ambulatory GI groups that run their own anesthesia service line.\n\n"
+    "A second paragraph the summary never reaches.\n"
+)
+
+
+async def _seed_project_document(
+    conn: AsyncConnection,
+    project: Project,
+    artifacts: DurableAgentArtifactStore,
+    *,
+    path: str,
+    body: str,
+    version: int = 1,
+    status: str = "proposed",
+    kind: str = "icp-definition",
+    artifact_sha256: str | None = None,
+    project_scoped: bool = True,
+) -> UUID:
+    """One ``brand_knowledge_document`` row over really-stored bytes, scoped to this project.
+
+    ``artifact_sha256`` overrides the digest the *row* claims (the table only checks its shape),
+    which is how "the stored digest moved" is reproduced without corrupting a blob.
+    """
+
+    ref = await artifacts.persist_body(
+        workspace_id=project.workspace_id, data=body.encode(), media_type="text/markdown"
+    )
+    document_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project)"
+        ),
+        {
+            "id": document_id,
+            "ws": project.workspace_id,
+            "brand": project.brand_id,
+            "folder": path.split("/", 1)[0],
+            "path": path,
+            "kind": kind,
+            "version": version,
+            "status": status,
+            "key": ref.artifact_key,
+            "sha": artifact_sha256 or ref.sha256,
+            "project": project.project_id if project_scoped else None,
+        },
+    )
+    return document_id
+
+
+def test_a_project_scoped_document_joins_the_project_folder_and_the_status_file() -> None:
+    """A document the project authored for itself is a file the turn can open, and is listed.
+
+    Two surfaces, one set of rows: ``status.md``'s "Project documents" section names it at the
+    path it is materialized at, and ``current_project_documents`` hands the turn its verified
+    bytes to seed there. The brand-level document in the same folder is not this project's, and
+    must appear in neither — it materializes under the brand prefix and is listed by the brand's
+    own card.
+    """
+
+    async def scenario() -> None:
+        storage = _MemoryStorage()
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            ws, project_id = project.workspace_id, project.project_id
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            await _seed_project_document(
+                conn, project, artifacts, path="audience/icp-gi-dac.md", body=_PROJECT_ICP
+            )
+            await _seed_project_document(
+                conn,
+                project,
+                artifacts,
+                path="audience/icp-gi.md",
+                body="---\nkind: icp-definition\n---\n\nThe brand's own ICP.\n",
+                project_scoped=False,
+            )
+
+            facts = await load_project_status_facts(conn, workspace_id=ws, project_id=project_id)
+            assert [(d.path, d.version, d.status) for d in facts.documents] == [
+                ("audience/icp-gi-dac.md", 1, "proposed")
+            ]
+            rendered = render_status_markdown(facts)
+            assert (
+                "- `inputs/project/audience/icp-gi-dac.md` — version 1, proposed, updated "
+                in rendered
+            )
+            assert "icp-gi.md" not in rendered
+
+            files = await current_project_documents(
+                conn, storage, workspace_id=ws, project_id=project_id
+            )
+            assert [(f.path, f.kind, f.version, f.status) for f in files] == [
+                ("audience/icp-gi-dac.md", "icp-definition", 1, "proposed")
+            ]
+            # The bytes are the document's own, so the model reads what was authored.
+            assert files[0].body == _PROJECT_ICP.encode()
+            # …and the index line is its first line of prose. Front matter is the document's
+            # metadata, not its subject: summarizing it would put "---" in every index line.
+            assert files[0].summary == (
+                "Ambulatory GI groups that run their own anesthesia service line."
+            )
+            assert summary_of(_PROJECT_ICP.encode()) == files[0].summary
+
+    run_async(scenario())
+
+
+def test_a_project_document_whose_stored_digest_moved_is_a_typed_refusal() -> None:
+    """The row says which bytes this document is; bytes that are not those bytes are refused.
+
+    Seeding a document whose content is not the content its durable row names would hand the
+    model a file the project never authored, under a name the project trusts.
+    """
+
+    async def scenario() -> None:
+        storage = _MemoryStorage()
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            await _seed_project_document(
+                conn,
+                project,
+                artifacts,
+                path="audience/icp-gi-dac.md",
+                body=_PROJECT_ICP,
+                artifact_sha256="b" * 64,
+            )
+            with pytest.raises(ProjectFilesPinConflict, match="stored digest"):
+                await current_project_documents(
+                    conn,
+                    storage,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
                 )
 
     run_async(scenario())

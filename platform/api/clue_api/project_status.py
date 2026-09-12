@@ -4,6 +4,13 @@ Spec: docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design
 The renderers are pure so the wording is tested without a database; the loaders read only ARV2
 rows and the ``project_state`` statements (ruling R8). Nothing here writes "now": every timestamp
 is a row's own, so two attempts of one turn compile identical bytes.
+
+:func:`current_project_documents` sits here too, beside the two compiled files, because the
+project's folder is one set: a document this project authored for itself is both a file the turn
+seeds under ``inputs/project/`` and a line in ``status.md``'s "Project documents" section, and
+both come off the same rows. It cannot live in :mod:`clue_api.project_context_files`, which
+:mod:`clue_api.brand_knowledge_context` (the reader of those rows) imports — this module imports
+both and is imported only by the turn's wiring, so the dependency runs one way.
 """
 
 from __future__ import annotations
@@ -19,12 +26,22 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import AgentArtifactReader
 from clue_api.arv2.discovery_store import PENDING_DISPOSITION, SHOWN_DISPOSITIONS
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
-from clue_api.brand_knowledge_context import INPUT_PREFIX
-from clue_api.project_context_files import project_workspace_path
+from clue_api.brand_knowledge_context import (
+    INPUT_PREFIX,
+    KnowledgeDocumentRef,
+    current_project_knowledge_refs,
+)
+from clue_api.project_context_files import (
+    CompiledProjectFile,
+    ProjectFilesPinConflict,
+    project_workspace_path,
+    summary_of,
+)
 from clue_api.statement_evidence import resolve_statement_quotes
 from clue_projections.stage0 import ResolvedQuote
 from clue_research.stage0 import StatementRoute, read_statements
 from clue_spine import ProjectProductSet, current_project_product_set, get_project
+from clue_storage import StorageBackend, read_verified_artifact
 
 __all__ = [
     "DecisionItem",
@@ -33,6 +50,7 @@ __all__ = [
     "ProjectStatusFacts",
     "ResearchJobFacts",
     "ResearchRunFacts",
+    "current_project_documents",
     "load_project_decisions",
     "load_project_status_facts",
     "render_decisions_markdown",
@@ -158,6 +176,69 @@ _RESEARCH_JOBS = text(
 )
 
 
+async def _project_document_refs(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> tuple[KnowledgeDocumentRef, ...]:
+    """This project's current servable documents, in path order — the one read both users share.
+
+    ``status.md`` lists them and the turn seeds them; reading the same rows through one function
+    is what keeps the file from naming a document the workspace does not carry, or carrying one
+    the file never mentions.
+    """
+
+    refs = await current_project_knowledge_refs(
+        conn, workspace_id=workspace_id, project_id=project_id
+    )
+    return tuple(sorted(refs, key=lambda ref: ref.path))
+
+
+async def current_project_documents(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> list[CompiledProjectFile]:
+    """This project's own documents as files, ready to be pinned beside its compiled ones.
+
+    A project-scoped document (an ICP variant the project authored for itself, its personas, the
+    plan) is not brand knowledge: ``knowledge_seed_files`` skips it deliberately, because it
+    materializes under the *project's* prefix. This is where it gets there — the turn's project
+    files pin persists and freezes these bytes exactly as it does ``status.md``, so a retry seeds
+    the document version the first attempt read even after a newer version is authored.
+
+    Every document's bytes are verified twice: :func:`read_verified_artifact` against its durable
+    artifact row, and then the row's own ``artifact_sha256`` against what was read. The second
+    refusal is :class:`ProjectFilesPinConflict` for the same reason the pinned read raises it —
+    seeding a file whose bytes are not the bytes the document row names would hand the model a
+    document this project never authored, under a name it trusts.
+    """
+
+    files: list[CompiledProjectFile] = []
+    for ref in await _project_document_refs(conn, workspace_id=workspace_id, project_id=project_id):
+        record, body = await read_verified_artifact(
+            conn,
+            storage,
+            storage_key=ref.artifact_key,
+            workspace_id=workspace_id,
+        )
+        if record.content_sha256 != ref.artifact_sha256:
+            raise ProjectFilesPinConflict(
+                f"the project document {ref.path!r} no longer matches its stored digest"
+            )
+        files.append(
+            CompiledProjectFile(
+                path=ref.path,
+                kind=ref.kind,
+                body=body,
+                version=ref.version,
+                status=ref.status,
+                summary=summary_of(body),
+            )
+        )
+    return files
+
+
 async def load_project_status_facts(
     conn: AsyncConnection, *, workspace_id: str, project_id: str
 ) -> ProjectStatusFacts:
@@ -173,6 +254,9 @@ async def load_project_status_facts(
     project = await get_project(conn, project_id)
     if project is None or project.workspace_id != workspace_id:
         raise ValueError("this project does not exist in this workspace")
+    document_refs = await _project_document_refs(
+        conn, workspace_id=workspace_id, project_id=project_id
+    )
     icp = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
     product_set = await current_project_product_set(
         conn, workspace_id=workspace_id, project_id=project_id
@@ -284,7 +368,15 @@ async def load_project_status_facts(
         account_count=account_count,
         discovery=discovery,
         research=tuple(research),
-        documents=(),
+        documents=tuple(
+            ProjectDocumentFacts(
+                path=ref.path,
+                version=ref.version,
+                status=ref.status,
+                updated_at=ref.updated_at,
+            )
+            for ref in document_refs
+        ),
     )
 
 

@@ -119,6 +119,11 @@ ICP = (
     "Independent gastroenterology groups with three to twelve physicians.\n"
 )
 RESEARCH = "---\nkind: product-research\nproduct_id: prd_aura\n---\n\nAura schedules procedures.\n"
+#: A document this project authored for ITSELF: it belongs to the project's folder, not the brand's.
+PROJECT_ICP = (
+    "---\nkind: icp-definition\nicp_key: gi-dac\nstatus: proposed\n---\n\n"
+    "Ambulatory GI groups that run their own anesthesia service line.\n"
+)
 LATER = "---\nkind: audience-persona\n---\n\nPublished after this turn pinned its knowledge.\n"
 
 
@@ -197,7 +202,10 @@ async def _seed_document(
     version: int,
     status: str,
     body: str,
+    project_id: str | None = None,
 ) -> tuple[UUID, str]:
+    """One knowledge document row. ``project_id`` scopes it to one project rather than the brand."""
+
     ref = await artifacts.persist_body(
         workspace_id=workspace_id,
         data=body.encode(),
@@ -207,8 +215,9 @@ async def _seed_document(
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            "path, kind, version, status, artifact_key, artifact_sha256) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha)"
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project)"
         ),
         {
             "id": document_id,
@@ -221,6 +230,7 @@ async def _seed_document(
             "status": status,
             "key": ref.artifact_key,
             "sha": ref.sha256,
+            "project": project_id,
         },
     )
     return document_id, ref.sha256
@@ -444,6 +454,18 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     status="ready",
                     body=RESEARCH,
                 )
+                await _seed_document(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path="audience/icp-gi-dac.md",
+                    kind="icp-definition",
+                    version=1,
+                    status="proposed",
+                    body=PROJECT_ICP,
+                    project_id=project.project_id,
+                )
 
                 submission = await _capture_submission(
                     conn,
@@ -522,6 +544,8 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 if isinstance(pinned, bytes | bytearray | str):
                     pinned = json.loads(pinned)
                 assert pin_rows[0]["brand_id"] == project.brand_id
+                # The project-scoped ICP is NOT in the brand's pin: it is the project's document
+                # and rides the project files pin instead.
                 assert sorted(item["path"] for item in pinned) == [
                     "audience/icp-gi-groups.md",
                     "company/overview.md",
@@ -549,8 +573,17 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
 
                 # 3b. the compiled project files are seeded read-only beside them, and the opening
                 # index names exactly the two paths the model can open.
-                for path in ("inputs/project/status.md", "inputs/project/decisions.md"):
+                for path in (
+                    "inputs/project/status.md",
+                    "inputs/project/decisions.md",
+                    # the project's own document, in the project's folder, beside the compiled two
+                    "inputs/project/audience/icp-gi-dac.md",
+                ):
                     assert lease.backend.stat_entry_sync(path).read_only is True
+                assert (
+                    lease.backend.read_text_sync("inputs/project/audience/icp-gi-dac.md")
+                    == PROJECT_ICP
+                )
                 status_body = lease.backend.read_text_sync("inputs/project/status.md")
                 # The title names this project, so the model never has to infer which project it
                 # is reading — and two fresh projects in one workspace no longer compile
@@ -559,20 +592,45 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     f"# Project status — {project.name} (`{project.project_id}`)\n"
                 )
                 assert "## Confirmed ICP" in status_body
+                # …and the same document is listed in the file, at the path it was seeded at.
+                assert (
+                    "- `inputs/project/audience/icp-gi-dac.md` — version 1, proposed, updated "
+                    in status_body
+                )
                 project_index = json.loads(
                     lease.backend.read_text_sync("context/project/project_files_index.json")
                 )
                 assert project_index["card_kind"] == "project_files_index"
                 assert sorted(item["workspace_path"] for item in project_index["files"]) == [
+                    "inputs/project/audience/icp-gi-dac.md",
                     "inputs/project/decisions.md",
                     "inputs/project/status.md",
                 ]
+                # A document carries its own version and status, unlike a compiled file, and its
+                # summary is derived from its prose rather than written by a compiler.
+                authored = next(
+                    item
+                    for item in project_index["files"]
+                    if item["path"] == "audience/icp-gi-dac.md"
+                )
+                assert (authored["kind"], authored["version"], authored["status"]) == (
+                    "icp-definition",
+                    1,
+                    "proposed",
+                )
+                assert authored["summary"] == (
+                    "Ambulatory GI groups that run their own anesthesia service line."
+                )
                 # The index says what each file is FOR. Deriving the line from the bytes would
                 # summarize ``status.md`` as its first section's content ("Not confirmed."), which
                 # reads as a statement about the whole project and is wrong the moment an ICP is
                 # confirmed — a model that trusts the index and skips the file would then answer
                 # that nothing is confirmed on a fully configured project.
-                assert {item["path"]: item["summary"] for item in project_index["files"]} == {
+                assert {
+                    item["path"]: item["summary"]
+                    for item in project_index["files"]
+                    if item["status"] == "compiled"
+                } == {
                     "status.md": (
                         "ICP, products, plan, accounts, discovery and research, as of this turn."
                     ),
@@ -706,6 +764,7 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "decisions.md": lease.backend.read_text_sync(
                         "inputs/project/decisions.md"
                     ).encode(),
+                    "audience/icp-gi-dac.md": PROJECT_ICP.encode(),
                 }
                 assert "Accounts in this project: 0" in status_body
             finally:

@@ -105,13 +105,35 @@ def project_workspace_path(row_path: str) -> str:
     return PROJECT_INPUT_PREFIX + row_path.removeprefix("project/")
 
 
+def _after_front_matter(decoded: str) -> str:
+    """A document's text with its leading YAML front matter dropped.
+
+    Every authored project document (an ICP variant, its personas, the plan) is markdown *with*
+    front matter, whose first line is the ``---`` fence and whose next lines are ``kind:``,
+    ``status:`` and friends — metadata about the document, never its subject. Without this every
+    index line for an authored document would read ``---``.
+
+    A fence that is never closed is not front matter (it is a horizontal rule on the first line),
+    so the text is returned untouched rather than swallowed to the end of the file.
+    """
+
+    lines = decoded.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return decoded
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return "\n".join(lines[index + 1 :])
+    return decoded
+
+
 def summary_of(body: bytes) -> str:
     """The summary rule for a *prose* document: its first prose line, bounded.
 
     The leading ``#`` heading is the file's title, not a summary of it, so heading lines are
-    skipped — otherwise every line of the index would read ``# Project status``. A file that is
-    only a heading (or is not text at all) summarizes to the empty string, which is honest: there
-    is nothing to preview, and the model opens the file.
+    skipped — otherwise every line of the index would read ``# Project status``. A leading YAML
+    front-matter block is skipped for the same reason (see :func:`_after_front_matter`). A file
+    that is only a heading (or is not text at all) summarizes to the empty string, which is
+    honest: there is nothing to preview, and the model opens the file.
 
     This rule is wrong for a *section-structured compiled* file, whose first prose line is one
     section's content (``status.md`` would summarize as "Not confirmed."). Such a file carries a
@@ -122,7 +144,7 @@ def summary_of(body: bytes) -> str:
         decoded = body.decode()
     except UnicodeDecodeError:
         return ""
-    for line in decoded.splitlines():
+    for line in _after_front_matter(decoded).splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

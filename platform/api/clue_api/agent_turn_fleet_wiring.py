@@ -122,6 +122,7 @@ from clue_api.project_context_files import (
     read_pinned_project_files,
 )
 from clue_api.project_status import (
+    current_project_documents,
     load_project_decisions,
     load_project_status_facts,
     render_decisions_markdown,
@@ -602,6 +603,9 @@ class ProjectConversationTurnRunner:
         # first attempt pinned, never a freshly compiled "current" state.
         project_files: tuple[PinnedProjectFile, ...] = ()
         if self._storage is not None:
+            # Bound once here so the compiler below closes over a backend, not over an attribute
+            # whose declared type still admits ``None``.
+            storage = self._storage
             async with self._conn_factory() as conn:
 
                 async def compile_project_files() -> list[CompiledProjectFile]:
@@ -639,6 +643,18 @@ class ProjectConversationTurnRunner:
                             version=None,
                             status="compiled",
                             summary="What the human told this project, in their words.",
+                        ),
+                        # …and the documents this project authored for itself. They are not brand
+                        # knowledge — the brand's seeds skip a project-scoped row deliberately —
+                        # so this is the one path that puts them on disk, in the same folder and
+                        # under the same pin as the two compiled files. Their paths are
+                        # folder-qualified, so they cannot collide with ``status.md`` or
+                        # ``decisions.md``; the pin's duplicate-path refusal stays the guard.
+                        *await current_project_documents(
+                            conn,
+                            storage,
+                            workspace_id=workspace_id,
+                            project_id=scope.project_id,
                         ),
                     ]
 
