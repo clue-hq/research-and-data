@@ -32,23 +32,6 @@
 
 **Frontend:** deferred — see `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`. The one frontend line in this plan is the tool label in `apps/frontend/src/features/projects/model/chat-tool-presentation.ts` (Task 9).
 
----|---|
-| `features/projects/model/project-documents.ts` | Zod schemas: `ProjectDocumentSummarySchema`, `ProjectDocumentDetailSchema`, `ProjectDocumentsResponseSchema`; `ProjectDocument` types; `planDocumentOf(list)`. |
-| `features/projects/data/project-documents.repository.ts` | Server-side reads via `fetchRead`; `saveProjectDocument(document, body)` client PUT with the 409/401/403 messages. |
-| `app/api/projects/[projectId]/documents/route.ts`, `app/api/projects/[projectId]/documents/[documentId]/route.ts` | BFF: list; detail + PUT. |
-| `features/chat-shell/model/chat-shell.ts`, `hooks/use-editor-shell-controller.ts`, `model/chat-surface-params.ts` | Surface `"plan"`: type unions, `open-plan` action, `openPlan`, URL `?surface=plan`. |
-| `features/chat-shell/model/plan-write-signal.ts` (+ test) | `PLAN_WRITE_TOOL = "write_project_document"`, `planWriteToOpen(...)`. |
-| `features/chat-shell/components/artifact-tabs.tsx`, `artifact-stage.tsx`, `chat-surface.tsx` | The Plan tab, the pane, the auto-open effect, `onOpenPlan` into chat parts. |
-| `features/projects/components/chat-message-part.tsx` | The plan card calls `actions.onOpenPlan()` when `part.planRef.objectType === "project_document"`. |
-| `components/markdown/markdown-article.tsx`, `markdown-source-editor.tsx`, `markdown.module.css`, `hooks/use-markdown-source-editor.ts` | Lifted from brand-context: the preview article and the CodeMirror editor, shared. |
-| `features/projects/hooks/use-project-document-editor.ts` | The draft/base/in-flight/rebase state machine with an injected save. |
-| `features/projects/hooks/use-project-documents.ts` | Loads the project's documents; `refreshToken` refetch; exposes `plan`. |
-| `features/projects/components/project-document-surface.tsx` + `project-document-surface.module.css` | Header (file icon + name, Preview/Edit, Save/Discard/Saved), article or editor. |
-| `features/projects/model/chat-tool-presentation.ts` | Label `write_project_document: "Write the project plan"`. |
-| `features/gallery/model/project-gallery.ts`, `components/gallery-artifact-card.tsx`, `features/chat-shell/model/gallery-card-target.ts` | Document cards (project ICP/persona) in the gallery; opening one lands on the document surface with that document. |
-
-Delete: `features/projects/components/project-plan.tsx` and `ProjectPlanSchema`/`ProjectPlan` in `model/project-workspace.ts` (orphaned dummy lift, replaced by this plan).
-
 ---
 
 ### Task 1: `write_project_plan` and the project-documents read/write functions
