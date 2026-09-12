@@ -84,7 +84,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v45 (ARV2 Track R, R4, 2026-09-10): v44 plus ONE tool — `launch_arv2_discovery@1`, verified
     # account discovery for a project — and stage0-interview v22, whose §7b is the procedure for
     # it. Nothing is dropped and nothing is re-pinned; everything else is v44's.
-    AgentRole.HEAD_OF_ABM: "v45",
+    # v46 (ARV2 context and authoring, 2026-09-12): v45 plus `author_icp_document@1` and
+    # `request_persona_synthesis@1` — the agent may write a proposed ICP document (brand-level or
+    # a project-local variant) and ask the platform for its personas — and stage0-interview v23,
+    # whose §5b and §5c are the procedures and whose §1 names the project's own files. Neither
+    # tool confirms anything: the ICP gate is still the human's. Everything else is v45's.
+    AgentRole.HEAD_OF_ABM: "v46",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -110,14 +115,18 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
     # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
     "archive_thread": (),
-    # ICP authoring: registered so the platform's write surface stays complete and the authority
-    # audit sees it, granted to nobody yet — the Head-of-ABM profile that pins it, and the skill
-    # text that teaches when an ICP is ready to write down, land with the authoring flow itself.
-    "author_icp_document": (),
-    # The persona request is the same kind of capability and lands on the same terms: registered
-    # so the audience-persona half of the ICP flow is visible to the authority audit, granted to
-    # nobody until the profile and skill text that teach it land with the flow.
-    "request_persona_synthesis": (),
+    # ICP authoring: granted with `head-of-abm@v46`; stage0-interview v23 §5b is the procedure.
+    # Writing the profile down is the same act as proposing one in prose — it is drafted only from
+    # the brand's knowledge files and what the human said on this turn — except that the written
+    # version is a durable, addressable document the confirmation gate can present. It approves
+    # nothing: the document is born proposed and the human confirms it through
+    # `open_icp_confirmation_gate@2`, exactly as they confirm a profile onboarding synthesized.
+    "author_icp_document": (AgentRole.HEAD_OF_ABM,),
+    # The persona request is the same kind of capability and lands on the same terms: a profile
+    # the human already confirmed needs its personas before research and outreach can use it, and
+    # asking for them queues a background onboarding turn rather than writing a document here.
+    # Granted with `head-of-abm@v46`; stage0-interview v23 §5c is the procedure.
+    "request_persona_synthesis": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
@@ -448,6 +457,12 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",
+                # ARV2 context and authoring: both write. `author_icp_document` mints a durable
+                # proposed ICP version on the brand or the project, and `request_persona_synthesis`
+                # queues a real background onboarding turn that spends against providers — neither
+                # is a thing a manual-conversation-only dev harness may leave behind.
+                "author_icp_document",
+                "request_persona_synthesis",
             }
         ),
         withheld_delegation_roles=frozenset(

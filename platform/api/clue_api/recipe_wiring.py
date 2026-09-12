@@ -92,6 +92,13 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # would refuse the tool `head-of-abm@v45` grants without its own revision. v23 is v22 plus
     # that address and nothing else; v22 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v23.json",
+    # ARV2 context and authoring: two addresses join the interaction slot —
+    # `author_icp_document@1`, the proposed ICP document the agent may write, and
+    # `request_persona_synthesis@1`, the personas for a confirmed one — because the slot pins
+    # EXACT addresses and would refuse the tools `head-of-abm@v46` grants without its own
+    # revision. v24 is v23 plus those two addresses and nothing else; v23 stays the exact
+    # replay input for turns pinned to it.
+    "recipe0-stage0-v24.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

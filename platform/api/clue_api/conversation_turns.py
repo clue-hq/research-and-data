@@ -124,7 +124,11 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # stage0-interview v22 §7b teaches. The slot pins exact addresses, so a granted tool the
 # promoted revision does not admit is refused by plan validation; v22 stays the exact replay
 # input for turns already pinned to it.
-CONVERSATION_RECIPE_VERSION = 23
+# Revision 24 (ARV2 context and authoring) is revision 23 plus two exact addresses:
+# ``author_icp_document@1`` and ``request_persona_synthesis@1``, the ICP-authoring pair
+# `head-of-abm@v46` grants and stage0-interview v23 §5b/§5c teach. v23 stays the exact replay
+# input for turns already pinned to it.
+CONVERSATION_RECIPE_VERSION = 24
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface

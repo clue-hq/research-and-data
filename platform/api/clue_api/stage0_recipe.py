@@ -426,7 +426,15 @@ class Stage0StepPinProvider:
         # presenting turn), so the pin is resolved through the turn ref the engine injected. A
         # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
         # tool's own preconditions are what refuse it, with a reason a model can act on.
-        if step.tool_name in {"open_design_leg", "open_product_set_selection_gate"}:
+        # ARV2 context and authoring: the ICP-authoring pair derives its project the same way and
+        # for the same reason — each carries only the trusted `source_turn_ref`, never a
+        # model-authored project, so the presenting turn is the coordinate the pin resolves from.
+        if step.tool_name in {
+            "author_icp_document",
+            "open_design_leg",
+            "open_product_set_selection_gate",
+            "request_persona_synthesis",
+        }:
             requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
         # The artifact-shaped ICP gate (``@2``) derives its project the same way. ``@1`` keeps the
         # Stage-0 scope path above, so the version is part of the condition.

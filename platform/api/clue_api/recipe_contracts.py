@@ -80,6 +80,13 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # standing address.
     "launch_arv2_discovery@1",
     "read_arv2_account_research_run@1",
+    # ARV2 context and authoring (added in recipe0-stage0@24): the proposed ICP document the
+    # agent may write, and the persona synthesis it may request for a confirmed one. Both are
+    # granted at `head-of-abm@v46` and declare the same ``project`` pin as their siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "author_icp_document@1",
+    "request_persona_synthesis@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
