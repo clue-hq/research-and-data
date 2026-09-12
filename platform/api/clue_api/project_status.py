@@ -24,7 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentArtifactReader
-from clue_api.arv2.discovery_store import PENDING_DISPOSITION, SHOWN_DISPOSITIONS
+from clue_api.arv2.discovery_store import SHOWN_DISPOSITIONS, VERIFIED_PREDICATE
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
@@ -149,18 +149,20 @@ _ACCOUNT_COUNT = text(
 )
 
 # "verified" and "shown" are the words the discovery screen uses, and their arithmetic is the
-# lane's, not this module's: both dispositions are bound from ``clue_api.arv2.discovery_store``'s
-# public constants rather than re-typed here, so a seventh disposition cannot leave status.md
-# quietly reporting a different number than the UI. Every sub-select is workspace-scoped too: the
-# candidate's ``workspace_id`` is not forced equal to its run's by any FK.
+# lane's, not this module's: both are bound from ``clue_api.arv2.discovery_store``'s public
+# constants rather than re-typed here, so a seventh disposition cannot leave status.md quietly
+# reporting a different number than the UI — and ``VERIFIED_PREDICATE`` in particular is shared
+# with the chat read and the Target-accounts poll, because "verified" means *judged* (a verdict
+# row), not merely "no longer pending". Every sub-select is workspace-scoped too: the candidate's
+# ``workspace_id`` is not forced equal to its run's by any FK.
 _LATEST_DISCOVERY = text(
-    """
+    f"""
     SELECT r.run_id, r.status, r.asked,
            COALESCE(r.found_strict, 0) + COALESCE(r.found_relaxed, 0) AS found,
            r.started_at, r.finished_at,
            (SELECT count(*) FROM arv2_discovery_candidate c
              WHERE c.run_id = r.run_id AND c.workspace_id = :ws
-               AND c.disposition <> :pending) AS verified,
+               AND {VERIFIED_PREDICATE}) AS verified,
            (SELECT count(*) FROM arv2_discovery_candidate c
              WHERE c.run_id = r.run_id AND c.workspace_id = :ws
                AND c.disposition = ANY(:shown)) AS shown,
@@ -356,11 +358,7 @@ async def load_project_status_facts(
         (
             await conn.execute(
                 _LATEST_DISCOVERY,
-                {
-                    **params,
-                    "shown": list(SHOWN_DISPOSITIONS),
-                    "pending": PENDING_DISPOSITION,
-                },
+                {**params, "shown": list(SHOWN_DISPOSITIONS)},
             )
         )
         .mappings()

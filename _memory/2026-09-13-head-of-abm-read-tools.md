@@ -262,3 +262,45 @@ SELECT count(*) AS accounts,
   grant should measure before it appends.
 - The lane DB still carries committed rows from earlier walks behind several pre-existing reds; a
   reset clears them.
+
+## Final-review fix wave — 2026-09-13 (`head-of-abm@v49` / `stage0-interview@v26`)
+
+The review (`.superpowers/sdd/2026-09-12-head-of-abm-read-tools/final-review.md`, 0 Critical /
+4 Important / 9 Minor / 4 Nit) was adjudicated in the ledger (rulings Q and R) and applied as one
+wave. Report: `.superpowers/sdd/2026-09-12-head-of-abm-read-tools/fix-report.md`.
+
+- **I1 / ruling Q** — `_account_claims` now mirrors `display/gather.py`'s gate exactly: SENSITIVE
+  use-class dropped, tier-4 not-VERIFIED dropped under `settings.verification_enabled`,
+  `outreach_safe=false` dropped. Counted in `excluded: {sensitive, unverified, outreach_unsafe}`;
+  each claim carries `verification_status` + `outreach_safe`. `DbArv2ReadService(settings=…)` is
+  the new constructor arg (composed from `settings` at `fleet_main`, `resolved` at
+  `projections_main`). The description no longer says "verified".
+- **I2 / ruling R** — `discovery_store.VERIFIED_PREDICATE = "jsonb_array_length(c.verdicts_json) > 0"`
+  is the ONE definition, consumed by `read_tools._DISCOVERY_COUNTS`,
+  `project_status._LATEST_DISCOVERY` and `frontend_read/discovery_status._LATEST_RUN`. "Not pending"
+  counted the pre-spend dispositions, which are stamped before any gate is asked.
+- **I3** — `read_project_accounts` gained `query` (ILIKE, metacharacters escaped) and `offset`;
+  `total` counts the filtered set.
+- **I4** — candidates filtered to the caller's workspace before sorting; `candidate_total` follows.
+- **M1** — the `refreshing` tie-break is `v1_shared._ARV2_RESEARCH_STATUS`'s tuple compare, and the
+  row order is the accounts screen's `created_at DESC, id DESC`. **Test-seeding note:**
+  `account_entity.created_at` defaults to `now()` (TRANSACTION time), so accounts seeded in one
+  `rollback_conn` share a timestamp and the order falls through to a random uuid — `_seed_account`
+  in `tests/arv2/test_read_tools_db.py` now stamps an ascending `created_at`.
+- **M2/M3/M4/M5** — `truncated` proven at 121 claims; clipped evidence ends `…` and carries
+  `evidence_truncated`; overview `body` → `body_text` (JSON, 6000-char cap) + `body_truncated`;
+  a prefix that matches nothing on a researched account refuses `no_claims_under_prefix`.
+- **M8** — the trial surface **withholds** the three reads (it composes no read service).
+- **M9** — the outputs carry typed rows; this moved all three output digests and
+  `read_project_accounts`' INPUT digest, so `skills/stage0-interview/v26` and
+  `profiles/head-of-abm/v49` were minted and `C6_ACTIVE_PROFILE_VERSIONS` /
+  `PROJECT_CONVERSATION_AGENT_PROFILE_ID` flipped. **The recipe stays v26** — verified by reading
+  the JSON: `recipe0-stage0-v26.json` carries zero `sha256` keys, it pins addresses only, and no
+  address moved.
+- **PARKED** (ledger): M6 (candidate jsonb decode at `candidate_limit=0`), M7 (no project-membership
+  check on the account read), and the four nits.
+- **Deviation from the brief, recorded:** the brief said skill v26 would be v25 "with only the three
+  output digests updated"; `read_project_accounts`' *input* digest also moved (I3 added `query` and
+  `offset`), so four digests changed. The skill's §7b/§7c prose is byte-identical to v25 — the
+  `query`/`offset` teaching lives in the tool's own `model_description`, which is where the model
+  reads it.

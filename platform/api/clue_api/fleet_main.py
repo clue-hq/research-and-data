@@ -954,8 +954,10 @@ async def _serve() -> None:
         # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
         # every deployment (account membership, display blocks, claims, discovery runs) and reading
         # them spends nothing. Composed unconditionally; the tools refuse by name only where the
-        # read surface itself is absent.
-        arv2_reads = DbArv2ReadService()
+        # read surface itself is absent. ``settings`` is here for one predicate: the claims read
+        # mirrors the account page's display gate, whose tier-4 arm is armed by
+        # ``verification_enabled``.
+        arv2_reads = DbArv2ReadService(settings=settings)
         registry = build_toolbelt(
             storage=storage,
             settings=settings,

@@ -102,7 +102,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # says to read the last discovery run before proposing another. None of them spends, approves
     # or launches: they replace "what my own thread happened to start" with what the rows say.
     # Everything else is v47's.
-    AgentRole.HEAD_OF_ABM: "v48",
+    # v49 (read-tool contract repairs, 2026-09-13): v48's three reads with their contracts fixed,
+    # and stage0-interview v26. The rows they serve are typed in the output schema now, so a later
+    # change to a row shape moves the digest and this pin notices; `read_account_research`'s claims
+    # are gated exactly as the account page gates them (sensitive, unverified tier-4 and
+    # outreach-unsafe held back and counted) so chat cannot state a fact the app refuses to print;
+    # `read_project_accounts` gained `query`/`offset` so a named account past the first page is
+    # reachable; and `read_discovery_run`'s `verified` counts the candidates the verifier judged.
+    # No tool is added or dropped. Everything else is v48's.
+    AgentRole.HEAD_OF_ABM: "v49",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -148,10 +156,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "write_project_document": (AgentRole.HEAD_OF_ABM,),
     # The ARV2 reads: what this project's own rows already say — its accounts and their research
     # status, one account's overview or claims, one discovery run and its candidates. Granted with
-    # `head-of-abm@v48`; stage0-interview v25 §7c is the procedure and its §7b says to read the
-    # last discovery run before proposing another. They spend nothing, approve nothing and launch
-    # nothing, so the only thing a call can do is make an answer true: a fact about an account now
-    # comes from a claim the read returned rather than from an earlier thread's memory.
+    # `head-of-abm@v48` (contracts repaired at v49); stage0-interview v26 §7c is the procedure and
+    # its §7b says to read the last discovery run before proposing another. They spend nothing,
+    # approve nothing and launch nothing, so the only thing a call can do is make an answer true:
+    # a fact about an account now comes from a claim the read returned rather than from an earlier
+    # thread's memory.
     "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
     "read_account_research": (AgentRole.HEAD_OF_ABM,),
     "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
@@ -495,6 +504,15 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # plan card in the project's own chat — a manual-conversation-only dev harness
                 # may not leave one behind either.
                 "write_project_document",
+                # The three ARV2 reads spend nothing and address nobody, so they are withheld for
+                # the OTHER reason PC-C8 §2.4 gives: the trial's own `build_toolbelt` passes no
+                # `arv2_reads`, so installed they would be advertised in the capability map and
+                # refuse `arv2_reads_not_composed` at call time — restriction by refusal, which
+                # that section rejects. Withheld, the trial's framing sentence is true: this
+                # surface has no read surface over the project's rows.
+                "read_project_accounts",
+                "read_account_research",
+                "read_discovery_run",
             }
         ),
         withheld_delegation_roles=frozenset(

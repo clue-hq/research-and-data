@@ -99,6 +99,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v23",
         "skill:stage0-interview@v24",
         "skill:stage0-interview@v25",
+        # The read tools' contract repairs: v25 with the three reads' output digests (and
+        # `read_project_accounts`' input digest) re-measured off the typed descriptors.
+        "skill:stage0-interview@v26",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -171,6 +174,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The ARV2 reads: v47 plus `read_project_accounts@1`, `read_account_research@1` and
         # `read_discovery_run@1`, and stage0-interview v25.
         "profile:head-of-abm@v48",
+        # The read tools' contract repairs: v48 with the three reads re-pinned and
+        # stage0-interview v26.
+        "profile:head-of-abm@v49",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",

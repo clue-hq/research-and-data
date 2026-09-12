@@ -121,7 +121,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # reads) is v47 plus `read_project_accounts@1`, `read_account_research@1` and
         # `read_discovery_run@1` and stage0-interview v25 (§7c, read before you speak); digest
         # measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("000fd5b5ba03b4f94da63ae94a7e6fac95ba958758f76c0e4e6825f4e9dea0f4"),
+        AgentRole.HEAD_OF_ABM: ("1c15046323973cd81c6b3c07ac22dfe84c71ccf280b3652c6efd2d04f56c3237"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -482,9 +482,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v48"
+    assert production.profile_ref.address == "profile:head-of-abm@v49"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v25"
+        "skill:stage0-interview@v26"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -528,7 +528,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v25")
+    body = production.open_skill("skill:stage0-interview@v26")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "point the user to onboarding on the Knowledge page" in body
@@ -586,7 +586,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
     # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v25"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v26"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
@@ -694,7 +694,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v25")
+    body = head.open_skill("skill:stage0-interview@v26")
 
     assert required_guidance in body
 

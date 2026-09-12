@@ -23,6 +23,7 @@ call, one :class:`DbArv2ReadService` that opens one transaction per call.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Protocol
@@ -33,8 +34,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.discovery_store import (
-    PENDING_DISPOSITION,
     SHOWN_DISPOSITIONS,
+    VERIFIED_PREDICATE,
     CandidateRow,
     list_candidates,
 )
@@ -42,7 +43,8 @@ from clue_api.arv2.discovery_store import read_discovery_run as read_discovery_r
 from clue_api.arv2.display.blocks import live_blocks
 from clue_api.arv2.display.recipes import read_recipes
 from clue_api.arv2.errors import Arv2Error
-from clue_core import EntityId
+from clue_config import Settings
+from clue_core import Claim, EntityId, UseClass, VerificationStatus
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
 from clue_spine import get_project
@@ -62,6 +64,7 @@ from clue_toolbelt import (
 )
 
 __all__ = [
+    "BODY_CHARS",
     "EVIDENCE_CHARS",
     "MAX_ACCOUNTS",
     "MAX_CANDIDATES",
@@ -102,7 +105,7 @@ class Arv2ReadRefused(Arv2Error):
     ``code`` is stable and machine-readable; the toolbelt tools turn it straight into a
     :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
     ``account_not_found``, ``overview_not_written``, ``account_not_researched``,
-    ``discovery_run_not_found``, ``no_discovery_run``.
+    ``no_claims_under_prefix``, ``discovery_run_not_found``, ``no_discovery_run``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -139,6 +142,16 @@ class ProjectAccountsPage:
     accounts: tuple[ProjectAccountView, ...]
 
 
+#: The optional name/domain filter, written once so the page and the total measure one population.
+#: ``CAST(:query AS text) IS NULL`` rather than a Python-assembled predicate: the statement is one
+#: prepared shape either way, and the pattern is always bound rather than interpolated.
+_ACCOUNT_QUERY_FILTER = """
+      AND (
+          CAST(:query AS text) IS NULL
+          OR a.canonical_name ILIKE :pattern
+          OR a.primary_domain ILIKE :pattern
+      )"""
+
 #: The project's accounts with each one's research state, in one statement.
 #:
 #: ``merged_into IS NULL`` drops merge losers: a merged account is the same company under another
@@ -146,9 +159,16 @@ class ProjectAccountsPage:
 #: account's newest ARV2 **account** job — person jobs share this table and the account column, and
 #: a contact still being researched is not the account being re-researched. ``refreshing`` is the
 #: narrow claim it sounds like: the latest run is live *and* an earlier one completed, so the
-#: account already has research on it and is getting more.
+#: account already has research on it and is getting more — and "earlier" is the same **tuple**
+#: compare ``frontend_read.v1_shared._ARV2_RESEARCH_STATUS`` uses, because both statements order
+#: "latest" by ``(created_at, job_id)`` and so both must break a ``created_at`` tie the same way.
+#: Two jobs written in one transaction would otherwise read ``refreshing: false`` to the agent and
+#: "Refreshing" on the screen.
+#:
+#: The row order is the accounts screen's own default (``created_at DESC, id DESC``), so "the first
+#: ten accounts" means the same ten to the agent and to the marketer looking at the table.
 _LIST_PROJECT_ACCOUNTS = text(
-    """
+    f"""
     SELECT a.id, a.canonical_name, a.primary_domain, pa.added_via, pa.added_at,
            j.status AS research_status,
            EXISTS (SELECT 1 FROM arv2_research_job j2
@@ -158,7 +178,8 @@ _LIST_PROJECT_ACCOUNTS = text(
                      AND EXISTS (SELECT 1 FROM arv2_research_job j3
                                  WHERE j3.workspace_id = :ws AND j3.account_entity_id = a.id
                                    AND j3.subject_type = 'account' AND j3.status = 'completed'
-                                   AND j3.created_at < j2.created_at)) AS refreshing
+                                   AND (j3.created_at, j3.job_id)
+                                       < (j2.created_at, j2.job_id))) AS refreshing
     FROM project_account pa
     JOIN account_entity a ON a.id = pa.account_entity_id AND a.merged_into IS NULL
     LEFT JOIN LATERAL (
@@ -166,23 +187,39 @@ _LIST_PROJECT_ACCOUNTS = text(
       WHERE j.workspace_id = :ws AND j.account_entity_id = a.id AND j.subject_type = 'account'
       ORDER BY j.created_at DESC, j.job_id DESC LIMIT 1
     ) j ON TRUE
-    WHERE pa.workspace_id = :ws AND pa.project_id = :project
-    ORDER BY a.canonical_name, a.id
-    LIMIT :limit
+    WHERE pa.workspace_id = :ws AND pa.project_id = :project{_ACCOUNT_QUERY_FILTER}
+    ORDER BY a.created_at DESC, a.id DESC
+    LIMIT :limit OFFSET :offset
     """
 )
 
 #: The total counts the rows the listing *can show*, which is why it repeats the listing's own
-#: ``merged_into IS NULL`` join: "showing 100 of 240" must be two measurements of one population,
-#: and counting a merge loser the page can never serve would make the remainder unreachable.
+#: ``merged_into IS NULL`` join **and** its filter: "showing 100 of 240" must be two measurements
+#: of one population, and counting a merge loser (or a name the filter excluded) the page can never
+#: serve would make the remainder unreachable.
 _COUNT_PROJECT_ACCOUNTS = text(
-    """
+    f"""
     SELECT count(*)
     FROM project_account pa
     JOIN account_entity a ON a.id = pa.account_entity_id AND a.merged_into IS NULL
-    WHERE pa.workspace_id = :ws AND pa.project_id = :project
+    WHERE pa.workspace_id = :ws AND pa.project_id = :project{_ACCOUNT_QUERY_FILTER}
     """
 )
+
+
+def _ilike_pattern(query: str | None) -> str:
+    """``query`` as a contains-pattern, with LIKE's own metacharacters neutered.
+
+    A human typing ``100%`` or ``a_b`` is naming a company, not writing a pattern; unescaped, the
+    first would match every account and the second would match one character too many. Backslash
+    goes first — it is the escape character Postgres LIKE uses by default, so escaping it after the
+    others would re-escape their escapes.
+    """
+
+    if query is None:
+        return "%"
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 async def list_project_accounts(
@@ -191,6 +228,8 @@ async def list_project_accounts(
     workspace_id: str,
     project_id: str,
     limit: int,
+    query: str | None = None,
+    offset: int = 0,
 ) -> ProjectAccountsPage:
     """The project's accounts with their research status. Raises when the project is not ours."""
 
@@ -199,8 +238,16 @@ async def list_project_accounts(
         # Fail-closed and indistinguishable: another workspace's project is not "empty", it is
         # absent — the same answer a project id that never existed gets.
         raise Arv2ReadRefused("project_not_found", f"no project {project_id} in this workspace")
-    params = {"ws": workspace_id, "project": project_id, "limit": limit}
+    params: dict[str, Any] = {
+        "ws": workspace_id,
+        "project": project_id,
+        "limit": limit,
+        "offset": offset,
+        "query": query,
+        "pattern": _ilike_pattern(query),
+    }
     rows = (await conn.execute(_LIST_PROJECT_ACCOUNTS, params)).mappings().all()
+    # The total measures the FILTERED population: the model pages within the answer it asked for.
     total = int((await conn.execute(_COUNT_PROJECT_ACCOUNTS, params)).scalar_one())
     accounts = tuple(
         ProjectAccountView(
@@ -227,8 +274,13 @@ class AccountOverviewSection(BaseModel, frozen=True):
     """One written section of an account's overview page, as it was stored."""
 
     section_key: str
-    #: ``display_block.body_json`` verbatim — the same body the app renders, not a second shape.
-    body: dict[str, Any]
+    #: ``display_block.body_json`` as JSON text, capped at :data:`BODY_CHARS`. Text rather than a
+    #: nested object because the stored body has no bound of its own — nothing in the display
+    #: package limits how many items a section holds or how long one item is — and an unbounded
+    #: blob is context the model pays for on every later turn of the thread.
+    body_text: str
+    #: The body was longer than the cap and the tail is not here.
+    body_truncated: bool
     cited_claim_ids: tuple[str, ...]
     generated_at: str
 
@@ -240,9 +292,18 @@ class AccountClaimView(BaseModel, frozen=True):
     field_key: str
     value: Any
     source_url: str | None
-    #: The evidence span, clipped — a quote is here to be *checked*, not reproduced whole.
+    #: The evidence span, clipped — a quote is here to be *checked*, not reproduced whole. A
+    #: clipped span ends in ``…`` so a partial quote is never presented as a complete one.
     evidence: str
+    #: The span was longer than :data:`EVIDENCE_CHARS`; what is here is its opening.
+    evidence_truncated: bool
     tier: int
+    #: ``claim.verification_status`` — ``unverified`` / ``verified`` / ``rejected``. Served so the
+    #: model can say *how* a fact is known, not only what it is.
+    verification_status: str | None
+    #: ``claim.outreach_safe`` — false rows never reach here; the field carries the fact anyway so
+    #: the shape does not change if the gate ever admits a restricted section.
+    outreach_safe: bool | None
     collected_at: str
 
 
@@ -256,6 +317,10 @@ class AccountResearch:
     overview: tuple[AccountOverviewSection, ...]
     claims: tuple[AccountClaimView, ...]
     truncated: bool
+    #: How many live claims the display gate held back, by reason: ``sensitive``, ``unverified``,
+    #: ``outreach_unsafe``. Counted rather than silently dropped, exactly as ``SectionInput`` does
+    #: for the page — an empty answer with a count is a fact; an empty answer alone is a lie.
+    excluded: dict[str, int]
 
 
 #: The hard ceiling on one claims read, for the same reason as :data:`MAX_ACCOUNTS`: a researched
@@ -265,10 +330,32 @@ MAX_CLAIMS = 120
 
 #: An evidence span is a quotation the reader may *check*; a whole article is not. Clipped rather
 #: than dropped, because a truncated quote still tells the reader what kind of sentence it came
-#: from — and the full span is one evidence read away.
+#: from — and the full span is one evidence read away. A clipped span ends with the ellipsis and
+#: never exceeds this length, so the marker costs a character of the quote rather than adding one.
 EVIDENCE_CHARS = 240
 
+#: The cap on one overview section's serialized body. The stored body is ``{intro, items, checks,
+#: cited_flags, cost_usd, call:{…}}`` and nothing in the display package bounds ``items`` — so the
+#: honest answer to "how large can a section be?" was "unbounded" until this.
+BODY_CHARS = 6000
+
+#: What a clipped string ends with. One character, so the cap is the cap.
+_ELLIPSIS = "…"
+
 _OVERVIEW_PAGE = "overview"
+
+
+def _clip(value: str, limit: int) -> tuple[str, bool]:
+    """``value`` within ``limit`` characters, and whether anything was cut.
+
+    The ellipsis replaces the last kept character rather than following it: a caller that trusts
+    the cap must be able to trust it, marker included.
+    """
+
+    if len(value) <= limit:
+        return value, False
+    return value[: limit - 1] + _ELLIPSIS, True
+
 
 #: The account, as this workspace may see it. ``merged_into IS NULL`` refuses a merge loser by
 #: name rather than serving the wrong company's research under the id the caller asked about.
@@ -333,15 +420,33 @@ async def _overview_sections(
         blocks.values(),
         key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
     )
-    return tuple(
-        AccountOverviewSection(
-            section_key=block.section_key,
-            body=block.body_json,
-            cited_claim_ids=block.cited_claim_ids,
-            generated_at=block.generated_at.isoformat(),
+    sections: list[AccountOverviewSection] = []
+    for block in ordered:
+        # ``sort_keys`` so two attempts of one turn serialize identical bytes, and
+        # ``ensure_ascii=False`` so a quote the writer used stays the character the human typed.
+        body_text, body_truncated = _clip(
+            json.dumps(block.body_json, sort_keys=True, ensure_ascii=False), BODY_CHARS
         )
-        for block in ordered
-    )
+        sections.append(
+            AccountOverviewSection(
+                section_key=block.section_key,
+                body_text=body_text,
+                body_truncated=body_truncated,
+                cited_claim_ids=block.cited_claim_ids,
+                generated_at=block.generated_at.isoformat(),
+            )
+        )
+    return tuple(sections)
+
+
+def _is_sensitive(claim: Claim) -> bool:
+    return claim.use_class is UseClass.SENSITIVE
+
+
+def _is_unverified_synthesis(claim: Claim) -> bool:
+    """Under a verifying posture, an unjudged tier-4 synthesis is not a fact yet."""
+
+    return claim.source_tier == 4 and claim.verification_status is not VerificationStatus.VERIFIED
 
 
 async def _account_claims(
@@ -350,8 +455,24 @@ async def _account_claims(
     workspace_id: str,
     account_uuid: UUID,
     field_prefix: str | None,
-) -> tuple[tuple[AccountClaimView, ...], bool]:
-    """The account's live claims under ``field_prefix``, bounded, plus whether the tail was cut."""
+    settings: Settings,
+) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int]]:
+    """The account's live claims under ``field_prefix``, **gated exactly as the account page gates
+    them**, bounded, plus whether the tail was cut and what was held back.
+
+    The gate is :mod:`clue_api.arv2.display.gather`'s, predicate for predicate: a special-category
+    value never leaves the store, an unjudged tier-4 synthesis is held back under a verifying
+    posture, and an ``outreach_safe=false`` row is held back outright (this read has no restricted
+    section to put one in). Without it the agent could tell a founder, in chat, a fact the account
+    page deliberately refuses to print — and call it verified, because the tool said so.
+
+    Exclusions are **counted, not hidden**: an account whose every claim is held back comes back
+    with an empty list and a non-zero ``excluded``, which says "there is something here and you may
+    not have it" rather than "there is nothing here".
+
+    The claims read spans every project of the workspace that researched this account: the store
+    holds account truth, not a per-project lens.
+    """
 
     # Scoped by the claim store's own tenant filter, never by a hand-written workspace predicate:
     # the scope object is the one place that knows public-footprint claims are shared and private
@@ -361,6 +482,8 @@ async def _account_claims(
         [EntityId(account_uuid)],
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
+    if not claims:
+        raise Arv2ReadRefused("account_not_researched", "no claims about this account yet")
     # ``claims_for_entities`` already orders by ``(field_key, collected_at DESC, id)``, which is
     # the grouping the agent reads: one field's newest value first.
     matching = [
@@ -369,25 +492,45 @@ async def _account_claims(
         if field_prefix is None or claim.field_key.startswith(field_prefix)
     ]
     if not matching:
+        # A distinct code: the account IS researched, and saying otherwise because one prefix came
+        # back empty is a false statement about the account in the machine-readable half.
         raise Arv2ReadRefused(
-            "account_not_researched",
-            f"no claims about this account{f' under {field_prefix}' if field_prefix else ''} yet",
+            "no_claims_under_prefix",
+            f"this account has claims, but none under {field_prefix}",
         )
-    return (
-        tuple(
+
+    excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
+    kept: list[Claim] = []
+    for claim in matching:
+        if _is_sensitive(claim):
+            excluded["sensitive"] += 1
+            continue
+        if settings.verification_enabled and _is_unverified_synthesis(claim):
+            excluded["unverified"] += 1
+            continue
+        if not claim.outreach_safe:
+            excluded["outreach_unsafe"] += 1
+            continue
+        kept.append(claim)
+
+    views: list[AccountClaimView] = []
+    for claim in kept[:MAX_CLAIMS]:
+        evidence, evidence_truncated = _clip(claim.evidence_span or "", EVIDENCE_CHARS)
+        views.append(
             AccountClaimView(
                 claim_id=str(claim.id),
                 field_key=str(claim.field_key),
                 value=claim.value_json,
                 source_url=claim.source_url,
-                evidence=(claim.evidence_span or "")[:EVIDENCE_CHARS],
+                evidence=evidence,
+                evidence_truncated=evidence_truncated,
                 tier=int(claim.source_tier),
+                verification_status=str(claim.verification_status),
+                outreach_safe=bool(claim.outreach_safe),
                 collected_at=claim.collected_at.isoformat(),
             )
-            for claim in matching[:MAX_CLAIMS]
-        ),
-        len(matching) > MAX_CLAIMS,
-    )
+        )
+    return tuple(views), len(kept) > MAX_CLAIMS, excluded
 
 
 async def read_account_research(
@@ -396,6 +539,7 @@ async def read_account_research(
     workspace_id: str,
     account_entity_id: str,
     section: str,
+    settings: Settings,
     field_prefix: str | None = None,
 ) -> AccountResearch:
     """What research found about one account: its written overview, or its live claims.
@@ -411,16 +555,18 @@ async def read_account_research(
     overview: tuple[AccountOverviewSection, ...] = ()
     claims: tuple[AccountClaimView, ...] = ()
     truncated = False
+    excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
     if section == "overview":
         overview = await _overview_sections(
             conn, workspace_id=workspace_id, account_uuid=account_uuid
         )
     else:
-        claims, truncated = await _account_claims(
+        claims, truncated, excluded = await _account_claims(
             conn,
             workspace_id=workspace_id,
             account_uuid=account_uuid,
             field_prefix=field_prefix,
+            settings=settings,
         )
     return AccountResearch(
         account_entity_id=str(account_uuid),
@@ -429,6 +575,7 @@ async def read_account_research(
         overview=overview,
         claims=claims,
         truncated=truncated,
+        excluded=excluded,
     )
 
 
@@ -492,16 +639,19 @@ _LATEST_DISCOVERY_RUN = text(
 )
 
 #: The three tallies a human asks for by other names: "how many did we check?", "how many are
-#: worth looking at?", "how many did we take?". Verified is the complement of ``pending`` rather
-#: than a list of its own, so a disposition added later counts as verified without touching this.
+#: worth looking at?", "how many did we take?". "Checked" is
+#: :data:`~clue_api.arv2.discovery_store.VERIFIED_PREDICATE` — a candidate with a verdict — shared
+#: with ``status.md`` and the Target-accounts poll, because the pre-spend dispositions
+#: (``duplicate_of_existing``, ``not_chosen_before``) are stamped before any gate is asked and
+#: counting them as verified made the agent say the platform had checked companies it had skipped.
 #: Every sub-select names the tenant: ``arv2_discovery_candidate.run_id`` is a single-column FK, so
 #: nothing in the schema forces a candidate's workspace to equal its run's.
 _DISCOVERY_COUNTS = text(
-    """
+    f"""
     SELECT
       (SELECT count(*) FROM arv2_discovery_candidate c
         WHERE c.run_id = :run AND c.workspace_id = :ws
-          AND c.disposition <> :pending) AS verified,
+          AND {VERIFIED_PREDICATE}) AS verified,
       (SELECT count(*) FROM arv2_discovery_candidate c
         WHERE c.run_id = :run AND c.workspace_id = :ws
           AND c.disposition = ANY(:shown)) AS shown,
@@ -571,18 +721,24 @@ async def read_discovery_run(
         (
             await conn.execute(
                 _DISCOVERY_COUNTS,
-                {
-                    "run": run_uuid,
-                    "ws": workspace_id,
-                    "pending": PENDING_DISPOSITION,
-                    "shown": list(SHOWN_DISPOSITIONS),
-                },
+                {"run": run_uuid, "ws": workspace_id, "shown": list(SHOWN_DISPOSITIONS)},
             )
         )
         .mappings()
         .one()
     )
-    candidates = sorted(await list_candidates(conn, run_id=run_uuid), key=_candidate_order)
+    # ``list_candidates`` filters on ``run_id`` alone, and the FK is single-column — so the rows
+    # are scoped HERE, the same way the tallies above are. The two halves of one answer must agree
+    # about whether the FK is trusted: a row whose workspace is not the run's would otherwise be
+    # listed and counted into ``candidate_total`` while being excluded from ``shown``.
+    candidates = sorted(
+        (
+            candidate
+            for candidate in await list_candidates(conn, run_id=run_uuid)
+            if candidate.workspace_id == workspace_id
+        ),
+        key=_candidate_order,
+    )
     return DiscoveryRunView(
         run_id=str(run.run_id),
         status=str(run.status),
@@ -623,7 +779,13 @@ class Arv2ReadService(Protocol):
     """What the read tools call. One transaction per call is the implementation's business."""
 
     async def list_project_accounts(
-        self, *, workspace_id: str, project_id: str, limit: int
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        limit: int,
+        query: str | None,
+        offset: int,
     ) -> ProjectAccountsPage: ...
 
     async def read_account_research(
@@ -646,18 +808,36 @@ class Arv2ReadService(Protocol):
 
 
 class DbArv2ReadService:
-    """The production service: one transaction per read, and nothing else — reads need no storage,
-    no queue and no settings, so this composes on every deployment that has a database."""
+    """The production service: one transaction per read, and nothing else — reads need no storage
+    and no queue, so this composes on every deployment that has a database.
 
-    def __init__(self, *, conn_factory: ConnFactory = transaction) -> None:
+    It does need ``settings``, for one reason: the claims read mirrors the account page's display
+    gate, and one arm of that gate (hold back an unjudged tier-4 synthesis) is only armed under a
+    verifying posture. Reading the flag from the same ``Settings`` the page reads is what keeps
+    chat and app telling one story rather than two.
+    """
+
+    def __init__(self, *, settings: Settings, conn_factory: ConnFactory = transaction) -> None:
+        self._settings = settings
         self._conn_factory = conn_factory
 
     async def list_project_accounts(
-        self, *, workspace_id: str, project_id: str, limit: int
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        limit: int,
+        query: str | None,
+        offset: int,
     ) -> ProjectAccountsPage:
         async with self._conn_factory() as conn:
             return await list_project_accounts(
-                conn, workspace_id=workspace_id, project_id=project_id, limit=limit
+                conn,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                limit=limit,
+                query=query,
+                offset=offset,
             )
 
     async def read_account_research(
@@ -675,6 +855,7 @@ class DbArv2ReadService:
                 account_entity_id=account_entity_id,
                 section=section,
                 field_prefix=field_prefix,
+                settings=self._settings,
             )
 
     async def read_discovery_run(
@@ -712,14 +893,20 @@ def _not_composed() -> tuple[PreconditionFailure, ...]:
 class ReadProjectAccountsInput(ToolInput):
     project_id: str
     limit: int = Field(default=100, ge=1, le=MAX_ACCOUNTS)
+    #: A name or domain fragment, case-insensitive. Without it, an account past the first page is
+    #: reachable only by paging — and a model that reads one short page and stops would tell the
+    #: human their account is not in the project.
+    query: str | None = Field(default=None, max_length=120)
+    #: How many rows to skip. With ``limit`` this walks a project larger than one page.
+    offset: int = Field(default=0, ge=0)
 
 
 class ReadProjectAccountsOutput(ToolOutput):
     project_id: str
     total: int
-    #: ``ProjectAccountView`` rows. ``total`` is the whole membership; ``len(accounts)`` is the
-    #: page, so the model can say "showing 100 of 240" rather than guessing at the rest.
-    accounts: tuple[dict[str, Any], ...]
+    #: The project's accounts. ``total`` is the whole **filtered** membership; ``len(accounts)`` is
+    #: the page, so the model can say "showing 100 of 240" rather than guessing at the rest.
+    accounts: tuple[ProjectAccountView, ...]
 
 
 class ReadProjectAccountsTool(Tool):
@@ -729,9 +916,10 @@ class ReadProjectAccountsTool(Tool):
     version = "1"
     model_description = (
         "List the accounts in one project with each account's research status (not_started, "
-        "in_progress, needs_review, completed, suspended) and how it joined the project. Read "
-        "this before saying how many accounts there are, which are researched, or before "
-        "proposing more discovery. Effect-free."
+        "in_progress, needs_review, completed, suspended) and how it joined the project. Filter "
+        "by name or domain to find one account; page with limit and offset when total is larger "
+        "than the page you received. Read this before saying how many accounts there are, which "
+        "are researched, or before proposing more discovery. Effect-free."
     )
     input_model: ClassVar[type[ToolInput]] = ReadProjectAccountsInput
     output_model: ClassVar[type[ToolOutput]] = ReadProjectAccountsOutput
@@ -741,7 +929,9 @@ class ReadProjectAccountsTool(Tool):
         durable_identity="current project_account rows + each account's latest ARV2 account job",
         external_boundary=ExternalReplayBoundary.NONE,
     )
-    parameter_policy = JournalParameterPolicy(safe_display_fields=("project_id", "limit"))
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "limit", "query", "offset")
+    )
     #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
     #: pin (standing rule item 5).
     pin_requirements = ("project",)
@@ -764,13 +954,15 @@ class ReadProjectAccountsTool(Tool):
                 workspace_id=ctx.workspace_id,
                 project_id=inputs.project_id,
                 limit=inputs.limit,
+                query=inputs.query,
+                offset=inputs.offset,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
         output = ReadProjectAccountsOutput(
             project_id=page.project_id,
             total=page.total,
-            accounts=tuple(account.model_dump() for account in page.accounts),
+            accounts=page.accounts,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 
@@ -787,12 +979,15 @@ class ReadAccountResearchOutput(ToolOutput):
     account_entity_id: str
     account_name: str
     section: str
-    #: ``AccountOverviewSection`` rows when ``section='overview'``, else empty.
-    overview: tuple[dict[str, Any], ...]
-    #: ``AccountClaimView`` rows when ``section='claims'``, else empty.
-    claims: tuple[dict[str, Any], ...]
+    #: The written sections when ``section='overview'``, else empty.
+    overview: tuple[AccountOverviewSection, ...]
+    #: The account's servable claims when ``section='claims'``, else empty.
+    claims: tuple[AccountClaimView, ...]
     #: The account holds more claims than one read serves; narrow with ``field_prefix``.
     truncated: bool
+    #: What the account pages' own gate held back, by reason: ``sensitive``, ``unverified``,
+    #: ``outreach_unsafe``. A non-zero count means "there is more here, and it is not servable".
+    excluded: dict[str, int]
 
 
 class ReadAccountResearchTool(Tool):
@@ -803,9 +998,10 @@ class ReadAccountResearchTool(Tool):
     model_description = (
         "Read what research found about one account: section='overview' returns the written "
         "overview sections (prose with the claim ids they cite); section='claims' returns the "
-        "account's verified claims grouped by field (value, source, evidence, tier), optionally "
-        "under a field prefix. Read this before saying anything specific about an account. "
-        "Effect-free."
+        "the claims the account pages show, grouped by field (value, source, evidence, tier, "
+        "verification status), optionally under a field prefix — sensitive, unverified tier-4 and "
+        "outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying "
+        "anything specific about an account. Effect-free."
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
@@ -848,9 +1044,10 @@ class ReadAccountResearchTool(Tool):
             account_entity_id=research.account_entity_id,
             account_name=research.account_name,
             section=research.section,
-            overview=tuple(section.model_dump() for section in research.overview),
-            claims=tuple(claim.model_dump() for claim in research.claims),
+            overview=research.overview,
+            claims=research.claims,
             truncated=research.truncated,
+            excluded=research.excluded,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 
@@ -875,14 +1072,17 @@ class ReadDiscoveryRunOutput(ToolOutput):
     asked: int | None
     #: Strict plus relaxed — the companies the run actually brought back.
     found: int
+    #: How many candidates the verifier actually judged against the ICP — the ones that carry a
+    #: verdict. Companies skipped before any gate (already an account, surfaced and not chosen
+    #: before) are NOT counted here; they are in ``candidate_total``.
     verified: int
     shown: int
     approved: int
     relaxed_requested: bool
     started_at: str | None
     finished_at: str | None
-    #: ``DiscoveryCandidateView`` rows, shown-first and best-fit-first.
-    candidates: tuple[dict[str, Any], ...]
+    #: The run's candidates, shown-first and best-fit-first.
+    candidates: tuple[DiscoveryCandidateView, ...]
     #: The run's whole candidate count, so a bounded list never reads as a small run.
     candidate_total: int
 
@@ -894,9 +1094,9 @@ class ReadDiscoveryRunTool(Tool):
     version = "1"
     model_description = (
         "Read the project's latest discovery run (or one by id): status, what was asked for and "
-        "found, how many candidates were verified, shown and approved, and the top candidates "
-        "with their verdict. Read this before proposing another discovery, and to answer what "
-        "discovery found. It approves nothing. Effect-free."
+        "found, how many candidates the verifier judged against the ICP, how many were shown and "
+        "approved, and the top candidates with their verdict. Read this before proposing another "
+        "discovery, and to answer what discovery found. It approves nothing. Effect-free."
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunInput
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunOutput
@@ -949,11 +1149,14 @@ class ReadDiscoveryRunTool(Tool):
             relaxed_requested=run.relaxed_requested,
             started_at=run.started_at,
             finished_at=run.finished_at,
-            # ``by_alias`` is what turns ``pass_`` back into the schema's ``pass``.
-            candidates=tuple(candidate.model_dump(by_alias=True) for candidate in run.candidates),
+            candidates=run.candidates,
             candidate_total=run.candidate_total,
         )
-        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+        # ``by_alias`` is what turns ``pass_`` back into the schema's ``pass``; it is the only
+        # aliased field on this surface, so the whole dump takes it.
+        return ToolResult(
+            tool=self.name, version=self.version, references=output.model_dump(by_alias=True)
+        )
 
 
 def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:

@@ -83,6 +83,13 @@ _WITHHELD = {
     # The project plan writes a durable document version and puts a plan card in the chat, so
     # it is withheld with them.
     "write_project_document",
+    # The three ARV2 reads are withheld for the OTHER reason: they spend nothing and address
+    # nobody, but the trial's own `build_toolbelt` passes no `arv2_reads`, so installed they would
+    # be advertised and then refuse `arv2_reads_not_composed` at call time — restriction by
+    # refusal, which PC-C8 §2.4 rejects. Withheld, this surface's framing is true.
+    "read_project_accounts",
+    "read_account_research",
+    "read_discovery_run",
 }
 
 # The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
@@ -315,7 +322,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v25" in base_disclosures
+    assert "skill:stage0-interview@v26" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -339,9 +346,15 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # The project plan is granted at `head-of-abm@v47` and taught by stage0-interview v24
         # §6b; the trial withholds it for the same sentence.
         "write_project_document",
+        # The three reads are granted at `head-of-abm@v48` and taught by stage0-interview v25
+        # §7b/§7c; the trial withholds them because it composes no read service, so installed they
+        # could only refuse.
+        "read_project_accounts",
+        "read_account_research",
+        "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v25")
+    body = base.open_skill("skill:stage0-interview@v26")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

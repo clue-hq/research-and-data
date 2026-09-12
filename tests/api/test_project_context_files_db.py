@@ -155,13 +155,22 @@ async def _seed_candidate(
     *,
     disposition: str,
     decision: str | None = None,
+    judged: bool = True,
 ) -> None:
+    """One candidate. ``judged`` writes a verdict row, which is what ``verified`` counts.
+
+    The pre-spend dispositions (``duplicate_of_existing``, ``not_chosen_before``) are stamped
+    before any gate is asked, so a candidate carrying one has no verdicts and ``status.md`` must
+    not report it as a company the platform checked.
+    """
+
     await conn.execute(
         text(
             "INSERT INTO arv2_discovery_candidate (candidate_id, run_id, workspace_id, "
-            "project_id, pass, domain, name, provider_snapshot_json, disposition, decision) "
+            "project_id, pass, domain, name, provider_snapshot_json, verdicts_json, disposition, "
+            "decision) "
             "VALUES (:candidate, :run, :ws, :project, 'strict', :domain, :name, "
-            "CAST(:snapshot AS jsonb), :disposition, :decision)"
+            "CAST(:snapshot AS jsonb), CAST(:verdicts AS jsonb), :disposition, :decision)"
         ),
         {
             "candidate": uuid4(),
@@ -171,6 +180,9 @@ async def _seed_candidate(
             "domain": domain,
             "name": domain,
             "snapshot": json.dumps({"domain": domain}),
+            "verdicts": json.dumps(
+                [{"gate_key": "geography", "verdict": "pass"}] if judged else []
+            ),
             "disposition": disposition,
             "decision": decision,
         },
@@ -260,7 +272,19 @@ def test_status_facts_read_the_pin_the_product_set_and_the_arv2_rows() -> None:
                 disposition="pass",
                 decision="approved",
             )
-            await _seed_candidate(conn, project, discovery_run, "acme.org", disposition="pending")
+            await _seed_candidate(
+                conn, project, discovery_run, "acme.org", disposition="pending", judged=False
+            )
+            # Stamped before any gate was asked: not pending, and not checked either — so
+            # `verified` must stay at the one candidate that actually carries a verdict.
+            await _seed_candidate(
+                conn,
+                project,
+                discovery_run,
+                "dupe.org",
+                disposition="duplicate_of_existing",
+                judged=False,
+            )
             research_run = await _seed_research_run(conn, project, project_run_id)
             await _seed_job(
                 conn,
@@ -561,9 +585,9 @@ async def _seed_foreign_candidate(
     await conn.execute(
         text(
             "INSERT INTO arv2_discovery_candidate (candidate_id, run_id, workspace_id, "
-            "project_id, pass, domain, name, provider_snapshot_json, disposition) "
+            "project_id, pass, domain, name, provider_snapshot_json, verdicts_json, disposition) "
             "VALUES (:candidate, :run, :ws, :project, 'strict', :domain, :name, "
-            "CAST(:snapshot AS jsonb), :disposition)"
+            "CAST(:snapshot AS jsonb), CAST(:verdicts AS jsonb), :disposition)"
         ),
         {
             "candidate": uuid4(),
@@ -573,6 +597,7 @@ async def _seed_foreign_candidate(
             "domain": domain,
             "name": domain,
             "snapshot": json.dumps({"domain": domain}),
+            "verdicts": json.dumps([{"gate_key": "geography", "verdict": "pass"}]),
             "disposition": disposition,
         },
     )

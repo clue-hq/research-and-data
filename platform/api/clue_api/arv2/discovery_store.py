@@ -40,6 +40,7 @@ from clue_core import decode_jsonb
 __all__ = [
     "PENDING_DISPOSITION",
     "SHOWN_DISPOSITIONS",
+    "VERIFIED_PREDICATE",
     "CandidateRow",
     "Disposition",
     "DiscoveryRunRow",
@@ -83,9 +84,22 @@ Disposition = Literal[
 #: instead of re-typing the three words into its own SQL.
 SHOWN_DISPOSITIONS: tuple[str, ...] = ("pass", "partial", "unclear")
 
-#: A candidate nothing has verified yet. "Verified" is the complement of this, never a word of
-#: its own.
+#: A candidate nothing has verified yet.
 PENDING_DISPOSITION = "pending"
+
+#: What "verified" MEANS, in one place: the verifier actually judged this company.
+#:
+#: It used to be the complement of ``pending``, and that was wrong in a way nobody could see from
+#: the number. ``_pre_spend_disposition`` stamps ``duplicate_of_existing`` and ``not_chosen_before``
+#: **before any gate is asked** — those candidates cost the one website answer that identified them
+#: and were never checked against the ICP — so "not pending" counted them as verified and the agent
+#: told the founder the platform had checked companies it had skipped. A verdict row is the only
+#: thing that proves a judgement happened, so the verdict array is the test.
+#:
+#: A SQL fragment rather than a helper because its three readers (the chat read, ``status.md`` and
+#: the Target-accounts tab's poll) each embed it in a different statement; they alias the candidate
+#: table ``c`` so one definition serves all three and the three numbers cannot drift apart.
+VERIFIED_PREDICATE = "jsonb_array_length(c.verdicts_json) > 0"
 
 #: The same set as a literal SQL tuple, derived so the two can never drift apart.
 _LIVE_DISPOSITIONS = "(" + ", ".join(f"'{value}'" for value in SHOWN_DISPOSITIONS) + ")"

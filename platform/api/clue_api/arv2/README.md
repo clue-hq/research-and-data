@@ -1785,8 +1785,8 @@ column the ICP-authoring migration added), so everything above about scope, line
 materialization applies to it unchanged: it compiles onto the lease as `inputs/project/plan.md` and
 lists in `status.md` under *Project documents*.
 
-> **Superseded 2026-09-13 — the current trio is `head-of-abm@v48` /
-> `stage0-interview@v25` / `recipe0-stage0-v26.json` (`CONVERSATION_RECIPE_VERSION = 26`)** — see
+> **Superseded 2026-09-13 — the current trio is `head-of-abm@v49` /
+> `stage0-interview@v26` / `recipe0-stage0-v26.json` (`CONVERSATION_RECIPE_VERSION = 26`)** — see
 > § "The three reads" below. v47 / v24 / v25 remain exactly as described here, for replay.
 
 **Versions at this stage:** `head-of-abm@v47` (pins `stage0-interview@v24`) and
@@ -1858,9 +1858,11 @@ project's accounts, at one account's research, and at the discovery run. Before 
 and every fact the agent stated about an account came out of its own conversation — right inside one
 thread, wrong in the next one, and wrong again the moment a fleet job finished behind its back.
 
-**Current versions:** `head-of-abm@v48` (pins `stage0-interview@v25`) and
+**Current versions:** `head-of-abm@v49` (pins `stage0-interview@v26`) and
 `recipe0-stage0-v26.json`, with `CONVERSATION_RECIPE_VERSION = 26` and
-`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v48"`.
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v49"`. (v48 / v25 minted the three tools;
+v49 / v26 re-pin the same three after the final-review fix wave — see § "The fix wave" below. The
+recipe is unchanged: it pins addresses, and no address moved.)
 
 ### Read tools
 
@@ -1920,3 +1922,46 @@ module calls no card compiler; the pin is `_execution_project_pin`, with no Clie
 and `launch_arv2_discovery` gained no precondition — the reads are additive and the skill's ordering
 rule is prose, not a gate; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0
 broken; `.env.example` posture unchanged with **no new flag**.
+
+
+### The fix wave (2026-09-13) — what the three reads say now
+
+The final review found four things the reads *said* that the rows did not support. Each is fixed at
+the source rather than in the skill, because the model reads the tool's own description first.
+
+* **The claims read mirrors the account page's display gate** (ruling Q). `_account_claims` now
+  applies `display/gather.py`'s three predicates, predicate for predicate: a `SENSITIVE` use-class
+  claim never leaves the store, an unjudged tier-4 synthesis is held back under a verifying posture,
+  and an `outreach_safe=false` claim is held back outright (this read has no restricted section to
+  put one in). Each exclusion is **counted** — `excluded: {sensitive, unverified, outreach_unsafe}`
+  — so "nothing to show" and "something here you may not have" stay two different answers, and each
+  served claim carries its own `verification_status` and `outreach_safe`. The description no longer
+  says "verified claims"; it says *the claims the account pages show*. `DbArv2ReadService` therefore
+  takes `settings`: the tier-4 arm is armed by `verification_enabled`, the same flag the page reads.
+* **`verified` means judged** (ruling R). `discovery_store.VERIFIED_PREDICATE`
+  (`jsonb_array_length(c.verdicts_json) > 0`) is now the single definition, shared by this read,
+  `project_status._LATEST_DISCOVERY` and `frontend_read/discovery_status._LATEST_RUN`. The old
+  reading — "not `pending`" — counted the pre-spend dispositions (`duplicate_of_existing`,
+  `not_chosen_before`), which `discovery_driver._pre_spend_disposition` stamps *before any gate is
+  asked*, so the agent reported companies as checked that were never checked.
+* **A named account is reachable.** `read_project_accounts` takes `query` (case-insensitive
+  substring on name or domain, with LIKE's metacharacters escaped) and `offset`; `total` counts the
+  filtered set, and the row order is now the accounts screen's own default (`created_at DESC,
+  id DESC`) so "the first ten" means the same ten in chat and on the table. The `refreshing`
+  tie-break is the screen's tuple compare too.
+* **The candidate rows are workspace-scoped like the tallies beside them.**
+  `arv2_discovery_candidate.run_id` is a single-column FK; the counts already said `:ws` and the
+  list did not, so a mis-stamped row was excluded from `shown` and still listed and counted into
+  `candidate_total`.
+
+Smaller repairs in the same wave: a clipped evidence span ends with `…` and carries
+`evidence_truncated`; an overview section's body is serialized JSON capped at 6000 characters with
+`body_truncated` (the stored body has no bound of its own); a prefix that matches nothing on a
+researched account refuses the new `no_claims_under_prefix` instead of `account_not_researched`; the
+`stage0_conversation_trial` surface **withholds** the three reads, because that surface composes no
+read service and an installed-but-refusing tool is the restriction-by-refusal PC-C8 §2.4 rejects;
+and the three outputs carry typed rows (`ProjectAccountView`, `AccountOverviewSection`,
+`AccountClaimView`, `DiscoveryCandidateView`) so the schema digest can see the payload shape.
+
+That last one is why there is a `v49`/`v26` at all: typing the rows moved all three output digests
+(and `read_project_accounts`' input digest), and v48/v25 are immutable.

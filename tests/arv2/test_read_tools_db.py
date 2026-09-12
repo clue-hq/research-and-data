@@ -24,13 +24,17 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
+    BODY_CHARS,
     EVIDENCE_CHARS,
+    MAX_CLAIMS,
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
     read_discovery_run,
 )
-from clue_core import EntityId, EntityType, new_project_run_id
+from clue_api.frontend_read.v1_shared import arv2_research_status_for
+from clue_config import Settings
+from clue_core import EntityId, EntityType, ExtractionMethod, UseClass, new_project_run_id
 from clue_research.durable import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
@@ -57,15 +61,42 @@ USER_ID = "usr_arv2_read_tools"
 _SHA = "a" * 64
 _NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
+#: The claims read mirrors the account page's display gate, and one arm of that gate is armed by
+#: this flag — so the two postures are both exercised, exactly as ``test_gather_db`` exercises them.
+VERIFYING = Settings(_env_file=None, verification_enabled=True)
+PERMISSIVE = Settings(_env_file=None, verification_enabled=False)
+
+
+#: Every seeded account gets a distinct ``created_at``, ascending in seed order.
+#:
+#: ``account_entity.created_at`` defaults to ``now()``, which is the TRANSACTION's clock — so every
+#: account a test seeds inside one ``rollback_conn`` shares one timestamp and the listing's
+#: ``created_at DESC, id DESC`` order falls through to a random uuid. Stamping the column makes
+#: "newest first" mean "last seeded first", which is what these tests are actually asserting.
+_SEED_CLOCK = _NOW
+
 
 async def _seed_account(
-    conn: AsyncConnection, project: Project, name: str, *, added_via: str = "manual"
+    conn: AsyncConnection,
+    project: Project,
+    name: str,
+    *,
+    added_via: str = "manual",
+    created_at: datetime | None = None,
 ) -> EntityId:
+    global _SEED_CLOCK
     account_id = await insert_account_entity(
         conn,
         canonical_name=name,
         primary_domain=f"{name.lower().replace(' ', '-')}.example",
         workspace_id=project.workspace_id,
+    )
+    if created_at is None:
+        _SEED_CLOCK += timedelta(minutes=1)
+        created_at = _SEED_CLOCK
+    await conn.execute(
+        text("UPDATE account_entity SET created_at = CAST(:at AS timestamptz) WHERE id = :id"),
+        {"at": created_at, "id": account_id},
     )
     await ensure_project_account(
         conn,
@@ -193,8 +224,9 @@ def test_the_account_list_carries_the_latest_status_and_the_refreshing_flag() ->
 
             assert page.project_id == project.project_id
             assert page.total == 2
-            # Ordered by canonical name.
-            alpha, beta = page.accounts
+            # Newest first — the accounts screen's own default order (`created_at DESC, id DESC`),
+            # so "the first ten accounts" means the same ten to the agent and to the marketer.
+            beta, alpha = page.accounts
             assert (alpha.account_entity_id, alpha.name) == (str(researched), "Alpha Health")
             assert alpha.domain == "alpha-health.example"
             assert (alpha.research_status, alpha.refreshing) == ("in_progress", True)
@@ -243,7 +275,7 @@ def test_a_first_research_run_is_not_a_refresh() -> None:
                 limit=100,
             )
 
-            alpha, beta = page.accounts
+            beta, alpha = page.accounts
             assert (alpha.research_status, alpha.refreshing) == ("in_progress", False)
             assert (beta.research_status, beta.refreshing) == ("completed", False)
 
@@ -296,8 +328,135 @@ def test_the_page_is_bounded_and_the_total_is_not() -> None:
                 limit=1,
             )
 
-            assert [account.name for account in page.accounts] == ["Alpha Health"]
+            assert [account.name for account in page.accounts] == ["Beta Clinic"]
             assert page.total == 2
+
+            # …and the second page reaches the tail rather than leaving it unreachable.
+            second = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=1,
+                offset=1,
+            )
+            assert [account.name for account in second.accounts] == ["Alpha Health"]
+            assert second.total == 2
+
+    run_async(scenario())
+
+
+def test_a_named_account_is_reachable_by_query_and_the_tail_by_offset() -> None:
+    """I3: without a filter, an account past the first page is unreachable — and the model, told
+    never to speak about an account from memory, would say it is not in the project."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await _seed_account(conn, project, "Alpha Health")
+            await _seed_account(conn, project, "Zeta Surgical")
+
+            by_name = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+                query="zeta surg",
+            )
+            assert [account.name for account in by_name.accounts] == ["Zeta Surgical"]
+            # The total measures the FILTERED population, so "1 of 1" is not "1 of 2".
+            assert by_name.total == 1
+
+            by_domain = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+                query="ALPHA-HEALTH.EXAMPLE",
+            )
+            assert [account.name for account in by_domain.accounts] == ["Alpha Health"]
+
+            # A LIKE metacharacter is a character the human typed, not a pattern they wrote.
+            wildcard = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+                query="%",
+            )
+            assert wildcard.accounts == ()
+            assert wildcard.total == 0
+
+            # A filter that matches nothing is an empty page of the project, not a refusal: the
+            # project is ours and it IS this list — there is just no account by that name.
+            missing = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+                query="Goodman Campbell",
+            )
+            assert (missing.accounts, missing.total) == ((), 0)
+
+    run_async(scenario())
+
+
+def test_the_list_order_is_the_accounts_screen_s_own_default() -> None:
+    """M1: "the first ten accounts" must mean the same ten in chat and on the table."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            # Seeded oldest-first and alphabetically ascending, so an alphabetical order and the
+            # screen's ``created_at DESC`` order are each other's reverse — no test passes by luck.
+            for name in ("Alpha Health", "Beta Clinic", "Gamma Surgery"):
+                await _seed_account(conn, project, name)
+
+            page = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+            )
+
+            assert [account.name for account in page.accounts] == [
+                "Gamma Surgery",
+                "Beta Clinic",
+                "Alpha Health",
+            ]
+
+    run_async(scenario())
+
+
+def test_a_created_at_tie_breaks_on_the_job_id_the_accounts_screen_breaks_on() -> None:
+    """M1: two account jobs written in one statement must not read `refreshing: false` here and
+    "Refreshing" on the screen — both order latest by `(created_at, job_id)`, so both break the
+    "an earlier run completed" test the same way."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            # One job per run per account (`arv2_research_job_subject_once`), so two runs.
+            first = await _seed_research_run(conn, project)
+            second = await _seed_research_run(conn, project)
+            # ONE timestamp for both jobs — a completed job superseded and a new one queued in the
+            # same transaction, with `now()` frozen.
+            await _seed_job(conn, project, first, account, status="completed", created_at=_NOW)
+            await _seed_job(conn, project, second, account, status="in_progress", created_at=_NOW)
+
+            page = await list_project_accounts(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                limit=100,
+            )
+
+            (alpha,) = page.accounts
+            screen = await arv2_research_status_for(
+                conn, workspace_id=project.workspace_id, account_ids=[account]
+            )
+            # Whatever the tie decides, the chat read and the accounts screen decide it together.
+            assert (alpha.research_status, alpha.refreshing) == screen[account]
 
     run_async(scenario())
 
@@ -429,6 +588,7 @@ def test_the_overview_read_serves_the_written_sections_in_the_page_s_own_order()
                 workspace_id=project.workspace_id,
                 account_entity_id=str(account),
                 section="overview",
+                settings=VERIFYING,
             )
 
             assert (research.account_entity_id, research.account_name) == (
@@ -440,11 +600,12 @@ def test_the_overview_read_serves_the_written_sections_in_the_page_s_own_order()
                 "why-now",
                 "buying-committee",
             ]
-            # The body is served verbatim — the app's shape, not a second one.
-            assert research.overview[0].body == {
-                "intro": [],
-                "items": [{"text": "They opened four ABM roles."}],
-            }
+            # The body is the app's own shape, serialized and bounded rather than nested — an
+            # overview body has no length of its own, and this read is context the model pays for.
+            assert research.overview[0].body_text == (
+                '{"intro": [], "items": [{"text": "They opened four ABM roles."}]}'
+            )
+            assert research.overview[0].body_truncated is False
             assert research.overview[1].cited_claim_ids == (str(cited),)
             assert research.overview[0].generated_at.startswith("2026-09-12T12:00:00")
             # The unasked half is empty rather than absent.
@@ -503,6 +664,7 @@ def test_the_claims_read_serves_the_live_claims_clipped_and_filtered() -> None:
                 workspace_id=project.workspace_id,
                 account_entity_id=str(account),
                 section="claims",
+                settings=VERIFYING,
             )
 
             assert research.section == "claims"
@@ -517,9 +679,20 @@ def test_the_claims_read_serves_the_live_claims_clipped_and_filtered() -> None:
             assert requisitions.claim_id == claims["requisitions"]
             assert requisitions.value == [{"title": "ABM Manager"}]
             assert requisitions.source_url == "https://alpha.example/careers"
+            # Clipped, and SAID to be clipped: a partial quote presented as a whole one is the
+            # one dishonesty a verifiability-first system cannot afford.
             assert len(requisitions.evidence) == EVIDENCE_CHARS
-            assert requisitions.evidence == long_span[:EVIDENCE_CHARS]
+            assert requisitions.evidence == long_span[: EVIDENCE_CHARS - 1] + "…"
+            assert requisitions.evidence_truncated is True
+            assert culture.evidence_truncated is False
+            assert culture.evidence == "every purchase goes to a committee"
             assert requisitions.tier == 2  # stamped from the scrape method, not chosen
+            assert (requisitions.verification_status, requisitions.outreach_safe) == (
+                "unverified",
+                True,
+            )
+            # Nothing was held back on this account, and the counts say so rather than being absent.
+            assert research.excluded == {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
             assert requisitions.collected_at.startswith("20")
             assert culture.value == "Committee-led, slow to sign"
 
@@ -529,8 +702,189 @@ def test_the_claims_read_serves_the_live_claims_clipped_and_filtered() -> None:
                 account_entity_id=str(account),
                 section="claims",
                 field_prefix="account.resonance",
+                settings=VERIFYING,
             )
             assert [claim.claim_id for claim in narrowed.claims] == [claims["culture"]]
+
+    run_async(scenario())
+
+
+def test_the_claims_read_holds_back_exactly_what_the_account_page_holds_back() -> None:
+    """I1 / ruling Q: chat may not print a fact the account page deliberately refuses to print.
+
+    One claim of each excluded class, and one VERIFIED tier-4 synthesis that must survive — because
+    the failure this guards is not "drop tier 4", it is "drop the tier-4 rows nobody judged".
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="plain",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            # (a) special-category: never leaves the store, for any section.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="sensitive",
+                field_key="account.resonance.buying_culture",
+                value="A fact about the founder's health",
+                use_class=UseClass.SENSITIVE,
+            )
+            # (b) tier-4 synthesis nobody judged: the least-trusted class in the platform.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="unjudged",
+                field_key="account.strategic_moves",
+                value="Probably opening a second site",
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                evidence_span="hiring for a second site",
+            )
+            # (c) the same class, JUDGED — this one is a fact and must be served, with its status.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="judged",
+                field_key="account.strategic_moves",
+                value="Opened a New York office in June 2026",
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                evidence_span="opened a New York office",
+            )
+            await conn.execute(
+                text("UPDATE claim SET verification_status = 'verified' WHERE id = :id"),
+                {"id": UUID(claims["judged"])},
+            )
+            # (d) outreach-unsafe: this read has no restricted section to put one in.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="unsafe",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
+            )
+
+            served = {claim.claim_id for claim in research.claims}
+            assert served == {claims["plain"], claims["judged"]}
+            assert research.excluded == {
+                "sensitive": 1,
+                "unverified": 1,
+                "outreach_unsafe": 1,
+            }
+            judged = next(claim for claim in research.claims if claim.claim_id == claims["judged"])
+            assert (judged.tier, judged.verification_status) == (4, "verified")
+            assert judged.outreach_safe is True
+
+            # The tier-4 arm is the posture's, exactly as it is on the page: with verification off,
+            # the unjudged synthesis is served and the other two exclusions still hold.
+            permissive = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=PERMISSIVE,
+            )
+            assert {claim.claim_id for claim in permissive.claims} == {
+                claims["plain"],
+                claims["judged"],
+                claims["unjudged"],
+            }
+            assert permissive.excluded == {
+                "sensitive": 1,
+                "unverified": 0,
+                "outreach_unsafe": 1,
+            }
+
+    run_async(scenario())
+
+
+def test_the_claims_read_is_bounded_at_the_cap_and_says_so() -> None:
+    """M2: the one bound in this file whose off-by-one nothing else would catch."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            for index in range(MAX_CLAIMS + 1):
+                await _seed_claim(
+                    conn,
+                    claims,
+                    project,
+                    account,
+                    label=f"claim_{index}",
+                    field_key="account.open_requisitions",
+                    value=[{"title": f"Role {index}"}],
+                )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
+            )
+
+            assert len(research.claims) == MAX_CLAIMS
+            assert research.truncated is True
+
+    run_async(scenario())
+
+
+def test_a_long_overview_body_is_capped_and_says_so() -> None:
+    """M4: the stored body has no bound of its own, so the read gives it one."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            await _seed_block(
+                conn,
+                project,
+                account,
+                section_key="why-now",
+                # Nothing in the display package caps `items`; one long section is enough.
+                body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="overview",
+                settings=VERIFYING,
+            )
+
+            section = research.overview[0]
+            assert len(section.body_text) == BODY_CHARS
+            assert section.body_text.endswith("…")
+            assert section.body_truncated is True
 
     run_async(scenario())
 
@@ -550,6 +904,7 @@ def test_an_account_this_workspace_cannot_see_is_refused_by_name() -> None:
                         workspace_id=WORKSPACE,
                         account_entity_id=account_entity_id,
                         section="claims",
+                        settings=VERIFYING,
                     )
                 assert refused.value.code == "account_not_found"
 
@@ -569,6 +924,7 @@ def test_an_account_this_workspace_cannot_see_is_refused_by_name() -> None:
                     workspace_id=project.workspace_id,
                     account_entity_id=str(loser),
                     section="overview",
+                    settings=VERIFYING,
                 )
             assert merged.value.code == "account_not_found"
 
@@ -589,6 +945,7 @@ def test_an_unwritten_overview_and_an_unresearched_account_refuse_rather_than_re
                     workspace_id=project.workspace_id,
                     account_entity_id=str(account),
                     section="overview",
+                    settings=VERIFYING,
                 )
             assert unwritten.value.code == "overview_not_written"
             assert "section='claims'" in str(unwritten.value)
@@ -599,6 +956,7 @@ def test_an_unwritten_overview_and_an_unresearched_account_refuse_rather_than_re
                     workspace_id=project.workspace_id,
                     account_entity_id=str(account),
                     section="claims",
+                    settings=VERIFYING,
                 )
             assert unresearched.value.code == "account_not_researched"
 
@@ -620,8 +978,11 @@ def test_an_unwritten_overview_and_an_unresearched_account_refuse_rather_than_re
                     account_entity_id=str(account),
                     section="claims",
                     field_prefix="account.resonance",
+                    settings=VERIFYING,
                 )
-            assert narrowed.value.code == "account_not_researched"
+            # NOT `account_not_researched`: the account IS researched, and the machine-readable
+            # half must not say otherwise because one prefix came back empty.
+            assert narrowed.value.code == "no_claims_under_prefix"
             assert "account.resonance" in str(narrowed.value)
 
     run_async(scenario())
@@ -698,23 +1059,37 @@ async def _seed_candidate(
     decision: str | None = None,
     fit: float | None = None,
     candidate_pass: str = "strict",
+    judged: bool = True,
+    workspace_id: str | None = None,
 ) -> None:
+    """One candidate. ``judged`` writes a verdict row — which is what *verified* means.
+
+    The default is ``True`` because the dispositions a verifier produces (`pass`/`partial`/
+    `unclear`) always carry verdicts; the pre-spend ones (`duplicate_of_existing`,
+    `not_chosen_before`) are stamped before any gate is asked, so a test that seeds one passes
+    ``judged=False`` and the tallies must not count it.
+    """
+
     await conn.execute(
         text(
             "INSERT INTO arv2_discovery_candidate (candidate_id, run_id, workspace_id, "
-            "project_id, pass, domain, name, provider_snapshot_json, fit, disposition, decision) "
+            "project_id, pass, domain, name, provider_snapshot_json, verdicts_json, fit, "
+            "disposition, decision) "
             "VALUES (:candidate, :run, :ws, :project, :pass, :domain, :name, "
-            "CAST(:snapshot AS jsonb), :fit, :disposition, :decision)"
+            "CAST(:snapshot AS jsonb), CAST(:verdicts AS jsonb), :fit, :disposition, :decision)"
         ),
         {
             "candidate": uuid4(),
             "run": run_id,
-            "ws": project.workspace_id,
+            "ws": workspace_id or project.workspace_id,
             "project": project.project_id,
             "pass": candidate_pass,
             "domain": f"{name.lower().replace(' ', '-')}.example",
             "name": name,
             "snapshot": json.dumps({"name": name}),
+            "verdicts": json.dumps(
+                [{"criterion": "geography", "verdict": "pass"}] if judged else []
+            ),
             "fit": fit,
             "disposition": disposition,
             "decision": decision,
@@ -748,11 +1123,21 @@ def test_the_latest_discovery_run_is_read_with_its_three_tallies() -> None:
                 conn, project, latest, "Beta Clinic", disposition="partial", fit=0.4
             )
             await _seed_candidate(conn, project, latest, "Gamma Surgery", disposition="unclear")
-            # Verified but not shown, and pending: the complement of "pending" is "verified".
+            # A candidate the driver stamped BEFORE any gate was asked: it cost the one website
+            # answer that identified it and was never checked against the ICP, so it is not
+            # verified — even though it is not pending either.
             await _seed_candidate(
-                conn, project, latest, "Delta Labs", disposition="duplicate_of_existing", fit=0.1
+                conn,
+                project,
+                latest,
+                "Delta Labs",
+                disposition="duplicate_of_existing",
+                fit=0.1,
+                judged=False,
             )
-            await _seed_candidate(conn, project, latest, "Epsilon Group", disposition="pending")
+            await _seed_candidate(
+                conn, project, latest, "Epsilon Group", disposition="pending", judged=False
+            )
 
             run = await read_discovery_run(
                 conn,
@@ -768,7 +1153,10 @@ def test_the_latest_discovery_run_is_read_with_its_three_tallies() -> None:
             assert (run.target_count, run.asked) == (20, 35)
             # strict + relaxed, coalesced.
             assert run.found == 13
-            assert (run.verified, run.shown, run.approved) == (4, 3, 1)
+            # THREE were judged (the pass/partial/unclear ones); the pre-spend duplicate and the
+            # pending one were not. Under the old "not pending" reading this said 4 — and the agent
+            # told the founder the platform had checked a company it had skipped.
+            assert (run.verified, run.shown, run.approved) == (3, 3, 1)
             assert run.relaxed_requested is True
             assert run.started_at is not None and run.started_at.startswith("2026-09-12")
             assert run.finished_at is not None
@@ -788,7 +1176,13 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
             run_id = await _seed_discovery_run(conn, project)
             # Seeded in an order that is wrong for every rule at once.
             await _seed_candidate(
-                conn, project, run_id, "Zeta Rehab", disposition="not_chosen_before", fit=1.0
+                conn,
+                project,
+                run_id,
+                "Zeta Rehab",
+                disposition="not_chosen_before",
+                fit=1.0,
+                judged=False,
             )
             await _seed_candidate(conn, project, run_id, "Unscored Clinic", disposition="pass")
             await _seed_candidate(
@@ -848,7 +1242,52 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 candidate_limit=0,
             )
             assert tallies_only.candidates == ()
-            assert (tallies_only.candidate_total, tallies_only.verified) == (4, 4)
+            # Four candidates; three were judged — `not_chosen_before` is a pre-spend stamp.
+            assert (tallies_only.candidate_total, tallies_only.verified) == (4, 3)
+
+    run_async(scenario())
+
+
+def test_a_candidate_stamped_with_another_tenant_is_neither_listed_nor_counted() -> None:
+    """I4: the tallies and the rows must agree about whether the single-column FK is trusted.
+
+    ``arv2_discovery_candidate.run_id`` references the run and nothing forces the candidate's
+    workspace to equal the run's, which the counts' ``:ws`` predicates already concede. The list
+    must concede it too, or the agent reads "shown: 1" beside two shown companies and one of them
+    is another tenant's row.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            await _seed_candidate(
+                conn, project, run_id, "Alpha Health", disposition="pass", fit=0.9
+            )
+            # Same run id, another tenant's stamp — a repair script, a bulk import, a resumed run.
+            await seed_project(conn, "ws_arv2_read_tools_other", name="Foreign")
+            await _seed_candidate(
+                conn,
+                project,
+                run_id,
+                "Foreign Health",
+                disposition="pass",
+                fit=1.0,
+                workspace_id="ws_arv2_read_tools_other",
+            )
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                candidate_limit=25,
+            )
+
+            assert [candidate.name for candidate in run.candidates] == ["Alpha Health"]
+            # …and the remainder the model is told about is the remainder it can reach.
+            assert run.candidate_total == 1
+            assert (run.verified, run.shown) == (1, 1)
 
     run_async(scenario())
 
@@ -866,7 +1305,9 @@ def test_a_run_can_be_read_by_id_and_an_unfinished_one_reads_honestly() -> None:
                 found_strict=None,
                 found_relaxed=None,
             )
-            await _seed_candidate(conn, project, older, "Old Health", disposition="pending")
+            await _seed_candidate(
+                conn, project, older, "Old Health", disposition="pending", judged=False
+            )
             await _seed_discovery_run(conn, project)
 
             run = await read_discovery_run(

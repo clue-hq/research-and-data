@@ -134,7 +134,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 26 (the ARV2 reads) is revision 25 plus three exact addresses:
 # ``read_project_accounts@1``, ``read_account_research@1`` and ``read_discovery_run@1``, the
 # effect-free reads `head-of-abm@v48` grants and stage0-interview v25 §7b/§7c teach. v25 stays the
-# exact replay input for turns already pinned to it.
+# exact replay input for turns already pinned to it. The reads' fix wave minted `head-of-abm@v49` /
+# stage0-interview v26 but NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved —
+# only the three tools' schema digests, which the profile and the skill pin and this file does not.
 CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a

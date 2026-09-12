@@ -87,14 +87,20 @@ class _FakeService:
     research: AccountResearch | None = None
     discovery: DiscoveryRunView | None = None
     refusal: Arv2ReadRefused | None = None
-    account_reads: list[tuple[str, str, int]] = field(default_factory=list)
+    account_reads: list[tuple[str, str, int, str | None, int]] = field(default_factory=list)
     research_reads: list[tuple[str, str, str, str | None]] = field(default_factory=list)
     discovery_reads: list[tuple[str, str, str | None, int]] = field(default_factory=list)
 
     async def list_project_accounts(
-        self, *, workspace_id: str, project_id: str, limit: int
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        limit: int,
+        query: str | None,
+        offset: int,
     ) -> ProjectAccountsPage:
-        self.account_reads.append((workspace_id, project_id, limit))
+        self.account_reads.append((workspace_id, project_id, limit, query, offset))
         if self.refusal is not None:
             raise self.refusal
         assert self.page is not None
@@ -147,11 +153,13 @@ def test_the_read_asks_about_the_ambient_workspace_and_serves_the_page() -> None
         tool = ReadProjectAccountsTool(service)
 
         result = await tool.invoke(
-            ReadProjectAccountsInput(project_id=PROJECT, limit=25), _context()
+            ReadProjectAccountsInput(project_id=PROJECT, limit=25, query="zeta", offset=50),
+            _context(),
         )
 
-        # The tenant is AMBIENT, never a model-authored input.
-        assert service.account_reads == [(WORKSPACE, PROJECT, 25)]
+        # The tenant is AMBIENT, never a model-authored input; the filter and the offset are the
+        # model's, and both reach the service.
+        assert service.account_reads == [(WORKSPACE, PROJECT, 25, "zeta", 50)]
         assert result.references["project_id"] == PROJECT
         assert result.references["total"] == 2
         assert result.references["accounts"] == (
@@ -192,6 +200,14 @@ def test_the_page_size_is_bounded_by_the_schema() -> None:
     with pytest.raises(ValueError):
         ReadProjectAccountsInput(project_id=PROJECT, limit=0)
     assert ReadProjectAccountsInput(project_id=PROJECT).limit == 100
+    # The filter is optional, bounded, and the offset cannot run backwards.
+    defaults = ReadProjectAccountsInput(project_id=PROJECT)
+    assert (defaults.query, defaults.offset) == (None, 0)
+    ReadProjectAccountsInput(project_id=PROJECT, query="z" * 120, offset=1_000)
+    with pytest.raises(ValueError):
+        ReadProjectAccountsInput(project_id=PROJECT, query="z" * 121)
+    with pytest.raises(ValueError):
+        ReadProjectAccountsInput(project_id=PROJECT, offset=-1)
 
 
 def test_the_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
@@ -217,7 +233,8 @@ def _research(section: str = "overview") -> AccountResearch:
         overview=(
             AccountOverviewSection(
                 section_key="why-now",
-                body={"intro": [], "items": [{"text": "They opened four ABM roles."}]},
+                body_text='{"intro": [], "items": [{"text": "They opened four ABM roles."}]}',
+                body_truncated=False,
                 cited_claim_ids=(CLAIM_ID,),
                 generated_at="2026-09-12T12:00:00+00:00",
             ),
@@ -229,11 +246,15 @@ def _research(section: str = "overview") -> AccountResearch:
                 value=[{"title": "ABM Manager"}],
                 source_url="https://alpha.example/careers",
                 evidence="ABM Manager, Marketing",
+                evidence_truncated=False,
                 tier=2,
+                verification_status="verified",
+                outreach_safe=True,
                 collected_at="2026-09-12T12:00:00+00:00",
             ),
         ),
         truncated=True,
+        excluded={"sensitive": 1, "unverified": 2, "outreach_unsafe": 0},
     )
 
 
@@ -261,14 +282,25 @@ def test_the_account_read_asks_about_the_ambient_workspace_and_serves_both_shape
                 "value": [{"title": "ABM Manager"}],
                 "source_url": "https://alpha.example/careers",
                 "evidence": "ABM Manager, Marketing",
+                "evidence_truncated": False,
                 "tier": 2,
+                "verification_status": "verified",
+                "outreach_safe": True,
                 "collected_at": "2026-09-12T12:00:00+00:00",
             },
         )
+        # What the page's gate held back travels with the answer, so an agent reading three claims
+        # of five knows two exist and are not servable.
+        assert result.references["excluded"] == {
+            "sensitive": 1,
+            "unverified": 2,
+            "outreach_unsafe": 0,
+        }
         assert result.references["overview"] == (
             {
                 "section_key": "why-now",
-                "body": {"intro": [], "items": [{"text": "They opened four ABM roles."}]},
+                "body_text": '{"intro": [], "items": [{"text": "They opened four ABM roles."}]}',
+                "body_truncated": False,
                 "cited_claim_ids": (CLAIM_ID,),
                 "generated_at": "2026-09-12T12:00:00+00:00",
             },
@@ -288,7 +320,13 @@ def test_an_uncomposed_account_read_refuses_before_it_touches_anything() -> None
 
 
 @pytest.mark.parametrize(
-    "code", ["account_not_found", "overview_not_written", "account_not_researched"]
+    "code",
+    [
+        "account_not_found",
+        "overview_not_written",
+        "account_not_researched",
+        "no_claims_under_prefix",
+    ],
 )
 def test_every_missing_prerequisite_is_typed_rather_than_an_empty_success(code: str) -> None:
     """An empty overview or an empty claim list would be a *statement* about the account."""
@@ -315,6 +353,17 @@ def test_the_account_read_s_inputs_are_bounded_by_the_schema() -> None:
         )
     with pytest.raises(ValueError):
         ReadAccountResearchInput(account_entity_id=ACCOUNT_ID, field_prefix="a" * 81)
+
+
+def test_the_account_read_never_calls_the_claims_it_serves_verified() -> None:
+    """The word the model reads must be true of the filter: the reads mirror the page's gate."""
+
+    description = ReadAccountResearchTool(_FakeService()).model_description
+
+    assert "verified claims" not in description
+    assert "the claims the account pages show" in description
+    for reason in ("sensitive", "unverified tier-4", "outreach-unsafe"):
+        assert reason in description
 
 
 def test_the_account_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
@@ -448,6 +497,8 @@ def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_
     assert tool.replay.policy is ReplayPolicy.EFFECT_FREE
     # A read approves nothing, so the description says so where the model reads it.
     assert "approves nothing" in tool.model_description
+    # And "verified" is said the way the tallies mean it, never as "everything not pending".
+    assert "the verifier judged" in tool.model_description
     # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
     # pin (standing rule item 5); the recipe-safety audit refuses a standing address with no pin.
     assert tool.pin_requirements == ("project",)
