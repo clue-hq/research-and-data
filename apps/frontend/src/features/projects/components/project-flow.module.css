@@ -70,8 +70,9 @@
   position: relative;
   display: flex;
   width: 100%;
+  /* Long drafts scroll in the editor without moving the footer or surrounding page. */
+  height: 126px;
   min-height: 126px;
-  max-height: min(248px, calc(100dvh - 160px));
   flex-direction: column;
   justify-content: space-between;
   overflow: visible;
@@ -92,21 +93,19 @@
 .composerBody {
   display: flex;
   min-width: 0;
-  min-height: 64px;
-  flex: 1 1 auto;
+  min-height: 0;
+  flex: 1 1 0;
   flex-direction: column;
 }
 
 .composerWithAttachments {
+  height: 151px;
   min-height: 151px;
-}
-
-.composerWithAttachments .composerBody {
-  min-height: 89px;
 }
 
 .composerAttachments {
   width: 100%;
+  flex-shrink: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
   padding: 0 4px;
@@ -118,6 +117,7 @@
 }
 
 .composerAttachmentError {
+  flex-shrink: 0;
   margin: 0;
   padding: 2px 6px 0;
   color: var(--clue-ds-color-content-danger, #b42318);
@@ -127,18 +127,19 @@
 
 .composerEditorShell {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 44px;
-  max-height: 120px;
-  flex: 1 1 auto;
+  min-height: 0;
+  flex: 1 1 0;
   overflow: hidden;
 }
 
 .composerEditor {
   box-sizing: border-box;
   width: 100%;
-  min-height: 44px;
-  max-height: 120px;
+  min-height: 0;
+  flex: 1 1 0;
   overflow-x: hidden;
   overflow-y: auto;
   border: 0;
@@ -165,7 +166,9 @@
 }
 
 .composerParagraph {
-  min-height: 40px;
+  /* Slate's absolute placeholder must share the text's padded line origin. */
+  position: relative;
+  min-height: 22px;
   margin: 0;
 }
 
