@@ -37,7 +37,8 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
   projectTitle: string;
 }) {
   const project = useMemo(() => ({ id: projectId, name: projectTitle }), [projectId, projectTitle]);
-  const controller = useAccountsScreenController(accountsForProject(data.accounts, projectId), data.bulkCapabilities, undefined, { project });
+  const accounts = useMemo(() => accountsForProject(data.accounts, projectId), [data.accounts, projectId]);
+  const controller = useAccountsScreenController(accounts, data.bulkCapabilities, undefined, { project });
   const [pageSize, setPageSize] = useState<AccountPageSize>(25);
   const [pageRequest, setPageRequest] = useState({ key: "", page: 1 });
   const [adding, setAdding] = useState(false);

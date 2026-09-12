@@ -74,11 +74,13 @@ export function AccountsScreen({
                 <select
                   aria-label="Project for selected Accounts"
                   className={`${components.input} min-w-48 px-2`}
+                  disabled={controller.isBulkSubmitting}
                   onChange={(event) =>
                     controller.setSelectedProjectId(event.target.value)
                   }
                   value={controller.selectedProjectId}
                 >
+                  <option disabled value="">Choose a project</option>
                   {controller.bulkCapabilities.projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
