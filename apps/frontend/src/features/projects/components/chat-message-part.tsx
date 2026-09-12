@@ -68,12 +68,6 @@ export function ChatMessagePartView({
       // in the stream/inspector, without duplicating the same rounds in chat.
       return null;
     case "tool":
-      // Saving the answer is an internal receipt, already represented by the reply.
-      // Keep genuine errors visible and retain the receipt in Inspect.
-      if (
-        part.toolName === "finalize_turn" &&
-        ["input-streaming", "input-available", "output-available"].includes(part.state)
-      ) return null;
       return <ChatToolCall part={part} />;
     case "task":
       return <ChatResearchTask part={part} />;
