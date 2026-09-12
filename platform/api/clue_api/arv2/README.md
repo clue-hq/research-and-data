@@ -1785,7 +1785,11 @@ column the ICP-authoring migration added), so everything above about scope, line
 materialization applies to it unchanged: it compiles onto the lease as `inputs/project/plan.md` and
 lists in `status.md` under *Project documents*.
 
-**Current versions:** `head-of-abm@v47` (pins `stage0-interview@v24`) and
+> **Superseded 2026-09-13 — the current trio is `head-of-abm@v48` /
+> `stage0-interview@v25` / `recipe0-stage0-v26.json` (`CONVERSATION_RECIPE_VERSION = 26`)** — see
+> § "The three reads" below. v47 / v24 / v25 remain exactly as described here, for replay.
+
+**Versions at this stage:** `head-of-abm@v47` (pins `stage0-interview@v24`) and
 `recipe0-stage0-v25.json`, with `CONVERSATION_RECIPE_VERSION = 25` and
 `PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v47"`.
 
@@ -1846,3 +1850,73 @@ with no Client-KB pin and no new `AgentTurnScopePinConflict` path; a plan is a r
 `.md` plus an index row, so no card compiles for it; `launch_arv2_account_research` gained no
 precondition; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0 broken;
 `.env.example` posture unchanged with **no new flag**.
+
+## The three reads (2026-09-13)
+
+Everything above lets the Head of ABM *act* on a project. These three let it **look**: at the
+project's accounts, at one account's research, and at the discovery run. Before them, every number
+and every fact the agent stated about an account came out of its own conversation — right inside one
+thread, wrong in the next one, and wrong again the moment a fleet job finished behind its back.
+
+**Current versions:** `head-of-abm@v48` (pins `stage0-interview@v25`) and
+`recipe0-stage0-v26.json`, with `CONVERSATION_RECIPE_VERSION = 26` and
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v48"`.
+
+### Read tools
+
+All three live in `platform/api/clue_api/arv2/read_tools.py` behind one `Arv2ReadService` seam
+(`DbArv2ReadService`, one transaction per call). They share three properties, and the properties are
+the design:
+
+* **Effect-free.** `READ` + `ReplaySafety(EFFECT_FREE, external_boundary=NONE)`. They spend nothing,
+  approve nothing and launch nothing, which is why they are registered with **no flag** — they read
+  rows that already exist — and why the C8 trial surface withholds none of them.
+* **Absence is a typed refusal, never an empty success.** An account nobody has researched says so
+  by name. The agent cannot read silence as "nothing to report" and then narrate around it.
+* **Scope is ambient.** The workspace comes from `ctx.workspace_id`; the model never supplies it. A
+  project, account or run outside this workspace is *absent* — the same answer an id that never
+  existed gets.
+
+| tool | what it answers | bounds |
+| --- | --- | --- |
+| `read_project_accounts@1` | the project's accounts, each with `added_via` / `added_at`, its latest **account** job's `research_status` (`not_started` when there is none) and a `refreshing` flag (a live job that post-dates a completed one — a first run is not a refresh), plus `total` | `limit` 1…200, default 100 (`MAX_ACCOUNTS`) |
+| `read_account_research@1` | `section="overview"`: the account's written overview blocks in the **page's own running order** (`read_recipes(conn, "overview", workspace_id=…)`, workspace overrides honoured; an unrecognised section sorts after by `section_key`, which is also the whole order when no recipes are seeded). `section="claims"`: its claims through `claims_for_entities(…, scope=WorkspaceScope.for_workspace(ws))`, optionally narrowed by `field_prefix` | `field_prefix` ≤ 80 chars; first 120 claims (`MAX_CLAIMS`) with `truncated`; each evidence span clipped to 240 chars (`EVIDENCE_CHARS`) |
+| `read_discovery_run@1` | the project's latest run, or a named `run_id`: status, window, `asked`, `found` (strict + relaxed; a missing counter reads `0`), the three tallies (`verified` / `shown` / `approved`, **every sub-select workspace-scoped** because `arv2_discovery_candidate.run_id` is a single-column FK), and the candidates shown-first then best-fit then name, an unscored one sorting *after* every scored one rather than as a zero | `candidate_limit` 0…50, default 25 (`MAX_CANDIDATES`); `0` is a legitimate ask — the tallies without the company list; `candidate_total` is always the whole run |
+
+**Refusal codes** (raised as `Arv2ReadRefused`, surfaced as `PreconditionFailed`):
+`arv2_reads_not_composed` (the service is `None` at this root — the three are composed at
+`fleet_main._serve` and `projections_main.build_application`), `project_not_found`,
+`account_not_found`, `overview_not_written` (its message points the agent at `section='claims'`),
+`account_not_researched` (naming the prefix when one was given), `no_discovery_run`,
+`discovery_run_not_found`. A malformed uuid refuses as *not found* on purpose: absent and malformed
+mean the same thing to the caller, and the model does not need to learn the id format from an error.
+
+**Ruling M — `read_account_research` follows no lineage.** A merge loser is `account_not_found`, not
+a silent redirect to its survivor: the agent asked about an id this workspace no longer serves, and
+answering about a different row would be a quiet substitution. The rule this leaves behind is the
+part worth keeping — *any* lineage a read tool ever learns to follow must **re-check `workspace_id`
+on the row it lands on**. `merged_into` is a lineage pointer, not a tenancy guarantee.
+
+**Grant.** `stage0-interview@v25`'s new **§7c "Read before you speak about accounts"** is the prose
+that makes them habitual (its front-matter `summary` was rewritten, not appended to — v24 sat at 505
+of its 512-char cap; ruling N). `head-of-abm@v48` pins the skill and the three tools;
+`recipe0-stage0-v26.json` admits the three addresses at all four sites. The three names sit in
+`stage0_recipe._execution_project_pin` — **not** the presenting-turn branch — because two carry a
+model-authored `project_id` in the body and `read_account_research` names no project at all, so the
+execution row is the trusted coordinate. In the chat they read as "Review the project's accounts",
+"Review an account's research" and "Review the discovery run"
+(`apps/frontend/src/features/projects/model/chat-tool-presentation.ts`).
+
+**Ruling O**, taken while the listing was built: `total` counts the rows the listing *can show*, so
+the count SQL repeats the page's own `JOIN account_entity … merged_into IS NULL`. "Showing 100 of
+240" has to be two measurements of one population, or the remainder is unreachable.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Re-run at this stage, all seven answered: v48 pins no readiness / Stage-0 / Client-KB / Product-KB
+tool (the three added pins are these reads); the product-set gate source is untouched and the new
+module calls no card compiler; the pin is `_execution_project_pin`, with no Client-KB pin and no new
+`AgentTurnScopePinConflict` path; a read compiles nothing onto the lease; `launch_arv2_account_research`
+and `launch_arv2_discovery` gained no precondition — the reads are additive and the skill's ordering
+rule is prose, not a gate; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0
+broken; `.env.example` posture unchanged with **no new flag**.

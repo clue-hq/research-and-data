@@ -149,6 +149,45 @@ test("writing the project plan reads as operator work, not a tool name", () => {
   assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
 });
 
+test("the three reads read as reviewing work, not tool names", () => {
+  const accounts = toolPresentation(
+    part("read_project_accounts", {
+      project_id: GATE_ID,
+      total: 12,
+      accounts: [{ account_entity_id: GATE_ID, name: "Goodman Campbell" }],
+    }),
+  );
+  assert.equal(accounts.label, "Review the project's accounts");
+
+  const research = toolPresentation(
+    part("read_account_research", {
+      account_entity_id: GATE_ID,
+      account_name: "Goodman Campbell",
+      section: "overview",
+      overview: [],
+      claims: [],
+      truncated: false,
+    }),
+  );
+  assert.equal(research.label, "Review an account's research");
+
+  const discovery = toolPresentation(
+    part("read_discovery_run", {
+      run_id: GATE_ID,
+      status: "completed",
+      asked: 20,
+      found: 13,
+      candidates: [],
+    }),
+  );
+  assert.equal(discovery.label, "Review the discovery run");
+
+  for (const presentation of [accounts, research, discovery]) {
+    assert.deepEqual(presentation.rows, []);
+    assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
+  }
+});
+
 test("gate preparation never exposes gate, user, workspace, ref, or digest values", () => {
   const presentation = toolPresentation(
     part("open_icp_confirmation_gate", {

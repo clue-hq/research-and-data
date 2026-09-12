@@ -704,6 +704,27 @@ to `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`. Standing rule re-ru
 unchanged, no new flag. Engineering detail: `platform/api/clue_api/arv2/README.md` § "Project plan
 document"; close-out: `_memory/2026-09-12-project-plan-document.md` (live walk owed).
 
+### Addendum 2026-09-13 — the three reads (profile v48, skill v25, recipe v26)
+
+The Head of ABM can now look at what it has done instead of remembering it: `read_project_accounts@1`
+(the project's accounts, each with its latest account job's research status and a `refreshing` flag),
+`read_account_research@1` (one account's written overview in the page's own order, or its claims with
+evidence) and `read_discovery_run@1` (the latest or a named run with its asked/found window, its
+verified/shown/approved tallies and its candidates) — all three effect-free, registered with **no
+flag**, scoped by the ambient `ctx.workspace_id` rather than anything the model supplies, and
+answering absence with a typed refusal (`project_not_found`, `account_not_found`,
+`overview_not_written`, `account_not_researched`, `no_discovery_run`, `discovery_run_not_found`,
+`arv2_reads_not_composed`) so the agent can never read silence as "nothing to report". Ruling **M**:
+a read follows no lineage — a merge loser is `account_not_found`, not a quiet redirect to its
+survivor, and any lineage a read ever learns to follow must re-check `workspace_id` on the row it
+lands on. Skill `stage0-interview@v25` §7c ("Read before you speak about accounts") is the prose that
+makes it habitual; the grant is `head-of-abm@v48` / `recipe0-stage0-v26.json` /
+`CONVERSATION_RECIPE_VERSION = 26`, pinned through `_execution_project_pin`, with v47 / v24 / recipe
+v25 byte-untouched and the trial surface unchanged (a read withholds nothing worth withholding).
+Standing rule re-run, 7/7; env posture unchanged, no new flag. Engineering detail:
+`platform/api/clue_api/arv2/README.md` § "The three reads"; close-out:
+`_memory/2026-09-13-head-of-abm-read-tools.md` (live walk owed).
+
 ---
 
 ## 9. Phases, exit gates, ownership, timeline

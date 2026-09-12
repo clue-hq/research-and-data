@@ -38,6 +38,9 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   start_confirmed_project_run: "Start the project",
   draft_account_research_directive: "Prepare the research plan",
   launch_account_research: "Start account research",
+  read_project_accounts: "Review the project's accounts",
+  read_account_research: "Review an account's research",
+  read_discovery_run: "Review the discovery run",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {
