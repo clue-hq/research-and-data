@@ -222,8 +222,6 @@ Research-card polishing and other textbox layout changes remain separate.
 **Status: implemented and verified through a real Grok conversation in Semarang.**
 This is CP1 in the combined chat-polish delivery plan. The approved inline/plain-text
 view is retained; provider data now reaches it through the existing event path.
-The internal `finalize_turn` saving/completed receipt is omitted from normal chat;
-errors/denials remain visible and Inspect retains the full receipt.
 
 **Original verified defect:** the Semarang worker already has trace mode `raw` and
 uses Grok through OpenRouter. The gateway's non-OpenAI chat-completions branch
