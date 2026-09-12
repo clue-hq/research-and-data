@@ -216,7 +216,7 @@ class InlineDesignLaneDriver:
                 # The beat exited ⇒ it declared the lease lost. The handler races
                 # ``lease_lost`` itself and abandons cooperatively — await that abandonment
                 # rather than cancelling mid-write.
-                result = await work
+                result = await asyncio.shield(work)
                 log.warning(
                     "design_leg.lane_fenced_out",
                     work_id=str(work_id),
@@ -227,6 +227,17 @@ class InlineDesignLaneDriver:
                 work_id=str(work_id),
                 outcome=result.outcome,
             )
+        except asyncio.CancelledError:
+            from clue_design import runs as design_runs
+
+            async with self._conn_factory() as conn:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            # Cancelling an asyncio wrapper does not stop its synchronous job thread.
+            # Keep the heartbeat and handler alive until the actual body exits.
+            await asyncio.shield(work)
+            raise
         finally:
             for task in (beat, work):
                 if not task.done():

@@ -34,6 +34,11 @@ from clue_agents.contracts import (
 )
 from clue_core import ExecutionId
 
+INTERRUPTED_ASSISTANT_NOTICE = (
+    "The following assistant message was interrupted by the user. "
+    "It is an incomplete response, not a completed action or final answer."
+)
+
 __all__ = [
     "AgentArtifactSink",
     "AgentArtifactReader",
@@ -74,6 +79,7 @@ class HistoryMessageRef(PortValue):
     sequence: int = Field(ge=1)
     role: Literal["system", "user", "assistant", "tool"]
     body_ref: ArtifactRef
+    interrupted: bool = False
 
 
 class ContextMaterialization(PortValue):

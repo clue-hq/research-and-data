@@ -334,6 +334,11 @@ class DesignToolInvocations:
         idempotency_key: str | None = None,
     ) -> ToolResult:
         """Run one governed design tool. Synchronous — see the module docstring."""
+        if actor == "agent" and self._run_subject is not None:
+            if self._host.repository(workspace_id).cancellation_requested(self._run_subject.run_id):
+                from lumen_agent.cancellation import TurnCancelled
+
+                raise TurnCancelled()
         return _run_isolated(
             self._ainvoke(
                 name,

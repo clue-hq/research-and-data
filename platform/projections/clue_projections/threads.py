@@ -384,8 +384,13 @@ _TURN_UNION_SELECT = """
         e.last_event_id,
         e.attempts,
         j.status AS journal_status,
+        c.control_id AS stop_control_id,
+        ack.acknowledged_at AS stop_acknowledged_at,
         f.status AS task_status
     FROM agent_turn_submission s
+    LEFT JOIN agent_turn_control_request c ON c.workspace_id=s.workspace_id
+      AND c.turn_id=s.turn_id AND c.kind='stop'
+    LEFT JOIN agent_turn_stop_ack ack ON ack.control_id=c.control_id
     LEFT JOIN LATERAL (
         SELECT
             max(event_id) AS last_event_id,
@@ -432,6 +437,7 @@ _THREADS_RUNNING = text(
     SELECT u.thread_id
     FROM ({_TURN_UNION_SELECT} AND s.thread_id = ANY(CAST(:thread_ids AS text[]))) u
     WHERE u.terminal_event IS NULL
+      AND u.stop_acknowledged_at IS NULL
       AND (u.task_status IS NULL OR u.task_status NOT IN ('done', 'failed'))
     GROUP BY u.thread_id
     """
@@ -447,6 +453,10 @@ _TERMINAL_STATES: dict[str, str] = {
 
 
 def _turn_state(row: dict[str, object]) -> str:
+    if row.get("stop_acknowledged_at") is not None:
+        return "cancelled"
+    if row.get("stop_control_id") is not None:
+        return "running"
     terminal = row.get("terminal_event")
     if terminal is not None:
         return _TERMINAL_STATES.get(str(terminal), "completed")

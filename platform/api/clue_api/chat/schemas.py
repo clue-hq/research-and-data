@@ -271,12 +271,9 @@ class SubmitTurnRequest(_Request):
 
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
-        design_asset_refs = tuple(
-            ref for ref in self.context_refs if ref.object_type == "design_asset"
-        )
-        if self.message is not None and not self.message.strip() and not design_asset_refs:
+        if self.message is not None and not self.message.strip() and not self.context_refs:
             raise ValueError(
-                "message must contain something other than whitespace unless reference images "
+                "message must contain something other than whitespace unless context references "
                 "are supplied"
             )
         if self.gate_response is not None and (

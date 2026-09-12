@@ -34,7 +34,7 @@ test("the card sizes its own dock, so the composer is never clipped behind it", 
     shellCss,
     /\.shellPanelOpen \.composerDockWithResearchCard\s*\{\s*flex-basis:\s*auto;/,
   );
-  assert.match(surface, /research\.card \? styles\.composerDockWithResearchCard/);
+  assert.match(surface, /research\.card \|\| chat\.queueControl\.paused \? styles\.composerDockWithResearchCard/);
 });
 
 test("the prime rule names the two ARV2 launch tools and waits for the transcript", () => {

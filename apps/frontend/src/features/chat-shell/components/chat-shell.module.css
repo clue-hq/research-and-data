@@ -3201,3 +3201,25 @@
     animation: none;
   }
 }
+
+.queueControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 4px 10px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+}
+
+.queueControls button {
+  border: 1px solid var(--chat-shell-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.queueControls button:disabled { opacity: 0.45; cursor: default; }

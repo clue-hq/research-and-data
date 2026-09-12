@@ -35,6 +35,7 @@ from clue_gateway.metadata import (
     ROLE_KEY,
     CostSource,
 )
+from clue_gateway.openrouter_chat import OpenRouterChatModel
 from clue_gateway.tracing import record_model_call
 from clue_obs import get_logger
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
@@ -1037,7 +1038,7 @@ class OpenRouterAgentModelProvider:
                 }
                 if chat_reasoning:
                     extra_body["reasoning"] = chat_reasoning
-            return ChatOpenAI(  # type: ignore[call-arg]
+            return OpenRouterChatModel(  # type: ignore[call-arg]
                 model=model_id,
                 api_key=self._api_key,
                 base_url=self._config.base_url,
@@ -1046,6 +1047,7 @@ class OpenRouterAgentModelProvider:
                 max_tokens=max_output_tokens,
                 temperature=temperature,
                 stream_usage=True,
+                use_responses_api=False,
                 http_client=self._http_client,
                 http_async_client=self._http_async_client,
                 extra_body=extra_body or None,

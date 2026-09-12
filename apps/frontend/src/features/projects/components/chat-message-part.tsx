@@ -52,12 +52,12 @@ export function ChatMessagePartView({
       return (
         <div className={styles.messageText} data-streaming={part.streaming || undefined}>
           <MessageResponse streaming={part.streaming}>{part.text}</MessageResponse>
-          {part.failed ? (
+          {part.failed && part.failureReason !== "stop_requested" ? (
             <p role="note">
               <ProjectIcon name="close" size={12} />
               {part.failureReason
-                ? `Stopped: ${part.failureReason}`
-                : "Stopped before this response finished"}
+                ? `Response interrupted: ${part.failureReason}`
+                : "This response could not finish"}
             </p>
           ) : null}
         </div>
@@ -68,6 +68,12 @@ export function ChatMessagePartView({
       // in the stream/inspector, without duplicating the same rounds in chat.
       return null;
     case "tool":
+      // Saving the answer is an internal receipt, already represented by the reply.
+      // Keep genuine errors visible and retain the receipt in Inspect.
+      if (
+        part.toolName === "finalize_turn" &&
+        ["input-streaming", "input-available", "output-available"].includes(part.state)
+      ) return null;
       return <ChatToolCall part={part} />;
     case "task":
       return <ChatResearchTask part={part} />;
