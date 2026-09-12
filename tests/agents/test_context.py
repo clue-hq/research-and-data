@@ -454,3 +454,54 @@ def test_utf8_byte_counter_is_conservative_and_versioned() -> None:
     counter = Utf8ByteTokenCounter()
     assert counter.version == "utf8-bytes-v1"
     assert counter.count("é") == 2
+
+
+@pytest.mark.parametrize("fits", [False, True])
+def test_interrupted_history_and_its_notice_share_one_budget_decision(fits: bool) -> None:
+    from clue_agents.context import HistoryLayerSource
+    from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
+
+    body = "Exact unfinished `answer"
+    ref = artifact("partial.txt")
+    history = (
+        HistoryMessageRef(
+            message_id=TURN_ID,
+            turn_id=TURN_ID,
+            sequence=1,
+            role="assistant",
+            body_ref=ref,
+            interrupted=True,
+        ),
+    )
+    source = HistoryLayerSource(_ArtifactReader({ref.artifact_key: body.encode()}))
+    sources = tuple(source if s.layer is ContextLayer.L6_CONVERSATION else s for s in _sources())
+    full_cost = len((INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + body).encode())
+    policy = _policy().model_copy(
+        update={
+            "budgets": tuple(
+                LayerBudget(
+                    layer=b.layer,
+                    max_tokens=(full_cost if fits else len(body))
+                    if b.layer is ContextLayer.L6_CONVERSATION
+                    else b.max_tokens,
+                )
+                for b in _policy().budgets
+            )
+        }
+    )
+    assembled = asyncio.run(
+        DeterministicAgentContextAssembler(
+            sources=sources,
+            policy=policy,
+            receipts=_Receipts(),
+            clock=lambda: NOW,
+        ).assemble(request=request(), profile=profile(), history=history)
+    )
+    contents = [m.content for m in assembled.messages]
+    assert (body in contents) is fits
+    assert (INTERRUPTED_ASSISTANT_NOTICE in contents) is fits
+    if fits:
+        index = contents.index(body)
+        assert contents[index - 1] == INTERRUPTED_ASSISTANT_NOTICE
+        assert assembled.messages[index - 1].type == "system"
+        assert assembled.messages[index].type == "ai"

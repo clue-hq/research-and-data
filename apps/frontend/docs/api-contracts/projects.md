@@ -1261,14 +1261,10 @@ detached research run.
 
 ### 6A. Chat polish delivery plan: Stop, queue, progress and reasoning — 2026-09-12
 
-**Status: product direction agreed; implementation plan proposed. No application
-changes are included in this planning update.** This subsection records the next
-amendment to §6, not a claim that the behavior below already exists. The founder
-requires discussion and plan review before development. The founder has selected
-keeping queued messages waiting after Stop, with a Resume button above the
-composer, and has explicitly added the provider-reasoning adapter repair to this
-plan. These directions supersede R5's automatic queue advancement after Stop
-when implemented; current code still uses R5.
+**Status: implemented in Semarang on 2026-09-12 after founder approval.** CP1–CP6
+are built; targeted CP7 acceptance is recorded below. This amendment supersedes
+R5's automatic queue advancement after Stop. Normal completion still advances
+the queue. Research-card polishing and broader textbox redesign remain separate.
 
 #### Agreed experience and scope
 
@@ -1329,9 +1325,9 @@ Use accessible names `Send message` and `Stop response`, with disabled/busy
 semantics on the control. No new visible lifecycle copy is required. A lost
 network connection is not proof of cancellation or completion.
 
-#### Current implementation and required changes
+#### Implementation changes
 
-| Area | Verified current behavior | Planned change |
+| Area | Previous behavior | Implemented change |
 | --- | --- | --- |
 | Stop API | Existing authorized, idempotent `POST …/turns/:turnId/stop`; `202` records intent | Reuse it; keep receipt distinct from completion |
 | Turn control read | The immutable control row exists, but the turn DTO does not expose pending Stop | Add optional `stop_request` metadata to the turn projection/read and Zod adapter |
@@ -1347,26 +1343,27 @@ network connection is not proof of cancellation or completion.
 
 Keep the public turn states `queued | running | completed | awaiting_input |
 failed | cancelled`. Do not introduce a public `stopping` state merely to style
-a button. Proposed additive turn-read member:
+a button. Additive turn-read member:
 
 ```json
 {
   "stop_request": {
     "control_id": "existing-control-id",
-    "requested_at": "2026-09-12T00:00:00Z"
+    "requested_at": "2026-09-12T00:00:00Z",
+    "pending": true
   }
 }
 ```
 
 It is `null` when absent and is read from `agent_turn_control_request`, never
-manufactured by the browser. On a running turn it means cancellation pending;
-on a terminal turn the terminal outcome wins. Do not include requester identity
+manufactured by the browser. `pending` is true until the immutable Stop acknowledgement exists. The projection
+keeps an accepted Stop running until that acknowledgement; acknowledgement makes
+it cancelled even if the worker crashes before publishing the terminal SSE frame. Do not include requester identity
 or provider internals in this UI projection. The existing POST receipt remains
 `202`; an already-requested Stop remains idempotent; queued/terminal targets
 remain `409 TURN_NOT_RUNNING` unless replaying an existing receipt.
 
-The frontend repository must validate this response with Zod instead of its
-current unchecked cast. The controller keeps an optimistic pending target until
+The frontend repository validates Stop, Resume and turn-list responses with Zod. The controller keeps an optimistic pending target until
 the receipt/read catches up, reconciles through existing SSE plus bounded reads
 while cancellation is pending, and rehydrates on reconnect, focus, and reload.
 Terminal stream state continues to outrank stale `running` reads. A response for
@@ -1506,7 +1503,7 @@ their count; Resume is shown only for a held queue. During cancellation Resume
 is disabled. After cancellation it is enabled; while its request is pending it
 is disabled again. No Stopping/Stopped copy is introduced.
 
-**Proposed backend contract:**
+**Implemented backend contract:**
 
 - Persist one queue-control record per workspace/thread, keyed by the existing
   Stop control ID, with the hold timestamp. It is shared dispatcher state, not
@@ -1552,8 +1549,8 @@ scheduling order or stale frontend state.
 
 #### Development slices and concrete ownership
 
-Implement sequentially with focused commits; update this subsection from
-proposed to built only with evidence. Each slice has a finish condition.
+The approved slices below retain their finish conditions; the verification record
+distinguishes deterministic coverage from live observations.
 
 | Slice | Deliverable and primary files | Finish condition |
 | --- | --- | --- |
@@ -1572,6 +1569,61 @@ systems. Schema changes are justified by a concrete invariant (for example a
 selected durable queue hold); if needed, use a random Alembic revision, one head,
 and an up/down/up smoke test on an isolated throwaway database. Prefer no new
 runtime flags; any required flag must land with `.env.example` parity.
+
+#### Implementation and verification record — 2026-09-12
+
+- `d639a2de8bd1` adds an immutable `agent_turn_stop_ack`, the thread's
+  `queue_hold_control_id`, and idempotent `agent_thread_queue_resume` receipts.
+  Existing cancelled controls are backfilled. The migration has one head and
+  passed isolated up/down/up before being applied to `clue_semarang`.
+- Stop, finalization, design registration, queue admission and interruption
+  persistence share the relevant thread/turn locks. Queue acceptance timestamps
+  are assigned monotonically under the thread lock, so a transaction opened
+  earlier cannot overtake messages already accepted. Claims recheck queue holds.
+- `chat/interrupted_turn.py` reuses artifact storage, immutable history and
+  ownership references. It persists only the last accepted finalize-answer prefix.
+  Recovery retains pending Stop events, never restarts the stopped model, and
+  can hydrate history after event pruning. Interrupted provenance and its body
+  share one context-budget decision; the saved user-facing bytes stay unchanged.
+- The new Resume endpoint returns `hold_control_id`, `replayed`,
+  `dispatched_turn_id` and `queue_control`. Stop returns the existing 202 intent
+  receipt. Turn reads add `stop_request.pending` and `meta.queue_control`.
+- Design uses its existing cancellation DAL. The exact turn-derived run is
+  signalled before driver cancellation; its heartbeat/lease remains until the
+  synchronous body exits. Model-start/end checks force a fresh probe, streaming
+  token checks observe the sticky signal, and the design toolbelt blocks further
+  writes. This is cooperative cancellation: an in-flight synchronous provider
+  request may return or time out before acknowledgement. Shared clients/workers
+  and detached research jobs are never killed by chat Stop.
+- Focused backend tests cover real adapter wire data through the emitter,
+  interrupted history/replay/outbox pruning, both Stop/finalization orderings,
+  queue hold/Resume/FIFO and stale Resume, claim-before-start, inline design lease
+  ownership and design cancellation boundaries. The frontend project suites
+  pass 202 tests, including button states, reasoning wrapping and repository
+  contracts. Design-system build, lint and production build pass; lint retains
+  two pre-existing unused-variable warnings in design-engine files. Import-linter
+  reports 26 contracts kept. Mypy still reports four pre-existing errors in
+  unchanged `design/ad_assets.py`, `arv2/account_research_claims.py` and
+  `arv2/account_research_driver.py`.
+- Live Semarang acceptance used a dedicated verification chat. Grok emitted
+  13 reasoning deltas in the first turn; the disclosure showed real text and
+  respected manual collapse. Trace width and scroll width were both 669px.
+  Long inline-code/Markdown responses stayed within the 1086px page after reload.
+  A second turn was stopped while reasoning: intent-to-ack was 0.353s, with no
+  fabricated assistant reply or successful finalization. Its queued successor
+  remained held across hard reload and completed only after Resume. All five
+  verification turns finished; no test generation remains running.
+- Evidence limits: the live Stop happened before answer text; exact partial-answer
+  preservation is verified deterministically against Postgres/artifact hydration,
+  including pruning. Design scene/website cancellation was exercised with local
+  runtime tests, not a new paid live design generation. No new live account
+  research was launched for this acceptance; isolation is enforced by the scoped
+  cancellation paths, and existing Semarang research work was left untouched.
+  These observations do not claim provider-side compute cancellation or durable
+  customer-visible reasoning. Semarang runs frontend 3040, API 8070, design 8071,
+  database `clue_semarang`, and dedicated Redis 56379; sibling services were untouched.
+
+The following matrix remains the regression checklist for future changes:
 
 #### Acceptance matrix and verification
 

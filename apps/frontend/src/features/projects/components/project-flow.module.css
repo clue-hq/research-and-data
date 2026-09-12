@@ -363,7 +363,7 @@
   align-items: center;
   justify-content: center;
   border: 0.5px solid var(--clue-ds-color-primitives-brand-950);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--clue-ds-color-primitives-brand-950);
   color: white;
   cursor: pointer;

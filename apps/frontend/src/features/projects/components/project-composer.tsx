@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { SquareIcon } from "lucide-react";
+import { composerAction, hasComposerDraft } from "../model/composer-action";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -36,6 +38,9 @@ export function ProjectComposer({
   onModelSelect = NOOP,
   onPromptChange,
   onSubmit,
+  onStop,
+  running = false,
+  stopping = false,
   prompt,
   sendDisabled = false,
   selectedEntities = [],
@@ -60,6 +65,9 @@ export function ProjectComposer({
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
   onSubmit: (value: string, entityIds: string[]) => boolean | Promise<boolean>;
+  onStop?: () => void;
+  running?: boolean;
+  stopping?: boolean;
   prompt: string;
   sendDisabled?: boolean;
   selectedEntities?: ProjectEntity[];
@@ -71,6 +79,9 @@ export function ProjectComposer({
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const [submitting, setSubmitting] = useState(false);
+  const action = composerAction({ running: running && Boolean(onStop), stopping,
+    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments),
+    disabled, sendDisabled, submitting });
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -84,11 +95,11 @@ export function ProjectComposer({
   );
   const submitCurrentDraft = useCallback(
     async (promptOverride?: string) => {
-      if (disabled || sendDisabled || submitting) return;
+      if (disabled || sendDisabled || submitting || stopping) return;
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!currentPrompt.trim() && !currentEntityIds.length && !attachments.length) {
+      if (!hasComposerDraft(currentPrompt, currentEntityIds, attachments)) {
         return;
       }
 
@@ -101,7 +112,7 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [attachments.length, disabled, onSubmit, prompt, sendDisabled, submitting],
+    [attachments, disabled, onSubmit, prompt, sendDisabled, submitting, stopping],
   );
 
   return (
@@ -205,17 +216,14 @@ export function ProjectComposer({
             </div>
           ) : null}
           <button
-            aria-label="Send"
+            aria-label={action.kind === "stop" ? "Stop response" : "Send message"}
+            aria-busy={stopping || submitting || undefined}
             className={styles.sendButton}
-            disabled={
-              disabled ||
-              sendDisabled ||
-              submitting ||
-              (!prompt.trim() && !selectedEntities.length && !attachments.length)
-            }
-            type="submit"
+            disabled={action.disabled}
+            onClick={action.kind === "stop" ? onStop : undefined}
+            type={action.kind === "stop" ? "button" : "submit"}
           >
-            <ProjectIcon name="arrow-up" size={16} />
+            {action.kind === "stop" ? <SquareIcon aria-hidden="true" size={12} fill="currentColor" strokeWidth={0} /> : <ProjectIcon name="arrow-up" size={16} />}
           </button>
         </div>
       </div>

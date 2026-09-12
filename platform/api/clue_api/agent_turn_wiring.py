@@ -9,6 +9,7 @@ from uuid import UUID, uuid5
 
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentExecutionStatus,
@@ -963,6 +964,8 @@ class DbAgentTurnJournal:
     ) -> None:
         """Atomically make a previously recorded envelope authoritative for turn state."""
 
+        from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
+
         if envelope_ref.workspace_id != workspace_id:
             raise ValueError("finalization envelope artifact crosses the turn workspace")
         status = {
@@ -972,6 +975,9 @@ class DbAgentTurnJournal:
             "failed": AgentTurnStatus.FAILED,
         }[envelope.status.value]
         async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            if await stop_requested(conn, workspace_id=workspace_id, turn_id=turn_id):
+                raise TurnStopRequested("Stop accepted before finalization")
             inserted = await conn.execute(
                 text(
                     """
@@ -1079,7 +1085,18 @@ class DbAgentTurnJournal:
         status: AgentTurnStatus,
         reason_code: str | None,
     ) -> None:
+        from clue_api.chat.turn_controls import lock_turn_control
+
         async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            if await conn.scalar(
+                text(
+                    "SELECT 1 FROM agent_turn_event WHERE workspace_id=:workspace "
+                    "AND turn_id=:turn AND status='cancelled'"
+                ),
+                {"workspace": workspace_id, "turn": turn_id},
+            ):
+                return
             exists = await conn.execute(
                 text("SELECT 1 FROM agent_turn WHERE id=:turn AND workspace_id=:workspace"),
                 {"turn": turn_id, "workspace": workspace_id},
@@ -1319,7 +1336,9 @@ class DbAgentHistoryStore(AgentHistoryStore):
             result = await conn.execute(
                 text(
                     "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                    "m.body_sha256, a.media_type, a.size_bytes "
+                    "m.body_sha256, a.media_type, a.size_bytes, "
+                    "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                    "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                     "FROM agent_thread_message m "
                     "JOIN artifact a ON a.storage_key=m.body_artifact_key "
                     "WHERE m.workspace_id=:workspace AND m.thread_id=:thread "
@@ -1333,6 +1352,7 @@ class DbAgentHistoryStore(AgentHistoryStore):
                     turn_id=row["turn_id"],
                     sequence=int(row["sequence"]),
                     role=row["role"],
+                    interrupted=bool(row["interrupted"]),
                     body_ref=ArtifactRef(
                         workspace_id=workspace_id,
                         artifact_key=row["body_artifact_key"],
@@ -1354,82 +1374,103 @@ class DbAgentHistoryStore(AgentHistoryStore):
         role: Literal["system", "user", "assistant", "tool"],
         body_ref: ArtifactRef,
     ) -> HistoryMessageRef:
-        if body_ref.workspace_id != workspace_id:
-            raise ValueError("history body ref crosses the thread workspace")
         async with self._conn_factory() as conn:
-            existing = await conn.execute(
-                text(
-                    "SELECT turn_id, sequence, role, body_artifact_key, body_sha256 "
-                    "FROM agent_thread_message "
-                    "WHERE workspace_id=:workspace AND id=:id"
-                ),
-                {"workspace": workspace_id, "id": message_id},
-            )
-            row = existing.mappings().first()
-            if row is not None:
-                if (
-                    row["turn_id"] != turn_id
-                    or row["role"] != role
-                    or row["body_artifact_key"] != body_ref.artifact_key
-                    or row["body_sha256"] != body_ref.sha256
-                ):
-                    raise ValueError("history message id already has different immutable content")
-                return HistoryMessageRef(
-                    message_id=message_id,
-                    turn_id=turn_id,
-                    sequence=int(row["sequence"]),
-                    role=role,
-                    body_ref=body_ref,
-                )
-            await conn.execute(
-                text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                {"scope": _thread_lock_key(workspace_id, thread_id)},
-            )
-            next_result = await conn.execute(
-                text(
-                    "SELECT COALESCE(max(sequence), 0) + 1 "
-                    "FROM agent_thread_message "
-                    "WHERE workspace_id=:workspace AND thread_id=:thread"
-                ),
-                {"workspace": workspace_id, "thread": thread_id},
-            )
-            sequence = int(next_result.scalar_one())
-            await conn.execute(
-                text(
-                    "INSERT INTO agent_thread_message "
-                    "(id, workspace_id, thread_id, turn_id, sequence, role, body_artifact_key, "
-                    " body_sha256, retention_class) "
-                    "SELECT :id, :workspace, :thread, :turn, :sequence, :role, :key, :sha, "
-                    " t.retention_class FROM agent_turn t "
-                    "WHERE t.id=:turn AND t.workspace_id=:workspace"
-                ),
-                {
-                    "id": message_id,
-                    "workspace": workspace_id,
-                    "thread": thread_id,
-                    "turn": turn_id,
-                    "sequence": sequence,
-                    "role": role,
-                    "key": body_ref.artifact_key,
-                    "sha": body_ref.sha256,
-                },
-            )
-            await _insert_artifact_ref(
+            return await self.append_in_transaction(
                 conn,
-                turn_id=turn_id,
-                owner_kind="history",
-                owner_id=message_id,
-                role="history_body",
-                ordinal=0,
-                ref=body_ref,
-            )
-            return HistoryMessageRef(
                 message_id=message_id,
                 turn_id=turn_id,
-                sequence=sequence,
+                workspace_id=workspace_id,
+                thread_id=thread_id,
                 role=role,
                 body_ref=body_ref,
             )
+
+    @staticmethod
+    async def append_in_transaction(
+        conn: AsyncConnection,
+        *,
+        message_id: UUID,
+        turn_id: UUID,
+        workspace_id: str,
+        thread_id: str,
+        role: Literal["system", "user", "assistant", "tool"],
+        body_ref: ArtifactRef,
+    ) -> HistoryMessageRef:
+        if body_ref.workspace_id != workspace_id:
+            raise ValueError("history body ref crosses the thread workspace")
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": _thread_lock_key(workspace_id, thread_id)},
+        )
+        existing = await conn.execute(
+            text(
+                "SELECT turn_id, sequence, role, body_artifact_key, body_sha256 "
+                "FROM agent_thread_message "
+                "WHERE workspace_id=:workspace AND id=:id"
+            ),
+            {"workspace": workspace_id, "id": message_id},
+        )
+        row = existing.mappings().first()
+        if row is not None:
+            if (
+                row["turn_id"] != turn_id
+                or row["role"] != role
+                or row["body_artifact_key"] != body_ref.artifact_key
+                or row["body_sha256"] != body_ref.sha256
+            ):
+                raise ValueError("history message id already has different immutable content")
+            return HistoryMessageRef(
+                message_id=message_id,
+                turn_id=turn_id,
+                sequence=int(row["sequence"]),
+                role=role,
+                body_ref=body_ref,
+            )
+        next_result = await conn.execute(
+            text(
+                "SELECT COALESCE(max(sequence), 0) + 1 "
+                "FROM agent_thread_message "
+                "WHERE workspace_id=:workspace AND thread_id=:thread"
+            ),
+            {"workspace": workspace_id, "thread": thread_id},
+        )
+        sequence = int(next_result.scalar_one())
+        await conn.execute(
+            text(
+                "INSERT INTO agent_thread_message "
+                "(id, workspace_id, thread_id, turn_id, sequence, role, body_artifact_key, "
+                " body_sha256, retention_class) "
+                "SELECT :id, :workspace, :thread, :turn, :sequence, :role, :key, :sha, "
+                " t.retention_class FROM agent_turn t "
+                "WHERE t.id=:turn AND t.workspace_id=:workspace"
+            ),
+            {
+                "id": message_id,
+                "workspace": workspace_id,
+                "thread": thread_id,
+                "turn": turn_id,
+                "sequence": sequence,
+                "role": role,
+                "key": body_ref.artifact_key,
+                "sha": body_ref.sha256,
+            },
+        )
+        await _insert_artifact_ref(
+            conn,
+            turn_id=turn_id,
+            owner_kind="history",
+            owner_id=message_id,
+            role="history_body",
+            ordinal=0,
+            ref=body_ref,
+        )
+        return HistoryMessageRef(
+            message_id=message_id,
+            turn_id=turn_id,
+            sequence=sequence,
+            role=role,
+            body_ref=body_ref,
+        )
 
 
 class DbAgentReplayReader:

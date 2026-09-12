@@ -211,19 +211,21 @@ backend permits provider trace text only in development and does not persist it.
 Making traces customer-visible in production or available after refresh requires
 a separate agreed backend contract; the frontend must not fabricate missing text
 or silently persist it in browser storage. Stop controls and the minimal queued-
-message Resume surface are now planned in
+message Resume surface are implemented in
 [Projects §6A](../api-contracts/projects.md#chat-polish-delivery-plan).
 Research-card polishing and other textbox layout changes remain separate.
 
 <a id="provider-reasoning-delivery-repair"></a>
 
-### Provider reasoning delivery repair — planned, 2026-09-12
+### Provider reasoning delivery repair — implemented, 2026-09-12
 
-**Status: explicitly included by the founder in the plan of action; development
-has not started.** This is CP1 in the combined chat-polish delivery plan. Preserve
-the approved inline/plain-text view; the missing part is real data delivery.
+**Status: implemented and verified through a real Grok conversation in Semarang.**
+This is CP1 in the combined chat-polish delivery plan. The approved inline/plain-text
+view is retained; provider data now reaches it through the existing event path.
+The internal `finalize_turn` saving/completed receipt is omitted from normal chat;
+errors/denials remain visible and Inspect retains the full receipt.
 
-**Verified local defect:** the Semarang worker already has trace mode `raw` and
+**Original verified defect:** the Semarang worker already has trace mode `raw` and
 uses Grok through OpenRouter. The gateway's non-OpenAI chat-completions branch
 constructs `ChatOpenAI` from pinned `langchain-openai==1.4.1`. That adapter drops
 third-party reasoning fields before `TurnStreamCallbackHandler` can read them.
@@ -233,18 +235,34 @@ had reasoning status events but no reasoning-text deltas or snapshots. Its raw
 provider response was not captured; this is not evidence that the provider
 actually returned text for that particular turn.
 
-**Adapter direction:** use the maintained `ChatOpenRouter` integration for the
-existing OpenRouter chat-completions branch, after a compatibility test against
-our governed wrapper. Its documentation covers streaming, tool calling, native
-async, usage and standard reasoning content blocks. Pin a compatible version
-and update the lockfile when implementing; do not broadly upgrade LangChain or
-monkey-patch dependency internals. This is a proposed fit, not locally proven
-compatibility. [LangChain's OpenRouter integration](https://docs.langchain.com/oss/python/integrations/chat/openrouter).
+**Adapter decision:** compatibility testing rejected `langchain-openrouter==0.2.7`
+for this pinned wrapper: its SDK `Chat.send` rejects the existing `usage` argument,
+its retry setting becomes a wall-time budget instead of the configured retry count,
+and usage-only frames lose provider cost metadata. The plan's narrow alternative
+is implemented in `libs/clue-gateway/clue_gateway/openrouter_chat.py` over the
+existing pinned `ChatOpenAI` conversion hooks. Transport, tool binding, cancellation,
+timeouts and retry ownership remain upstream. No dependency/lockfile change or
+monkeypatch is required. OpenAI's Responses branch remains unchanged.
+
+The converter retains scalar reasoning aliases and structured continuation details.
+The stream extractor selects one canonical text source and allowlists displayable
+text/summary blocks; encrypted data never becomes visible trace text. Wire tests
+exercise sync/async calls, tool continuations, usage/cost and aliases; a fake HTTP
+stream also traverses the actual adapter and emitter into Postgres events. A real
+Grok turn emitted 13 reasoning deltas and populated the approved disclosure.
+
+**Retention audit:** no raw payload logging or new reasoning-history store was
+added. The existing development-only trace gate and bounded event/lens policy
+still control display. Existing model receipt artifacts and LangGraph continuation
+checkpoints can retain provider metadata under their current retention/access
+policies, including opaque details required for a subsequent tool round. They are
+not chat transcript messages. Only accepted user-facing answer text enters the
+new interrupted-history path; cold refresh is not a promise of retained raw traces.
 
 | Step | Work and ownership | Required evidence |
 | --- | --- | --- |
 | CP1.1 — Reproduce the loss | `tests/gateway/test_agent_model.py`, existing dev-lens tests; use fake HTTP streaming responses through the real configured adapter, not only hand-built normalized chunks | A failing regression demonstrates the current loss on the exact route; ordinary final-answer/tool streaming still works |
-| CP1.2 — Replace the lossy adapter | `libs/clue-gateway/clue_gateway/agent_model.py`, its `pyproject.toml`, `uv.lock` | The provider-specific implementation works with `GovernedAgentChatModel`, injected HTTP clients, sync/async streaming, tool binding and interruption; no separate model egress |
+| CP1.2 — Replace the lossy adapter | `libs/clue-gateway/clue_gateway/agent_model.py`, `openrouter_chat.py`; no dependency change | The provider-specific implementation works with `GovernedAgentChatModel`, injected HTTP clients, sync/async streaming, tool binding and interruption; no separate model egress |
 | CP1.3 — Normalize once and project | `platform/api/clue_api/chat/turn_stream.py`; a gateway helper only if needed by the stable model seam | Provider-exposed text reaches existing reasoning part IDs in order, with correct round/attempt ownership and no duplicate characters |
 | CP1.4 — Real conversation acceptance | Existing `ChatReasoning` and transcript, live Semarang worker/API/browser | A supported-provider turn shows incremental real text in the approved disclosure; manually collapse/reopen across rounds, finish and Stop, with bounded widths |
 

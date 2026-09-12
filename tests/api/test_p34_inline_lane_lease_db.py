@@ -433,3 +433,55 @@ def test_a_fenced_lane_reacquires_when_the_takeover_dies_without_finishing(
             await _cleanup_committed_run(envelope)
 
     run_async(scenario())
+
+
+def test_cancelled_inline_driver_waits_for_its_body_and_keeps_lease(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """The caller cannot acknowledge Stop while the owned handler is still unwinding."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+            envelope = await _seed_committed_run("stop-body")
+            entered, release, exited = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+            class Handler:
+                async def handle(self, context: WorkContext) -> WorkResult:
+                    entered.set()
+                    await release.wait()
+                    exited.set()
+                    return WorkResult(outcome="cancelled", references={})
+
+            driver = InlineDesignLaneDriver(
+                handler=Handler(),
+                lease_ttl=timedelta(seconds=1),
+                heartbeat_interval_s=0.2,
+                join_poll_interval_s=0.05,
+                join_timeout_s=5,
+            )
+            drive = asyncio.create_task(driver.drive(envelope=envelope))
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                drive.cancel()
+                await asyncio.sleep(1.1)
+                assert not drive.done() and not exited.is_set()
+                async with transaction() as conn:
+                    lease = await get_work_lease(conn, WorkId(envelope.work_id))
+                async with transaction() as conn:
+                    assert await design_runs.cancellation_requested(
+                        conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                    )
+                assert lease is not None and lease.live
+                release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(drive, 2)
+                assert exited.is_set()
+            finally:
+                release.set()
+                if not drive.done():
+                    drive.cancel()
+                await _cleanup_committed_run(envelope)
+
+    run_async(scenario())

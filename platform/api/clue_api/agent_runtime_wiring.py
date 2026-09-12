@@ -638,6 +638,21 @@ class AgentFinalizationAuthority:
         return ref
 
 
+class TurnWorkGuard(AsyncCallbackHandler):
+    """Admission check shared by model and tool boundaries for one chat turn."""
+
+    raise_error = True
+
+    def __init__(self, check: Callable[[], Awaitable[None]]) -> None:
+        self.check = check
+
+    async def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
+        await self.check()
+
+    async def on_llm_end(self, *args: Any, **kwargs: Any) -> None:
+        await self.check()
+
+
 class GovernedAgentToolFactory:
     """Expose exact effective descriptors plus one trusted honest-finalize mechanism."""
 
@@ -653,7 +668,9 @@ class GovernedAgentToolFactory:
         required_output_path: str | None = None,
         completion_guard: CompletionGuard | None = None,
         stream: TurnStreamEmitter | None = None,
+        before_work: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        self._before_work = before_work
         self._request = request
         self._resolved_profile = resolved_profile
         self._registry = registry
@@ -670,6 +687,10 @@ class GovernedAgentToolFactory:
         # Per-turn state: the factory is constructed once per turn, next to the turn's execution
         # adapter, so this budget is shared across every governed tool the model may call.
         self._tool_failures = 0
+
+    async def _check_work(self) -> None:
+        if self._before_work is not None:
+            await self._before_work()
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
@@ -705,6 +726,7 @@ class GovernedAgentToolFactory:
         )
 
         async def invoke(runtime: ToolRuntime, **kwargs: Any) -> str:
+            await self._check_work()
             tool_call_id = str(runtime.tool_call_id)
             call_digest = hashlib.sha256(tool_call_id.encode()).hexdigest()[:24]
             node_key = f"agent_{name}_{call_digest}"
@@ -762,6 +784,7 @@ class GovernedAgentToolFactory:
                     ),
                     raise_when_exhausted=rejected,
                 )
+            await self._check_work()
             final_progress = None
             async for progress in self._execution.execute(plan=validated):
                 final_progress = progress
@@ -911,6 +934,7 @@ class GovernedAgentToolFactory:
         }
 
         async def delegate_specialist(runtime: ToolRuntime, **kwargs: Any) -> str:
+            await self._check_work()
             model_input = DelegateSpecialistRequest.model_validate(kwargs)
             role = AgentRole(model_input.role)
             if role not in self._resolved_profile.profile.delegation_roles:
@@ -1068,6 +1092,7 @@ class GovernedAgentToolFactory:
     def _finalize_tool(self) -> BaseTool:
         async def finalize_turn(runtime: ToolRuntime, **kwargs: Any) -> str:
             del runtime
+            await self._check_work()
             model_input = ModelFinalizeRequest.model_validate(kwargs)
             if (
                 model_input.status is FinalizeStatus.COMPLETED
@@ -1182,7 +1207,9 @@ class DurableDeepAgentTurnRunner:
         runtime: DeepAgentTurnRuntime,
         turns: DbAgentTurnJournal,
         artifacts: DurableAgentArtifactStore,
+        before_work: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        self._before_work = before_work
         self._runtime = runtime
         self._turns = turns
         self._artifacts = artifacts
@@ -1213,6 +1240,8 @@ class DurableDeepAgentTurnRunner:
         # streaming path (the handler is structurally a LangChain streaming consumer). With no
         # stream attached the callback tuple, and therefore the model path, is exactly what it was.
         callbacks: tuple[AsyncCallbackHandler, ...] = (model_calls,)
+        if self._before_work is not None:
+            callbacks = (TurnWorkGuard(self._before_work), *callbacks)
         if stream is not None:
             callbacks = (*callbacks, TurnStreamCallbackHandler(emitter=stream))
         try:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from clue_agents import (
     AgentModelProvider,
     AgentPlanPolicy,
@@ -30,6 +32,7 @@ from clue_api.agent_runtime_wiring import (
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
+from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.stage0_recipe import Stage0StepPinProvider
 from clue_api.turn_binding import CapturedTurnBinder, RequestCapturedTurn
@@ -254,6 +257,15 @@ class HeadOfAbmStage0Runtime:
             conn_factory=self._conn_factory,
         )
         execution.bind_finalization_authority(finalization)
+
+        async def before_work() -> None:
+            async with self._conn_factory() as conn:
+                stopped = await stop_requested(
+                    conn, workspace_id=request.constitution.workspace_id, turn_id=request.turn_id
+                )
+            if stopped:
+                raise asyncio.CancelledError("chat turn stopped before admitting more work")
+
         governed_tools = GovernedAgentToolFactory(
             request=request,
             resolved_profile=resolved,
@@ -261,6 +273,7 @@ class HeadOfAbmStage0Runtime:
             execution=execution,
             lease=lease,
             artifacts=self._artifacts,
+            before_work=before_work,
             completion_guard=completion_guard,
             stream=stream,
         ).build()
@@ -271,6 +284,7 @@ class HeadOfAbmStage0Runtime:
             max_rounds=self._max_rounds,
         )
         return await DurableDeepAgentTurnRunner(
+            before_work=before_work,
             runtime=runtime,
             turns=self._turns,
             artifacts=self._artifacts,

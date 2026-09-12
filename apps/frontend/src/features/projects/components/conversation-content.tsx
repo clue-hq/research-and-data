@@ -115,20 +115,6 @@ export function ConversationContent({
       </div>
       <ChatTurnInspector inspector={turnInspector} />
 
-      {chat.threadBusy ? (
-        <div className={styles.planApprovalActions}>
-          <span role="status">
-            {chat.runningTurn
-              ? "Working — new messages will queue behind this turn."
-              : "Queued — waiting for the current turn to start."}
-          </span>
-          {chat.runningTurn ? (
-            <button onClick={() => void chat.stopActiveTurn()} type="button">
-              Stop
-            </button>
-          ) : null}
-        </div>
-      ) : null}
     </>
   );
 }

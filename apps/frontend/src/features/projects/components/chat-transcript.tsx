@@ -191,17 +191,6 @@ export function ChatTranscript({
               </p>
             ) : null}
             {message.role === "assistant" &&
-            message.state === "cancelled" &&
-            message.body === null &&
-            !message.parts.some(
-              (part) =>
-                (part.kind === "text" && part.failed),
-            ) ? (
-              <p className={styles.reasoningStatus} role="status">
-                Stopped
-              </p>
-            ) : null}
-            {message.role === "assistant" &&
             message.state === "failed" &&
             message.body === null &&
             // A typed failure now renders its own sentence below, so the

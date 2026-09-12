@@ -2394,9 +2394,7 @@ def build_chat_router(
                     project_id=project_id,
                     turn_id=turn_id,
                     message=message,
-                    allow_empty_reference_turn=any(
-                        ref.object_type == "design_asset" for ref in context_refs
-                    ),
+                    allow_empty_reference_turn=bool(context_refs),
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,

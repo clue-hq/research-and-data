@@ -36,6 +36,7 @@ import contextlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TypeVar
 from uuid import UUID
 
@@ -72,6 +73,7 @@ from clue_api.agent_turn_submission import (
     AgentTurnSubmissionRow,
     dispatch_next_thread_turn,
     get_submission,
+    lock_thread_queue,
     message_artifact_ref,
     submission_context_refs,
 )
@@ -87,6 +89,7 @@ from clue_api.brand_knowledge_context import (
     read_pinned_documents,
 )
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.interrupted_turn import commit_interrupted_turn, recover_interrupted_answer
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
@@ -414,6 +417,11 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     turn_id=turn_id,
                 )
+        async with self._conn_factory() as conn:
+            pending_stop = await stop_requested(conn, workspace_id=workspace_id, turn_id=turn_id)
+        if pending_stop:
+            # Recovery must reconcile Stop before opening a new attempt or calling any model.
+            await self._finish_stop(submission=submission, turn_id=turn_id, stream=None)
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -933,41 +941,94 @@ class ProjectConversationTurnRunner:
                     "required turn context is no longer available; start a new thread"
                 ) from error
 
-        if stream is None or self._stop_poll_interval_s <= 0:
-            return await _execute_with_artifact_boundary()
-
         turn = asyncio.create_task(_execute_with_artifact_boundary())
         watcher = asyncio.create_task(
             self._await_stop(
                 workspace_id=submission.workspace_id,
                 turn_id=turn_id,
-                generation_attempt_id=stream.generation_attempt_id,
+                generation_attempt_id=None if stream is None else stream.generation_attempt_id,
             )
         )
-        done, _pending = await asyncio.wait({turn, watcher}, return_when=asyncio.FIRST_COMPLETED)
-        if turn in done:
+        try:
+            done, _pending = await asyncio.wait(
+                {turn, watcher}, return_when=asyncio.FIRST_COMPLETED
+            )
+            async with self._conn_factory() as conn:
+                stopped = await stop_requested(
+                    conn, workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            if turn in done and not stopped:
+                watcher.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await watcher
+                return turn.result()
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
-            return turn.result()
-        turn.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await turn
-        # The cancelled task passed through the generic runtime unwinder, which cannot know
-        # whether cancellation meant a user Stop or a process/lease failure. This runner owns that
-        # distinction, so its later terminal journal event deliberately supersedes the generic
-        # abandoned marker with the durable truth.
-        await self._engine.components.turns.mark_cancelled(
-            turn_id=turn_id,
-            workspace_id=submission.workspace_id,
-        )
-        await stream.turn_cancelled()
-        log.info(
-            "agent_turn.stopped",
-            turn_id=str(turn_id),
-            workspace_id=submission.workspace_id,
-            generation_attempt_id=str(stream.generation_attempt_id),
-        )
+            if self._design_legs is not None:
+                await self._design_legs.request_stop_for_turn(
+                    workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            turn.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await turn
+            await self._finish_stop(submission=submission, turn_id=turn_id, stream=stream)
+            raise AssertionError("stop reconciliation must terminate this turn")
+        finally:
+            for task in (watcher, turn):
+                if not task.done():
+                    task.cancel()
+            for task in (watcher, turn):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
+    async def _finish_stop(
+        self, *, submission: AgentTurnSubmissionRow, turn_id: UUID, stream: TurnStreamEmitter | None
+    ) -> None:
+        if self._design_legs is not None:
+            await self._design_legs.request_stop_for_turn(
+                workspace_id=submission.workspace_id, turn_id=turn_id
+            )
+            await self._design_legs.await_stopped_turn(
+                workspace_id=submission.workspace_id, turn_id=turn_id
+            )
+        async with self._conn_factory() as conn:
+            acknowledged = bool(
+                await conn.scalar(
+                    text(
+                        "SELECT 1 FROM agent_turn_stop_ack a JOIN "
+                        "agent_turn_control_request c USING (control_id) "
+                        "WHERE c.workspace_id=:workspace AND c.turn_id=:turn AND c.kind='stop'"
+                    ),
+                    {"workspace": submission.workspace_id, "turn": turn_id},
+                )
+            )
+            prefix = (
+                stream.interrupted_answer()
+                if stream is not None
+                else await recover_interrupted_answer(
+                    conn, workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            )
+        if not acknowledged:
+            body_ref = None
+            if prefix:
+                body_ref = await self._engine.artifacts.persist_body(
+                    workspace_id=submission.workspace_id,
+                    data=prefix.encode("utf-8"),
+                    media_type="text/plain",
+                    project_bindings=((submission.project_id, "project_conversation_context"),),
+                )
+            async with self._conn_factory() as conn:
+                await commit_interrupted_turn(
+                    conn,
+                    workspace_id=submission.workspace_id,
+                    thread_id=submission.thread_id,
+                    turn_id=turn_id,
+                    body_ref=body_ref,
+                )
+        if stream is not None:
+            await stream.turn_cancelled()
         raise TurnStopped("this generation attempt was stopped by its submitter")
 
     async def _await_stop(
@@ -975,12 +1036,12 @@ class ProjectConversationTurnRunner:
         *,
         workspace_id: str,
         turn_id: UUID,
-        generation_attempt_id: UUID,
+        generation_attempt_id: UUID | None,
     ) -> None:
         """Poll the durable control table until this attempt is asked to stop."""
 
         while True:
-            await asyncio.sleep(self._stop_poll_interval_s)
+            await asyncio.sleep(max(0.05, self._stop_poll_interval_s))
             async with self._conn_factory() as conn:
                 if await stop_requested(
                     conn,
@@ -1154,6 +1215,24 @@ class AgentTurnWorkHandler:
         workspace_id = str(context.payload["workspace_id"])
         thread_id = str(context.payload["thread_id"])
         references: dict[str, JsonValue] = {"turn_id": str(turn_id)}
+        async with self._conn_factory() as conn:
+            await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
+            held_by = await conn.scalar(
+                text(
+                    "SELECT c.turn_id FROM agent_thread t JOIN agent_turn_control_request c "
+                    "ON c.control_id=t.queue_hold_control_id WHERE "
+                    "t.workspace_id=:workspace AND t.id=:thread"
+                ),
+                {"workspace": workspace_id, "thread": thread_id},
+            )
+        if held_by is not None and held_by != turn_id:
+            # Covers tasks offered just before Stop acquired the dispatch lock.
+            return WorkResult(
+                outcome="queue_held",
+                references=references,
+                requeue=True,
+                requeue_after=timedelta(seconds=1),
+            )
         try:
             result = await self._runner.run(turn_id=turn_id, workspace_id=workspace_id)
         except TurnStopped:
@@ -1164,6 +1243,18 @@ class AgentTurnWorkHandler:
             status = FleetTaskStatus.DONE
             references["status"] = "cancelled"
         except Exception as error:  # noqa: BLE001 — recorded as a failed task, never swallowed
+            async with self._conn_factory() as conn:
+                pending_stop = await stop_requested(
+                    conn, workspace_id=workspace_id, turn_id=turn_id
+                )
+            if pending_stop:
+                log.exception("agent_turn.stop_reconciliation_failed", turn_id=str(turn_id))
+                return WorkResult(
+                    outcome="stop_pending",
+                    references=references,
+                    requeue=True,
+                    requeue_after=timedelta(seconds=1),
+                )
             log.exception(
                 "agent_turn.failed",
                 turn_id=str(turn_id),

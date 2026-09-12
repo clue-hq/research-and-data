@@ -517,7 +517,7 @@ export function ChatSurface({
         <div
           className={`${styles.composerDock} ${
             targetChips.length ? styles.composerDockWithTargets : ""
-          } ${research.card ? styles.composerDockWithResearchCard : ""}`}
+          } ${research.card || chat.queueControl.paused ? styles.composerDockWithResearchCard : ""}`}
         >
           <div className={styles.composerFrame}>
             {research.card ? (
@@ -549,7 +549,17 @@ export function ChatSurface({
                 </div>
               </div>
             ) : null}
+            {chat.queueControl.paused && chat.queuedTurns.length > 0 ? (
+              <div className={styles.queueControls}>
+                <span>{chat.queuedTurns.length} {chat.queuedTurns.length === 1 ? "message" : "messages"} queued</span>
+                <button type="button" disabled={chat.stopPending || chat.resumingQueue}
+                  onClick={() => void chat.resumeQueuedTurns()}>Resume</button>
+              </div>
+            ) : null}
             <ProjectComposer
+              running={chat.runningTurn !== null}
+              stopping={chat.stopPending}
+              onStop={() => void chat.stopActiveTurn()}
               attachmentAccept={DESIGN_REFERENCE_ACCEPT}
               attachmentError={
                 designReferencesEnabled ? referenceAttachments.error : null

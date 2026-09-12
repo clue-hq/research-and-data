@@ -28,6 +28,7 @@ from clue_agents.contracts import (
     DomainObjectRef,
 )
 from clue_agents.ports import (
+    INTERRUPTED_ASSISTANT_NOTICE,
     AgentArtifactReader,
     AssembledAgentContext,
     ContextMaterialization,
@@ -106,6 +107,20 @@ class ContextCandidate(ContextValue):
     origin: Literal["trusted_context", "history", "current_user_instruction"] = "trusted_context"
     materialized_path: str | None = None
     required: bool = False
+    interrupted: bool = False
+
+    @model_validator(mode="after")
+    def interruption_is_history(self) -> ContextCandidate:
+        if self.interrupted and (self.role != "assistant" or self.origin != "history"):
+            raise ValueError("interruption provenance belongs to assistant history")
+        return self
+
+    @property
+    def budget_text(self) -> str:
+        # Keep the provenance and exact saved body together under the layer budget.
+        if self.interrupted:
+            return INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + self.body
+        return self.body
 
 
 class ContextReceiptRef(ContextValue):
@@ -471,6 +486,7 @@ class HistoryLayerSource:
                     body=body,
                     role=item.role,
                     origin="history",
+                    interrupted=item.interrupted and item.role == "assistant",
                 )
             )
         return result
@@ -672,7 +688,7 @@ class DeterministicAgentContextAssembler:
         retained: dict[str, int] = {}
         used = 0
         for candidate in order:
-            count = self._counter.count(candidate.body)
+            count = self._counter.count(candidate.budget_text)
             if used + count > budget:
                 if candidate.required:
                     raise ValueError(
@@ -739,7 +755,7 @@ class DeterministicAgentContextAssembler:
                         )
                     )
                     continue
-                digest = hashlib.sha256(candidate.body.encode("utf-8")).hexdigest()
+                digest = hashlib.sha256(candidate.budget_text.encode("utf-8")).hexdigest()
                 if candidate.materialized_path is not None:
                     if candidate.materialized_path in seen_paths:
                         raise ValueError("context materialization paths must be bundle-unique")
@@ -757,6 +773,8 @@ class DeterministicAgentContextAssembler:
                 if candidate.origin == "current_user_instruction":
                     current_instructions.append(candidate)
                 hashes.append(digest)
+                if candidate.interrupted:
+                    messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
                 messages.append(_message(candidate))
                 receipt_refs.append(
                     ContextReceiptRef(
