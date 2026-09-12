@@ -13,10 +13,12 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from clue_api.arv2.discovery_store import PENDING_DISPOSITION, SHOWN_DISPOSITIONS
 from clue_api.arv2.icp_confirmation import ProjectIcpPin
 from clue_api.project_status import (
     DecisionItem,
     DiscoveryFacts,
+    ProjectDocumentFacts,
     ProjectStatusFacts,
     ResearchJobFacts,
     ResearchRunFacts,
@@ -31,6 +33,7 @@ _T = datetime(2026, 9, 12, 8, 30, tzinfo=UTC)
 def _facts(**overrides: Any) -> ProjectStatusFacts:
     base = ProjectStatusFacts(
         project_id="prj_1",
+        project_name="Insight Health outreach",
         icp=None,
         product_set=None,
         account_count=0,
@@ -43,7 +46,10 @@ def _facts(**overrides: Any) -> ProjectStatusFacts:
 
 def test_an_empty_project_renders_every_section_with_its_honest_absence() -> None:
     text = render_status_markdown(_facts())
-    assert text.startswith("# Project status\n")
+    # The title names the project: a file that opens on a bare "# Project status" leaves the
+    # model guessing which project it is reading, and leaves two fresh projects in one workspace
+    # compiling byte-identical files that share one content-addressed artifact.
+    assert text.startswith("# Project status — Insight Health outreach (`prj_1`)\n")
     for heading in (
         "## Confirmed ICP",
         "## Products",
@@ -142,3 +148,52 @@ def test_decisions_render_one_bullet_per_statement_oldest_first_or_an_honest_emp
         '- **project.outcome** — "we want new logos in mid-market GI groups"\n'
         '- **project.icp_boundary** — "exclude academic medical centres"\n'
     )
+
+
+def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() -> None:
+    """Ruling F: a project document has exactly one workspace path, wherever it is mentioned.
+
+    The plan is looked up by its folder-qualified row path (``project/plan.md``) and rendered
+    twice — once under ``## Plan`` and once under ``## Project documents``. Rendering the row path
+    below the prefix verbatim would advertise ``inputs/project/project/plan.md`` in one of them, a
+    path nothing seeds: the model would read a broken link and report the plan as missing.
+    """
+
+    text = render_status_markdown(
+        _facts(
+            documents=(
+                ProjectDocumentFacts(
+                    path="project/plan.md", version=2, status="ready", updated_at=_T
+                ),
+                ProjectDocumentFacts(
+                    path="audience/icp-gi.md", version=1, status="ready", updated_at=_T
+                ),
+            )
+        )
+    )
+    assert "inputs/project/project/" not in text
+    assert "- Version 2, updated 2026-09-12T08:30:00+00:00 — `inputs/project/plan.md`" in text
+    assert (
+        "- `inputs/project/plan.md` — version 2, ready, updated 2026-09-12T08:30:00+00:00" in text
+    )
+    # A document in any other folder keeps that folder below the prefix.
+    assert (
+        "- `inputs/project/audience/icp-gi.md` — version 1, ready, "
+        "updated 2026-09-12T08:30:00+00:00" in text
+    )
+
+
+def test_the_discovery_counters_read_the_arv2_lanes_own_disposition_vocabulary() -> None:
+    """status.md's ``shown`` is the driver's ``shown``, proven rather than assumed.
+
+    The words are the same on both surfaces, so a seventh disposition that reaches the driver and
+    the store but not this file would not fail anything — status.md would simply report a smaller
+    number than the screen the human is looking at. This is the assertion that makes that a build
+    failure instead of a quiet disagreement.
+    """
+
+    from clue_api.arv2.discovery_driver import _SHOWN
+
+    assert frozenset(SHOWN_DISPOSITIONS) == _SHOWN
+    # "verified" is the complement of pending, not a vocabulary of its own.
+    assert PENDING_DISPOSITION == "pending"

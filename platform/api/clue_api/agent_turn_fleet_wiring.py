@@ -120,7 +120,6 @@ from clue_api.project_context_files import (
     load_or_create_project_files_pin,
     project_seed_files,
     read_pinned_project_files,
-    summary_of,
 )
 from clue_api.project_status import (
     load_project_decisions,
@@ -336,10 +335,6 @@ class _ProjectContextBundle:
 
     artifacts: tuple[ProjectContextArtifact, ...] = ()
     observations: tuple[_ContextCardObservation, ...] = ()
-
-    @property
-    def available(self) -> bool:
-        return bool(self.artifacts)
 
     def artifact(self, name: str) -> ProjectContextArtifact | None:
         return next((item for item in self.artifacts if item.name == name), None)
@@ -621,6 +616,10 @@ class ProjectConversationTurnRunner:
                     )
                     status_md = render_status_markdown(facts).encode()
                     decisions_md = render_decisions_markdown(decisions).encode()
+                    # Both summaries are literal: these files are section-structured, so their
+                    # first prose line is one section's content ("Not confirmed.") and would tell
+                    # the model something false about the whole file. The index exists to say
+                    # what a file is *for*, so the compiler writes that sentence itself.
                     return [
                         CompiledProjectFile(
                             path="status.md",
@@ -628,7 +627,10 @@ class ProjectConversationTurnRunner:
                             body=status_md,
                             version=None,
                             status="compiled",
-                            summary=summary_of(status_md),
+                            summary=(
+                                "ICP, products, plan, accounts, discovery and research, "
+                                "as of this turn."
+                            ),
                         ),
                         CompiledProjectFile(
                             path="decisions.md",
@@ -636,7 +638,7 @@ class ProjectConversationTurnRunner:
                             body=decisions_md,
                             version=None,
                             status="compiled",
-                            summary=summary_of(decisions_md),
+                            summary="What the human told this project, in their words.",
                         ),
                     ]
 

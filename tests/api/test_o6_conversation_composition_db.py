@@ -66,6 +66,11 @@ from clue_api.execution_wiring import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.project_context_files import (
+    CompiledProjectFile,
+    load_or_create_project_files_pin,
+    read_pinned_project_files,
+)
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -91,6 +96,8 @@ from clue_fleet import (
     claim_next_task,
     finish_task,
 )
+from clue_research.identity import insert_account_entity
+from clue_research.membership import ensure_project_account
 from clue_research.stage0 import submit_onboarding_input
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore
@@ -545,7 +552,12 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 for path in ("inputs/project/status.md", "inputs/project/decisions.md"):
                     assert lease.backend.stat_entry_sync(path).read_only is True
                 status_body = lease.backend.read_text_sync("inputs/project/status.md")
-                assert status_body.startswith("# Project status\n")
+                # The title names this project, so the model never has to infer which project it
+                # is reading — and two fresh projects in one workspace no longer compile
+                # byte-identical status files onto one content-addressed artifact.
+                assert status_body.startswith(
+                    f"# Project status — {project.name} (`{project.project_id}`)\n"
+                )
                 assert "## Confirmed ICP" in status_body
                 project_index = json.loads(
                     lease.backend.read_text_sync("context/project/project_files_index.json")
@@ -555,6 +567,17 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "inputs/project/decisions.md",
                     "inputs/project/status.md",
                 ]
+                # The index says what each file is FOR. Deriving the line from the bytes would
+                # summarize ``status.md`` as its first section's content ("Not confirmed."), which
+                # reads as a statement about the whole project and is wrong the moment an ICP is
+                # confirmed — a model that trusts the index and skips the file would then answer
+                # that nothing is confirmed on a fully configured project.
+                assert {item["path"]: item["summary"] for item in project_index["files"]} == {
+                    "status.md": (
+                        "ICP, products, plan, accounts, discovery and research, as of this turn."
+                    ),
+                    "decisions.md": "What the human told this project, in their words.",
+                }
                 files_digest = (
                     await conn.execute(
                         text(
@@ -646,6 +669,45 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     f"{INPUT_PREFIX}company/overview.md",
                     f"{INPUT_PREFIX}product/aura.md",
                 ]
+
+                # 7. the same property for the project's own files, which are compiled from
+                # rows rather than published: adding an account changes what a fresh compile
+                # would say, and a retry must still seed the bytes the first attempt pinned.
+                account_id = await insert_account_entity(
+                    conn,
+                    canonical_name="Goodman Campbell",
+                    primary_domain="goodman.example",
+                    workspace_id=workspace_id,
+                )
+                await ensure_project_account(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    account_entity_id=account_id,
+                    added_via="manual",
+                )
+
+                async def _never() -> list[CompiledProjectFile]:
+                    raise AssertionError("a pinned turn never recompiles its project files")
+
+                retry_project_pin, project_created = await load_or_create_project_files_pin(
+                    conn,
+                    artifacts,
+                    workspace_id=workspace_id,
+                    turn_id=submission.turn_id,
+                    project_id=project.project_id,
+                    compile=_never,
+                )
+                assert project_created is False
+                assert retry_project_pin.files_sha256 == str(files_digest)
+                retry_files = await read_pinned_project_files(conn, storage, pin=retry_project_pin)
+                assert {file.ref.path: file.body for file in retry_files} == {
+                    "status.md": status_body.encode(),
+                    "decisions.md": lease.backend.read_text_sync(
+                        "inputs/project/decisions.md"
+                    ).encode(),
+                }
+                assert "Accounts in this project: 0" in status_body
             finally:
                 workspaces.close()
 

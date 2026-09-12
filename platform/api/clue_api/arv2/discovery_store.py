@@ -38,6 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import decode_jsonb
 
 __all__ = [
+    "PENDING_DISPOSITION",
+    "SHOWN_DISPOSITIONS",
     "CandidateRow",
     "Disposition",
     "DiscoveryRunRow",
@@ -72,9 +74,21 @@ Disposition = Literal[
     "pending", "pass", "partial", "unclear", "duplicate_of_existing", "not_chosen_before"
 ]
 
-#: The dispositions a candidate is still worth remembering as "seen but not chosen". A duplicate
-#: is already an account, and a pending one was never verified, so neither is re-surfacing news.
-_LIVE_DISPOSITIONS = "('pass', 'partial', 'unclear')"
+#: The dispositions that mean the human was shown this company — §4's *shown*, and equally the
+#: candidates a later run still remembers as "seen but not chosen". A duplicate is already an
+#: account, and a pending one was never verified, so neither is re-surfacing news.
+#:
+#: Public because it is the lane's vocabulary, not this module's: anything that counts or reports
+#: candidates (``status.md``'s discovery section, the driver's own tally) reads it from here
+#: instead of re-typing the three words into its own SQL.
+SHOWN_DISPOSITIONS: tuple[str, ...] = ("pass", "partial", "unclear")
+
+#: A candidate nothing has verified yet. "Verified" is the complement of this, never a word of
+#: its own.
+PENDING_DISPOSITION = "pending"
+
+#: The same set as a literal SQL tuple, derived so the two can never drift apart.
+_LIVE_DISPOSITIONS = "(" + ", ".join(f"'{value}'" for value in SHOWN_DISPOSITIONS) + ")"
 
 _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "

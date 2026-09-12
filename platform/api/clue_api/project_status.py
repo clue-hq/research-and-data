@@ -17,12 +17,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentArtifactReader
+from clue_api.arv2.discovery_store import PENDING_DISPOSITION, SHOWN_DISPOSITIONS
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.brand_knowledge_context import INPUT_PREFIX
+from clue_api.project_context_files import project_workspace_path
 from clue_api.statement_evidence import resolve_statement_quotes
 from clue_projections.stage0 import ResolvedQuote
 from clue_research.stage0 import StatementRoute, read_statements
-from clue_spine import ProjectProductSet, current_project_product_set
+from clue_spine import ProjectProductSet, current_project_product_set, get_project
 
 __all__ = [
     "DecisionItem",
@@ -87,6 +89,7 @@ class ProjectDocumentFacts:
 @dataclass(frozen=True, slots=True)
 class ProjectStatusFacts:
     project_id: str
+    project_name: str
     icp: ProjectIcpPin | None
     product_set: ProjectProductSet | None
     account_count: int
@@ -105,18 +108,25 @@ _ACCOUNT_COUNT = text(
     "SELECT count(*) FROM project_account WHERE workspace_id = :ws AND project_id = :project"
 )
 
+# "verified" and "shown" are the words the discovery screen uses, and their arithmetic is the
+# lane's, not this module's: both dispositions are bound from ``clue_api.arv2.discovery_store``'s
+# public constants rather than re-typed here, so a seventh disposition cannot leave status.md
+# quietly reporting a different number than the UI. Every sub-select is workspace-scoped too: the
+# candidate's ``workspace_id`` is not forced equal to its run's by any FK.
 _LATEST_DISCOVERY = text(
     """
     SELECT r.run_id, r.status, r.asked,
            COALESCE(r.found_strict, 0) + COALESCE(r.found_relaxed, 0) AS found,
            r.started_at, r.finished_at,
            (SELECT count(*) FROM arv2_discovery_candidate c
-             WHERE c.run_id = r.run_id AND c.disposition <> 'pending') AS verified,
+             WHERE c.run_id = r.run_id AND c.workspace_id = :ws
+               AND c.disposition <> :pending) AS verified,
            (SELECT count(*) FROM arv2_discovery_candidate c
-             WHERE c.run_id = r.run_id
-               AND c.disposition IN ('pass', 'partial', 'unclear')) AS shown,
+             WHERE c.run_id = r.run_id AND c.workspace_id = :ws
+               AND c.disposition = ANY(:shown)) AS shown,
            (SELECT count(*) FROM arv2_discovery_candidate c
-             WHERE c.run_id = r.run_id AND c.decision = 'approved') AS approved
+             WHERE c.run_id = r.run_id AND c.workspace_id = :ws
+               AND c.decision = 'approved') AS approved
     FROM arv2_discovery_run r
     WHERE r.workspace_id = :ws AND r.project_id = :project
     ORDER BY r.created_at DESC, r.run_id DESC
@@ -134,12 +144,15 @@ _RESEARCH_RUNS = text(
     """
 )
 
+# ``arv2_research_job.run_id`` is a single-column FK, so nothing in the schema forces a job's
+# workspace to equal its run's: the job and the account it names are scoped here explicitly rather
+# than trusted to be scoped by something that is scoped.
 _RESEARCH_JOBS = text(
     """
     SELECT j.run_id, j.subject_type, j.account_entity_id, a.canonical_name, j.status, j.stage
     FROM arv2_research_job j
     JOIN account_entity a ON a.id = j.account_entity_id
-    WHERE j.run_id = ANY(:run_ids)
+    WHERE j.run_id = ANY(:run_ids) AND j.workspace_id = :ws AND a.workspace_id = :ws
     ORDER BY j.run_id, j.subject_type, a.canonical_name, j.job_id
     """
 )
@@ -152,15 +165,34 @@ async def load_project_status_facts(
 
     Only the latest discovery run and the newest :data:`_RESEARCH_RUNS_SHOWN` research runs are
     read: older runs are history, and the file is context, not an archive.
+
+    Raises ``ValueError`` when the project is not this workspace's: a status file compiled for a
+    project the caller cannot see is never the right answer.
     """
 
+    project = await get_project(conn, project_id)
+    if project is None or project.workspace_id != workspace_id:
+        raise ValueError("this project does not exist in this workspace")
     icp = await current_project_icp_pin(conn, workspace_id=workspace_id, project_id=project_id)
     product_set = await current_project_product_set(
         conn, workspace_id=workspace_id, project_id=project_id
     )
-    params = {"ws": workspace_id, "project": project_id}
+    params: dict[str, object] = {"ws": workspace_id, "project": project_id}
     account_count = int(await conn.scalar(_ACCOUNT_COUNT, params) or 0)
-    row = (await conn.execute(_LATEST_DISCOVERY, params)).mappings().first()
+    row = (
+        (
+            await conn.execute(
+                _LATEST_DISCOVERY,
+                {
+                    **params,
+                    "shown": list(SHOWN_DISPOSITIONS),
+                    "pending": PENDING_DISPOSITION,
+                },
+            )
+        )
+        .mappings()
+        .first()
+    )
     discovery = (
         None
         if row is None
@@ -184,7 +216,12 @@ async def load_project_status_facts(
     research: list[ResearchRunFacts] = []
     if runs:
         jobs = (
-            (await conn.execute(_RESEARCH_JOBS, {"run_ids": [r["run_id"] for r in runs]}))
+            (
+                await conn.execute(
+                    _RESEARCH_JOBS,
+                    {"run_ids": [r["run_id"] for r in runs], "ws": workspace_id},
+                )
+            )
             .mappings()
             .all()
         )
@@ -200,6 +237,19 @@ async def load_project_status_facts(
                 if job["subject_type"] == "person":
                     person_counts[job["account_entity_id"]] = (
                         person_counts.get(job["account_entity_id"], 0) + 1
+                    )
+                    # An account whose own job ran in an *earlier* run still has committee work
+                    # here. Standing in for it with what this run does know beats dropping it:
+                    # a silently missing account reads as "not researched", and its person jobs
+                    # would vanish from the run's own denominator too.
+                    accounts.setdefault(
+                        job["account_entity_id"],
+                        ResearchJobFacts(
+                            account_name=str(job["canonical_name"]),
+                            status="person research only",
+                            stage=None,
+                            person_jobs=0,
+                        ),
                     )
                     continue
                 accounts[job["account_entity_id"]] = ResearchJobFacts(
@@ -228,6 +278,7 @@ async def load_project_status_facts(
             )
     return ProjectStatusFacts(
         project_id=project_id,
+        project_name=project.name,
         icp=icp,
         product_set=product_set,
         account_count=account_count,
@@ -271,9 +322,15 @@ def _iso(value: datetime | None) -> str:
 
 
 def render_status_markdown(facts: ProjectStatusFacts) -> str:
-    """Every section, always — an empty one says so rather than disappearing."""
+    """Every section, always — an empty one says so rather than disappearing.
 
-    lines: list[str] = ["# Project status", ""]
+    The title names the project. The model should never have to infer *which* project it is
+    reading about, and it also makes the file's content address project-specific: two fresh
+    projects in one workspace would otherwise compile byte-identical status files and share one
+    artifact, so erasing the first project's artifacts would refuse the second project's turns.
+    """
+
+    lines: list[str] = [f"# Project status — {facts.project_name} (`{facts.project_id}`)", ""]
     lines += ["## Confirmed ICP"]
     if facts.icp is None:
         lines += ["Not confirmed."]
@@ -294,7 +351,8 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
         lines += ["Not written."]
     else:
         lines += [
-            f"- Version {plan.version}, updated {_iso(plan.updated_at)} — `inputs/project/plan.md`"
+            f"- Version {plan.version}, updated {_iso(plan.updated_at)} — "
+            f"`{project_workspace_path(plan.path)}`"
         ]
     lines += ["", "## Accounts", f"- Accounts in this project: {facts.account_count}"]
     lines += ["", "## Discovery"]
@@ -326,7 +384,7 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
         lines += ["None yet."]
     for doc in facts.documents:
         lines += [
-            f"- `inputs/project/{doc.path}` — version {doc.version}, {doc.status}, "
+            f"- `{project_workspace_path(doc.path)}` — version {doc.version}, {doc.status}, "
             f"updated {_iso(doc.updated_at)}"
         ]
     return "\n".join(lines) + "\n"

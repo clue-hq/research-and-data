@@ -22,9 +22,12 @@ documents:
   context. The card is an *index*, not the content: a path, a status and one summary line per file
   so the model knows what to open.
 
-:func:`summary_of` is the one summary rule. The compiler (which builds
-:class:`CompiledProjectFile`) and the index card both call it, so the line the card shows can never
-disagree with the line the pin recorded.
+The index card never derives a summary of its own: it renders ``ProjectFileRef.summary``, the line
+the pin recorded, so the card cannot advertise a line the pinned file does not carry. A *compiled*
+file (``status.md``, ``decisions.md``) gets a literal summary from its compiler — the file is
+section-structured, and its first prose line is one section's content, not a description of the
+file. :func:`summary_of` remains the summary rule for *prose* documents, whose first line really is
+their subject.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import WorkspaceSeedFile
+from clue_agents.contracts import normalize_virtual_path
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_core import UtcDatetime
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
@@ -61,6 +65,7 @@ __all__ = [
     "get_project_files_pin",
     "load_or_create_project_files_pin",
     "project_seed_files",
+    "project_workspace_path",
     "read_pinned_project_files",
     "summary_of",
 ]
@@ -83,13 +88,34 @@ class ProjectFilesPinConflict(ValueError):
     """This turn's pinned project files cannot be read as the turn pinned them."""
 
 
+def project_workspace_path(row_path: str) -> str:
+    """The one rule for where a project document is materialized (ruling F).
+
+    A project document's stored path is folder-qualified — ``project/plan.md`` for the plan,
+    ``audience/icp-gi.md`` for an audience document — while every project file is materialized
+    below :data:`PROJECT_INPUT_PREFIX`. One leading ``project/`` segment is therefore the *folder
+    name*, not a directory under the prefix: without stripping it the plan would be advertised at
+    ``inputs/project/project/plan.md``, a path nothing seeds. Everything else is kept verbatim, so
+    a document's folder survives into the workspace.
+
+    This is the only place that rule is written down: ``status.md``'s renderer, the compiled files'
+    seed paths and the index card all call it, so two surfaces cannot name one document differently.
+    """
+
+    return PROJECT_INPUT_PREFIX + row_path.removeprefix("project/")
+
+
 def summary_of(body: bytes) -> str:
-    """The one summary rule: the file's first prose line, bounded.
+    """The summary rule for a *prose* document: its first prose line, bounded.
 
     The leading ``#`` heading is the file's title, not a summary of it, so heading lines are
     skipped — otherwise every line of the index would read ``# Project status``. A file that is
     only a heading (or is not text at all) summarizes to the empty string, which is honest: there
     is nothing to preview, and the model opens the file.
+
+    This rule is wrong for a *section-structured compiled* file, whose first prose line is one
+    section's content (``status.md`` would summarize as "Not confirmed."). Such a file carries a
+    literal summary written by its compiler instead.
     """
 
     try:
@@ -119,9 +145,15 @@ class CompiledProjectFile:
 
 
 class ProjectFileRef(BaseModel):
-    """One pinned file, identified precisely enough to re-read exactly these bytes."""
+    """One pinned file, identified precisely enough to re-read exactly these bytes.
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    ``extra="ignore"``: the pin is read back by whichever worker retries the turn, which during a
+    rollout may be running *older* code than the worker that wrote it. An unknown key added by a
+    newer compiler must degrade to "a field I do not use", never fail the turn — the pin is
+    append-only, so a refusal here would fail every attempt of that turn forever.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     path: str
     kind: str
@@ -130,6 +162,20 @@ class ProjectFileRef(BaseModel):
     summary: str
     artifact_key: str
     artifact_sha256: str
+
+    @field_validator("path")
+    @classmethod
+    def _materializable_path(cls, value: str) -> str:
+        """A path the workspace can actually seed, refused where it can still be refused.
+
+        A pinned path is materialized verbatim under :data:`PROJECT_INPUT_PREFIX`, and
+        ``WorkspaceSeedFile`` rejects an absolute, dot-relative or backslash path with a
+        ``WorkspaceSecurityError`` — but by then the pin is written, and the pin is read before
+        the compiler runs, so *every* retry of that turn would fail identically. The same rule is
+        therefore enforced at the one boundary that can still say no.
+        """
+
+        return normalize_virtual_path(value)
 
     @field_validator("artifact_sha256")
     @classmethod
@@ -162,21 +208,26 @@ def _ref_payload(ref: ProjectFileRef) -> dict[str, Any]:
     return ref.model_dump(mode="json")
 
 
-def _files_digest(refs: Sequence[ProjectFileRef]) -> str:
-    """A bare 64-hex digest over the pinned set, in path order.
+def _files_digest(payloads: Sequence[dict[str, Any]]) -> str:
+    """A bare 64-hex digest over the pinned set, exactly as it is stored.
 
-    Two attempts of one turn compare this value to prove they composed the same project context,
-    so it is order-independent by construction rather than by the caller's care.
+    Two attempts of one turn compare this value to prove they composed the same project context.
+    It hashes the *same* payload list the ``files`` column is written from — one explicitly
+    path-sorted list built once by the caller — so the column and the digest cannot disagree about
+    order.
     """
 
-    payload = [_ref_payload(ref) for ref in sorted(refs, key=lambda ref: ref.path)]
-    return hashlib.sha256(_canonical_json(payload)).hexdigest()
+    return hashlib.sha256(_canonical_json(list(payloads))).hexdigest()
 
 
 class ProjectFilesPinRow(BaseModel):
-    """One turn's immutable project-files receipt."""
+    """One turn's immutable project-files receipt.
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    ``extra="ignore"`` for the same mixed-version reason as :class:`ProjectFileRef`: a retry may be
+    read back by an older worker than the one that wrote the row.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     turn_id: UUID
     workspace_id: str
@@ -244,14 +295,35 @@ async def load_or_create_project_files_pin(
         return existing, False
 
     compiled = sorted(await compile(), key=lambda file: file.path)
+    paths = [file.path for file in compiled]
+    if len(set(paths)) != len(paths):
+        # Refused before anything is persisted: a pin is insert-once and is read before the
+        # compiler runs, so a set that cannot be materialized (two files claiming one path) would
+        # otherwise fail every later attempt of this turn identically, forever.
+        raise ProjectFilesPinConflict(
+            "a compiled project-file set cannot name one path twice: "
+            + ", ".join(sorted({path for path in paths if paths.count(path) > 1}))
+        )
     refs: list[ProjectFileRef] = []
     for file in compiled:
-        ref = await artifacts.persist_body(
-            workspace_id=workspace_id,
-            data=file.body,
-            media_type=_FILE_MEDIA_TYPE,
-            project_bindings=((project_id, PROJECT_CONTEXT_FILE_BINDING_KIND),),
-        )
+        try:
+            ref = await artifacts.persist_body(
+                workspace_id=workspace_id,
+                data=file.body,
+                media_type=_FILE_MEDIA_TYPE,
+                project_bindings=((project_id, PROJECT_CONTEXT_FILE_BINDING_KIND),),
+            )
+        except ValueError as exc:
+            # The artifact store refuses to resurrect erased bytes. A compiled file is
+            # content-addressed, so an *identical* file compiled for an erased project can land on
+            # a tombstoned key: say which file, in this module's own vocabulary, instead of
+            # letting an untyped store error escape the turn.
+            if "cannot be resurrected" not in str(exc):
+                raise
+            raise ProjectFilesPinConflict(
+                f"the compiled project file {file.path!r} was erased in this workspace and "
+                "cannot be re-pinned"
+            ) from exc
         refs.append(
             ProjectFileRef(
                 path=file.path,
@@ -263,6 +335,9 @@ async def load_or_create_project_files_pin(
                 artifact_sha256=ref.sha256,
             )
         )
+    # One explicitly path-sorted list: the stored column and the digest are built from it, so the
+    # invariant "the pin is in path order" is local to these two lines.
+    payloads = [_ref_payload(ref) for ref in sorted(refs, key=lambda ref: ref.path)]
     inserted = (
         (
             await conn.execute(
@@ -278,8 +353,8 @@ async def load_or_create_project_files_pin(
                     "turn_id": turn_id,
                     "workspace_id": workspace_id,
                     "project_id": project_id,
-                    "files": _canonical_json([_ref_payload(ref) for ref in refs]).decode(),
-                    "digest": _files_digest(refs),
+                    "files": _canonical_json(payloads).decode(),
+                    "digest": _files_digest(payloads),
                 },
             )
         )
@@ -342,7 +417,7 @@ async def read_pinned_project_files(
 
 
 def _workspace_path(ref: ProjectFileRef) -> str:
-    return PROJECT_INPUT_PREFIX + ref.path
+    return project_workspace_path(ref.path)
 
 
 def project_seed_files(files: Sequence[PinnedProjectFile]) -> tuple[WorkspaceSeedFile, ...]:
@@ -399,8 +474,9 @@ def compile_project_files_index_card(
 ) -> ProjectFilesIndexCard:
     """Compile the opening index over one turn's pinned project files, in path order.
 
-    Every summary is derived from the pinned bytes through :func:`summary_of`, the same rule the
-    compiler used, so the card cannot advertise a line the seeded file does not open with.
+    Every line is read off the pinned :class:`ProjectFileRef` — including the summary, which the
+    compiler wrote and the pin recorded. The card derives nothing of its own, so it cannot
+    describe a file differently from the receipt the turn is composed against.
     """
 
     return ProjectFilesIndexCard(
@@ -412,7 +488,7 @@ def compile_project_files_index_card(
                 kind=file.ref.kind,
                 version=file.ref.version,
                 status=file.ref.status,
-                summary=summary_of(file.body),
+                summary=file.ref.summary,
                 artifact_sha256=file.ref.artifact_sha256,
             )
             for file in sorted(files, key=lambda file: file.ref.path)
