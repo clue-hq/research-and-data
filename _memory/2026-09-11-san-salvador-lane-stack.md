@@ -396,3 +396,15 @@ tests / lint 0 errors / tsc at the 50-error baseline / build green. NOT pushed. 
 4. Owed walk: launch research → card within 5 s → bar and line move → Completed for 60 s → gone;
    a person-only launch (card scores by people); a worker restart mid-run (paused jobs score only
    their walked quarters, pill "Needs attention"). Workers need a restart to pick up the stamps.
+
+## Onboarding v2 is the default (plan 2026-09-12-onboarding-v2-default)
+
+`CLUE_ONBOARDING_V2_ENABLED=true` by default; `CLUE_LEGACY_STAGE0_RECON_ENABLED=false` gates the
+old recon (binder, `/stage0/setup`, STAGE0_RECON handler). The setting-up screen posts
+`/api/clue/onboarding` and polls `/api/clue/onboarding/current`; release on the four fast steps.
+(The brand-context status route named in ledger row F1 was the earlier idea; the plan used the
+onboarding route.) The profile draft is memory-only, so a hard reload on the setting-up screen
+re-attaches to a live run via the seam's probe but cannot start one — founder call whether to
+persist the website. Ledger A3/A4/A5 closed. Owed: a fresh-workspace walk (sign up → profile →
+setting-up fills from the new lane → released → Brand context shows the documents, personas
+landing after).
