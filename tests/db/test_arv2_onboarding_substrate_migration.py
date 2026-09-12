@@ -43,6 +43,14 @@ async def _constraints(conn, table: str) -> dict[str, str]:
     return {str(row.conname): str(row.definition) for row in rows}
 
 
+async def _indexes(conn, table: str) -> dict[str, str]:
+    rows = await conn.execute(
+        text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = :table"),
+        {"table": table},
+    )
+    return {str(row.indexname): str(row.indexdef) for row in rows}
+
+
 @pytest.mark.usefixtures("require_db")
 def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
     async def scenario() -> None:
@@ -50,6 +58,7 @@ def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
             run = await _constraints(conn, "onboarding_run")
             step = await _constraints(conn, "onboarding_step")
             doc = await _constraints(conn, "brand_knowledge_document")
+            doc_indexes = await _indexes(conn, "brand_knowledge_document")
 
         for status in ("queued", "running", "completed", "completed_with_gaps", "failed"):
             assert status in run["onboarding_run_status"]
@@ -88,7 +97,11 @@ def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
         for folder in ("company", "product", "audience", "proof", "design"):
             assert folder in doc["brand_knowledge_document_folder"]
         assert "[0-9a-f]{64}" in doc["brand_knowledge_document_body_when_served"]
-        assert "path, version" in doc["brand_knowledge_document_path_version"]
+        # The path/version identity was a brand-scoped UNIQUE constraint here at O1; the ICP
+        # authoring migration re-scoped it per project, so the guarantee now lives in the
+        # scope-aware unique index (the constraint name is gone from pg_constraint).
+        assert "brand_knowledge_document_path_version" not in doc
+        assert "path, version" in doc_indexes["brand_knowledge_document_scope_path_version"]
 
     run_async(scenario())
 
