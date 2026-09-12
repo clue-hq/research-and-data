@@ -1780,3 +1780,16 @@ The frontend composes this URL in `toProjectArtifact` from the list read's
   leak: the index is `(workspace, document, version)`.
 - `etag` is not in the BFF's forwarded response headers, so revalidation does not survive
   the proxy. Harmless under the immutable `?v=` scheme — do not design against it.
+
+### Research progress card (2026-09-12)
+
+Spec `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`. One pinned card per
+project above the composer, rendered from `GET /frontend/v1/projects/:projectId/research/progress`
+(BFF `GET /api/projects/:projectId/research-progress`): `{ requested_accounts, queued, running,
+finished, progress_pct, pill, last_finished_at, agents[{account_name, stage, subject}],
+attention[{account_name, reason}] } | null`. Backend: the account driver stamps
+`arv2_research_job.stage` (deep_research → synthesis → committee → member_research); the fold is
+`clue_api.arv2.research_progress` (four quarters per account, member research fractional; 100
+only when every job is terminal; Completed lingers 60 s). Frontend polls every 5 s while a card
+is served and rotates the status line every 4 s (`model/research-progress-line.ts`). No chevron,
+no dismiss, no per-account detail (founder rulings 2026-09-12).

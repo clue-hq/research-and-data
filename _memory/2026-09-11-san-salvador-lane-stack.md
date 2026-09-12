@@ -365,3 +365,14 @@ tsc at the 50-error baseline / `npm run build` green. NOT pushed. Parked for the
    run stuck at `not_started`.
 3. Owed: the founder's signed-in walk after these fixes — launch discovery from chat → tab opens
    → rows climb → spinner stops — including a page reload mid-run.
+
+## Research progress card landed (plan 2026-09-12-research-progress-card)
+
+`arv2_research_job.stage` (migration `c90aaea30a88`, off `2cd622be2da0`), `set_job_stage`, four
+driver stamps (claim / finalize tool / committee / member launch), pure fold
+`arv2/research_progress.py`, read `/frontend/v1/projects/{id}/research/progress` — its wire models
+live in `frontend_read/research_progress.py`, not `contract_v1.py`, because this document is
+snake_case on the wire — card pinned in the composer dock. The card is primed on a completed
+`launch_arv2_account_research` or `launch_arv2_person_research` tool part (the old lane's
+`launch_account_research` is superseded and is not matched). Owed: the founder's walk (launch
+research → card appears within 5 s → bar and line move → Completed for 60 s → gone).
