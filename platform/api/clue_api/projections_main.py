@@ -102,7 +102,8 @@ def build_application(
     # argument, and no chat/turn-serving module reaches this wiring (both guarded by
     # tests/api/test_lane_d2_http_gateway_isolation.py).
     stage0_scrape_binder: Stage0ScrapeBinder | None = None
-    if resolved.self_serve_provisioning_enabled:
+    # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
+    if resolved.legacy_stage0_recon_enabled:
         stage0_extractor = build_stage0_claim_extractor(build_optional_platform_gateway(resolved))
         stage0_scrape_binder = build_stage0_scrape_binder(
             extractor=stage0_extractor,
@@ -241,7 +242,9 @@ def build_application(
             # tying registry seeding only to ``research_views`` makes every planned source look
             # unregistered: both recon lanes then finish almost instantly with only empty fields.
             # Load the same idempotent registry whenever either consumer is live.
-            if resolved.self_serve_provisioning_enabled or research_views is not None:
+            # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer
+            # implies it.
+            if resolved.legacy_stage0_recon_enabled or research_views is not None:
                 await load_research_packs(conn)
             if research_views is not None:
                 required = (

@@ -920,7 +920,8 @@ def create_projections_app(
     # FI-4 slice 2: the onboarding workspace-setup composition (capture → onboarding_input →
     # recon driver + the lane-truth read). Rides the same default-off flag as the provisioning
     # route it continues; needs the storage backend for capture-before-use.
-    if resolved.self_serve_provisioning_enabled and ingestion_storage is not None:
+    # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
+    if resolved.legacy_stage0_recon_enabled and ingestion_storage is not None:
         app.include_router(
             create_stage0_setup_router(
                 tool_invoker=tool_invoker,

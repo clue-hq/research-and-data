@@ -538,7 +538,8 @@ def _build_stage0_scrape_binder(
 ) -> Stage0ScrapeBinder | None:
     """The worker's live Stage-0 scrape composition — the HTTP root's, with the same extractor.
 
-    Flag-gated exactly as ``projections_main`` is: with ``self_serve_provisioning_enabled`` off
+    Flag-gated exactly as ``projections_main`` is: with ``legacy_stage0_recon_enabled`` off
+    (the default since 2026-09-12 — ledger A4 split it off ``self_serve_provisioning_enabled``)
     there is no binder and ``start_recon`` keeps refusing before any spend. The ``gateway`` is the
     one ``_serve`` already built for every other model consumer in this process — this seam takes it
     rather than building a second client for the same credential.
@@ -547,7 +548,8 @@ def _build_stage0_scrape_binder(
     instance and the same account lookup, so the background research lane the worker drives can
     fill ``client.competitor`` / ``client.buyer_profile``. Bound only with an Exa credential.
     """
-    if not settings.self_serve_provisioning_enabled:
+    # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
+    if not settings.legacy_stage0_recon_enabled:
         return None
     extractor = build_stage0_claim_extractor(gateway)
     binder = build_stage0_scrape_binder(
@@ -1160,7 +1162,9 @@ async def _serve() -> None:
                 crawl_enqueuer=official_site_crawl.enqueuer,
                 settings=settings,
             )
-            if settings.self_serve_provisioning_enabled
+            # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer
+            # implies it.
+            if settings.legacy_stage0_recon_enabled
             else None
         )
         onboarding_handler = _build_onboarding_handler(

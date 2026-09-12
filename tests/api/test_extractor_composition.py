@@ -188,7 +188,7 @@ def test_projections_root_composes_the_llm_extractor_when_a_gateway_is_available
     monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
     seen = _captured_extractor(monkeypatch, projections_main)
     projections_main.build_application(
-        _settings(tmp_path, self_serve_provisioning_enabled=True, gateway_allow_stub=True),
+        _settings(tmp_path, legacy_stage0_recon_enabled=True, gateway_allow_stub=True),
         secrets=Secrets(_env_file=None),
     )
     assert isinstance(seen["extractor"], LlmClaimExtractor)
@@ -200,7 +200,7 @@ def test_projections_root_falls_back_to_the_empty_extractor_without_a_gateway(
     monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
     seen = _captured_extractor(monkeypatch, projections_main)
     projections_main.build_application(
-        _settings(tmp_path, self_serve_provisioning_enabled=True, gateway_allow_stub=False),
+        _settings(tmp_path, legacy_stage0_recon_enabled=True, gateway_allow_stub=False),
         secrets=Secrets(_env_file=None),
     )
     assert isinstance(seen["extractor"], CallableClaimExtractor)
@@ -209,7 +209,7 @@ def test_projections_root_falls_back_to_the_empty_extractor_without_a_gateway(
 def test_self_serve_startup_loads_research_registry_without_c7(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A fresh onboarding-only deployment must seed the source manifests its waterfall reads.
+    """A deployment running the old Stage-0 recon must seed the source manifests it reads.
 
     This is intentionally a startup-composition test rather than another direct
     ``load_research_packs`` test: the live defect was that the loader existed but the HTTP root
@@ -235,7 +235,7 @@ def test_self_serve_startup_loads_research_registry_without_c7(
     app = projections_main.build_application(
         _settings(
             tmp_path,
-            self_serve_provisioning_enabled=True,
+            legacy_stage0_recon_enabled=True,
             gateway_allow_stub=False,
         ),
         secrets=Secrets(_env_file=None),
@@ -258,7 +258,7 @@ def test_projections_root_builds_no_gateway_when_the_scrape_surface_is_off(
     monkeypatch.setattr(projections_main, "build_optional_platform_gateway", counting)
     seen = _captured_extractor(monkeypatch, projections_main)
     projections_main.build_application(
-        _settings(tmp_path, self_serve_provisioning_enabled=False),
+        _settings(tmp_path, legacy_stage0_recon_enabled=False),
         secrets=Secrets(_env_file=None),
     )
     assert calls == []
@@ -273,7 +273,7 @@ def test_fleet_root_composes_the_llm_extractor_from_its_existing_gateway(
 ) -> None:
     seen = _captured_extractor(monkeypatch, fleet_main)
     binder = fleet_main._build_stage0_scrape_binder(
-        _settings(tmp_path, self_serve_provisioning_enabled=True), gateway=_FakeGateway()
+        _settings(tmp_path, legacy_stage0_recon_enabled=True), gateway=_FakeGateway()
     )
     assert isinstance(binder, Stage0ScrapeBinder)
     assert isinstance(seen["extractor"], LlmClaimExtractor)
@@ -282,7 +282,7 @@ def test_fleet_root_composes_the_llm_extractor_from_its_existing_gateway(
 def test_fleet_root_has_no_binder_when_the_scrape_surface_is_off(tmp_path: Path) -> None:
     assert (
         fleet_main._build_stage0_scrape_binder(
-            _settings(tmp_path, self_serve_provisioning_enabled=False), gateway=_FakeGateway()
+            _settings(tmp_path, legacy_stage0_recon_enabled=False), gateway=_FakeGateway()
         )
         is None
     )
@@ -367,7 +367,7 @@ def test_the_fleet_root_binds_the_search_resolver_over_its_stage0_binder(tmp_pat
     clear_resolver_bindings()
     try:
         binder = fleet_main._build_stage0_scrape_binder(
-            _settings(tmp_path, self_serve_provisioning_enabled=True),
+            _settings(tmp_path, legacy_stage0_recon_enabled=True),
             gateway=_FakeGateway(),
             secrets=Secrets(_env_file=None, exa_api_key="composition-test"),
         )
@@ -375,3 +375,27 @@ def test_the_fleet_root_binds_the_search_resolver_over_its_stage0_binder(tmp_pat
         assert is_resolver_bound("exa_search")
     finally:
         clear_resolver_bindings()
+
+
+def test_provisioning_on_no_longer_composes_the_old_recon(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ledger A4: provisioning mints workspaces; the old Stage-0 recon is its own switch now."""
+    monkeypatch.setattr(run_composition, "Secrets", _NoKeySecrets)
+    seen = _captured_extractor(monkeypatch, projections_main)
+    projections_main.build_application(
+        _settings(
+            tmp_path, self_serve_provisioning_enabled=True, legacy_stage0_recon_enabled=False
+        ),
+        secrets=Secrets(_env_file=None),
+    )
+    assert seen == {}
+    assert (
+        fleet_main._build_stage0_scrape_binder(
+            _settings(
+                tmp_path, self_serve_provisioning_enabled=True, legacy_stage0_recon_enabled=False
+            ),
+            gateway=_FakeGateway(),
+        )
+        is None
+    )

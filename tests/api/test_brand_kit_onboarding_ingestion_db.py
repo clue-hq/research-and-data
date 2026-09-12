@@ -496,6 +496,8 @@ def test_the_http_root_composes_the_trigger_exactly_when_configured(
             _env_file=None,
             storage_fs_root=str(tmp_path / "artifacts"),
             self_serve_provisioning_enabled=True,
+            # The setup router rides the legacy-recon flag since 2026-09-12 (ledger A4).
+            legacy_stage0_recon_enabled=True,
             design_api_base_url=(DESIGN_BASE_URL if configured else None),
         ),
         secrets=Secrets(_env_file=None),
