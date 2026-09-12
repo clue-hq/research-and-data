@@ -45,13 +45,13 @@
 - Test: `tests/db/test_arv2_project_files_pin_migration.py`
 
 **Interfaces:**
-- Produces: table `agent_turn_project_files (turn_id uuid PK, workspace_id text, project_id text, files jsonb, files_sha256 text, pinned_at timestamptz)`; FK `(turn_id, workspace_id) → agent_turn_submission (turn_id, workspace_id)`; FK `(project_id, workspace_id) → project (id, workspace_id)`; CHECK `jsonb_typeof(files) = 'array'`; CHECK `files_sha256 ~ '^[0-9a-f]{64}$'`; trigger `agent_turn_project_files_append_only BEFORE UPDATE OR DELETE … execution_reject_append_only_mutation()`; index `(workspace_id, project_id, pinned_at DESC)`.
+- Produces: table `agent_turn_project_files (turn_id uuid PK, workspace_id text, project_id text, files jsonb, files_sha256 text, pinned_at timestamptz)`; FK `(turn_id, workspace_id) → agent_turn_submission (turn_id, workspace_id)`; FK `(project_id, workspace_id) → project (project_id, workspace_id)`; CHECK `jsonb_typeof(files) = 'array'`; CHECK `files_sha256 ~ '^[0-9a-f]{64}$'`; trigger `agent_turn_project_files_append_only BEFORE UPDATE OR DELETE … execution_reject_append_only_mutation()`; index `(workspace_id, project_id, pinned_at DESC)`.
 
 - [ ] **Step 1: Write the failing migration test**
 
 Copy `tests/db/test_arv2_onboarding_knowledge_pin_migration.py` to `tests/db/test_arv2_project_files_pin_migration.py` and adapt: `_PREVIOUS_REVISION = "c90aaea30a88"`, `_TABLE = "agent_turn_project_files"`. Keep the three tests in the same shape: (a) upgrade → the table, both FKs, the two CHECK constraints, the trigger and the index exist (query `pg_constraint`/`pg_trigger`/`pg_indexes` by name); (b) an insert with `files_sha256 = 'sha256:…'` (prefixed) raises `DBAPIError`; an `UPDATE` on an inserted row raises `DBAPIError` (append-only); (c) downgrade lands on `_PREVIOUS_REVISION` and the table is gone, then upgrade again succeeds.
 
-The `project` FK columns: verify with `\d project` on the lane DB that the anchor is `(id, workspace_id)`; `project_icp_pin` uses `FOREIGN KEY (project_id, workspace_id) REFERENCES project (id, workspace_id)` — copy that form.
+The `project` FK columns: the anchor is `project (project_id, workspace_id)` (`project_workspace_anchor`); `project_icp_pin` uses `FOREIGN KEY (project_id, workspace_id) REFERENCES project (project_id, workspace_id)` — copy that form.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -94,7 +94,7 @@ def upgrade() -> None:
                 REFERENCES agent_turn_submission (turn_id, workspace_id),
             CONSTRAINT agent_turn_project_files_project_fk
                 FOREIGN KEY (project_id, workspace_id)
-                REFERENCES project (id, workspace_id),
+                REFERENCES project (project_id, workspace_id),
             CONSTRAINT agent_turn_project_files_identity_nonempty CHECK (
                 length(btrim(workspace_id)) > 0 AND length(btrim(project_id)) > 0
             ),

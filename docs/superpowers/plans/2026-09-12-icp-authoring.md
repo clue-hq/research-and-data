@@ -55,7 +55,7 @@
 - Test: `tests/db/test_arv2_project_scoped_documents_migration.py`
 
 **Interfaces:**
-- Produces on `brand_knowledge_document`: `project_id text NULL` (FK `(project_id, workspace_id) → project (id, workspace_id)`), `derived_from_document_id uuid NULL` (FK → `brand_knowledge_document (document_id)`); the constraint `brand_knowledge_document_path_version` dropped and replaced by `CREATE UNIQUE INDEX brand_knowledge_document_scope_path_version ON brand_knowledge_document (workspace_id, brand_id, COALESCE(project_id, ''), path, version)`; folder CHECK `IN ('company','product','audience','proof','design','project')`; kind CHECK adds `'project-plan'`; index `brand_knowledge_document_project ON (workspace_id, project_id, path, version DESC) WHERE project_id IS NOT NULL`.
+- Produces on `brand_knowledge_document`: `project_id text NULL` (FK `(project_id, workspace_id) → project (project_id, workspace_id)`), `derived_from_document_id uuid NULL` (FK → `brand_knowledge_document (document_id)`); the constraint `brand_knowledge_document_path_version` dropped and replaced by `CREATE UNIQUE INDEX brand_knowledge_document_scope_path_version ON brand_knowledge_document (workspace_id, brand_id, COALESCE(project_id, ''), path, version)`; folder CHECK `IN ('company','product','audience','proof','design','project')`; kind CHECK adds `'project-plan'`; index `brand_knowledge_document_project ON (workspace_id, project_id, path, version DESC) WHERE project_id IS NOT NULL`.
 - Produces on `onboarding_run`: `kind text NOT NULL DEFAULT 'full' CHECK (kind IN ('full','personas'))`, `project_id text NULL` (FK as above), `persona_icp_document_id uuid NULL` (FK → `brand_knowledge_document`), CHECK `onboarding_run_persona_shape ((kind = 'personas') = (persona_icp_document_id IS NOT NULL))`.
 
 - [ ] **Step 1: Write the failing migration test** — copy the shape of `tests/db/test_arv2_project_icp_pin_migration.py`: upgrade; assert the two new columns on each table (`information_schema.columns`), the unique index by name in `pg_indexes`, that the old constraint name is gone from `pg_constraint`; insert two rows with the same `(workspace_id, brand_id, path, version)` and different `project_id` (NULL and `'prj'`) and assert no error; a third with the same scope raises `DBAPIError`; `INSERT INTO onboarding_run (... kind='personas', persona_icp_document_id=NULL)` raises `DBAPIError`; downgrade lands on the previous revision with the old constraint restored; upgrade again.
@@ -70,7 +70,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE brand_knowledge_document ADD COLUMN derived_from_document_id uuid")
     op.execute(
         "ALTER TABLE brand_knowledge_document ADD CONSTRAINT brand_knowledge_document_project_fk "
-        "FOREIGN KEY (project_id, workspace_id) REFERENCES project (id, workspace_id)"
+        "FOREIGN KEY (project_id, workspace_id) REFERENCES project (project_id, workspace_id)"
     )
     op.execute(
         "ALTER TABLE brand_knowledge_document ADD CONSTRAINT brand_knowledge_document_derived_fk "
@@ -111,7 +111,7 @@ def upgrade() -> None:
     )
     op.execute(
         "ALTER TABLE onboarding_run ADD CONSTRAINT onboarding_run_project_fk "
-        "FOREIGN KEY (project_id, workspace_id) REFERENCES project (id, workspace_id)"
+        "FOREIGN KEY (project_id, workspace_id) REFERENCES project (project_id, workspace_id)"
     )
     op.execute(
         "ALTER TABLE onboarding_run ADD CONSTRAINT onboarding_run_persona_icp_fk "
