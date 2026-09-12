@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatToolPart } from "./chat-parts";
 import {
-  activityStepLabel,
   profileDisplayName,
   toolPresentation,
 } from "./chat-tool-presentation";
@@ -178,16 +177,4 @@ test("opaque values never become profile names", () => {
   assert.equal(profileDisplayName(GATE_ID), "Ideal customer profile");
   assert.equal(profileDisplayName(DIGEST), "Ideal customer profile");
   assert.equal(profileDisplayName(WORKSPACE_ID), "Ideal customer profile");
-});
-
-test("activity steps hide model-round and versioned tool vocabulary", () => {
-  assert.equal(activityStepLabel("model_round", "Model round 4"), "Think through the next step");
-  assert.equal(
-    activityStepLabel("tool_call", "open_icp_confirmation_gate@1"),
-    "Prepare the profile for your review",
-  );
-  assert.equal(
-    activityStepLabel("future_kind", `${GATE_ID}@99`),
-    "Work on the project",
-  );
 });

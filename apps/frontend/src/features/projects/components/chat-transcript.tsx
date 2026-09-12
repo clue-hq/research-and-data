@@ -16,6 +16,7 @@ import {
 } from "../model/design-leg";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
+import { ChatReasoning } from "./chat-reasoning";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -155,6 +156,9 @@ export function ChatTranscript({
                 ) : null}
               </div>
             ) : null}
+            {message.role === "assistant" ? (
+              <ChatReasoning parts={message.parts} turnState={message.state} />
+            ) : null}
             {displayBody !== null ? (
               <div className={styles.messageText}>
                 <MessageResponse>{displayBody}</MessageResponse>
@@ -174,7 +178,6 @@ export function ChatTranscript({
                 actions={actions}
                 key={part.partId}
                 part={part}
-                turnState={message.state}
               />
             ))}
             {message.role === "assistant" &&
@@ -192,7 +195,6 @@ export function ChatTranscript({
             message.body === null &&
             !message.parts.some(
               (part) =>
-                part.kind === "reasoning" ||
                 (part.kind === "text" && part.failed),
             ) ? (
               <p className={styles.reasoningStatus} role="status">
@@ -208,7 +210,6 @@ export function ChatTranscript({
             message.failureCode === null &&
             !message.parts.some(
               (part) =>
-                part.kind === "reasoning" ||
                 (part.kind === "text" && part.failed),
             ) ? (
               <p className={styles.reasoningStatus} role="status">

@@ -167,8 +167,8 @@ export interface ChatToolPart {
  * `text_ephemeral` is the backend saying the load-bearing thing about that
  * text: unlike assistant prose it has no durable counterpart, so it exists for
  * as long as the stream held it and cannot be re-fetched after a reload or a
- * `stream.reset`. The adapter renders it as a live diagnostic, never as part of
- * the transcript.
+ * `stream.reset`. The frontend groups supplied text into one plain-text
+ * disclosure per response; its presentation does not change that retention.
  */
 const ReasoningPartWireSchema = z.object({
   ...partBase,
