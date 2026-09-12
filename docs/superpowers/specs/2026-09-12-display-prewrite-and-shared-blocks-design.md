@@ -1,14 +1,19 @@
 # Display pages: written at settle, shared where the question is the same
 
 **Status:** design agreed in chat with the founder, 2026-09-12. Branch `research-streaming`.
-**Rulings (founder, 2026-09-12):** the account overview page and every contact page are written
-when their research job settles — both are read, because artifacts are drafted from what the
-contacts care about; the insights page stays lazy and is composed from blocks the other two pages
+**Rulings (founder, 2026-09-12):** the account overview page is written when the account job
+settles; the contact pages of an account are written, all of them, in the background, the first
+time a user opens that account — its overview, its insights page, its contacts tab or "open as
+page" — because artifacts are drafted from what the contacts care about, but only for accounts
+the user actually looks at; the insights page stays lazy and is composed from blocks the other two pages
 own wherever it asks the same question; a shared block is the stored body only (sentences + claim
 cites), never the other page's heading, position or open/closed default; no synthesis is ever
 written from another synthesis — every section cites claims.
 **Open ruling (founder):** what a section shows while its block is not yet written (the dummy
-frontend has no such state). Until ruled, a missing section is simply absent, as today.
+frontend has no such state). This matters more under the on-open rule: a contact clicked seconds
+after its account was opened is still being written, and the insights page's shared contact
+sections fill in as those pages land. Until ruled, a missing section is absent and a page opened
+early writes inline, as today.
 
 ## 1. Today
 
@@ -34,12 +39,21 @@ and `tools-they-already-use` overlap `why-now`/`why-they-fit`/`how-to-approach`.
   runner. Idempotent: `display_block_live` already makes a live section unique per
   `(workspace, subject_kind, subject_id, page, section_key)`, and `ensure_page` writes only what is
   missing or stale, so a redelivered task costs nothing it has not already paid for.
-* Enqueue points, both after the settle transaction committed (the launch's own rule — rows
-  first, offer second), never raising into the job:
-  * account job settled → `("account", account_entity_id, "overview")`;
-  * person job settled → `("contact", subject_entity_id, "contact")`.
-  The offer rides `_offer_committee`'s pattern in `account_research_driver.py`; a worker with no
-  queue logs `arv2.display_page_not_enqueued` exactly as the committee offer does.
+* Two enqueue points:
+  * **at settle** — the account job settled → `("account", account_entity_id, "overview")`,
+    offered after the settle transaction committed (the launch's own rule — rows first, offer
+    second), never raising into the job. The offer rides `_offer_committee`'s pattern in
+    `account_research_driver.py`; a worker with no queue logs `arv2.display_page_not_enqueued`
+    exactly as the committee offer does.
+  * **on open** — the first read of an account's overview page, insights page or contacts tab
+    (the frontend-read account routes: detail, workspace, display pages) enqueues
+    `("contact", member_id, "contact")` for every committee member that has a settled person job
+    and no live contact page. The read already carries a side-effect seam
+    (`schedule_regeneration`); this is the same seam, keyed per account in the web process's
+    in-flight table so ten opens of one account enqueue once, and idempotent on the fleet by the
+    work id. A contact opened before its task ran still writes inline (the fallback below).
+  A person job settling enqueues nothing: contact pages are paid for only on accounts a user
+  opens.
 * Spend: the page's model calls land on the same provider ledger as the research, stamped with
   the research job as `job_id`, so the cost is visible where the research cost is.
 * The web read is unchanged as a fallback: a page opened before its task ran still writes inline.
@@ -71,8 +85,10 @@ Target accounts tab and the research card poll. Until then the inline write stay
 
 ## 5. Tests
 
-Handler: writes the page once, a redelivery writes nothing (DB). Driver: the two offers land after
-the settle commit and never raise (fakes). Recipes: a `shared_from` section composes the owner's
+Handler: writes the page once, a redelivery writes nothing (DB). Driver: the overview offer lands
+after the settle commit and never raises (fakes). Read: the first account open enqueues one task
+per settled member with no live page, a second open enqueues nothing, a member whose page exists
+is skipped (DB). Recipes: a `shared_from` section composes the owner's
 body under its own chrome, is absent when the owner is unwritten, and reports stale with the
 owner (pure + DB). Insights page: the sharing set leaves exactly four generated recipes.
 
