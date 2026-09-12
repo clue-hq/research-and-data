@@ -12,6 +12,7 @@ from httpx import ASGITransport
 from sqlalchemy import text
 
 from clue_api.onboarding_routes import create_onboarding_router
+from clue_design import ingestion as design_ingestion
 from tests._identity import seed_principal
 from tests._workspace import seed_project
 from tests.auth.conftest import rollback_conn, run_async
@@ -52,6 +53,9 @@ def test_start_creates_a_queued_run_and_enqueues_once_then_current_reads_it() ->
             ) as client:
                 nothing = await client.get("/onboarding/current", headers={"X-Workspace-Id": ws})
                 assert nothing.status_code == 200 and nothing.json()["status"] == "none"
+                # A workspace with no design ingestion job says so — never a fabricated
+                # "queued" the setting-up checklist would spin on forever.
+                assert nothing.json()["brandKitIngestion"] is None
                 started = await client.post(
                     "/onboarding",
                     headers={"X-Workspace-Id": ws, "X-Test-User-Id": "usr_o3_route"},
@@ -209,5 +213,48 @@ def test_a_run_that_could_not_be_offered_to_the_fleet_is_failed_not_stranded() -
                 # And the failed run does not block the workspace's next attempt.
                 current = await client.get("/onboarding/current", headers={"X-Workspace-Id": ws})
                 assert current.json()["status"] == "failed"
+
+    run_async(scenario())
+
+
+def test_current_echoes_the_workspaces_newest_brand_kit_ingestion_job() -> None:
+    """The checklist's brand-kit row moves because this read serves the real job.
+
+    ``POST /onboarding`` fires the ingestion; without this field the row could only ever read
+    "queued", on a screen watched for minutes. Job truth only — the row mapping is the client's.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = "ws-o3-route-kit"
+            await seed_project(conn, ws, name="O3 route kit")
+            app = FastAPI()
+            app.include_router(
+                create_onboarding_router(
+                    conn_factory=conn_session_factory(conn), enqueuer=_RecordingEnqueuer()
+                )
+            )
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                before = await client.get("/onboarding/current", headers={"X-Workspace-Id": ws})
+                assert before.json()["brandKitIngestion"] is None
+
+                job = await design_ingestion.create_job(
+                    conn,
+                    workspace_id=ws,
+                    kind="website",
+                    request={"url": "https://insighthealth.ai"},
+                )
+                after = await client.get("/onboarding/current", headers={"X-Workspace-Id": ws})
+                assert after.json()["brandKitIngestion"] == {
+                    "jobId": str(job["job_id"]),
+                    # The ``design_ingestion_status`` enum as stored, not a derived row state.
+                    "status": "queued",
+                }
+
+                # Newest-first ordering is the DAL's own contract (``list_recent``), pinned by
+                # the design ingestion tests; two rows minted inside one transaction share a
+                # ``created_at``, so asserting it here would pin the uuid tiebreak instead.
 
     run_async(scenario())

@@ -17,7 +17,7 @@ from sqlalchemy import text
 from clue_api.arv2.onboarding_driver import ONBOARDING_DEDUP_PREFIX, onboarding_work_id
 from clue_api.arv2.onboarding_store import create_run, fail_run, read_current_run
 from clue_api.auth_wiring import principal_from_request
-from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger
+from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger, read_newest_ingestion_job
 from clue_db import ConnFactory
 from clue_fleet import FleetTaskKind
 from clue_fleet.queue import DbWorkQueue, WorkQueue
@@ -27,6 +27,7 @@ from clue_spine import get_brand, list_brands_for_workspace
 
 __all__ = [
     "DbOnboardingEnqueuer",
+    "OnboardingBrandKitIngestionView",
     "OnboardingEnqueuer",
     "create_onboarding_router",
     "onboarding_workspace_resolver",
@@ -135,15 +136,35 @@ class OnboardingStepView(BaseModel):
     failureCode: str | None
 
 
+class OnboardingBrandKitIngestionView(BaseModel):
+    """The workspace's newest design brand-kit ingestion job — job truth, nothing derived.
+
+    ``POST /onboarding`` fires that ingestion (``brand_kit_ingestion.ensure``), so the setting-up
+    checklist has a "Creating brand kit" row to move; this is the read that moves it. ``status``
+    is the ``design_ingestion_status`` enum as stored (``queued|running|succeeded|failed``),
+    served as-is — the row's three-state mapping is the client's (the same division of labour as
+    ``GET /stage0/setup/current``, which serves the identical shape).
+    """
+
+    jobId: str
+    status: str
+
+
 class OnboardingStatusResponse(BaseModel):
     """The §7 status read. ``status`` is ``"none"`` before the workspace has ever run one, so the
-    poller can start before the first POST and never has to read a 404 as "not yet"."""
+    poller can start before the first POST and never has to read a 404 as "not yet".
+
+    ``brandKitIngestion`` is additive (§7 stays the frozen core): the workspace's newest design
+    ingestion job, or ``None`` when it has none — never a fabricated "queued" the checklist would
+    spin on forever. Served in EVERY branch, so a client never has to ask why the key vanished.
+    """
 
     schema_version: str
     runId: str | None
     status: str
     steps: list[OnboardingStepView]
     costUsd: str
+    brandKitIngestion: OnboardingBrandKitIngestionView | None = None
 
 
 def create_onboarding_router(
@@ -281,6 +302,13 @@ def create_onboarding_router(
     async def current_onboarding(workspace_id: WorkspaceDep) -> OnboardingStatusResponse:
         async with conn_factory() as conn:
             status = await read_current_run(conn, workspace_id=workspace_id)
+        # The same read the Stage-0 setup route serves, through the shared helper: the brand-kit
+        # ingestion is separate work from the run, so it is read separately and never gated on
+        # one existing.
+        job = await read_newest_ingestion_job(conn_factory, workspace_id=workspace_id)
+        brand_kit = (
+            None if job is None else OnboardingBrandKitIngestionView(jobId=job[0], status=job[1])
+        )
         # "Nothing yet" is a status, never a 404 — the poll starts before the first run exists.
         if status is None:
             return OnboardingStatusResponse(
@@ -289,6 +317,7 @@ def create_onboarding_router(
                 status="none",
                 steps=[],
                 costUsd="0",
+                brandKitIngestion=brand_kit,
             )
         return OnboardingStatusResponse(
             schema_version=PROJECTIONS_SCHEMA_VERSION,
@@ -308,6 +337,7 @@ def create_onboarding_router(
                 for step in status.steps
             ],
             costUsd=str(status.cost_usd),
+            brandKitIngestion=brand_kit,
         )
 
     return router
