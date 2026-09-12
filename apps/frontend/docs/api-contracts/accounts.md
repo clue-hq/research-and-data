@@ -1805,6 +1805,15 @@ the table keeps its columns, selection and page across that re-read. A refusal
 changes nothing on screen and says so, with a Try again action. No duplicate
 account record is created: membership is the only thing written.
 
+**Membership display correction (2026-09-12):** The global bulk picker starts
+at "Choose a project"; Add to project stays disabled until an explicit choice.
+Clearing or successfully submitting the selection resets that choice. The
+result notice includes the chosen project's name alongside the backend counts.
+The shared table controller reconciles each new server snapshot, retaining only
+unsaved local drafts from its previous rows. This makes added members and updated
+research fields visible on a tab re-read without remounting the table or losing
+its filters, selection and column settings. The membership API is unchanged.
+
 **Seam edit 3 — Add to chat, into the open chat** (founder request,
 2026-09-11; not in the dummy, which has no such button on this tab). The tab's
 selection bar carries an "Add to chat" button in the global bar's token (the

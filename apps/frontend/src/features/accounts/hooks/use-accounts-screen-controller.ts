@@ -10,6 +10,7 @@ import {
   type AccountRow,
 } from "../model/create-account";
 import { addSelectedAccountsToProject } from "../data/bulk-actions.repository";
+import { reconcileAccountRows } from "../model/account-rows";
 import {
   createAccountColumnDefinitions,
   createAccountColumnOrder,
@@ -50,6 +51,7 @@ export function useAccountsScreenController(
   );
   const [search, setSearch] = useState("");
   const [accountRows, setAccountRows] = useState<AccountRow[]>(initialAccounts);
+  const [receivedAccounts, setReceivedAccounts] = useState(initialAccounts);
   const [filters, setFilters] = useState(createDefaultAccountFilterRules);
   const [sort, setSort] = useState<AccountSort>("default");
   const [density, setDensity] =
@@ -66,14 +68,32 @@ export function useAccountsScreenController(
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [selectedProjectId, setSelectedProjectIdState] = useState(
-    bulkCapabilities.projects[0]?.id ?? "",
-  );
+  const [selectedProjectId, setSelectedProjectIdState] = useState("");
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [bulkNotice, setBulkNotice] = useState<string | null>(null);
   // One idempotency key per attempt at the same selection, so a retry after a
   // timeout resumes the same operation instead of starting a second one.
   const bulkAttemptKey = useRef<string | null>(null);
+
+  // Reconcile a new server snapshot without remounting the table: filters,
+  // pagination, selection and column preferences must survive a membership or
+  // research refresh. Local unsaved drafts are the only rows the server cannot own.
+  if (receivedAccounts !== initialAccounts) {
+    setReceivedAccounts(initialAccounts);
+    setAccountRows(reconcileAccountRows(accountRows, initialAccounts));
+    setColumnOrder((current) => [
+      ...current,
+      ...initialColumnDefinitions.map(({ key }) => key).filter((key) => !current.includes(key)),
+    ]);
+    setColumnWidths((current) => ({
+      ...createAccountColumnWidths(initialColumnDefinitions),
+      ...current,
+    }));
+    setVisibleColumns((current) => ({
+      ...createAccountColumnVisibility(initialColumnDefinitions),
+      ...current,
+    }));
+  }
 
   const scopedAccounts = useMemo(() => project
     ? accountRows.filter((account) => account.projects.some(({ id }) => id === project.id))
@@ -158,6 +178,7 @@ export function useAccountsScreenController(
 
   function clearSelection() {
     setSelectedAccountIds(new Set());
+    setSelectedProjectIdState("");
     bulkAttemptKey.current = null;
   }
 

@@ -175,7 +175,7 @@ test("Add to project posts the selected ids and the chosen project", async () =>
   assert.equal(outcome.status, "added");
   assert.equal(
     outcome.status === "added" ? outcome.notice : null,
-    "1 added · 1 already in project",
+    "ABM Q4: 1 added · 1 already in project",
   );
   // The controller clears the selection on exactly this outcome.
   assert.match(controller, /=== "added"/);
@@ -632,7 +632,7 @@ test("a project-scoped controller reads only that project's rows", () => {
   // Omitted, the workspace-wide screen is unscoped as before.
   assert.match(
     projectScreen,
-    /useAccountsScreenController\(accountsForProject\(data\.accounts, projectId\), data\.bulkCapabilities, undefined, \{ project \}\)/,
+    /useAccountsScreenController\(accounts, data\.bulkCapabilities, undefined, \{ project \}\)/,
   );
   assert.match(screen, /useAccountsScreenController\(accounts, bulkCapabilities\)/);
 });
@@ -696,7 +696,7 @@ test("Add accounts reflects only the picks the server accepted", async () => {
     accountsForProject(rows, project.id).map(({ id }) => id),
     ["account-1", "account-3"],
   );
-  assert.equal(outcome.status === "added" ? outcome.notice : null, "1 added · 1 already in project · 1 failed");
+  assert.equal(outcome.status === "added" ? outcome.notice : null, "ABM Q4: 1 added · 1 already in project · 1 failed");
   // The controller appends that reflection and surfaces that notice.
   assert.match(controller, /setBulkNotice\(outcome\.notice\);\s*\n\s*if \(outcome\.status === "refused"\) return false;\s*\n\s*addAccounts\(outcome\.rows\);/);
   assert.doesNotMatch(projectScreen, /data\/bulk-actions\.repository/);
