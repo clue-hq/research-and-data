@@ -9,11 +9,9 @@ the user actually looks at; the insights page stays lazy and is composed from bl
 own wherever it asks the same question; a shared block is the stored body only (sentences + claim
 cites), never the other page's heading, position or open/closed default; no synthesis is ever
 written from another synthesis — every section cites claims.
-**Open ruling (founder):** what a section shows while its block is not yet written (the dummy
-frontend has no such state). This matters more under the on-open rule: a contact clicked seconds
-after its account was opened is still being written, and the insights page's shared contact
-sections fill in as those pages land. Until ruled, a missing section is absent and a page opened
-early writes inline, as today.
+**Ruling (founder, 2026-09-12):** a section whose block is not yet written is simply blank —
+no spinner, no placeholder copy. The page shows what exists, the rest stays empty until the
+block lands, and the page picks it up on its poll.
 
 ## 1. Today
 
@@ -76,12 +74,13 @@ and `tools-they-already-use` overlap `why-now`/`why-they-fit`/`how-to-approach`.
   "may this caller stream this claim" check reads the composed page and therefore sees shared
   cites too.
 
-## 4. Progressive read (after the open ruling)
+## 4. Progressive read
 
-Once the founder rules the placeholder state, the web read stops writing inline: `page()` serves
-what exists, schedules the rest (the same `schedule_regeneration`, extended to missing sections),
-and the page polls the read every 5 s while any section is reported `pending`, the way the
-Target accounts tab and the research card poll. Until then the inline write stays.
+The web read stops writing inline: `page()` serves what exists, schedules the rest (the same
+`schedule_regeneration`, extended to missing sections), and reports the missing section keys as
+`pending`. A pending section renders blank (the ruling above). The page polls the read every 5 s
+while any section is `pending`, the way the Target accounts tab and the research card poll, and
+stops when none is. The inline write survives only as the explicit "regenerate" command path.
 
 ## 5. Tests
 
@@ -95,4 +94,4 @@ owner (pure + DB). Insights page: the sharing set leaves exactly four generated 
 ## 6. Out of scope
 
 Rewriting the insights recipes' prose; writing the insights page at settle; any change to what
-research writes; the placeholder state itself (a founder ruling first).
+research writes; any placeholder visual beyond a blank section.
