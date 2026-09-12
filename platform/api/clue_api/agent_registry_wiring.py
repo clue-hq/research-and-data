@@ -127,6 +127,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # asking for them queues a background onboarding turn rather than writing a document here.
     # Granted with `head-of-abm@v46`; stage0-interview v23 §5c is the procedure.
     "request_persona_synthesis": (AgentRole.HEAD_OF_ABM,),
+    # The project plan: registered so the platform's write surface stays complete and the
+    # authority audit sees it, granted to nobody yet — the Head-of-ABM profile that pins it and
+    # the skill text that teaches when a plan is ready to write land with the plan flow itself.
+    "write_project_document": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

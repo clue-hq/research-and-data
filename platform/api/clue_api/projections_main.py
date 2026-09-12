@@ -23,6 +23,7 @@ from clue_api.observability_wiring import build_observability_surface
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
@@ -142,6 +143,10 @@ def build_application(
     # holding that ICP document's one open slot. Off, the tool refuses by name. The queue is this
     # app's default ``DbWorkQueue``, exactly as ``DbOnboardingEnqueuer``'s is.
     persona_requests = DbPersonaRequestService() if resolved.onboarding_v2_enabled else None
+    # The project plan has no flag of its own either: writing it down spends nothing and confirms
+    # nothing, and it needs only the storage the knowledge documents live in. Without a service the
+    # tool registers and refuses by name.
+    project_documents = DbProjectDocumentService(storage)
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
@@ -149,6 +154,7 @@ def build_application(
         arv2_discovery_launch=arv2_discovery_launch,
         icp_authoring=icp_authoring,
         persona_requests=persona_requests,
+        project_documents=project_documents,
         stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),

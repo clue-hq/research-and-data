@@ -117,6 +117,10 @@ from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.product_set_selection_gate_tools import (
     build_product_set_selection_gate_tools,
 )
+from clue_api.project_document_tools import (
+    ProjectDocumentService,
+    build_project_document_tools,
+)
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.project_tools import RenameProjectTool
 from clue_api.proposal_tools import (
@@ -2654,6 +2658,7 @@ def build_toolbelt(
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
     icp_authoring: IcpAuthoringService | None = None,
     persona_requests: PersonaRequestService | None = None,
+    project_documents: ProjectDocumentService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2819,6 +2824,13 @@ def build_toolbelt(
     # lane is; without a service it refuses ``persona_synthesis_not_composed`` before it reads a
     # row.
     for tool in build_persona_request_tools(persona_requests, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The project's own plan: what the agent and the human settled, written down where both can
+    # read and edit it. Registered on every deployment on the same terms as its neighbours above;
+    # composed wherever the knowledge documents' storage is, with no flag of its own — writing the
+    # plan spends nothing and confirms nothing. Without a service it refuses
+    # ``project_documents_not_composed`` before it reads a row.
+    for tool in build_project_document_tools(project_documents, conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

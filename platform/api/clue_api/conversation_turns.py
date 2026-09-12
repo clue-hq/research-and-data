@@ -133,7 +133,9 @@ CONVERSATION_RECIPE_VERSION = 24
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
-_PLAN_OBJECT_TYPES: frozenset[str] = frozenset({"research_directive", "agent_plan", "plan"})
+_PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
+    {"research_directive", "agent_plan", "plan", "project_document"}
+)
 
 
 class DelegationWithheld:
@@ -459,10 +461,19 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
+                    # The project's plan is the one member of this set with a name of its own: the
+                    # human calls the document "the plan", not "the project document", and its
+                    # version is a file revision they can see in the editor, so it reads as "v3"
+                    # rather than a bare ordinal.
+                    is_plan_document = ref.object_type == "project_document"
                     await stream.emit_plan_part(
                         ref=ref,
-                        title=ref.object_type.replace("_", " "),
-                        revision_label=None if ref.version is None else str(ref.version),
+                        title="Plan" if is_plan_document else ref.object_type.replace("_", " "),
+                        revision_label=(
+                            f"v{ref.version}"
+                            if is_plan_document and ref.version is not None
+                            else (None if ref.version is None else str(ref.version))
+                        ),
                     )
         await stream.emit_launched_task_parts()
         if replayed:

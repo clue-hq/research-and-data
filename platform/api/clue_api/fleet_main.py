@@ -141,6 +141,7 @@ from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -945,6 +946,10 @@ async def _serve() -> None:
         persona_requests = (
             DbPersonaRequestService(queue=work_queue) if settings.onboarding_v2_enabled else None
         )
+        # The project plan has no flag of its own either: writing it down spends nothing and
+        # confirms nothing, and it needs only the storage the knowledge documents live in.
+        # Without a service the tool registers and refuses by name.
+        project_documents = DbProjectDocumentService(storage)
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -979,6 +984,7 @@ async def _serve() -> None:
             arv2_discovery_launch=arv2_discovery_launch,
             icp_authoring=icp_authoring,
             persona_requests=persona_requests,
+            project_documents=project_documents,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )

@@ -114,7 +114,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # human support) and what a call does NOT do — authoring mints a *proposed* document the human
     # still confirms at the ICP gate, and the persona request queues a background turn rather than
     # returning a document.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 128
+    # The project plan registers `write_project_document@1` (128 -> 129) and grants it to nobody:
+    # the write surface stays complete and the audit sees it, but no model surface names it yet —
+    # the profile that pins it and the skill text that teaches when a plan is ready to write land
+    # with the plan flow.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 129
+    assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("author_icp_document@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == (AgentRole.HEAD_OF_ABM,)
