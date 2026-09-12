@@ -1607,3 +1607,137 @@ discovery run against real providers.
   roughly **$0.04 per company**, on top of the four gate calls. Recorded as final-review finding I3;
   until it is decided, a company that clears every hard gate but sells to consumers can still land
   as a High-fit candidate for a human to read.
+
+## ICP authoring and project-scoped documents (2026-09-12)
+
+Before this, the only way a profile came into being was `synthesize_icps` during the brand's
+onboarding walk: the walk wrote the brand's ICPs, a human confirmed one, and a project pinned it.
+A marketer who read the proposals and said *"none of these is who we sell to"* had nowhere to go.
+Now the Head of ABM can **write one down** in the conversation, and can ask for the **personas** of
+a profile the human has confirmed. The documents an authoring turn produces can be **project-local**
+— the same brand, a different project, a different profile — which is why the knowledge tables
+grew a scope.
+
+### The schema (migration `b953bf11e2a9`)
+
+`brand_knowledge_document` gains:
+
+- **`project_id text NULL`** — `NULL` is the brand's own knowledge; a value scopes the row to one
+  project. The FK is composite (`(project_id, workspace_id) → project`), so a document cannot scope
+  itself into another tenant's project.
+- **`derived_from_document_id uuid NULL`** — the brand-level document this one was written from
+  (self-FK). Lineage, not currency: it says what the author read, never what is served.
+- The old `brand_knowledge_document_path_version` UNIQUE is replaced by the **scope-aware unique
+  index** `brand_knowledge_document_scope_path_version (workspace_id, brand_id,
+  COALESCE(project_id, ''), path, version)` — one path may exist once per scope per version, so a
+  project's variant of `audience/icp.md` coexists with the brand's. The `''` sentinel is
+  load-bearing; a real project id is never empty (the composite FK makes it unreachable).
+- A partial index for the project reads, `'project'` admitted to the folder CHECK and
+  `'project-plan'` to the kind CHECK.
+
+`onboarding_run` gains **`kind text NOT NULL DEFAULT 'full'`** (`'full' | 'personas'`),
+**`project_id`**, and **`persona_icp_document_id`**, welded by
+`onboarding_run_persona_shape`: `(kind = 'personas') = (persona_icp_document_id IS NOT NULL)`. A
+partial index enforces the one-open-personas-run-per-ICP-document read.
+
+### The reader rule
+
+One sentence decides every read: **a brand reader sees brand rows; a project reader sees both and
+lets the project win.**
+
+- **Brand readers filter `project_id IS NULL`.** `brand_knowledge_context.current_knowledge_documents`,
+  the five onboarding-walk reads in `onboarding_store` (the walk writes the *brand's* knowledge and a
+  project variant must not push its version chain along), and every `frontend_read/brand_knowledge`
+  read including the PUT's `FOR UPDATE`/`MAX(version)` pair. That module's `IntegrityError` mapping
+  now names `brand_knowledge_document_scope_path_version`.
+- **Project readers union.** `current_project_knowledge_refs(conn, *, workspace_id, project_id)` is
+  the mirror of the brand reader; `_current_input_documents` in `onboarding_synthesis_wiring` unions
+  the ICP's project over the brand so a persona turn can read the very document it was asked about.
+- **The ICP lookup orders project-local first.** `icp_confirmation.current_icp_document(...,
+  project_id=)` selects `AND (project_id IS NULL OR project_id = :project_id)` and orders
+  `path, (project_id IS NULL), version DESC` — a project-local row wins its path, and an unscoped
+  read (`project_id=None`) sees brand rows only. `confirm_icp_document` mints the next version *in
+  the subject's own scope* (`IS NOT DISTINCT FROM`) and carries `project_id` +
+  `derived_from_document_id` forward; `ProjectIcpPin` carries the scope too.
+  `account_research_store.read_persona_documents` is scoped the same way (a project's own persona
+  beats the brand's), threaded from `run.project_id`.
+- **Materialization.** `workspace_paths` groups by `(project_id, path)`; a project ref resolves
+  through `project_workspace_path`, so it lands under `inputs/project/…` rather than
+  `inputs/brand/knowledge/…`, and `knowledge_seed_files` **skips** it — plan 1's project-files pin
+  owns everything under `inputs/project/`. `project_status.current_project_documents` compiles those
+  rows onto the lease beside `status.md`/`decisions.md`, and `status.md` lists them under *Project
+  documents* off the same read, so the card cannot name a file the turn does not seed.
+
+### The two tools
+
+**`author_icp_document@1`** (`clue_api/icp_authoring_tools.py` over
+`arv2/icp_authoring.py`) — WRITE, `DOMAIN_IDEMPOTENT`, free. The model supplies `icp_key`, the whole
+`document`, `scope` (`brand` | `project`) and an optional `derived_from_icp_key`; the project, brand,
+human and turn come from the trusted `source_turn_ref` (pinned through
+`_presenting_turn_project_pin`). The row is born **`proposed`** — authoring proposes, the human's
+confirmation gate still decides. The document id is
+`uuid5("arv2-icp-authoring:{turn}:{scope}:{key}")`, so a replay inside one turn returns the stored
+row rather than re-rendering (the `authored_at` stamp is the one non-deterministic byte). Platform
+front matter (`status`, `brand_id`, `project_id`, `derived_from`, the confirmation stamp,
+`product_selection_version`, `user_edit`) is stripped from whatever the model typed and re-stamped
+from the resolved rows. Supersede is scope-local and never retires a `confirmed` row.
+Refusals: `icp_key_invalid`, `icp_front_matter_invalid` (kind / `icp_key` / non-empty `product_ids`
+/ non-empty `hard_gates`, with the reason in the message), `icp_key_taken_by_brand`,
+`icp_key_taken_by_project` (only a *servable* row owns a key — a superseded one's name is free
+again), `derived_from_not_found`, `icp_document_version_race`; plus the turn-binding
+`authoring_turn_ref_malformed` / `authoring_turn_not_found` / `authoring_addressee_missing` and
+`icp_authoring_not_composed`.
+
+**`request_persona_synthesis@1`** (`clue_api/persona_request_tools.py`) — SPEND,
+`DOMAIN_IDEMPOTENT`, composed behind `onboarding_v2_enabled` (what it opens *is* an onboarding run;
+with the lane off no worker would drive it and the row would hold that document's one open slot
+forever). It takes the `icp_key`, checks it against the project's **pinned** ICP, and offers a
+**personas-only onboarding run** through `DbOnboardingEnqueuer` — one place knows the task shape.
+`persona_run_id = uuid5("arv2-persona-run:{ws}:{document_id}:{turn}")`.
+Refusals: `persona_synthesis_not_composed`, `icp_not_pinned_for_project` (covers both "no pin" and
+"not this key" — one fact from the agent's side), `persona_run_already_open`, `brand_not_onboarded`
+(no completed `full` walk to copy the company domain from), `enqueue_failed` (which leaves the run
+`failed`, so the document is free again), plus the turn-binding trio.
+
+### The personas-only run
+
+`onboarding_driver._run` branches to `_personas_only` before anything else: `mark_run_running` →
+one `_persona_step` (the same step the full walk runs, unchanged) → `finish_run`. No client binding,
+no recon, no catalog sync, no ICP turn — the brand was onboarded long ago. The `IcpRef` carries
+`project_id`, so the persona is registered in the **ICP's own scope**, and `_register_documents`
+takes its `project_id` from the ICP it was asked about.
+
+Two filters keep the personas run out of the full walk's surfaces: `read_current_run` adds
+`AND kind = 'full'` (the setting-up screen and `read_onboarding_status` render steps a personas run
+does not have), and the `POST /onboarding` 409 `onboarding_in_progress` query does the same — a
+personas run must not hold the workspace's one start slot.
+
+### The grant (skill v23, profile v46, recipe v24)
+
+`stage0-interview@v23` pins both tools and teaches them in prose: §1 names the `inputs/project/`
+files, §3's outcomes, §5's *Revised* bullet, new **§5b "Author a profile"** (write the document,
+choose `brand` vs `project` scope, name `derived_from_icp_key`, then open the confirmation gate —
+authoring never confirms) and **§5c "Personas for a confirmed profile"**, and §10.
+`head-of-abm@v46` pins skill v23 and the two tools; `recipe0-stage0-v24.json` admits both addresses
+at all four sites; `CONVERSATION_RECIPE_VERSION = 24`;
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v46"`. Both tools are on
+`STAGE0_CONVERSATION_TRIAL_SURFACE.withheld_tools` — this is a project-conversation capability.
+v22 / v45 / `recipe0-stage0-v23.json` are byte-untouched.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Run at this stage, all seven answered:
+
+1. **Profile grants** — v46 pins no readiness / Stage-0 / Client-KB / Product-KB tool; the two
+   added pins are the new-lane authoring pair. ✔
+2. **Gate source** — untouched; neither new tool calls `compile_client_knowledge_card_v2`,
+   `current_kb_version` or `load_pinned_client_knowledge` (grepped). ✔
+3. **Scope pin content** — both tools resolve `_presenting_turn_project_pin` from the trusted
+   `source_turn_ref`; no Client-KB pin, no new `AgentTurnScopePinConflict` path. ✔
+4. **Context composition** — a project document is a read-only materialized `.md` on the lease plus
+   an index row; no card compiler runs. ✔
+5. **Launch path** — `launch_arv2_account_research` gained no precondition; the authoring pair is
+   additive. ✔
+6. **Static guard** — `tests/arv2/test_import_guard.py` green, `lint-imports` 26 kept / 0 broken. ✔
+7. **`.env.example` posture** — unchanged; no new flag (`author_icp_document` needs none,
+   `request_persona_synthesis` rides `onboarding_v2_enabled`). ✔

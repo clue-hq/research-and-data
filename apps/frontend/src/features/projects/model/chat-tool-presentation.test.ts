@@ -107,6 +107,31 @@ test("profile synthesis names the proposal but withholds tenant and decision ids
   assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039|90f10d1e/);
 });
 
+test("ICP authoring and persona requests read as operator work, not tool names", () => {
+  const authoring = toolPresentation(
+    part("author_icp_document", {
+      reference_values: {
+        icp_key: "independent_multisite_neurosurgery_spine_practices",
+        icp_version: 2,
+        workspace_id: WORKSPACE_ID,
+        document_id: GATE_ID,
+      },
+    }),
+  );
+  assert.equal(authoring.label, "Draft an ideal customer profile");
+  assert.deepEqual(authoring.rows, []);
+  assert.doesNotMatch(visibleText(authoring), /ws_fixture|6fae9039/);
+
+  const personas = toolPresentation(
+    part("request_persona_synthesis", {
+      reference_values: { run_id: GATE_ID, kind: "personas", status: "queued" },
+    }),
+  );
+  assert.equal(personas.label, "Write the buyer personas");
+  assert.deepEqual(personas.rows, []);
+  assert.doesNotMatch(visibleText(personas), /6fae9039|queued/);
+});
+
 test("gate preparation never exposes gate, user, workspace, ref, or digest values", () => {
   const presentation = toolPresentation(
     part("open_icp_confirmation_gate", {

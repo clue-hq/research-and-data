@@ -641,6 +641,52 @@ documents (`inputs/project/audience/…`, `inputs/project/plan.md`) follow in th
 
 ---
 
+### Addendum 2026-09-12 — ICP authoring (profile v46, skill v23, recipe v24)
+
+The next slices landed. A marketer who reads the onboarding walk's proposals and says *"none of
+these is who we sell to"* is no longer stuck: the Head of ABM can **write the profile down** in the
+conversation, and can ask for the **personas** of a profile the human has confirmed. Spec:
+`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.2.
+
+- **Knowledge documents carry a scope and a lineage** (migration `b953bf11e2a9`).
+  `brand_knowledge_document` gains `project_id` (NULL = the brand's own knowledge; a value scopes the
+  row to one project, composite FK to `project` so it cannot cross tenants) and
+  `derived_from_document_id`; the path/version UNIQUE becomes the scope-aware unique index
+  `brand_knowledge_document_scope_path_version (workspace_id, brand_id, COALESCE(project_id, ''),
+  path, version)`, so a project's variant of `audience/icp.md` coexists with the brand's.
+  `onboarding_run` gains `kind ('full' | 'personas')`, `project_id` and `persona_icp_document_id`,
+  welded by `onboarding_run_persona_shape`.
+- **The reader rule, in one sentence:** a brand reader sees brand rows (`project_id IS NULL` — the
+  onboarding walk, the Knowledge tree and its PUT); a project reader unions both and lets the project
+  win (`current_project_knowledge_refs`; `current_icp_document(project_id=)` orders
+  `path, (project_id IS NULL), version DESC`). Confirmation mints the next version *in the subject's
+  own scope* and carries the scope and the lineage forward; the pin carries them too. A project
+  document materializes under `inputs/project/…` (never `inputs/brand/knowledge/…`), is compiled onto
+  the lease by `project_status.current_project_documents`, and is listed in `status.md` off the same
+  read.
+- **`author_icp_document@1`** (WRITE, free, no flag) writes a **`proposed`** document — authoring
+  proposes, the human's confirmation gate still decides — at `brand` or `project` scope, optionally
+  naming the brand profile it was derived from. Platform front matter is stripped and re-stamped; the
+  document id is turn-derived so a replay never re-renders. Refusals: `icp_key_invalid`,
+  `icp_front_matter_invalid`, `icp_key_taken_by_brand`, `icp_key_taken_by_project`,
+  `derived_from_not_found`, `icp_document_version_race`.
+- **`request_persona_synthesis@1`** (SPEND, behind `onboarding_v2_enabled`) opens a **personas-only
+  onboarding run** for the project's *pinned* ICP: `mark_run_running` → one `_persona_step` →
+  `finish_run`, in the ICP's own scope. Refusals: `icp_not_pinned_for_project`,
+  `persona_run_already_open`, `brand_not_onboarded`, `enqueue_failed`. `read_current_run` and the
+  `POST /onboarding` 409 both filter `kind = 'full'`, so a personas run neither shows on the
+  setting-up screen nor holds the workspace's one start slot.
+- **The grant:** `stage0-interview@v23` (new §5b "Author a profile" and §5c "Personas for a confirmed
+  profile"), `head-of-abm@v46`, `recipe0-stage0-v24.json`, `CONVERSATION_RECIPE_VERSION = 24`. Both
+  tools are withheld from the Stage-0 trial surface — this is a project-conversation capability.
+  v22 / v45 / recipe v23 are byte-untouched.
+- **Standing rule re-run at this stage** (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`),
+  all seven items answered; **env posture unchanged and no new flag**. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` § "ICP authoring and project-scoped documents"; close-out:
+  `_memory/2026-09-12-icp-authoring.md`.
+
+---
+
 ## 9. Phases, exit gates, ownership, timeline
 
 | # | Phase | Builds | Exit gate | Owner |
