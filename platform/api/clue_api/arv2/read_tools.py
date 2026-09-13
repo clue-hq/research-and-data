@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -587,11 +587,22 @@ async def read_account_research(
 class DiscoveryCandidateView(BaseModel, frozen=True):
     """One company a discovery run surfaced, with the verdict the verifier gave it."""
 
+    #: ``serialize_by_alias`` is load-bearing, not decoration: the runner's canonical form is
+    #: ``model_dump(mode="json")`` with no ``by_alias``, so without it the durable, journaled copy
+    #: of a result would say ``pass_`` while the live result said ``pass``. ``populate_by_name``
+    #: keeps the Python constructor call ``DiscoveryCandidateView(pass_=...)`` working.
+    model_config = ConfigDict(frozen=True, populate_by_name=True, serialize_by_alias=True)
+
     name: str
     domain: str
     #: Which §4 pass surfaced it — ``strict`` (the full criteria) or ``relaxed`` (the widened
-    #: re-search). Serialized as ``pass``; the trailing underscore is Python's, not the schema's.
-    pass_: str = Field(serialization_alias="pass")
+    #: re-search). ``pass`` is the schema's word on both sides of the wire; the trailing underscore
+    #: is Python's. The runner re-validates a dumped result in JSON mode, so the model must accept
+    #: what it serializes — the 2026-09-13 live defect was a serialization-only alias.
+    pass_: str = Field(
+        validation_alias=AliasChoices("pass", "pass_"),
+        serialization_alias="pass",
+    )
     #: ``arv2_discovery_candidate.disposition``: ``pending`` until verified, then ``pass`` /
     #: ``partial`` / ``unclear`` / ``duplicate_of_existing`` / ``not_chosen_before``.
     disposition: str

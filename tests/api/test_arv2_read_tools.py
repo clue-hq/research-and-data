@@ -25,6 +25,7 @@ from clue_api.arv2.read_tools import (
     ReadAccountResearchInput,
     ReadAccountResearchTool,
     ReadDiscoveryRunInput,
+    ReadDiscoveryRunOutput,
     ReadDiscoveryRunTool,
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
@@ -39,6 +40,7 @@ from clue_toolbelt import (
     ToolEffectClass,
     ToolInput,
 )
+from clue_toolbelt.runner import validate_tool_output_references
 from tests.db.conftest import run_async
 
 WORKSPACE = "ws_arv2_read_tools"
@@ -445,6 +447,33 @@ def test_the_discovery_read_asks_about_the_ambient_workspace_and_serves_the_run(
         )
         # The bounded page and the whole run are two numbers, never one.
         assert result.references["candidate_total"] == 42
+
+    run_async(scenario())
+
+
+def test_the_discovery_read_s_result_passes_the_runner_s_own_output_validation() -> None:
+    """The live defect: the tool dumped ``pass`` by alias and the runner re-validated the JSON
+    against a model that only accepted ``pass_`` — every call was a ToolContractViolation."""
+
+    async def scenario() -> None:
+        tool = ReadDiscoveryRunTool(_FakeService(discovery=_discovery()))
+        result = await tool.invoke(
+            ReadDiscoveryRunInput(project_id=PROJECT, run_id=DISCOVERY_RUN_ID, candidate_limit=10),
+            _context(),
+        )
+
+        canonical = validate_tool_output_references(ReadDiscoveryRunOutput, result.references)
+
+        assert canonical["candidates"] == [
+            {
+                "name": "Alpha Health",
+                "domain": "alpha.example",
+                "pass": "relaxed",
+                "disposition": "pass",
+                "decision": "approved",
+                "fit": 0.9,
+            }
+        ]
 
     run_async(scenario())
 
