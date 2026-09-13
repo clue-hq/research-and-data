@@ -50,10 +50,10 @@ restated below where they bind this design.
   turn's inputs, delegations and outputs). The turn directory stops carrying copies of the first
   two.
 - **W2 — the project library is a materialized view of rows.** It is real and persistent on disk,
-  refreshed whenever a contributing row changes, and mounted read-only into every turn. The agent's
-  write to it is one governed "save to project" operation that lands a new document version and
-  re-materializes the file. From the agent's side it reads and writes `project/plan.md`; underneath
-  it is a version row.
+  refreshed whenever a contributing row changes, and mounted into every turn as a versioned root:
+  reads serve the materialized files; a write lands a new document version and re-materializes the
+  file (W6). From the agent's side it reads and writes `project/plan.md`; underneath it is a
+  version row.
 - **W3 — the pinned version is the only one in view.** The library shows the current (pinned or
   latest-ready) version of each document at its plain path. Older versions are reachable by
   explicit request, never listed in the index card, never sitting beside the current file.
@@ -138,7 +138,7 @@ Today's backend is anchored at one open directory descriptor with `O_NOFOLLOW` w
 | Virtual prefix | Host root | Mode |
 | --- | --- | --- |
 | `brand/` | `library/brand/<brand>/<version>/` | read-only |
-| `project/` | `projects/<project>/library/` | read-only (writes go through W6) |
+| `project/` | `projects/<project>/library/` | versioned root: read-through, write-through to the document writer (W6) |
 | `thread/` | `projects/<project>/threads/<thread>/scratch/` | read-write, persistent |
 | `work/`, `reads/`, `delegations/`, `outputs/`, `inputs/`, `context/`, `.deepagent/` | `turns/<execution>/…` | as today |
 
