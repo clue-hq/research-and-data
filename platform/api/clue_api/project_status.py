@@ -6,8 +6,8 @@ rows and the ``project_state`` statements (ruling R8). Nothing here writes "now"
 is a row's own, so two attempts of one turn compile identical bytes.
 
 :func:`current_project_documents` sits here too, beside the two compiled files, because the
-project's folder is one set: a document this project authored for itself is both a file the turn
-seeds under ``inputs/project/`` and a line in ``status.md``'s "Project documents" section, and
+project's folder is one set: a document this project authored for itself is both a file in the
+project library at ``project/`` and a line in ``status.md``'s "Project documents" section, and
 both come off the same rows. It cannot live in :mod:`clue_api.project_context_files`, which
 :mod:`clue_api.brand_knowledge_context` (the reader of those rows) imports — this module imports
 both and is imported only by the turn's wiring, so the dependency runs one way.
@@ -101,7 +101,7 @@ class ResearchRunFacts:
 
 @dataclass(frozen=True, slots=True)
 class ProjectDocumentFacts:
-    #: The **name** the document materializes under below ``inputs/project/`` — its row path, or
+    #: The **name** the document is served under below ``project/`` — its row path, or
     #: the version-qualified spelling when another version of that path owns the plain name.
     path: str
     version: int

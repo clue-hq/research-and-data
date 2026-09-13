@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -85,7 +86,6 @@ from clue_api.brand_knowledge_context import (
     PinnedDocument,
     compile_brand_knowledge_index_card,
     confirmed_icp_for_project,
-    knowledge_seed_files,
     load_or_create_knowledge_pin,
     read_pinned_documents,
 )
@@ -115,21 +115,19 @@ from clue_api.design_leg_wiring import (
 )
 from clue_api.frontend_read import latest_project_run_context
 from clue_api.project_context_files import (
-    PROJECT_FILES_INDEX_CARD_MEDIA_TYPE,
+    PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
     CompiledProjectFile,
-    PinnedProjectFile,
-    compile_project_files_index_card,
     load_or_create_project_files_pin,
-    project_seed_files,
     read_pinned_project_files,
 )
-from clue_api.project_library import ensure_project_library
-from clue_api.project_status import (
-    current_project_documents,
-    load_project_decisions,
-    load_project_status_facts,
-    render_decisions_markdown,
-    render_status_markdown,
+from clue_api.project_library import (
+    LIBRARY_INDEX_PATH,
+    ProjectLibrarySnapshot,
+    compile_project_library,
+    ensure_project_library,
+    installed_project_library_digest,
+    materialize_pinned_project_library,
+    pinned_library_digest,
 )
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
@@ -608,72 +606,36 @@ class ProjectConversationTurnRunner:
                 documents=documents,
             )
             mounts = MountRequest(brand=(scope.brand_id, brand_version))
-        # The per-thread seeds stay until the profile grants the ``brand`` prefix and the model is
-        # told to read the library instead; until then both surfaces carry the same documents.
-        input_seeds = knowledge_seed_files(
-            documents,
-            pinned_document_id=None if icp_pin is None else icp_pin.document_id,
-        )
-        # The project's own compiled files (spec §4.1): status.md and decisions.md, pinned for
-        # this turn exactly as the brand documents above are. The project moves while a turn runs
-        # — a discovery run finishes, a decision is recorded — so a retry must seed the bytes the
-        # first attempt pinned, never a freshly compiled "current" state.
-        project_files: tuple[PinnedProjectFile, ...] = ()
+        # The project's own state (spec §4.1): status.md, decisions.md, the artifact index and
+        # every document this project authored, compiled once beside the threads and mounted
+        # read-only at ``project/``. The project moves while a turn runs — a discovery run
+        # finishes, a decision is recorded, another thread's write refreshes the tree — so the
+        # generation this turn composes against is recorded in its insert-once pin, and a later
+        # attempt reads the pinned set rather than whatever is installed by then.
+        project_library_index: bytes | None = None
+        #: Set when this turn built a tree of its own; removed in the ``finally`` below.
+        pinned_tree_name: str | None = None
         if self._storage is not None:
             # Bound once here so the compiler below closes over a backend, not over an attribute
             # whose declared type still admits ``None``.
             storage = self._storage
+            compiled: ProjectLibrarySnapshot | None = None
             async with self._conn_factory() as conn:
 
-                async def compile_project_files() -> list[CompiledProjectFile]:
-                    facts = await load_project_status_facts(
-                        conn, workspace_id=workspace_id, project_id=scope.project_id
-                    )
-                    decisions = await load_project_decisions(
+                async def compile_library() -> Sequence[CompiledProjectFile]:
+                    # Called at most once per turn, and only on the attempt that wins the pin.
+                    # The whole generation is compiled here — the pin records the library's own
+                    # files, ``index.json`` included — and the same snapshot installs the tree
+                    # below, so one turn pays for one compile.
+                    nonlocal compiled
+                    compiled = await compile_project_library(
                         conn,
+                        storage,
                         self._engine.artifacts,
                         workspace_id=workspace_id,
                         project_id=scope.project_id,
                     )
-                    status_md = render_status_markdown(facts).encode()
-                    decisions_md = render_decisions_markdown(decisions).encode()
-                    # Both summaries are literal: these files are section-structured, so their
-                    # first prose line is one section's content ("Not confirmed.") and would tell
-                    # the model something false about the whole file. The index exists to say
-                    # what a file is *for*, so the compiler writes that sentence itself.
-                    return [
-                        CompiledProjectFile(
-                            path="status.md",
-                            kind="project-status",
-                            body=status_md,
-                            version=None,
-                            status="compiled",
-                            summary=(
-                                "ICP, products, plan, accounts, discovery and research, "
-                                "as of this turn."
-                            ),
-                        ),
-                        CompiledProjectFile(
-                            path="decisions.md",
-                            kind="project-decisions",
-                            body=decisions_md,
-                            version=None,
-                            status="compiled",
-                            summary="What the human told this project, in their words.",
-                        ),
-                        # …and the documents this project authored for itself. They are not brand
-                        # knowledge — the brand's seeds skip a project-scoped row deliberately —
-                        # so this is the one path that puts them on disk, in the same folder and
-                        # under the same pin as the two compiled files. Their paths are
-                        # folder-qualified, so they cannot collide with ``status.md`` or
-                        # ``decisions.md``; the pin's duplicate-path refusal stays the guard.
-                        *await current_project_documents(
-                            conn,
-                            storage,
-                            workspace_id=workspace_id,
-                            project_id=scope.project_id,
-                        ),
-                    ]
+                    return compiled.files
 
                 project_pin, project_pin_created = await load_or_create_project_files_pin(
                     conn,
@@ -681,42 +643,67 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     turn_id=turn_id,
                     project_id=scope.project_id,
-                    compile=compile_project_files,
+                    compile=compile_library,
                 )
                 project_files = await read_pinned_project_files(
                     conn, self._storage, pin=project_pin
                 )
-            log.info(
-                "agent_turn.project_files_composed",
-                turn_id=str(turn_id),
-                project_id=scope.project_id,
-                file_count=len(project_files),
-                pin_created=project_pin_created,
+                if project_pin_created and compiled is not None:
+                    # This attempt compiled the generation it pinned: install that exact snapshot,
+                    # skipping a second identical compile inside ``ensure``.
+                    library = await ensure_project_library(
+                        conn,
+                        storage,
+                        self._engine.artifacts,
+                        self._engine.components.workspaces,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        snapshot=compiled,
+                    )
+                    library_digest: str | None = library.digest
+                else:
+                    library_digest = None
+            project_library_index = next(
+                (file.body for file in project_files if file.ref.path == LIBRARY_INDEX_PATH),
+                None,
             )
-            # …and the same state compiled once beside the threads and mounted read-only at
-            # ``project/`` for every thread of this project. Unlike the seeds above it is not
-            # per-turn: a turn whose project has not moved finds the tree already in place and
-            # writes nothing. The seeds stay until the profile reads the library instead, so both
-            # surfaces carry the project's state for now.
-            async with self._conn_factory() as conn:
-                library = await ensure_project_library(
-                    conn,
-                    storage,
-                    self._engine.artifacts,
+            if not project_pin_created:
+                # A later attempt of this turn. The live library is shared and is refreshed
+                # whenever the project moves, so it may no longer be the tree this turn pinned;
+                # when it is not, the pinned generation is rebuilt as a tree of this turn's own
+                # and mounted instead, so the model re-reads the files its receipt names.
+                library_digest = pinned_library_digest(project_files)
+                installed = await installed_project_library_digest(
                     self._engine.components.workspaces,
                     workspace_id=workspace_id,
                     project_id=scope.project_id,
                 )
+                if library_digest is not None and library_digest != installed:
+                    pinned_tree_name = f"pinned-{turn_id.hex[:12]}"
+                    await materialize_pinned_project_library(
+                        self._engine.components.workspaces,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        name=pinned_tree_name,
+                        files=project_files,
+                        digest=library_digest,
+                    )
+                elif library_digest is None:
+                    # A pin with no manifest — written before the library existed. There is
+                    # nothing to replay from, so the live tree is the honest answer.
+                    library_digest = installed
             mounts = replace(mounts, project_library=True)
+            if pinned_tree_name is not None:
+                mounts = replace(mounts, project_library_name=pinned_tree_name)
             log.info(
                 "agent_turn.project_library_ready",
                 turn_id=str(turn_id),
                 project_id=scope.project_id,
-                library_sha256=library.digest,
-                file_count=len(library.index.files),
-                artifacts=library.index.artifacts,
+                library_sha256=library_digest,
+                file_count=len(project_files),
+                pin_created=project_pin_created,
+                replayed_from_pin=pinned_tree_name is not None,
             )
-        input_seeds = (*input_seeds, *project_seed_files(project_files))
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -781,7 +768,7 @@ class ProjectConversationTurnRunner:
                 documents=documents,
                 confirmed_icp=confirmed_icp,
                 product_set=product_set,
-                project_files=project_files,
+                project_library_index=project_library_index,
                 focus_refs=submission_focus_refs,
             )
             card_ref = await self._artifact(
@@ -892,8 +879,8 @@ class ProjectConversationTurnRunner:
             self._observe_context_card(
                 submission=submission,
                 scope=scope,
-                observation=observations.get("project_files_index"),
-                card_kind="project_files_index",
+                observation=observations.get("project_library_index"),
+                card_kind="project_library_index",
                 schema_version="1",
             )
             result = await self._execute_watched(
@@ -904,7 +891,6 @@ class ProjectConversationTurnRunner:
                     submitted_by_user_id=submission.submitted_by_user_id,
                     submitted_via_membership_id=submission.submitted_via_membership_id,
                     stream=stream,
-                    input_seeds=input_seeds,
                 ),
                 submission=submission,
                 turn_id=request.turn_id,
@@ -915,6 +901,13 @@ class ProjectConversationTurnRunner:
             return result
         finally:
             lease.release()
+            if pinned_tree_name is not None:
+                # What this turn wrote, this turn removes: the replay tree exists only for the
+                # length of the attempt that needed it, and the project's shared library — which
+                # ``remove_project_tree`` refuses to touch — is untouched either way.
+                self._engine.components.workspaces.remove_project_tree(
+                    workspace_id, scope.project_id, pinned_tree_name
+                )
 
     async def _compose_project_context(
         self,
@@ -924,20 +917,22 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = (),
         confirmed_icp: ConfirmedIcpRef | None = None,
         product_set: ProjectProductSet | None = None,
-        project_files: tuple[PinnedProjectFile, ...] = (),
+        project_library_index: bytes | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
         """Compile and persist the bounded index of this turn's pinned brand knowledge.
 
         Ruling D5: the Head of ABM does not open on four compiled cards any more — it opens on an
         *index* of the brand's own knowledge documents and reads the files it needs by path from
-        ``inputs/brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
+        ``brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
         froze, so this method compiles nothing from mutable "current" state; a brand with no
         servable document yet composes honestly nothing.
 
-        The project's own compiled files (spec §4.1) are indexed the same way, from the same kind
-        of pin: ``project_files`` are the bytes this turn's project-files pin froze, and the card
-        is an index over them — the files themselves are read from ``inputs/project/``.
+        The project's own state is indexed the same way, from the same kind of pin — but its card
+        is not compiled here at all: it is the *library's own manifest*, as this turn's pin froze
+        it (``project_library_index``). The tree ships its manifest, the pin records it, and the
+        opening context serves those exact bytes, so the card, the receipt and the files the model
+        opens at ``project/`` cannot describe three different generations.
         """
 
         artifacts: list[ProjectContextArtifact] = []
@@ -981,28 +976,24 @@ class ProjectConversationTurnRunner:
                 )
             )
 
-        if project_files:
-            project_card = compile_project_files_index_card(
-                project_id=scope.project_id,
-                files=project_files,
-            )
+        if project_library_index is not None:
             project_ref = await self._artifact(
                 submission,
                 scope,
-                PROJECT_FILES_INDEX_CARD_MEDIA_TYPE,
-                project_card.model_dump(mode="json", exclude_none=False),
+                PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
+                json.loads(project_library_index),
             )
-            if project_ref.sha256 != project_card.content_sha256().removeprefix("sha256:"):
+            if project_ref.sha256 != hashlib.sha256(project_library_index).hexdigest():
                 raise RuntimeError(
-                    "persisted project-files index differs from its compiled content hash"
+                    "persisted project-library index differs from the pinned manifest"
                 )
             artifacts.append(
                 ProjectContextArtifact(
-                    name="project_files_index",
+                    name="project_library_index",
                     artifact_ref=project_ref,
                     domain_ref=DomainObjectRef(
                         workspace_id=submission.workspace_id,
-                        object_type="project_files_index",
+                        object_type="project_library_index",
                         object_id=scope.project_id,
                         version=None,
                     ),
@@ -1010,8 +1001,8 @@ class ProjectConversationTurnRunner:
             )
             observations.append(
                 _ContextCardObservation(
-                    card_kind=project_card.card_kind,
-                    schema_version=project_card.schema_version,
+                    card_kind="project_library_index",
+                    schema_version="1",
                     content_sha256=project_ref.sha256,
                     omitted_count=0,
                 )

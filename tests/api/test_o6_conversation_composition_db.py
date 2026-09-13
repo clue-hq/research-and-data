@@ -7,10 +7,10 @@ and from the lease's own bytes, never from an in-memory convenience:
 
 * the turn writes exactly one ``agent_turn_knowledge_pin`` row naming the brand's current documents;
 * L3 carries exactly two composed project artifacts — ``brand_knowledge_index`` and
-  ``project_files_index`` — and none of the four cards the old production envelope compiled;
-* the pinned documents are on the lease, read-only, under ``inputs/brand/knowledge/`` at the digest
-  the pin recorded, and the turn's compiled project files are beside them under
-  ``inputs/project/`` at the digest their own pin recorded;
+  ``project_library_index`` — and none of the four cards the old production envelope compiled;
+* the brand's documents and the project's state are **mounted**, read-only, at ``brand/knowledge/``
+  and ``project/`` — nothing is copied into the thread, so ``inputs/`` holds only this turn's own
+  message and its current-context references;
 * publishing a newer document after the pin cannot change what a retry of that turn seeds;
 * the resource manifest the turn committed to discloses the new lane's surface and not the old
   one's — no ``account-deep-steering`` skill and none of the five old-research-lane tools, and the
@@ -55,9 +55,8 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.brand_knowledge_context import (
-    INPUT_PREFIX,
+    BRAND_LIBRARY_PREFIX,
     BrandKnowledgeIndexCard,
-    knowledge_seed_files,
     load_or_create_knowledge_pin,
     read_pinned_documents,
 )
@@ -68,10 +67,12 @@ from clue_api.execution_wiring import (
     build_tool_invoker,
 )
 from clue_api.project_context_files import (
+    PROJECT_LIBRARY_PREFIX,
     CompiledProjectFile,
     load_or_create_project_files_pin,
     read_pinned_project_files,
 )
+from clue_api.project_library import compile_project_library, ensure_project_library
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -182,12 +183,20 @@ class _RecordingWorkspaces:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
         self.leases: list[Any] = []
+        self.mounts: list[Any] = []
+        #: Called with the turn's own lease while it is still open. The mounted libraries are
+        #: only readable *during* the turn — a replay's pinned tree is removed when the turn
+        #: ends — so a test that wants to see what the model saw has to look from here.
+        self.on_acquire: Any = None
         self._last: dict[str, Any] = {}
 
     def acquire(self, **kwargs: Any) -> Any:
         lease = self._inner.acquire(**kwargs)
         self._last = dict(kwargs)
         self.leases.append(lease)
+        self.mounts.append(kwargs.get("mounts"))
+        if self.on_acquire is not None:
+            self.on_acquire(lease)
         return lease
 
     def reopen(self) -> Any:
@@ -629,34 +638,52 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "context/project/brand_knowledge_index.json",
                     "context/project/budget.json",
                     "context/project/project_card.json",
-                    "context/project/project_files_index.json",
+                    "context/project/project_library_index.json",
                 )
 
-                # 3. the pinned documents are on the lease, read-only, at the pinned digest.
-                # The turn released its lease when it ended; the thread workspace itself
-                # persists, so these assertions read it back through a fresh lease.
+                # 3. the brand's documents are MOUNTED read-only at ``brand/knowledge/`` — the
+                # same bytes the pin froze, rendered once beside the threads rather than copied
+                # into this one. The turn released its lease when it ended; the thread workspace
+                # and the libraries beside it persist, so these assertions read them back through
+                # a fresh lease over the same mounts.
                 assert len(workspaces.leases) == 1
                 lease = workspaces.reopen()
-                entry = lease.backend.stat_entry_sync(f"{INPUT_PREFIX}company/overview.md")
-                assert entry.sha256 == overview_sha
-                assert entry.read_only is True
-                for path in ("audience/icp-gi-groups.md", "product/aura.md"):
-                    assert lease.backend.stat_entry_sync(f"{INPUT_PREFIX}{path}").read_only is True
-
-                # 3b. the compiled project files are seeded read-only beside them, and the opening
-                # index names exactly the two paths the model can open.
+                mounted = {
+                    entry.path: entry
+                    for entry in lease.backend.list_entries_sync(BRAND_LIBRARY_PREFIX.rstrip("/"))
+                }
+                assert mounted[f"{BRAND_LIBRARY_PREFIX}company/overview.md"].sha256 == overview_sha
                 for path in (
-                    "inputs/project/status.md",
-                    "inputs/project/decisions.md",
-                    # the project's own document, in the project's folder, beside the compiled two
-                    "inputs/project/audience/icp-gi-dac.md",
+                    "company/overview.md",
+                    "audience/icp-gi-groups.md",
+                    "product/aura.md",
                 ):
-                    assert lease.backend.stat_entry_sync(path).read_only is True
+                    assert mounted[f"{BRAND_LIBRARY_PREFIX}{path}"].read_only is True
+
+                # 3b. the project's own state is mounted beside it at ``project/`` — the compiled
+                # files, the project's own documents and the library's two indexes.
+                project_mounted = {
+                    entry.path
+                    for entry in lease.backend.list_entries_sync(PROJECT_LIBRARY_PREFIX.rstrip("/"))
+                }
+                assert project_mounted == {
+                    f"{PROJECT_LIBRARY_PREFIX}index.json",
+                    f"{PROJECT_LIBRARY_PREFIX}status.md",
+                    f"{PROJECT_LIBRARY_PREFIX}decisions.md",
+                    f"{PROJECT_LIBRARY_PREFIX}artifacts/index.json",
+                    # the project's own document, in the project's folder, beside the compiled two
+                    f"{PROJECT_LIBRARY_PREFIX}audience/icp-gi-dac.md",
+                }
+                # 3c. …and nothing was seeded into the thread for either of them. ``inputs/`` is
+                # this turn's own message and its current-context references, and nothing else.
+                assert [entry.path for entry in lease.backend.list_entries_sync("inputs")] == [
+                    "inputs/user-message.txt"
+                ]
                 assert (
-                    lease.backend.read_text_sync("inputs/project/audience/icp-gi-dac.md")
+                    lease.backend.read_text_sync(f"{PROJECT_LIBRARY_PREFIX}audience/icp-gi-dac.md")
                     == PROJECT_ICP
                 )
-                status_body = lease.backend.read_text_sync("inputs/project/status.md")
+                status_body = lease.backend.read_text_sync(f"{PROJECT_LIBRARY_PREFIX}status.md")
                 # The title names this project, so the model never has to infer which project it
                 # is reading — and two fresh projects in one workspace no longer compile
                 # byte-identical status files onto one content-addressed artifact.
@@ -666,18 +693,25 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert "## Confirmed ICP" in status_body
                 # …and the same document is listed in the file, at the path it was seeded at.
                 assert (
-                    "- `inputs/project/audience/icp-gi-dac.md` — version 1, proposed, updated "
+                    "- `project/audience/icp-gi-dac.md` — version 1, proposed, updated "
                     in status_body
                 )
+                # The opening card is the library's own manifest, pinned for this turn: the model
+                # opens it at the canonical context path and every line names a mounted file.
                 project_index = json.loads(
-                    lease.backend.read_text_sync("context/project/project_files_index.json")
+                    lease.backend.read_text_sync("context/project/project_library_index.json")
                 )
-                assert project_index["card_kind"] == "project_files_index"
+                assert project_index["card_kind"] == "project_library_index"
                 assert sorted(item["workspace_path"] for item in project_index["files"]) == [
-                    "inputs/project/audience/icp-gi-dac.md",
-                    "inputs/project/decisions.md",
-                    "inputs/project/status.md",
+                    f"{PROJECT_LIBRARY_PREFIX}artifacts/index.json",
+                    f"{PROJECT_LIBRARY_PREFIX}audience/icp-gi-dac.md",
+                    f"{PROJECT_LIBRARY_PREFIX}decisions.md",
+                    f"{PROJECT_LIBRARY_PREFIX}status.md",
                 ]
+                # …and it is the very card the mounted tree carries, byte for byte.
+                assert project_index == json.loads(
+                    lease.backend.read_text_sync(f"{PROJECT_LIBRARY_PREFIX}index.json")
+                )
                 # A document carries its own version and status, unlike a compiled file, and its
                 # summary is derived from its prose rather than written by a compiler.
                 authored = next(
@@ -707,6 +741,7 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                         "ICP, products, plan, accounts, discovery and research, as of this turn."
                     ),
                     "decisions.md": "What the human told this project, in their words.",
+                    "artifacts/index.json": ("Design artifacts of this project, by reference."),
                 }
                 files_digest = (
                     await conn.execute(
@@ -741,7 +776,9 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "audience/icp-gi-groups.md",
                     "product/aura.md",
                 ]
-                assert card.documents[0].workspace_path == f"{INPUT_PREFIX}company/overview.md"
+                assert (
+                    card.documents[0].workspace_path == f"{BRAND_LIBRARY_PREFIX}company/overview.md"
+                )
                 assert card.confirmed_icp is None
                 assert card.product_set is None
                 assert card.omitted_count == 0
@@ -770,7 +807,10 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     }
                 )
 
-                # 6. a document published after the pin cannot change what a retry seeds.
+                # 6. a document published after the pin cannot change what a retry reads. The
+                # brand library is keyed by the pinned knowledge version, so the newer document
+                # is simply not in the version this turn mounted — and this turn's pin still
+                # names the three documents that are.
                 await _seed_document(
                     conn,
                     artifacts=artifacts,
@@ -791,18 +831,25 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 )
                 assert retry_created is False
                 assert retry_pin.documents_sha256 == pin_rows[0]["documents_sha256"]
-                retry_seeds = knowledge_seed_files(
-                    await read_pinned_documents(conn, storage, pin=retry_pin)
-                )
-                assert [seed.path for seed in retry_seeds] == [
-                    f"{INPUT_PREFIX}audience/icp-gi-groups.md",
-                    f"{INPUT_PREFIX}company/overview.md",
-                    f"{INPUT_PREFIX}product/aura.md",
+                assert sorted(
+                    document.ref.path
+                    for document in await read_pinned_documents(conn, storage, pin=retry_pin)
+                ) == [
+                    "audience/icp-gi-groups.md",
+                    "company/overview.md",
+                    "product/aura.md",
                 ]
+                # (``mounted`` was listed under ``brand/knowledge`` above; the tree's own
+                # ``index.json`` sits at the mount root, one level up.)
+                assert set(mounted) == {
+                    f"{BRAND_LIBRARY_PREFIX}audience/icp-gi-groups.md",
+                    f"{BRAND_LIBRARY_PREFIX}company/overview.md",
+                    f"{BRAND_LIBRARY_PREFIX}product/aura.md",
+                }
 
                 # 7. the same property for the project's own files, which are compiled from
                 # rows rather than published: adding an account changes what a fresh compile
-                # would say, and a retry must still seed the bytes the first attempt pinned.
+                # would say, and a retry must still read the bytes the first attempt pinned.
                 account_id = await insert_account_entity(
                     conn,
                     canonical_name="Goodman Campbell",
@@ -832,15 +879,175 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert retry_project_pin.files_sha256 == str(files_digest)
                 retry_files = await read_pinned_project_files(conn, storage, pin=retry_project_pin)
                 assert {file.ref.path: file.body for file in retry_files} == {
+                    "index.json": lease.backend.read_text_sync(
+                        f"{PROJECT_LIBRARY_PREFIX}index.json"
+                    ).encode(),
                     "status.md": status_body.encode(),
                     "decisions.md": lease.backend.read_text_sync(
-                        "inputs/project/decisions.md"
+                        f"{PROJECT_LIBRARY_PREFIX}decisions.md"
+                    ).encode(),
+                    "artifacts/index.json": lease.backend.read_text_sync(
+                        f"{PROJECT_LIBRARY_PREFIX}artifacts/index.json"
                     ).encode(),
                     "audience/icp-gi-dac.md": PROJECT_ICP.encode(),
                 }
                 assert "Accounts in this project: 0" in status_body
             finally:
                 workspaces.close()
+
+    run_async(scenario())
+
+
+def test_a_retry_mounts_the_pinned_library_after_the_live_one_moved(tmp_path: Path) -> None:
+    """A second attempt of one turn reads the project the first attempt pinned, not today's.
+
+    The project library is shared and it is refreshed whenever the project moves, so between two
+    attempts of one turn it can legitimately become a different tree. The pin is what makes that
+    safe: the first attempt recorded the library's files (``index.json`` included) in
+    ``agent_turn_project_files``, so the retry compares the pinned ``library_sha256`` to the live
+    tree's, finds they differ, and materializes the pinned set as its own tree beside the library
+    for the length of that turn.
+
+    The first attempt is simulated exactly as a crashed one leaves the world — its pin written and
+    its generation installed — because a *committed* turn replays its answer instead of composing
+    a second time, and it is composition this test is about. The pinned tree is only readable
+    while the turn holds it, so the assertion is taken from the turn's own lease.
+    """
+
+    async def scenario() -> None:
+        # LangGraph installs a concurrent index; do it before the rollback fixture's transaction.
+        async with postgres_agent_checkpointer(ExecutionId(uuid4())):
+            pass
+        async with rollback_conn() as conn:
+            workspace_id = f"o6t7-{uuid4().hex[:8]}"
+            project = await seed_project(conn, workspace_id, name="O6 T7 replay project")
+            stack = await _build_stack(conn, tmp_path=tmp_path)
+            storage = stack.storage
+            artifacts = stack.artifacts
+            try:
+                await _seed_document(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path="company/overview.md",
+                    kind="company-overview",
+                    version=1,
+                    status="ready",
+                    body=OVERVIEW,
+                )
+                submission = await _capture_submission(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    label="replay",
+                )
+
+                # 1. the first attempt: it compiled the library, pinned those files, and
+                # installed that generation — and then died before it could answer.
+                pinned_snapshot = await compile_project_library(
+                    conn,
+                    storage,
+                    artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                )
+
+                async def _first() -> list[CompiledProjectFile]:
+                    return list(pinned_snapshot.files)
+
+                pin, created = await load_or_create_project_files_pin(
+                    conn,
+                    artifacts,
+                    workspace_id=workspace_id,
+                    turn_id=submission.turn_id,
+                    project_id=project.project_id,
+                    compile=_first,
+                )
+                assert created is True
+                assert sorted(ref.path for ref in pin.files) == [
+                    "artifacts/index.json",
+                    "decisions.md",
+                    "index.json",
+                    "status.md",
+                ]
+                await ensure_project_library(
+                    conn,
+                    storage,
+                    artifacts,
+                    stack.workspaces,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    snapshot=pinned_snapshot,
+                )
+
+                # 2. …and between the attempts the project moved and the library was refreshed,
+                # so the live tree is no longer the tree the turn pinned.
+                account_id = await insert_account_entity(
+                    conn,
+                    canonical_name="Goodman Campbell",
+                    primary_domain="goodman.example",
+                    workspace_id=workspace_id,
+                )
+                await ensure_project_account(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    account_entity_id=account_id,
+                    added_via="manual",
+                )
+                live = await ensure_project_library(
+                    conn,
+                    storage,
+                    artifacts,
+                    stack.workspaces,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                )
+                assert live.digest != pinned_snapshot.digest
+                project_root = (
+                    tmp_path / "agent-workspaces" / workspace_id / "projects" / project.project_id
+                )
+                live_status = (project_root / "library" / "status.md").read_text()
+                assert "Accounts in this project: 1" in live_status
+
+                # 3. the retry. What the model is served is read from the turn's own lease,
+                # while it is open: the pinned tree does not outlive the turn.
+                observed: list[str] = []
+                stack.workspaces.on_acquire = lambda lease: observed.append(
+                    lease.backend.read_text_sync(f"{PROJECT_LIBRARY_PREFIX}status.md")
+                )
+                result = await _run_turn(
+                    conn,
+                    stack,
+                    workspace_id=workspace_id,
+                    submission=submission,
+                    worker_id="o6t7-replay-worker",
+                )
+                assert result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
+
+                pinned_status = next(
+                    file.body for file in pinned_snapshot.files if file.path == "status.md"
+                ).decode()
+                assert observed == [pinned_status]
+                assert "Accounts in this project: 0" in pinned_status
+                assert pinned_status != live_status
+                # …served from a tree of this turn's own, named for the turn.
+                assert stack.workspaces.mounts[-1].project_library_name == (
+                    f"pinned-{submission.turn_id.hex[:12]}"
+                )
+                # 4. and nothing of that turn outlives it: the per-turn tree is gone and the
+                # project's shared library is still the live generation. (``library.old-<pid>``
+                # is LibraryTree's own superseded generation, kept for its readers until the
+                # next replace — not this turn's to remove.)
+                remaining = sorted(item.name for item in project_root.iterdir())
+                assert [name for name in remaining if name.startswith("pinned-")] == []
+                assert {"library", "threads"} <= set(remaining)
+                assert (project_root / "library" / "status.md").read_text() == live_status
+            finally:
+                stack.workspaces.close()
 
     run_async(scenario())
 

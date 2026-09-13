@@ -567,9 +567,7 @@ def test_post_recon_scope_composes_only_the_brand_knowledge_index(
                 "company/overview.md",
                 "audience/icp-gi-groups.md",
             ]
-            assert (
-                card_a.documents[0].workspace_path == "inputs/brand/knowledge/company/overview.md"
-            )
+            assert card_a.documents[0].workspace_path == "brand/knowledge/company/overview.md"
             # The ICP was confirmed for project A, so only project A's index carries it.
             assert card_a.confirmed_icp is not None
             assert card_a.confirmed_icp.icp_key == "gi-groups"

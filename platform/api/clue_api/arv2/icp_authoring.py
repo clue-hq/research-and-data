@@ -87,11 +87,12 @@ _SERVABLE_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
 #: project's pinned ICP, and a proposal must never retire it (the rule re-synthesis already holds).
 _RETIRABLE_STATUSES: tuple[str, ...] = ("ready", "proposed")
 
-#: Where each scope's documents materialize in the agent's workspace. Both prefixes are restated
-#: here for the Global Constraint 7 reason above; they are
-#: ``brand_knowledge_context.INPUT_PREFIX`` and ``project_context_files.PROJECT_INPUT_PREFIX``.
-_BRAND_INPUT_PREFIX = "inputs/brand/knowledge/"
-_PROJECT_INPUT_PREFIX = "inputs/project/"
+#: Where each scope's documents are readable in the agent's workspace — in the mounted brand and
+#: project libraries. Both prefixes are restated here for the Global Constraint 7 reason above;
+#: they are ``brand_knowledge_context.INPUT_PREFIX`` and
+#: ``project_context_files.PROJECT_INPUT_PREFIX``.
+_BRAND_INPUT_PREFIX = "brand/knowledge/"
+_PROJECT_INPUT_PREFIX = "project/"
 
 #: Front-matter keys the platform owns. A model that typed any of them is not believed: a draft
 #: cannot confirm itself, scope itself, or claim a lineage. They are removed, then re-stamped

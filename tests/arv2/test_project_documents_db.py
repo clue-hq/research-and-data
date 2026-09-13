@@ -164,7 +164,7 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
 
             assert (written.version, written.replayed) == (1, False)
             assert written.path == PLAN_PATH
-            assert written.workspace_path == PLAN_WORKSPACE_PATH == "inputs/project/plan.md"
+            assert written.workspace_path == PLAN_WORKSPACE_PATH == "project/plan.md"
             assert written.document_id == plan_document_id(
                 turn_id=request.turn_id,
                 expected_version=None,
@@ -257,7 +257,7 @@ def test_a_write_against_a_version_that_is_no_longer_current_is_refused_by_name(
                     )
                 assert excinfo.value.code == "project_document_revision_conflict"
                 assert "version 1" in str(excinfo.value)
-                assert "inputs/project/plan.md" in str(excinfo.value)
+                assert "project/plan.md" in str(excinfo.value)
             # The refusal wrote nothing: the human's version 1 is still the only row.
             assert [row["version"] for row in await _rows_at(conn, workspace_id, PLAN_PATH)] == [1]
 

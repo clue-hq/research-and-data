@@ -1,13 +1,13 @@
 """The project library: one project's settled state, compiled once and refreshed when it moves.
 
-A turn's project seeds compile ``status.md``, ``decisions.md`` and every project document *again*,
-pin them, and copy them into that one thread's workspace — once per turn, per thread. The library
-does it the other way round: the same state is compiled once, beside the threads, at
-``<ws>/projects/<project>/library/``, and every thread of the project mounts that one frozen tree
-read-only at ``project/``. Nothing is copied into a workspace, and the project's state is written
-as many times as it *changes* rather than as many times as it is read.
+The per-turn seeds this replaced compiled ``status.md``, ``decisions.md`` and every project
+document *again*, pinned them, and copied them into that one thread's workspace — once per turn,
+per thread. The library does it the other way round: the same state is compiled once, beside the
+threads, at ``<ws>/projects/<project>/library/``, and every thread of the project mounts that one
+frozen tree read-only at ``project/``. Nothing is copied into a workspace, and the project's state
+is written as many times as it *changes* rather than as many times as it is read.
 
-Four rules make that safe:
+Five rules make that safe:
 
 * **Digest-refreshed, not time-refreshed.** :func:`project_library_digest` hashes the rows the
   library is compiled from — one cheap round trip per source — and the tree records that digest in
@@ -24,6 +24,12 @@ Four rules make that safe:
   content is served by the editor, not by a markdown tree an agent reads as context.
 * **Read-only.** :class:`~clue_agents.library_tree.LibraryTree` installs each generation
   atomically as 0400 files in 0500 directories, and the mount is opened ``read_only``.
+* **A turn reads the generation it pinned.** Because the tree is shared and refreshed whenever the
+  project moves, the live library can legitimately become a *different* tree between two attempts
+  of one turn. So a turn's ``agent_turn_project_files`` pin records this generation's files —
+  ``index.json`` among them — and a later attempt whose pinned digest no longer matches the
+  installed one rebuilds that exact generation as a tree of its own
+  (:func:`materialize_pinned_project_library`), which the wiring removes when the turn ends.
 
 Postgres stays the truth. This tree is a *rendering* of those rows: nothing server-side reads it
 to decide anything, and deleting it costs only the rewrite.
@@ -33,9 +39,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
@@ -57,6 +64,7 @@ from clue_api.design_leg_wiring import project_design_documents
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_PREFIX,
     CompiledProjectFile,
+    PinnedProjectFile,
     ProjectFilesPinConflict,
     ProjectLibraryIndexCard,
     canonical_json,
@@ -76,15 +84,21 @@ from clue_storage import StorageBackend, read_verified_artifact
 
 __all__ = [
     "ARTIFACT_INDEX_PATH",
+    "LIBRARY_INDEX_PATH",
     "ProjectLibrarySnapshot",
     "compile_project_library",
     "ensure_project_library",
+    "installed_project_library_digest",
+    "materialize_pinned_project_library",
+    "pinned_library_digest",
     "project_library_digest",
 ]
 
 #: The library's own directory below ``<ws>/projects/<project>/``, and the mount's reserved name.
 _LIBRARY_DIR: Final = "library"
-_INDEX_NAME: Final = "index.json"
+#: The tree's own manifest, inside the tree — a file of the generation like any other, so one
+#: turn's pin records it and a later attempt can rebuild the generation from the pin alone.
+LIBRARY_INDEX_PATH: Final = "index.json"
 #: Where the project's design artifacts are named, by reference.
 ARTIFACT_INDEX_PATH: Final = "artifacts/index.json"
 #: One materializer at a time in this process, for the reason the brand library takes the same
@@ -97,6 +111,7 @@ _MATERIALIZE_LOCK: Final = threading.Lock()
 _STATUS_SUMMARY: Final = "ICP, products, plan, accounts, discovery and research, as of this turn."
 _DECISIONS_SUMMARY: Final = "What the human told this project, in their words."
 _ARTIFACTS_SUMMARY: Final = "Design artifacts of this project, by reference."
+_INDEX_SUMMARY: Final = "Index of this project's library."
 
 
 # --- the refresh digest ----------------------------------------------------------------------
@@ -439,7 +454,7 @@ async def compile_project_library(
     artifact_index, artifact_count = await _artifact_index(
         conn, workspace_id=workspace_id, project_id=project_id
     )
-    files = (
+    served = (
         CompiledProjectFile(
             path="status.md",
             kind="project-status",
@@ -464,14 +479,30 @@ async def compile_project_library(
         artifact_index,
         *(item.file for item in documents),
     )
+    # The manifest describes the files it ships *with*, so it is compiled over them and then
+    # joins them as a file of its own. It cannot be one of its own entries — its entry would have
+    # to carry the digest of bytes that do not exist until the entry is written — so it is added
+    # after, and `_library_files` installs the whole set unchanged. Being a file is what lets one
+    # turn's pin record the manifest and a later attempt rebuild the tree from the pin alone.
+    index = compile_project_library_index_card(
+        project_id=project_id,
+        files=served,
+        library_sha256=digest,
+        artifacts=artifact_count,
+    )
     return ProjectLibrarySnapshot(
-        files=files,
-        index=compile_project_library_index_card(
-            project_id=project_id,
-            files=files,
-            library_sha256=digest,
-            artifacts=artifact_count,
+        files=(
+            *served,
+            CompiledProjectFile(
+                path=LIBRARY_INDEX_PATH,
+                kind="project-library-index",
+                body=index.canonical_bytes(),
+                version=None,
+                status="compiled",
+                summary=_INDEX_SUMMARY,
+            ),
         ),
+        index=index,
         digest=digest,
     )
 
@@ -487,6 +518,7 @@ async def ensure_project_library(
     *,
     workspace_id: str,
     project_id: str,
+    snapshot: ProjectLibrarySnapshot | None = None,
 ) -> ProjectLibrarySnapshot:
     """Materialize this project's library if the rows behind it have moved, and describe it.
 
@@ -502,36 +534,56 @@ async def ensure_project_library(
     is not racing a document write it is rendering, and a process-local lock, because
     ``LibraryTree.replace`` reclaims residue by name prefix. The filesystem work runs in a worker
     thread, so the turn's event loop is never held while a tree is written.
+
+    ``snapshot`` is a generation the caller has **already** compiled — the production turn compiles
+    one to pin it, and paying for a second identical compile here would double the one cost this
+    module exists to remove. Given it, this function only compares its digest to the installed one
+    and installs it if they differ; the digest is the caller's, taken before its own compile, so
+    the "a project that moved mid-compile leaves a tree newer than its digest" property below is
+    the caller's too.
     """
 
-    digest = await project_library_digest(conn, workspace_id=workspace_id, project_id=project_id)
+    digest = (
+        snapshot.digest
+        if snapshot is not None
+        else await project_library_digest(conn, workspace_id=workspace_id, project_id=project_id)
+    )
     installed = await asyncio.to_thread(
         _read_installed_index, workspaces, workspace_id=workspace_id, project_id=project_id
     )
     if installed is not None and installed.library_sha256 == digest:
-        return ProjectLibrarySnapshot(files=(), index=installed, digest=digest)
+        return (
+            snapshot
+            if snapshot is not None
+            else ProjectLibrarySnapshot(files=(), index=installed, digest=digest)
+        )
 
-    snapshot = await compile_project_library(
-        conn, storage, artifacts, workspace_id=workspace_id, project_id=project_id
-    )
+    if snapshot is None:
+        snapshot = await compile_project_library(
+            conn, storage, artifacts, workspace_id=workspace_id, project_id=project_id
+        )
     await lock_project(conn, workspace_id=workspace_id, project_id=project_id)
     await asyncio.to_thread(
-        _materialize,
+        _materialize_generation,
         workspaces,
         workspace_id=workspace_id,
         project_id=project_id,
-        snapshot=snapshot,
+        name=_LIBRARY_DIR,
+        files=_library_files(snapshot),
+        digest=snapshot.digest,
     )
     return snapshot
 
 
 def _library_files(snapshot: ProjectLibrarySnapshot) -> tuple[LibraryFile, ...]:
-    """The generation as the tree takes it: the manifest, then every file it describes."""
+    """The generation as the tree takes it — the manifest is one of the files.
 
-    return (
-        LibraryFile(path=_INDEX_NAME, content=snapshot.index.canonical_bytes()),
-        *(LibraryFile(path=file.path, content=file.body) for file in snapshot.files),
-    )
+    ``LibraryTree.replace`` refuses a generation without ``index.json`` or whose index records a
+    different digest, so this mapping is the whole contract: what the snapshot carries is what the
+    tree holds, and a turn that later rebuilds the tree from its pin installs the same set.
+    """
+
+    return tuple(LibraryFile(path=file.path, content=file.body) for file in snapshot.files)
 
 
 def _read_installed_index(
@@ -561,39 +613,135 @@ def _read_installed_index(
         return None
 
 
-def _materialize(
-    workspaces: AgentWorkspaceFactory,
-    *,
-    workspace_id: str,
-    project_id: str,
-    snapshot: ProjectLibrarySnapshot,
-) -> None:
-    """Install one generation under ``<ws>/projects/<project>/library``, atomically."""
-
-    with _MATERIALIZE_LOCK:
-        _with_parent_fd(
-            workspaces,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            act=lambda tree: tree.replace(_library_files(snapshot), digest=snapshot.digest),
-        )
-
-
 def _with_parent_fd[T](
     workspaces: AgentWorkspaceFactory,
     *,
     workspace_id: str,
     project_id: str,
     act: Callable[[LibraryTree], T],
+    name: str = _LIBRARY_DIR,
 ) -> T:
-    """Open this project's library parent, act on its tree, and close the descriptor.
+    """Open this project's library parent, act on a tree below it, and close the descriptor.
 
     The descriptor is anchored and is the caller's to close — one place that owns it, rather than
-    a ``try/finally`` at each of the two call sites.
+    a ``try/finally`` at each call site. ``name`` is the shared library for every caller but one:
+    a turn whose pinned generation is no longer the installed one builds its own tree beside it
+    (:func:`materialize_pinned_project_library`).
     """
 
     parent_fd = workspaces.project_parent_fd(workspace_id, project_id)
     try:
-        return act(LibraryTree(parent_fd=parent_fd, name=_LIBRARY_DIR))
+        return act(LibraryTree(parent_fd=parent_fd, name=name))
     finally:
         os.close(parent_fd)
+
+
+# --- replaying one turn's pinned generation ----------------------------------------------------
+
+
+def pinned_library_digest(files: Sequence[PinnedProjectFile]) -> str | None:
+    """The ``library_sha256`` recorded in a pin's own ``index.json``, or None when it has none.
+
+    This is how a second attempt of one turn asks "is the library still the tree I pinned?": the
+    pin carries the manifest as a file like any other, and the manifest carries the digest of the
+    rows that generation was compiled from. A pin *without* an ``index.json`` is a pin written
+    before the library existed (or by a build that did not record one) — absence, not an error, so
+    the caller falls back to the live tree rather than failing a turn forever over a receipt it
+    cannot use.
+
+    The body is read as plain JSON rather than validated as a
+    :class:`~clue_api.project_context_files.ProjectLibraryIndexCard`: that model forbids extra
+    keys, so a card written by a *newer* build would fail here and fail identically on every later
+    attempt. One key is all this needs.
+    """
+
+    body = next((file.body for file in files if file.ref.path == LIBRARY_INDEX_PATH), None)
+    if body is None:
+        return None
+    try:
+        document = json.loads(body.decode())
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    recorded = document.get("library_sha256")
+    return recorded if isinstance(recorded, str) and recorded else None
+
+
+async def installed_project_library_digest(
+    workspaces: AgentWorkspaceFactory,
+    *,
+    workspace_id: str,
+    project_id: str,
+) -> str | None:
+    """The digest of the generation installed at ``<ws>/projects/<project>/library``, if any.
+
+    None means "there is nothing here I can read as a library" — absent, or carrying a manifest
+    this build does not understand — which is exactly the case where a pinned set must be
+    materialized rather than trusted to be already on disk.
+    """
+
+    installed = await asyncio.to_thread(
+        _read_installed_index, workspaces, workspace_id=workspace_id, project_id=project_id
+    )
+    return None if installed is None else installed.library_sha256
+
+
+async def materialize_pinned_project_library(
+    workspaces: AgentWorkspaceFactory,
+    *,
+    workspace_id: str,
+    project_id: str,
+    name: str,
+    files: Sequence[PinnedProjectFile],
+    digest: str,
+) -> None:
+    """Install one turn's pinned generation as its own tree, beside the project's live library.
+
+    The live library belongs to every thread of the project and is refreshed whenever the project
+    moves, so it is not a turn's to rewrite: a retry whose pinned generation is no longer the
+    installed one gets a tree of its own, named for the turn, and the wiring removes it when the
+    turn ends. Nothing per-turn outlives the turn.
+
+    The bytes are the pinned ones, already verified against the pin by
+    :func:`~clue_api.project_context_files.read_pinned_project_files`, and ``digest`` is the
+    ``library_sha256`` the pinned manifest itself records — so ``LibraryTree.replace``'s check
+    that the generation's index declares the digest it is installed under is a real check here,
+    not a formality: a pin whose files and manifest disagree is refused rather than served.
+    """
+
+    generation = tuple(LibraryFile(path=file.ref.path, content=file.body) for file in files)
+    await asyncio.to_thread(
+        _materialize_generation,
+        workspaces,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        name=name,
+        files=generation,
+        digest=digest,
+    )
+
+
+def _materialize_generation(
+    workspaces: AgentWorkspaceFactory,
+    *,
+    workspace_id: str,
+    project_id: str,
+    name: str,
+    files: Sequence[LibraryFile],
+    digest: str,
+) -> None:
+    """Install one generation under ``<ws>/projects/<project>/<name>``, atomically.
+
+    The one installer, for both trees: the project's shared ``library`` and a turn's own pinned
+    replay tree. They differ by name and by nothing else, so they cannot install differently.
+    """
+
+    with _MATERIALIZE_LOCK:
+        _with_parent_fd(
+            workspaces,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            name=name,
+            act=lambda tree: tree.replace(files, digest=digest),
+        )

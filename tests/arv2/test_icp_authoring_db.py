@@ -142,7 +142,7 @@ def test_a_project_local_variant_is_stored_proposed_with_scope_and_lineage(tmp_p
             assert (first.version, first.status, first.replayed) == (1, "proposed", False)
             assert first.icp_key == "gi-dac"
             assert first.path == "audience/icp-gi-dac.md"
-            assert first.workspace_path == "inputs/project/audience/icp-gi-dac.md"
+            assert first.workspace_path == "project/audience/icp-gi-dac.md"
             assert first.document_id == authored_document_id(
                 turn_id=request.turn_id, scope="project", icp_key="gi-dac"
             )
@@ -201,7 +201,7 @@ def test_a_brand_level_profile_is_stored_unscoped_with_no_lineage(tmp_path: Any)
                 conn, storage, _request(workspace_id, brand_id, project_id, scope="brand")
             )
 
-            assert authored.workspace_path == "inputs/brand/knowledge/audience/icp-gi-dac.md"
+            assert authored.workspace_path == "brand/knowledge/audience/icp-gi-dac.md"
             row = await _row(conn, authored.document_id)
             assert row["project_id"] is None
             assert row["derived_from_document_id"] is None
@@ -493,7 +493,7 @@ def test_a_revision_over_a_pinned_path_is_named_at_its_version_qualified_file(
 
             assert (authored.version, authored.status) == (3, "proposed")
             assert authored.path == "audience/icp-gi.md"
-            assert authored.workspace_path == "inputs/brand/knowledge/audience/icp-gi.v3.md"
+            assert authored.workspace_path == "brand/knowledge/audience/icp-gi.v3.md"
             # The pin still owns the plain name, so nothing this act wrote moved the human's ICP.
             assert (
                 await conn.execute(
@@ -528,6 +528,6 @@ def test_an_unpinned_path_keeps_the_plain_name_in_the_receipt(tmp_path: Any) -> 
                     document_text=DOCUMENT.replace("icp_key: gi-dac", "icp_key: gi"),
                 ),
             )
-            assert authored.workspace_path == "inputs/brand/knowledge/audience/icp-gi.md"
+            assert authored.workspace_path == "brand/knowledge/audience/icp-gi.md"
 
     run_async(scenario())

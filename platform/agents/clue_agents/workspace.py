@@ -170,8 +170,14 @@ class MountRequest:
 
     #: ``(brand_id, knowledge_version)`` → ``<ws>/library/brand/<brand>/<version>``, read-only.
     brand: tuple[str, str] | None = None
-    #: ``<ws>/projects/<project>/library`` → the ``project`` mount, read-only.
+    #: ``<ws>/projects/<project>/<project_library_name>`` → the ``project`` mount, read-only.
     project_library: bool = False
+    #: Which tree below ``<ws>/projects/<project>/`` the ``project`` mount serves. The project's
+    #: shared library for every caller but one: a turn whose pinned generation is no longer the
+    #: installed one materializes that generation as its own tree beside the library and names it
+    #: here, so the mount is the one place the choice is made and the model's paths never move.
+    #: It is a single directory name, never a path — the factory validates it as one segment.
+    project_library_name: str = LIBRARY_DIR
 
 
 _NO_MOUNTS: Final = MountRequest()
@@ -1264,6 +1270,38 @@ class AgentWorkspaceFactory:
                 for descriptor in opened:
                     os.close(descriptor)
 
+    def remove_project_tree(self, workspace_id: str, project_id: str, name: str) -> None:
+        """Remove one named tree below ``<ws>/projects/<project>/``. Idempotent.
+
+        The counterpart of a turn materializing its pinned generation beside the project's
+        library: what one turn writes there, that turn removes, so no per-turn state outlives the
+        turn. ``name`` is validated as a single segment and the project's own ``library`` is
+        refused outright — that tree belongs to every thread of the project and is nobody's turn
+        to delete, and an idempotent "remove whatever you were given" would make deleting it one
+        typo away.
+
+        ``LibraryTree`` keeps a superseded generation as ``<name>.old-<pid>`` and a crashed build
+        as ``<name>.next-<pid>``, reclaiming both at the *next* replace of that name — which for a
+        per-turn tree never comes. So this removes the tree and its own residue together;
+        otherwise a turn killed between materializing and this call would leave a directory behind
+        forever.
+        """
+
+        segment = validate_workspace_segment(name, label="project tree name")
+        if segment == LIBRARY_DIR:
+            raise WorkspaceConfigurationError("the project library is not a per-turn tree")
+        # The descriptor is taken first and the lock second, never nested: ``_root_lock`` is an
+        # ``flock`` on one shared descriptor, so an inner release would drop the outer holder's
+        # lock too.
+        parent_fd = self.project_parent_fd(workspace_id, project_id)
+        try:
+            with self._root_lock():
+                for entry in os.listdir(parent_fd):
+                    if entry == segment or entry.startswith(f"{segment}."):
+                        self._remove_tree(parent_fd, entry)
+        finally:
+            os.close(parent_fd)
+
     def create(
         self,
         *,
@@ -1511,7 +1549,14 @@ class AgentWorkspaceFactory:
                 )
             if request.project_library:
                 directory_fd = self._open_library(
-                    (workspace_segment, PROJECTS_DIR, project_segment, LIBRARY_DIR),
+                    (
+                        workspace_segment,
+                        PROJECTS_DIR,
+                        project_segment,
+                        validate_workspace_segment(
+                            request.project_library_name, label="project_library_name"
+                        ),
+                    ),
                     name="project",
                 )
                 opened.append(

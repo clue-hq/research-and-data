@@ -86,13 +86,14 @@ PLAN_KIND = "project-plan"
 #: is gated on kinds and this module owns that gate.
 ICP_DEFINITION_KIND = "icp-definition"
 PERSONA_KIND = "audience-persona"
-#: Where the plan is readable in the agent's workspace. This is
+#: Where the plan is readable in the agent's workspace — in the mounted project library. This is
 #: ``project_context_files.project_workspace_path(PLAN_PATH)`` — one leading ``project/`` segment is
-#: the folder name, not a directory under ``inputs/project/``. It is restated here rather than
-#: imported for the reason ``icp_authoring`` restates its prefixes: ``clue_api.arv2`` may not import
-#: ``clue_api`` modules outside the lane (Global Constraint 7). The two must name one file
-#: identically, and the plan's path is fixed, so a constant is enough.
-PLAN_WORKSPACE_PATH = "inputs/project/plan.md"
+#: the folder name, not a directory under the prefix, so the mounted prefix and the folder name
+#: fold into one segment. It is restated here rather than imported for the reason ``icp_authoring``
+#: restates its prefixes: ``clue_api.arv2`` may not import ``clue_api`` modules outside the lane
+#: (Global Constraint 7). The two must name one file identically, and the plan's path is fixed, so
+#: a constant is enough.
+PLAN_WORKSPACE_PATH = "project/plan.md"
 #: What each version's artifact row records as its origin — the agent's write and the human's edit
 #: are different acts and are told apart at the artifact, not only in the front matter.
 PLAN_SOURCE_KEY = "arv2-project-plan"

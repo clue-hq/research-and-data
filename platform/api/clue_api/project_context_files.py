@@ -3,8 +3,8 @@
 Spec: docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md §4.1.
 
 A turn does not learn the project's state by being told about it — it reads files. The compiled
-set (``status.md``, ``decisions.md``, and later the project's own documents) is materialized
-read-only under ``inputs/project/`` and indexed in the opening context.
+set (``status.md``, ``decisions.md``, the project's own documents and the artifact index) is served
+read-only under ``project/`` and indexed in the opening context.
 
 This module is the seam between those compiled bytes and one turn, and it applies to project files
 exactly the discipline :mod:`clue_api.brand_knowledge_context` applies to brand knowledge
@@ -16,11 +16,15 @@ documents:
   different one on the retry: the file the model was told to re-read would have moved underneath
   it. The pin is insert-once and written before composition; every later attempt reads the winner's
   row and never its own discarded compile.
-* :func:`read_pinned_project_files` / :func:`project_seed_files` — the pinned bytes, verified
-  against the pinned digest, materialized under ``inputs/project/``.
-* :func:`compile_project_files_index_card` — a bounded index of those files for the opening
-  context. The card is an *index*, not the content: a path, a status and one summary line per file
-  so the model knows what to open.
+* :func:`read_pinned_project_files` — the pinned bytes, verified against the pinned digest. A
+  turn reads them at ``project/``, where :mod:`clue_api.project_library` compiles them once beside
+  the threads and every thread of the project mounts them read-only; a turn whose library has
+  moved since it pinned materializes the pinned set as its own tree for the length of that turn.
+  :func:`project_seed_files` copied the same bytes into one thread instead; no production surface
+  composes it since 2026-09-14.
+* :func:`compile_project_files_index_card` / :func:`compile_project_library_index_card` — a
+  bounded index of those files for the opening context. The card is an *index*, not the content:
+  a path, a status and one summary line per file so the model knows what to open.
 
 The index card never derives a summary of its own: it renders ``ProjectFileRef.summary``, the line
 the pin recorded, so the card cannot advertise a line the pinned file does not carry. A *compiled*
@@ -54,7 +58,9 @@ __all__ = [
     "PROJECT_CONTEXT_FILE_BINDING_KIND",
     "PROJECT_FILES_INDEX_CARD_MEDIA_TYPE",
     "PROJECT_INPUT_PREFIX",
+    "PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE",
     "PROJECT_LIBRARY_PREFIX",
+    "SEED_PREFIX",
     "CompiledProjectFile",
     "PinnedProjectFile",
     "ProjectFileEntry",
@@ -74,15 +80,24 @@ __all__ = [
     "summary_of",
 ]
 
-#: Every compiled project file is materialized read-only below this workspace prefix.
-PROJECT_INPUT_PREFIX = "inputs/project/"
-#: …and served, unseeded, below this one when the workspace mounts the *project library* instead:
-#: the same state compiled once beside the threads (``<ws>/projects/<project>/library/``) and
-#: mounted read-only at ``project/``. One prefix constant per surface, so a path is never spelled
-#: by hand at a call site — the brand's two surfaces are named the same way
+#: Where a turn reads this project's files. Since 2026-09-14 that is the **mounted** project
+#: library — the same state compiled once beside the threads (``<ws>/projects/<project>/library/``)
+#: and mounted read-only at ``project/`` — so the two constants below are one path, kept as two
+#: names because they are two *surfaces*: the per-turn seed surface (:func:`project_seed_files`,
+#: which no production turn composes any more) and the library mount. One constant per surface,
+#: so a path is never spelled by hand at a call site; the brand's two are named the same way
 #: (``brand_knowledge_context.INPUT_PREFIX`` / ``BRAND_LIBRARY_PREFIX``).
+PROJECT_INPUT_PREFIX = "project/"
 PROJECT_LIBRARY_PREFIX = "project/"
 PROJECT_FILES_INDEX_CARD_MEDIA_TYPE = "application/vnd.clue.project-files-index-card+json"
+#: The media type of the card a turn actually opens on: the *library's* own manifest, pinned for
+#: that turn. One media type per card kind, so an artifact row says which card it holds.
+PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE = "application/vnd.clue.project-library-index-card+json"
+#: Where the *seed* surface puts these files. Deliberately NOT :data:`PROJECT_INPUT_PREFIX`, which
+#: now names the mount: a ``WorkspaceSeedFile`` may only materialize below ``context/`` or
+#: ``inputs/`` (``clue_agents.resources``), so a seed built at the mount's prefix is refused at
+#: construction.
+SEED_PREFIX = "inputs/project/"
 #: The DSAR binding kind these artifacts carry, so an erasure of the project reaches them.
 PROJECT_CONTEXT_FILE_BINDING_KIND = "project_context_file"
 
@@ -102,16 +117,17 @@ def project_workspace_path(row_path: str, *, prefix: str = PROJECT_INPUT_PREFIX)
     """The one rule for where a project document is materialized (ruling F).
 
     A project document's stored path is folder-qualified — ``project/plan.md`` for the plan,
-    ``audience/icp-gi.md`` for an audience document — while every project file is materialized
-    below :data:`PROJECT_INPUT_PREFIX`. One leading ``project/`` segment is therefore the *folder
+    ``audience/icp-gi.md`` for an audience document — while every project file is served below
+    :data:`PROJECT_LIBRARY_PREFIX`. One leading ``project/`` segment is therefore the *folder
     name*, not a directory under the prefix: without stripping it the plan would be advertised at
-    ``inputs/project/project/plan.md``, a path nothing seeds. Everything else is kept verbatim, so
-    a document's folder survives into the workspace.
+    ``project/project/plan.md``, a path nothing serves. Everything else is kept verbatim, so a
+    document's folder survives into the workspace.
 
-    ``prefix`` is the one thing that differs between the two surfaces that serve these files: the
-    thread's own seeds (:data:`PROJECT_INPUT_PREFIX`) and the mounted project library
-    (:data:`PROJECT_LIBRARY_PREFIX`). The naming rule above is identical for both, which is the
-    point — a document is at the same relative path whichever surface a turn reads it from.
+    ``prefix`` is the one thing that could differ between the two surfaces that serve these files
+    — the thread's own seeds (:data:`PROJECT_INPUT_PREFIX`) and the mounted project library
+    (:data:`PROJECT_LIBRARY_PREFIX`) — and since 2026-09-14 the two agree on one path. The naming
+    rule above is identical for both, which is the point: a document is at the same relative path
+    whichever surface a turn reads it from.
 
     This is the only place that rule is written down: ``status.md``'s renderer, the compiled files'
     seed paths and the index card all call it, so two surfaces cannot name one document differently.
@@ -460,16 +476,22 @@ async def read_pinned_project_files(
     return tuple(files)
 
 
-def _workspace_path(ref: ProjectFileRef) -> str:
-    return project_workspace_path(ref.path)
+def project_seed_files(
+    files: Sequence[PinnedProjectFile],
+    *,
+    prefix: str = SEED_PREFIX,
+) -> tuple[WorkspaceSeedFile, ...]:
+    """The read-only workspace files the model reads by path, one per pinned file.
 
-
-def project_seed_files(files: Sequence[PinnedProjectFile]) -> tuple[WorkspaceSeedFile, ...]:
-    """The read-only workspace files the model reads by path, one per pinned file."""
+    **No production surface composes this since 2026-09-14**: a turn reads these files at the
+    mounted project library instead, so these bytes are never copied into a thread. It is kept for
+    the reason ``brand_knowledge_context.knowledge_seed_files`` is kept — it is where the seed
+    surface's naming rule is spelled, and that rule is the library's too.
+    """
 
     return tuple(
         WorkspaceSeedFile(
-            path=_workspace_path(file.ref),
+            path=project_workspace_path(file.ref.path, prefix=prefix),
             content=file.body,
             sha256=file.ref.artifact_sha256,
             media_type=_FILE_MEDIA_TYPE,
@@ -515,12 +537,19 @@ def compile_project_files_index_card(
     *,
     project_id: str,
     files: Sequence[PinnedProjectFile],
+    prefix: str = SEED_PREFIX,
 ) -> ProjectFilesIndexCard:
-    """Compile the opening index over one turn's pinned project files, in path order.
+    """Compile the opening index over one turn's *seeded* project files, in path order.
 
     Every line is read off the pinned :class:`ProjectFileRef` — including the summary, which the
     compiler wrote and the pin recorded. The card derives nothing of its own, so it cannot
     describe a file differently from the receipt the turn is composed against.
+
+    ``prefix`` defaults to :data:`SEED_PREFIX` for the same reason :func:`project_seed_files` does:
+    this card describes the seed surface, and it must name files where that surface puts them. The
+    card a production turn opens on is the *library's* manifest
+    (:func:`compile_project_library_index_card`), not this one — no production surface has
+    composed this since 2026-09-14.
     """
 
     return ProjectFilesIndexCard(
@@ -528,7 +557,7 @@ def compile_project_files_index_card(
         files=[
             ProjectFileEntry(
                 path=file.ref.path,
-                workspace_path=_workspace_path(file.ref),
+                workspace_path=project_workspace_path(file.ref.path, prefix=prefix),
                 kind=file.ref.kind,
                 version=file.ref.version,
                 status=file.ref.status,

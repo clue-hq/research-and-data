@@ -90,7 +90,6 @@ from clue_api.agent_runtime_wiring import (
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.brand_knowledge_context import (
-    INPUT_PREFIX,
     SERVABLE_STATUSES,
     current_knowledge_documents,
     current_project_knowledge_refs,
@@ -148,6 +147,12 @@ TURN_NAMESPACE = UUID("6c2f9d0e-4b3a-5f1e-9a77-0e2b4c8d1f55")
 #: The $5 record-only ceiling the C5 plan policy enforces for one synthesis turn.
 BUDGET_LIMIT_MILLICENTS = 500_000
 SYNTHESIS_CARD_MEDIA_TYPE = "application/vnd.clue.onboarding-synthesis-card+json"
+#: Where THIS surface puts the knowledge documents its turns read. It seeds its own read-only
+#: copies per turn and mounts no library, and its profile (``onboarding-synthesis@v3``), prompt
+#: and skill all name this path — so it is deliberately not on the library/mount path the
+#: conversation turn moved to, and it owns the constant rather than sharing
+#: ``brand_knowledge_context.INPUT_PREFIX``, which now names the mount.
+INPUT_PREFIX = "inputs/brand/knowledge/"
 
 _RECIPE_KEY = "onboarding-synthesis-unit"
 _RECIPE_VERSION = 1

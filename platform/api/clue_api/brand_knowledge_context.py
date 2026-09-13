@@ -12,8 +12,11 @@ This module is the seam between the durable documents and one turn's context:
   set, crash, and seed a different set on the retry: the file the model was told to re-read would
   have moved underneath it. The pin is insert-once, written before composition; every later attempt
   reads the winner's row.
-* :func:`read_pinned_documents` / :func:`knowledge_seed_files` — the pinned bytes, verified against
-  the pinned digest, materialized read-only under ``inputs/brand/knowledge/``.
+* :func:`read_pinned_documents` — the pinned bytes, verified against the pinned digest. A turn
+  reads them at ``brand/knowledge/``, where :mod:`clue_api.brand_library` renders them once per
+  knowledge version and every thread of the brand mounts them read-only.
+  :func:`knowledge_seed_files` copied the same bytes into one thread instead; no production
+  surface composes it since 2026-09-14.
 * :func:`compile_brand_knowledge_index_card` — a bounded index of those files for the opening
   context. The card is an *index*, not the knowledge: it carries a path, a status and one summary
   line per document so the model knows what to read, never the documents' contents.
@@ -58,6 +61,7 @@ __all__ = [
     "BRAND_LIBRARY_PREFIX",
     "INPUT_PREFIX",
     "KNOWLEDGE_DOCUMENT_MEDIA_TYPE",
+    "SEED_PREFIX",
     "SERVABLE_STATUSES",
     "BrandKnowledgeIndexCard",
     "ConfirmedIcpRef",
@@ -79,12 +83,14 @@ __all__ = [
     "workspace_paths",
 ]
 
-#: Every brand knowledge document is materialized read-only below this workspace prefix.
-INPUT_PREFIX = "inputs/brand/knowledge/"
-#: …and served, unseeded, below this one when the workspace mounts the brand library instead: the
-#: same documents rendered once per knowledge version beside the threads
-#: (``<ws>/library/brand/<brand>/<version>/knowledge/``) and mounted read-only at ``brand/``. One
-#: prefix constant per surface, so a path is never spelled by hand at a call site.
+#: Where a turn reads the brand's knowledge documents. Since 2026-09-14 that is the **mounted**
+#: brand library — the same documents rendered once per knowledge version beside the threads
+#: (``<ws>/library/brand/<brand>/<version>/knowledge/``) and mounted read-only at ``brand/`` — so
+#: the two constants below are one path, kept as two names because they are two *surfaces*: the
+#: per-turn seed surface (:func:`knowledge_seed_files`, which no production turn composes any
+#: more) and the library mount. One constant per surface, so a path is never spelled by hand at a
+#: call site.
+INPUT_PREFIX = "brand/knowledge/"
 BRAND_LIBRARY_PREFIX = "brand/knowledge/"
 #: A document is servable input when its bytes exist and it has not been superseded.
 SERVABLE_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
@@ -466,12 +472,12 @@ def workspace_paths(
     pinned_document_id: UUID | None = None,
     prefix: str = INPUT_PREFIX,
 ) -> dict[UUID, str]:
-    """Where each pinned document materializes under ``prefix`` (default the thread's seeds).
+    """Where each pinned document materializes under ``prefix`` (default ``brand/knowledge/``).
 
-    ``prefix`` is the one thing that differs between the two surfaces that serve these documents:
-    the thread's own seeds (``inputs/brand/knowledge/``) and the mounted brand library
-    (``brand/knowledge/``). The naming rules below are identical for both, which is the point —
-    a document is at the same relative path whichever surface a turn reads it from.
+    ``prefix`` is the one thing that could differ between the two surfaces that serve these
+    documents — the thread's own seeds and the mounted brand library — and since 2026-09-14 the
+    two agree on one path. The naming rules below are identical for both, which is the point: a
+    document is at the same relative path whichever surface a turn reads it from.
 
     Normally one document holds a path and the answer is just that path. A project's ICP pin can
     put **two** versions of one path in a turn's set at once — the version the project agreed to,
@@ -509,19 +515,31 @@ def workspace_paths(
     return resolved
 
 
+#: Where the *seed* surface puts these documents. Deliberately NOT :data:`INPUT_PREFIX`, which now
+#: names the mount: a ``WorkspaceSeedFile`` may only materialize below ``context/`` or ``inputs/``
+#: (``clue_agents.resources``), so a seed built at the mount's prefix is refused at construction.
+SEED_PREFIX = "inputs/brand/knowledge/"
+
+
 def knowledge_seed_files(
     documents: Sequence[PinnedDocument],
     *,
     pinned_document_id: UUID | None = None,
+    prefix: str = SEED_PREFIX,
 ) -> tuple[WorkspaceSeedFile, ...]:
     """The read-only workspace files the model reads by path, one per pinned **brand** document.
 
     A project-scoped document is skipped here and seeded by the project files pin instead, which
-    owns everything under ``inputs/project/``. Two seeds for one path would be a materialization
+    owns everything under the project's prefix. Two seeds for one path would be a materialization
     conflict; one owner per prefix is the rule that prevents it.
+
+    **No production surface composes this since 2026-09-14**: a turn reads these files at the
+    mounted brand library instead, so these bytes are never copied into a thread. It is kept
+    because it is the one place that spells the seed surface's naming rule, and because the rule
+    it encodes is the library's too (:func:`workspace_paths` is shared).
     """
 
-    paths = workspace_paths(documents, pinned_document_id=pinned_document_id)
+    paths = workspace_paths(documents, pinned_document_id=pinned_document_id, prefix=prefix)
     return tuple(
         WorkspaceSeedFile(
             path=paths[document.ref.document_id],

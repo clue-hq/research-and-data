@@ -1017,6 +1017,54 @@ def test_a_mount_request_for_an_unmaterialized_library_is_refused(
         factory.close()
 
 
+def test_a_named_project_tree_is_mounted_as_project_and_can_be_removed(tmp_path: Path) -> None:
+    """One turn's own tree, beside the project's library, under the same virtual name.
+
+    A turn whose pinned library generation is no longer the installed one materializes that
+    generation beside the library and mounts it instead, so ``project/`` means "what this turn
+    pinned" and every path the model was told to read still resolves. Two rules make that safe and
+    are asserted here: the name is a segment the factory validates (never a path), and the shared
+    library is not something a turn may remove.
+    """
+
+    root, factory, _sink = make_factory(tmp_path)
+    _library(root, "ws-1", "projects", "project-1", "library")
+    pinned = _library(root, "ws-1", "projects", "project-1", "pinned-0123456789ab")
+    (pinned / "status.md").write_text("# Pinned\n")
+    os.chmod(pinned / "status.md", 0o400)
+    active = policy(readable=(*DEFAULT_READABLE_PREFIXES, "project"))
+    try:
+        lease = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=active,
+            mounts=MountRequest(project_library=True, project_library_name="pinned-0123456789ab"),
+        )
+        assert lease.backend.read_text_sync("project/status.md") == "# Pinned\n"
+        lease.release()
+
+        # The project's shared library belongs to every thread of the project: no turn removes it.
+        with pytest.raises(WorkspaceConfigurationError):
+            factory.remove_project_tree("ws-1", "project-1", "library")
+        # …and the name is one segment, never a path out of the project.
+        with pytest.raises(WorkspaceConfigurationError):
+            factory.remove_project_tree("ws-1", "project-1", "../library")
+        assert (root / "ws-1/projects/project-1/library").is_dir()
+
+        # …and the tree's own superseded/crashed-build residue goes with it: nothing else ever
+        # replaces a per-turn tree, so nothing else would ever reclaim it.
+        residue = _library(root, "ws-1", "projects", "project-1", "pinned-0123456789ab.old-999")
+        factory.remove_project_tree("ws-1", "project-1", "pinned-0123456789ab")
+        assert not pinned.exists()
+        assert not residue.exists()
+        # Idempotent: the turn's ``finally`` runs whether or not the tree was ever built.
+        factory.remove_project_tree("ws-1", "project-1", "pinned-0123456789ab")
+    finally:
+        factory.close()
+
+
 def test_reacquiring_a_live_thread_with_another_mount_request_conflicts(tmp_path: Path) -> None:
     root, factory, _sink = make_factory(tmp_path)
     _library(root, "ws-1", "projects", "project-1", "library")

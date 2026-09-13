@@ -93,7 +93,7 @@ def _authored(**overrides: Any) -> AuthoredIcp:
         "icp_key": "gi-dac",
         "version": 1,
         "path": "audience/icp-gi-dac.md",
-        "workspace_path": "inputs/project/audience/icp-gi-dac.md",
+        "workspace_path": "project/audience/icp-gi-dac.md",
         "status": "proposed",
         "replayed": False,
     }
@@ -245,7 +245,7 @@ def test_the_derived_request_carries_ambient_scope_and_the_turns_own_people(
             "icp_key": "gi-dac",
             "version": 1,
             "path": "audience/icp-gi-dac.md",
-            "workspace_path": "inputs/project/audience/icp-gi-dac.md",
+            "workspace_path": "project/audience/icp-gi-dac.md",
             "status": "proposed",
             "replayed": False,
         }
@@ -287,7 +287,7 @@ def test_a_brand_level_write_still_carries_the_turns_project(
     async def scenario() -> None:
         _bind(monkeypatch, identity=_identity())
         service = _FakeService(
-            authored=_authored(workspace_path="inputs/brand/knowledge/audience/icp-gi-dac.md")
+            authored=_authored(workspace_path="brand/knowledge/audience/icp-gi-dac.md")
         )
         await _tool(service).invoke(_inputs(scope="brand", derived_from_icp_key=None), _context())
         request = service.requests[0]

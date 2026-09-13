@@ -1,6 +1,6 @@
 """The project context files against the real rows they are compiled from.
 
-``inputs/project/status.md`` is not a story the model tells about the project — it is the project's
+``project/status.md`` is not a story the model tells about the project — it is the project's
 own ARV2 rows, read at the moment the turn opens. These tests seed those rows by hand and assert
 the compiled facts, because the thing that would silently rot is a count: a discovery run's
 verified/shown/approved tallies and an account's person-job count are derived, and a derivation
@@ -893,10 +893,7 @@ def test_a_project_scoped_document_joins_the_project_folder_and_the_status_file(
                 ("audience/icp-gi-dac.md", 1, "proposed")
             ]
             rendered = render_status_markdown(facts)
-            assert (
-                "- `inputs/project/audience/icp-gi-dac.md` — version 1, proposed, updated "
-                in rendered
-            )
+            assert "- `project/audience/icp-gi-dac.md` — version 1, proposed, updated " in rendered
             assert "icp-gi.md" not in rendered
 
             files = await current_project_documents(
@@ -1054,11 +1051,9 @@ def test_a_pinned_project_icp_is_seeded_beside_the_newer_version_of_its_path() -
                 ("audience/icp-gi-dac.v2.md", 2, "proposed"),
             ]
             rendered = render_status_markdown(facts)
-            assert "- Key: `gi-dac` (version 1) — `inputs/project/audience/icp-gi-dac.md`" in (
-                rendered
-            )
-            assert "`inputs/project/audience/icp-gi-dac.md` — version 1, confirmed" in rendered
-            assert "`inputs/project/audience/icp-gi-dac.v2.md` — version 2, proposed" in rendered
+            assert "- Key: `gi-dac` (version 1) — `project/audience/icp-gi-dac.md`" in (rendered)
+            assert "`project/audience/icp-gi-dac.md` — version 1, confirmed" in rendered
+            assert "`project/audience/icp-gi-dac.v2.md` — version 2, proposed" in rendered
 
             files = await current_project_documents(
                 conn, storage, workspace_id=ws, project_id=project_id

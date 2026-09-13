@@ -1,4 +1,4 @@
-"""The wording of ``inputs/project/status.md`` and ``inputs/project/decisions.md``.
+"""The wording of ``project/status.md`` and ``project/decisions.md``.
 
 Both renderers are pure functions over facts, so what the model reads is pinned here without a
 database. Two properties matter beyond the words: every section is present even when it is empty
@@ -120,10 +120,7 @@ def test_pinned_icp_products_discovery_and_research_render_from_the_rows() -> No
         ),
     )
     text = render_status_markdown(facts)
-    assert (
-        "- Key: `gi-groups` (version 3) — `inputs/brand/knowledge/audience/icp-gi-groups.md`"
-        in text
-    )
+    assert "- Key: `gi-groups` (version 3) — `brand/knowledge/audience/icp-gi-groups.md`" in text
     assert "- Selection version 2: `prd_a`, `prd_b`" in text
     assert "- Accounts in this project: 7" in text
     assert "- Latest run `00000000-0000-0000-0000-000000000002`: completed" in text
@@ -160,8 +157,8 @@ def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() ->
 
     The plan is looked up by its folder-qualified row path (``project/plan.md``) and rendered
     twice — once under ``## Plan`` and once under ``## Project documents``. Rendering the row path
-    below the prefix verbatim would advertise ``inputs/project/project/plan.md`` in one of them, a
-    path nothing seeds: the model would read a broken link and report the plan as missing.
+    below the prefix verbatim would advertise ``project/project/plan.md`` in one of them, a path
+    nothing serves: the model would read a broken link and report the plan as missing.
     """
 
     text = render_status_markdown(
@@ -176,14 +173,12 @@ def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() ->
             )
         )
     )
-    assert "inputs/project/project/" not in text
-    assert "- Version 2, updated 2026-09-12T08:30:00+00:00 — `inputs/project/plan.md`" in text
-    assert (
-        "- `inputs/project/plan.md` — version 2, ready, updated 2026-09-12T08:30:00+00:00" in text
-    )
+    assert "project/project/" not in text
+    assert "- Version 2, updated 2026-09-12T08:30:00+00:00 — `project/plan.md`" in text
+    assert "- `project/plan.md` — version 2, ready, updated 2026-09-12T08:30:00+00:00" in text
     # A document in any other folder keeps that folder below the prefix.
     assert (
-        "- `inputs/project/audience/icp-gi.md` — version 1, ready, "
+        "- `project/audience/icp-gi.md` — version 1, ready, "
         "updated 2026-09-12T08:30:00+00:00" in text
     )
 
@@ -213,7 +208,7 @@ def test_a_surface_that_serves_one_version_per_path_says_the_newer_one_exists_in
     )
     assert "icp-gi.v2.md" not in text
     assert (
-        "- `inputs/project/audience/icp-gi.md` — version 1, confirmed, "
+        "- `project/audience/icp-gi.md` — version 1, confirmed, "
         "updated 2026-09-12T08:30:00+00:00 (newer version v2 proposed)" in text
     )
 
@@ -222,10 +217,10 @@ def test_the_confirmed_icp_line_names_the_prefix_of_the_pins_own_scope() -> None
     """I1: a project-local pinned ICP is not in the brand's folder, and must not be named there.
 
     ``ProjectIcpPin`` carries the pinned document's scope. A project-scoped variant materializes
-    under ``inputs/project/`` — ``knowledge_seed_files`` skips it and the project files pin seeds
-    it — so rendering it under the brand prefix advertises a path nothing seeds. status.md is the
-    first file the agent opens on a thread, so it would send it to read a file that does not
-    exist, and the agent would then report its own confirmed ICP as missing.
+    in the project library at ``project/`` — the brand library skips it deliberately — so
+    rendering it under the brand prefix advertises a path nothing serves. status.md is the first
+    file the agent opens on a thread, so it would send it to read a file that does not exist, and
+    the agent would then report its own confirmed ICP as missing.
     """
 
     def _pin(project_id: str | None) -> ProjectIcpPin:
@@ -241,12 +236,12 @@ def test_the_confirmed_icp_line_names_the_prefix_of_the_pins_own_scope() -> None
         )
 
     brand = render_status_markdown(_facts(icp=_pin(None)))
-    assert "- Key: `gi-dac` (version 2) — `inputs/brand/knowledge/audience/icp-gi-dac.md`" in brand
-    assert "inputs/project/audience/icp-gi-dac.md" not in brand
+    assert "- Key: `gi-dac` (version 2) — `brand/knowledge/audience/icp-gi-dac.md`" in brand
+    assert "project/audience/icp-gi-dac.md" not in brand
 
     project = render_status_markdown(_facts(icp=_pin("prj_1")))
-    assert "- Key: `gi-dac` (version 2) — `inputs/project/audience/icp-gi-dac.md`" in project
-    assert "inputs/brand/knowledge/" not in project
+    assert "- Key: `gi-dac` (version 2) — `project/audience/icp-gi-dac.md`" in project
+    assert "brand/knowledge/" not in project
 
 
 def test_the_personas_section_lists_this_projects_persona_runs_or_says_there_are_none() -> None:

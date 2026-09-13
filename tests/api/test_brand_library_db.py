@@ -33,7 +33,7 @@ from clue_agents.workspace_policy import WorkspaceSecurityError
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.brand_knowledge_context import (
     BRAND_LIBRARY_PREFIX,
-    INPUT_PREFIX,
+    SEED_PREFIX,
     compile_brand_knowledge_index_card,
     knowledge_seed_files,
     load_or_create_knowledge_pin,
@@ -264,8 +264,8 @@ def test_the_shared_brand_library_gives_the_plain_name_to_the_newest_version(
                 seed.path: seed
                 for seed in knowledge_seed_files(documents, pinned_document_id=icp_pin.document_id)
             }
-            assert seeds[f"{INPUT_PREFIX}audience/icp-gi.md"].content == confirmed_body.encode()
-            assert seeds[f"{INPUT_PREFIX}audience/icp-gi.v3.md"].content == newer_body.encode()
+            assert seeds[f"{SEED_PREFIX}audience/icp-gi.md"].content == confirmed_body.encode()
+            assert seeds[f"{SEED_PREFIX}audience/icp-gi.v3.md"].content == newer_body.encode()
 
             root, factory, _sink = make_factory(tmp_path)
             try:

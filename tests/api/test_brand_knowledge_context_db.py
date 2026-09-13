@@ -7,7 +7,7 @@ durable rows, never from an in-memory convenience:
 * **A turn's document set is pinned once.** Publishing a newer version mid-turn cannot change what
   a retry of that turn sees — the pin is insert-once and every later attempt reads the winner.
 * **Bytes are verified against the pinned digest.** A document whose stored digest has moved is a
-  loud refusal, not a silently different file seeded under ``inputs/brand/knowledge/``.
+  loud refusal, not a silently different file served under ``brand/knowledge/``.
 
 The index card is compiled, not stored, so its two tests are pure: they build the pinned documents
 by hand and assert the bounded shape the model actually receives.
@@ -28,6 +28,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
 from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
+    SEED_PREFIX,
     BrandKnowledgeIndexCard,
     KnowledgeDocumentRef,
     KnowledgePinConflict,
@@ -331,8 +332,9 @@ def test_project_documents_are_invisible_to_brand_readers_and_seed_under_inputs_
                 ),
             )
             paths = workspace_paths(pinned)
-            assert paths[brand_doc] == "inputs/brand/knowledge/audience/icp-gi.md"
-            assert paths[project_doc] == "inputs/project/audience/icp-gi-dac.md"
+            assert paths[brand_doc] == "brand/knowledge/audience/icp-gi.md"
+            assert paths[project_doc] == "project/audience/icp-gi-dac.md"
+            # The seed surface applies the same rule under its own prefix.
             assert [seed.path for seed in knowledge_seed_files(pinned)] == [
                 "inputs/brand/knowledge/audience/icp-gi.md"
             ]
@@ -555,10 +557,10 @@ def test_pinned_documents_seed_read_only_files_under_the_knowledge_prefix() -> N
 
             seeds = knowledge_seed_files(documents)
             assert [seed.path for seed in seeds] == [
-                f"{INPUT_PREFIX}audience/icp-gi.md",
-                f"{INPUT_PREFIX}company/overview.md",
+                f"{SEED_PREFIX}audience/icp-gi.md",
+                f"{SEED_PREFIX}company/overview.md",
             ]
-            assert all(seed.path.startswith(INPUT_PREFIX) for seed in seeds)
+            assert all(seed.path.startswith(SEED_PREFIX) for seed in seeds)
             assert all(seed.media_type == "text/markdown" for seed in seeds)
             assert {seed.sha256 for seed in seeds} == {doc.ref.artifact_sha256 for doc in documents}
 
@@ -976,12 +978,12 @@ def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirm
             # Every seed is a distinct real file, and the pinned version owns the natural name.
             assert len({seed.path for seed in seeds}) == len(seeds)
             assert sorted(seed.path for seed in seeds) == [
-                f"{INPUT_PREFIX}audience/icp-gi.md",
-                f"{INPUT_PREFIX}audience/icp-gi.v3.md",
-                f"{INPUT_PREFIX}company/overview.md",
+                f"{SEED_PREFIX}audience/icp-gi.md",
+                f"{SEED_PREFIX}audience/icp-gi.v3.md",
+                f"{SEED_PREFIX}company/overview.md",
             ]
             pinned_seed = next(
-                seed for seed in seeds if seed.path == f"{INPUT_PREFIX}audience/icp-gi.md"
+                seed for seed in seeds if seed.path == f"{SEED_PREFIX}audience/icp-gi.md"
             )
             assert pinned_seed.sha256 == pin.artifact_sha256
 
@@ -1008,8 +1010,11 @@ def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirm
             assert listed[str(pinned_document_id)].workspace_path == (
                 f"{INPUT_PREFIX}audience/icp-gi.md"
             )
-            assert {entry.workspace_path for entry in card.documents} == {
-                seed.path for seed in seeds
-            }
+            # One naming rule, two surfaces: the card names the mount and the seeds name the
+            # seed folder, so the property — the index lists exactly the files the rule produces,
+            # version-qualified name included — is asserted on the names below the prefixes.
+            assert {
+                entry.workspace_path.removeprefix(INPUT_PREFIX) for entry in card.documents
+            } == {seed.path.removeprefix(SEED_PREFIX) for seed in seeds}
 
     run_async(scenario())

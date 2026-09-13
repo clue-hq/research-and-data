@@ -247,7 +247,7 @@ def test_the_derived_request_carries_ambient_scope_and_the_turns_own_people(
             "document_id": str(DOCUMENT_ID),
             "path": "project/plan.md",
             "version": 3,
-            "workspace_path": "inputs/project/plan.md",
+            "workspace_path": "project/plan.md",
             "replayed": False,
         }
         assert result.replayed is False

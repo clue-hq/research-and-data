@@ -189,9 +189,12 @@ class HeadOfAbmStage0Runtime:
         fleet turn — keeps byte-for-byte the behaviour it had before D3.
 
         ``input_seeds`` (ARV2 onboarding O6) are read-only workspace files the *surface* pins for
-        this turn — today the brand's pinned knowledge documents under ``inputs/brand/knowledge/``.
-        They are materialized alongside the assembler's own context materializations and verified
+        this turn, materialized alongside the assembler's own context materializations and verified
         with them, so a reclaimed turn re-proves its input bytes rather than trusting the directory.
+        The production conversation turn supplies none since 2026-09-14 — it mounts the brand and
+        project libraries instead of copying them into the thread — so today this is the onboarding
+        synthesis surface's seeds under ``inputs/brand/knowledge/``, and the collision check below
+        guards the canonical context paths against them.
         """
 
         resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
