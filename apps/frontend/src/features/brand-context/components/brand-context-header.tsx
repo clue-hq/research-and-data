@@ -98,7 +98,7 @@ export function BrandContextHeader({
             {controller.knowledgeEditor.dirty ? (
               <>
                 <button className={styles.secondaryButton} disabled={controller.knowledgeEditor.busy} onClick={controller.knowledgeEditor.discard} type="button">Discard changes</button>
-                <button className={styles.primaryButton} disabled={controller.knowledgeEditor.busy} onClick={controller.knowledgeEditor.save} type="button">
+                <button className={styles.primaryButton} disabled={!controller.knowledgeEditor.canSave} onClick={controller.knowledgeEditor.save} type="button">
                   {controller.knowledgeEditor.saving ? "Saving…" : "Save changes"}
                 </button>
               </>

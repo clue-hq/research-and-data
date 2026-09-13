@@ -1323,151 +1323,18 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
-.markdownPreview {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 48px 48px 96px;
-  overflow-wrap: anywhere;
-}
-
-.markdownEditor {
+.knowledgeEditorFrame {
   margin: 24px 32px 48px;
-  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--clue-ds-color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--clue-ds-product-component-button-md-radius);
 }
-
 .documentSaveError {
   margin: 16px 32px 0;
   color: var(--clue-ds-color-content-subtle);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.markdownEditor :global(.cm-editor) {
-  min-height: 420px;
-  background: var(--clue-ds-color-bg-neutral);
-  color: var(--clue-ds-color-content-neutral);
-  font-size: 14px;
-}
-
-.markdownEditor :global(.cm-scroller) { font-family: ui-monospace, monospace; }
-.markdownEditor :global(.cm-content) { padding: 16px 0; }
-.markdownEditor :global(.cm-line) { padding: 0 16px; }
-.markdownEditor :global(.cm-editor.cm-focused) { outline: none; }
-.markdownEditor:focus-within { border-color: var(--clue-ds-color-border-neutral); }
-.markdownEditor :global(.cm-cursor) { border-left-color: var(--clue-ds-color-content-neutral); }
-.markdownEditor :global(.cm-selectionBackground),
-.markdownEditor :global(.cm-focused .cm-selectionBackground) {
-  background: var(--clue-ds-color-bg-neutral-pressed);
-}
-
-.markdownPreview h1,
-.markdownPreview h2,
-.markdownPreview h3,
-.markdownPreview h4,
-.markdownPreview h5,
-.markdownPreview h6 {
-  color: var(--clue-ds-color-content-neutral);
-}
-
-.markdownPreview h1 {
-  margin: 0 0 24px;
-  font: 700 24px/36px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview h2 {
-  margin: 32px 0 12px;
-  font: 500 16px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview h3,
-.markdownPreview h4,
-.markdownPreview h5,
-.markdownPreview h6 {
-  margin: 24px 0 8px;
-  font: 500 14px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview p,
-.markdownPreview li {
-  color: var(--clue-ds-color-content-neutral);
-  font: 400 14px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview p {
-  margin: 0 0 20px;
-}
-
-.markdownPreview ul,
-.markdownPreview ol {
-  margin: 0 0 22px;
-  padding-left: 22px;
-}
-
-.markdownPreview ul { list-style: disc; }
-.markdownPreview ol { list-style: decimal; }
-.markdownPreview li > :is(ul, ol) { margin: 5px 0; }
-.markdownPreview :global(.contains-task-list) { list-style: none; }
-.markdownPreview input[type="checkbox"] { margin-right: 6px; }
-
-.markdownPreview a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.markdownPreview blockquote {
-  margin: 20px 0;
-  border-left: 3px solid var(--clue-ds-color-border-neutral);
-  padding-left: 16px;
-}
-
-.markdownPreview table {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  margin: 20px 0;
-  border-collapse: collapse;
-  font: 400 14px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview th,
-.markdownPreview td {
-  border: 1px solid var(--clue-ds-color-border-neutral);
-  padding: 8px 12px;
-}
-
-.markdownPreview th {
-  background: var(--clue-ds-color-bg-subtle);
-  font-weight: 700;
-}
-
-.markdownPreview code {
-  border-radius: 4px;
-  background: var(--clue-ds-color-bg-subtle);
-  padding: 2px 4px;
-  font-family: "DM Mono", monospace;
-  font-size: 0.9em;
-}
-
-.markdownPreview pre {
-  overflow-x: auto;
-  margin: 20px 0;
-  border-radius: 6px;
-  background: var(--clue-ds-color-bg-subtle);
-  padding: 16px;
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.markdownPreview pre code { padding: 0; }
-.markdownPreview img { max-width: 100%; height: auto; }
-.markdownPreview hr { margin: 24px 0; border-top: 1px solid var(--clue-ds-color-border-neutral); }
-
-.markdownPreview li + li {
-  margin-top: 5px;
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
 }
 
 .emptyState {
@@ -1961,9 +1828,6 @@
     min-width: 614px;
   }
 
-  .markdownPreview {
-    padding: 32px 24px 72px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

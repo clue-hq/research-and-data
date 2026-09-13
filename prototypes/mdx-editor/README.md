@@ -48,7 +48,7 @@ native language control is hidden using its semantic `aria-label`, not a generat
 Source mode and blocks have no visible line numbers. Image insertion, AI writing,
 collaboration, diff review and production persistence are outside this prototype.
 
-## Compatibility finding: main-app integration is still gated
+## Compatibility finding (initial prototype; resolved by Task 5)
 
 Verified release set: MDXEditor **4.2.5**, Next **16.2.12**, React/React DOM **19.2.4**,
 with MDXEditor's supported **Lexical 0.48.0** tree. Next/React match the main application.
@@ -65,9 +65,14 @@ Their nodes therefore did not share the editor's constructor identity. Removing 
 experiment's application-Lexical dependencies and deduplicating the prototype's supported
 0.48 tree resolved the failure. **No main-app dependency was changed or overridden.**
 The dependency test guards this exact failure inside the prototype. It does not prove
-coexistence with the application's existing 0.49 composer. Resolve version alignment or
+coexistence with the application's existing 0.49 design text editor. Resolve version alignment or
 a genuinely isolated bundle, then test both editors together before migration. Lane 2
-Task 5 Step 1 remains open for that production compatibility decision/proof.
+Task 5 Step 1 initially remained open for that production compatibility decision/proof.
+
+**2026-09-14:** the main app now aligns its direct Lexical packages with the supported
+0.48.0 tree, with no overrides. Main-app Knowledge browser checks, constructor-identity
+tests, design text regressions and the production build pass. See
+`apps/frontend/src/components/markdown/README.md` (from the repository root).
 
 ## Integration details to carry forward
 

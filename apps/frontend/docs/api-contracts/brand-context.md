@@ -620,3 +620,25 @@ its display region with proportional `contain` sizing, preserving all artwork.
 Desktop reserves 280–360 px for the description; mobile stacks the details below
 the preview. Long names wrap and long descriptions scroll within the details pane.
 This is presentation-only and does not change the asset write contract above.
+
+
+### Lane 2 shared Markdown editor (2026-09-14)
+
+The approved MDXEditor replaces the Knowledge-specific CodeMirror editor. Preview is
+shared `MarkdownArticle` (react-markdown + remark-gfm); editing is shared `MarkdownEditor`
+with a client-only import of MDXEditor and native plugins. The PUT contract above is unchanged.
+The frontend gates Edit on the authenticated workspace's `project.write` permission plus
+a loaded, versioned document; the server remains the write authority.
+
+Feature-owned sessions are keyed by workspace and document path, retaining raw saved body,
+draft, base revision and returned immutable document ID. Initial Markdown normalization
+and undo to the initial value do not create false drafts. Preview/Edit retains editor history.
+Document switches retain drafts; clean external content and Discard explicitly reset the
+editor. Dirty external refreshes keep the original save base, allowing the backend's 409
+check to protect against overwrites. Failed saves keep the draft; editing is inert while saving.
+
+Source uses the library's recovery UI. Import errors never substitute empty bytes. Source
+drafts must return to valid Rich text before Save; editing itself may normalize Markdown.
+Code blocks stay monospaced without a language picker or line numbers and retain their
+fence metadata. Typography, colors and radii use Clue tokens; DM Mono is loaded locally.
+Long inline code, URLs and source wrap; wide tables scroll inside the document.

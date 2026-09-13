@@ -126,21 +126,40 @@ Map library public CSS variables/classes and icon overrides to Clue, including d
 Vendor structural CSS is retained. Constrain the whole panel width; tables/code cannot widen
 the surrounding chat, and long URLs/inline code/source text wrap. No source line numbers.
 
-- [ ] **Step 1: Compatibility prototype.** Verify a published MDXEditor release in this Next/React
+- [x] **Step 1: Compatibility prototype.** Verify a published MDXEditor release in this Next/React
   checkout, including client-only plugin imports and coexistence with existing Lexical dependencies.
   Do not force unrelated package versions. Exercise a disposable representative Markdown document.
   - **2026-09-13 prototype:** `prototypes/mdx-editor/` runs on port 3047 with real controls,
     Clue tokens, browser-only demo saves and source recovery. Next/React checks pass with
     MDXEditor 4.2.5's Lexical 0.48 tree. The app's existing Lexical 0.49 packages produced
-    duplicate-instance errors in the first browser experiment. Step 1 stays open until
-    main-app dependency coexistence/alignment is resolved; see the prototype README.
-- [ ] **Step 2: Shared integration.** Extract `MarkdownArticle`, introduce the MDXEditor boundary,
+    duplicate-instance errors in the first browser experiment. This initial gate was resolved in the main-app migration below; see the prototype README.
+- [x] **Step 2: Shared integration.** Extract `MarkdownArticle`, introduce the MDXEditor boundary,
   then migrate Knowledge. Preserve canEdit/read-only rules, Save/Discard, draft base revision,
   conflicts and the return of a new document ID on save. Keep repository calls outside the editor.
-- [ ] **Step 3: Verify.** Focused draft/adapter tests and browser interactions for no-op opening,
+- [x] **Step 3: Verify.** Focused draft/adapter tests and browser interactions for no-op opening,
   initial normalization, edits/undo, source recovery, Preview/Edit, Discard, switching documents
   and long-content wrapping. Run relevant Brand Context tests plus frontend lint/build/token tests.
-- [ ] **Step 4: Commit** — `refactor(frontend): shared Markdown preview and MDXEditor foundation`.
+- [x] **Step 4: Commit** — `refactor(frontend): shared Markdown preview and MDXEditor foundation`.
+
+---
+
+**2026-09-14 implementation / acceptance:** shared components now live in
+`src/components/markdown/`; Knowledge uses the approved native MDXEditor toolbar and
+shared library preview. Direct Lexical packages are aligned to 0.48.0 (no overrides),
+with a constructor-identity regression and the existing design text tests passing.
+DM Mono is self-hosted, matching the code token. Session identity is workspace + path;
+Save adopts the returned immutable ID/revision, and refresh cannot replace a dirty base.
+Native source recovery retains the draft and requires valid Rich text before Save.
+
+Browser acceptance on Semarang 3040: clean opening of the existing Knowledge document;
+Preview/Edit undo to clean; a disposable document saved as v2 and v3 and survived reload;
+a second tab's stale save returned a conflict and retained its draft; source errors,
+document switching, Discard and 360 px rich/source/preview containment passed. The
+fixture paths were removed afterward; original Knowledge documents were not edited.
+The 2,254-test frontend suite, design-system build, lint and production build passed.
+Task 6 (Plan UI) remains separate. The local database still lacks Lane 1's project_id
+column on brand_knowledge_document; backend/schema rollout is required before the later
+project-document browser walk, and was not changed for this Knowledge migration.
 
 ---
 

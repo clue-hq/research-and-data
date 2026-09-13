@@ -2,63 +2,57 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BrandKnowledgeDocument } from "../model/brand-context";
 import { saveKnowledgeDocument } from "../data/brand-knowledge-actions";
+import { markdownCanSave, type MarkdownEditorStatus } from "@/components/markdown/markdown-session";
+import {
+  acceptKnowledgeDocument, acceptKnowledgeSave, changeKnowledgeBody,
+  discardKnowledgeDraft, knowledgeSessionDirty, type KnowledgeEditorSession,
+} from "../model/knowledge-editor-session";
 
-type Draft = { body: string; base: BrandKnowledgeDocument };
-
-export function useKnowledgeEditor(document: BrandKnowledgeDocument | undefined) {
+export function useKnowledgeEditor(document: BrandKnowledgeDocument | undefined, { scopeKey, canWrite }: { scopeKey: string; canWrite: boolean }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"preview" | "edit">("preview");
-  const [editorOpened, setEditorOpened] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [savedDocuments, setSavedDocuments] = useState<Record<string, BrandKnowledgeDocument>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [savingPath, setSavingPath] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Record<string, KnowledgeEditorSession>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const path = document?.path;
-  const saved = path ? savedDocuments[path] : undefined;
-  const source = saved && (saved.version ?? 0) >= (document?.version ?? 0) ? saved : document;
-  const draft = path ? drafts[path] : undefined;
-  const body = draft?.body ?? source?.body ?? "";
-  const canEdit = !!source?.version && source.bodyLoaded !== false;
-  const hasDrafts = Object.keys(drafts).length > 0;
+  const key = JSON.stringify([scopeKey, document?.path]);
+  const session = document ? acceptKnowledgeDocument(sessions[key], document) : undefined;
+  // Accept clean external replacements before painting. Typing and version UUIDs alone do not
+  // reset the editor. Dirty sessions keep their original document/revision as the save base.
+  if (session && session !== sessions[key]) setSessions({ ...sessions, [key]: session });
+  const canEdit = canWrite && !!session?.base.version && session.base.bodyLoaded !== false;
+  const dirty = !!session && knowledgeSessionDirty(session);
+  const hasDrafts = Object.values(sessions).some(knowledgeSessionDirty);
 
-  const setBody = useCallback((value: string) => {
-    if (!path || !source || !canEdit || inFlight.current) return;
-    setDrafts((current) => {
-      const base = current[path]?.base ?? source;
-      const next = { ...current };
-      if (value === base.body) delete next[path];
-      else next[path] = { body: value, base };
-      return next;
+  const setBody = useCallback((body: string) => {
+    if (!canEdit || inFlight.current) return;
+    setSessions((current) => current[key] ? { ...current, [key]: changeKnowledgeBody(current[key], body) } : current);
+  }, [canEdit, key]);
+  const setEditorStatus = useCallback((validation: MarkdownEditorStatus) => {
+    setSessions((current) => {
+      const item = current[key];
+      if (!item || (item.validation.error === validation.error && item.validation.viewMode === validation.viewMode)) return current;
+      return { ...current, [key]: { ...item, validation } };
     });
-  }, [canEdit, path, source]);
+  }, [key]);
 
   function discard() {
-    if (!path || inFlight.current) return;
-    setDrafts((current) => { const next = { ...current }; delete next[path]; return next; });
-    setErrors((current) => ({ ...current, [path]: "" }));
+    if (!document || inFlight.current) return;
+    setSessions((current) => current[key] ? { ...current, [key]: discardKnowledgeDraft(current[key], document) } : current);
   }
 
   async function save() {
-    if (!path || !draft || !canEdit || inFlight.current) return;
+    if (!session || !dirty || !canEdit || !markdownCanSave(session.validation) || inFlight.current) return;
     inFlight.current = true;
-    setSavingPath(path);
-    setErrors((current) => ({ ...current, [path]: "" }));
+    setSavingKey(key);
+    setSessions((current) => ({ ...current, [key]: { ...current[key], error: null } }));
     try {
-      const result = await saveKnowledgeDocument(draft.base, draft.body);
-      setSavedDocuments((current) => ({ ...current, [path]: result }));
-      setDrafts((current) => {
-        const next = { ...current };
-        if (next[path]?.body === draft.body) delete next[path];
-        else if (next[path]) next[path] = { ...next[path], base: result };
-        return next;
-      });
+      const saved = await saveKnowledgeDocument(session.base, session.body);
+      setSessions((current) => ({ ...current, [key]: acceptKnowledgeSave(current[key], saved, session.body) }));
       router.refresh();
     } catch (error) {
-      setErrors((current) => ({ ...current, [path]: error instanceof Error ? error.message : "Could not save your changes. Please try again." }));
+      setSessions((current) => ({ ...current, [key]: { ...current[key], error: error instanceof Error ? error.message : "Could not save your changes. Please try again." } }));
     } finally {
       inFlight.current = false;
-      setSavingPath(null);
+      setSavingKey(null);
     }
   }
 
@@ -70,13 +64,14 @@ export function useKnowledgeEditor(document: BrandKnowledgeDocument | undefined)
   }, [hasDrafts]);
 
   return {
-    body, canEdit, dirty: !!draft, discard, editorOpened, mode: canEdit ? mode : "preview",
-    error: path ? errors[path] : undefined, save, setBody,
-    saving: savingPath === path, busy: savingPath !== null,
-    saved: !!saved && !draft,
-    setMode(next: "preview" | "edit") {
-      if (next === "edit") setEditorOpened(true);
-      setMode(next);
+    documentKey: key, body: session?.body ?? "", resetKey: session?.resetKey ?? 0,
+    canEdit, dirty, discard, editorOpened: session?.opened ?? false,
+    mode: canEdit ? session?.mode ?? "preview" : "preview",
+    error: session?.error, save, setBody, setEditorStatus,
+    canSave: canEdit && dirty && !!session && markdownCanSave(session.validation) && savingKey === null,
+    saving: savingKey === key, busy: savingKey !== null, saved: session?.saved && !dirty,
+    setMode(mode: "preview" | "edit") {
+      setSessions((current) => current[key] ? { ...current, [key]: { ...current[key], mode, opened: current[key].opened || mode === "edit" } } : current);
     },
   };
 }
