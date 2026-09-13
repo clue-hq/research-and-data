@@ -51,6 +51,7 @@ from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.brand_knowledge_context import (
     KnowledgeDocumentRef,
     current_knowledge_documents,
+    current_project_knowledge_refs,
 )
 from clue_api.turn_action import (
     TurnActionUnresolvable,
@@ -264,8 +265,17 @@ class OpenProductSetSelectionGateTool(Tool):
                     "this brand has no products to choose between",
                     reason_code="product_set_no_candidates",
                 )
-            documents = await current_knowledge_documents(
-                conn, workspace_id=ctx.workspace_id, brand_id=brand_id
+            # Both scopes, because the ICP pre-check below must find the document this project
+            # would actually be asked about: its own variant when it authored one, the brand's
+            # otherwise. The brand reader no longer returns project rows, so they are unioned in
+            # rather than filtered out.
+            documents = (
+                *await current_knowledge_documents(
+                    conn, workspace_id=ctx.workspace_id, brand_id=brand_id
+                ),
+                *await current_project_knowledge_refs(
+                    conn, workspace_id=ctx.workspace_id, project_id=turn.project_id
+                ),
             )
             catalog = _current_catalog(documents)
             catalog_front = (
@@ -437,7 +447,16 @@ class OpenProductSetSelectionGateTool(Tool):
 def _current_catalog(
     documents: Sequence[KnowledgeDocumentRef],
 ) -> KnowledgeDocumentRef | None:
-    catalogs = [ref for ref in documents if ref.kind == _CATALOG_KIND]
+    """The **brand's** product catalog. A project-scoped row is never the product catalog.
+
+    ``documents`` is a union of both scopes, because the ICP lookup beside this one must find the
+    project's own variant. The catalog is the other kind of question: what this brand sells is the
+    brand's fact, and the gate confirms a selection *from* it. A project-scoped `product/catalog.md`
+    would otherwise silently become the authority for that project's product set — nothing in the
+    schema forbids one, and the set of project-scoped kinds keeps growing.
+    """
+
+    catalogs = [ref for ref in documents if ref.kind == _CATALOG_KIND and ref.project_id is None]
     if not catalogs:
         return None
     return min(catalogs, key=lambda ref: ref.path)

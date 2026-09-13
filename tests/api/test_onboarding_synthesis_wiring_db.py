@@ -671,3 +671,178 @@ def test_a_re_synthesis_retires_the_draft_it_replaces_but_never_a_confirmation(
             assert rows[3]["status"] == "proposed"
 
     run_async(scenario())
+
+
+PROJECT_ICP = """---
+kind: icp-definition
+icp_key: gi-groups-dac
+version: 1
+status: proposed
+product_ids: [prd_aura]
+persona_map:
+  economic_buyer: {titles: [Practice Administrator]}
+qualifier_fields: []
+---
+
+# GI groups, direct-to-employer
+
+Body (inputs/brand/knowledge/company/overview.md).
+"""
+
+PROJECT_PERSONA = """---
+kind: audience-persona
+icp_key: gi-groups-dac
+icp_version: 1
+personas:
+  - {role: economic_buyer, titles: [Benefits Director],
+     buying_triggers: [self-funded plan renewal], evidence_urls: []}
+---
+
+# Personas for GI groups, direct-to-employer
+
+## Economic buyer
+Text.
+"""
+
+
+def _project_persona_script() -> list[AIMessage]:
+    return [
+        AIMessage(
+            content="",
+            tool_calls=[
+                _call(
+                    "write_file",
+                    {
+                        "file_path": "outputs/audience/persona-gi-groups-dac.md",
+                        "content": PROJECT_PERSONA,
+                    },
+                    1,
+                )
+            ],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                _call(
+                    "finalize_turn",
+                    {"status": "completed", "user_message": "Wrote persona-gi-groups-dac."},
+                    2,
+                )
+            ],
+        ),
+    ]
+
+
+async def _seed_project_icp(
+    conn: AsyncConnection,
+    *,
+    storage: _MemoryStorage,
+    brand_id: str,
+    project_id: str,
+) -> UUID:
+    """One project-local ICP variant, the shape ``author_icp_document`` writes for a project."""
+
+    artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_session_factory(conn))
+    ref = await artifacts.persist_body(
+        workspace_id=WS, data=PROJECT_ICP.encode(), media_type="text/markdown"
+    )
+    document_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, "
+            "project_id, folder, path, kind, version, status, artifact_key, artifact_sha256) "
+            "VALUES (:id, :ws, :brand, :project, 'audience', :path, 'icp-definition', 1, "
+            "'proposed', :key, :sha)"
+        ),
+        {
+            "id": document_id,
+            "ws": WS,
+            "brand": brand_id,
+            "project": project_id,
+            "path": "audience/icp-gi-groups-dac.md",
+            "key": ref.artifact_key,
+            "sha": ref.sha256,
+        },
+    )
+    return document_id
+
+
+def test_a_persona_turn_for_a_project_local_icp_reads_and_writes_in_that_scope(
+    tmp_path: Path,
+) -> None:
+    """A project's own ICP is not the brand's, on both sides of the turn.
+
+    The brand-level reader cannot see it, so a persona turn that only read the brand's documents
+    would fail ``icp_document_missing`` on the very document it was asked to write about. The
+    turn's inputs are therefore the brand's knowledge **union** the ICP's own project's documents,
+    and the persona it writes lands in that same project's scope rather than in the brand's.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WS, name="seed")
+            await seed_principal(conn, workspace_id=WS, user_id="usr_o4")
+            brand_id = project.brand_id
+            storage = _MemoryStorage()
+            await _seed_inputs(conn, storage=storage, brand_id=brand_id)
+            variant = await _seed_project_icp(
+                conn, storage=storage, brand_id=brand_id, project_id=project.project_id
+            )
+
+            launcher = await OnboardingSynthesisLauncher.for_tests(
+                conn=conn,
+                storage=storage,
+                models=_Models(_project_persona_script()),
+                workspace_root=tmp_path / "ws",
+            )
+            run_id = uuid4()
+            result = await launcher.launch_persona(
+                workspace_id=WS,
+                brand_id=brand_id,
+                run_id=run_id,
+                step_id=uuid4(),
+                icp=RegisteredIcp(
+                    document_id=variant,
+                    icp_key="gi-groups-dac",
+                    version=1,
+                    path="audience/icp-gi-groups-dac.md",
+                    project_id=project.project_id,
+                ),
+            )
+
+            assert result.status == "completed", (result.failure_code, result.failure_message)
+            # The variant was selected as the turn's one ICP, by document id.
+            card = next(
+                card
+                for card in await _payloads(
+                    conn, storage=storage, media_type=SYNTHESIS_CARD_MEDIA_TYPE
+                )
+                if card["task"] == "persona"
+            )
+            assert card["icp"] == {
+                "key": "gi-groups-dac",
+                "document_id": str(variant),
+                "version": 1,
+            }
+            assert "inputs/brand/knowledge/audience/icp-gi-groups-dac.md" in card["context_paths"]
+            # And the persona it wrote is the project's, beside the brand's own knowledge.
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT path, kind, status, project_id FROM brand_knowledge_document "
+                            "WHERE workspace_id = :ws AND folder = 'audience' ORDER BY path"
+                        ),
+                        {"ws": WS},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert [(row["path"], row["project_id"]) for row in rows] == [
+                ("audience/icp-gi-groups-dac.md", project.project_id),
+                ("audience/persona-gi-groups-dac.md", project.project_id),
+            ]
+            assert rows[1]["kind"] == "audience-persona" and rows[1]["status"] == "ready"
+
+    run_async(scenario())

@@ -85,7 +85,10 @@ ICP_CONFIRMATION_SOURCE_KEY = "arv2-icp-confirmation"
 _SERVABLE_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
 
 _CONFIRMATION_NAMESPACE = "arv2-icp-confirmation"
-_DOCUMENT_COLUMNS = "document_id, brand_id, path, version, status, artifact_key, artifact_sha256"
+_DOCUMENT_COLUMNS = (
+    "document_id, brand_id, project_id, derived_from_document_id, path, version, status, "
+    "artifact_key, artifact_sha256"
+)
 
 
 def _utcnow() -> datetime:
@@ -111,6 +114,11 @@ class IcpDocumentSubject:
     product_ids: tuple[str, ...]
     title: str
     confirmed_for_project_id: str | None
+    #: ``None`` for the brand's own document; set for a project-local variant, which only that
+    #: project may read and confirm. The confirmed version inherits both this and the lineage
+    #: below, so a variant's history stays inside its own scope.
+    project_id: str | None
+    derived_from_document_id: UUID | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,28 +173,43 @@ def _confirmed_for(front: Mapping[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+_SERVABLE_ICP_ROWS = text(
+    "SELECT DISTINCT ON (path) "
+    f"{_DOCUMENT_COLUMNS} "
+    "FROM brand_knowledge_document "
+    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND kind = :kind "
+    "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
+    "  AND (project_id IS NULL OR project_id = :project_id) "
+    "ORDER BY path, (project_id IS NULL), version DESC"
+)
+
+
 async def _servable_icp_rows(
     conn: AsyncConnection,
     *,
     workspace_id: str,
     brand_id: str,
+    project_id: str | None,
 ) -> tuple[dict[str, Any], ...]:
-    """The brand's current servable ICP documents — the max version of each path."""
+    """The current servable ICP documents this project may read — the max version of each path.
+
+    Scope decides which row owns a path. A project sees the brand's documents *and* its own
+    variants, and where both exist at one path the variant wins (``(project_id IS NULL)`` sorts
+    ``false`` first, so ``DISTINCT ON`` keeps the project's row) — a project that rewrote its ICP
+    reads what it rewrote. A read with no project (``:project_id`` bound ``None``) sees brand rows
+    only: ``project_id = NULL`` is never true, so no project's private variant leaks into an
+    unscoped read.
+    """
 
     rows = (
         await conn.execute(
-            text(
-                f"SELECT DISTINCT ON (path) {_DOCUMENT_COLUMNS} "
-                "FROM brand_knowledge_document "
-                "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
-                "  AND kind = :kind AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
-                "ORDER BY path, version DESC"
-            ),
+            _SERVABLE_ICP_ROWS,
             {
                 "workspace_id": workspace_id,
                 "brand_id": brand_id,
                 "kind": ICP_KIND,
                 "statuses": list(_SERVABLE_STATUSES),
+                "project_id": project_id,
             },
         )
     ).mappings()
@@ -226,9 +249,12 @@ async def _subject_from_row(
     path = str(row["path"])
     declared = front.get("icp_key")
     icp_key = declared if isinstance(declared, str) and declared else _key_from_path(path)
+    project_id = row["project_id"]
     return IcpDocumentSubject(
         document_id=row["document_id"],
         brand_id=str(row["brand_id"]),
+        project_id=None if project_id is None else str(project_id),
+        derived_from_document_id=row["derived_from_document_id"],
         path=path,
         icp_key=icp_key,
         version=int(row["version"]),
@@ -248,15 +274,21 @@ async def current_icp_document(
     workspace_id: str,
     brand_id: str,
     icp_key: str,
+    project_id: str | None = None,
 ) -> IcpDocumentSubject | None:
-    """This brand's current ICP document for ``icp_key``, read back through its own bytes.
+    """The current ICP document for ``icp_key`` this project may read, through its own bytes.
 
     The path is the identity onboarding writes (``audience/icp-<key>.md``), so it is tried first.
     The fallback scan exists because the key is a front-matter fact and a document written under
     some other path still carries it; a key that no servable document claims is honestly absent.
+
+    ``project_id`` is the reader's scope: with it, a project-local variant of a path wins over the
+    brand's document; without it, only brand-level documents are visible at all.
     """
 
-    rows = await _servable_icp_rows(conn, workspace_id=workspace_id, brand_id=brand_id)
+    rows = await _servable_icp_rows(
+        conn, workspace_id=workspace_id, brand_id=brand_id, project_id=project_id
+    )
     path = _path_for(icp_key)
     ordered = sorted(rows, key=lambda row: (str(row["path"]) != path, str(row["path"])))
     for row in ordered:
@@ -467,20 +499,32 @@ async def confirm_icp_document(
             await conn.execute(
                 text(
                     "SELECT COALESCE(MAX(version), 0) + 1 FROM brand_knowledge_document "
-                    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND path = :path"
+                    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND path = :path "
+                    "  AND project_id IS NOT DISTINCT FROM :project_id"
                 ),
-                {"workspace_id": workspace_id, "brand_id": brand_id, "path": proposed.path},
+                {
+                    "workspace_id": workspace_id,
+                    "brand_id": brand_id,
+                    "path": proposed.path,
+                    # The *subject's* scope, not the confirming project's: confirming a brand
+                    # document mints a brand version, and confirming a project's variant mints the
+                    # next version of that variant. The two histories share a path and never
+                    # interleave, which is exactly what the scoped unique index allows.
+                    "project_id": proposed.project_id,
+                },
             )
         ).scalar_one()
     )
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document ("
-            "  document_id, workspace_id, brand_id, folder, path, kind, version, status, "
+            "  document_id, workspace_id, brand_id, project_id, derived_from_document_id, "
+            "  folder, path, kind, version, status, "
             "  artifact_key, artifact_sha256, produced_by_step_id, produced_by_turn_id, "
             "  supersedes_document_id"
             ") VALUES ("
-            "  :document_id, :workspace_id, :brand_id, :folder, :path, :kind, :version, "
+            "  :document_id, :workspace_id, :brand_id, :project_id, :derived_from, "
+            "  :folder, :path, :kind, :version, "
             "  'confirmed', :artifact_key, :artifact_sha256, NULL, NULL, :supersedes"
             ") ON CONFLICT (document_id) DO NOTHING"
         ),
@@ -488,6 +532,10 @@ async def confirm_icp_document(
             "document_id": document_id,
             "workspace_id": workspace_id,
             "brand_id": brand_id,
+            # A confirmation does not change what a document *is*: the confirmed version keeps the
+            # proposal's scope and the lineage back to the brand document it was cut from.
+            "project_id": proposed.project_id,
+            "derived_from": proposed.derived_from_document_id,
             "folder": proposed.path.split("/", 1)[0],
             "path": proposed.path,
             "kind": ICP_KIND,
@@ -539,6 +587,9 @@ class ProjectIcpPin:
     product_selection_version: int | None
     version: int
     path: str
+    #: The pinned document's own scope: ``None`` when the project pinned the brand's document, its
+    #: own project id when it pinned a variant it authored.
+    project_id: str | None
 
 
 #: The current pin is the project's greatest ``pin_seq``. ``version`` and ``path`` are not columns
@@ -548,7 +599,7 @@ class ProjectIcpPin:
 _CURRENT_PIN = text(
     """
     SELECT pin.document_id, pin.icp_key, pin.artifact_key, pin.artifact_sha256,
-           pin.product_selection_version, doc.version, doc.path
+           pin.product_selection_version, doc.version, doc.path, doc.project_id
     FROM project_icp_pin AS pin
     JOIN brand_knowledge_document AS doc ON doc.document_id = pin.document_id
     WHERE pin.workspace_id = :workspace_id AND pin.project_id = :project_id
@@ -585,6 +636,7 @@ async def current_project_icp_pin(
     if row is None:
         return None
     selection_version = row["product_selection_version"]
+    pinned_project_id = row["project_id"]
     return ProjectIcpPin(
         document_id=row["document_id"],
         icp_key=str(row["icp_key"]),
@@ -593,6 +645,7 @@ async def current_project_icp_pin(
         product_selection_version=(None if selection_version is None else int(selection_version)),
         version=int(row["version"]),
         path=str(row["path"]),
+        project_id=None if pinned_project_id is None else str(pinned_project_id),
     )
 
 

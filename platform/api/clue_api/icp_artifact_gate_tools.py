@@ -238,6 +238,10 @@ class OpenIcpArtifactGateTool(Tool):
                     workspace_id=ctx.workspace_id,
                     brand_id=project.brand_id,
                     icp_key=inputs.icp_key,
+                    # The presenting turn supplies the project scope exactly as it supplies the
+                    # brand: a project that authored its own variant of this key is asked about
+                    # that variant, not about the brand's document.
+                    project_id=turn.project_id,
                 )
             )
             if subject is None:

@@ -81,6 +81,7 @@ async def _seed_document(
     version: int,
     status: str,
     body: str,
+    project_id: str | None = None,
 ) -> UUID:
     ref = await artifacts.persist_body(
         workspace_id=workspace_id,
@@ -91,8 +92,9 @@ async def _seed_document(
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            "path, kind, version, status, artifact_key, artifact_sha256) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha)"
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project)"
         ),
         {
             "id": document_id,
@@ -105,6 +107,7 @@ async def _seed_document(
             "status": status,
             "key": ref.artifact_key,
             "sha": ref.sha256,
+            "project": project_id,
         },
     )
     return document_id
@@ -535,5 +538,76 @@ def test_the_tool_is_free_domain_idempotent_and_confirms_nothing(tmp_path: Path)
                 ).cost_cents
                 == 0
             )
+
+    run_async(scenario())
+
+
+def test_a_project_scoped_catalog_document_never_becomes_this_gates_catalog(
+    tmp_path: Path,
+) -> None:
+    """Review M5: the gate reads both scopes for the ICP, but the catalog is the brand's alone.
+
+    The union exists so the ICP pre-check finds the project's own variant when it authored one.
+    The catalog is the other kind of question — what this brand *sells* is a brand fact, and the
+    gate's whole job is confirming a selection from it — so a project-scoped ``product-catalog``
+    row must not become the authority for that project's product set. Nothing in the schema
+    forbids one, and the set of project-scoped kinds keeps growing, so the filter is the guard.
+
+    The seeded decoy sorts *before* ``product/catalog.md``, which is what makes this a real test:
+    the lookup takes the path-smallest catalog, so an unfiltered union would pick the decoy.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_brand_catalog(
+                conn, tmp_path, workspace_id="ws-o6-set-scope", label="set-scope"
+            )
+            await _seed_document(
+                conn,
+                artifacts=fixture.artifacts,
+                workspace_id=fixture.seeded.workspace_id,
+                brand_id=fixture.brand_id,
+                path="product/brand-catalog.md",
+                kind="product-catalog",
+                version=9,
+                status="ready",
+                body=_catalog_body(
+                    [
+                        {
+                            "name": "A project's private idea of the catalog",
+                            "short_description": "Not what this brand sells.",
+                            "offering_kind": "product",
+                            "family": "Decoy",
+                            "lifecycle": "active",
+                            "official_url": "https://example.test/decoy",
+                        }
+                    ]
+                ),
+                project_id=fixture.project.project_id,
+            )
+
+            tool = _tool(fixture)
+            inputs = OpenProductSetSelectionGateInput(
+                icp_key="clinics",
+                source_turn_ref=derive_turn_action_ref(fixture.seeded.turn_id),
+            )
+            result = await tool.invoke(inputs, _ctx(fixture))
+
+            view = await get_gate(
+                conn,
+                workspace_id=fixture.seeded.workspace_id,
+                gate_id=UUID(str(result.references["gate_id"])),
+            )
+            assert view is not None
+            assert view.gate.subject_ref == (
+                f"brand-product-catalog:{fixture.brand_id}:{fixture.catalog_document_id}"
+            )
+            assert view.gate.subject_revision == 3
+            snapshot = view.gate.subject_snapshot
+            assert snapshot["catalog_document_id"] == str(fixture.catalog_document_id)
+            assert snapshot["catalog_version"] == 3
+            # The brand's two real products are still the candidates and the suggestion stands.
+            assert result.references["candidate_count"] == 2
+            assert snapshot["suggested_product_ids"] == [fixture.products[1].product_id]
 
     run_async(scenario())

@@ -8,6 +8,8 @@ from sqlalchemy import text
 
 from clue_api.arv2.account_research_launch import DbArv2LaunchService
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.icp_authoring import DbIcpAuthoringService
+from clue_api.arv2.read_tools import DbArv2ReadService
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.auth_wiring import build_principal_service
 from clue_api.chat import StartupDevPrincipalResolver
@@ -19,8 +21,10 @@ from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read.contact_email_lookup import build_contact_email_lookup_service
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
+from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.projections_app import create_projections_app
 from clue_api.research_view_runtime import (
     ProductionResearchViewRuntime,
@@ -131,11 +135,35 @@ def build_application(
     arv2_discovery_launch = (
         DbArv2DiscoveryService(resolved, storage) if resolved.arv2_discovery_enabled else None
     )
+    # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
+    # nothing. What it needs is the storage the knowledge documents live in, so it composes where
+    # the composed backend is. Without a service the tool registers and refuses by name.
+    icp_authoring = DbIcpAuthoringService(storage)
+    # The persona request DOES need the onboarding flag: what it opens is an onboarding run, and
+    # with the lane off no worker would ever drive it — the row would sit ``queued`` forever,
+    # holding that ICP document's one open slot. Off, the tool refuses by name. The queue is this
+    # app's default ``DbWorkQueue``, exactly as ``DbOnboardingEnqueuer``'s is.
+    persona_requests = DbPersonaRequestService() if resolved.onboarding_v2_enabled else None
+    # The project plan has no flag of its own either: writing it down spends nothing and confirms
+    # nothing, and it needs only the storage the knowledge documents live in. Without a service the
+    # tool registers and refuses by name.
+    project_documents = DbProjectDocumentService(storage)
+    # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
+    # every deployment (account membership, display blocks, claims, discovery runs) and reading
+    # them spends nothing. Composed unconditionally; the tools refuse by name only where the
+    # read surface itself is absent. ``settings`` is here for one predicate: the claims read
+    # mirrors the account page's display gate, whose tier-4 arm is armed by
+    # ``verification_enabled``.
+    arv2_reads = DbArv2ReadService(settings=resolved)
     registry = build_toolbelt(
         storage=storage,
         settings=resolved,
         arv2_account_launch=arv2_account_launch,
         arv2_discovery_launch=arv2_discovery_launch,
+        arv2_reads=arv2_reads,
+        icp_authoring=icp_authoring,
+        persona_requests=persona_requests,
+        project_documents=project_documents,
         stage0_scrape_binder=stage0_scrape_binder,
         research_view_composer=(research_views.composer if research_views is not None else None),
         research_view_snapshots=(research_views.snapshots if research_views is not None else None),

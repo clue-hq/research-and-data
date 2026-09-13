@@ -31,10 +31,16 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   override_stage0_readiness: "Record the readiness decision",
   inspect_readiness_history: "Review profile readiness",
   synthesize_icps: "Create an ideal customer profile proposal",
+  author_icp_document: "Draft an ideal customer profile",
+  request_persona_synthesis: "Write the buyer personas",
+  write_project_document: "Write the project plan",
   open_icp_confirmation_gate: "Prepare the profile for your review",
   start_confirmed_project_run: "Start the project",
   draft_account_research_directive: "Prepare the research plan",
   launch_account_research: "Start account research",
+  read_project_accounts: "Review the project's accounts",
+  read_account_research: "Review an account's research",
+  read_discovery_run: "Review the discovery run",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {

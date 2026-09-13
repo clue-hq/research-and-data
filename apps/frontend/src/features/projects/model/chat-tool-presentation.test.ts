@@ -107,6 +107,87 @@ test("profile synthesis names the proposal but withholds tenant and decision ids
   assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039|90f10d1e/);
 });
 
+test("ICP authoring and persona requests read as operator work, not tool names", () => {
+  const authoring = toolPresentation(
+    part("author_icp_document", {
+      reference_values: {
+        icp_key: "independent_multisite_neurosurgery_spine_practices",
+        icp_version: 2,
+        workspace_id: WORKSPACE_ID,
+        document_id: GATE_ID,
+      },
+    }),
+  );
+  assert.equal(authoring.label, "Draft an ideal customer profile");
+  assert.deepEqual(authoring.rows, []);
+  assert.doesNotMatch(visibleText(authoring), /ws_fixture|6fae9039/);
+
+  const personas = toolPresentation(
+    part("request_persona_synthesis", {
+      reference_values: { run_id: GATE_ID, kind: "personas", status: "queued" },
+    }),
+  );
+  assert.equal(personas.label, "Write the buyer personas");
+  assert.deepEqual(personas.rows, []);
+  assert.doesNotMatch(visibleText(personas), /6fae9039|queued/);
+});
+
+test("writing the project plan reads as operator work, not a tool name", () => {
+  const presentation = toolPresentation(
+    part("write_project_document", {
+      reference_values: {
+        document_id: GATE_ID,
+        document: "plan",
+        version: 2,
+        workspace_id: WORKSPACE_ID,
+      },
+    }),
+  );
+
+  assert.equal(presentation.label, "Write the project plan");
+  assert.deepEqual(presentation.rows, []);
+  assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
+});
+
+test("the three reads read as reviewing work, not tool names", () => {
+  const accounts = toolPresentation(
+    part("read_project_accounts", {
+      project_id: GATE_ID,
+      total: 12,
+      accounts: [{ account_entity_id: GATE_ID, name: "Goodman Campbell" }],
+    }),
+  );
+  assert.equal(accounts.label, "Review the project's accounts");
+
+  const research = toolPresentation(
+    part("read_account_research", {
+      account_entity_id: GATE_ID,
+      account_name: "Goodman Campbell",
+      section: "overview",
+      overview: [],
+      claims: [],
+      truncated: false,
+    }),
+  );
+  assert.equal(research.label, "Review an account's research");
+
+  const discovery = toolPresentation(
+    part("read_discovery_run", {
+      run_id: GATE_ID,
+      status: "completed",
+      asked: 20,
+      found: 13,
+      candidates: [],
+    }),
+  );
+  assert.equal(discovery.label, "Review the discovery run");
+
+  for (const presentation of [accounts, research, discovery]) {
+    assert.deepEqual(presentation.rows, []);
+    assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
+  }
+});
+
 test("gate preparation never exposes gate, user, workspace, ref, or digest values", () => {
   const presentation = toolPresentation(
     part("open_icp_confirmation_gate", {

@@ -33,7 +33,7 @@ from clue_api.icp_artifact_gate_tools import (
 )
 from clue_api.turn_action import derive_turn_action_ref
 from clue_core import new_operation_id
-from clue_spine import create_product, get_project
+from clue_spine import create_product, create_project, get_project
 from clue_storage import FsStorage
 from clue_toolbelt import ReplayPolicy, ToolContext, ToolEffectClass
 from tests.api.test_lane_d4_agent_gate_db import USER_ID, _seed
@@ -83,8 +83,14 @@ async def seed_document(
     version: int,
     status: str,
     body: str,
+    project_id: str | None = None,
+    derived_from_document_id: UUID | None = None,
 ) -> tuple[UUID, str, str]:
-    """Insert one ``brand_knowledge_document`` over really-stored bytes."""
+    """Insert one ``brand_knowledge_document`` over really-stored bytes.
+
+    ``project_id`` scopes the row to one project (ICP authoring, Task 1's columns);
+    ``derived_from_document_id`` is the brand document a project-local variant was cut from.
+    """
 
     ref = await artifacts.persist_body(
         workspace_id=workspace_id,
@@ -95,8 +101,10 @@ async def seed_document(
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            "path, kind, version, status, artifact_key, artifact_sha256) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha)"
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id, "
+            "derived_from_document_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project, :derived)"
         ),
         {
             "id": document_id,
@@ -109,6 +117,8 @@ async def seed_document(
             "status": status,
             "key": ref.artifact_key,
             "sha": ref.sha256,
+            "project": project_id,
+            "derived": derived_from_document_id,
         },
     )
     return document_id, ref.artifact_key, ref.sha256
@@ -464,6 +474,97 @@ def test_the_tool_is_free_domain_idempotent_and_pins_the_project(tmp_path: Path)
                 )
             )
             assert estimate.cost_cents == 0
+
+    run_async(scenario())
+
+
+def test_a_project_local_icp_is_served_only_to_its_own_project(tmp_path: Path) -> None:
+    """A project-local ICP variant is this project's document, and nobody else's.
+
+    The same key read for another project — or read with no project at all — is honestly absent
+    rather than answered with a document that project never authored. The gate opens on it because
+    the presenting turn supplies the project scope, exactly as it supplies the brand.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_icp(
+                conn,
+                tmp_path,
+                workspace_id="ws-o6-icp-proj",
+                label="icpproj",
+                with_document=False,
+            )
+            workspace_id = fixture.seeded.workspace_id
+            document_id, _key, artifact_sha256 = await seed_document(
+                conn,
+                artifacts=fixture.artifacts,
+                workspace_id=workspace_id,
+                brand_id=fixture.brand_id,
+                path="audience/icp-clinics-dac.md",
+                kind="icp-definition",
+                version=1,
+                status="proposed",
+                body=icp_body(
+                    key="clinics-dac",
+                    status="proposed",
+                    product_ids=[fixture.product.product_id],
+                ),
+                project_id=fixture.seeded.project_id,
+            )
+            other = await create_project(
+                conn,
+                workspace_id=workspace_id,
+                brand_id=fixture.brand_id,
+                name="Another project on the same brand",
+            )
+
+            mine = await current_icp_document(
+                conn,
+                fixture.storage,
+                workspace_id=workspace_id,
+                brand_id=fixture.brand_id,
+                icp_key="clinics-dac",
+                project_id=fixture.seeded.project_id,
+            )
+            assert mine is not None
+            assert mine.document_id == document_id
+            assert mine.project_id == fixture.seeded.project_id
+            assert mine.derived_from_document_id is None
+
+            assert (
+                await current_icp_document(
+                    conn,
+                    fixture.storage,
+                    workspace_id=workspace_id,
+                    brand_id=fixture.brand_id,
+                    icp_key="clinics-dac",
+                    project_id=other.project_id,
+                )
+                is None
+            )
+            assert (
+                await current_icp_document(
+                    conn,
+                    fixture.storage,
+                    workspace_id=workspace_id,
+                    brand_id=fixture.brand_id,
+                    icp_key="clinics-dac",
+                )
+                is None
+            )
+
+            tool = _tool(fixture)
+            inputs = OpenIcpArtifactGateInput(
+                icp_key="clinics-dac",
+                source_turn_ref=derive_turn_action_ref(fixture.seeded.turn_id),
+            )
+            assert await tool.preconditions(inputs, _ctx(fixture)) == ()
+            result = await tool.invoke(inputs, _ctx(fixture))
+            assert result.references["subject_ref"] == (
+                f"brand-knowledge-document:{document_id}:v1"
+            )
+            assert result.references["expected_subject_sha256"] == artifact_sha256
 
     run_async(scenario())
 

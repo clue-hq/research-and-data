@@ -84,7 +84,33 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v45 (ARV2 Track R, R4, 2026-09-10): v44 plus ONE tool — `launch_arv2_discovery@1`, verified
     # account discovery for a project — and stage0-interview v22, whose §7b is the procedure for
     # it. Nothing is dropped and nothing is re-pinned; everything else is v44's.
-    AgentRole.HEAD_OF_ABM: "v45",
+    # v46 (ARV2 context and authoring, 2026-09-12): v45 plus `author_icp_document@1` and
+    # `request_persona_synthesis@1` — the agent may write a proposed ICP document (brand-level or
+    # a project-local variant) and ask the platform for its personas — and stage0-interview v23,
+    # whose §5b and §5c are the procedures and whose §1 names the project's own files. Neither
+    # tool confirms anything: the ICP gate is still the human's. Everything else is v45's.
+    # v47 (project plan, 2026-09-12): v46 plus ONE tool — `write_project_document@1`, the
+    # project's one plan written with a revision check — and stage0-interview v24, whose §6b says
+    # when the plan is written (after the section-2 answers, a confirmed ICP and a confirmed
+    # product set) and what it contains. The human edits the same file in the Plan tab, so a
+    # stale write is refused by name rather than overwriting their words. Everything else is v46's.
+    # v48 (read tools, 2026-09-13): v47 plus THREE effect-free reads over the project's own ARV2
+    # rows — `read_project_accounts@1` (the accounts in the project and each one's research
+    # status), `read_account_research@1` (one account's written overview, or its live claims) and
+    # `read_discovery_run@1` (the latest or a named discovery run with its candidates) — and
+    # stage0-interview v25, whose §7c says to read before speaking about accounts and whose §7b
+    # says to read the last discovery run before proposing another. None of them spends, approves
+    # or launches: they replace "what my own thread happened to start" with what the rows say.
+    # Everything else is v47's.
+    # v49 (read-tool contract repairs, 2026-09-13): v48's three reads with their contracts fixed,
+    # and stage0-interview v26. The rows they serve are typed in the output schema now, so a later
+    # change to a row shape moves the digest and this pin notices; `read_account_research`'s claims
+    # are gated exactly as the account page gates them (sensitive, unverified tier-4 and
+    # outreach-unsafe held back and counted) so chat cannot state a fact the app refuses to print;
+    # `read_project_accounts` gained `query`/`offset` so a named account past the first page is
+    # reachable; and `read_discovery_run`'s `verified` counts the candidates the verifier judged.
+    # No tool is added or dropped. Everything else is v48's.
+    AgentRole.HEAD_OF_ABM: "v49",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -110,6 +136,34 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
     # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
     "archive_thread": (),
+    # ICP authoring: granted with `head-of-abm@v46`; stage0-interview v23 §5b is the procedure.
+    # Writing the profile down is the same act as proposing one in prose — it is drafted only from
+    # the brand's knowledge files and what the human said on this turn — except that the written
+    # version is a durable, addressable document the confirmation gate can present. It approves
+    # nothing: the document is born proposed and the human confirms it through
+    # `open_icp_confirmation_gate@2`, exactly as they confirm a profile onboarding synthesized.
+    "author_icp_document": (AgentRole.HEAD_OF_ABM,),
+    # The persona request is the same kind of capability and lands on the same terms: a profile
+    # the human already confirmed needs its personas before research and outreach can use it, and
+    # asking for them queues a background onboarding turn rather than writing a document here.
+    # Granted with `head-of-abm@v46`; stage0-interview v23 §5c is the procedure.
+    "request_persona_synthesis": (AgentRole.HEAD_OF_ABM,),
+    # The project plan: granted with `head-of-abm@v47`; stage0-interview v24 §6b is the procedure.
+    # A project has one plan and this agent writes it, in the human's terms, out of the decisions
+    # the conversation already reached — it decides nothing new. The human edits the same document
+    # in the Plan tab, so the write carries the version it was authored against and a stale one is
+    # refused by name: the model re-reads, keeps the human's edits, and writes again.
+    "write_project_document": (AgentRole.HEAD_OF_ABM,),
+    # The ARV2 reads: what this project's own rows already say — its accounts and their research
+    # status, one account's overview or claims, one discovery run and its candidates. Granted with
+    # `head-of-abm@v48` (contracts repaired at v49); stage0-interview v26 §7c is the procedure and
+    # its §7b says to read the last discovery run before proposing another. They spend nothing,
+    # approve nothing and launch nothing, so the only thing a call can do is make an answer true:
+    # a fact about an account now comes from a claim the read returned rather than from an earlier
+    # thread's memory.
+    "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research": (AgentRole.HEAD_OF_ABM,),
+    "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
@@ -440,6 +494,25 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",
+                # ARV2 context and authoring: both write. `author_icp_document` mints a durable
+                # proposed ICP version on the brand or the project, and `request_persona_synthesis`
+                # queues a real background onboarding turn that spends against providers — neither
+                # is a thing a manual-conversation-only dev harness may leave behind.
+                "author_icp_document",
+                "request_persona_synthesis",
+                # The project plan writes a durable document version off this surface and puts a
+                # plan card in the project's own chat — a manual-conversation-only dev harness
+                # may not leave one behind either.
+                "write_project_document",
+                # The three ARV2 reads spend nothing and address nobody, so they are withheld for
+                # the OTHER reason PC-C8 §2.4 gives: the trial's own `build_toolbelt` passes no
+                # `arv2_reads`, so installed they would be advertised in the capability map and
+                # refuse `arv2_reads_not_composed` at call time — restriction by refusal, which
+                # that section rejects. Withheld, the trial's framing sentence is true: this
+                # surface has no read surface over the project's rows.
+                "read_project_accounts",
+                "read_account_research",
+                "read_discovery_run",
             }
         ),
         withheld_delegation_roles=frozenset(

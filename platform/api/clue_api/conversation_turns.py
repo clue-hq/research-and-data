@@ -124,12 +124,27 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # stage0-interview v22 §7b teaches. The slot pins exact addresses, so a granted tool the
 # promoted revision does not admit is refused by plan validation; v22 stays the exact replay
 # input for turns already pinned to it.
-CONVERSATION_RECIPE_VERSION = 23
+# Revision 24 (ARV2 context and authoring) is revision 23 plus two exact addresses:
+# ``author_icp_document@1`` and ``request_persona_synthesis@1``, the ICP-authoring pair
+# `head-of-abm@v46` grants and stage0-interview v23 §5b/§5c teach. v23 stays the exact replay
+# input for turns already pinned to it.
+# Revision 25 (the project plan) is revision 24 plus one exact address:
+# ``write_project_document@1``, the plan tool `head-of-abm@v47` grants and stage0-interview v24
+# §6b teaches. v24 stays the exact replay input for turns already pinned to it.
+# Revision 26 (the ARV2 reads) is revision 25 plus three exact addresses:
+# ``read_project_accounts@1``, ``read_account_research@1`` and ``read_discovery_run@1``, the
+# effect-free reads `head-of-abm@v48` grants and stage0-interview v25 §7b/§7c teach. v25 stays the
+# exact replay input for turns already pinned to it. The reads' fix wave minted `head-of-abm@v49` /
+# stage0-interview v26 but NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved —
+# only the three tools' schema digests, which the profile and the skill pin and this file does not.
+CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
-_PLAN_OBJECT_TYPES: frozenset[str] = frozenset({"research_directive", "agent_plan", "plan"})
+_PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
+    {"research_directive", "agent_plan", "plan", "project_document"}
+)
 
 
 class DelegationWithheld:
@@ -455,10 +470,19 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
+                    # The project's plan is the one member of this set with a name of its own: the
+                    # human calls the document "the plan", not "the project document", and its
+                    # version is a file revision they can see in the editor, so it reads as "v3"
+                    # rather than a bare ordinal.
+                    is_plan_document = ref.object_type == "project_document"
                     await stream.emit_plan_part(
                         ref=ref,
-                        title=ref.object_type.replace("_", " "),
-                        revision_label=None if ref.version is None else str(ref.version),
+                        title="Plan" if is_plan_document else ref.object_type.replace("_", " "),
+                        revision_label=(
+                            f"v{ref.version}"
+                            if is_plan_document and ref.version is not None
+                            else (None if ref.version is None else str(ref.version))
+                        ),
                     )
         await stream.emit_launched_task_parts()
         if replayed:

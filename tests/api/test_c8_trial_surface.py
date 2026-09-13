@@ -76,6 +76,20 @@ _WITHHELD = {
     "launch_arv2_discovery",
     "open_product_set_selection_gate",
     "open_icp_confirmation_gate",
+    # ARV2 context and authoring: both write something durable off this surface — a proposed ICP
+    # version, and a queued background persona run that spends — so both are withheld.
+    "author_icp_document",
+    "request_persona_synthesis",
+    # The project plan writes a durable document version and puts a plan card in the chat, so
+    # it is withheld with them.
+    "write_project_document",
+    # The three ARV2 reads are withheld for the OTHER reason: they spend nothing and address
+    # nobody, but the trial's own `build_toolbelt` passes no `arv2_reads`, so installed they would
+    # be advertised and then refuse `arv2_reads_not_composed` at call time — restriction by
+    # refusal, which PC-C8 §2.4 rejects. Withheld, this surface's framing is true.
+    "read_project_accounts",
+    "read_account_research",
+    "read_discovery_run",
 }
 
 # The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
@@ -308,7 +322,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v22" in base_disclosures
+    assert "skill:stage0-interview@v26" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -325,9 +339,22 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # ARV2 Track R, R4: the discovery launch is granted to the role and taught by
         # stage0-interview v22 §7b; the trial withholds it with its siblings.
         "launch_arv2_discovery",
+        # ARV2 context and authoring: the ICP-authoring pair is granted at `head-of-abm@v46` and
+        # taught by stage0-interview v23 §5b/§5c; the trial withholds both for the same sentence.
+        "author_icp_document",
+        "request_persona_synthesis",
+        # The project plan is granted at `head-of-abm@v47` and taught by stage0-interview v24
+        # §6b; the trial withholds it for the same sentence.
+        "write_project_document",
+        # The three reads are granted at `head-of-abm@v48` and taught by stage0-interview v25
+        # §7b/§7c; the trial withholds them because it composes no read service, so installed they
+        # could only refuse.
+        "read_project_accounts",
+        "read_account_research",
+        "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v22")
+    body = base.open_skill("skill:stage0-interview@v26")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

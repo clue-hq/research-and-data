@@ -80,10 +80,15 @@ def test_none_then_the_latest_run_with_its_counts() -> None:
             await record_discovery_progress(
                 conn, run_id=row.run_id, found_strict=5, found_relaxed=0, analyzed=90
             )
+            # ``verified`` means the verifier JUDGED this company, which is a verdict row — not
+            # merely "no longer pending". `d.com` is the proof: the driver stamps
+            # `duplicate_of_existing` BEFORE any gate is asked, so it leaves the pass with no
+            # verdicts and must not be counted as checked.
             for domain, disposition in (
                 ("a.com", "pass"),
                 ("b.com", "unclear"),
                 ("c.com", "pending"),
+                ("d.com", "duplicate_of_existing"),
             ):
                 candidate_id = await upsert_candidate(
                     conn,
@@ -103,7 +108,11 @@ def test_none_then_the_latest_run_with_its_counts() -> None:
                     await record_verdicts(
                         conn,
                         candidate_id=candidate_id,
-                        verdicts=[],
+                        verdicts=(
+                            []
+                            if disposition == "duplicate_of_existing"
+                            else [{"gate_key": "geography", "verdict": "pass"}]
+                        ),
                         fit=0.5,
                         disposition=disposition,
                         account_entity_id=None,
@@ -115,6 +124,7 @@ def test_none_then_the_latest_run_with_its_counts() -> None:
             assert body["run_id"] == str(row.run_id)
             assert body["status"] == "in_progress"
             counts = (body["asked"], body["found"], body["verified"], body["shown"])
+            # Four candidates; two carry a verdict. The pre-spend duplicate does not.
             assert counts == (None, 5, 2, 2)
             assert body["started_at"] is not None and body["finished_at"] is None
             # Another workspace never sees this project's run.

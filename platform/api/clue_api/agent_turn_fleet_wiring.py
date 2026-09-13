@@ -112,6 +112,22 @@ from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
 )
 from clue_api.frontend_read import latest_project_run_context
+from clue_api.project_context_files import (
+    PROJECT_FILES_INDEX_CARD_MEDIA_TYPE,
+    CompiledProjectFile,
+    PinnedProjectFile,
+    compile_project_files_index_card,
+    load_or_create_project_files_pin,
+    project_seed_files,
+    read_pinned_project_files,
+)
+from clue_api.project_status import (
+    current_project_documents,
+    load_project_decisions,
+    load_project_status_facts,
+    render_decisions_markdown,
+    render_status_markdown,
+)
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -311,18 +327,15 @@ class _ProjectContextBundle:
     """The conditional half of one atomically constituted production L3 bundle.
 
     Since ARV2 onboarding O6 (ruling D5) the conditional half is the brand-knowledge index over
-    this turn's pinned documents, plus whatever account-deep steering the focus refs earn. A brand
-    with no servable knowledge document yet is the one valid empty bundle; the v2 conversation
-    envelope is still compiled only *after* this bundle succeeds, so it can never advertise an
-    artifact that failed to compile or persist.
+    this turn's pinned documents and the project-files index over its pinned project files, plus
+    whatever account-deep steering the focus refs earn. A turn composed without a blob backend
+    (diagnostic fixtures) is the one valid empty bundle; the v2 conversation envelope is still
+    compiled only *after* this bundle succeeds, so it can never advertise an artifact that failed
+    to compile or persist.
     """
 
     artifacts: tuple[ProjectContextArtifact, ...] = ()
     observations: tuple[_ContextCardObservation, ...] = ()
-
-    @property
-    def available(self) -> bool:
-        return bool(self.artifacts)
 
     def artifact(self, name: str) -> ProjectContextArtifact | None:
         return next((item for item in self.artifacts if item.name == name), None)
@@ -584,6 +597,86 @@ class ProjectConversationTurnRunner:
             documents,
             pinned_document_id=None if icp_pin is None else icp_pin.document_id,
         )
+        # The project's own compiled files (spec §4.1): status.md and decisions.md, pinned for
+        # this turn exactly as the brand documents above are. The project moves while a turn runs
+        # — a discovery run finishes, a decision is recorded — so a retry must seed the bytes the
+        # first attempt pinned, never a freshly compiled "current" state.
+        project_files: tuple[PinnedProjectFile, ...] = ()
+        if self._storage is not None:
+            # Bound once here so the compiler below closes over a backend, not over an attribute
+            # whose declared type still admits ``None``.
+            storage = self._storage
+            async with self._conn_factory() as conn:
+
+                async def compile_project_files() -> list[CompiledProjectFile]:
+                    facts = await load_project_status_facts(
+                        conn, workspace_id=workspace_id, project_id=scope.project_id
+                    )
+                    decisions = await load_project_decisions(
+                        conn,
+                        self._engine.artifacts,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                    )
+                    status_md = render_status_markdown(facts).encode()
+                    decisions_md = render_decisions_markdown(decisions).encode()
+                    # Both summaries are literal: these files are section-structured, so their
+                    # first prose line is one section's content ("Not confirmed.") and would tell
+                    # the model something false about the whole file. The index exists to say
+                    # what a file is *for*, so the compiler writes that sentence itself.
+                    return [
+                        CompiledProjectFile(
+                            path="status.md",
+                            kind="project-status",
+                            body=status_md,
+                            version=None,
+                            status="compiled",
+                            summary=(
+                                "ICP, products, plan, accounts, discovery and research, "
+                                "as of this turn."
+                            ),
+                        ),
+                        CompiledProjectFile(
+                            path="decisions.md",
+                            kind="project-decisions",
+                            body=decisions_md,
+                            version=None,
+                            status="compiled",
+                            summary="What the human told this project, in their words.",
+                        ),
+                        # …and the documents this project authored for itself. They are not brand
+                        # knowledge — the brand's seeds skip a project-scoped row deliberately —
+                        # so this is the one path that puts them on disk, in the same folder and
+                        # under the same pin as the two compiled files. Their paths are
+                        # folder-qualified, so they cannot collide with ``status.md`` or
+                        # ``decisions.md``; the pin's duplicate-path refusal stays the guard.
+                        *await current_project_documents(
+                            conn,
+                            storage,
+                            workspace_id=workspace_id,
+                            project_id=scope.project_id,
+                        ),
+                    ]
+
+                project_pin, project_pin_created = await load_or_create_project_files_pin(
+                    conn,
+                    self._engine.artifacts,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                    project_id=scope.project_id,
+                    compile=compile_project_files,
+                )
+                project_files = await read_pinned_project_files(
+                    conn, self._storage, pin=project_pin
+                )
+            log.info(
+                "agent_turn.project_files_composed",
+                turn_id=str(turn_id),
+                project_id=scope.project_id,
+                file_count=len(project_files),
+                pin_created=project_pin_created,
+            )
+        input_seeds = (*input_seeds, *project_seed_files(project_files))
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -645,6 +738,7 @@ class ProjectConversationTurnRunner:
             documents=documents,
             confirmed_icp=confirmed_icp,
             product_set=product_set,
+            project_files=project_files,
             focus_refs=submission_focus_refs,
         )
         card_ref = await self._artifact(
@@ -750,6 +844,13 @@ class ProjectConversationTurnRunner:
             card_kind="brand_knowledge_index",
             schema_version="1",
         )
+        self._observe_context_card(
+            submission=submission,
+            scope=scope,
+            observation=observations.get("project_files_index"),
+            card_kind="project_files_index",
+            schema_version="1",
+        )
         result = await self._execute_watched(
             run=lambda: self._engine.execute(
                 request=request,
@@ -776,6 +877,7 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = (),
         confirmed_icp: ConfirmedIcpRef | None = None,
         product_set: ProjectProductSet | None = None,
+        project_files: tuple[PinnedProjectFile, ...] = (),
         focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
         """Compile and persist the bounded index of this turn's pinned brand knowledge.
@@ -785,6 +887,10 @@ class ProjectConversationTurnRunner:
         ``inputs/brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
         froze, so this method compiles nothing from mutable "current" state; a brand with no
         servable document yet composes honestly nothing.
+
+        The project's own compiled files (spec §4.1) are indexed the same way, from the same kind
+        of pin: ``project_files`` are the bytes this turn's project-files pin froze, and the card
+        is an index over them — the files themselves are read from ``inputs/project/``.
         """
 
         artifacts: list[ProjectContextArtifact] = []
@@ -825,6 +931,42 @@ class ProjectConversationTurnRunner:
                     schema_version=card.schema_version,
                     content_sha256=index_ref.sha256,
                     omitted_count=card.omitted_count,
+                )
+            )
+
+        if project_files:
+            project_card = compile_project_files_index_card(
+                project_id=scope.project_id,
+                files=project_files,
+            )
+            project_ref = await self._artifact(
+                submission,
+                scope,
+                PROJECT_FILES_INDEX_CARD_MEDIA_TYPE,
+                project_card.model_dump(mode="json", exclude_none=False),
+            )
+            if project_ref.sha256 != project_card.content_sha256().removeprefix("sha256:"):
+                raise RuntimeError(
+                    "persisted project-files index differs from its compiled content hash"
+                )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name="project_files_index",
+                    artifact_ref=project_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="project_files_index",
+                        object_id=scope.project_id,
+                        version=None,
+                    ),
+                )
+            )
+            observations.append(
+                _ContextCardObservation(
+                    card_kind=project_card.card_kind,
+                    schema_version=project_card.schema_version,
+                    content_sha256=project_ref.sha256,
+                    omitted_count=0,
                 )
             )
 

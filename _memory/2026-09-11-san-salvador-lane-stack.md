@@ -427,3 +427,27 @@ reload on the setting-up screen (memory-only draft → the seam re-attaches to t
 Parked: the fixture (design-review) preview now shows the five live rows; the official-site crawl
 fleet still composes unconditionally (inert without the recon handler); persisting the profile
 website across reloads is a founder call.
+
+## 2026-09-12 — project context + ICP authoring: spec and four plans written (not yet executed)
+
+Founder walk findings: a second thread of a project knows nothing of the first (the `project_state`
+route of `record_interview_answer` is write-only since O6 ruling D5; L6 is thread-scoped; no ARV2
+list/read tools on head-of-abm@v45), and skill v22 §3/§5/§10 forbids ICP authoring. Founder rulings
+R1–R9 recorded in `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md`.
+Presentation truth for markdown documents = the dummy's Plan tab (screenshot 2026-09-12); this repo's
+`project-plan.tsx` / `ProjectPlanSchema` are orphaned dummy lifts (zero importers) and get replaced.
+
+Plans, in build order (each SDD-executable on its own):
+1. `docs/superpowers/plans/2026-09-12-project-context-files.md` — `agent_turn_project_files` pin,
+   `inputs/project/status.md` + `decisions.md` (deterministic), `ProjectFilesIndexCard@1`.
+2. `docs/superpowers/plans/2026-09-12-icp-authoring.md` — `brand_knowledge_document.project_id` +
+   `derived_from_document_id`, `onboarding_run.kind`, `author_icp_document@1`,
+   `request_persona_synthesis@1`, skill v23 / profile v46 / recipe v24.
+3. `docs/superpowers/plans/2026-09-12-project-plan-document.md` — `write_project_document@1`,
+   `/frontend/v1/projects/{id}/documents` list/detail/PUT, the Plan rail surface, shared markdown
+   pieces on design tokens, auto-open + plan-card click, documents in the gallery, skill v24 / v47 / v25.
+4. `docs/superpowers/plans/2026-09-12-head-of-abm-read-tools.md` — `read_project_accounts@1`,
+   `read_account_research@1`, `read_discovery_run@1`, skill v25 / v48 / v26.
+
+Also observed today: 32 Exa `402 Payment Required` responses in the workers' logs during the research
+run (jobs still finalized; content fetches were refused). Exa credit likely exhausted — founder told.

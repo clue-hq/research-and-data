@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 23
+    assert CONVERSATION_RECIPE_VERSION == 26
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -364,6 +364,131 @@ def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
     assert v22["version"] == 22
     assert v23["version"] == 23
     assert slot["dynamic_pin_kinds"] == v22_slot["dynamic_pin_kinds"]
+
+
+def test_icp_authoring_mints_recipe_v24_without_rewriting_v23() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v23 = json.loads((root / "recipe0-stage0-v23.json").read_text())
+    v24 = json.loads((root / "recipe0-stage0-v24.json").read_text())
+    # ARV2 context and authoring adds exactly two addresses: the proposed ICP document the agent
+    # may write, and the personas it may request for a profile the human already confirmed.
+    added = {"author_icp_document@1", "request_persona_synthesis@1"}
+
+    v23_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v23.json")
+    assert SYSTEM_RECIPE_FILENAMES[v23_index : v23_index + 2] == (
+        "recipe0-stage0-v23.json",
+        "recipe0-stage0-v24.json",
+    )
+    assert added.isdisjoint(v23["graph"]["tool_allowlist"])
+    assert added <= set(v24["graph"]["tool_allowlist"])
+    slot = next(node for node in v24["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v24["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    expected = {tuple(address.split("@")) for address in added}
+    assert expected <= slot_requirements
+    assert expected <= node_compatibility
+    # v24 is v23 PLUS the two addresses and nothing else: every address v23 admitted still
+    # resolves, so an execution pinned to either revision keeps the surface it was validated
+    # against.
+    v23_slot = next(
+        node for node in v23["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v23["graph"]["tool_allowlist"]) | added == set(v24["graph"]["tool_allowlist"])
+    assert set(v23_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert v23["version"] == 23
+    assert v24["version"] == 24
+    assert slot["dynamic_pin_kinds"] == v23_slot["dynamic_pin_kinds"]
+
+
+def test_project_plan_mints_recipe_v25_without_rewriting_v24() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v24 = json.loads((root / "recipe0-stage0-v24.json").read_text())
+    v25 = json.loads((root / "recipe0-stage0-v25.json").read_text())
+    # The project plan adds exactly one address: the plan the agent writes for this project,
+    # version-checked against the human's own edits in the Plan tab.
+    added = {"write_project_document@1"}
+
+    v24_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v24.json")
+    assert SYSTEM_RECIPE_FILENAMES[v24_index : v24_index + 2] == (
+        "recipe0-stage0-v24.json",
+        "recipe0-stage0-v25.json",
+    )
+    assert added.isdisjoint(v24["graph"]["tool_allowlist"])
+    assert added <= set(v25["graph"]["tool_allowlist"])
+    slot = next(node for node in v25["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v25["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    expected = {tuple(address.split("@")) for address in added}
+    assert expected <= slot_requirements
+    assert expected <= node_compatibility
+    # v25 is v24 PLUS the one address and nothing else: every address v24 admitted still resolves,
+    # so an execution pinned to either revision keeps the surface it was validated against.
+    v24_slot = next(
+        node for node in v24["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v24["graph"]["tool_allowlist"]) | added == set(v25["graph"]["tool_allowlist"])
+    assert set(v24_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert v24["version"] == 24
+    assert v25["version"] == 25
+    assert slot["dynamic_pin_kinds"] == v24_slot["dynamic_pin_kinds"]
+
+
+def test_read_tools_mint_recipe_v26_without_rewriting_v25() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v25 = json.loads((root / "recipe0-stage0-v25.json").read_text())
+    v26 = json.loads((root / "recipe0-stage0-v26.json").read_text())
+    # The ARV2 reads add exactly three addresses: the project's accounts, one account's research,
+    # and the discovery run — effect-free reads over rows that already exist.
+    added = {"read_project_accounts@1", "read_account_research@1", "read_discovery_run@1"}
+
+    v25_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v25.json")
+    assert SYSTEM_RECIPE_FILENAMES[v25_index : v25_index + 2] == (
+        "recipe0-stage0-v25.json",
+        "recipe0-stage0-v26.json",
+    )
+    assert added.isdisjoint(v25["graph"]["tool_allowlist"])
+    assert added <= set(v26["graph"]["tool_allowlist"])
+    slot = next(node for node in v26["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v26["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    expected = {tuple(address.split("@")) for address in added}
+    assert expected <= slot_requirements
+    assert expected <= node_compatibility
+    # v26 is v25 PLUS the three addresses and nothing else: every address v25 admitted still
+    # resolves, so an execution pinned to either revision keeps the surface it was validated
+    # against.
+    v25_slot = next(
+        node for node in v25["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v25["graph"]["tool_allowlist"]) | added == set(v26["graph"]["tool_allowlist"])
+    assert set(v25_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert v25["version"] == 25
+    assert v26["version"] == 26
+    assert slot["dynamic_pin_kinds"] == v25_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

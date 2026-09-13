@@ -71,6 +71,8 @@ from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryService,
     build_arv2_discovery_tools,
 )
+from clue_api.arv2.icp_authoring import IcpAuthoringService
+from clue_api.arv2.read_tools import Arv2ReadService, build_arv2_read_tools
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -105,14 +107,20 @@ from clue_api.exa_targeted_enrichment import (
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.icp_artifact_gate_tools import build_icp_artifact_gate_tools
+from clue_api.icp_authoring_tools import build_icp_authoring_tools
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
+from clue_api.persona_request_tools import PersonaRequestService, build_persona_request_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.product_set_selection_gate_tools import (
     build_product_set_selection_gate_tools,
+)
+from clue_api.project_document_tools import (
+    ProjectDocumentService,
+    build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.project_tools import RenameProjectTool
@@ -2649,6 +2657,10 @@ def build_toolbelt(
     entity_research_launches: EntityResearchLaunchServices | None = None,
     arv2_account_launch: Arv2LaunchService | None = None,
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
+    arv2_reads: Arv2ReadService | None = None,
+    icp_authoring: IcpAuthoringService | None = None,
+    persona_requests: PersonaRequestService | None = None,
+    project_documents: ProjectDocumentService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2800,6 +2812,34 @@ def build_toolbelt(
     # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
+        registry.register(tool, make_default=True)
+    # The other side of the lane: what the project's rows already say. Registered everywhere like
+    # its launching neighbours, but composed with no flag of its own — these three read
+    # ``project_account``, the display blocks, the claim store and the discovery run, all of which
+    # exist wherever there is a database, and reading them spends nothing. Without a service they
+    # refuse ``arv2_reads_not_composed`` before they touch a row.
+    for tool in build_arv2_read_tools(arv2_reads):
+        registry.register(tool, make_default=True)
+    # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
+    # the gate that confirms one. Registered on every deployment for the same reason as its
+    # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and
+    # the projections app root), with no flag of its own — writing a proposal spends nothing and
+    # confirms nothing. Without a service it refuses ``icp_authoring_not_composed`` before it reads
+    # a row.
+    for tool in build_icp_authoring_tools(icp_authoring, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The other half of the same flow: authoring writes the profile, this asks for the personas of
+    # the version the project pinned. Registered everywhere, composed where the onboarding fleet
+    # lane is; without a service it refuses ``persona_synthesis_not_composed`` before it reads a
+    # row.
+    for tool in build_persona_request_tools(persona_requests, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The project's own plan: what the agent and the human settled, written down where both can
+    # read and edit it. Registered on every deployment on the same terms as its neighbours above;
+    # composed wherever the knowledge documents' storage is, with no flag of its own — writing the
+    # plan spends nothing and confirms nothing. Without a service it refuses
+    # ``project_documents_not_composed`` before it reads a row.
+    for tool in build_project_document_tools(project_documents, conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

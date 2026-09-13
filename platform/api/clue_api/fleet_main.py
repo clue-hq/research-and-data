@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
 )
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
     IcpSynthesisOutcome,
@@ -85,6 +86,7 @@ from clue_api.arv2.onboarding_driver import (
     build_onboarding_provider_caller,
 )
 from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
+from clue_api.arv2.read_tools import DbArv2ReadService
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -136,9 +138,11 @@ from clue_api.onboarding_synthesis_wiring import (
     RegisteredIcp,
     build_onboarding_synthesis_launcher,
 )
+from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
@@ -571,7 +575,9 @@ class _SynthesisSeam:
 
     Both turns cross here. The ICP turn's ``RegisteredIcp`` rows become the driver's ``IcpRef``s on
     the way out, and each one comes back as its own ``RegisteredIcp`` when the driver opens that
-    ICP's persona turn — the same four fields, copied in both directions.
+    ICP's persona turn — the same fields, copied in both directions. ``project_id`` is one of them:
+    a persona is written in the scope of the ICP it is about, and a personas-only run carries that
+    scope in from its fleet payload rather than deriving it here.
     """
 
     def __init__(self, launcher: OnboardingSynthesisLauncher) -> None:
@@ -594,6 +600,7 @@ class _SynthesisSeam:
                     icp_key=icp.icp_key,
                     version=icp.version,
                     path=icp.path,
+                    project_id=icp.project_id,
                 )
                 for icp in result.icps
             ),
@@ -612,6 +619,7 @@ class _SynthesisSeam:
                 icp_key=icp.icp_key,
                 version=icp.version,
                 path=icp.path,
+                project_id=icp.project_id,
             ),
         )
         return SynthesisOutcome(
@@ -929,6 +937,27 @@ async def _serve() -> None:
             if settings.arv2_discovery_enabled
             else None
         )
+        # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
+        # nothing. What it needs is the storage the knowledge documents live in, so it composes
+        # where the composed backend is. Without a service the tool registers and refuses by name.
+        icp_authoring = DbIcpAuthoringService(storage)
+        # The persona request DOES need the onboarding flag: what it opens is an onboarding run,
+        # and with the lane off no worker would ever drive it — the row would sit ``queued``
+        # forever, holding that ICP document's one open slot. Off, the tool refuses by name.
+        persona_requests = (
+            DbPersonaRequestService(queue=work_queue) if settings.onboarding_v2_enabled else None
+        )
+        # The project plan has no flag of its own either: writing it down spends nothing and
+        # confirms nothing, and it needs only the storage the knowledge documents live in.
+        # Without a service the tool registers and refuses by name.
+        project_documents = DbProjectDocumentService(storage)
+        # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
+        # every deployment (account membership, display blocks, claims, discovery runs) and reading
+        # them spends nothing. Composed unconditionally; the tools refuse by name only where the
+        # read surface itself is absent. ``settings`` is here for one predicate: the claims read
+        # mirrors the account page's display gate, whose tier-4 arm is armed by
+        # ``verification_enabled``.
+        arv2_reads = DbArv2ReadService(settings=settings)
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -961,6 +990,10 @@ async def _serve() -> None:
             entity_research_launches=entity_research_launches,
             arv2_account_launch=arv2_account_launch,
             arv2_discovery_launch=arv2_discovery_launch,
+            arv2_reads=arv2_reads,
+            icp_authoring=icp_authoring,
+            persona_requests=persona_requests,
+            project_documents=project_documents,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
         )

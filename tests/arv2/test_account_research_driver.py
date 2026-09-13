@@ -182,10 +182,12 @@ class FakeStore:
         return "completed"
 
     async def read_persona_documents(
-        self, conn: Any, *, workspace_id: str, brand_id: str
+        self, conn: Any, *, workspace_id: str, brand_id: str, project_id: str
     ) -> tuple[Any, ...]:
         del conn
-        self.events.append(("read_persona_documents", {"brand_id": brand_id}))
+        self.events.append(
+            ("read_persona_documents", {"brand_id": brand_id, "project_id": project_id})
+        )
         return (
             SimpleNamespace(
                 document_id=uuid4(),

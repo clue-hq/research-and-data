@@ -6,10 +6,11 @@ seven-layer assembler and the real workspace lease. Four properties are asserted
 and from the lease's own bytes, never from an in-memory convenience:
 
 * the turn writes exactly one ``agent_turn_knowledge_pin`` row naming the brand's current documents;
-* L3 carries exactly one composed project artifact — ``brand_knowledge_index`` — and none of the
-  four cards the old production envelope compiled;
+* L3 carries exactly two composed project artifacts — ``brand_knowledge_index`` and
+  ``project_files_index`` — and none of the four cards the old production envelope compiled;
 * the pinned documents are on the lease, read-only, under ``inputs/brand/knowledge/`` at the digest
-  the pin recorded;
+  the pin recorded, and the turn's compiled project files are beside them under
+  ``inputs/project/`` at the digest their own pin recorded;
 * publishing a newer document after the pin cannot change what a retry of that turn seeds;
 * the resource manifest the turn committed to discloses the new lane's surface and not the old
   one's — no ``account-deep-steering`` skill and none of the five old-research-lane tools, and the
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -64,6 +66,11 @@ from clue_api.execution_wiring import (
     StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.project_context_files import (
+    CompiledProjectFile,
+    load_or_create_project_files_pin,
+    read_pinned_project_files,
+)
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -89,6 +96,8 @@ from clue_fleet import (
     claim_next_task,
     finish_task,
 )
+from clue_research.identity import insert_account_entity
+from clue_research.membership import ensure_project_account
 from clue_research.stage0 import submit_onboarding_input
 from clue_storage import FsStorage
 from clue_toolbelt import DbIdempotencyStore
@@ -110,6 +119,11 @@ ICP = (
     "Independent gastroenterology groups with three to twelve physicians.\n"
 )
 RESEARCH = "---\nkind: product-research\nproduct_id: prd_aura\n---\n\nAura schedules procedures.\n"
+#: A document this project authored for ITSELF: it belongs to the project's folder, not the brand's.
+PROJECT_ICP = (
+    "---\nkind: icp-definition\nicp_key: gi-dac\nstatus: proposed\n---\n\n"
+    "Ambulatory GI groups that run their own anesthesia service line.\n"
+)
 LATER = "---\nkind: audience-persona\n---\n\nPublished after this turn pinned its knowledge.\n"
 
 
@@ -188,7 +202,10 @@ async def _seed_document(
     version: int,
     status: str,
     body: str,
+    project_id: str | None = None,
 ) -> tuple[UUID, str]:
+    """One knowledge document row. ``project_id`` scopes it to one project rather than the brand."""
+
     ref = await artifacts.persist_body(
         workspace_id=workspace_id,
         data=body.encode(),
@@ -198,8 +215,9 @@ async def _seed_document(
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            "path, kind, version, status, artifact_key, artifact_sha256) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha)"
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project)"
         ),
         {
             "id": document_id,
@@ -212,6 +230,7 @@ async def _seed_document(
             "status": status,
             "key": ref.artifact_key,
             "sha": ref.sha256,
+            "project": project_id,
         },
     )
     return document_id, ref.sha256
@@ -435,6 +454,18 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     status="ready",
                     body=RESEARCH,
                 )
+                await _seed_document(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path="audience/icp-gi-dac.md",
+                    kind="icp-definition",
+                    version=1,
+                    status="proposed",
+                    body=PROJECT_ICP,
+                    project_id=project.project_id,
+                )
 
                 submission = await _capture_submission(
                     conn,
@@ -513,17 +544,22 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 if isinstance(pinned, bytes | bytearray | str):
                     pinned = json.loads(pinned)
                 assert pin_rows[0]["brand_id"] == project.brand_id
+                # The project-scoped ICP is NOT in the brand's pin: it is the project's document
+                # and rides the project files pin instead.
                 assert sorted(item["path"] for item in pinned) == [
                     "audience/icp-gi-groups.md",
                     "company/overview.md",
                     "product/aura.md",
                 ]
 
-                # 2. L3 carries the index and none of the four retired cards.
+                # 2. L3 carries both indexes and none of the four retired cards. Every path here
+                # is ``context/project/<constitution artifact name>.json``, so this is also the
+                # assertion that ``project_context_artifacts`` names both index cards.
                 assert await _l3_paths(conn, submission.turn_id) == (
                     "context/project/brand_knowledge_index.json",
                     "context/project/budget.json",
                     "context/project/project_card.json",
+                    "context/project/project_files_index.json",
                 )
 
                 # 3. the pinned documents are on the lease, read-only, at the pinned digest.
@@ -534,6 +570,82 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 assert entry.read_only is True
                 for path in ("audience/icp-gi-groups.md", "product/aura.md"):
                     assert lease.backend.stat_entry_sync(f"{INPUT_PREFIX}{path}").read_only is True
+
+                # 3b. the compiled project files are seeded read-only beside them, and the opening
+                # index names exactly the two paths the model can open.
+                for path in (
+                    "inputs/project/status.md",
+                    "inputs/project/decisions.md",
+                    # the project's own document, in the project's folder, beside the compiled two
+                    "inputs/project/audience/icp-gi-dac.md",
+                ):
+                    assert lease.backend.stat_entry_sync(path).read_only is True
+                assert (
+                    lease.backend.read_text_sync("inputs/project/audience/icp-gi-dac.md")
+                    == PROJECT_ICP
+                )
+                status_body = lease.backend.read_text_sync("inputs/project/status.md")
+                # The title names this project, so the model never has to infer which project it
+                # is reading — and two fresh projects in one workspace no longer compile
+                # byte-identical status files onto one content-addressed artifact.
+                assert status_body.startswith(
+                    f"# Project status — {project.name} (`{project.project_id}`)\n"
+                )
+                assert "## Confirmed ICP" in status_body
+                # …and the same document is listed in the file, at the path it was seeded at.
+                assert (
+                    "- `inputs/project/audience/icp-gi-dac.md` — version 1, proposed, updated "
+                    in status_body
+                )
+                project_index = json.loads(
+                    lease.backend.read_text_sync("context/project/project_files_index.json")
+                )
+                assert project_index["card_kind"] == "project_files_index"
+                assert sorted(item["workspace_path"] for item in project_index["files"]) == [
+                    "inputs/project/audience/icp-gi-dac.md",
+                    "inputs/project/decisions.md",
+                    "inputs/project/status.md",
+                ]
+                # A document carries its own version and status, unlike a compiled file, and its
+                # summary is derived from its prose rather than written by a compiler.
+                authored = next(
+                    item
+                    for item in project_index["files"]
+                    if item["path"] == "audience/icp-gi-dac.md"
+                )
+                assert (authored["kind"], authored["version"], authored["status"]) == (
+                    "icp-definition",
+                    1,
+                    "proposed",
+                )
+                assert authored["summary"] == (
+                    "Ambulatory GI groups that run their own anesthesia service line."
+                )
+                # The index says what each file is FOR. Deriving the line from the bytes would
+                # summarize ``status.md`` as its first section's content ("Not confirmed."), which
+                # reads as a statement about the whole project and is wrong the moment an ICP is
+                # confirmed — a model that trusts the index and skips the file would then answer
+                # that nothing is confirmed on a fully configured project.
+                assert {
+                    item["path"]: item["summary"]
+                    for item in project_index["files"]
+                    if item["status"] == "compiled"
+                } == {
+                    "status.md": (
+                        "ICP, products, plan, accounts, discovery and research, as of this turn."
+                    ),
+                    "decisions.md": "What the human told this project, in their words.",
+                }
+                files_digest = (
+                    await conn.execute(
+                        text(
+                            "SELECT files_sha256 FROM agent_turn_project_files "
+                            "WHERE turn_id = :turn"
+                        ),
+                        {"turn": submission.turn_id},
+                    )
+                ).scalar_one()
+                assert re.fullmatch(r"[0-9a-f]{64}", str(files_digest))
 
                 # 4. the index card itself — three entries, no confirmed ICP for this project.
                 index_key = (
@@ -615,6 +727,46 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     f"{INPUT_PREFIX}company/overview.md",
                     f"{INPUT_PREFIX}product/aura.md",
                 ]
+
+                # 7. the same property for the project's own files, which are compiled from
+                # rows rather than published: adding an account changes what a fresh compile
+                # would say, and a retry must still seed the bytes the first attempt pinned.
+                account_id = await insert_account_entity(
+                    conn,
+                    canonical_name="Goodman Campbell",
+                    primary_domain="goodman.example",
+                    workspace_id=workspace_id,
+                )
+                await ensure_project_account(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    account_entity_id=account_id,
+                    added_via="manual",
+                )
+
+                async def _never() -> list[CompiledProjectFile]:
+                    raise AssertionError("a pinned turn never recompiles its project files")
+
+                retry_project_pin, project_created = await load_or_create_project_files_pin(
+                    conn,
+                    artifacts,
+                    workspace_id=workspace_id,
+                    turn_id=submission.turn_id,
+                    project_id=project.project_id,
+                    compile=_never,
+                )
+                assert project_created is False
+                assert retry_project_pin.files_sha256 == str(files_digest)
+                retry_files = await read_pinned_project_files(conn, storage, pin=retry_project_pin)
+                assert {file.ref.path: file.body for file in retry_files} == {
+                    "status.md": status_body.encode(),
+                    "decisions.md": lease.backend.read_text_sync(
+                        "inputs/project/decisions.md"
+                    ).encode(),
+                    "audience/icp-gi-dac.md": PROJECT_ICP.encode(),
+                }
+                assert "Accounts in this project: 0" in status_body
             finally:
                 workspaces.close()
 

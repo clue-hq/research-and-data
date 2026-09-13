@@ -96,6 +96,12 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v20",
         "skill:stage0-interview@v21",
         "skill:stage0-interview@v22",
+        "skill:stage0-interview@v23",
+        "skill:stage0-interview@v24",
+        "skill:stage0-interview@v25",
+        # The read tools' contract repairs: v25 with the three reads' output digests (and
+        # `read_project_accounts`' input digest) re-measured off the typed descriptors.
+        "skill:stage0-interview@v26",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -160,6 +166,17 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v44",
         # ARV2 Track R, R4: v44 plus `launch_arv2_discovery@1` and stage0-interview v22.
         "profile:head-of-abm@v45",
+        # ARV2 context and authoring: v45 plus `author_icp_document@1` and
+        # `request_persona_synthesis@1`, and stage0-interview v23.
+        "profile:head-of-abm@v46",
+        # The project plan: v46 plus `write_project_document@1`, and stage0-interview v24.
+        "profile:head-of-abm@v47",
+        # The ARV2 reads: v47 plus `read_project_accounts@1`, `read_account_research@1` and
+        # `read_discovery_run@1`, and stage0-interview v25.
+        "profile:head-of-abm@v48",
+        # The read tools' contract repairs: v48 with the three reads re-pinned and
+        # stage0-interview v26.
+        "profile:head-of-abm@v49",
         "profile:head-of-abm@v5",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
