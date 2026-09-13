@@ -7,13 +7,14 @@ status: active
 # The workspace is now one persistent directory per chat thread, so `scratch/` — the agent's own
 # notebook, which survives every turn of the thread — is granted readable and writable, and
 # `reads/` is granted readable (the platform writes what a tool read back for it; the agent never
-# writes there). `work/` is dropped from the WRITABLE list — it was the per-turn scratch folder
-# and `scratch/` replaces it here — but stays readable so a delegated specialist keeps its own
-# scratch pad under the ceiling; the Head of ABM never writes it. (The registry intersects a
-# child's workspace with its parent's, so dropping `work/` here would leave every delegated
-# research/content/reviewer child writable only in `outputs/`. An empty read-only `work/` costs
-# the Head of ABM nothing.) `context/` stays readable, because the assembler still materializes
-# the turn's context cards under it. Quota raised to 400 files / 20 MiB because the notebook
+# writes there). `work/` stays on BOTH lists, readable and writable, so a delegated specialist's
+# workspace is byte-for-byte what it was under v50 — the Head of ABM's own skill never names
+# `work/` and never writes there, because `scratch/` is its notebook. (The registry intersects a
+# child's workspace with its parent's on both lists, so dropping `work/` here would leave every
+# delegated research/content/reviewer child writable only in `outputs/` — its own scratch pad
+# taken away by a change to its parent. An unused `work/` costs the Head of ABM nothing.)
+# `context/` stays readable, because the assembler still materializes the turn's context cards
+# under it. Quota raised to 400 files / 20 MiB because the notebook
 # persists across a long conversation instead of dying with the turn. Skill pin moved v27→v28
 # (§1 names the notebook: what `scratch/` is for, and what belongs in the project's files instead).
 # Nothing else moves.
@@ -229,7 +230,7 @@ workspace:
   allowed_extensions: [".json", ".md", ".txt", ".yaml"]
   readable_prefixes:
     [".deepagent", "inputs", "context", "scratch", "reads", "work", "outputs"]
-  writable_prefixes: ["scratch", "outputs"]
+  writable_prefixes: ["scratch", "work", "outputs"]
   retention_class: agent-ephemeral-v1
 delegation_roles: [research, content_drafter, reviewer]
 delegation_tool_grants:
