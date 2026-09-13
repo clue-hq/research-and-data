@@ -51,6 +51,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:head-of-abm@v6",
         "prompt:head-of-abm@v7",
         "prompt:head-of-abm@v8",
+        # The workspace libraries: v8 with one sentence moved from the per-turn brand seeds to the
+        # mounted `brand/knowledge/`.
+        "prompt:head-of-abm@v9",
         "prompt:onboarding-synthesis@v1",
         "prompt:onboarding-synthesis@v2",
         "prompt:research-specialist@v1",
@@ -108,6 +111,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The thread workspace: v27 with the §1 bullet that names `scratch/` as the notebook that
         # persists across the turns of one chat.
         "skill:stage0-interview@v28",
+        # The workspace libraries: v28 with §1 rewritten around the two read-only mounts —
+        # `brand/knowledge/` and the project library at `project/` — instead of the per-turn seeds.
+        "skill:stage0-interview@v29",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -189,6 +195,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The thread workspace: v50 with `scratch/`/`reads/` granted, `work/` dropped, the quota
         # raised for a notebook that persists, and stage0-interview v28.
         "profile:head-of-abm@v51",
+        # The workspace libraries: v51 plus the `brand/` and `project/` read-only mounts, with
+        # stage0-interview v29 and prompt head-of-abm v9.
+        "profile:head-of-abm@v52",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

@@ -126,7 +126,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # every delegated specialist's scratch pad away — and the quota rises to 400 files / 20 MiB.
     # stage0-interview v28 §1 names the notebook: what to keep in `scratch/` and what belongs in
     # the project's own files instead. No tool is added or dropped. Everything else is v50's.
-    AgentRole.HEAD_OF_ABM: "v51",
+    # v52 (the mounted libraries, 2026-09-13): v51's surface with the two read-only library
+    # mounts granted — `brand/` (the brand's knowledge, materialized once per pinned version) and
+    # `project/` (the project's settled state: `status.md`, `decisions.md`, its own documents and
+    # the artifact index, compiled once per project). Both are readable, neither is writable: a
+    # library is the platform's word about what is settled, and the agent changes it through a
+    # governed tool, never by writing a file. prompt head-of-abm v9 and stage0-interview v29 name
+    # those mounted paths instead of the per-turn seed paths under `inputs/`. No tool is added or
+    # dropped. Everything else is v51's.
+    AgentRole.HEAD_OF_ABM: "v52",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

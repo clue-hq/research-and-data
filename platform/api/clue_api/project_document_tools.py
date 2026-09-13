@@ -1,6 +1,6 @@
 """``write_project_document@1`` — the Head of ABM writes this project's plan.
 
-A project has one plan, ``inputs/project/plan.md``, and two hands write it: the agent through this
+A project has one plan, ``project/plan.md``, and two hands write it: the agent through this
 tool, the human through the project-document editor. That makes it a lost-update problem, so the
 model must say **which version it read** — ``expected_version`` — and the platform refuses by name
 when the file has moved since, rather than overwriting words the human typed in between.
@@ -110,7 +110,7 @@ class WriteProjectDocumentInput(ToolInput):
 
     document: Literal["plan"]
     body: str = Field(min_length=1, max_length=_PLAN_MAX_CHARS)
-    #: The version of ``inputs/project/plan.md`` this body was written against; omitted only when
+    #: The version of ``project/plan.md`` this body was written against; omitted only when
     #: no plan exists yet.
     expected_version: int | None = Field(default=None, ge=1)
     source_turn_ref: Annotated[
@@ -139,7 +139,7 @@ class WriteProjectDocumentTool(Tool):
     name = "write_project_document"
     version = "1"
     model_description = (
-        "Write this project's plan (inputs/project/plan.md) as markdown: the execution plan you "
+        "Write this project's plan (project/plan.md) as markdown: the execution plan you "
         "and the human settled — outcome, the confirmed profile and products, the account motion, "
         "channels, owners, what day ninety looks like, and the next steps. Write it once the "
         "strategy, the ICP and the product set are agreed, never on the first turn. Pass "

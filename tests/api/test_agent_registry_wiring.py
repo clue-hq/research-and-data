@@ -126,8 +126,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # stage0-interview v27. v51 adds no address either: it moves the workspace block to the
         # thread layout (`scratch/`/`reads/` granted, `work/` dropped, quota raised) and pins
         # stage0-interview v28, whose §1 names the notebook — the skill body is in the manifest,
-        # so the digest moves. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("53ce90b6621ecc5831394d747c8efe874c4dd62a01496352e8d75174e32d68cb"),
+        # so the digest moves. v52 adds no address either: it grants the `brand/` and `project/`
+        # read-only library mounts and pins stage0-interview v29 and prompt head-of-abm v9, which
+        # name those mounted paths instead of the per-turn seeds under `inputs/`; the prompt and
+        # the skill body are both in the manifest, so the digest moves again. Digest measured off
+        # this tree.
+        AgentRole.HEAD_OF_ABM: ("d82f37697a9d46ac81134a573ecd66d5e00a3db7610b89d0cf18520006a44f4f"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -488,9 +492,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v51"
+    assert production.profile_ref.address == "profile:head-of-abm@v52"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v28"
+        "skill:stage0-interview@v29"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -534,12 +538,12 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v28")
+    body = production.open_skill("skill:stage0-interview@v29")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
     assert "Do not research the company yourself and do not invent a profile." in body
-    assert "Never state a product fact that a product file does not contain" in body
+    assert "Never state a fact a file does not contain" in body
     assert "is routed `unmapped` with its exact quote" in body
 
 
@@ -592,7 +596,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
     # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
     assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v28"
+    assert disclosures[0].resource.address == "skill:stage0-interview@v29"
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
@@ -663,8 +667,8 @@ def test_c67_account_deepagent_profile_is_historical_only(
         # situation a human can walk into has one explicit governed behaviour written down, not an
         # inference the model is trusted to make.
         ("no_knowledge_documents", "onboarding has not produced knowledge for this brand yet"),
-        ("read_before_speaking", "issue every `read_file` call together in a single turn"),
-        ("unknown_product_fact", "Never state a product fact that a product file does not contain"),
+        ("read_before_speaking", "before your first reply on a project, also read"),
+        ("unknown_product_fact", "Never state a fact a file does not contain"),
         ("product_set_gate", "call `open_product_set_selection_gate` with the `icp_key`"),
         ("possible_duplicate", "A candidate marked as a possible duplicate"),
         ("icp_gate", "call `open_icp_confirmation_gate` with the `icp_key` of the picked ICP"),
@@ -700,7 +704,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v28")
+    body = head.open_skill("skill:stage0-interview@v29")
 
     assert required_guidance in body
 
@@ -779,7 +783,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v8/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v9/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

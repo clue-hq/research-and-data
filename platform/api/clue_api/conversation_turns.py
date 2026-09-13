@@ -139,7 +139,10 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved — only the three tools'
 # schema digests, which the profile and the skill pin and this file does not. The thread-workspace
 # wave (`head-of-abm@v51` / stage0-interview v28) mints no revision either, for the same reason:
-# it moves the profile's workspace block and the skill's §1 text, not a tool address.
+# it moves the profile's workspace block and the skill's §1 text, not a tool address. Nor does the
+# workspace-libraries wave (`head-of-abm@v52` / stage0-interview v29 / prompt head-of-abm v9): it
+# grants the `brand/` and `project/` read-only mounts and renames the paths the skill and the
+# prompt tell the model to read, and again no tool address moves.
 CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
