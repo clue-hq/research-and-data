@@ -59,8 +59,9 @@ and [bitmap conversion methods](https://helpx.adobe.com/ca/photoshop/desktop/adj
 
 ## 3. Compact direction record
 
-Use these fields in `imagery-direction.md`, or update an existing section with
-the same information. This is a run note, not a new brand-library record.
+Use these fields in the existing reference brief or round direction. Other
+notes link to that record; they do not repeat it. This is a run note, not a new
+brand-library record.
 
 ```text
 Visual job: what the imagery helps this particular message communicate.
@@ -69,6 +70,7 @@ Operation: reuse, placement crop, edit, close companion, new concept or native.
 Preserve: a few visible identity/subject/treatment/composition properties.
 Vary: what may change; one meaningful difference per requested candidate.
 Layers: target aspect, focal and quiet regions; originals/native/raster parts.
+Copy contrast: resolved foreground color, source-coordinate copy region and measurement.
 Prompt: component requested + observed treatment + intended arrangement.
 Gaps: unknown properties, missing sources, unsupported operations or inputs.
 Review: returned asset IDs, observed matches/mismatches, next action.
@@ -78,6 +80,16 @@ Add only constraints that apply. For example, reserve text space when the scene
 will overlay text; require alpha when a foreground must be movable over another
 background. A brand companion does not require unrelated people, landscapes,
 particles, flowers, gradients or a CTA simply because those occur in examples.
+
+For copy directly over a raster, measure the candidate with
+`inspect(view="image_contrast", target=<asset_id>, foreground_color="#RRGGBB",
+region=[left,top,right,bottom])`. Coordinates are normalized to the source
+image, so map a placement crop before sampling. Read the threshold flags
+(large display copy 3:1; body copy 4.5:1), not just the median. Sampling cannot
+certify the full composition or text over a plate/effect; inspect those against
+their actual ground. A refusal for alpha or an embedded color profile leaves
+the check unresolved. Do not call an ancestor-token diagnostic false and then
+accept unreadable copy without measuring the real image region.
 
 ## 4. Worked applications
 
@@ -91,11 +103,14 @@ asks for two new backgrounds for the same category-awareness message.
 Keep broad color transitions and soft edges. Candidate A reserves the center;
 candidate B moves visual weight toward an edge to support a different text
 arrangement. Headline and logo remain independent native/source layers.
+Choose the foreground/ground pair together. A pale center supports dark copy;
+a white headline needs a darker region. Low detail alone does not create contrast.
 
 **Illustrative component prompt:** "Create another abstract background in the
-visual family of the attached reference: broad defocused color fields, soft
-transitions and fine low-contrast texture. Keep the center calm for separately
-overlaid text. Preserve its abstract character; omit lettering and logos."
+visual family of the selected reference: broad defocused color fields, soft
+transitions and fine low-contrast texture. Keep a calm light region for the
+separately overlaid dark headline. Preserve its abstract character; omit
+lettering and logos." The foreground color here is an example, not a brand rule.
 
 **Counterexample:** "A beautiful hospitality landscape in brand colors" supplies
 a new literal subject without evidence that the brand or brief calls for it.
@@ -154,11 +169,18 @@ that this runtime exposes its options.
 - `asset(action="generate_image", prompt=..., brand_notes=[...],
   target_node_id=...)` registers an image; placement is a separate operation.
   An explicit supported `aspect_ratio` can override target-derived geometry.
-- Generation automatically forwards the turn's frozen attachments with
-  **style-only framing**. There is no per-call reference-selection or
-  reference-role argument. Do not claim a viewed library asset was attached,
-  or that an unwanted turn attachment was omitted. If mixed references prevent
-  the required result, report the input-selection gap rather than invent a knob.
+- `reference_asset_ids=[...]` selects up to four inspected inputs from the
+  frozen attachments, kit/library manifest or current scene. Selection replaces
+  automatic turn attachments; [] deliberately selects none. Omission retains
+  all automatic attachments. Library rasters use their original bytes; vectors
+  need a raster preview. Missing, corrupt or out-of-context selections refuse
+  before spending. Successful model/cache calls return `reference_inputs`
+  with IDs, pixel digests and MIME types. A fallback has no successful receipt.
+- Generation still uses **style-only framing**; role labels belong to the
+  direction and prompt, not a reference-role parameter. For a new background,
+  select the clean treatment source instead of also conditioning on product
+  screens/logos destined for independent placement. Use reuse/edit for source
+  preservation. Reference selection does not guarantee exact composition.
 - `asset(action="edit_image", node_id=..., prompt=...)` operates on the image
   already placed in that node and keeps its placement. Inspect identity and
   composition after editing; preserving placement does not guarantee unchanged
@@ -178,12 +200,40 @@ logos, copy, buttons, diagrams and source UI separate from generated atmosphere.
 If copy does not read, adjust its region, contrast or backing deliberately using
 the existing composition rules; a white/black scrim is not evidence of brand fit.
 
+### Page and image dependencies
+
+Build the known composition in the first compile: page, real copy, exact logo
+and product sources, plus a frame of the intended artwork size. The frame can
+have a temporary brand-token fill. Generate with that frame as `target_node_id`.
+After the tool returns a real asset ID, view it and put an image child inside
+the frame using `image asset(<returned_id>)`. Use explicit child dimensions in
+manually positioned nested frames; inspect the resulting crop.
+
+An image with no `asset(...)` halts compilation. An auto-layout container is
+`stack_id al(v, ...)`, not `stack_id al ... al(v, ...)`. Use the grammar and
+format's legal font-size tokens from the first pass; raw sizes may be replaced
+by role binding. A logo image is independently editable without a template
+slot. When an actual scaling slot is needed, its policy and sample must match
+the source, including whether it really has alpha. Never spend repair rounds
+trying to force an opaque app icon into a transparent-logo slot.
+
+This is one image dependency followed by a rendered check, not an additional
+concept-planning phase. Repair geometry or text placement around a good image
+without paying for another image. Regenerate only when the image itself fails.
+
 ## 6. Review and bounded repair
 
 Compare the selected reference and generated asset at full view and at intended
 delivery size. Check subject, tonal range, treatment, visual weight, quiet copy
 regions and any required cutout edges. Then inspect them with the actual native
 overlays. A strong background can still produce a weak ad after composition.
+
+In the self-audit, record evidence separately for the component and final ad:
+source IDs actually sent; observed treatment match; real source pixels retained;
+native copy and logo present; legibility at feed size. A preflight contrast
+warning can refer to a hidden token ancestor, but that does not establish that
+the image's visible ground passes. White text on a pale wash fails even if the
+reference-fidelity score is high. Do not invent a numerical contrast ratio.
 
 Choose the smallest correction with a reason. A good image with one flawed
 region may suit editing; a wrong subject requires a revised direction. Retain

@@ -89,9 +89,10 @@ already hold, and each one becomes words in the prompt:
    you see in plain words: is their imagery photographic or illustrated?
    Grainy or clean? Warm or cold? Dense or airy? Those observed words go
    into the prompt verbatim.
-3. **Reference images on the call.** When the turn has reference images,
-   they condition the generation call automatically — you do not attach
-   them. In the agent-facing `asset` tool, there is no parameter that turns them on or off. The
+3. **Reference images on the call.** `reference_asset_ids` selects up to four
+   inspected attachments, kit/library assets or scene assets for this component.
+   Omission uses the turn attachments; [] uses none. Viewing an asset does not
+   select it. Successful model/cache calls report exact `reference_inputs`. The
    platform already tells the model the references are STYLE references
    only: match their palette, texture, mood, and edge character, generate
    a new image, do not copy, crop, or edit them. So the prompt's job

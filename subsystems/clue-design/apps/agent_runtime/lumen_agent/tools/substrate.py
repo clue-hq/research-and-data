@@ -3,9 +3,11 @@ from __future__ import annotations
 import base64
 import copy
 import functools
+import hashlib
 import inspect
 import io
 import json
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,7 +46,7 @@ from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
 from . import logo_fetch
-from .asset_preview import asset_preview_path, blob_path_for_digest
+from .asset_preview import PREVIEWABLE_MIME_TYPES, asset_preview_path, blob_path_for_digest
 from ..run_metrics import RunMetrics
 from ..text_clearance import collision_advisory
 from pydantic import ValidationError
@@ -994,6 +996,7 @@ class LumenDesignTools:
         transparent_background: bool = False,
         label: Optional[str] = None,
         condition_on_references: bool = True,
+        reference_asset_ids: list[str] | None = None,
     ) -> str:
         """Generate a raster image asset from a text prompt and register it in the
         scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
@@ -1002,9 +1005,11 @@ class LumenDesignTools:
         when available, otherwise a deterministic placeholder so the design still
         composes offline. When this turn has attached reference images, generated
         imagery is AUTOMATICALLY conditioned on them (their palette/texture/mood
-        anchor the style) — describe the SUBJECT in the prompt, not the reference
-        style. Set condition_on_references=false only when the brief demands imagery
-        that deliberately diverges from the references. The scene must already
+        anchor the style). `reference_asset_ids` explicitly selects up to four
+        inspected inputs from the frozen attachments, kit, library or current
+        scene; [] selects none. Omission keeps automatic turn attachments. Exact
+        UI/logo pixels belong in separate source layers, not generated artwork.
+        The scene must already
         contain a page/artboard: on a pageless scene this tool REFUSES before
         generating (error `scene.page_required`) — author the page first.
         Returns the asset_id; place it with place_asset_in_node /
@@ -1037,6 +1042,7 @@ class LumenDesignTools:
             brand_notes=notes,
             transparent_background=transparent_background,
             condition_on_references=condition_on_references,
+            reference_asset_ids=reference_asset_ids,
         )
         diagnostics = diagnostics_from(raw_diagnostics)
         if record is None:
@@ -1121,6 +1127,8 @@ class LumenDesignTools:
             "source": record.get("source"),
             "license": (record.get("license") or {}).get("name"),
         }
+        if "reference_inputs" in meta:
+            image["reference_inputs"] = meta["reference_inputs"]
         # W1.7(b): `width`/`height`/`aspect_ratio` above are the REQUEST. When the
         # model returned something else, say so rather than let the ask stand in
         # for the answer — cover-fit placement still works, but an agent choosing
@@ -1611,6 +1619,82 @@ class LumenDesignTools:
             digests.append(digest)
         return (images or None), (digests or None)
 
+    def _collect_selected_reference_previews(self, asset_ids: list[str]):
+        """Resolve only this run's authorized IDs to verified conditioning bytes.
+
+        Library rasters use full source pixels, not contact-sheet thumbnails.
+        Vectors need an existing raster preview; generation never vectorizes.
+        Explicit selection fails as a unit instead of silently dropping an input.
+        The legacy automatic-attachment path retains its existing skip behavior.
+        """
+
+        def refuse(reason: str, detail: str):
+            return None, None, None, (f"image.reference_{reason}", detail)
+
+        if not isinstance(asset_ids, list) or any(
+            not isinstance(item, str) or not item for item in asset_ids
+        ):
+            return refuse("invalid", "reference_asset_ids must be a list of asset IDs.")
+        ids = list(dict.fromkeys(asset_ids))
+        if len(ids) > 4:
+            return refuse("limit", "Select at most four relevant reference assets per image.")
+        images, digests, receipt = [], [], []
+        store_root = self.config.effective_asset_store_root
+        for asset_id in ids:
+            attached = (self.config.reference_assets or {}).get(asset_id)
+            if attached is not None:
+                digest = attached.get("preview_digest")
+                mime = attached.get("mime_type") or "image/png"
+            else:
+                record = (self.scene.get("assets") or {}).get(asset_id)
+                if record is None:
+                    entry = (
+                        (self.config.brand_kit_assets or {}).get(asset_id)
+                        or (self.config.asset_library or {}).get(asset_id)
+                        or {}
+                    )
+                    record = entry.get("record")
+                if (
+                    not isinstance(record, dict)
+                    or record.get("id") != asset_id
+                    or record.get("status") != "ready"
+                ):
+                    return refuse(
+                        "unavailable", f"{asset_id} is not a ready asset in this run's context."
+                    )
+                media = record.get("media") or {}
+                mime = media.get("mime_type")
+                if mime in PREVIEWABLE_MIME_TYPES:
+                    digest = (media.get("digest") or {}).get("value")
+                else:
+                    preview = asset_preview_path(record, store_root)
+                    digest = Path(preview[0]).name if preview else None
+                    mime = (media.get("thumbnail") or {}).get("mime_type") or "image/png"
+            if (
+                not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or mime not in PREVIEWABLE_MIME_TYPES
+            ):
+                return refuse(
+                    "invalid", f"{asset_id} has no valid raster reference digest and MIME type."
+                )
+            try:
+                pixels = blob_path_for_digest(store_root, digest).read_bytes()
+            except OSError:
+                return refuse(
+                    "missing",
+                    f"Selected reference {asset_id} has no materialized bytes; "
+                    "choose another available source.",
+                )
+            if hashlib.sha256(pixels).hexdigest() != digest:
+                return refuse(
+                    "corrupt", f"Selected reference {asset_id} does not match its frozen digest."
+                )
+            images.append((pixels, mime))
+            digests.append(digest)
+            receipt.append({"asset_id": asset_id, "digest": digest, "mime_type": mime})
+        return images or None, digests or None, receipt, None
+
     def _produce_image_asset(
         self,
         *,
@@ -1623,6 +1707,7 @@ class LumenDesignTools:
         brand_notes: List[str],
         transparent_background: bool,
         condition_on_references: bool = True,
+        reference_asset_ids: list[str] | None = None,
     ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
         """Produce + ingest one image asset record. Prefers the configured T2I
         model; on a missing config or any model/ingest failure it falls back to the
@@ -1641,6 +1726,15 @@ class LumenDesignTools:
         string. `meta["fallback"]` is absent on the success path."""
         diagnostics: List[JsonObject] = []
         fallback: Optional[JsonObject] = None
+        selected_receipt = None
+        if reference_asset_ids is not None:
+            reference_images, reference_digests, selected_receipt, error = (
+                self._collect_selected_reference_previews(reference_asset_ids)
+            )
+            if error:
+                # A bad selection is a correctable tool error, not permission
+                # to spend on unconditioned imagery or mutate the scene.
+                return None, {}, diagnostics, error
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
@@ -1649,9 +1743,10 @@ class LumenDesignTools:
             # preview bytes (order-sorted) so the style rides the model call and
             # the cache keys on their pixel digests. No references / opt-out →
             # (None, None) and the request is byte-identical to a plain generation.
-            reference_images, reference_digests = self._collect_reference_previews(
-                condition_on_references, diagnostics
-            )
+            if reference_asset_ids is None:
+                reference_images, reference_digests = self._collect_reference_previews(
+                    condition_on_references, diagnostics
+                )
             # Generation cache: re-use the asset an identical earlier request
             # produced (the loop re-requests the same hero each iteration) instead
             # of re-paying the model. Checked BEFORE the provider call.
@@ -1672,7 +1767,15 @@ class LumenDesignTools:
                 if cached:
                     return (
                         cached,
-                        {"mode": "cached", "model": (cached.get("source") or {}).get("model")},
+                        {
+                            "mode": "cached",
+                            "model": (cached.get("source") or {}).get("model"),
+                            **(
+                                {"reference_inputs": selected_receipt}
+                                if selected_receipt is not None
+                                else {}
+                            ),
+                        },
                         diagnostics,
                         None,
                     )
@@ -1723,8 +1826,11 @@ class LumenDesignTools:
                             "model": result.model,
                             "actual_width": getattr(result, "width", None),
                             "actual_height": getattr(result, "height", None),
-                            "aspect_ratio_honored": getattr(
-                                result, "aspect_ratio_honored", None
+                            "aspect_ratio_honored": getattr(result, "aspect_ratio_honored", None),
+                            **(
+                                {"reference_inputs": selected_receipt}
+                                if selected_receipt is not None
+                                else {}
                             ),
                         },
                         diagnostics,
@@ -1769,7 +1875,7 @@ class LumenDesignTools:
                 "reason": "not_configured",
                 "error_code": "image_model.not_configured",
                 "detail": "text-to-image model is not configured (set IMAGE_MODEL_*)",
-                "conditioning_lost": False,
+                "conditioning_lost": bool(selected_receipt),
             }
             diagnostics.append(
                 _image_warning(
@@ -2460,6 +2566,7 @@ class LumenDesignTools:
         alt: Optional[str] = None,
         preserve_transparency: Optional[bool] = None,
         label: Optional[str] = None,
+        reference_asset_ids: list[str] | None = None,
     ) -> str:
         """Generate or place a design asset. Pick `action`:
 
@@ -2468,6 +2575,14 @@ class LumenDesignTools:
           (or `target_slot_id`) so the aspect is derived from that frame's geometry —
           images are cropped to fill, never stretched. Optional `aspect_ratio` /
           `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+          `reference_asset_ids` selects up to four inspected style inputs by ID
+          from this run's attachments, brand kit, workspace library or scene.
+          Omit it to use turn attachments; [] uses no references. A selection
+          replaces automatic attachments. Source pixels and their digest are
+          verified before spending; unavailable selections return an error.
+          Successful model/cache results report exact `reference_inputs`.
+          Viewing an asset alone does not attach it. Keep exact UI and logos as
+          separate source layers; this action produces a new raster component.
         - `action="edit_image"` — edit the image already placed in `node_id` with a
           text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT
           changing the composition; the edited result re-enters the same node with its
@@ -2505,6 +2620,7 @@ class LumenDesignTools:
                 brand_notes,
                 transparent_background,
                 label,
+                reference_asset_ids=reference_asset_ids,
             )
         if action == "edit_image":
             if not node_id:
@@ -3808,7 +3924,13 @@ class LumenDesignTools:
         )
 
     @_tool_span
-    def inspect(self, view: str, target: Optional[str] = None) -> str:
+    def inspect(
+        self,
+        view: str,
+        target: str | None = None,
+        foreground_color: str | None = None,
+        region: list[float] | None = None,
+    ) -> str:
         """Read-only inspection of the in-memory scene. Pick `view`:
 
         - `view="scene"` — document, pages, counts, slots, effective brand.
@@ -3818,12 +3940,43 @@ class LumenDesignTools:
         - `view="geometry"` (target=node_id) — stored computed geometry + declared
           transform/size for one node.
         - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
+        - `view="image_contrast"` (target=asset_id, foreground_color="#RRGGBB",
+          region=[left,top,right,bottom]) — measure an opaque text color over
+          actual image pixels. Region is normalized 0..1 in SOURCE coordinates;
+          account for placement cropping. Returns sampled ratios and threshold
+          checks. Excludes overlaid plates, glyphs, opacity and effects; inspect
+          the final composition too. Transparent/profiled sources return a gap.
 
         Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
         if view == "scene":
             return self.summarize_scene()
         if view == "slots":
             return self.summarize_slots()
+        if view == "image_contrast":
+            from ..image_contrast import measure_image_contrast
+
+            if not target or foreground_color is None or region is None:
+                return self._tool_error(
+                    "inspect.bad_request",
+                    "image_contrast requires target=asset_id, foreground_color and region.",
+                )
+            images, _, receipt, error = self._collect_selected_reference_previews([target])
+            if error:
+                return self._tool_error(*error)
+            try:
+                measured = measure_image_contrast(images[0][0], foreground_color, region)
+            except (ValueError, OSError) as error:
+                return self._tool_error("inspect.image_contrast_unavailable", str(error))
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "asset_id": target,
+                    "source_digest": receipt[0]["digest"],
+                    "foreground_color": foreground_color,
+                    "region": region,
+                    "contrast": measured,
+                }
+            )
         if view == "page":
             if not target:
                 return self._tool_error(
@@ -3851,7 +4004,15 @@ class LumenDesignTools:
         return self._tool_error(
             "inspect.unknown_view",
             f"unknown view '{view}'.",
-            valid_views=["scene", "page", "node_tree", "slots", "geometry", "slot_bindings"],
+            valid_views=[
+                "scene",
+                "page",
+                "node_tree",
+                "slots",
+                "geometry",
+                "slot_bindings",
+                "image_contrast",
+            ],
         )
 
     def curated_context(

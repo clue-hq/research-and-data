@@ -49,9 +49,11 @@ Write them as one or two natural sentences, not a comma list. Prose beats keywor
   read cleanly (see `knowledge/images/placement`).
 - **Aspect comes from the frame, not the prompt.** `asset(action="generate_image")` derives
   the aspect ratio from the target node's geometry — don't hardcode a ratio that fights the frame.
-- **References condition generation automatically.** When the turn has attached
-  reference images, `asset(action="generate_image")` sends them as style anchors;
-  in this agent-facing tool there is no parameter that turns them on or off.
+- **Select relevant reference pixels.** `asset(action="generate_image")` accepts
+  `reference_asset_ids`: up to four inspected attachments, kit/library assets or
+  scene assets. Omission uses turn attachments; [] uses none. A successful
+  model/cache result reports exact `reference_inputs`. Viewing alone does not
+  attach a library image. These inputs are style anchors, not exact source edits.
   Inspect the pixels and describe the qualities to carry forward: palette,
   texture, mood, edge character, depth and visual weight. Then describe the artwork
   and copy regions this brief needs. These observations guide a new image; they

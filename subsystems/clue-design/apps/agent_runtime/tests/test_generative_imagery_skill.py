@@ -272,12 +272,12 @@ def test_the_skill_is_honest_that_the_ratio_report_only_speaks_on_a_miss() -> No
     [SKILL_FILE, KNOWLEDGE_DOCS / "knowledge/images/prompts.md"],
     ids=["skill", "linked-prompt-guide"],
 )
-def test_imagery_guides_do_not_promise_a_reference_conditioning_parameter(
+def test_imagery_guides_match_the_public_reference_selection_parameter(
     guide_path: Path,
 ) -> None:
-    """The linked prompt guide reaches the same agent as the skill. Both must
-    describe the public `asset` tool, not the internal generate_image helper's
-    opt-out or the separate HTTP API's reference_asset_ids input."""
+    """Both guides describe the public selector, not the helper-only boolean.
+    Actual byte delivery is exercised by test_image_reference_selection.py.
+    """
 
     substrate = (RUNTIME_ROOT / "lumen_agent" / "tools" / "substrate.py").read_text(
         encoding="utf-8"
@@ -286,10 +286,12 @@ def test_imagery_guides_do_not_promise_a_reference_conditioning_parameter(
     assert "condition_on_references" not in tool_signature, (
         "the asset tool grew a reference-conditioning parameter — the skill can now name it"
     )
+    assert "reference_asset_ids" in tool_signature
 
     body = parse_frontmatter(guide_path.read_text(encoding="utf-8"))[1]
     assert "condition_on_references" not in body
-    assert "there is no parameter that turns them on or off" in body
+    assert "reference_asset_ids" in body
+    assert "reference_inputs" in body
 
 
 # --- 4. Illustrative hexes stay illustrative -------------------------------

@@ -129,9 +129,14 @@ inline. Reuse inspected assets instead of searching the whole catalog again.
   `skills/color-and-contrast`. A saturated brand surface may need dark or light
   text depending on its luminance. A token name is not a contrast verdict.
 - Keep the authentic logo as its own image layer with undistorted proportions,
-  sized for the composition and the kit's declared minimum. Bind through slots
-  (`slot(account.logo)`) with asset roles (`logo.primary` / `logo.reversed`),
-  never an invented asset id. Match its visual weight to the reference.
+  sized for the composition and the kit's declared minimum. Use actual asset
+  roles (`logo.primary` / `logo.reversed`), never an invented asset id. Prefer a
+  recognizable wordmark/lockup to a favicon when the reference identifies the
+  brand by name. Match its visual weight and choose a compatible ground.
+  A standalone logo image is editable without a personalization slot. When
+  scaling requires `slot(account.logo)`, supply its required placeholder/sample
+  and a `fit=contain` policy matching the real source alpha; opaque assets
+  cannot satisfy `preserve_transparency=true`. Preserve existing bound slots.
 - **Look at every asset before you place it** — `view("asset:<asset_id>")`.
   Authentic product screenshots may contain source UI text. Keep their bytes
   intact; use contain or a deliberate crop that preserves meaningful content.
