@@ -7251,6 +7251,21 @@ def create_app(
         """Public Phase E provider-registry surface (lands with Phase G):
         run any registered generation provider and persist the normalized
         asset record."""
+        if not image_provider.is_image_model_provider(payload.provider) and any(
+            value is not None
+            for value in (payload.reference_roles, payload.reference_framing, payload.operation)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "image_model.unsupported_reference_semantics",
+                    "message": (
+                        "reference roles, framing and operation labels require "
+                        "the image model provider"
+                    ),
+                    "diagnostics": [],
+                },
+            )
         asset_id = f"asset_gen_{uuid4().hex[:12]}"
         cache_key: Optional[str] = None
         blobs = blob_store(repo)
@@ -7291,6 +7306,7 @@ def create_app(
             # its source pixels). Empty ids → None → byte-identical to today.
             reference_images: Optional[list] = None
             reference_digests: Optional[List[str]] = None
+            ref_ids = payload.reference_asset_ids
             if source_images is None:
                 ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
                 if ref_ids:
@@ -7312,9 +7328,12 @@ def create_app(
                 aspect_ratio=payload.aspect_ratio,
                 image_size=payload.image_size,
                 transparent_background=payload.transparent_background,
-                reference_asset_ids=payload.reference_asset_ids,
+                reference_asset_ids=ref_ids,
                 reference_digests=reference_digests,
                 source_digest=source_digest,
+                operation=payload.operation,
+                reference_roles=payload.reference_roles,
+                reference_framing=payload.reference_framing,
             )
             # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
             # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
@@ -7341,6 +7360,7 @@ def create_app(
                     "provider": {"id": payload.provider},
                     "deduplicated": True,
                     "diagnostics": [],
+                    **image_provider.image_request_receipt_fields(cached_record),
                 }
             # Real text-to-image generation runs here in the async-capable Python
             # layer; the returned bytes are persisted through the SAME ingest
@@ -7354,6 +7374,7 @@ def create_app(
                         brand_notes=payload.brand_notes,
                         transparent_background=payload.transparent_background,
                         request_id=asset_id,
+                        operation=payload.operation,
                     )
                 else:
                     generated = image_provider.generate(
@@ -7364,9 +7385,12 @@ def create_app(
                         aspect_ratio=payload.aspect_ratio,
                         image_size=payload.image_size,
                         transparent_background=payload.transparent_background,
-                        reference_asset_ids=payload.reference_asset_ids,
+                        reference_asset_ids=ref_ids,
                         reference_images=reference_images,
                         request_id=asset_id,
+                        operation=payload.operation,
+                        reference_roles=payload.reference_roles,
+                        reference_framing=payload.reference_framing,
                     )
             except image_provider.ImageGenerationError as error:
                 log_event(
@@ -7498,6 +7522,7 @@ def create_app(
             "provider": asset_payload.get("provider") or {"id": payload.provider},
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
+            **image_provider.image_request_receipt_fields(stored["asset"]),
         }
 
     @app.get("/assets")

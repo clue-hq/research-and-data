@@ -5355,19 +5355,19 @@ def test_image_model_api_style_rejects_a_typo(monkeypatch: pytest.MonkeyPatch) -
     assert Settings().image_model_api_style == "chat"
 
 
-def test_generation_key_reference_digests(client: TestClient) -> None:
+def test_generation_key_reference_digests() -> None:
     # RC2 D-RC2.3: reference_digests participate only when truthy (existing keys
-    # byte-identical), order-insensitively.
+    # byte-identical). Reference order is part of the composition contract.
     from lumen_api import image_cache
 
     base = image_cache.generation_key(prompt="a hero", model="m")
     # No digests / empty list -> identical to the pre-RC2 key (byte-compatible).
     assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=None) == base
     assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=[]) == base
-    # Truthy digests change the key, and their order does not matter.
+    # Truthy digests change the key, including when their order changes.
     with_refs = image_cache.generation_key(prompt="a hero", model="m", reference_digests=["b", "a"])
     assert with_refs != base
-    assert with_refs == image_cache.generation_key(
+    assert with_refs != image_cache.generation_key(
         prompt="a hero", model="m", reference_digests=["a", "b"]
     )
     # Different reference pixels -> different key.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, StrictInt
+from pydantic import AliasChoices, BaseModel, Field, StrictInt, model_validator
 
 
 JsonObject = Dict[str, Any]
@@ -360,12 +360,38 @@ class GenerateAssetRequest(BaseModel):
     aspect_ratio: Optional[str] = None
     image_size: Optional[str] = None
     reference_asset_ids: List[str] = Field(default_factory=list)
+    reference_roles: Optional[List[Literal["source", "treatment", "composition"]]] = None
+    reference_framing: Optional[str] = None
+    operation: Optional[str] = None
     label: Optional[str] = None
     # Phase 3b image EDIT: when set, the prompt is an edit instruction applied
     # to this existing asset's pixels; the result is a NEW asset whose source
     # records the parent (kind "edited"). Remove-background = an edit with
     # transparent_background=true.
     source_asset_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_reference_semantics(self) -> "GenerateAssetRequest":
+        if self.reference_roles is not None:
+            if len(self.reference_roles) != len(self.reference_asset_ids):
+                raise ValueError(
+                    "reference_roles must match reference_asset_ids in order and length"
+                )
+            if any(not asset_id.strip() for asset_id in self.reference_asset_ids) or (
+                len(set(self.reference_asset_ids)) != len(self.reference_asset_ids)
+            ):
+                raise ValueError("role-aware reference_asset_ids must be non-empty and unique")
+        if self.reference_framing is not None and (
+            not self.reference_framing.strip() or not any(self.reference_asset_ids)
+        ):
+            raise ValueError(
+                "reference_framing requires reference assets and a non-empty instruction"
+            )
+        if self.source_asset_id and (
+            self.reference_roles is not None or self.reference_framing is not None
+        ):
+            raise ValueError("source edits do not accept generation reference roles or framing")
+        return self
 
 
 class CreateBindingSetRequest(BaseModel):
