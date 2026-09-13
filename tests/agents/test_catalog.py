@@ -102,6 +102,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The read tools' contract repairs: v25 with the three reads' output digests (and
         # `read_project_accounts`' input digest) re-measured off the typed descriptors.
         "skill:stage0-interview@v26",
+        # The read tools' hotfix: v26 with `read_account_research`'s paged/prefixed contract and
+        # `read_discovery_run`'s repaired input re-measured, and the §7c/§1 text they need.
+        "skill:stage0-interview@v27",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -178,6 +181,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # stage0-interview v26.
         "profile:head-of-abm@v49",
         "profile:head-of-abm@v5",
+        # The read tools' hotfix: v49 with the three reads re-pinned and stage0-interview v27.
+        "profile:head-of-abm@v50",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

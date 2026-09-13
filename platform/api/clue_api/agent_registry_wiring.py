@@ -110,7 +110,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `read_project_accounts` gained `query`/`offset` so a named account past the first page is
     # reachable; and `read_discovery_run`'s `verified` counts the candidates the verifier judged.
     # No tool is added or dropped. Everything else is v48's.
-    AgentRole.HEAD_OF_ABM: "v49",
+    # v50 (read-tool hotfix, 2026-09-13): v49's three reads with the hotfix contracts, and
+    # stage0-interview v27. `read_account_research` pages its claims (`offset`/`next_offset`) under
+    # a byte budget so a wide account fits the governed receipt, and names the account's own claim
+    # families in `prefixes` so a narrowing prefix is never invented; `read_discovery_run` accepts
+    # the schema's own `pass` on input so its result passes the runner's validation. §7c now says
+    # an overview renders on first page view (so `overview_not_written` is not a failure) and that
+    # claims are read to the end before a count is stated. No tool is added or dropped. Everything
+    # else is v49's.
+    AgentRole.HEAD_OF_ABM: "v50",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -552,10 +560,12 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_reason_code="project_conversation_no_autonomous_research",
         framing=(
             "This surface is the project conversation: you converse with the client, record what "
-            "they tell you, and can draft research direction, present its confirmation gate, or "
-            "launch an exact Account set explicitly commanded and attached by the current human "
-            "turn when the pilot budget gate is disabled. You do not capture on their behalf, "
-            "fetch external sources, delegate to a specialist, or widen the human's selected set."
+            "they tell you, author the project's ICP and request its personas, open the "
+            "product-set and ICP confirmation gates, write the project plan, and launch ARV2 "
+            "discovery, account research and person research on this project when the human asks "
+            "for them. You read the project's accounts, research and discovery runs from the rows "
+            "before speaking about them. You do not fetch external sources yourself, delegate to a "
+            "specialist, or widen a set the human selected."
         ),
     ),
     # ARV2 O4 (synthesis split): the ICP turn writes the client's profiles from the brand's
