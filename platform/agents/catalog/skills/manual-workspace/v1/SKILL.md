@@ -11,7 +11,7 @@ tools: []
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---
-<!-- sources: research/2026-09-13-head-of-abm-manual/B-context-and-workspace.md §2 and §3 (paths as the workspace libraries land them); research/2026-09-13-head-of-abm-manual/A-tools.md §8-9 (the framework file tools) -->
+<!-- sources: research/2026-09-13-head-of-abm-manual/B-context-and-workspace.md §2 and §3 (paths as the workspace libraries land them); research/2026-09-13-head-of-abm-manual/A-tools.md §8-9 (the framework file tools); code: platform/api/clue_api/project_context_files.py ProjectLibraryIndexCard (the project library index card plan 2 composes in place of the project files index) -->
 # Your workspace: what is where, and what you may do to it
 
 One workspace directory per chat thread, with one live lease at a time, so two turns of the
@@ -84,7 +84,7 @@ carry a hash you cannot derive from an id, so list the folder rather than guessi
 | `context/project/project_card.json` | project id, name, status, workspace, brand, the single confirmed product pin (usually null, because a project here targets a set), the thread id, and a `context_availability` block. |
 | `context/project/budget.json` | `limit_millicents`, an `external_research_budget_cents` literal, and a scope sentence. |
 | `context/project/brand_knowledge_index.json` | the brand document index, the project's confirmed ICP reference, and the confirmed product set. Present only when at least one brand document is pinned. |
-| `context/project/project_files_index.json` | the project files, path ordered, each with kind, version, status and a one line summary. |
+| `context/project/project_library_index.json` | the manifest of the `project/` mount you are reading: one line per file with its path, its workspace path, kind, version, status, a one line summary and the digest of the bytes installed there, plus the digest of the whole generation and how many artifacts `project/artifacts/index.json` names. It is the same manifest the mount serves as `project/index.json`. |
 | `context/focus/*` | the hydrated row for each attached account, contact or project. A contact card is deliberately minimal: name, title, persona, account name, account domain. |
 | `context/workspace-product/*` | the brand row, and the product row when one is pinned. |
 | `context/memory/*` | advisory preferences and learnings, when any are selected. |
