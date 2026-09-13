@@ -1,0 +1,296 @@
+"""The brand library: one pinned knowledge version, materialized once and mounted read-only.
+
+The turn's seeds copy every pinned document into *this thread's* workspace. The library does the
+opposite: it renders one knowledge version once, beside the threads, under
+``<ws>/library/brand/<brand>/<version>/``, and every thread of every project of that brand mounts
+the same frozen tree at ``brand/``. Three properties are load-bearing and are asserted here against
+a real filesystem, never a fake:
+
+* **Content-addressed, written once.** The version segment is the pin's ``documents_sha256``, so a
+  second turn on the same knowledge finds the tree already there and does not rewrite it — the
+  directory keeps its inode and its mtime, and no superseded generation appears beside it.
+* **Immutable on disk.** 0400 files in 0500 directories, and the mounted path refuses a write.
+* **Shared by every project of the brand.** The library is not project-relative: the *newest*
+  version of a path owns the plain name there, whatever any one project pinned. A project's own
+  ICP pin still owns the plain name in that project's thread seeds — the two surfaces disagree on
+  purpose, because one is shared and the other is the project's.
+
+Postgres stays the truth: the tree is a rendering of the pinned rows, and nothing reads it to
+decide anything.
+"""
+
+from __future__ import annotations
+
+import json
+import stat
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+from clue_agents import MountRequest
+from clue_agents.workspace_policy import WorkspaceSecurityError
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.brand_knowledge_context import (
+    BRAND_LIBRARY_PREFIX,
+    INPUT_PREFIX,
+    knowledge_seed_files,
+    load_or_create_knowledge_pin,
+    read_pinned_documents,
+)
+from clue_api.brand_library import brand_library_version, ensure_brand_library
+from tests._workspace import seed_project
+from tests.agents.workspace_helpers import (
+    DEFAULT_READABLE_PREFIXES,
+    EXECUTION_ID,
+    make_factory,
+    policy,
+)
+from tests.api.test_brand_knowledge_context_db import (
+    CATALOG,
+    OVERVIEW,
+    _icp,
+    _pin_icp,
+    _seed_document,
+    _submitted_turn,
+)
+from tests.api.test_stage0_setup_db import _MemoryStorage
+from tests.db.conftest import run_async
+from tests.profiling.conftest import (
+    conn_session_factory,
+    migrated_db,  # noqa: F401 -- exposes the fixture to this test module
+    rollback_conn,
+)
+
+
+@pytest.fixture
+def require_profiling_db(request: pytest.FixtureRequest) -> None:
+    if not request.getfixturevalue("migrated_db"):
+        pytest.skip("requires a migrated per-branch Postgres database")
+
+
+pytestmark = pytest.mark.usefixtures("require_profiling_db")
+
+
+def test_the_brand_library_is_written_once_per_pinned_version_and_mounts_read_only(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-library-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 library")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            for path, kind, body in (
+                ("company/overview.md", "company-overview", OVERVIEW),
+                ("product/catalog.md", "product-catalog", CATALOG),
+            ):
+                await _seed_document(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path=path,
+                    kind=kind,
+                    version=1,
+                    status="ready",
+                    body=body,
+                )
+            turn_id = await _submitted_turn(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                label="library",
+            )
+            pin, created = await load_or_create_knowledge_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+            )
+            assert created is True
+            documents = await read_pinned_documents(conn, storage, pin=pin)
+
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                assert version == brand_library_version(pin) == pin.documents_sha256[:16]
+
+                brand_root = root / workspace_id / "library" / "brand" / project.brand_id
+                tree = brand_root / version
+                overview = tree / "knowledge" / "company" / "overview.md"
+                assert overview.read_text() == OVERVIEW
+                assert (tree / "knowledge" / "product" / "catalog.md").read_text() == CATALOG
+                # Immutable on disk: 0400 files inside 0500 directories, all the way up.
+                assert stat.S_IMODE(overview.stat().st_mode) == 0o400
+                assert stat.S_IMODE((tree / "knowledge" / "company").stat().st_mode) == 0o500
+                assert stat.S_IMODE(tree.stat().st_mode) == 0o500
+
+                index = json.loads((tree / "index.json").read_text())
+                assert index["card_kind"] == "brand_knowledge_index"
+                assert index["brand_id"] == project.brand_id
+                assert index["library_sha256"] == pin.documents_sha256
+                # Every line of the index names the file at the path the mount serves it at.
+                assert {entry["workspace_path"] for entry in index["documents"]} == {
+                    f"{BRAND_LIBRARY_PREFIX}company/overview.md",
+                    f"{BRAND_LIBRARY_PREFIX}product/catalog.md",
+                }
+                # The library is brand-wide, so it carries no per-project facts at all.
+                assert index["confirmed_icp"] is None
+                assert index["product_set"] is None
+
+                # A second turn on the same knowledge version finds the tree and writes nothing.
+                before = tree.stat()
+                assert await ensure_brand_library(factory, pin=pin, documents=documents) == version
+                after = tree.stat()
+                assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+                assert [child.name for child in brand_root.iterdir()] == [version]
+
+                lease = factory.acquire(
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id="thread-1",
+                    execution_id=EXECUTION_ID,
+                    policy=policy(readable=(*DEFAULT_READABLE_PREFIXES, "brand")),
+                    mounts=MountRequest(brand=(project.brand_id, version)),
+                )
+                assert (
+                    lease.backend.read_text_sync(f"{BRAND_LIBRARY_PREFIX}company/overview.md")
+                    == OVERVIEW
+                )
+                with pytest.raises(WorkspaceSecurityError):
+                    lease.backend.write_text_sync(
+                        f"{BRAND_LIBRARY_PREFIX}company/overview.md", "nope"
+                    )
+                # The mount is read beside the thread root, never copied into it.
+                assert not (
+                    root
+                    / workspace_id
+                    / "projects"
+                    / project.project_id
+                    / "threads"
+                    / "thread-1"
+                    / "brand"
+                ).exists()
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_the_shared_brand_library_gives_the_plain_name_to_the_newest_version(
+    tmp_path: Path,
+) -> None:
+    """The library is one tree per knowledge version, shared by every project of the brand.
+
+    So a project's ICP pin cannot move a name in it: the newest version of a path owns the plain
+    name, and the older version rides beside it version-qualified. The project's *thread* seeds
+    still hand the plain name to the version that project pinned — the project's pin belongs in
+    the project's own context, not in a tree its sibling projects read.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-libpin-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 library pin")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            confirmed_body = _icp(
+                key="gi", status="confirmed", project_id=project.project_id, selection_version=3
+            )
+            newer_body = _icp(key="gi", status="proposed", project_id=None, selection_version=None)
+            pinned_document_id = await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi.md",
+                kind="icp-definition",
+                version=2,
+                status="confirmed",
+                body=confirmed_body,
+            )
+            icp_pin = await _pin_icp(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                document_id=pinned_document_id,
+                icp_key="gi",
+                product_selection_version=3,
+            )
+            await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi.md",
+                kind="icp-definition",
+                version=3,
+                status="proposed",
+                body=newer_body,
+            )
+            turn_id = await _submitted_turn(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                label="libpin",
+            )
+            pin, _created = await load_or_create_knowledge_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+            )
+            documents = await read_pinned_documents(conn, storage, pin=pin)
+            assert [(ref.path, ref.version) for ref in pin.documents] == [
+                ("audience/icp-gi.md", 2),
+                ("audience/icp-gi.md", 3),
+            ]
+
+            # The thread's seeds are project-relative: the pinned v2 owns the plain name there.
+            seeds = {
+                seed.path: seed
+                for seed in knowledge_seed_files(documents, pinned_document_id=icp_pin.document_id)
+            }
+            assert seeds[f"{INPUT_PREFIX}audience/icp-gi.md"].content == confirmed_body.encode()
+            assert seeds[f"{INPUT_PREFIX}audience/icp-gi.v3.md"].content == newer_body.encode()
+
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                knowledge = (
+                    root
+                    / workspace_id
+                    / "library"
+                    / "brand"
+                    / project.brand_id
+                    / version
+                    / "knowledge"
+                )
+                # …and the shared library is not: the newest version owns the plain name.
+                assert (knowledge / "audience" / "icp-gi.md").read_text() == newer_body
+                assert (knowledge / "audience" / "icp-gi.v2.md").read_text() == confirmed_body
+                index = json.loads(
+                    (knowledge.parent / "index.json").read_text(),
+                )
+                assert {
+                    entry["version"]: entry["workspace_path"] for entry in index["documents"]
+                } == {
+                    3: f"{BRAND_LIBRARY_PREFIX}audience/icp-gi.md",
+                    2: f"{BRAND_LIBRARY_PREFIX}audience/icp-gi.v2.md",
+                }
+            finally:
+                factory.close()
+
+    run_async(scenario())

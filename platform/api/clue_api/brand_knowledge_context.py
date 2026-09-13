@@ -39,7 +39,8 @@ from typing import Any, Literal
 from uuid import UUID
 
 import yaml
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, model_serializer
+from pydantic_core.core_schema import SerializerFunctionWrapHandler
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -54,6 +55,7 @@ from clue_storage import StorageBackend, read_verified_artifact
 
 __all__ = [
     "BRAND_KNOWLEDGE_INDEX_CARD_MEDIA_TYPE",
+    "BRAND_LIBRARY_PREFIX",
     "INPUT_PREFIX",
     "KNOWLEDGE_DOCUMENT_MEDIA_TYPE",
     "SERVABLE_STATUSES",
@@ -79,6 +81,11 @@ __all__ = [
 
 #: Every brand knowledge document is materialized read-only below this workspace prefix.
 INPUT_PREFIX = "inputs/brand/knowledge/"
+#: …and served, unseeded, below this one when the workspace mounts the brand library instead: the
+#: same documents rendered once per knowledge version beside the threads
+#: (``<ws>/library/brand/<brand>/<version>/knowledge/``) and mounted read-only at ``brand/``. One
+#: prefix constant per surface, so a path is never spelled by hand at a call site.
+BRAND_LIBRARY_PREFIX = "brand/knowledge/"
 #: A document is servable input when its bytes exist and it has not been superseded.
 SERVABLE_STATUSES: tuple[str, ...] = ("ready", "proposed", "confirmed")
 #: Knowledge documents are markdown with YAML front matter, on disk and in the artifact store.
@@ -457,8 +464,14 @@ def workspace_paths(
     documents: Sequence[PinnedDocument],
     *,
     pinned_document_id: UUID | None = None,
+    prefix: str = INPUT_PREFIX,
 ) -> dict[UUID, str]:
-    """Where each pinned document materializes under ``inputs/brand/knowledge/``.
+    """Where each pinned document materializes under ``prefix`` (default the thread's seeds).
+
+    ``prefix`` is the one thing that differs between the two surfaces that serve these documents:
+    the thread's own seeds (``inputs/brand/knowledge/``) and the mounted brand library
+    (``brand/knowledge/``). The naming rules below are identical for both, which is the point —
+    a document is at the same relative path whichever surface a turn reads it from.
 
     Normally one document holds a path and the answer is just that path. A project's ICP pin can
     put **two** versions of one path in a turn's set at once — the version the project agreed to,
@@ -491,7 +504,7 @@ def workspace_paths(
                 else version_qualified_path(path, document.ref.version)
             )
             resolved[document.ref.document_id] = (
-                INPUT_PREFIX + name if project_id is None else project_workspace_path(name)
+                prefix + name if project_id is None else project_workspace_path(name)
             )
     return resolved
 
@@ -626,6 +639,27 @@ class BrandKnowledgeIndexCard(BaseModel):
     confirmed_icp: ConfirmedIcpRef | None
     product_set: dict[str, JsonValue] | None
     omitted_count: int
+    #: Set only when this card is a **library** manifest: the digest of the knowledge pin the
+    #: library tree renders (``LibraryTree`` requires its ``index.json`` to record it). A turn's
+    #: opening context card is not a manifest of anything, so it leaves the field unset — and an
+    #: unset field is serialized away entirely, below, so that card's bytes and content hash are
+    #: exactly what they were before this field existed.
+    library_sha256: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Drop ``library_sha256`` when it is unset — in *every* dump, not just the canonical one.
+
+        The two serializations of this card must agree: the fleet wiring persists
+        ``model_dump(exclude_none=False)`` and then asserts the stored digest equals
+        :meth:`content_sha256`. A field that one path emitted as ``null`` and the other omitted
+        would fail that check, so the omission lives in the serializer both paths share.
+        """
+
+        payload = dict(handler(self))
+        if self.library_sha256 is None:
+            payload.pop("library_sha256", None)
+        return payload
 
     def canonical_bytes(self) -> bytes:
         # ``exclude_none=False``: a null ``confirmed_icp`` is the typed "no ICP confirmed for this
@@ -698,6 +732,8 @@ def compile_brand_knowledge_index_card(
     confirmed_icp: ConfirmedIcpRef | None,
     product_set: ProjectProductSet | None,
     max_bytes: int = 8192,
+    prefix: str = INPUT_PREFIX,
+    library_sha256: str | None = None,
 ) -> BrandKnowledgeIndexCard:
     """Compile the opening index over one turn's pinned documents, bounded by ``max_bytes``.
 
@@ -714,6 +750,10 @@ def compile_brand_knowledge_index_card(
     and the project's current version of one path differ — puts two disagreeing descriptions of one
     file in one turn's opening context. ``confirmed_icp`` is unchanged: naming the pinned document
     is this card's job whatever that document's scope.
+
+    ``prefix`` and ``library_sha256`` are what the **brand library** compiles this same card with:
+    the paths it names are then the library's mounted paths, and the digest records which pinned
+    knowledge version the tree renders. Neither is set for a turn's opening card.
     """
 
     ordered = sorted(
@@ -725,6 +765,7 @@ def compile_brand_knowledge_index_card(
     paths = workspace_paths(
         documents,
         pinned_document_id=None if confirmed_icp is None else confirmed_icp.document_id,
+        prefix=prefix,
     )
     entries = [
         _index_entry(document, workspace_path=paths[document.ref.document_id])
@@ -746,6 +787,7 @@ def compile_brand_knowledge_index_card(
                 }
             ),
             omitted_count=omitted,
+            library_sha256=library_sha256,
         )
 
     omitted_count = 0

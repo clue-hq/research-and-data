@@ -56,6 +56,7 @@ from clue_agents import (
     ContextLayer,
     DomainObjectRef,
     LayerBudget,
+    MountRequest,
     ProjectContextArtifact,
 )
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
@@ -88,6 +89,7 @@ from clue_api.brand_knowledge_context import (
     load_or_create_knowledge_pin,
     read_pinned_documents,
 )
+from clue_api.brand_library import ensure_brand_library
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 from clue_api.chat.interrupted_turn import commit_interrupted_turn, recover_interrupted_answer
 from clue_api.chat.turn_controls import stop_requested
@@ -559,6 +561,9 @@ class ProjectConversationTurnRunner:
         product_set: ProjectProductSet | None = None
         icp_pin: ProjectIcpPin | None = None
         knowledge_pin_created = False
+        # What this turn's workspace mounts beside its thread root. A turn that composes no
+        # knowledge has no library version to name, so it mounts nothing.
+        mounts = MountRequest()
         if self._storage is None:
             log.info(
                 "agent_turn.knowledge_not_composed",
@@ -593,6 +598,17 @@ class ProjectConversationTurnRunner:
                 documents,
                 pinned_document_id=None if icp_pin is None else icp_pin.document_id,
             )
+            # The same pinned bytes, written once per knowledge version beside the threads and
+            # mounted read-only at ``brand/`` for every thread of every project of this brand.
+            # It is materialized here, not seeded per turn: a present tree is never rewritten.
+            brand_version = await ensure_brand_library(
+                self._engine.components.workspaces,
+                pin=knowledge_pin,
+                documents=documents,
+            )
+            mounts = MountRequest(brand=(scope.brand_id, brand_version))
+        # The per-thread seeds stay until the profile grants the ``brand`` prefix and the model is
+        # told to read the library instead; until then both surfaces carry the same documents.
         input_seeds = knowledge_seed_files(
             documents,
             pinned_document_id=None if icp_pin is None else icp_pin.document_id,
@@ -726,6 +742,7 @@ class ProjectConversationTurnRunner:
             thread_id=submission.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
+            mounts=mounts,
         )
         try:
             focus_ref = DomainObjectRef(
