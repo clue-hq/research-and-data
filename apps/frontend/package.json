@@ -53,6 +53,8 @@
     "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "shadcn": "^4.16.1",
     "slate": "^0.126.0",
     "slate-history": "^0.113.1",

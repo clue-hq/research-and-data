@@ -115,7 +115,7 @@ export function toBrandContextWorkspace(
     knowledgeFolders: toKnowledgeFolders(kit),
     name: kit.brand_kit.name,
     textStyles: toTextStyles(json.tokens?.typography),
-    typefaces: toTypefaces(json.assets?.fonts),
+    typefaces: toTypefaces(json.assets?.fonts, kit),
   };
 }
 
@@ -241,17 +241,28 @@ type FontAssets = Readonly<Record<string, BrandFontAsset | null>>;
  * platform/library face, everything else (a webfont captured from the client's
  * own site, an upload) is the brand's own — the screen's "Custom".
  */
-function toTypefaces(fonts: FontAssets | undefined): BrandTypeface[] {
+function toTypefaces(fonts: FontAssets | undefined, kit: BrandKitDetail): BrandTypeface[] {
   if (!fonts) return [];
   return Object.keys(fonts)
     .sort()
     .flatMap((id) => {
       const font = fonts[id];
       if (!font) return [];
+      const faces = (font.faces ?? []).flatMap((face) => {
+        if (!face) return [];
+        const url = face.asset_id
+          ? `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(face.asset_id)}/bytes`
+          : webFontUrl(face.source_url);
+        return url ? [{ url, weight: face.weight, style: face.style }] : [];
+      });
       return [
         {
           family: font.family,
           id,
+          ...(faces.length ? {
+            faces,
+            previewFamily: `clue-brand-${encodeURIComponent(kit.brand_kit.id)}-${kit.brand_kit.version}-${encodeURIComponent(id)}`,
+          } : {}),
           source:
             font.source && font.source.kind !== "system"
               ? ("custom" as const)
@@ -259,6 +270,17 @@ function toTypefaces(fonts: FontAssets | undefined): BrandTypeface[] {
         },
       ];
     });
+}
+
+/** Website font references must be browser-loadable URLs, never script/data URLs. */
+function webFontUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 type TypographyTokens = Readonly<Record<string, BrandTypographyToken | null>>;

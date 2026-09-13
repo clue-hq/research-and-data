@@ -11,8 +11,8 @@ import type {
   BrandContextWorkspace,
   BrandDocumentMode,
   BrandTextStyle,
+  BrandTypeface,
 } from "../model/brand-context";
-import { parseKnowledgeMarkdown } from "../model/brand-context";
 
 type BrandDialog = "new-style" | "new-typeface" | null;
 type AssetEditingField = "description" | "name" | null;
@@ -88,7 +88,12 @@ export function useBrandContextController({
     ),
   );
   const [dialog, setDialog] = useState<BrandDialog>(null);
-  const [typefaces, setTypefaces] = useState(workspace.typefaces);
+  const [addedTypefaces, setAddedTypefaces] = useState<BrandTypeface[]>([]);
+  const [removedTypefaceIds, setRemovedTypefaceIds] = useState<Set<string>>(() => new Set());
+  const typefaces = useMemo(() => [
+    ...workspace.typefaces.filter((typeface) => !removedTypefaceIds.has(typeface.id)),
+    ...addedTypefaces.filter((typeface) => !workspace.typefaces.some((font) => font.family.toLowerCase() === typeface.family.toLowerCase())),
+  ], [addedTypefaces, removedTypefaceIds, workspace.typefaces]);
   const [typefaceMenuId, setTypefaceMenuId] = useState<string | null>(null);
   const [fontSearch, setFontSearch] = useState("");
   const [customFontName, setCustomFontName] = useState("");
@@ -144,10 +149,6 @@ export function useBrandContextController({
   const documentBody = selectedDocument
     ? documentBodies[selectedDocument.id] ?? selectedDocument.body
     : "";
-  const markdownBlocks = useMemo(
-    () => parseKnowledgeMarkdown(documentBody),
-    [documentBody],
-  );
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
@@ -280,7 +281,7 @@ export function useBrandContextController({
     const family = fontSearch.trim() || customFontName.replace(/\.[^.]+$/, "");
     if (!family) return;
     if (!typefaces.some((typeface) => typeface.family.toLocaleLowerCase() === family.toLocaleLowerCase())) {
-      setTypefaces((current) => [
+      setAddedTypefaces((current) => [
         ...current,
         { family, id: `custom-${family.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-")}`, source: "custom" },
       ]);
@@ -307,7 +308,9 @@ export function useBrandContextController({
   }
 
   function removeTypeface(typefaceId: string) {
-    setTypefaces((current) => current.filter((typeface) => typeface.id !== typefaceId || typeface.source !== "custom"));
+    if (typefaces.find((typeface) => typeface.id === typefaceId)?.source !== "custom") return;
+    setAddedTypefaces((current) => current.filter((typeface) => typeface.id !== typefaceId));
+    setRemovedTypefaceIds((current) => new Set(current).add(typefaceId));
     setTypefaceMenuId(null);
   }
 
@@ -360,7 +363,6 @@ export function useBrandContextController({
     filteredAssets,
     filteredTypefaces,
     fontSearch,
-    markdownBlocks,
     newStyle,
     editAssetDetails,
     openAsset,

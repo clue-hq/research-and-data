@@ -505,3 +505,29 @@ The dummy's other knowledge folders (Company, Product, Audience, Proof, Memories
 nothing in the store fills them, and an empty folder tree is the honest report. A real
 markdown-document store behind the section, and persistence for the lifted edits, remain
 unbuilt.
+
+## Local backport (2026-09-13) — Brand Context presentation
+
+Adapted Aryan's `3903ae73`, `769b4994` and `79330214` changes from
+`origin/brand-context-polish` onto Design Agent V1. The existing authenticated
+brand-kit and asset read contracts remain in use; no onboarding API is added.
+
+- Asset dialogs contain the full image within a larger responsive preview and
+  keep long names/descriptions readable in the details column.
+- Typeface mapping preserves the kit's `faces` (weight, style, asset ID and source
+  URL). Stored faces use `/api/clue/design/assets/{id}/bytes`; remote fallback
+  accepts HTTP(S) only. Font-family registration is namespaced by kit/version/role.
+  A sample appears after the actual font loads, with explicit loading/unavailable
+  states instead of a silent fallback. Refreshing the kit refreshes its typefaces.
+- Knowledge uses `react-markdown` and `remark-gfm` for headings, lists, tables,
+  links and code. Existing client-local drafts are still previewable. This does
+  **not** persist edits or change the structured Design brief.
+
+The newer onboarding Knowledge tree, polling and version-checked Markdown saves
+(`2c100e8a`) depend on the upstream ARV2 backend/document store, absent on this
+branch. They are not part of this backport. Importing the full upstream branch is
+a separate contract and migration integration, not a presentation update.
+
+Presentation changes do not rerun ingestion or increase source coverage. Current
+website capture visits the entry URL plus explicitly supplied `page_urls`; it
+does not discover linked pages. Ad-library harvesting remains a separate job.

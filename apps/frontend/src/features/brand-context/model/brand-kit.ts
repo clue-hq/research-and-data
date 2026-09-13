@@ -65,6 +65,12 @@ export const BrandFontAssetSchema = z.object({
   family: z.string().min(1),
   /** `AssetSource` (assets.rs:129) — `system` is a platform family, anything else is the brand's own. */
   source: z.object({ kind: z.string() }).nullish(),
+  faces: z.array(z.object({
+    weight: z.number().int().min(1).max(1000),
+    style: z.enum(["normal", "italic"]),
+    asset_id: z.string().min(1).nullish(),
+    source_url: z.string().nullish(),
+  }).nullable().catch(null)).nullish(),
 });
 
 export const BrandLogoVariantSchema = z.object({
