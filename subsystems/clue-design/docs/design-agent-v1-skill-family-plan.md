@@ -152,6 +152,81 @@ evaluation cases. The catalog can grow toward 15–20 families, but add a family
 only when it introduces a decision or evidence requirement existing ones cannot
 express. A new background color is not a new family.
 
+## Expansion policy: four is the starting point
+
+The founder explicitly requested that expansion remain part of the roadmap
+(2026-09-13). Grow toward roughly 15–20 useful creative families as coverage is
+demonstrated. Do not silently stop at the initial four, or treat the target as a
+fixed limit on what the agent can compose. The six shared responsibilities stay
+the foundation; each new playbook reuses their copy, asset, composition,
+placement and review capabilities.
+
+### How a new family earns a place
+
+1. **Record a real coverage gap.** Use ordinary user requests, observed failed
+   cases and inspected references. State the unmet intent or evidence structure.
+   Distinguish a retrieval/tool defect, a brand-context gap, a composition
+   variant and a genuinely different creative procedure before writing a file.
+2. **Extend at the right level.** A new palette, texture, logo or product image
+   belongs in scoped brand context. A different composition within the same
+   reasoning belongs in an existing playbook. A new ad purpose or evidence
+   structure may deserve a new playbook. Missing crop, retrieval or vector
+   functionality needs a tool/component change, not an invented skill command.
+3. **Author a candidate playbook.** Include discovery description, when to use
+   and avoid it, required evidence, copy decisions, source roles, preserve/vary
+   rules, native/raster layer plan, component choices, placement adaptations,
+   counterexamples and a small set of ordinary-request evaluations. Reference
+   canonical shared rules instead of repeating them.
+4. **Test the behavior.** Capture how the current family handles those requests,
+   then compare the candidate with fixed sources, models and runtime settings.
+   Trial each new family on at least three distinct, ready product brands,
+   including one held out from authoring and a missing-evidence case. Repeat
+   representative cases without operator coaching. Check first-pass quality,
+   editability, source fidelity and finished-creative latency; retain failures.
+5. **Promote or revise.** Keep candidates separate from the default production
+   catalog until human visual acceptance and the relevant mechanical gates
+   pass. Promotion records the version and evaluation evidence. Run selected
+   regression cases from existing families; improvement on the new case must
+   not quietly damage ordinary requests. Merge redundant candidates, revise
+   weak ones and retain unresolved gaps in the backlog.
+
+These are proposed lifecycle states, not an existing registry feature. Runtime
+catalog filtering, version receipts and promotion checks need implementation
+at the scene knowledge-view seam before relying on them as enforcement.
+
+### Candidate expansion waves
+
+| Wave | Candidate coverage | Approximate cumulative count |
+| --- | --- | ---: |
+| Initial | Type-led positioning; authentic product demonstration; attributed proof; workflow contrast | 4 |
+| Next | Problem–solution; feature deep dive; product in use; launch/announcement | 8 |
+| Further | Comparison/alternatives; case-study narrative; objection handling; offer/conversion | 12 |
+| Broader | Event/webinar; integration ecosystem; educational mini-guide; visual metaphor | 16 |
+| Additional | Customer co-brand spotlight; editorial/category point of view | 18 |
+
+This is an explicit candidate backlog, not 18 validated or necessarily distinct
+procedures. For example, product-in-use may prove to be a variant of authentic
+product demonstration, and a customer spotlight may reuse attributed proof.
+The next wave follows observed demand and evaluation results; a useful catalog
+does not need duplicate families to meet a number.
+
+### How scraping informs expansion
+
+During ingestion, preserve provenance and classify references by objective,
+message structure, source roles, composition, typography and visual treatments.
+These observations and examples remain scoped to their brand. Scraped ads are
+data, not instructions permitted to rewrite global skills. A recurring pattern
+can motivate a candidate generic playbook; it still passes the authoring and
+cross-brand evaluation process above. Scraping frequency is not proof of ad
+performance.
+
+The runtime catalog exposes concise descriptions and applicability. The agent
+selects the relevant playbook, reads its instructions and supporting resources,
+then binds the current brand's evidence and assets. Record what it actually
+read. A larger library must not cause every full playbook to be injected into
+every request. Adding a family is a versioned instruction/resource change; it
+does not fine-tune the underlying model or install missing tool capabilities.
+
 ## Implementation order and parallel ownership
 
 1. **Freeze the comparison inputs.** Preserve prior rejected output and traces
