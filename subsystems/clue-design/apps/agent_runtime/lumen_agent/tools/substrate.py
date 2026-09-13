@@ -2652,6 +2652,9 @@ class LumenDesignTools:
           changing the composition; the edited result re-enters the same node with its
           current placement preserved. Set `transparent_background=True` to remove the
           background. Prefer this over a full regenerate when the image is right-but-flawed.
+          This source-only route does not accept reference_asset_ids, reference_roles
+          or reference_framing. For selected-reference changes, generate_image with
+          those inputs, inspect the result and place it explicitly.
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
@@ -2690,10 +2693,15 @@ class LumenDesignTools:
                 operation=operation,
             )
         if action == "edit_image":
-            if reference_roles is not None or reference_framing is not None:
+            if (
+                reference_asset_ids is not None
+                or reference_roles is not None
+                or reference_framing is not None
+            ):
                 return self._tool_error(
                     "asset.bad_request",
-                    "edit_image uses the placed source; reference_roles/framing apply to generate_image.",
+                    "edit_image uses only the placed source; reference_asset_ids/roles/framing "
+                    "require generate_image followed by explicit placement.",
                 )
             if not node_id:
                 return self._tool_error(

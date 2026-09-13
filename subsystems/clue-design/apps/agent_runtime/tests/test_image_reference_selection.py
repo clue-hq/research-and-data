@@ -108,6 +108,43 @@ def test_bad_roles_refuse_without_provider_or_scene_write(tmp_path, monkeypatch,
     assert json.dumps(tools.scene, sort_keys=True) == before
 
 
+@pytest.mark.parametrize("empty_selection", [False, True])
+def test_source_edit_refuses_selected_references_before_provider_or_scene_write(
+    tmp_path, monkeypatch, empty_selection
+):
+    tools, record, _ = _library_tools(tmp_path, monkeypatch)
+    _give_page(tools)
+    tools.scene["assets"][record["id"]] = record
+    tools.scene["nodes"]["hero"] = {
+        "id": "hero", "kind": {"kind": "image", "asset_id": record["id"]},
+        "asset_placement": {"fit": "contain", "focal_point": {"x": 0.2, "y": 0.7}},
+    }
+    calls = []
+
+    def fake_edit(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            image_bytes=_solid_png(512), mime_type="image/png", model="test/image-model",
+            provenance={"created_by": "agent", "notes": []},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.image_provider", SimpleNamespace(
+        is_configured=lambda: True, configured_model_id=lambda: "test/image-model",
+        edit=fake_edit,
+    ))
+    before = json.dumps(tools.scene, sort_keys=True)
+    result = json.loads(tools.asset(
+        action="edit_image", node_id="hero", prompt="Use the selected treatment",
+        reference_asset_ids=[] if empty_selection else [record["id"]],
+    ))
+
+    assert result.get("status") == "error", result
+    assert result.get("error_code") == "asset.bad_request", result
+    assert calls == [], "An unsupported reference selection must not spend on a source-only edit"
+    assert json.dumps(tools.scene, sort_keys=True) == before
+
+
 def test_public_tool_uses_selected_library_original_and_reports_custody(tmp_path, monkeypatch):
     tools, record, thumbnail = _library_tools(tmp_path, monkeypatch)
     _give_page(tools)
