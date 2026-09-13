@@ -44,11 +44,12 @@ restated below where they bind this design.
 
 ## 3. Rulings (founder, 2026-09-13)
 
-- **W1 — four levels, one hierarchy.** The agent's filesystem mirrors the platform's: a
-  *workspace library* (brand knowledge), a *project library* (everything settled for the project),
-  a *thread scratchpad* (persists across the turns of one thread), and the *turn directory* (this
-  turn's inputs, delegations and outputs). The turn directory stops carrying copies of the first
-  two.
+- **W1 — three levels, one hierarchy; a turn is an event, not a place.** The agent's filesystem
+  mirrors the platform's: a *workspace library* (brand knowledge), a *project library* (everything
+  settled for the project), and *one directory per chat thread* that the agent lives in. There is
+  no per-turn directory: a turn rewrites `inputs/` from durable artifacts when it starts and
+  snapshots `outputs/` to artifact storage when it finalizes (amended 2026-09-13; the earlier
+  four-level shape with a turn directory was judged over-engineered).
 - **W2 — the project library is a materialized view of rows.** It is real and persistent on disk,
   refreshed whenever a contributing row changes, and mounted into every turn as a versioned root:
   reads serve the materialized files; a write lands a new document version and re-materializes the
@@ -60,9 +61,10 @@ restated below where they bind this design.
 - **W4 — artifacts by reference.** The library carries an artifact index (id, kind, title, status,
   version, link), never a copy. A read tool fetches one artifact's content on demand when the agent
   needs it.
-- **W5 — the thread scratchpad persists.** `thread/` survives across turns of the same thread,
-  is unversioned, not part of the record, quota'd, and purged with the thread's retention. It is
-  the agent's notebook, nothing more.
+- **W5 — the thread's folder persists.** `scratch/` and `reads/` survive across the turns of one
+  thread, are unversioned, not part of the record, under one quota with the rest of the thread's
+  folder, and purged when the thread is archived or its retention lapses. `scratch/` is the
+  agent's notebook, nothing more.
 - **W6 — the project is written with the agent's ordinary file tools.** No new governed tool.
   deepagents' own `write_file` and `edit_file` work under `project/`; the backend treats that
   prefix as a *versioned root*: a write there goes through the same document writer the human PUT
@@ -84,7 +86,7 @@ restated below where they bind this design.
   brand onboarding it was built for and stops being a service the project agent calls.
 - **W9 — reads page and spill; they never overflow.** Every read tool takes `offset`/`limit` and
   returns `next_offset`. A result that would exceed the receipt bound is written to
-  `turn/reads/<operation_id>.json` and the receipt carries the path, the count and a short summary;
+  `reads/<operation_id>.json` and the receipt carries the path, the count and a short summary;
   the agent reads the file in chunks with its file tool. A general claims query tool (entity,
   field prefix, tier, verification status, since; paginated; display-gated) joins the account,
   discovery and accounts reads.
@@ -107,28 +109,27 @@ restated below where they bind this design.
       knowledge/{company,product,audience,proof}/*.md
       index.json                        # BrandKnowledgeIndexCard@1, unchanged
   projects/<project_id>/
-    library/                            # W2: project library, read-only in turns
-      status.md                         # compiled (plan 1, unchanged)
-      decisions.md                      # compiled (plan 1, unchanged)
+    library/                            # W2: project library, versioned root
+      status.md                         # compiled (plan 1 of the 2026-09-12 set, unchanged)
+      decisions.md                      # compiled
       audience/icp-<key>.md             # the pinned ICP only (W3)
-      personas/<icp-key>.md             # current version only
+      audience/persona-<key>.md         # current version only (ruling P3-a: existing path)
       plan.md                           # current version only
       artifacts/index.json              # W4: references, never content
-      index.json                        # ProjectLibraryIndexCard@1 (replaces project_files_index)
-    threads/<thread_id>/
-      scratch/                          # W5: read-write, persists across the thread's turns
-    turns/<execution_id>/               # today's six-folder layout, minus the copies
-      .deepagent/                       # manifest, profile, prompt, skills (unchanged)
-      inputs/user-message.txt           # + attached refs
-      context/                          # cards (project card, focus, budget, both index cards)
-      work/                             # this turn's scratch
-      reads/                            # W9: spilled tool results
-      delegations/
-      outputs/                          # snapshotted to artifacts at close (unchanged)
+      index.json                        # ProjectLibraryIndexCard@1
+    threads/<thread_id>/                # the backend root: one folder per chat (W1, W5)
+      .deepagent/                       # manifest, profile, prompt, skills — rewritten per turn
+      inputs/                           # this turn's user message + cards — rewritten per turn
+      scratch/                          # the notebook, persists
+      reads/                            # W9: spilled tool results, persist
+      outputs/                          # snapshotted to artifacts at finalize, then emptied
 ```
 
-The model's virtual paths are `brand/…`, `project/…`, `thread/…`, and the turn's own folders at
-the root, exactly as today's `inputs/…` are. The host layout above is never model-visible.
+The model's virtual paths are `brand/…`, `project/…`, `manual/…` (plan 2b) and the thread's own
+folders at the root. The host layout above is never model-visible. There is no per-turn
+directory: the durable record of a turn is its DB pins (knowledge pin, project files pin,
+resource manifest digest) and its artifacts (user message, cards, outputs), which is what a
+crashed turn is rebuilt from.
 
 ### 4.2 Mounting
 
@@ -139,12 +140,12 @@ Today's backend is anchored at one open directory descriptor with `O_NOFOLLOW` w
 | --- | --- | --- |
 | `brand/` | `library/brand/<brand>/<version>/` | read-only |
 | `project/` | `projects/<project>/library/` | versioned root: read-through, write-through to the document writer (W6) |
-| `thread/` | `projects/<project>/threads/<thread>/scratch/` | read-write, persistent |
-| `work/`, `reads/`, `delegations/`, `outputs/`, `inputs/`, `context/`, `.deepagent/` | `turns/<execution>/…` | as today |
+| `manual/` | the catalog's manual version (plan 2b) | read-only |
+| `scratch/`, `reads/`, `outputs/`, `inputs/`, `.deepagent/` | `projects/<project>/threads/<thread>/…` | the thread root: `scratch/` and `outputs/` writable; `inputs/` and `.deepagent/` platform-written, read-only to the model; `reads/` platform-written |
 
-Symlinks stay refused; the mapping is in the backend, not on disk. Quotas: the turn quota applies
-to the turn folders; the thread scratchpad gets its own (proposed 50 files / 2 MiB); the libraries
-are not the model's to fill.
+Symlinks stay refused; the mapping is in the backend, not on disk. One quota per thread covers
+the thread's folder and any writable mount; the libraries are not the model's to fill. One live
+lease per thread at a time, matching the one-turn-per-thread queue.
 
 ### 4.3 Refresh, pinning and replay
 
@@ -156,7 +157,8 @@ are not the model's to fill.
 - **What a turn pins.** `agent_turn_project_files` keeps its insert-once role, now recording the
   library index (every file's path, version and sha) the turn was mounted against. Replay
   re-mounts that exact set from artifact storage, not from the live library. Brand knowledge is
-  pinned by `(brand, knowledge version)` as today.
+  pinned by `(brand, knowledge version)` as today. A crashed turn rebuilds `inputs/` and
+  `.deepagent/` from the same artifacts and verifies the same digests; no frozen copy is kept.
 - **Concurrency.** Two threads saving the same document meet at `expected_version` (plan 3's
   writer, lock order unchanged). The library is rewritten under the project row lock so a reader
   never sees half a refresh; a turn that started before a refresh keeps its pinned set until it
@@ -209,7 +211,7 @@ The Stage-0 skill's §1 (files), §5b (author a profile), §5c (personas) and §
 short document skills the profile grants alongside it: `icp-authoring`, `persona-authoring`,
 `plan-authoring`, each stating what the document must contain, the path to save to, and the gate
 (if any). §7 (reads) is rewritten for paging and spilling: read in pages, note what you have in
-`thread/scratch/`, never state a count you did not read. Skill text is presented to the founder
+`scratch/`, never state a count you did not read. Skill text is presented to the founder
 before it is written (standing rule).
 
 ### 4.7 What retires and what stays
@@ -225,15 +227,16 @@ before it is written (standing rule).
 
 ## 5. Open questions (to settle when the plans are drawn)
 
-- Retention of `threads/<thread>/scratch/`: with the thread's archive, or on a clock?
+- Retention of a thread's folder: on archive, and after `CLUE_AGENT_WORKSPACE_RETENTION_S` past its newest terminal turn (plan 1 does both; confirm the window).
 - Whether the library index card lists artifact references inline or points at
   `project/artifacts/index.json` only (size argument for the latter).
 - Whether `read_artifact@1` serves rendered HTML, the design document's JSON, or both.
 
 ## 6. Plans to draw, in build order
 
-1. **Multi-root workspace backend** — the mount table, the thread scratchpad, the spill folder,
-   quotas, replay re-mount, tests against the security model.
+1. **Thread-rooted workspace with mounts** — the mount table, one persistent folder per thread
+   (`scratch/`, `reads/`), per-turn rewrite of `inputs/` and snapshot-then-empty of `outputs/`,
+   one quota, thread retention, tests against the security model.
 2. **Libraries** — brand library materialization by version; project library materialization,
    refresh triggers, `ProjectLibraryIndexCard@1`, the turn pin over the library index.
 3. **The versioned project root and the document skills** — write-through `project/` in the

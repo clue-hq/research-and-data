@@ -185,10 +185,10 @@ def test_the_artifact_index_lists_design_documents_by_reference(): ...
 1. `ensure_brand_library` → brand version; `ensure_project_library` → snapshot.
 2. `load_or_create_project_files_pin(..., compile=lambda: snapshot.files)` pins the library's files (same insert-once rule; the pin's `files_sha256` equals `snapshot.digest` by construction because the index entries carry the same artifact shas).
 3. **First attempt** (`project_pin_created`): `acquire(..., mounts=MountRequest(thread_id, brand=(brand_id, version), project_library=True))`.
-4. **Retry/replay** (pin existed): if `LibraryTree.current_digest() == pin.files_sha256` mount the live library; else materialize the pinned files into `turns/<execution>/.mounts/project/` (a per-turn `LibraryTree` under the execution root, built from `read_pinned_project_files`) and mount *that* as `project`. The brand mount is already content-addressed by version, so it is always exact.
+4. **Retry/replay** (pin existed): if `LibraryTree.current_digest() == pin.files_sha256` mount the live library; else materialize the pinned files into a per-turn `LibraryTree` under the thread root's `.deepagent/project-pinned/` (built from `read_pinned_project_files`, replaced at the next turn start like the other materialized trees) and mount *that* as `project`. The brand mount is already content-addressed by version, so it is always exact.
 5. `context/project/project_library_index.json` is the pinned index (replaces `project_files_index.json`); the brand index card is read from the brand library's `index.json`.
 
-- [ ] **Step 1: Failing DB tests** — (a) a production turn's lease lists `brand/knowledge/company/overview.md` and `project/status.md` through `backend.ls`, and `inputs/` holds only `user-message.txt`; (b) after a `project_state` write between two attempts of the same turn (simulate by calling the pin loader twice with a changed compile), the second attempt's `project/status.md` bytes equal the first's (the pinned set), not the live library's.
+- [ ] **Step 1: Failing DB tests** — (a) a production turn's lease lists `brand/knowledge/company/overview.md` and `project/status.md` through `backend.ls`, and `inputs/` holds only the user message and the current-context refs; (b) after a `project_state` write between two attempts of the same turn (simulate by calling the pin loader twice with a changed compile), the second attempt's `project/status.md` bytes equal the first's (the pinned set), not the live library's.
 - [ ] **Step 2: Run — FAIL. Step 3: Implement. Step 4: Run** the composition file, project-context files, `tests/api/test_c8_trial_surface.py` (the trial surface keeps seeds). **Step 5: Commit** — `feat(agent-turn): turns mount the brand and project libraries; the project pin records the library index; replay mounts the pinned set`.
 
 ---
@@ -196,7 +196,7 @@ def test_the_artifact_index_lists_design_documents_by_reference(): ...
 ### Task 5: Skill v29 and profile v52 — the new paths
 
 **Files:**
-- Create: `platform/agents/catalog/skills/stage0-interview/v29/SKILL.md` (copy of v28), `platform/agents/catalog/profiles/head-of-abm/v52/profile.yaml` (copy of v51; `readable_prefixes: [".deepagent", "inputs", "context", "work", "reads", "outputs", "brand", "project", "thread"]`)
+- Create: `platform/agents/catalog/skills/stage0-interview/v29/SKILL.md` (copy of v28), `platform/agents/catalog/profiles/head-of-abm/v52/profile.yaml` (copy of v51; `readable_prefixes: [".deepagent", "inputs", "scratch", "reads", "outputs", "brand", "project"]`)
 - Modify: registry pins, catalog/registry tests, `apps/frontend/src/features/projects/model/chat-tool-presentation.ts` (no change), `platform/api/clue_api/arv2/README.md` (paths)
 
 Skill v29 §1 (founder-reviewed with this plan; replaces the section's path bullets):
@@ -209,7 +209,7 @@ Two read-only folders are mounted for you on every turn. `brand/knowledge/` hold
 - Before your first reply on a thread, read `project/status.md` and `project/decisions.md`; before your first reply on a project, also read `brand/knowledge/company/overview.md` and every `brand/knowledge/audience/icp-*.md`, all in one step.
 - Read `brand/knowledge/product/catalog.md` when products come up and the product file before you say anything specific about a product; `brand/knowledge/proof/customer-reviews.md` when the conversation turns to what customers say.
 - Re-read `project/status.md` before answering where the project stands. When you need a detail, re-read the file rather than recalling it. Never state a fact a file does not contain; if a file says a thing was not found, say that.
-- `thread/` is your notebook for this conversation (see the previous version's rule; unchanged).
+- `scratch/` is your notebook for this conversation (see the previous version's rule; unchanged).
 - If `brand/knowledge/index.json` lists no documents, onboarding has not run for this brand. Say so and point the human to the Knowledge page; do not research the company yourself.
 ```
 

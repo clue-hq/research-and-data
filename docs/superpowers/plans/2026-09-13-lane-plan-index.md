@@ -10,7 +10,7 @@ worktrees sequenced by dependency, never by owner.
 | # | Plan | What it fixes / builds | Depends on | Grant |
 | --- | --- | --- | --- | --- |
 | 0 | `2026-09-13-read-tools-hotfix.md` | The five live-walk failures: the discovery read's output contract; the account read overflowing the 16 KiB receipt (paged by `offset` under a byte budget); a wrong prefix answered with the account's claim families; honest read refusals no longer spend the repair budget (W10) | nothing | skill v27 / profile v50 / recipe v26 |
-| 1 | `2026-09-13-workspace-multi-root-backend.md` | The mount table on the backend; the `projects/<project>/{turns,threads}` layout; the persistent thread scratchpad with its own quota and retention; the `reads/` folder | 0 (nothing technical; sequencing only) | skill v28 / profile v51 |
+| 1 | `2026-09-13-workspace-multi-root-backend.md` | The mount table on the backend; the workspace rooted at `projects/<project>/threads/<thread>/` with no per-turn directory; `scratch/` and `reads/` persist under one thread quota; `inputs/` rewritten per turn, `outputs/` snapshotted then emptied; thread retention | 0 (nothing technical; sequencing only) | skill v28 / profile v51 |
 | 2 | `2026-09-13-workspace-libraries.md` | Brand knowledge materialized once per version and mounted as `brand/`; the project library (status, decisions, current documents, artifact index) compiled from rows, digest-refreshed, mounted as `project/`; the turn pins the library index and replays from it; per-turn copies stop | 1 | skill v29 / profile v52 |
 | 2b | *operating manual* (plan to be drawn from `docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md`) | The builder and generated chapters (tools, fields, statuses, errors), drift tests, the capability-map block, `manual/` mounted, `manual@v1` pinned; path references added to the current skill. Hand-written chapters are drafted now, in parallel with plan 0, and founder-reviewed before this plan runs | 2 (the paths it cites settle there); the five founder decisions in the manual spec §9 | skill v30 (path references) / profile v53 / manual v1 |
 | 3 | `2026-09-13-versioned-project-root-and-document-skills.md` | `write_file`/`edit_file` under `project/` land document versions through the existing writers (ICP, persona, plan); the plan card from the turn's rows; three document skills pointing at manual chapters; the three bespoke tools **and the three dead tools + `submit_ingestion@1`** ungranted; personas written by the Head of ABM; manual v2 (tool pages regenerated) | 2b | skill v31 + 3 skills / profile v54 / recipe v27 / manual v2 |
@@ -27,7 +27,7 @@ worktrees sequenced by dependency, never by owner.
 | `overview_not_written` on a "Researched" account | honest; documented to the model in plan 0 Task 5's §7c; rendering the overview at research completion is an open product decision (spec §5) |
 | a guessed `field_prefix` | plan 0 Task 3 |
 | four refusals killed the turn | plan 0 Task 4 (W10) |
-| no cross-thread continuity except through rows compiled per turn | plan 2 (library), plan 1 (scratchpad) |
+| no cross-thread continuity except through rows compiled per turn; nothing persists within a thread either | plan 2 (library), plan 1 (the thread's folder) |
 | a bespoke tool per document; personas through an onboarding run | plan 3 |
 
 ## Lane 2 — the gallery and the document surface (new worktree, frontend only)

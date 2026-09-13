@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every read tool the Head of ABM has pages with `offset`/`limit`/`next_offset`; a governed result that would exceed the receipt bound is spilled into the turn's `reads/` folder and the receipt points at it; a general claims query and a gallery-artifact read join the three ARV2 reads; the skill says how to read to the end.
+**Goal:** Every read tool the Head of ABM has pages with `offset`/`limit`/`next_offset`; a governed result that would exceed the receipt bound is spilled into the thread's `reads/` folder and the receipt points at it; a general claims query and a gallery-artifact read join the three ARV2 reads; the skill says how to read to the end.
 
-**Architecture:** Pagination lives in `clue_api.arv2.read_tools` (the hotfix's byte budget stays as the page's ceiling). Spilling lives in the governed execution adapter (`agent_execution_wiring.C5AgentExecutionAdapter._execute_tool`), which receives a `SpillSink` bound to the turn's lease backend: when the canonical references exceed the budget it writes them to `reads/<operation_id>.json` and records a reference-only receipt. `read_claims@1` reuses the display gate; `read_artifact@1` reads a design document through the same DAL the artifact route uses. Skill v31 / profile v54 / recipe v28 grant the two new tools.
+**Architecture:** Pagination lives in `clue_api.arv2.read_tools` (the hotfix's byte budget stays as the page's ceiling). Spilling lives in the governed execution adapter (`agent_execution_wiring.C5AgentExecutionAdapter._execute_tool`), which receives a `SpillSink` bound to the thread's lease backend: when the canonical references exceed the budget it writes them to `reads/<operation_id>.json` and records a reference-only receipt. `read_claims@1` reuses the display gate; `read_artifact@1` reads a design document through the same DAL the artifact route uses. Skill v31 / profile v54 / recipe v28 grant the two new tools.
 
 **Tech Stack:** Python 3.12, pydantic, SQLAlchemy async, the toolbelt, pytest.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Receipt bound unchanged** (16 KiB); `READ_REFERENCES_BUDGET_BYTES = 12 * 1024` is the page ceiling and the spill threshold.
-- **Spill file contract:** `reads/<operation_id>.json`, UTF-8 JSON, the full canonical references; the receipt's `reference_values` becomes `{"spilled_to": "<path>", "count": <int>, "summary": "<≤300 chars>", "tool": "<address>"}`. The file counts toward the turn quota and dies with the turn. The model reads it with `read_file` (offset/limit in lines).
+- **Spill file contract:** `reads/<operation_id>.json`, UTF-8 JSON, the full canonical references; the receipt's `reference_values` becomes `{"spilled_to": "<path>", "count": <int>, "summary": "<≤300 chars>", "tool": "<address>"}`. The file counts toward the thread quota and persists in `reads/` until the folder's size cap trims the oldest. The model reads it with `read_file` (offset/limit in lines).
 - **Display gate:** `read_claims@1` holds back exactly what `read_account_research`'s claims do, and counts it.
 - **Pagination contract, all reads:** `offset: int = Field(default=0, ge=0)`, `limit: int = Field(default=<per tool>, ge=1, le=<max>)`; output `offset`, `next_offset: int | None`, `total: int` where a total is one query away, else `truncated: bool`.
 - **Versions:** skill `stage0-interview@v31`, profile `head-of-abm@v54`, recipe `recipe0-stage0-v28` (v27 plus `read_claims@1`, `read_artifact@1`), `CONVERSATION_RECIPE_VERSION = 28`; digests re-measured; recipe promoted on the lane DB.
@@ -144,7 +144,7 @@ Skill v31 §7c (founder-reviewed with this plan; replaces the hotfix's §7c):
 - **What discovery found:** `read_discovery_run`.
 - **What a gallery artifact is or says:** `read_artifact` with an id from `project/artifacts/index.json`; `section: "content"` only when you need its text.
 
-Every read comes in pages. A page ends with `next_offset`; when it is not null, read again with `offset: next_offset` before you summarize or count. Narrow with `field_prefix` using a family from `prefixes`; never invent one. When a result was too large for its receipt, the receipt says `spilled_to`: read that file with `read_file`, in chunks with `offset` and `limit`, and note what you found in `thread/notes.md` so you do not read it twice. Read accounts one at a time, in the order the human named them. A read costs nothing and is never a launch. Quote a fact only with a claim behind it; say when a field is empty. Never state a fact from memory of an earlier thread.
+Every read comes in pages. A page ends with `next_offset`; when it is not null, read again with `offset: next_offset` before you summarize or count. Narrow with `field_prefix` using a family from `prefixes`; never invent one. When a result was too large for its receipt, the receipt says `spilled_to`: read that file with `read_file`, in chunks with `offset` and `limit`, and note what you found in `scratch/notes.md` so you do not read it twice. Read accounts one at a time, in the order the human named them. A read costs nothing and is never a launch. Quote a fact only with a claim behind it; say when a field is empty. Never state a fact from memory of an earlier thread.
 ```
 
 - [ ] **Steps:** create, pin, measure, promote recipe v28 on the lane DB, run the grant tests, commit — `feat(head-of-abm): v54/v31/recipe v28 — read_claims and read_artifact granted; §7c reads pages and spills to the end`.

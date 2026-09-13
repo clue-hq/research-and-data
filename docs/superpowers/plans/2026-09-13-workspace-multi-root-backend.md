@@ -1,370 +1,241 @@
-# Multi-root agent workspace backend Implementation Plan (Lane 1, plan 1)
+# Thread-rooted agent workspace with mounts Implementation Plan (Lane 1, plan 1)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The deepagent's filesystem can present more than one anchored root under one virtual tree — a read-only library mount, a read-write persistent thread scratchpad, and the per-turn folders — with the same security model the single-root backend has today, and the on-disk layout mirrors the platform's hierarchy (`<ws>/projects/<project>/{library,threads,turns}`).
+**Goal:** The deepagent's filesystem is one persistent directory per chat thread plus read-only mounts. There are no per-turn directories. A turn rewrites `inputs/` from durable artifacts at its start and snapshots `outputs/` to artifact storage at its finalize; `scratch/` and `reads/` persist across the thread's turns under one quota.
 
-**Architecture:** `AnchoredAgentWorkspaceBackend` gains a mount table: a virtual first segment (`brand`, `project`, `thread`) resolves to its own open directory descriptor and mode; every existing path rule (normalization, `O_NOFOLLOW` walks, private-mode audits, atomic writes, quotas) runs unchanged against whichever root the segment resolves to. The factory creates the new layout and opens the mounts; the turn wiring asks for the `thread` mount only (the libraries arrive in plan 2, the versioned `project` writer in plan 3). Cleanup learns the new layout and purges archived threads' scratch.
+**Architecture:** `AnchoredAgentWorkspaceBackend` gains a mount table (a reserved first segment resolves to its own anchored root and mode) and keeps every existing path rule. The factory roots the backend at `<ws>/projects/<project>/threads/<thread>/` and opens the mounts the caller asks for. `AgentResourceMaterializer` stops being one-shot: at each turn start it replaces `.deepagent/` and `inputs/` (verifying digests as today), and at each finalize `outputs/` is snapshotted then emptied. Crash resume rebuilds `inputs/` from the same artifacts and verifies the same digests, so the recovery guarantee is unchanged without a frozen copy. Cleanup purges threads, not executions.
 
-**Tech Stack:** Python 3.12, `os.*` with `dir_fd`, `fcntl`, deepagents 0.6.12 `BackendProtocol`, pytest with `tmp_path`.
+**Tech Stack:** Python 3.12, `os.*` with `dir_fd`, `fcntl`, deepagents 0.6.12 `BackendProtocol`, pytest with `tmp_path`, one Alembic revision.
 
-**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W1, W5, §4.1, §4.2, §4.3 (concurrency/replay), §4.7.
+**Spec:** `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` — W1, W5, §4.1, §4.2, §4.3 (as amended 2026-09-13: thread-rooted, no per-turn directory).
 
 ## Global Constraints
 
-- **Security model unchanged:** directories 0700 and owned by the service user; every component opened with `O_NOFOLLOW | O_DIRECTORY`; files regular only; temp-file + `link` install; no host path in any model-visible string or error. Every existing test in `tests/agents/test_workspace_backend.py` and `test_workspace_policy.py` stays green.
-- **Virtual paths:** `normalize_virtual_path` rules unchanged. Mount names are single segments and are reserved: a profile's `readable_prefixes` may list them, and `_LAYOUT` folders may not collide with them.
+- **Security model unchanged:** 0700 directories owned by the service user; `O_NOFOLLOW | O_DIRECTORY` on every component; regular files only; temp-file + `link` install; no host path in any model-visible string. `tests/agents/test_workspace_backend.py` and `test_workspace_policy.py` stay green (paths updated where the layout moved).
 - **On-disk layout (host, never model-visible):**
-  `<root>/<workspace_id>/library/brand/<brand_id>/<knowledge_version>/`,
-  `<root>/<workspace_id>/projects/<project_id>/library/`,
-  `<root>/<workspace_id>/projects/<project_id>/threads/<thread_id>/scratch/`,
-  `<root>/<workspace_id>/projects/<project_id>/turns/<execution_id>/`.
-  The literal segment names `library`, `projects`, `threads`, `turns`, `scratch` are constants in `workspace.py`.
-- **Turn folders:** `_LAYOUT = (".deepagent", "inputs", "context", "work", "reads", "delegations", "outputs")`; `reads/` is new and is materialization-free (it is where plan 4 spills). `_MATERIALIZED_PREFIXES` unchanged.
-- **Thread scratch quota:** its own envelope, `ThreadScratchQuota(max_file_count=50, max_file_bytes=262_144, max_total_bytes=2_097_152)`, enforced at write time by walking the scratch mount. The turn quota keeps counting the turn folders only.
-- **Env flags:** `CLUE_AGENT_THREAD_SCRATCH_RETENTION_S=2592000` (30 days) added to `.env.example` and `.env` at parity, read by `Settings.agent_thread_scratch_retention_s`.
-- **Tests:** offline only in this plan (no DB) except the cleanup job's DB test, which runs against the lane DB with `--ignore-glob='*_live.py' -p no:cacheprovider`.
-- **Commits:** local only, no push, no AI attribution.
+  `<root>/<workspace_id>/library/brand/<brand_id>/<knowledge_version>/` (plan 2),
+  `<root>/<workspace_id>/projects/<project_id>/library/` (plan 2),
+  `<root>/<workspace_id>/projects/<project_id>/threads/<thread_id>/` — **the backend root**.
+  Segment names `library`, `projects`, `threads` are constants in `workspace.py`.
+- **Thread folders:** `_LAYOUT = (".deepagent", "inputs", "scratch", "reads", "outputs")`. `work/` and `delegations/` are gone (delegation is withheld on this surface; `scratch/` is the notebook). `_MATERIALIZED_PREFIXES = (".deepagent", "inputs")` are rewritten by the platform at every turn start and read-only in between.
+- **Per-turn state on disk: none.** The turn's identity is the lease's `execution_id` (in-process) and the DB rows; `workspace_root_id = sha256(workspace, project, thread)`.
+- **One quota per thread:** the profile's `workspace` block applies to the whole thread directory; profile v51 raises it to `max_file_count: 400`, `max_total_bytes: 20971520` because scratch and reads persist.
+- **Retention:** a thread directory is purged when its thread is archived, or when its newest turn is terminal and older than `CLUE_AGENT_WORKSPACE_RETENTION_S` (existing flag, now thread-scoped; `.env.example` comment updated). No new flag.
+- **Tests:** offline suites without `.env`; DB suites only on the lane DB with `--ignore-glob='*_live.py' -p no:cacheprovider`. **Commits:** local only, no push, no AI attribution.
 
 ---
 
-### Task 1: Mount table on the backend — resolve, read, list
+### Task 1: Mount table on the backend — resolve, read, list, write
 
 **Files:**
-- Modify: `platform/agents/clue_agents/workspace.py` (constants at 71–80; `AnchoredAgentWorkspaceBackend.__init__` 213–233; `_validate_path` 273–291; `_parent_fd` 293–316; `_open_file` 318–332; `_walk_files` 334–373; `list_entries_sync` 621; deepagents `ls` 739)
+- Modify: `platform/agents/clue_agents/workspace.py` (constants 71–80; `AnchoredAgentWorkspaceBackend.__init__` 213–233; `_validate_path` 273–291; `_parent_fd` 293–316; `_open_file` 318–332; `_walk_files` 334–373; `_quota_before_write` 375–391; `list_entries_sync` 621; deepagents `ls`/`glob` 739–802)
 - Modify: `platform/agents/clue_agents/__init__.py` (export `WorkspaceMount`, `MountMode`)
-- Test: `tests/agents/test_workspace_backend.py`
+- Test: `tests/agents/test_workspace_backend.py`, `tests/agents/workspace_helpers.py` (`policy(readable=…, writable=…)` overrides)
 
 **Interfaces:**
 
 ```python
-# clue_agents/workspace.py
 MountMode = Literal["read_only", "read_write"]
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceMount:
-    """One extra anchored root under a reserved first segment of the virtual tree."""
-    name: str                # a validated single segment: "brand" | "project" | "thread"
-    directory_fd: int        # already open with _DIR_FLAGS, audited private
+    name: str            # single validated segment, e.g. "brand" | "project" | "manual"
+    directory_fd: int    # open with _DIR_FLAGS, audited private
     mode: MountMode
-    #: Only for a read_write mount: its own quota envelope (the turn's policy does not apply).
-    quota: ThreadScratchQuota | None = None
-
-@dataclass(frozen=True, slots=True)
-class ThreadScratchQuota:
-    max_file_count: int
-    max_file_bytes: int
-    max_total_bytes: int
 
 class AnchoredAgentWorkspaceBackend(BackendProtocol):
     def __init__(self, *, execution_fd, identity, policy, artifact_sink,
                  mounts: Sequence[WorkspaceMount] = ()) -> None: ...
     def _resolve(self, logical: str) -> tuple[int, str, WorkspaceMount | None]:
-        """(root fd, path relative to that root, the mount or None for the execution root)."""
+        """(root fd, path relative to that root, the mount or None for the thread root)."""
 ```
 
-- [ ] **Step 1: Write the failing tests**
+(`execution_fd` keeps its parameter name for the diff's sake; it is the thread root's descriptor.)
+
+- [ ] **Step 1: Failing tests**
 
 ```python
-# tests/agents/test_workspace_backend.py — new helpers + tests
-def _mounted_backend(tmp_path: Path, *, mode: str = "read_only"):
-    """A backend over tmp root with one extra mount at ``library``."""
-    root, factory, lease = make_lease(tmp_path)          # the file's existing helper
-    mount_dir = tmp_path / "mount"
-    mount_dir.mkdir(mode=0o700)
-    (mount_dir / "plan.md").write_text("# Plan\n")
-    os.chmod(mount_dir / "plan.md", 0o400)
+def _mounted_backend(tmp_path: Path, *, mode: MountMode = "read_only"):
+    root, factory, lease = make_lease(tmp_path)          # existing helper
+    mount_dir = tmp_path / "mount"; mount_dir.mkdir(mode=0o700)
+    (mount_dir / "plan.md").write_text("# Plan\n"); os.chmod(mount_dir / "plan.md", 0o400)
     fd = os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     backend = AnchoredAgentWorkspaceBackend(
         execution_fd=os.open(root_of(lease), os.O_RDONLY | os.O_DIRECTORY),
         identity=lease.identity,
-        policy=policy(readable=(".deepagent", "inputs", "context", "work", "outputs", "library")),
+        policy=policy(readable=(".deepagent", "inputs", "scratch", "reads", "outputs", "library"),
+                      writable=("scratch", "outputs", "library")),
         artifact_sink=RecordingArtifactSink(),
         mounts=(WorkspaceMount(name="library", directory_fd=fd, mode=mode),),
     )
     return backend, mount_dir
 
+def test_a_read_only_mount_is_readable_by_its_virtual_name_and_never_writable(tmp_path): ...
+    # read_text_sync("library/plan.md") == "# Plan\n"; write → WorkspaceSecurityError;
+    # facade write → error startswith "permission_denied"
 
-def test_a_read_only_mount_is_readable_by_its_virtual_name_and_never_writable(tmp_path: Path) -> None:
-    backend, _ = _mounted_backend(tmp_path)
-    assert backend.read_text_sync("library/plan.md") == "# Plan\n"
-    assert backend.read("library/plan.md").file_data["content"] == "# Plan\n"
-    with pytest.raises(WorkspaceSecurityError):
-        backend.write_text_sync("library/notes.md", "x")
-    assert backend.write("library/notes.md", "x").error.startswith("permission_denied")
+def test_root_listing_shows_mounts_as_directories(tmp_path): ...
+    # {"path": "library", "is_dir": True, "size": 0} in backend.ls("/").entries
 
+def test_a_mount_cannot_be_escaped_or_shadowed(tmp_path): ...
+    # symlink inside the mount → WorkspaceSecurityError; "library/../inputs/x" → error;
+    # materialize_bytes("library/x.md") → WorkspaceSecurityError
 
-def test_root_listing_shows_mounts_as_directories(tmp_path: Path) -> None:
-    backend, _ = _mounted_backend(tmp_path)
-    listed = backend.ls("/")
-    assert {"path": "library", "is_dir": True, "size": 0} in listed.entries
-    assert [e["path"] for e in backend.ls("library").entries] == ["library/plan.md"]
-
-
-def test_a_mount_cannot_be_escaped_or_shadowed(tmp_path: Path) -> None:
-    backend, mount_dir = _mounted_backend(tmp_path)
-    os.symlink("/etc/hosts", mount_dir / "hosts")
-    with pytest.raises(WorkspaceSecurityError):
-        backend.read_text_sync("library/hosts")
-    with pytest.raises(WorkspaceSecurityError):
-        backend.read_text_sync("library/../inputs/user-message.txt")
-    # The execution root cannot grow a folder that shadows a mount.
-    with pytest.raises(WorkspaceSecurityError):
-        backend.write_text_sync("library.md", "x")  # allowed name...
-    with pytest.raises(WorkspaceSecurityError):
-        backend.materialize_bytes("library/x.md", b"x")
+def test_a_read_write_mount_takes_writes_under_the_thread_quota(tmp_path): ...
+    # mode="read_write": write + edit land in mount_dir with mode 0o600 and count toward the
+    # same policy quota (policy() allows 20 files: 19 in scratch + 1 in the mount, the 21st refused)
 ```
 
-Adjust `policy(...)` in `workspace_helpers.py` to accept `readable=`/`writable=` overrides (keyword-only, defaults unchanged). The last two assertions pin two rules: a *file* named like a mount at the root is fine (drop that assertion if `library.md` is not a collision; keep the materialize one), and materialization may never target a mount.
-
-- [ ] **Step 2: Run to verify they fail**
-
-Run: `.venv/bin/pytest tests/agents/test_workspace_backend.py -k "mount" -p no:cacheprovider -q`
-Expected: FAIL with `TypeError: __init__() got an unexpected keyword argument 'mounts'`.
-
-- [ ] **Step 3: Implement the mount table**
-
-```python
-# constants
-_MOUNT_SEGMENT = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
-
-class AnchoredAgentWorkspaceBackend(BackendProtocol):
-    def __init__(self, *, execution_fd, identity, policy, artifact_sink, mounts=()):
-        ...existing...
-        by_name: dict[str, WorkspaceMount] = {}
-        for mount in mounts:
-            if not _MOUNT_SEGMENT.fullmatch(mount.name) or mount.name in _LAYOUT:
-                raise WorkspaceConfigurationError("mount name is reserved or malformed")
-            if mount.name in by_name:
-                raise WorkspaceConfigurationError("duplicate mount name")
-            _validate_private_directory(mount.directory_fd)
-            if mount.mode == "read_write" and mount.quota is None:
-                raise WorkspaceConfigurationError("a writable mount needs its own quota")
-            by_name[mount.name] = mount
-        self._mounts = by_name
-
-    def _resolve(self, logical: str) -> tuple[int, str, WorkspaceMount | None]:
-        head, _, rest = logical.partition("/")
-        mount = self._mounts.get(head)
-        if mount is None:
-            return self._root_fd, logical, None
-        if not rest:
-            raise WorkspaceSecurityError("a mount root is a directory, not a file")
-        return mount.directory_fd, rest, mount
-```
-
-Thread the resolution through every host-touching method: `_parent_fd(logical, *, create, root_fd=None)` and `_open_file` take the resolved root (change their first line from `os.dup(self._root_fd)` to `os.dup(root_fd)`); `_walk_files(prefix, *, root_fd=None)` likewise; `read_text_sync`, `write_text_sync`, `edit_text_sync`, `_create_file`, `_replace_file_unlocked`, `_entry`, `stat_entry_sync`, `list_entries_sync` call `self._resolve` first and pass the fd and the relative path down, then re-prefix returned paths with `f"{mount.name}/"` so model-visible paths stay virtual. `_validate_path(write=True)`: after the existing prefix checks, `if mount is not None and mount.mode == "read_only": raise WorkspaceSecurityError("path is inside a read-only mount")`; `materialize=True` with a mount → `WorkspaceSecurityError("materialization never targets a mount")`. `_filesystem_lock` keeps locking the execution root fd (one lock per backend is enough; mounts are per-thread/per-turn objects).
-
-`ls`/`glob` at the root: append `{"path": name, "is_dir": True, "size": 0}` per mount. `usage_snapshot` and `materialized_trees_frozen` stay on the execution root only.
-
-- [ ] **Step 4: Run the whole backend file**
-
-Run: `.venv/bin/pytest tests/agents/test_workspace_backend.py tests/agents/test_workspace_policy.py -p no:cacheprovider -q`
-Expected: PASS (all pre-existing tests, plus the three new ones).
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add platform/agents/clue_agents/workspace.py platform/agents/clue_agents/__init__.py tests/agents/test_workspace_backend.py tests/agents/workspace_helpers.py
-git commit -m "feat(agent-workspace): a mount table — extra anchored roots under reserved virtual segments, read-only or read-write, same walk and audit rules"
-```
-
----
-
-### Task 2: A writable mount with its own quota (the thread scratchpad)
-
-**Files:**
-- Modify: `platform/agents/clue_agents/workspace.py` (`_quota_before_write` 375–391, `_validate_current_quota` 393–400, `write_text_sync`/`edit_text_sync`/`_create_file`/`_replace_file_unlocked`)
-- Test: `tests/agents/test_workspace_backend.py`
-
-**Interfaces:**
-- Produces: writes under a `read_write` mount are quota-checked against `mount.quota` by walking that mount; file mode 0600, directory 0700, atomic install exactly as the turn folders.
-
-- [ ] **Step 1: Failing tests**
-
-```python
-def test_a_writable_mount_takes_writes_and_edits_under_its_own_quota(tmp_path: Path) -> None:
-    backend, mount_dir = _mounted_backend(tmp_path, mode="read_write",
-                                          quota=ThreadScratchQuota(3, 64, 128))
-    backend.write_text_sync("library/notes.md", "first\n")
-    backend.edit_text_sync("library/notes.md", old="first", new="second")
-    assert (mount_dir / "notes.md").read_text() == "second\n"
-    assert stat.S_IMODE((mount_dir / "notes.md").stat().st_mode) == 0o600
-    with pytest.raises(WorkspaceQuotaExceeded):
-        backend.write_text_sync("library/big.md", "x" * 65)
-    backend.write_text_sync("library/a.md", "a"); backend.write_text_sync("library/b.md", "b")
-    with pytest.raises(WorkspaceQuotaExceeded):          # 4th file
-        backend.write_text_sync("library/c.md", "c")
-    # The turn's own usage does not count the mount.
-    assert backend.usage_snapshot().file_count == 0
-
-
-def test_mount_writes_never_touch_the_turn_quota_and_vice_versa(tmp_path: Path) -> None:
-    backend, _ = _mounted_backend(tmp_path, mode="read_write",
-                                  quota=ThreadScratchQuota(50, 4096, 8192))
-    for i in range(20):                                   # policy() allows 20 files
-        backend.write_text_sync(f"work/{i}.md", "x")
-    with pytest.raises(WorkspaceQuotaExceeded):
-        backend.write_text_sync("work/21.md", "x")
-    backend.write_text_sync("library/still-fine.md", "x")  # the mount has its own room
-```
-
-- [ ] **Step 2: Run — expect FAIL** (`WorkspaceSecurityError: path is inside a read-only mount` or a quota error from the wrong envelope).
+- [ ] **Step 2: Run — FAIL** (`unexpected keyword argument 'mounts'`).
 
 - [ ] **Step 3: Implement**
 
-`_quota_before_write(*, byte_count, adds_file, mount=None)`: when `mount` is a writable mount, walk `mount.directory_fd` and check against `mount.quota` instead of the policy; `_validate_current_quota(files, *, quota=None)` takes the envelope to check. `_create_file`/`_replace_file_unlocked` receive the resolved `(root_fd, relative, mount)` and pass `mount` to the quota check. Writable-mount files are created with `_FILE_MODE` (never read-only).
+```python
+_MOUNT_SEGMENT = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
-- [ ] **Step 4: Run the backend file — PASS. Step 5: Commit**
+def __init__(..., mounts=()):
+    ...existing...
+    by_name: dict[str, WorkspaceMount] = {}
+    for mount in mounts:
+        if not _MOUNT_SEGMENT.fullmatch(mount.name) or mount.name in _LAYOUT:
+            raise WorkspaceConfigurationError("mount name is reserved or malformed")
+        if mount.name in by_name:
+            raise WorkspaceConfigurationError("duplicate mount name")
+        _validate_private_directory(mount.directory_fd)
+        by_name[mount.name] = mount
+    self._mounts = by_name
 
-```bash
-git commit -am "feat(agent-workspace): a read-write mount writes and edits under its own quota envelope, apart from the turn's"
+def _resolve(self, logical):
+    head, _, rest = logical.partition("/")
+    mount = self._mounts.get(head)
+    if mount is None:
+        return self._root_fd, logical, None
+    if not rest:
+        raise WorkspaceSecurityError("a mount root is a directory, not a file")
+    return mount.directory_fd, rest, mount
 ```
+
+Thread the resolved `(root_fd, relative, mount)` through `_parent_fd`, `_open_file`, `_walk_files`, `read_text_sync`, `write_text_sync`, `edit_text_sync`, `_create_file`, `_replace_file_unlocked`, `_entry`, `stat_entry_sync`, `list_entries_sync` (re-prefix returned paths with `f"{mount.name}/"`). `_validate_path(write=True)`: a `read_only` mount raises `WorkspaceSecurityError("path is inside a read-only mount")`; `materialize=True` into any mount raises. Quota: `_quota_before_write` walks the thread root **and** every `read_write` mount and checks the sum against the policy (one quota, W5). `ls`/`glob` at the root append one `is_dir: True` entry per mount. `close()` closes mount fds.
+
+- [ ] **Step 4: Run** `tests/agents/test_workspace_backend.py tests/agents/test_workspace_policy.py` — PASS. **Step 5: Commit** — `feat(agent-workspace): a mount table — extra anchored roots under reserved virtual segments, read-only or read-write, one quota`.
 
 ---
 
-### Task 3: The factory creates the new layout and opens the thread mount
+### Task 2: The factory roots the workspace at the thread
 
 **Files:**
-- Modify: `platform/agents/clue_agents/workspace.py` (`AgentWorkspaceFactory.create` 923–990, `acquire` 992–1044, `_reopen_backend` 1046–1103, `_delete_execution` 1129–1159, `erase_for_privacy`/`purge_terminal` 1173–1245, `_LAYOUT`)
-- Modify: `platform/agents/clue_agents/workspace_policy.py` (nothing structural; the root audit already accepts directories only)
-- Test: `tests/agents/test_workspace_backend.py` (`test_factory_securely_reopens_same_frozen_execution_after_process_restart`, `test_factory_rejects_unexpected_entries_between_scope_levels`, privacy erasure test), `tests/agents/workspace_helpers.py`
+- Modify: `platform/agents/clue_agents/workspace.py` (`_LAYOUT`, `WorkspaceIdentity` gains `thread_id`, `AgentWorkspaceFactory.create` 923–990, `acquire` 992–1044, `_reopen_backend` 1046–1103, `_delete_execution` → `_delete_thread` 1129–1159, `erase_for_privacy`/`purge_terminal` 1173–1245)
+- Test: `tests/agents/test_workspace_backend.py` (the reopen-after-restart, scope-audit and privacy-erasure tests move to the new layout), `tests/agents/workspace_helpers.py`
 
 **Interfaces:**
 
 ```python
 LIBRARY_DIR = "library"; PROJECTS_DIR = "projects"; THREADS_DIR = "threads"
-TURNS_DIR = "turns"; SCRATCH_DIR = "scratch"
-THREAD_SCRATCH_QUOTA = ThreadScratchQuota(max_file_count=50, max_file_bytes=262_144, max_total_bytes=2_097_152)
 
 @dataclass(frozen=True, slots=True)
 class MountRequest:
-    """What the caller wants mounted; the factory turns it into open descriptors."""
-    thread_id: str | None = None          # → "thread" mount, read_write, THREAD_SCRATCH_QUOTA
-    # plan 2 adds: brand: tuple[str, str] | None (brand_id, knowledge_version) → "brand", read_only
-    #              project_library: bool → "project", read_only (plan 3 makes it versioned)
+    """What the caller wants mounted; the factory turns it into open descriptors (plan 2 fills it)."""
+    brand: tuple[str, str] | None = None      # (brand_id, knowledge_version) → "brand", read_only
+    project_library: bool = False             # → "project", read_only (plan 3 makes it versioned)
 
 class AgentWorkspaceFactory:
-    def create(self, *, workspace_id, project_id, execution_id, policy,
+    def create(self, *, workspace_id, project_id, thread_id, execution_id, policy,
                mounts: MountRequest = MountRequest()) -> AgentWorkspaceLease: ...
-    def acquire(self, *, workspace_id, project_id, execution_id, policy,
-                mounts: MountRequest = MountRequest()) -> AgentWorkspaceLease: ...
-    def purge_thread_scratch(self, *, workspace_id, project_id, thread_id) -> bool: ...
+    def acquire(self, *, workspace_id, project_id, thread_id, execution_id, policy,
+                mounts: MountRequest = MountRequest()) -> AgentWorkspaceLease:
+        """The thread directory is created if absent and reopened if present. The execution id
+        keys the in-process lease (one live lease per thread at a time — a second acquire for a
+        different execution while one is open is a WorkspaceConflict, matching the one-turn-per-
+        thread queue) and stamps the snapshot idempotency."""
+    def purge_thread(self, *, workspace_id, project_id, thread_id) -> bool: ...
 ```
+
+`WorkspaceIdentity(workspace_id, project_id, thread_id, execution_id, workspace_root_id, retention_class)`; `workspace_root_id = "awr_" + sha256(f"{ws}\0{project}\0{thread}")`.
 
 - [ ] **Step 1: Failing tests**
 
 ```python
-def test_the_factory_lays_out_projects_turns_and_threads(tmp_path: Path) -> None:
+def test_the_factory_roots_the_workspace_at_the_thread(tmp_path):
     root, factory = make_factory(tmp_path)
-    lease = factory.create(workspace_id="ws_a", project_id="prj_a", execution_id=EXECUTION_ID,
-                           policy=policy(readable=(*DEFAULT_READABLE, "thread"), writable=("work", "outputs", "thread")),
-                           mounts=MountRequest(thread_id="thr_a"))
-    turn = root / "ws_a" / "projects" / "prj_a" / "turns" / str(EXECUTION_ID)
-    scratch = root / "ws_a" / "projects" / "prj_a" / "threads" / "thr_a" / "scratch"
-    assert turn.is_dir() and scratch.is_dir()
-    assert sorted(p.name for p in turn.iterdir()) == [".deepagent", "context", "delegations", "inputs", "outputs", "reads", "work"]
-    lease.backend.write_text_sync("thread/notes.md", "remember\n")
-    assert (scratch / "notes.md").read_text() == "remember\n"
-    for path in (turn, scratch, scratch.parent, turn.parent):
-        assert stat.S_IMODE(path.stat().st_mode) == 0o700
+    lease = factory.create(workspace_id="ws_a", project_id="prj_a", thread_id="thr_a",
+                           execution_id=EXECUTION_ID, policy=policy())
+    thread = root / "ws_a" / "projects" / "prj_a" / "threads" / "thr_a"
+    assert sorted(p.name for p in thread.iterdir()) == [".deepagent", "inputs", "outputs", "reads", "scratch"]
+    for p in (thread, thread.parent, thread.parent.parent):
+        assert stat.S_IMODE(p.stat().st_mode) == 0o700
+    assert lease.identity.workspace_root_id == expected_root_id("ws_a", "prj_a", "thr_a")
 
+def test_scratch_and_reads_survive_across_turns_of_the_thread(tmp_path):
+    ...first = create(..., execution_id=E1); first.backend.write_text_sync("scratch/notes.md", "one\n")
+    ...finish(first)                                      # snapshot outputs, authorize, release
+    ...second = acquire(..., execution_id=E2); assert read "scratch/notes.md" == "one\n"
 
-def test_the_scratchpad_survives_the_turn_and_is_shared_by_the_thread_s_next_turn(tmp_path: Path) -> None:
-    root, factory = make_factory(tmp_path)
-    first = factory.create(..., execution_id=EXECUTION_ID, mounts=MountRequest(thread_id="thr_a"))
-    first.backend.write_text_sync("thread/notes.md", "from turn one\n")
-    await_snapshot_and_cleanup(factory, first)     # helper: snapshot outputs, authorize, cleanup
-    second = factory.create(..., execution_id=ExecutionId(uuid4()), mounts=MountRequest(thread_id="thr_a"))
-    assert second.backend.read_text_sync("thread/notes.md") == "from turn one\n"
-    assert factory.purge_thread_scratch(workspace_id="ws_a", project_id="prj_a", thread_id="thr_a") is True
-    assert not (root / "ws_a" / "projects" / "prj_a" / "threads" / "thr_a").exists()
+def test_one_live_lease_per_thread(tmp_path):
+    ...first = create(E1); with pytest.raises(WorkspaceConflict): factory.acquire(..., execution_id=E2)
 
+def test_purge_thread_removes_the_directory_and_reports_absence_the_second_time(tmp_path): ...
 
-def test_a_thread_id_is_validated_like_every_other_segment(tmp_path: Path) -> None:
-    _, factory = make_factory(tmp_path)
-    with pytest.raises(WorkspaceConfigurationError):
-        factory.create(..., mounts=MountRequest(thread_id="../thr"))
+def test_a_thread_id_is_validated_like_every_other_segment(tmp_path):
+    with pytest.raises(WorkspaceConfigurationError): factory.create(..., thread_id="../thr")
 ```
 
-Update the two existing layout-dependent tests (reopen after restart; unexpected entries between scope levels) for the `projects/<project>/turns/<execution>` path.
+- [ ] **Step 2: Run — FAIL. Step 3: Implement.** `create`: under `_root_lock`, `_ensure_directory` chain `workspace → projects → <project> → threads → <thread>`; `_LAYOUT` folders created if absent (idempotent — the thread persists). `_active` is keyed by `(ws, project, thread)`; `acquire` reopens the same backend for the same execution (crash resume) and refuses a different execution while one is live. `_delete_thread` replaces `_delete_execution` (removes `threads/<thread>`, rmdir-if-empty upward). `purge_terminal(workspace_id, project_id, thread_id)` and `erase_for_privacy(...)` take the thread. `AgentWorkspaceLease.release()` (new) drops the lease from `_active` without deleting anything; `cleanup()` becomes `release()` plus nothing on disk.
 
-- [ ] **Step 2: Run — expect FAIL** on `mounts=`.
-
-- [ ] **Step 3: Implement**
-
-In `create`: under `_root_lock`, `_ensure_directory` chain `workspace → projects → <project> → turns`, then the existing `mkdir(execution)` no-reuse rule and `_LAYOUT` creation under it. If `mounts.thread_id`: validate the segment, `_ensure_directory` chain `<project> → threads → <thread> → scratch`, open its fd with `_DIR_FLAGS`, validate private, build `WorkspaceMount(name="thread", directory_fd=fd, mode="read_write", quota=THREAD_SCRATCH_QUOTA)`. Pass `mounts=` to the backend. `_audit_scope_directories` runs on `workspace`, `projects`, `<project>`, `turns` and `threads` levels (they are all directories-only levels; `library` at the workspace level is a directory and passes the audit).
-
-`acquire`: same `mounts` argument; `_reopen_backend` re-opens the mounts the same way (idempotent `_ensure_directory`). Store the mount request in `_active`'s value alongside the backend so a reopen with a *different* thread id is refused (`WorkspaceConflict("execution was created for another thread")`).
-
-`_delete_execution`: remove `turns/<execution>`; rmdir `turns`, `<project>`, `projects`, `<workspace>` only when empty (extend the existing ENOTEMPTY tolerance). `purge_thread_scratch`: `_remove_tree` on `threads/<thread>` under the root lock; return whether anything existed. `erase_for_privacy` (DSAR): also purge every `threads/*` under the project when called with `thread_id=None`? No — keep DSAR's contract per execution; add `erase_thread_scratch` as an alias of `purge_thread_scratch` and note in the docstring that the DSAR sweep (plan 2) calls both.
-
-Backend `close()` closes mount fds too.
-
-- [ ] **Step 4: Run the two workspace files — PASS. Step 5: Commit**
-
-```bash
-git commit -am "feat(agent-workspace): projects/<project>/{turns,threads} layout, the persistent thread scratchpad mount, and its purge"
-```
+- [ ] **Step 4: Run the two workspace files — PASS. Step 5: Commit** — `feat(agent-workspace): the workspace is rooted at the thread; scratch/ and reads/ persist; one live lease per thread`.
 
 ---
 
-### Task 4: The turn mounts its thread scratchpad; profile grants `thread/`
+### Task 3: Materialize per turn into a persistent directory; snapshot and empty outputs
 
 **Files:**
-- Modify: `platform/api/clue_api/agent_turn_fleet_wiring.py:723-728` (the `acquire` call), `platform/api/clue_api/onboarding_synthesis_wiring.py:1542` region (its own factory use is unchanged; confirm it passes no mounts)
-- Create: `platform/agents/catalog/profiles/head-of-abm/v51/profile.yaml` (copy of v50 from the hotfix; `readable_prefixes` adds `"reads"` and `"thread"`, `writable_prefixes` adds `"thread"`)
-- Modify: `platform/api/clue_api/agent_registry_wiring.py` (`C6_ACTIVE_PROFILE_VERSIONS[HEAD_OF_ABM] = "v51"`), `PROJECT_CONVERSATION_AGENT_PROFILE_ID`, `tests/agents/test_catalog.py`, `tests/api/test_agent_registry_wiring.py` (digest re-measured)
-- Modify: `platform/agents/catalog/skills/stage0-interview/v28/SKILL.md` (copy of v27; §1 gains one bullet) — see the text below
-- Test: `tests/api/test_o6_conversation_composition_db.py` (a DB test that a production turn's lease has the `thread` mount and a write there lands under `threads/<thread>/scratch`)
+- Modify: `platform/agents/clue_agents/resources.py` (`AgentResourceMaterializer.materialize` 149–194, `verify_materialized` 196–220), `platform/agents/clue_agents/workspace.py` (`freeze_materialized_trees` 583, `_freeze_tree` 588, a new `reset_materialized_trees()`, `snapshot_outputs` 687–730 gains `empty_after=True`)
+- Test: `tests/agents/test_resource_materializer.py` (find the existing materializer tests by `grep -rl AgentResourceMaterializer tests/agents`), `tests/agents/test_workspace_backend.py`
 
-Skill v28 §1 addition (founder-reviewed with this plan; appended after the `inputs/project/` bullet):
+**Behaviour:**
+
+1. `materialize(lease, snapshot, seed_files)` at turn start: `reset_materialized_trees()` makes `.deepagent/` and `inputs/` writable and empties them; write the resource bodies, the seed files (user message, `inputs/current-context/*`; brand and project seeds until plan 2 moves them to mounts) and the manifest; freeze both trees; verify digests exactly as today. The one-shot guard (`resources_frozen or materialization_failed → conflict`) becomes "a live turn already materialized" (guard on the lease, not the directory).
+2. `verify_materialized(...)` on crash resume: if the trees are present and frozen, verify digests as today; if absent or partial (the crash hit mid-write), `materialize` again — same artifacts, same bytes.
+3. `snapshot_outputs(empty_after=True)`: snapshot exactly as today, then unfreeze and empty `outputs/`, leaving the directory. The finalize envelope names the snapshot refs, as today.
+4. `usage_snapshot()` reports the whole thread directory (scratch + reads + inputs + outputs + `.deepagent`); `output_file_count`/`output_bytes` still count `outputs/` at snapshot time.
+
+- [ ] **Step 1: Failing tests** — a second `materialize` on the same lease directory after a finished turn replaces `inputs/` (old file gone, new file present, both trees frozen again); a partial `.deepagent/` (delete the manifest by hand) is rebuilt by `verify_materialized`; `snapshot_outputs(empty_after=True)` persists the refs and leaves `outputs/` empty and writable; `scratch/` is untouched by all of the above.
+- [ ] **Steps 2–5:** implement, run, commit — `feat(agent-workspace): inputs and resources are rewritten per turn in the thread directory; outputs are snapshotted then emptied`.
+
+---
+
+### Task 4: The turn wiring uses the thread root; profile v51; skill v28
+
+**Files:**
+- Modify: `platform/api/clue_api/agent_turn_fleet_wiring.py:723-728` (`acquire(..., thread_id=submission.thread_id, ...)`), `platform/api/clue_api/head_of_abm_wiring.py:229-240` (the resume branch calls the new `verify_materialized` semantics), `platform/api/clue_api/agent_runtime_wiring.py:541` (`snapshot_outputs(empty_after=True)`), `platform/api/clue_api/onboarding_synthesis_wiring.py:1542` region and `account_research_turn_wiring.py` (their factory calls pass `thread_id=` — the onboarding run's thread id, the research job's synthetic thread id `f"arv2-{job_id}"`), `platform/api/clue_api/agent_workspace_wiring.py` (unchanged)
+- Create: `platform/agents/catalog/profiles/head-of-abm/v51/profile.yaml` (copy of v50: `readable_prefixes: [".deepagent", "inputs", "scratch", "reads", "outputs"]`, `writable_prefixes: ["scratch", "outputs"]`, `max_file_count: 400`, `max_total_bytes: 20971520`), `platform/agents/catalog/skills/stage0-interview/v28/SKILL.md` (copy of v27; §1 gains the bullet below; every `work/` mention becomes `scratch/`)
+- Modify: `agent_registry_wiring.py` pins, `PROJECT_CONVERSATION_AGENT_PROFILE_ID`, `tests/agents/test_catalog.py`, `tests/api/test_agent_registry_wiring.py` (digest re-measured), `tests/api/test_o6_conversation_composition_db.py`
+
+Skill v28 §1 bullet (founder-reviewed with this plan):
 
 ```markdown
-- `thread/` is your notebook for this conversation. It keeps what you write there across the turns of this thread and nobody else reads it. Use it for what you have read and decided so far in a long conversation (`thread/notes.md`); never for anything the project should remember — that goes in the project's files (section 6).
+- `scratch/` is your notebook for this conversation. What you write there stays across the turns of this chat and nobody else reads it. Use it for what you have read and decided so far in a long conversation (`scratch/notes.md`); never for anything the project should remember — that goes in the project's files (section 6). `inputs/` is this turn's message and cards and is rewritten every turn.
 ```
 
-- [ ] **Step 1: Failing DB test** — in the composition test file, submit one turn on a project thread through the fleet wiring test harness the file already uses; assert `lease.backend._mounts["thread"]` exists (or, black-box: after the turn, the host path `<root>/<ws>/projects/<project>/threads/<thread>/scratch` exists; the test knows the root from `Settings`).
-- [ ] **Step 2: Run — FAIL** (no `threads/` directory).
-- [ ] **Step 3: Implement** — `acquire(..., mounts=MountRequest(thread_id=submission.thread_id))`. Profile v51 and skill v28 as above; registry pins; re-measure the manifest digest.
-- [ ] **Step 4: Run** the composition DB test, the catalog and registry tests, and the workspace tests. PASS.
-- [ ] **Step 5: Commit**
-
-```bash
-git commit -am "feat(head-of-abm): v51 mounts the thread scratchpad — readable/writable thread/, readable reads/; skill v28 §1 names the notebook"
-```
+- [ ] **Step 1: Failing DB test** — in the composition test, run two turns on one thread through the harness; after the first, write a marker into `scratch/` through the lease; assert the second turn's lease reads it, that `inputs/user-message.txt` holds the second message, and that the host path `<root>/<ws>/projects/<project>/threads/<thread>` is the only directory under `threads/`.
+- [ ] **Steps 2–5:** implement, pin, re-measure, run the composition DB test + catalog/registry/onboarding-synthesis/account-research turn tests, commit — `feat(agent-turn): turns run in the thread's workspace; profile v51 grants scratch/ and reads/; skill v28 names the notebook`.
 
 ---
 
-### Task 5: Cleanup learns the layout; archived threads' scratch is purged
+### Task 5: Cleanup purges threads
 
 **Files:**
-- Modify: `platform/api/clue_api/agent_cleanup.py` (`run_once`: a second query), `libs/clue-config/clue_config/settings.py` (`agent_thread_scratch_retention_s: int = 2_592_000`), `.env.example`, `.env`
-- Test: `tests/api/test_agent_cleanup_db.py` (find the existing cleanup DB test file by `grep -rl AgentWorkspaceCleanupJob tests`)
+- Modify: `platform/api/clue_api/agent_cleanup.py` (`run_once`), `.env.example` (comment on `CLUE_AGENT_WORKSPACE_RETENTION_S`: now "seconds after a thread's newest turn went terminal"), one Alembic revision adding nullable `thread_id` to `agent_workspace_cleanup_event` and the action `thread_purge` (reversible)
+- Test: the existing cleanup DB test file (`grep -rl AgentWorkspaceCleanupJob tests`)
 
-**Interfaces:**
-- Produces: `AgentCleanupResult` gains `threads_purged: int`.
+**Behaviour:** one query selects threads whose `status='archived'`, plus threads whose newest `agent_turn_event` is terminal (`completed/failed/cancelled/abandoned/privacy_tombstoned`) and older than the retention window, excluding threads with an in-flight turn and threads already purged; `purge_thread` each; one cleanup event per thread keyed `uuid5(_CLEANUP_NAMESPACE, f"{workspace}:{thread}:thread_purge")`. `AgentCleanupResult` gains `threads_purged`. DSAR (`erase_for_privacy`) purges the thread directory.
 
-- [ ] **Step 1: Failing test** — seed an `agent_thread` row with `status='archived'` and `updated_at` older than the retention, create its scratch directory through the factory, run `run_once`, assert the directory is gone and `threads_purged == 1`; a second run reports `0`. An active thread older than the window is untouched.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement**
-
-```python
-            archived = await conn.execute(text(
-                "SELECT id, workspace_id, project_id FROM agent_thread "
-                "WHERE status = 'archived' AND updated_at <= :cutoff "
-                "AND NOT EXISTS (SELECT 1 FROM agent_workspace_cleanup_event c "
-                " WHERE c.thread_id = agent_thread.id AND c.action = 'thread_scratch_purge')"
-            ), {"cutoff": current - timedelta(seconds=self._settings.agent_thread_scratch_retention_s)})
-```
-
-`agent_workspace_cleanup_event` needs a nullable `thread_id` column and an `action` value `thread_scratch_purge` — one migration `alembic revision -m "agent_workspace_cleanup_event thread scratch purge"` (add the column, extend the CHECK if the action is CHECK-constrained; reversible). Record one event per purged thread, keyed `uuid5(_CLEANUP_NAMESPACE, f"{workspace}:{thread}:thread_scratch_purge")`.
-
-- [ ] **Step 4: Run** the cleanup DB test and `alembic heads` (one head). **Step 5: Commit** with the env parity change.
+- [ ] **Steps:** failing test → implement → `alembic heads` shows one head → commit — `feat(agent-cleanup): thread directories are purged on archive and after retention`.
 
 ---
 
 ## Self-review
 
-- **Spec coverage:** W1 layout (Task 3), W5 scratchpad + quota + retention (Tasks 2–5), §4.2 mount mechanics (Task 1), `reads/` folder for W9 (Task 3), security model preserved (every task's gate). Libraries and the versioned root are plans 2 and 3 by design. ✔
-- **Placeholders:** the `make_factory`/`await_snapshot_and_cleanup` helpers are named here and must be added to `workspace_helpers.py` by Task 3's implementer, mirroring the existing `make_lease`; the file's existing helpers are the pattern. ✔
-- **Type consistency:** `WorkspaceMount`, `ThreadScratchQuota`, `MountRequest` and the five directory constants are defined in Task 1/3 and used unchanged after. ✔
+- **Spec coverage (as amended):** W1 thread root + mounts (Tasks 1–2), W5 persistent scratchpad under one quota (Tasks 1–2, 4), `reads/` for W9 (Task 2), per-turn rewrite of inputs and snapshot-then-empty of outputs (Task 3), retention per thread (Task 5), security model preserved (every task's gate). ✔
+- **Simplicity check:** no per-turn directory, no second quota envelope, no new env flag, no hidden record; the only new on-disk concept is "a thread has a folder". ✔
+- **Type consistency:** `WorkspaceMount`, `MountRequest(brand=, project_library=)`, `WorkspaceIdentity.thread_id`, `purge_thread`, `snapshot_outputs(empty_after=)`, `reset_materialized_trees` are named identically across tasks and match plans 2–4 (which only use the mounts and `reads/`). ✔
