@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from clue_api.arv2.read_tools import (
+    READ_REFERENCES_BUDGET_BYTES,
     AccountClaimView,
     AccountOverviewSection,
     AccountResearch,
@@ -23,6 +24,7 @@ from clue_api.arv2.read_tools import (
     ProjectAccountsPage,
     ProjectAccountView,
     ReadAccountResearchInput,
+    ReadAccountResearchOutput,
     ReadAccountResearchTool,
     ReadDiscoveryRunInput,
     ReadDiscoveryRunOutput,
@@ -30,6 +32,7 @@ from clue_api.arv2.read_tools import (
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
     build_arv2_read_tools,
+    receipt_bytes,
 )
 from clue_core import new_operation_id
 from clue_db import transaction
@@ -90,7 +93,7 @@ class _FakeService:
     discovery: DiscoveryRunView | None = None
     refusal: Arv2ReadRefused | None = None
     account_reads: list[tuple[str, str, int, str | None, int]] = field(default_factory=list)
-    research_reads: list[tuple[str, str, str, str | None]] = field(default_factory=list)
+    research_reads: list[tuple[str, str, str, str | None, int]] = field(default_factory=list)
     discovery_reads: list[tuple[str, str, str | None, int]] = field(default_factory=list)
 
     async def list_project_accounts(
@@ -115,8 +118,9 @@ class _FakeService:
         account_entity_id: str,
         section: str,
         field_prefix: str | None,
+        offset: int,
     ) -> AccountResearch:
-        self.research_reads.append((workspace_id, account_entity_id, section, field_prefix))
+        self.research_reads.append((workspace_id, account_entity_id, section, field_prefix, offset))
         if self.refusal is not None:
             raise self.refusal
         assert self.research is not None
@@ -257,6 +261,9 @@ def _research(section: str = "overview") -> AccountResearch:
         ),
         truncated=True,
         excluded={"sensitive": 1, "unverified": 2, "outreach_unsafe": 0},
+        offset=0,
+        next_offset=1,
+        prefixes={},
     )
 
 
@@ -267,13 +274,19 @@ def test_the_account_read_asks_about_the_ambient_workspace_and_serves_both_shape
 
         result = await tool.invoke(
             ReadAccountResearchInput(
-                account_entity_id=ACCOUNT_ID, section="claims", field_prefix="account.resonance"
+                account_entity_id=ACCOUNT_ID,
+                section="claims",
+                field_prefix="account.resonance",
+                offset=40,
             ),
             _context(),
         )
 
-        # The tenant is AMBIENT, never a model-authored input.
-        assert service.research_reads == [(WORKSPACE, ACCOUNT_ID, "claims", "account.resonance")]
+        # The tenant is AMBIENT, never a model-authored input; the prefix and the page the model
+        # asked to continue from are the model's, and both reach the service.
+        assert service.research_reads == [
+            (WORKSPACE, ACCOUNT_ID, "claims", "account.resonance", 40)
+        ]
         assert result.references["account_name"] == "Alpha Health"
         assert result.references["section"] == "claims"
         assert result.references["truncated"] is True
@@ -307,6 +320,58 @@ def test_the_account_read_asks_about_the_ambient_workspace_and_serves_both_shape
                 "generated_at": "2026-09-12T12:00:00+00:00",
             },
         )
+
+    run_async(scenario())
+
+
+def test_the_account_read_s_result_fits_the_governed_receipt() -> None:
+    """The bound is measured where the runtime measures it: on the canonical references."""
+
+    async def scenario() -> None:
+        claims = tuple(
+            AccountClaimView(
+                claim_id=f"{index:08d}-4444-5444-8444-444444444444",
+                field_key="account.open_requisitions",
+                value={"title": f"Role {index}"},
+                source_url="https://alpha.example/jobs",
+                evidence="x" * 240,
+                evidence_truncated=True,
+                tier=3,
+                verification_status="unverified",
+                outreach_safe=True,
+                collected_at="2026-09-12T08:00:00+00:00",
+            )
+            for index in range(40)
+        )
+        # The page the service would serve out of those forty: every leading claim that fits the
+        # budget. Stated as "the largest prefix within the budget" rather than by calling the
+        # service's own helper, so the test is a second opinion about the bound and not an echo.
+        fitted = max(
+            count
+            for count in range(1, len(claims) + 1)
+            if receipt_bytes([claim.model_dump() for claim in claims[:count]])
+            <= READ_REFERENCES_BUDGET_BYTES
+        )
+        assert fitted < len(claims)  # the fixture is the over-budget account, as intended
+        big = AccountResearch(
+            account_entity_id=ACCOUNT_ID,
+            account_name="Alpha Health",
+            section="claims",
+            overview=(),
+            claims=claims[:fitted],
+            truncated=True,
+            excluded={"sensitive": 0, "unverified": 0, "outreach_unsafe": 0},
+            offset=0,
+            next_offset=fitted,
+            prefixes={"account.open_requisitions": 40},
+        )
+        tool = ReadAccountResearchTool(_FakeService(research=big))
+        result = await tool.invoke(
+            ReadAccountResearchInput(account_entity_id=ACCOUNT_ID, section="claims"), _context()
+        )
+        canonical = validate_tool_output_references(ReadAccountResearchOutput, result.references)
+        # The service is trusted to have bounded the page; the tool adds < 1 KiB of envelope.
+        assert receipt_bytes(canonical) < 16_384
 
     run_async(scenario())
 

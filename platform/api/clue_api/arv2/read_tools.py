@@ -69,6 +69,7 @@ __all__ = [
     "MAX_ACCOUNTS",
     "MAX_CANDIDATES",
     "MAX_CLAIMS",
+    "READ_REFERENCES_BUDGET_BYTES",
     "AccountClaimView",
     "AccountOverviewSection",
     "AccountResearch",
@@ -92,6 +93,7 @@ __all__ = [
     "list_project_accounts",
     "read_account_research",
     "read_discovery_run",
+    "receipt_bytes",
 ]
 
 #: The hard ceiling on one read. A tool result is context the model pays for on every later turn,
@@ -105,7 +107,8 @@ class Arv2ReadRefused(Arv2Error):
     ``code`` is stable and machine-readable; the toolbelt tools turn it straight into a
     :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
     ``account_not_found``, ``overview_not_written``, ``account_not_researched``,
-    ``no_claims_under_prefix``, ``discovery_run_not_found``, ``no_discovery_run``.
+    ``no_claims_under_prefix``, ``offset_past_end``, ``offset_not_paged``,
+    ``discovery_run_not_found``, ``no_discovery_run``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -321,6 +324,13 @@ class AccountResearch:
     #: ``outreach_unsafe``. Counted rather than silently dropped, exactly as ``SectionInput`` does
     #: for the page — an empty answer with a count is a fact; an empty answer alone is a lie.
     excluded: dict[str, int]
+    #: Where this page started in the account's servable claims (``0`` for the overview).
+    offset: int
+    #: Where the next page starts, or ``None`` when this page ends the list.
+    next_offset: int | None
+    #: The account's claim families with their servable counts — the prefixes a narrowed read
+    #: may ask for (Task 3 fills it; ``{}`` until then).
+    prefixes: dict[str, int]
 
 
 #: The hard ceiling on one claims read, for the same reason as :data:`MAX_ACCOUNTS`: a researched
@@ -338,6 +348,45 @@ EVIDENCE_CHARS = 240
 #: cited_flags, cost_usd, call:{…}}`` and nothing in the display package bounds ``items`` — so the
 #: honest answer to "how large can a section be?" was "unbounded" until this.
 BODY_CHARS = 6000
+
+#: The budget for one read's ``references``. The runtime records every governed result as a
+#: ``GovernedOperationReceipt`` whose canonical ``reference_values`` must stay under 16 KiB
+#: (``clue_agents/execution.py``); a result over it is discarded *after* the read ran, which is
+#: how 72 claims became "the agent cannot read this account" on 2026-09-13. 12 KiB leaves room
+#: for the envelope fields (ids, name, counts) and for the receipt's own wrapper.
+READ_REFERENCES_BUDGET_BYTES = 12 * 1024
+
+
+def receipt_bytes(value: object) -> int:
+    """How many bytes ``value`` occupies in a receipt — the receipt's own encoding, so the bound
+    measured here is the bound the runtime enforces."""
+
+    return len(
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ).encode()
+    )
+
+
+def _take_within_budget(items: Sequence[dict[str, Any]], *, budget: int) -> tuple[int, bool]:
+    """How many leading ``items`` fit in ``budget`` bytes when encoded as one JSON array.
+
+    Always admits at least one item (a single over-budget item is the caller's to clip), and
+    returns whether anything was left out. Linear, not bisected: pages are a few dozen items.
+    """
+
+    if not items:
+        return 0, False
+    used = 2  # the array's brackets
+    count = 0
+    for item in items:
+        size = receipt_bytes(item) + (1 if count else 0)  # the comma
+        if count and used + size > budget:
+            break
+        used += size
+        count += 1
+    return count, count < len(items)
+
 
 #: What a clipped string ends with. One character, so the cap is the cap.
 _ELLIPSIS = "…"
@@ -394,8 +443,13 @@ async def _account_in_workspace(
 
 async def _overview_sections(
     conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
-) -> tuple[AccountOverviewSection, ...]:
-    """The account's written overview, in the order the overview page itself serves it."""
+) -> tuple[tuple[AccountOverviewSection, ...], bool]:
+    """The account's written overview in the order the overview page itself serves it, bounded by
+    the receipt's budget, plus whether anything was left out.
+
+    :data:`BODY_CHARS` bounds one section; nothing bounded the *page*, and a handful of capped
+    sections is past the receipt on its own. What fits is served, and the cut is said out loud.
+    """
 
     blocks = await live_blocks(
         conn,
@@ -436,7 +490,24 @@ async def _overview_sections(
                 generated_at=block.generated_at.isoformat(),
             )
         )
-    return tuple(sections)
+    fitted, cut = _take_within_budget(
+        [section.model_dump() for section in sections], budget=READ_REFERENCES_BUDGET_BYTES
+    )
+    if fitted == 1 and cut:
+        # The first section is all that fits. Clip its body to what the budget actually leaves it
+        # — a section whose own body is over budget would otherwise be served whole and thrown
+        # away by the receipt, which is the bug this bound exists for. When the body already fits
+        # the room, ``_clip`` is a no-op and the section is served exactly as it was built.
+        head = sections[0]
+        room = READ_REFERENCES_BUDGET_BYTES - receipt_bytes({**head.model_dump(), "body_text": ""})
+        body_text, body_clipped = _clip(head.body_text, max(room, 200))
+        sections[0] = head.model_copy(
+            update={
+                "body_text": body_text,
+                "body_truncated": head.body_truncated or body_clipped,
+            }
+        )
+    return tuple(sections[:fitted]), cut
 
 
 def _is_sensitive(claim: Claim) -> bool:
@@ -456,9 +527,11 @@ async def _account_claims(
     account_uuid: UUID,
     field_prefix: str | None,
     settings: Settings,
-) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int]]:
-    """The account's live claims under ``field_prefix``, **gated exactly as the account page gates
-    them**, bounded, plus whether the tail was cut and what was held back.
+    offset: int,
+) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int], int | None]:
+    """One page of the account's live claims under ``field_prefix``, **gated exactly as the account
+    page gates them**, bounded, plus whether more is left, what was held back, and where the next
+    page starts.
 
     The gate is :mod:`clue_api.arv2.display.gather`'s, predicate for predicate: a special-category
     value never leaves the store, an unjudged tier-4 synthesis is held back under a verifying
@@ -469,6 +542,10 @@ async def _account_claims(
     Exclusions are **counted, not hidden**: an account whose every claim is held back comes back
     with an empty list and a non-zero ``excluded``, which says "there is something here and you may
     not have it" rather than "there is nothing here".
+
+    The page is bounded twice: by :data:`MAX_CLAIMS` and — the binding one on a real account — by
+    :data:`READ_REFERENCES_BUDGET_BYTES`, measured in the receipt's own encoding. Whatever does not
+    fit is not dropped: the next offset says where to continue.
 
     The claims read spans every project of the workspace that researched this account: the store
     holds account truth, not a per-project lens.
@@ -513,8 +590,16 @@ async def _account_claims(
             continue
         kept.append(claim)
 
+    if offset >= len(kept) and offset > 0:
+        # An offset past the end is the caller's mistake, not an empty account: answering it with
+        # "no claims" would be a false statement about an account that has some.
+        raise Arv2ReadRefused(
+            "offset_past_end",
+            f"this account has {len(kept)} servable claims; offset {offset} is past the end",
+        )
+    window = kept[offset : offset + MAX_CLAIMS]
     views: list[AccountClaimView] = []
-    for claim in kept[:MAX_CLAIMS]:
+    for claim in window:
         evidence, evidence_truncated = _clip(claim.evidence_span or "", EVIDENCE_CHARS)
         views.append(
             AccountClaimView(
@@ -530,7 +615,13 @@ async def _account_claims(
                 collected_at=claim.collected_at.isoformat(),
             )
         )
-    return tuple(views), len(kept) > MAX_CLAIMS, excluded
+    fitted, cut = _take_within_budget(
+        [view.model_dump() for view in views], budget=READ_REFERENCES_BUDGET_BYTES
+    )
+    served = tuple(views[:fitted])
+    end = offset + len(served)
+    truncated = cut or end < len(kept)
+    return served, truncated, excluded, (end if truncated else None)
 
 
 async def read_account_research(
@@ -541,12 +632,17 @@ async def read_account_research(
     section: str,
     settings: Settings,
     field_prefix: str | None = None,
+    offset: int = 0,
 ) -> AccountResearch:
     """What research found about one account: its written overview, or its live claims.
 
     The two sections answer two different questions — "what do we say about them?" and "what do we
     actually know, and who says so?" — so one read never serves both: the unasked half is empty,
     and an unwritten overview is a refusal rather than an account that looks unresearched.
+
+    Claims are paged by ``offset`` under the receipt's byte budget; the overview is not paged (a
+    cut overview tells the model to read the claims instead), so an offset on it is refused rather
+    than ignored.
     """
 
     account_uuid, name = await _account_in_workspace(
@@ -556,17 +652,21 @@ async def read_account_research(
     claims: tuple[AccountClaimView, ...] = ()
     truncated = False
     excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
+    next_offset: int | None = None
     if section == "overview":
-        overview = await _overview_sections(
+        if offset != 0:
+            raise Arv2ReadRefused("offset_not_paged", "the overview is not paged; omit offset")
+        overview, truncated = await _overview_sections(
             conn, workspace_id=workspace_id, account_uuid=account_uuid
         )
     else:
-        claims, truncated, excluded = await _account_claims(
+        claims, truncated, excluded, next_offset = await _account_claims(
             conn,
             workspace_id=workspace_id,
             account_uuid=account_uuid,
             field_prefix=field_prefix,
             settings=settings,
+            offset=offset,
         )
     return AccountResearch(
         account_entity_id=str(account_uuid),
@@ -576,6 +676,10 @@ async def read_account_research(
         claims=claims,
         truncated=truncated,
         excluded=excluded,
+        offset=offset,
+        next_offset=next_offset,
+        # Task 3 fills this; declared here so the shape does not change under the model twice.
+        prefixes={},
     )
 
 
@@ -806,6 +910,7 @@ class Arv2ReadService(Protocol):
         account_entity_id: str,
         section: str,
         field_prefix: str | None,
+        offset: int,
     ) -> AccountResearch: ...
 
     async def read_discovery_run(
@@ -858,6 +963,7 @@ class DbArv2ReadService:
         account_entity_id: str,
         section: str,
         field_prefix: str | None,
+        offset: int,
     ) -> AccountResearch:
         async with self._conn_factory() as conn:
             return await read_account_research(
@@ -867,6 +973,7 @@ class DbArv2ReadService:
                 section=section,
                 field_prefix=field_prefix,
                 settings=self._settings,
+                offset=offset,
             )
 
     async def read_discovery_run(
@@ -984,6 +1091,8 @@ class ReadAccountResearchInput(ToolInput):
     #: Claims only: ``account.resonance`` narrows a researched account's claims to one family
     #: rather than making the model read all of them to find three.
     field_prefix: str | None = Field(default=None, max_length=80)
+    #: Claims only: continue from ``next_offset`` of the previous page. ``0`` starts over.
+    offset: int = Field(default=0, ge=0)
 
 
 class ReadAccountResearchOutput(ToolOutput):
@@ -994,11 +1103,18 @@ class ReadAccountResearchOutput(ToolOutput):
     overview: tuple[AccountOverviewSection, ...]
     #: The account's servable claims when ``section='claims'``, else empty.
     claims: tuple[AccountClaimView, ...]
-    #: The account holds more claims than one read serves; narrow with ``field_prefix``.
+    #: More exists than this page holds: continue with ``offset = next_offset`` (claims), or read
+    #: the claims when a long overview was cut.
     truncated: bool
     #: What the account pages' own gate held back, by reason: ``sensitive``, ``unverified``,
     #: ``outreach_unsafe``. A non-zero count means "there is more here, and it is not servable".
     excluded: dict[str, int]
+    #: Where this page started in the account's servable claims.
+    offset: int
+    #: Where the next page starts, or ``None`` when this page ends the list.
+    next_offset: int | None
+    #: The account's claim families with their servable counts.
+    prefixes: dict[str, int]
 
 
 class ReadAccountResearchTool(Tool):
@@ -1023,7 +1139,7 @@ class ReadAccountResearchTool(Tool):
         external_boundary=ExternalReplayBoundary.NONE,
     )
     parameter_policy = JournalParameterPolicy(
-        safe_display_fields=("account_entity_id", "section", "field_prefix")
+        safe_display_fields=("account_entity_id", "section", "field_prefix", "offset")
     )
     #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
     #: pin (standing rule item 5).
@@ -1048,6 +1164,7 @@ class ReadAccountResearchTool(Tool):
                 account_entity_id=inputs.account_entity_id,
                 section=inputs.section,
                 field_prefix=inputs.field_prefix,
+                offset=inputs.offset,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
@@ -1059,6 +1176,9 @@ class ReadAccountResearchTool(Tool):
             claims=research.claims,
             truncated=research.truncated,
             excluded=research.excluded,
+            offset=research.offset,
+            next_offset=research.next_offset,
+            prefixes=research.prefixes,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 

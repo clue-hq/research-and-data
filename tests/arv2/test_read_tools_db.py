@@ -26,11 +26,12 @@ from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
     BODY_CHARS,
     EVIDENCE_CHARS,
-    MAX_CLAIMS,
+    READ_REFERENCES_BUDGET_BYTES,
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
     read_discovery_run,
+    receipt_bytes,
 )
 from clue_api.frontend_read.v1_shared import arv2_research_status_for
 from clue_config import Settings
@@ -823,35 +824,61 @@ def test_the_claims_read_holds_back_exactly_what_the_account_page_holds_back() -
     run_async(scenario())
 
 
-def test_the_claims_read_is_bounded_at_the_cap_and_says_so() -> None:
-    """M2: the one bound in this file whose off-by-one nothing else would catch."""
+def test_the_claims_read_fits_the_governed_receipt_and_pages_the_rest() -> None:
+    """The 2026-09-13 live defect: 72 claims built a valid result the runtime then refused
+    ("bounded operation receipt exceeds 16 KiB"). The read now stops at the byte budget, says so,
+    and names the offset the next call continues from."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             project = await seed_project(conn, WORKSPACE, name="Read tools")
             account = await _seed_account(conn, project, "Alpha Health")
             claims: dict[str, str] = {}
-            for index in range(MAX_CLAIMS + 1):
+            # ~400 bytes of evidence each: 72 of them is ~30 KiB, the shape of the live account.
+            for index in range(72):
                 await _seed_claim(
                     conn,
                     claims,
                     project,
                     account,
                     label=f"claim_{index}",
-                    field_key="account.open_requisitions",
-                    value=[{"title": f"Role {index}"}],
+                    field_key=f"account.open_requisitions.role_{index:03d}",
+                    value={"title": f"Role {index}", "posted": "2026-09-01"},
+                    evidence_span=("Hiring now: " + ("clinical staff, ") * 24).strip(),
+                    source_url=f"https://alpha.example/jobs/{index}",
                 )
 
-            research = await read_account_research(
+            first = await read_account_research(
                 conn,
                 workspace_id=project.workspace_id,
                 account_entity_id=str(account),
                 section="claims",
                 settings=VERIFYING,
             )
+            assert first.truncated is True
+            assert first.offset == 0
+            assert first.next_offset is not None and 0 < first.next_offset < 72
+            assert len(first.claims) == first.next_offset
+            assert receipt_bytes([view.model_dump() for view in first.claims]) <= (
+                READ_REFERENCES_BUDGET_BYTES
+            )
 
-            assert len(research.claims) == MAX_CLAIMS
-            assert research.truncated is True
+            # Walk the rest: the pages partition the kept claims, in order, without overlap.
+            seen = [view.claim_id for view in first.claims]
+            offset = first.next_offset
+            while offset is not None:
+                page = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="claims",
+                    settings=VERIFYING,
+                    offset=offset,
+                )
+                assert page.offset == offset
+                seen.extend(view.claim_id for view in page.claims)
+                offset = page.next_offset
+            assert len(seen) == 72 and len(set(seen)) == 72
 
     run_async(scenario())
 
@@ -885,6 +912,35 @@ def test_a_long_overview_body_is_capped_and_says_so() -> None:
             assert len(section.body_text) == BODY_CHARS
             assert section.body_text.endswith("…")
             assert section.body_truncated is True
+            # One capped section still fits the receipt, so nothing was left out.
+            assert research.truncated is False
+
+            # Two more of the same: the per-section cap is not a bound on the *page*, and three
+            # capped sections are past the receipt's budget. The read serves what fits and says so.
+            for section_key in ("why-they-fit", "buying-committee"):
+                await _seed_block(
+                    conn,
+                    project,
+                    account,
+                    section_key=section_key,
+                    body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+                )
+
+            crowded = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="overview",
+                settings=VERIFYING,
+            )
+
+            assert len(crowded.overview) < 3
+            assert crowded.truncated is True
+            assert receipt_bytes([s.model_dump() for s in crowded.overview]) <= (
+                READ_REFERENCES_BUDGET_BYTES
+            )
+            # The overview is not paged in this hotfix: a cut overview sends the model to claims.
+            assert (crowded.offset, crowded.next_offset) == (0, None)
 
     run_async(scenario())
 
