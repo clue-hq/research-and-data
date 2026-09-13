@@ -54,6 +54,7 @@ __all__ = [
     "PROJECT_CONTEXT_FILE_BINDING_KIND",
     "PROJECT_FILES_INDEX_CARD_MEDIA_TYPE",
     "PROJECT_INPUT_PREFIX",
+    "PROJECT_LIBRARY_PREFIX",
     "CompiledProjectFile",
     "PinnedProjectFile",
     "ProjectFileEntry",
@@ -61,7 +62,10 @@ __all__ = [
     "ProjectFilesIndexCard",
     "ProjectFilesPinConflict",
     "ProjectFilesPinRow",
+    "ProjectLibraryIndexCard",
+    "canonical_json",
     "compile_project_files_index_card",
+    "compile_project_library_index_card",
     "get_project_files_pin",
     "load_or_create_project_files_pin",
     "project_seed_files",
@@ -72,6 +76,12 @@ __all__ = [
 
 #: Every compiled project file is materialized read-only below this workspace prefix.
 PROJECT_INPUT_PREFIX = "inputs/project/"
+#: …and served, unseeded, below this one when the workspace mounts the *project library* instead:
+#: the same state compiled once beside the threads (``<ws>/projects/<project>/library/``) and
+#: mounted read-only at ``project/``. One prefix constant per surface, so a path is never spelled
+#: by hand at a call site — the brand's two surfaces are named the same way
+#: (``brand_knowledge_context.INPUT_PREFIX`` / ``BRAND_LIBRARY_PREFIX``).
+PROJECT_LIBRARY_PREFIX = "project/"
 PROJECT_FILES_INDEX_CARD_MEDIA_TYPE = "application/vnd.clue.project-files-index-card+json"
 #: The DSAR binding kind these artifacts carry, so an erasure of the project reaches them.
 PROJECT_CONTEXT_FILE_BINDING_KIND = "project_context_file"
@@ -88,7 +98,7 @@ class ProjectFilesPinConflict(ValueError):
     """This turn's pinned project files cannot be read as the turn pinned them."""
 
 
-def project_workspace_path(row_path: str) -> str:
+def project_workspace_path(row_path: str, *, prefix: str = PROJECT_INPUT_PREFIX) -> str:
     """The one rule for where a project document is materialized (ruling F).
 
     A project document's stored path is folder-qualified — ``project/plan.md`` for the plan,
@@ -98,11 +108,16 @@ def project_workspace_path(row_path: str) -> str:
     ``inputs/project/project/plan.md``, a path nothing seeds. Everything else is kept verbatim, so
     a document's folder survives into the workspace.
 
+    ``prefix`` is the one thing that differs between the two surfaces that serve these files: the
+    thread's own seeds (:data:`PROJECT_INPUT_PREFIX`) and the mounted project library
+    (:data:`PROJECT_LIBRARY_PREFIX`). The naming rule above is identical for both, which is the
+    point — a document is at the same relative path whichever surface a turn reads it from.
+
     This is the only place that rule is written down: ``status.md``'s renderer, the compiled files'
     seed paths and the index card all call it, so two surfaces cannot name one document differently.
     """
 
-    return PROJECT_INPUT_PREFIX + row_path.removeprefix("project/")
+    return prefix + row_path.removeprefix("project/")
 
 
 def _after_front_matter(decoded: str) -> str:
@@ -216,7 +231,14 @@ class ProjectFileRef(BaseModel):
         return digest
 
 
-def _canonical_json(value: object) -> bytes:
+def canonical_json(value: object) -> bytes:
+    """One byte-stable JSON encoding, shared by every digest and card compiled over these files.
+
+    Public because the project library hashes and writes JSON of its own (its index card, its
+    artifact index, its refresh digest) and two encoders would eventually disagree about key order
+    or separators — which, for a content-addressed tree, reads as "the project changed".
+    """
+
     return json.dumps(
         value,
         sort_keys=True,
@@ -239,7 +261,7 @@ def _files_digest(payloads: Sequence[dict[str, Any]]) -> str:
     order.
     """
 
-    return hashlib.sha256(_canonical_json(list(payloads))).hexdigest()
+    return hashlib.sha256(canonical_json(list(payloads))).hexdigest()
 
 
 class ProjectFilesPinRow(BaseModel):
@@ -375,7 +397,7 @@ async def load_or_create_project_files_pin(
                     "turn_id": turn_id,
                     "workspace_id": workspace_id,
                     "project_id": project_id,
-                    "files": _canonical_json(payloads).decode(),
+                    "files": canonical_json(payloads).decode(),
                     "digest": _files_digest(payloads),
                 },
             )
@@ -483,7 +505,7 @@ class ProjectFilesIndexCard(BaseModel):
     def canonical_bytes(self) -> bytes:
         # ``exclude_none=False``: an unversioned (compiled) file's null ``version`` is the typed
         # "this file has no version" state, not an absent field.
-        return _canonical_json(self.model_dump(mode="json", exclude_none=False))
+        return canonical_json(self.model_dump(mode="json", exclude_none=False))
 
     def content_sha256(self) -> str:
         return f"sha256:{hashlib.sha256(self.canonical_bytes()).hexdigest()}"
@@ -514,5 +536,82 @@ def compile_project_files_index_card(
                 artifact_sha256=file.ref.artifact_sha256,
             )
             for file in sorted(files, key=lambda file: file.ref.path)
+        ],
+    )
+
+
+class ProjectLibraryIndexCard(BaseModel):
+    """The manifest of one *project library* generation — the whole tree, never the files.
+
+    The sibling of :class:`ProjectFilesIndexCard` on the other surface. The pinned card describes
+    one turn's frozen set, so every line is read off a ``ProjectFileRef``; this one describes a
+    tree on disk, so every line is read off the compiled bytes that were installed in it. Two more
+    facts ride along, because they are what the tree is *for*:
+
+    * ``library_sha256`` — the digest over the rows this generation was compiled from.
+      :class:`~clue_agents.library_tree.LibraryTree` reads it back out of this very card to decide
+      whether anything has to be rewritten, so the card is the tree's own record of its freshness.
+    * ``artifacts`` — how many design artifacts ``artifacts/index.json`` names. The index is by
+      reference (W4), so the count is the one number a reader gets without opening it.
+
+    It is compiled **unbounded**: the 8 KiB budget belongs to a turn's *opening* card, where every
+    line is spent whether or not the model reads it, while this manifest is read from disk by path
+    and an omitted line would only make it under-list the files sitting beside it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    schema_version: Literal["1"] = "1"
+    card_kind: Literal["project_library_index"] = "project_library_index"
+    project_id: str
+    files: list[ProjectFileEntry]
+    library_sha256: str
+    artifacts: int
+
+    def canonical_bytes(self) -> bytes:
+        # ``exclude_none=False``: a compiled file's null ``version`` is the typed "this file has
+        # no version" state, not an absent field.
+        return canonical_json(self.model_dump(mode="json", exclude_none=False))
+
+    def content_sha256(self) -> str:
+        return f"sha256:{hashlib.sha256(self.canonical_bytes()).hexdigest()}"
+
+
+def compile_project_library_index_card(
+    *,
+    project_id: str,
+    files: Sequence[CompiledProjectFile],
+    library_sha256: str,
+    artifacts: int,
+) -> ProjectLibraryIndexCard:
+    """Compile the manifest of one library generation over the files it installs, in path order.
+
+    ``path`` is the file's path *inside the tree*, which for a document is its row path with the
+    ``project/`` folder segment already folded away (:func:`project_workspace_path`) — inside the
+    library the tree path is the name. ``workspace_path`` is where the mount serves it, so it is
+    that same path under :data:`PROJECT_LIBRARY_PREFIX` and nothing else: the manifest describes
+    the tree it ships in, so it cannot name a file at a path the mount does not serve.
+
+    ``artifact_sha256`` is the digest of the bytes installed at that path. For a document that is
+    exactly its artifact row's ``artifact_sha256`` (the store is content-addressed); for a
+    compiled file it is the only digest there is. One rule, so a reader can compare what it read
+    against what the manifest says it should have read.
+    """
+
+    return ProjectLibraryIndexCard(
+        project_id=project_id,
+        library_sha256=library_sha256,
+        artifacts=artifacts,
+        files=[
+            ProjectFileEntry(
+                path=file.path,
+                workspace_path=PROJECT_LIBRARY_PREFIX + file.path,
+                kind=file.kind,
+                version=file.version,
+                status=file.status,
+                summary=file.summary,
+                artifact_sha256=hashlib.sha256(file.body).hexdigest(),
+            )
+            for file in sorted(files, key=lambda file: file.path)
         ],
     )

@@ -107,6 +107,12 @@ class ProjectDocumentFacts:
     version: int
     status: str
     updated_at: datetime
+    #: A version of this same path that is newer than the one served here, when the surface being
+    #: compiled serves only **one** version per path (the project library, W3). The per-turn seeds
+    #: leave both ``None`` because they carry the other version as a real, version-qualified file
+    #: and list it on its own line: a surface names what it serves, in the form it serves it.
+    newer_version: int | None = None
+    newer_status: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,9 +595,16 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
     if not facts.documents:
         lines += ["None yet."]
     for doc in facts.documents:
+        # A surface that serves one version per path says the other version exists *in words*,
+        # because naming it as a file would send the model to a path that surface does not carry.
+        newer = (
+            ""
+            if doc.newer_version is None
+            else f" (newer version v{doc.newer_version} {doc.newer_status})"
+        )
         lines += [
             f"- `{project_workspace_path(doc.path)}` — version {doc.version}, {doc.status}, "
-            f"updated {_iso(doc.updated_at)}"
+            f"updated {_iso(doc.updated_at)}{newer}"
         ]
     return "\n".join(lines) + "\n"
 

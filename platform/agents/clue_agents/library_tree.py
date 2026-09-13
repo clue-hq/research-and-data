@@ -184,6 +184,28 @@ class LibraryTree:
     def current_digest(self) -> str | None:
         """The ``library_sha256`` recorded in ``<name>/index.json``, or None when absent."""
 
+        document = self.read_index()
+        if document is None:
+            return None
+        recorded = document.get(_DIGEST_KEY)
+        if recorded is None:
+            return None
+        if not isinstance(recorded, str):
+            raise WorkspaceConflict("library index digest is not a string")
+        return recorded
+
+    def read_index(self) -> dict[str, object] | None:
+        """The installed ``<name>/index.json`` as a JSON object, or None when there is none.
+
+        The whole manifest, for a caller that wants what the tree says about itself rather than
+        only its digest — a library whose digest still matches is described entirely by the card
+        it already carries, so nothing has to be recompiled to answer "what is in there".
+
+        Audited exactly as :meth:`open_fd` audits the tree: the directory is private, the index is
+        opened ``O_NOFOLLOW`` and must be a regular file. A tree that is absent, or that carries
+        no index yet, is None; anything unsafe or unreadable is refused loudly.
+        """
+
         try:
             tree_fd = os.open(self._name, _DIR_FLAGS, dir_fd=self._parent_fd)
         except FileNotFoundError:
@@ -207,12 +229,7 @@ class LibraryTree:
         finally:
             os.close(tree_fd)
 
-        recorded = _decode_index(data).get(_DIGEST_KEY)
-        if recorded is None:
-            return None
-        if not isinstance(recorded, str):
-            raise WorkspaceConflict("library index digest is not a string")
-        return recorded
+        return _decode_index(data)
 
     def replace(self, files: Sequence[LibraryFile], *, digest: str) -> None:
         """Install one whole generation, atomically, as a frozen read-only tree.

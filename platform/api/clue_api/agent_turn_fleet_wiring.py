@@ -35,7 +35,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import TypeVar
 from uuid import UUID
@@ -123,6 +123,7 @@ from clue_api.project_context_files import (
     project_seed_files,
     read_pinned_project_files,
 )
+from clue_api.project_library import ensure_project_library
 from clue_api.project_status import (
     current_project_documents,
     load_project_decisions,
@@ -691,6 +692,29 @@ class ProjectConversationTurnRunner:
                 project_id=scope.project_id,
                 file_count=len(project_files),
                 pin_created=project_pin_created,
+            )
+            # …and the same state compiled once beside the threads and mounted read-only at
+            # ``project/`` for every thread of this project. Unlike the seeds above it is not
+            # per-turn: a turn whose project has not moved finds the tree already in place and
+            # writes nothing. The seeds stay until the profile reads the library instead, so both
+            # surfaces carry the project's state for now.
+            async with self._conn_factory() as conn:
+                library = await ensure_project_library(
+                    conn,
+                    storage,
+                    self._engine.artifacts,
+                    self._engine.components.workspaces,
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                )
+            mounts = replace(mounts, project_library=True)
+            log.info(
+                "agent_turn.project_library_ready",
+                turn_id=str(turn_id),
+                project_id=scope.project_id,
+                library_sha256=library.digest,
+                file_count=len(library.index.files),
+                artifacts=library.index.artifacts,
             )
         input_seeds = (*input_seeds, *project_seed_files(project_files))
         revision = await self._recipes.get_by_identity(

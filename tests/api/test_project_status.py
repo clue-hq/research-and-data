@@ -188,6 +188,36 @@ def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() ->
     )
 
 
+def test_a_surface_that_serves_one_version_per_path_says_the_newer_one_exists_in_words() -> None:
+    """W3: the project library holds one file per path, so it cannot name a ``.vN`` sibling.
+
+    The per-turn seeds carry a superseded pin's newer version as a real, version-qualified file
+    and give it its own line. The library does not — it is the project's *settled* state — so the
+    line names the plain path it really serves and reports the newer version as a sentence. A file
+    name is a promise the reader can open; a sentence is not.
+    """
+
+    text = render_status_markdown(
+        _facts(
+            documents=(
+                ProjectDocumentFacts(
+                    path="audience/icp-gi.md",
+                    version=1,
+                    status="confirmed",
+                    updated_at=_T,
+                    newer_version=2,
+                    newer_status="proposed",
+                ),
+            )
+        )
+    )
+    assert "icp-gi.v2.md" not in text
+    assert (
+        "- `inputs/project/audience/icp-gi.md` — version 1, confirmed, "
+        "updated 2026-09-12T08:30:00+00:00 (newer version v2 proposed)" in text
+    )
+
+
 def test_the_confirmed_icp_line_names_the_prefix_of_the_pins_own_scope() -> None:
     """I1: a project-local pinned ICP is not in the brand's folder, and must not be named there.
 

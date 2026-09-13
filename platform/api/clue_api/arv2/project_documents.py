@@ -70,6 +70,7 @@ __all__ = [
     "WrittenDocument",
     "current_plan_version",
     "list_project_documents",
+    "lock_project",
     "plan_document_id",
     "read_project_document",
     "save_project_document",
@@ -328,8 +329,12 @@ async def _store_bytes(storage: StorageBackend, key: str, data: bytes) -> None:
     await storage.put(key, data, media_type=_DOCUMENT_MEDIA_TYPE)
 
 
-async def _lock_project(conn: AsyncConnection, *, workspace_id: str, project_id: str) -> None:
-    """Take this project's row lock. **The first lock either writer takes, always.**
+async def lock_project(conn: AsyncConnection, *, workspace_id: str, project_id: str) -> None:
+    """Take this project's row lock. **The first lock every writer of this project takes.**
+
+    Public because a third writer joined the two below: the project library
+    (``clue_api.project_library``) rewrites one tree per project, and it serializes that rewrite
+    against the document writes it renders by taking exactly this lock, in exactly this order.
 
     Both hands write one version chain — the agent through :func:`write_project_plan`, the human
     through :func:`save_project_document` — and two writers that take the same two locks in
@@ -412,8 +417,8 @@ async def write_project_plan(
     if replayed is not None:
         return replayed
 
-    # The one lock order both writers take (see :func:`_lock_project`); a replay above costs none.
-    await _lock_project(conn, workspace_id=request.workspace_id, project_id=request.project_id)
+    # The one lock order both writers take (see :func:`lock_project`); a replay above costs none.
+    await lock_project(conn, workspace_id=request.workspace_id, project_id=request.project_id)
     current = await current_plan_version(
         conn, workspace_id=request.workspace_id, project_id=request.project_id
     )
@@ -732,9 +737,9 @@ async def save_project_document(
         )
     # Serialize competing human saves for this project, and take this lock *before* the document
     # row's: one order for both writers is what keeps the agent's write and this one from
-    # deadlocking (see :func:`_lock_project`). Other publishers may still race to insert the next
+    # deadlocking (see :func:`lock_project`). Other publishers may still race to insert the next
     # version; the unique index remains the final arbiter.
-    await _lock_project(conn, workspace_id=workspace_id, project_id=project_id)
+    await lock_project(conn, workspace_id=workspace_id, project_id=project_id)
     row = await _document(
         conn,
         workspace_id=workspace_id,
