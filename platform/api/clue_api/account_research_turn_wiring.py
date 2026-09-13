@@ -454,7 +454,7 @@ class PreparedAccountResearchTurnRunner:
         lease = self._workspaces.acquire(
             workspace_id=workspace_id,
             project_id=project.project_id,
-            thread_id=f"arv2-{account_run_id}",
+            thread_id=f"account-research-{account_run_id}",
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )

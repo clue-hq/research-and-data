@@ -290,7 +290,7 @@ class FreshWakeSpecialistRunner:
         lease = self._workspaces.acquire(
             workspace_id=workspace_id,
             project_id=parent.project_id,
-            thread_id=f"child-{child_execution_id}",
+            thread_id=f"delegation-{request.delegation_id}",
             execution_id=child_execution_id,
             resolved_profile=resolved_profile,
         )

@@ -747,7 +747,7 @@ class Stage0Trial:
         lease = self._components.workspaces.acquire(
             workspace_id=self.state.workspace_id,
             project_id=self.state.project_id,
-            thread_id=f"trial-{execution_id}",
+            thread_id=self.state.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
