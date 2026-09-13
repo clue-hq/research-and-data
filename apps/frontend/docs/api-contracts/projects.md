@@ -2260,7 +2260,10 @@ by three routes on the workspace-scoped `/frontend/v1` router
 (`platform/api/clue_api/frontend_read/project_documents.py`), registered after the research-progress
 route. Wire is **snake_case** in a `{ "data": … }` envelope — the `discovery/current` and
 `research/progress` neighbours' shape, not the camelCase `WireModel` the accounts contract uses.
-Timestamps are `Z`-suffixed ISO. Tenancy is the router's `X-Workspace-Id` header (401 without it).
+Timestamps are `Z`-suffixed ISO. In the authenticated application, the shared backend client
+proves the provider session, resolves Clue membership and stamps `X-Clue-Workspace-Id`.
+The router's legacy `X-Workspace-Id` dependency is overridden by authenticated composition;
+the frontend never supplies a static workspace or trusts a browser-supplied workspace header.
 
 | route | answer |
 | --- | --- |
@@ -2296,8 +2299,30 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
 - **The chat side:** a finalize carrying `{ object_type: "project_document", object_id, version }`
   in `domain_refs` projects one `PLAN` part titled `"Plan"` with `revision_label` `v{version}`, and
   the tool reads as **"Write the project plan"** in the transcript.
-- **Deferred (founder ruling R12, 2026-09-12):** the Plan tab, the document editor, the plan card's
-  click-through, the auto-open on a write, the gallery document cards **and the `?surface=plan` deep
-  link** are `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`, to be built with the
-  markdown-toolbar slice. Until then the plan card renders but opens nothing, and no frontend
-  repository consumes these three routes.
+- **Frontend connection implemented (Lane 2 Task 4, 2026-09-13):**
+  `features/projects/model/project-documents.ts` validates lists/details and maps `updated_at`,
+  `icp_key` and `front_matter` to camelCase. Kinds are the three frozen project-document kinds;
+  status and nullable ICP keys are retained without guesses. The plan is selected by exact path
+  `project/plan.md`. Edited labels use the viewer's local timezone and an explicit clock.
+- Server reads use `listProjectDocuments` / `getProjectDocument` in
+  `data/project-documents.repository.ts`, through the shared authenticated `fetchRead` client.
+  There is no fixture fallback, and failed reads never become empty document lists.
+- Browser routes are `GET /api/projects/:projectId/documents` and
+  `GET|PUT /api/projects/:projectId/documents/:documentId`. All responses are `no-store`.
+  PUT accepts **only** `{ body, expectedRevision }`, enforces the shared allowed-origin policy,
+  and forwards `{ body, expected_revision }` with session-derived credentials. Invalid JSON is
+  400; invalid/nonpositive revision, blank/oversized body or extra fields are 422. Backend
+  statuses/bodies (including 401/403/404/409) pass through, with request IDs retained.
+- `saveProjectDocument` lives in **`data/project-document-actions.ts`**, keeping browser imports
+  free of the server-only read/authentication graph, as the Knowledge actions already do.
+  It sends the original Markdown unchanged, never sends front matter, and returns the full saved
+  detail, including the **new ID/version** (or unchanged ones for a no-op). Callers must use that
+  returned base for the next save. Saves are not retried or merged automatically.
+- Repository/action errors retain `ClueApiError.status`, `code` and `requestId`. A 409 explains
+  that a newer **document** exists and advises keeping/copying the draft before loading it;
+  401/403 explain missing view/edit permission. Both `{ error: … }` and FastAPI `{ detail: … }`
+  refusal envelopes are understood for saves. These functions do not own or clear editor drafts.
+- **Still pending in the active Lane 2 plan:** the shared MDXEditor migration, Plan pane and editor
+  hook, draft/conflict recovery UI, plan-card click/auto-open, Gallery document cards and
+  `?surface=plan`. Task 4 verifies transport and version handling; it does not claim a live editor
+  save/refresh acceptance walk. The unused dummy `ProjectPlan` component/schema were removed.

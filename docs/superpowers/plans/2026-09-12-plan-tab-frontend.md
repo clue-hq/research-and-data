@@ -29,7 +29,7 @@ The task numbering keeps the parent plan's numbers (4–8) so cross-references h
 ### Task 4: Frontend model, repository, BFF
 
 **Files:**
-- Create: `apps/frontend/src/features/projects/model/project-documents.ts` (+ `.test.ts`), `apps/frontend/src/features/projects/data/project-documents.repository.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/route.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/[documentId]/route.ts`
+- Create: `apps/frontend/src/features/projects/model/project-documents.ts` (+ `.test.ts`), `apps/frontend/src/features/projects/data/project-documents.repository.ts`, `project-document-actions.ts`, `project-documents-error.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/route.ts`, `apps/frontend/src/app/api/projects/[projectId]/documents/[documentId]/route.ts` and their shared `project-documents-handler.ts` (+ focused repository/action/BFF tests).
 - Delete: `apps/frontend/src/features/projects/components/project-plan.tsx`; remove `ProjectPlanSchema` and `export type ProjectPlan` from `model/project-workspace.ts`
 
 **Interfaces:**
@@ -48,7 +48,7 @@ export const ProjectDocumentDetailSchema = ProjectDocumentSummarySchema.extend({
 export const ProjectDocumentsResponseSchema = z.object({ data: z.object({ documents: z.array(ProjectDocumentSummarySchema) }) });
 export const ProjectDocumentDetailResponseSchema = z.object({ data: ProjectDocumentDetailSchema });
 export interface ProjectDocument { id; path; kind; title; version; status; updatedAt; icpKey }   // camelCase view
-export interface ProjectDocumentDetail extends ProjectDocument { markdown: string }
+export interface ProjectDocumentDetail extends ProjectDocument { markdown: string; frontMatter: Record<string, unknown> }
 export function toProjectDocument(wire): ProjectDocument
 export function planDocumentOf(documents: readonly ProjectDocument[]): ProjectDocument | null   // path === "project/plan.md"
 export function documentEditedLabel(updatedAt: string, now: Date): string   // "Edited just now" | "Edited 5 min ago" | "Edited today at 14:02" | "Edited 12 Sep" — pure, tested
@@ -58,17 +58,26 @@ export function documentEditedLabel(updatedAt: string, now: Date): string   // "
 // data/project-documents.repository.ts
 export async function listProjectDocuments(projectId, read = fetchRead): Promise<ProjectDocument[]>
 export async function getProjectDocument(projectId, documentId, read = fetchRead): Promise<ProjectDocumentDetail>
+// data/project-document-actions.ts — browser-safe; do not import the server read repository in an editor
 export async function saveProjectDocument(projectId, document: ProjectDocument, body: string, clueFetch = fetch): Promise<ProjectDocumentDetail>
 //   PUT /api/projects/{projectId}/documents/{id} with { body, expectedRevision: document.version }
-//   409 → "A newer version of the plan exists. Your changes are still here; copy them before loading the latest version."
+//   409 → "A newer version of this document exists. Your changes are still here; copy them before loading the latest version."
 //   401/403 → "You do not have permission to edit this document."
 ```
 
 BFF routes copy `app/api/projects/[projectId]/discovery/route.ts`: `GET` list; `GET` detail; `PUT` forwards `{ body, expected_revision: expectedRevision }` through the authenticated backend client used by the accounts bulk-action route (find the mutation helper that route uses; it already enforces origin and workspace stamping), returns the backend status and body verbatim on 409/401/403.
 
-- [ ] **Step 1: Failing model tests** — schema parse of a list payload; `planDocumentOf`; `documentEditedLabel` for the four cases.
-- [ ] **Step 2–4: implement; run `npm test`, `npm run lint`.**
-- [ ] **Step 5: Commit** — `git commit -m "feat(frontend): project documents model, repository and BFF routes; drop the orphaned dummy plan lift"`.
+- [x] **Step 1: Failing model tests** — schema parse of a list payload; `planDocumentOf`; `documentEditedLabel` for the four cases.
+- [x] **Step 2–4: implement; run `npm test`, `npm run lint`.**
+  - **2026-09-13:** implemented all three BFF methods, authenticated server reads, browser saves,
+    immutable returned IDs/revisions, unchanged-body transport, permissions/conflict errors and
+    orphan removal. Front matter is retained for reads and never writable through the BFF.
+    Save actions are separated from server reads because a browser bundle of the original
+    combined module pulled in server authentication/Node built-ins. This follows the existing
+    Knowledge repository/actions split; the backend contract is unchanged. Full test suite,
+    design-token build, lint and production build passed; final verification is in
+    `_memory/2026-09-13-lane2-project-document-connection.md`.
+- [x] **Step 5: Commit** — local checkpoint: `feat(frontend): connect project documents with versioned saves`.
 
 ---
 
