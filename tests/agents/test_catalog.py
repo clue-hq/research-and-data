@@ -115,6 +115,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # `brand/knowledge/` and the project library at `project/` — instead of the per-turn seeds.
         "skill:stage0-interview@v29",
         "skill:stage0-interview@v3",
+        # The brand index path: v29 with §1 naming the brand library's manifest where it is
+        # actually mounted — `brand/index.json`, the tree root, beside `knowledge/`.
+        "skill:stage0-interview@v30",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -198,6 +201,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The workspace libraries: v51 plus the `brand/` and `project/` read-only mounts, with
         # stage0-interview v29 and prompt head-of-abm v9.
         "profile:head-of-abm@v52",
+        # The brand index path: v52 with stage0-interview v30.
+        "profile:head-of-abm@v53",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

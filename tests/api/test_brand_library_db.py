@@ -184,6 +184,87 @@ def test_the_brand_library_is_written_once_per_pinned_version_and_mounts_read_on
     run_async(scenario())
 
 
+def test_the_mounted_brand_library_serves_its_manifest_at_brand_index_json(
+    tmp_path: Path,
+) -> None:
+    """The manifest is at the tree ROOT, so mounted it is ``brand/index.json``.
+
+    ``LibraryTree`` requires ``index.json`` at the root — ``current_digest()`` reads it there — so
+    the writer puts it beside ``knowledge/``, not inside it. A live turn on ``head-of-abm@v52``
+    read ``project/status.md`` fine and then asked for ``brand/knowledge/index.json``, because
+    stage0-interview v29 §1 named it there; the workspace answered "workspace file does not
+    exist". This test pins both halves of that: the manifest the skill now names resolves and
+    carries the pin's digest, and the path v29 named resolves to nothing.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-libidx-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 library index")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="company/overview.md",
+                kind="company-overview",
+                version=1,
+                status="ready",
+                body=OVERVIEW,
+            )
+            turn_id = await _submitted_turn(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                label="libidx",
+            )
+            pin, _created = await load_or_create_knowledge_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+            )
+            documents = await read_pinned_documents(conn, storage, pin=pin)
+
+            _root, factory, _sink = make_factory(tmp_path)
+            try:
+                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                lease = factory.acquire(
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id="thread-idx",
+                    execution_id=EXECUTION_ID,
+                    policy=policy(readable=(*DEFAULT_READABLE_PREFIXES, "brand")),
+                    mounts=MountRequest(brand=(project.brand_id, version)),
+                )
+
+                index = json.loads(lease.backend.read_text_sync("brand/index.json"))
+                assert index["library_sha256"] == pin.documents_sha256
+                assert index["brand_id"] == project.brand_id
+                assert {entry["workspace_path"] for entry in index["documents"]} == {
+                    f"{BRAND_LIBRARY_PREFIX}company/overview.md",
+                }
+                # The document the manifest lists is there under the path it lists it at.
+                assert (
+                    lease.backend.read_text_sync(f"{BRAND_LIBRARY_PREFIX}company/overview.md")
+                    == OVERVIEW
+                )
+                # …and the path skill v29 named is not a file. v30 names `brand/index.json`.
+                with pytest.raises(WorkspaceSecurityError):
+                    lease.backend.read_text_sync(f"{BRAND_LIBRARY_PREFIX}index.json")
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
 def test_the_shared_brand_library_gives_the_plain_name_to_the_newest_version(
     tmp_path: Path,
 ) -> None:

@@ -134,7 +134,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # governed tool, never by writing a file. prompt head-of-abm v9 and stage0-interview v29 name
     # those mounted paths instead of the per-turn seed paths under `inputs/`. No tool is added or
     # dropped. Everything else is v51's.
-    AgentRole.HEAD_OF_ABM: "v52",
+    # v53 (brand index path, 2026-09-14): v52's surface with the skill pin moved v29→v30 —
+    # §1 names the brand library's manifest at its real mounted path, `brand/index.json`.
+    AgentRole.HEAD_OF_ABM: "v53",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
