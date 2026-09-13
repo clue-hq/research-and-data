@@ -38,6 +38,7 @@ exit; a turn ending keeps the leg ``open_awaiting_user``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -1023,6 +1024,11 @@ class DesignLegTurnRunner:
                 assistant_message=assistant_message,
                 replayed=False,
             )
+        except asyncio.CancelledError:
+            # The watched-turn owner distinguishes user Stop from process/lease
+            # cancellation. Emitting a crash terminal here would close SSE before
+            # that owner can publish the actual cancellation.
+            raise
         except BaseException:
             await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
             raise

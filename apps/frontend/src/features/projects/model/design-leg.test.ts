@@ -82,11 +82,11 @@ test("each typed leg refusal renders a sentence, never its code", () => {
   );
   assert.equal(
     designTurnFailureNotice("design_leg_turn_failed"),
-    "Design couldn't finish this page. Nothing was saved — send another message to try again.",
+    "Design stopped before completion. Any saved draft remains available.",
   );
   assert.equal(
     designTurnFailureNotice("design_leg_turn_crashed"),
-    "The design turn stopped unexpectedly. Nothing was saved — send another message to try again.",
+    "Design stopped before completion. Any saved draft remains available.",
   );
 });
 

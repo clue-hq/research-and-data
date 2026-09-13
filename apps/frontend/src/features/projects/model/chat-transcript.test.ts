@@ -535,6 +535,53 @@ test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
   assert.deepEqual(cold[1].parts, []);
 });
 
+for (const durableState of ["cancelled", "running"] as const) {
+  test(`a replayed crash reconciles with durable ${durableState} without losing partial text`, () => {
+    // Older design Stop attempts emitted turn.failed before turn.cancelled. The
+    // SSE reader closes on the first terminal, so only the durable turn read can
+    // prove that the user cancelled after the generic crash unwinder ran.
+    const stream = apply(emptyTranscriptState(), [
+      frame({ type: "turn.started" }),
+      frame({ type: "text.start", part_id: "text:partial", part_kind: "text" }),
+      frame({ type: "text.delta", part_id: "text:partial", delta_index: 0, delta: "Draft started" }),
+      frame({ type: "turn.failed", failure_code: "design_leg_turn_crashed" }),
+    ]);
+    const messages = composeTranscript({
+      messages: [],
+      turns: [{
+        turnId: TURN,
+        threadId: "t1",
+        projectId: "p1",
+        state: durableState,
+        requestedAt: "2026-09-13T00:00:00Z",
+        lastEventId: null,
+        generationAttempts: 1,
+        submissionMessage: null,
+      }],
+      stream,
+    });
+    const assistant = messages.find((message) => message.role === "assistant");
+    assert.ok(assistant);
+    assert.equal(assistant.state, durableState === "cancelled" ? "cancelled" : "failed");
+    assert.equal(assistant.failureCode, durableState === "cancelled" ? null : "design_leg_turn_crashed");
+    assert.equal(assistant.live, false);
+    const partial = assistant.parts.find((part) => part.kind === "text");
+    assert.ok(partial?.kind === "text");
+    assert.equal(partial.text, "Draft started");
+    assert.equal(partial.failed, true);
+  });
+}
+
+test("a cancellation frame clears an earlier crash notice", () => {
+  const stream = apply(emptyTranscriptState(), [
+    frame({ type: "turn.failed", failure_code: "design_leg_turn_crashed" }),
+    frame({ type: "turn.cancelled", reason: "stop_requested" }),
+  ]);
+  const [assistant] = composeTranscript({ messages: [], turns: [], stream });
+  assert.equal(assistant.state, "cancelled");
+  assert.equal(assistant.failureCode, null);
+});
+
 /**
  * Rule 6 — the dev-lens raw reasoning trace.
  *

@@ -125,9 +125,8 @@ export function designTurnFailureNotice(code: string | null): string | null {
     case "design_leg_account_unresolved":
       return "This page's target account could not be resolved, so the turn was refused. Nothing was generated.";
     case "design_leg_turn_failed":
-      return "Design couldn't finish this page. Nothing was saved — send another message to try again.";
     case "design_leg_turn_crashed":
-      return "The design turn stopped unexpectedly. Nothing was saved — send another message to try again.";
+      return "Design stopped before completion. Any saved draft remains available.";
     default:
       return code;
   }

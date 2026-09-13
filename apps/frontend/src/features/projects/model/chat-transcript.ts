@@ -392,6 +392,7 @@ export function applyChatStreamEvent(
       const next = TURN_STATES[event.type];
       if (next) turn.state = next;
       if (event.failureCode !== null) turn.failureCode = event.failureCode;
+      if (event.type === "turn.cancelled") turn.failureCode = null;
       if (event.type === "turn.cancelled" || event.type === "turn.failed") {
         markStreamingTextFailed(turn, event.reason ?? event.failureCode);
       }
@@ -642,10 +643,14 @@ export function composeTranscript({
       // The turns read is the cold-reload authority. A stream projection may
       // lead it during a live transition, but the absence of replay frames must
       // never erase a durable cancelled/failed/queued assistant receipt.
-      const state =
-        projected?.state ??
-        (durableTurn ? transcriptStateOf(durableTurn.state) : undefined) ??
-        (durableAssistant ? "completed" : "queued");
+      const durableState = durableTurn ? transcriptStateOf(durableTurn.state) : undefined;
+      // Older Stop attempts emitted a generic failure before their cancellation,
+      // and SSE closed at that first terminal. The persisted cancellation is the
+      // later truth even when replay can only reconstruct the earlier failure.
+      // A stale running read must still yield to a live terminal stream frame.
+      const state = durableState === "cancelled"
+        ? durableState
+        : projected?.state ?? durableState ?? (durableAssistant ? "completed" : "queued");
       composed.push({
         id: durableAssistant?.id ?? projected?.messageId ?? `pending:${turnId}`,
         turnId,
@@ -657,7 +662,7 @@ export function composeTranscript({
         refs: durableAssistant?.refs ?? [],
         live: state === "queued" || state === "running",
         state,
-        failureCode: projected?.failureCode ?? null,
+        failureCode: state === "cancelled" ? null : projected?.failureCode ?? null,
         optimistic: false,
         legNotices: orderedLegNotices(projected),
         generatingDesign:

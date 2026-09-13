@@ -226,6 +226,57 @@ async def _history_roles(conn: AsyncConnection, seeds: dict[str, Any]) -> list[s
     )
 
 
+def test_cancelled_design_lane_leaves_terminal_journaling_to_stop_owner(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="cancel")
+            submission = await _submit_message(
+                conn, seeds, label="cancel-1", message="Create a draft."
+            )
+            entered = asyncio.Event()
+
+            class WaitingLane:
+                async def drive(self, *, envelope: Any) -> None:
+                    entered.set()
+                    await asyncio.Event().wait()
+
+            task = asyncio.create_task(
+                _run_on(conn, seeds, _fresh_runner(seeds, tmp_path, WaitingLane()), submission)
+            )
+            await asyncio.wait_for(entered.wait(), timeout=10)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            terminal_rows = (
+                await conn.execute(
+                    text(
+                        "SELECT status, reason_code FROM agent_turn_event "
+                        "WHERE turn_id=:turn AND status IN ('failed', 'abandoned', 'cancelled')"
+                    ),
+                    {"turn": submission.turn_id},
+                )
+            ).all()
+            # A premature crash event closes the SSE before the outer Stop
+            # owner can emit the actual cancellation. No terminal belongs here.
+            assert terminal_rows == []
+            run = await design_runs.get_run(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                run_id=design_leg_run_id(submission.turn_id),
+            )
+            assert run is not None and run["status"] == "queued"
+            assert run["result"] is None
+
+    run_async(scenario())
+
+
 # --- mid-leg worker restart (the master-plan gate's 'survives a mid-leg worker restart') -------
 
 
