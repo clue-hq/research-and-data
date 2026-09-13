@@ -1,9 +1,16 @@
-"""A project's own documents: the plan the agent writes, and the versions the human edits.
+"""A project's own documents: the plan and the personas the agent writes, and the human's edits.
 
 A project has one plan, ``project/plan.md``, and two hands write it. The Head of ABM writes it
 through :func:`write_project_plan` once the strategy, the ICP and the product set are settled; the
 human edits it — and every other document this project owns — through :func:`save_project_document`,
 the project-scoped twin of the Knowledge PUT. Both append an immutable version to one chain.
+
+A project's **personas** are written the same way, by :func:`write_project_persona`, one document
+per pinned ICP at ``audience/persona-<icp_key>.md``. They are the plan's siblings rather than a
+second mechanism: same replay key, same project lock, same optimistic version check, same retire —
+with one rule of their own. A persona follows the ICP the project has *pinned* (W8), so a write
+for any other key is refused by name instead of authoring a reading of a profile this project does
+not qualify against.
 
 Two hands on one file is a lost-update problem, so the agent must say **which version it read**.
 ``expected_version`` is compared against the version at rest, and a mismatch is refused by name
@@ -45,6 +52,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_storage import (
@@ -57,7 +65,9 @@ from clue_storage import (
 
 __all__ = [
     "ICP_DEFINITION_KIND",
+    "PERSONA_FOLDER",
     "PERSONA_KIND",
+    "PERSONA_SOURCE_KEY",
     "PLAN_FOLDER",
     "PLAN_KIND",
     "PLAN_PATH",
@@ -66,14 +76,19 @@ __all__ = [
     "USER_EDIT_SOURCE_KEY",
     "ProjectDocumentRefused",
     "ProjectDocumentRow",
+    "ProjectPersonaWrite",
     "ProjectPlanWrite",
     "WrittenDocument",
+    "current_document_version",
     "current_plan_version",
     "list_project_documents",
     "lock_project",
+    "persona_document_id",
+    "persona_path",
     "plan_document_id",
     "read_project_document",
     "save_project_document",
+    "write_project_persona",
     "write_project_plan",
 ]
 
@@ -98,9 +113,18 @@ PLAN_WORKSPACE_PATH = "project/plan.md"
 #: are different acts and are told apart at the artifact, not only in the front matter.
 PLAN_SOURCE_KEY = "arv2-project-plan"
 USER_EDIT_SOURCE_KEY = "arv2-project-document-user_edit"
+#: A persona lives in the ``audience`` folder beside the ICP it reads, and its artifact records the
+#: agent's write as its own act — told apart from the onboarding surface's synthesis of the same
+#: path, which registers its documents under its own source key.
+PERSONA_FOLDER = "audience"
+PERSONA_SOURCE_KEY = "arv2-project-persona"
 
 _DOCUMENT_MEDIA_TYPE = "text/markdown"
 _PLAN_NAMESPACE = "arv2-project-plan"
+_PERSONA_NAMESPACE = "arv2-project-persona"
+#: Where this project's documents are readable in the agent's workspace. See
+#: :data:`PLAN_WORKSPACE_PATH` for why the prefix is restated here rather than imported.
+_PROJECT_INPUT_PREFIX = "project/"
 
 #: A document is servable — it owns its path — while its bytes exist and it has not been
 #: superseded. Restated rather than imported, for the Global Constraint 7 reason above.
@@ -161,6 +185,28 @@ class ProjectPlanWrite:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectPersonaWrite:
+    """One write of one ICP's persona document. The plan's twin, plus the key it is about.
+
+    ``document_text`` is the model's whole file, front matter and all — unlike the plan, whose body
+    is all the writer takes — because a persona's header carries content the model owns (the
+    ``personas`` list) beside the fields the platform stamps.
+    """
+
+    workspace_id: str
+    brand_id: str
+    project_id: str
+    turn_id: UUID
+    user_id: str
+    #: The ICP this persona reads. It must be the key this project has **pinned**.
+    icp_key: str
+    document_text: str
+    #: The version of ``project/audience/persona-<key>.md`` this text was written against;
+    #: ``None`` when the file does not exist yet.
+    expected_version: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class WrittenDocument:
     """The version this write stored, named precisely enough for the agent to cite and re-open."""
 
@@ -212,6 +258,40 @@ def plan_document_id(*, turn_id: UUID, expected_version: int | None, body_sha256
     )
 
 
+def persona_path(icp_key: str) -> str:
+    """The row path of one ICP's persona document. One key, one persona, one path."""
+
+    return f"{PERSONA_FOLDER}/persona-{icp_key}.md"
+
+
+def persona_document_id(
+    *, turn_id: UUID, icp_key: str, expected_version: int | None, document_sha256: str
+) -> UUID:
+    """The one id this turn's write of *this persona text* at this version will ever have.
+
+    Derived exactly the way :func:`plan_document_id` is, and for the same reasons, with the ICP key
+    joined in: one turn may write a persona for the pinned ICP and nothing else, but a project that
+    re-pins and writes again inside one turn is a different document, not a replay of this one.
+    """
+
+    return uuid5(
+        NAMESPACE_URL,
+        f"{_PERSONA_NAMESPACE}:{turn_id}:{icp_key}:{expected_version or 0}:{document_sha256}",
+    )
+
+
+def _workspace_path(path: str) -> str:
+    """Where a row path is readable in the agent's workspace.
+
+    ``project_context_files.project_workspace_path``: one leading ``project/`` segment is the
+    *folder* name, not a directory under the prefix, so the mounted prefix and a plan's folder fold
+    into one segment while an ``audience/`` document keeps both. Restated rather than imported for
+    the reason :data:`PLAN_WORKSPACE_PATH` gives.
+    """
+
+    return _PROJECT_INPUT_PREFIX + path.removeprefix(_PROJECT_INPUT_PREFIX)
+
+
 def _icp_key_of(path: str) -> str | None:
     for prefix in ("audience/icp-", "audience/persona-"):
         if path.startswith(prefix) and path.endswith(".md"):
@@ -234,16 +314,16 @@ def _row(row: RowMapping) -> ProjectDocumentRow:
     )
 
 
-async def current_plan_version(
-    conn: AsyncConnection, *, workspace_id: str, project_id: str
+async def current_document_version(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, path: str
 ) -> int | None:
-    """The version of this project's plan at rest, or ``None`` when it has none.
+    """The version of one of this project's documents at rest, or ``None`` when it has none.
 
     Read over *every* row in the scope rather than the servable ones only: the next version number
     must be one no version of this path has ever used, or the scoped unique index would refuse it.
-    The newest row is always the servable one here — this module is the only writer of the path, and
-    it retires the previous version in the same transaction — so this is also the version the agent
-    read in its workspace.
+    The newest row is always the servable one here — this module is the only writer of these paths,
+    and it retires the previous version in the same transaction — so this is also the version the
+    agent read in its workspace.
     """
 
     version = await conn.scalar(
@@ -251,12 +331,22 @@ async def current_plan_version(
             "SELECT MAX(version) FROM brand_knowledge_document "
             "WHERE workspace_id = :workspace_id AND project_id = :project_id AND path = :path"
         ),
-        {"workspace_id": workspace_id, "project_id": project_id, "path": PLAN_PATH},
+        {"workspace_id": workspace_id, "project_id": project_id, "path": path},
     )
     return None if version is None else int(version)
 
 
-async def _stored_plan(
+async def current_plan_version(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> int | None:
+    """The version of this project's plan at rest, or ``None`` when it has none."""
+
+    return await current_document_version(
+        conn, workspace_id=workspace_id, project_id=project_id, path=PLAN_PATH
+    )
+
+
+async def _stored_document(
     conn: AsyncConnection, *, workspace_id: str, project_id: str, document_id: UUID
 ) -> WrittenDocument | None:
     """The row this write already produced, or ``None``. Read before anything is rendered.
@@ -285,11 +375,12 @@ async def _stored_plan(
     )
     if row is None:
         return None
+    path = str(row["path"])
     return WrittenDocument(
         document_id=document_id,
-        path=str(row["path"]),
+        path=path,
         version=int(row["version"]),
-        workspace_path=PLAN_WORKSPACE_PATH,
+        workspace_path=_workspace_path(path),
         replayed=True,
     )
 
@@ -380,6 +471,101 @@ async def _retire(
     )
 
 
+async def _supersedes(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, path: str
+) -> UUID | None:
+    """The row a new version at ``path`` follows: the servable one it was written against.
+
+    It agrees with the current version in every ordinary case, and reading it rather than assuming
+    it keeps a reader walking ``supersedes_document_id`` backwards from stepping off a row that was
+    never retired.
+    """
+
+    return (
+        await conn.execute(
+            text(
+                "SELECT document_id FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                "  AND path = :path AND status = ANY(:statuses) "
+                "ORDER BY version DESC LIMIT 1"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "path": path,
+                "statuses": list(_SERVABLE_STATUSES),
+            },
+        )
+    ).scalar_one_or_none()
+
+
+async def _insert_version(
+    conn: AsyncConnection,
+    *,
+    document_id: UUID,
+    workspace_id: str,
+    brand_id: str,
+    project_id: str,
+    folder: str,
+    path: str,
+    kind: str,
+    version: int,
+    status: str,
+    artifact_key_: str,
+    artifact_sha256: str,
+    supersedes: UUID | None,
+    turn_id: UUID | None,
+    race_message: str,
+) -> bool:
+    """Insert one version row, returning whether *this* call is the one that published it.
+
+    ``False`` means ``ON CONFLICT DO NOTHING`` matched: a concurrent twin of this exact call
+    inserted the row first, so this call published nothing. That is the same logical event as the
+    replay short-circuit each writer takes above, and is reported the same way — a caller is never
+    told it wrote a version it did not write.
+
+    Shared by both agent-side writers so the plan and a persona cannot drift on the one thing the
+    version chain depends on: the scoped unique index is the final arbiter, and losing to it is a
+    named refusal with nothing partial at rest, never an unhandled ``IntegrityError``.
+    """
+
+    try:
+        result = await conn.execute(
+            text(
+                "INSERT INTO brand_knowledge_document ("
+                "  document_id, workspace_id, brand_id, project_id, folder, path, kind, version, "
+                "  status, artifact_key, artifact_sha256, produced_by_turn_id, "
+                "  supersedes_document_id"
+                ") VALUES ("
+                "  :document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind, "
+                "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, :supersedes"
+                ") ON CONFLICT (document_id) DO NOTHING"
+            ),
+            {
+                "document_id": document_id,
+                "workspace_id": workspace_id,
+                "brand_id": brand_id,
+                "project_id": project_id,
+                "folder": folder,
+                "path": path,
+                "kind": kind,
+                "version": version,
+                "status": status,
+                "artifact_key": artifact_key_,
+                "artifact_sha256": artifact_sha256,
+                "turn_id": turn_id,
+                "supersedes": supersedes,
+            },
+        )
+    except IntegrityError as exc:
+        if "brand_knowledge_document_scope_path_version" in str(exc.orig):
+            # Another writer took this version number between the read and the insert. Nothing
+            # partial is at rest — the caller re-reads the document and writes again.
+            raise ProjectDocumentRefused("project_document_version_race", race_message) from exc
+        raise
+    return result.rowcount != 0
+
+
 async def write_project_plan(
     conn: AsyncConnection,
     storage: StorageBackend,
@@ -409,7 +595,7 @@ async def write_project_plan(
         expected_version=request.expected_version,
         body_sha256=body_sha256,
     )
-    replayed = await _stored_plan(
+    replayed = await _stored_document(
         conn,
         workspace_id=request.workspace_id,
         project_id=request.project_id,
@@ -455,64 +641,32 @@ async def write_project_plan(
         ),
         source_key=PLAN_SOURCE_KEY,
     )
-    # The row this version follows: the servable one it was written against. It agrees with
-    # ``current`` in every ordinary case, and reading it rather than assuming it keeps a reader
-    # walking ``supersedes_document_id`` backwards from stepping off a row that was never retired.
-    supersedes = (
-        await conn.execute(
-            text(
-                "SELECT document_id FROM brand_knowledge_document "
-                "WHERE workspace_id = :workspace_id AND project_id = :project_id "
-                "  AND path = :path AND status = ANY(:statuses) "
-                "ORDER BY version DESC LIMIT 1"
-            ),
-            {
-                "workspace_id": request.workspace_id,
-                "project_id": request.project_id,
-                "path": PLAN_PATH,
-                "statuses": list(_SERVABLE_STATUSES),
-            },
-        )
-    ).scalar_one_or_none()
-    try:
-        result = await conn.execute(
-            text(
-                "INSERT INTO brand_knowledge_document ("
-                "  document_id, workspace_id, brand_id, project_id, folder, path, kind, version, "
-                "  status, artifact_key, artifact_sha256, supersedes_document_id"
-                ") VALUES ("
-                "  :document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind, "
-                "  :version, 'ready', :artifact_key, :artifact_sha256, :supersedes"
-                ") ON CONFLICT (document_id) DO NOTHING"
-            ),
-            {
-                "document_id": document_id,
-                "workspace_id": request.workspace_id,
-                "brand_id": request.brand_id,
-                "project_id": request.project_id,
-                "folder": PLAN_FOLDER,
-                "path": PLAN_PATH,
-                "kind": PLAN_KIND,
-                "version": version,
-                "artifact_key": key,
-                "artifact_sha256": sha,
-                "supersedes": supersedes,
-            },
-        )
-    except IntegrityError as exc:
-        if "brand_knowledge_document_scope_path_version" in str(exc.orig):
-            # Another writer took this version number between the read and the insert. Nothing
-            # partial is at rest — the caller re-reads the plan and writes again.
-            raise ProjectDocumentRefused(
-                "project_document_version_race",
-                f"another writer published version {version} of the plan; "
-                f"re-read {PLAN_WORKSPACE_PATH} and write again",
-            ) from exc
-        raise
-    # ``DO NOTHING`` matched: a concurrent twin of this exact call inserted the row first, so this
-    # call published nothing. That is the same logical event as the replay short-circuit above and
-    # is reported the same way — the caller is never told it wrote a version it did not write.
-    inserted = result.rowcount != 0
+    supersedes = await _supersedes(
+        conn,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        path=PLAN_PATH,
+    )
+    inserted = await _insert_version(
+        conn,
+        document_id=document_id,
+        workspace_id=request.workspace_id,
+        brand_id=request.brand_id,
+        project_id=request.project_id,
+        folder=PLAN_FOLDER,
+        path=PLAN_PATH,
+        kind=PLAN_KIND,
+        version=version,
+        status="ready",
+        artifact_key_=key,
+        artifact_sha256=sha,
+        supersedes=supersedes,
+        turn_id=None,
+        race_message=(
+            f"another writer published version {version} of the plan; "
+            f"re-read {PLAN_WORKSPACE_PATH} and write again"
+        ),
+    )
     if inserted:
         await _retire(
             conn,
@@ -526,7 +680,7 @@ async def write_project_plan(
     # twin above still stores its bytes, so the artifact row it did record is never a dangling
     # promise of an object that was never written.
     await _store_bytes(storage, key, data)
-    stored = await _stored_plan(
+    stored = await _stored_document(
         conn,
         workspace_id=request.workspace_id,
         project_id=request.project_id,
@@ -544,6 +698,202 @@ async def write_project_plan(
         path=stored.path,
         version=stored.version,
         workspace_path=PLAN_WORKSPACE_PATH,
+        replayed=not inserted,
+    )
+
+
+def _persona_front_matter(
+    front: Mapping[str, Any],
+    *,
+    request: ProjectPersonaWrite,
+    icp_version: int,
+    version: int,
+    authored_at: datetime,
+) -> dict[str, Any]:
+    """The model's front matter with the platform's facts stamped over it.
+
+    Everything the document itself says survives — the ``personas`` list is the whole point of the
+    file and is never touched. What the model does not own is stamped last and therefore wins: the
+    kind every reader dispatches on, the ICP *version* this reading was written against (so a
+    persona can be told apart from one written for an earlier pin), the scope, the version this
+    write mints, and who wrote it on which turn.
+    """
+
+    stamped = dict(front)
+    stamped["kind"] = PERSONA_KIND
+    stamped["icp_key"] = request.icp_key
+    stamped["icp_version"] = icp_version
+    stamped["project_id"] = request.project_id
+    stamped["brand_id"] = request.brand_id
+    stamped["version"] = version
+    stamped["status"] = "ready"
+    stamped["authored_by"] = {"turn_id": str(request.turn_id), "user_id": request.user_id}
+    stamped["authored_at"] = authored_at.isoformat()
+    return stamped
+
+
+async def write_project_persona(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    request: ProjectPersonaWrite,
+    *,
+    now: Callable[[], datetime] = _utcnow,
+) -> WrittenDocument:
+    """Store one persona as the next ``ready`` version of ``audience/persona-<key>.md``.
+
+    The plan's twin, sharing its replay key, its lock order, its revision check and its retire. Two
+    things are its own:
+
+    * **The pin gates it (W8).** A persona is a reading of the ICP this project qualifies accounts
+      against, so it may only be written for the key the project has *pinned*. A write for any
+      other key — or for a project that has pinned nothing — is refused by name, because a persona
+      about a profile nobody confirmed is a document no downstream surface could honestly use.
+    * **Front matter is optional on the way in.** A model that wrote none is not refused; the whole
+      text becomes the body and the platform stamps the front matter (:func:`_persona_front_matter`)
+      over it. A model that wrote a *contradicting* one — another kind, another key — is refused:
+      that is a document about something else, not a formatting slip.
+
+    Raises :class:`ProjectDocumentRefused` — never a partial write — for every refusable condition.
+    """
+
+    if not request.document_text.strip():
+        raise ProjectDocumentRefused(
+            "project_document_body_empty",
+            "the persona document is empty; write the persona as markdown",
+        )
+    try:
+        front, body = parse_front_matter(request.document_text, preserve_body=True)
+    except ValueError:
+        # No front matter at all, or one that is not a mapping: the model wrote plain markdown and
+        # the platform supplies the machine-readable header itself.
+        front, body = {}, request.document_text
+    declared_kind = front.get("kind")
+    if declared_kind is not None and declared_kind != PERSONA_KIND:
+        raise ProjectDocumentRefused(
+            "persona_front_matter_invalid",
+            f"front matter kind must be {PERSONA_KIND} (found {declared_kind!r})",
+        )
+    declared_key = front.get("icp_key")
+    if declared_key is not None and declared_key != request.icp_key:
+        raise ProjectDocumentRefused(
+            "persona_front_matter_invalid",
+            f"front matter icp_key must be {request.icp_key!r} (found {declared_key!r})",
+        )
+
+    path = persona_path(request.icp_key)
+    workspace_path = _workspace_path(path)
+    document_id = persona_document_id(
+        turn_id=request.turn_id,
+        icp_key=request.icp_key,
+        expected_version=request.expected_version,
+        document_sha256=sha256(request.document_text.encode("utf-8")).hexdigest(),
+    )
+    replayed = await _stored_document(
+        conn,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        document_id=document_id,
+    )
+    if replayed is not None:
+        return replayed
+
+    # The one lock order every writer of this project takes (see :func:`lock_project`).
+    await lock_project(conn, workspace_id=request.workspace_id, project_id=request.project_id)
+    pin = await current_project_icp_pin(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
+    )
+    if pin is None:
+        raise ProjectDocumentRefused(
+            "icp_not_pinned",
+            "this project has no pinned ICP; personas follow the project's pinned ICP",
+        )
+    if pin.icp_key != request.icp_key:
+        raise ProjectDocumentRefused(
+            "icp_not_pinned",
+            f"personas follow the project's pinned ICP; this project's pin is {pin.icp_key!r}",
+        )
+    current = await current_document_version(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id, path=path
+    )
+    if current != request.expected_version:
+        raise ProjectDocumentRefused(
+            "project_document_revision_conflict",
+            f"{path} is at version {current}; you expected {request.expected_version}. "
+            f"Re-read {workspace_path} and write again.",
+        )
+
+    version = (current or 0) + 1
+    key, sha, data = await _record_document(
+        conn,
+        workspace_id=request.workspace_id,
+        document=KnowledgeDocument(
+            kind=PERSONA_KIND,
+            folder=PERSONA_FOLDER,
+            path=path,
+            front_matter=_persona_front_matter(
+                front,
+                request=request,
+                icp_version=pin.version,
+                version=version,
+                authored_at=now(),
+            ),
+            body=body,
+            cost=None,
+        ),
+        source_key=PERSONA_SOURCE_KEY,
+    )
+    supersedes = await _supersedes(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id, path=path
+    )
+    inserted = await _insert_version(
+        conn,
+        document_id=document_id,
+        workspace_id=request.workspace_id,
+        brand_id=request.brand_id,
+        project_id=request.project_id,
+        folder=PERSONA_FOLDER,
+        path=path,
+        kind=PERSONA_KIND,
+        version=version,
+        status="ready",
+        artifact_key_=key,
+        artifact_sha256=sha,
+        supersedes=supersedes,
+        # The persona records its turn, where the plan does not: the onboarding surface registers
+        # documents at this very path from its own turns, so "which turn wrote this one" is a
+        # question a reader of ``audience/`` genuinely has.
+        turn_id=request.turn_id,
+        race_message=(
+            f"another writer published version {version} of {path}; "
+            f"re-read {workspace_path} and write again"
+        ),
+    )
+    if inserted:
+        await _retire(
+            conn,
+            workspace_id=request.workspace_id,
+            project_id=request.project_id,
+            path=path,
+            keeping=document_id,
+        )
+    # The bytes land only now, with the row that cites them at rest — a refused write above leaves
+    # no unreferenced object behind, because its artifact row rolls back with the transaction.
+    await _store_bytes(storage, key, data)
+    stored = await _stored_document(
+        conn,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        document_id=document_id,
+    )
+    if stored is None:
+        raise ProjectDocumentRefused(
+            "project_document_version_race", "the written persona did not persist"
+        )
+    return WrittenDocument(
+        document_id=stored.document_id,
+        path=stored.path,
+        version=stored.version,
+        workspace_path=workspace_path,
         replayed=not inserted,
     )
 
