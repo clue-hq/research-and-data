@@ -77,14 +77,16 @@ cannot name and careful about limits it cannot see.
    with a one-line summary and its path (the mechanism skills already use,
    `registry.py:298-315`); the model opens a chapter with `read_file` when the summary matches
    its need. Nothing is preloaded except the index.
-4. **Cross-referenced by path.** A chapter names other chapters by their workspace path. A skill
-   says "read `manual/tools/read_account_research.md` before your first read". A tool's
-   `model_description` ends with "Manual: manual/tools/<name>.md". The glossary is the vocabulary
-   authority and every chapter links unknown words to it.
+4. **Cross-referenced by path.** A chapter names other chapters by their materialized workspace
+   path (`.deepagent/skills/manual-<chapter>/<version>/SKILL.md`, written by the builder from a
+   `manual:<chapter>` token). A skill says "what the read tools return and refuse is in
+   `manual-tools`". A tool's `model_description` ends with "Manual: <path>#<tool>". The glossary
+   is the vocabulary authority and every chapter links unknown words to it.
 5. **Honest about enforcement.** Every rule states whether code enforces it or only the prompt
    asks for it. A safety net that is not installed is not described as installed.
-6. **Versioned and pinned like a skill.** `manual@vN` is an immutable catalog resource with a
-   digest in the profile and the resource manifest; changing a chapter is a new version.
+6. **Versioned and pinned as skills.** Each chapter is an immutable catalog skill with a digest
+   in the profile and the resource manifest; changing a chapter is a new version of that chapter
+   (ruling M-1).
 7. **Grants nothing.** The manual describes; the profile, the recipe and the toolbelt decide.
 
 ## 3. The inventory: what the agent needs to know
@@ -217,45 +219,41 @@ Every term above, one line each, linking to its chapter `[hand]`. This is where 
 "verified", "shown", "researched", "refreshing", "pinned", "proposed", "servable", "restricted",
 "sensitive", "live claim", "merge loser", "gate receipt", "replayed" get their one definition.
 
-## 4. The library on disk
+## 4. The library on disk (ruling M-1, 2026-09-13: a chapter is a catalog skill)
+
+No new resource kind, no mount. Each chapter is a catalog skill named `manual-<chapter>` under
+`platform/agents/catalog/skills/manual-<chapter>/v1/SKILL.md`, with the existing skill front
+matter (`roles: [head_of_abm]`, `tools: []`). The profile pins each chapter like any skill; the
+generated capability map already discloses every pinned skill with its summary and its
+materialized path (`.deepagent/skills/manual-<chapter>/<version>/SKILL.md`); the model opens a
+chapter with `read_file`. Fifteen chapters:
 
 ```
-.deepagent/manual/<version>/
-  index.md                     # the map: one line per chapter with its summary (disclosed)
-  01-turn-and-limits.md
-  02-workspace.md
-  03-tools/index.md            # the 21+8+1 table
-  03-tools/<tool_name>.md      # one per granted tool, generated
-  04-claims.md
-  05-fields.md                 # generated from field_definition
-  06-accounts-and-research.md
-  07-discovery.md
-  08-documents-and-decisions.md
-  09-gates-and-authority.md
-  10-humans-and-screens.md
-  11-siblings.md
-  12-errors.md
-  13-glossary.md
+manual-index                 # the map: one line per chapter with its summary
+manual-turn                  # what a turn is, its budgets, what reaches the human
+manual-workspace             # folders, mounts, cards, file-tool truths, document formats
+manual-tools                 # one section per granted tool (generated)
+manual-fields                # the field registry by family (generated)
+manual-claims                # tiers, statuses, use classes, the display gate
+manual-accounts-research     # accounts, statuses, stages, committees, "settled"
+manual-discovery             # runs, passes, dispositions, fit, approval
+manual-documents-decisions   # kinds, versions, pins, statements, route keys
+manual-gates-authority       # what you decide, what needs a gate, enforced vs asked
+manual-humans-screens        # what humans do where, and how you learn it
+manual-siblings              # research, discovery, personas, design legs
+manual-errors                # every error string and the next move (generated)
+manual-limits                # rounds, clocks, caps, quotas, retention (generated)
+manual-glossary              # one line per term, linking its chapter
 ```
 
-Model-visible path: `manual/<chapter>` (the `.deepagent/manual/<version>/` prefix is mounted as
-`manual/` so links do not carry a version). The capability map gains a block:
-
-```
-Operating manual (open a chapter with read_file when its summary matches your need):
-- manual/index.md — the map
-- manual/01-turn-and-limits.md — what a turn is, your budgets, what reaches the human
-- …
-```
-
-Skills shrink to procedure and point at chapters: the Stage-0 skill's §6 becomes "record every
-material statement (manual/08-documents-and-decisions.md#recording) with
-`record_interview_answer` (manual/03-tools/record_interview_answer.md)". The three document
-skills of lane-1 plan 3 reference the document formats chapter rather than restating front matter.
+Cross-references are written as `manual:<chapter>` in the source and rewritten by the builder to
+the materialized path of the pinned version, so links never carry a hand-typed version. Skills
+shrink to procedure and point at chapters; the three document skills of lane-1 plan 3 reference
+`manual-documents-decisions` rather than restating front matter.
 
 ## 5. Generation and drift
 
-- **Builder:** `platform/agents/catalog/manual/build.py` renders the `[gen]` chapters from the
+- **Builder:** `platform/agents/catalog/manual/build.py` (plan `2026-09-13-operating-manual.md`) renders the `[gen]` chapters from the
   toolbelt descriptors (`build_toolbelt(storage=None, gateway=None)`), the enums in `clue_core`,
   the `field_definition` table (via a committed snapshot `fields.json` refreshed by the same
   script against the lane DB), the profile, `Settings` defaults and the frontend label map. It
@@ -326,7 +324,6 @@ Links are plain relative paths in backticks so `read_file` can follow them verba
 3. Is a spend estimate gate wanted on the ARV2 launches, or is "ICP pin + product set" the
    intended authority? The manual will say whichever is true.
 4. The closed `route_key` vocabulary in §7 item 12: accept, amend, or keep free text.
-5. Whether the manual is one resource (`manual@vN`, one digest) or one catalog resource per
-   chapter. One resource is simpler to pin; per-chapter lets a tool page change without
-   re-reviewing the glossary. Recommendation: one resource, generated chapters excluded from the
-   founder review by construction.
+5. ~~One resource or one per chapter~~ — settled by ruling M-1: one catalog skill per chapter,
+   because that is what the catalog already does; a generated chapter regenerates on its own
+   version without re-reviewing the hand-written ones.
