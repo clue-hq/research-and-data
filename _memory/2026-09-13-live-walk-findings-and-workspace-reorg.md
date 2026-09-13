@@ -93,3 +93,57 @@ delegation the surface withholds; `product/catalog.md` carries no product ids. T
 judgment is), disclosed through the capability map, cross-referenced by path, drift-tested,
 pinned in the profile; §7 maps 17 defects to lanes; §9 lists five founder decisions. `.superpowers/`
 added to `.gitignore` (it was not ignored).
+
+## Hotfix proven (2026-09-13, night) — lane-1 plan 0 landed, `4f1421cbf..HEAD`
+
+Six commits on `research-streaming` (SDD, Opus implementers, controller-reviewed): `0b1975628`
+(`read_discovery_run` accepts the schema's `pass` on input; `serialize_by_alias` so the runner's
+canonical form spells it `pass` too), `bbe859ed8` (claims paged by `offset`/`next_offset` under a
+12 KiB budget measured in the receipt's own encoding; a long overview clipped and flagged;
+`offset_past_end` / `offset_not_paged` refusals), `653f7e7fb` (`prefixes` = the account's servable
+claim families, gate before filter; `no_claims_under_prefix` lists them; the Task-1 `frozen=True`
+class kwarg dropped for mypy), `2c89ebee4` (skill v27 §7c + §1 onboarding pointer, profile v50,
+registry + `composer_context` at v50, the project-conversation framing sentence rewritten), and
+`423e5bb40` (W10: a `PreconditionFailed` from a READ tool is unbudgeted — neither counts nor
+raises; `agent.tool_repair` carries `budgeted`). Recipe stays 26. Gates: ruff/lint-imports clean
+on the touched files; offline 4-file run green except the pre-existing design grok-vs-terra red;
+DB read-tools suite 23/23.
+
+**Live walk on the lane stack (v50 workers, started 20:23 IST).** The signed-in test workspace
+(`ws_2875e9e3…`) does not hold Arthur Direct Care (that row is in `ws_869a9f51…`), so the re-ask
+used the equivalent researched account of project `prj_82aef3f5…` — Prevea Health, 79 claims,
+overview written — in the project's second thread `thr_fd34ee23…`:
+
+- "Can you tell me what was researched about Prevea Health?" → turn `19e3d6a5…` on
+  `head-of-abm v50`: `read_project_accounts(query="Prevea Health")` → `read_account_research`
+  overview (10 194 B) → claims offset 0 (13 034 B) → offset 17 (13 356 B) → offset 37 (11 734 B,
+  `next_offset` null) → `awaiting_input` in 102 s. The answer cites status, held-back count
+  ("Eighteen outreach-unsafe claims were held back"), the committee, and says where the file is
+  weak for DAC Agent. Zero `agent.tool_repair` lines.
+- "What did the last discovery run for this project find?" → turn `d0e7a77e…`:
+  `read_discovery_run` (5 181 B) completes and the answer lists all 34 candidates with their
+  pass verdicts and fits; `awaiting_input` in 67 s.
+
+```
+SELECT n.tool_name, count(*) FROM execution_node n WHERE n.kind='tool'
+  AND n.tool_name IN ('read_account_research','read_discovery_run')
+  AND n.created_at > now() - interval '1 hour' GROUP BY 1;
+read_account_research|4
+read_discovery_run|1
+```
+
+Not exercised live: `overview_not_written` (both researched accounts here have overviews) and a
+wrong `field_prefix` (the model never guessed one — §7c says never invent a prefix); both are
+proven by the DB tests. Stack note: `next dev --hostname localhost` binds `[::1]:3020` only, so
+the headless `/browse` Chromium (IPv4) got a connection error; the frontend was restarted with
+`--hostname 0.0.0.0` for the walk (the runbook script still starts it the old way; the founder's
+own browser falls back to v4/v6 and never noticed). The `up` script also aborted once on
+`rm -rf apps/frontend/.next` racing the dying next-server — re-running the frontend step by hand
+was enough.
+
+Deferred from the SDD ledger (for the final review / the lane backlog): runner-wide `by_alias`
+in `validate_tool_output_references`; one pathological claim value can still exceed the receipt
+(plan 4's spill); overview clip measures bytes and clips characters; the `GovernedToolFailure`
+body still says "correct … and call again" for an unbudgeted read refusal (manual-errors
+chapter); `arv2/README.md:1863` still names v49; the pre-existing design profile red resolves to
+a doubly-prefixed `openai/x-ai/grok-4.6`.
