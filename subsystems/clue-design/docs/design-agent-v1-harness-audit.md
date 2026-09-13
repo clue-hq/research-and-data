@@ -5,6 +5,11 @@ runtime sources and archived platform runs. No new generation, model change,
 production modification or brand-ingestion implementation was performed in this
 audit. Proposed changes below are not implemented by this document.
 
+Follow-up: the [skill family plan](design-agent-v1-skill-family-plan.md) refines
+the migration boundary and supersedes this audit's proposed rollout and test
+matrix. Its additional runtime findings do not replace the historical evidence
+below.
+
 ## Conclusion
 
 The result does not meet the founder's creative bar. The preceding work verified
