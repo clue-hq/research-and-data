@@ -227,12 +227,24 @@ Layout (from the screenshot, tokens only): `.surface` grid `auto minmax(0,1fr)`;
 
 - [x] **Step 1: Failing tests** — `chat-surface-params.test.ts`: `?surface=plan` hydrates `surface: "plan"`, `panelOpen: true`; pane params serialize back to `surface: "plan"` with no artifact vocabulary. A new `features/projects/hooks/use-project-document-editor.test.ts` is not possible (hooks need React); instead test the pure reducer pieces if you extract them (`draftAfterChange(drafts, path, base, body)` returns the drafts map with the entry removed when `body === base.body`) — put that pure function in `model/project-document-draft.ts` with a test.
 - [x] **Step 2–3: implement.** Run `npm test`, `npm run lint`, `npm run build`.
-- [ ] **Step 4: Browser check** (on the active Semarang frontend): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
+- [x] **Step 4: Browser check** (on the active Semarang frontend): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
 - [x] **Step 5: Commit** — `git commit -m "feat(chat-shell): the Plan surface — tab, pane, URL state, and the project document editor on shared markdown pieces"`.
 
 ---
 
 ### Task 7: Auto-open on write, the plan card click, labels
+
+**Implementation correction, 2026-09-14:** browser QA proved the transcript-snapshot sketch below
+cannot distinguish cold history delivered by SSE after `chat.loading` becomes false. It is
+superseded by `features/projects/model/plan-write-signal.ts` (`ProjectPlanWriteTracker`) and its
+controller wiring. Seed each turn's initial server `lastEventId` before attaching, preserve that
+cursor across reconnects, render older events without announcing a write, and announce later
+project-document plan parts once per part ID. The shell consumes the controller's monotone
+`planWriteRevision` to open/refresh Plan. New submissions attach with cursor zero. This preserves
+the original acceptance behavior and uses the existing server contract without a new endpoint.
+The regression tests cover late backlog, cursor boundaries, duplicates, reconnect gaps, new
+submissions, and unrelated/failed events. The earlier file/interface sketch is retained below as
+the design history, not the current implementation.
 
 **Files:**
 - Create: `features/chat-shell/model/plan-write-signal.ts` + `plan-write-signal.test.ts`
@@ -272,8 +284,19 @@ Semarang alone was migrated from `d639a2de8bd1` to `98775241f1e5`; only its plat
 restarted, on 8070. Browser empty/read/clean-edit and tab draft retention passed; two browser
 saves minted v2/v3 in the disposable project. The store refused a stale save after a separate
 v4 write. The browser session then expired. The remaining real-browser reload/conflict,
-keyboard/narrow layout, and live plan-part/card walkthrough are still pending sign-in. The
-checkbox for the full browser walk is intentionally left open. Task 8 is not included.
+keyboard/narrow layout, and live plan-part/card walkthrough were pending sign-in at that
+checkpoint. Task 8 is not included.
+
+**Resumed verification — 2026-09-14:** the replacement test account reached the correct workspace.
+Saved content survived a full browser reload. Browser conflicts preserved drafts through the
+latest-version check; Discard adopted the latest document and a subsequent save succeeded.
+Arrow/Home/End tab navigation and 720 px / 390 px layouts passed, including long inline code and
+code blocks in Preview/Edit. Held, no-model test streams exercised Plan-card clicks, auto-open on
+a new document reference, duplicates, and reload backlog. The backlog case caught and verified
+the cursor-based correction above. All 2,264 frontend tests, token build, lint (the same two
+pre-existing warnings), and production Next build pass. The disposable project/thread are
+archived, their append-only audit records retained, both streams completed, and zero fleet tasks
+were dispatched. No environment settings or other workspace processes changed.
 
 ### Task 8: Project documents in the gallery
 

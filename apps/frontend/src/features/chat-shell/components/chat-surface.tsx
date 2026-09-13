@@ -38,7 +38,6 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
-import { planWriteToOpen, projectPlanPartIds } from "../model/plan-write-signal";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -341,21 +340,15 @@ export function ChatSurface({
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
-  // Open a newly written Plan once; initial and paginated history never choose the user’s tab.
-  const knownPlanPartIds = useRef<Set<string> | null>(null);
-  const planHistoryStartId = useRef<string | undefined>(undefined);
-  const [planRefreshToken, setPlanRefreshToken] = useState(0);
+  // The controller distinguishes live writes from late history replay using server cursors.
+  const handledPlanWriteRevision = useRef(0);
+  const planRefreshToken = chat.planWriteRevision;
   const openPlan = shell.openPlan;
   useEffect(() => {
-    if (chat.loading) return;
-    const known = knownPlanPartIds.current;
-    if (known === null) planHistoryStartId.current = chat.transcript[0]?.id;
-    const opening = planWriteToOpen({ transcript: chat.transcript, knownPlanPartIds: known, historyStartId: planHistoryStartId.current });
-    knownPlanPartIds.current = new Set([...(known ?? []), ...projectPlanPartIds(chat.transcript)]);
-    if (opening === null) return;
-    setPlanRefreshToken((value) => value + 1);
+    if (planRefreshToken <= handledPlanWriteRevision.current) return;
+    handledPlanWriteRevision.current = planRefreshToken;
     openPlan();
-  }, [chat.loading, chat.transcript, openPlan]);
+  }, [planRefreshToken, openPlan]);
 
   // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
   // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only

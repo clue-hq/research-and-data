@@ -2333,10 +2333,19 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
   conflicting save retains the draft and offers a latest-version check. Source parse errors,
   missing `project.write` permission and blank project bodies disable saving.
 - Project-document plan-card titles open Plan. Newly received plan parts with
-  `planRef.objectType === "project_document"` open and refresh it once. Initial history and older
-  paginated messages are banked without opening it. This never depends on a tool name.
+  `planRef.objectType === "project_document"` open and refresh it once. The chat controller
+  seeds `ProjectPlanWriteTracker` with each turn's initial `lastEventId` from the server.
+  Backlog parts at or before that cursor are rendered without opening Plan, even when they arrive
+  after `loading` becomes false. Later parts announce a write once per document part ID. Cursors
+  survive reconnects without advancing on subsequent reads, so missed live writes still count.
+  Newly submitted turns start at zero. The shell consumes `planWriteRevision`; it does not infer
+  freshness from transcript rendering, client timestamps, or a tool name.
 - Live Semarang verification: empty/read states, clean Edit, tab-switch draft retention and two
-  browser saves, with new IDs/versions verified in Postgres/artifact storage. A separate store
-  write refused a stale save. Browser reload/conflict/keyboard/narrow-layout checks remain
-  pending after session expiry; those are not claimed complete.
+  browser saves, with new IDs/versions verified in Postgres/artifact storage. After sign-in was
+  restored, full reload preserved saved content; a stale browser save kept its draft; checking
+  for updates preserved it; Discard adopted the newer version and the next save succeeded.
+  Arrow/Home/End tab navigation passed. Preview and Edit at 720 px and 390 px contained long
+  inline/code-block text without widening the page. Controlled, held backend streams verified
+  Plan-card clicks, new-write auto-open, duplicate delivery, and cold backlog replay. No provider
+  or fleet execution was used. The fixture is archived with its append-only audit records retained.
 - **Remaining:** project ICP/persona Gallery document cards and selection (Task 8).

@@ -51,3 +51,31 @@
 - Confirmed the previous disposable Plan fixture has no remaining document rows. No fresh
   fixture was created. Implementation, environment settings, and running processes unchanged;
   reload/conflict/keyboard/narrow-layout/live-plan walkthrough checks remain pending.
+
+## Resumed verification and replay correction
+
+- Replacement test login reached the existing workspace normally. No credentials were stored.
+- Disposable project browser checks passed: saved content survives full reload; stale save keeps
+  the draft; Check for updates preserves it; Discard adopts latest; saving on that revision works.
+  Keyboard Arrow/Home/End navigation works. Preview/Edit at 720 and 390 px contain long inline
+  code, fenced blocks, and tables without widening the page; viewport override reset afterward.
+- No-model stream fixture used the existing submission/outbox/Plan emitter on the disposable
+  thread, with a transactional queue hold preventing dispatch. Plan card click, new part auto-open,
+  duplicate stability passed. An initial fixture ref incorrectly used a dict instead of the
+  emitter's typed DomainObjectRef; corrected the fixture, not production code.
+- Cold replay exposed a real defect: plan parts arrive after initial loading ends, so the old
+  transcript-snapshot baseline reopened Plan over Gallery. Replaced it with a projects-model
+  ProjectPlanWriteTracker, seeded from the first server lastEventId for each turn before attach.
+  Controller exposes planWriteRevision; shell consumes it. Keep cursors across reconnects, seed
+  newly submitted turns at zero, deduplicate by part ID. No client clock or new transport contract.
+- Verified corrected cold replay keeps Gallery and a subsequent new document part still opens
+  Plan. Added five regression tests replacing the three old snapshot tests. All 2,264 tests pass;
+  token build, lint (two pre-existing warnings), and production build pass. First targeted test
+  run failed as expected before the new model existed. React checklist and scoped diff reviewed.
+- Cleanup initially hit the append-only control-record trigger; transaction rolled back. Did not
+  bypass the trigger. Archived only the disposable project/thread instead, retaining audit rows,
+  document versions, and the protective queue hold. Both fixture streams are terminal and a
+  scoped query confirmed zero fleet tasks. No real provider calls, server restarts, or env edits.
+- Closing: Tasks 6–7 browser acceptance complete using actual document APIs and controlled live
+  streams; this does not claim a real model-generated turn. Task 8 remains separate. Local commit
+  only; leave the existing user's Plan tab open for testing.

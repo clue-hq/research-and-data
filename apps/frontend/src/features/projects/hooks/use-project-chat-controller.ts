@@ -37,6 +37,7 @@ import {
   type TranscriptState,
 } from "../model/chat-transcript";
 import { designRefreshForEvent } from "../model/design-leg";
+import { ProjectPlanWriteTracker } from "../model/plan-write-signal";
 import {
   deriveThreadStatus,
   threadLabel,
@@ -118,6 +119,8 @@ export interface ProjectChatController {
    * refresh, a canvas reload nonce) belongs to whoever renders them.
    */
   designRefresh: DesignRefreshCounters;
+  /** New project Plan writes observed after this thread visit's initial server cursors. */
+  planWriteRevision: number;
   /** True only when the current stream has observed an open design leg. */
   designLegOpen: boolean;
   submitting: boolean;
@@ -211,6 +214,8 @@ export function useProjectChatController({
     ReadonlyMap<string, GateAuthorityFailure>
   >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
+  const [planWriteRevision, setPlanWriteRevision] = useState(0);
+  const [planWrites] = useState(() => new ProjectPlanWriteTracker());
   const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
     feedRevision: 0,
     canvasRevision: 0,
@@ -340,6 +345,7 @@ export function useProjectChatController({
         loadGates(threadId),
       ]);
       if (!mounted.current || readVersion !== conversationReadVersion.current) return;
+      planWrites.seedHistory(turnPage.turns);
       // Merge, never replace: the read serves the newest page, and replacing
       // would throw away older pages the user has already scrolled in.
       setMessages((current) => mergeThreadMessages(current, messagePage.messages));
@@ -374,7 +380,7 @@ export function useProjectChatController({
       );
       return turnPage.turns;
     },
-    [loadGates, projectId, repositories],
+    [loadGates, planWrites, projectId, repositories],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -459,6 +465,9 @@ export function useProjectChatController({
     (threadId: string, turnId: string) => {
       if (attachments.current.has(turnId) || attached.current.has(turnId)) return;
       attached.current.add(turnId);
+      // A newly submitted turn may attach before its first listing. Its entire stream
+      // belongs to this visit; existing turns already have their cold-load cursor.
+      planWrites.seedHistory([{ turnId, lastEventId: null }]);
       const handle = repositories.stream.attach({
         projectId,
         threadId,
@@ -471,6 +480,9 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          if (planWrites.observe(event)) {
+            setPlanWriteRevision((revision) => revision + 1);
+          }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
           // open canvas refresh exactly when a durable design-leg transition
           // says the document moved — the frame IS the signal, so there is no
@@ -579,6 +591,7 @@ export function useProjectChatController({
       invalidateProjectCatalog,
       loadConversation,
       loadThreads,
+      planWrites,
       projectId,
       repositories,
       report,
@@ -976,6 +989,7 @@ export function useProjectChatController({
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
     designRefresh,
+    planWriteRevision,
     designLegOpen: stream.designLeg.open,
     submitting,
     hasOlderMessages: olderCursor !== null,
