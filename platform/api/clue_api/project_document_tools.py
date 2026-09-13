@@ -22,7 +22,7 @@ written version, and a deployment without storage registers the tool and refuses
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Annotated, ClassVar, Literal, Protocol
+from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 
 from pydantic import Field, StringConstraints
 
@@ -57,6 +57,9 @@ from clue_toolbelt import (
     ToolResult,
 )
 
+if TYPE_CHECKING:  # the refresher's module imports this one's neighbours; only the type is needed
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
+
 __all__ = [
     "DbProjectDocumentService",
     "ProjectDocumentService",
@@ -90,13 +93,24 @@ class DbProjectDocumentService:
         storage: StorageBackend,
         *,
         conn_factory: ConnFactory = transaction,
+        library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._storage = storage
         self._conn_factory = conn_factory
+        self._library = library
 
     async def write_plan(self, request: ProjectPlanWrite) -> WrittenDocument:
         async with self._conn_factory() as conn:
-            return await write_project_plan(conn, self._storage, request)
+            written = await write_project_plan(conn, self._storage, request)
+        # After the commit, never inside it: the library's compile takes this project's row lock,
+        # which this transaction was holding. Best-effort by contract — a plan that saved must not
+        # report failure because its rendering could not be written, and the next turn's digest
+        # would rebuild it anyway. Its point is the frontend, which reads the rendering.
+        if self._library is not None:
+            await self._library.refresh(
+                workspace_id=request.workspace_id, project_id=request.project_id
+            )
+        return written
 
 
 # =================================================================================================

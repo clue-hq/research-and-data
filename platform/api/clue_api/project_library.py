@@ -519,6 +519,7 @@ async def ensure_project_library(
     workspace_id: str,
     project_id: str,
     snapshot: ProjectLibrarySnapshot | None = None,
+    force: bool = False,
 ) -> ProjectLibrarySnapshot:
     """Materialize this project's library if the rows behind it have moved, and describe it.
 
@@ -541,6 +542,14 @@ async def ensure_project_library(
     and installs it if they differ; the digest is the caller's, taken before its own compile, so
     the "a project that moved mid-compile leaves a tree newer than its digest" property below is
     the caller's too.
+
+    ``force`` skips **only** the "the installed tree already records this digest" short-circuit,
+    for the one caller whose content moved without any row the digest hashes moving with it: a
+    DSAR erasure tombstones a statement's *evidence artifact*, leaving the
+    ``volunteered_statement`` row (and therefore the digest) exactly where it was, while
+    ``decisions.md`` must lose the quote. Everything else is unchanged — the generation is
+    compiled and installed the ordinary way, and it records the same unmoved digest, so the next
+    turn is a no-op again.
     """
 
     digest = (
@@ -551,7 +560,7 @@ async def ensure_project_library(
     installed = await asyncio.to_thread(
         _read_installed_index, workspaces, workspace_id=workspace_id, project_id=project_id
     )
-    if installed is not None and installed.library_sha256 == digest:
+    if not force and installed is not None and installed.library_sha256 == digest:
         return (
             snapshot
             if snapshot is not None

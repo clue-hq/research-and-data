@@ -22,7 +22,7 @@ import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
@@ -126,6 +126,9 @@ from clue_toolbelt import (
     ToolResult,
     UnknownTool,
 )
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
 PROJECTIONS_SCHEMA_HEADER = "X-Projections-Schema-Version"
@@ -769,6 +772,9 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
             auth_closer = getattr(_app.state, "auth_closer", None)
             if auth_closer is not None:
                 await auth_closer()
+            library_closer = getattr(_app.state, "project_library_closer", None)
+            if library_closer is not None:
+                library_closer()
 
 
 def create_projections_app(
@@ -797,6 +803,8 @@ def create_projections_app(
     contact_email_lookup: Any | None = None,
     stage0_recon_enqueuer: Stage0ReconEnqueuer | None = None,
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
+    project_library_closer: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -811,7 +819,14 @@ def create_projections_app(
     supplying both is refused at composition rather than resolved silently.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream). ``chat_stream_live_tail`` is the same
-    switch for FI Lane D D3's turn stream."""
+    switch for FI Lane D D3's turn stream.
+
+    ``project_library`` is the project-library refresher the two surfaces that write a project's
+    settled state call once their transaction commits — the human's project-document PUT and the
+    ICP-confirmation pin. It is ``None`` on a deployment with no agent-workspace root, and both
+    hooks are then no-ops. ``project_library_closer`` releases the workspace factory that
+    refresher was built over; this process owns one only for that purpose, so it is closed with
+    the other shutdown closers rather than left to process exit."""
     resolved = settings if settings is not None else load_settings()
     if resolved.auth_environment == "production" and auth_service is None:
         raise RuntimeError("production projections require the authenticated principal service")
@@ -822,6 +837,7 @@ def create_projections_app(
     )
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
+    app.state.project_library_closer = project_library_closer
     app.state.settings = resolved
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
@@ -847,6 +863,7 @@ def create_projections_app(
         evidence_storage=ingestion_storage,
         contact_email_lookup=contact_email_lookup,
         secrets=Secrets(),
+        project_library=project_library,
     )
     if auth_service is not None:
         # The provision route (workspace-creating write) mounts only behind its default-off
@@ -874,6 +891,7 @@ def create_projections_app(
         # The same backend the ingestion surface already uses; nothing model-shaped is added here.
         storage=ingestion_storage,
         transactional_tool_invoker_factory=transactional_tool_invoker_factory,
+        project_library=project_library,
     )
 
     # FI Lane D D3: the turn stream (attach/stop/retry/hydrated cold load), behind the same

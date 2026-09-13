@@ -20,7 +20,7 @@ document is named for its ICP, and everything else is titled by its own text (it
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
@@ -46,6 +46,9 @@ from clue_api.frontend_read.v1_shared import iso_utc
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_storage import StorageBackend, StorageError
+
+if TYPE_CHECKING:  # the refresher's module imports this one's neighbours; only the type is needed
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.frontend_read.project_documents")
 
@@ -247,8 +250,14 @@ def register_project_document_routes(
     conn_factory: ConnFactory,
     storage: StorageBackend | None,
     allow_local_mutations: bool = False,
+    library: ProjectLibraryRefresher | None = None,
 ) -> None:
-    """Register the project-documents list, detail and PUT on the scoped ``/frontend/v1`` router."""
+    """Register the project-documents list, detail and PUT on the scoped ``/frontend/v1`` router.
+
+    ``library`` is the project-library refresher the PUT calls once its edit has committed, so the
+    version the human just saved is the one the library serves. Absent on a deployment with no
+    agent-workspace root, and then the PUT behaves exactly as it did before.
+    """
 
     @router.get("/projects/{project_id}/documents", response_model=ProjectDocumentListResponseV1)
     async def get_project_documents(
@@ -331,6 +340,11 @@ def register_project_document_routes(
                 project_id=project_id,
                 document_id=saved.document_id,
             )
+        # After the commit, never inside it: the library's compile takes this project's row lock,
+        # which the save above was holding. Best-effort by contract — an edit that saved must not
+        # report failure because its rendering could not be written.
+        if library is not None:
+            await library.refresh(workspace_id=workspace_id, project_id=project_id)
         if found is None:  # pragma: no cover - the save above either landed or refused
             raise _not_found()
         row, front, body = found

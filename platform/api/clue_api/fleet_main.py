@@ -147,6 +147,7 @@ from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
 )
+from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.prose_synthesis_tools import ProseSynthesisServices
 from clue_api.recipe_wiring import (
@@ -937,10 +938,31 @@ async def _serve() -> None:
             if settings.arv2_discovery_enabled
             else None
         )
+        # The project library's refresher (2026-09-14): the two writing tools below rebuild this
+        # project's library once their write has committed, so the settled state the frontend reads
+        # is the state the tool just wrote rather than the state of the last turn. The factory is
+        # this worker's own, on the shared root — the tree replace is atomic across processes — and
+        # it is the same one the workspace cleanup job closes below. Without a configured workspace
+        # root there is no refresher and both hooks are no-ops.
+        agent_workspace_factory = (
+            build_agent_workspace_factory(storage=storage, settings=settings)
+            if settings.agent_workspace_root is not None
+            else None
+        )
+        project_library = (
+            ProjectLibraryRefresher(
+                storage=storage,
+                artifacts=DurableAgentArtifactStore(storage=storage),
+                workspaces=agent_workspace_factory,
+                conn_factory=transaction,
+            )
+            if agent_workspace_factory is not None
+            else None
+        )
         # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
         # nothing. What it needs is the storage the knowledge documents live in, so it composes
         # where the composed backend is. Without a service the tool registers and refuses by name.
-        icp_authoring = DbIcpAuthoringService(storage)
+        icp_authoring = DbIcpAuthoringService(storage, library=project_library)
         # The persona request DOES need the onboarding flag: what it opens is an onboarding run,
         # and with the lane off no worker would ever drive it — the row would sit ``queued``
         # forever, holding that ICP document's one open slot. Off, the tool refuses by name.
@@ -950,7 +972,7 @@ async def _serve() -> None:
         # The project plan has no flag of its own either: writing it down spends nothing and
         # confirms nothing, and it needs only the storage the knowledge documents live in.
         # Without a service the tool registers and refuses by name.
-        project_documents = DbProjectDocumentService(storage)
+        project_documents = DbProjectDocumentService(storage, library=project_library)
         # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
         # every deployment (account membership, display blocks, claims, discovery runs) and reading
         # them spends nothing. Composed unconditionally; the tools refuse by name only where the
@@ -1041,7 +1063,6 @@ async def _serve() -> None:
             controls=controls,
             max_concurrency=settings.recipe_executor_max_concurrency,
         )
-        agent_workspace_factory = None
         # The project DEEP phase remains the R1 loud quarantine. M8D entity runs are independently
         # launched through the promoted tool surfaces and drained by the handler below.
         driver = ComposingRunDriver(
@@ -1262,11 +1283,6 @@ async def _serve() -> None:
             interval_s=settings.design_run_event_prune_interval_s,
             retention_s=settings.design_run_event_retention_s,
         )
-        if agent_workspace_factory is None and settings.agent_workspace_root is not None:
-            agent_workspace_factory = build_agent_workspace_factory(
-                storage=storage,
-                settings=settings,
-            )
         agent_cleanup = _start_agent_cleanup(
             settings,
             (

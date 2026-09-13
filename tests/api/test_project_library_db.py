@@ -25,20 +25,33 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+import httpx
 import pytest
+from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents import MountRequest, WorkspacePolicy
-from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_agents import ArtifactRef, MountRequest, WorkspacePolicy
+from clue_api import project_library_refresh
+from clue_api.agent_turn_wiring import AgentPrivacyService, DurableAgentArtifactStore
+from clue_api.arv2.project_documents import PLAN_PATH, ProjectPlanWrite, write_project_plan
+from clue_api.frontend_read.app import FRONTEND_READ_PREFIX
 from clue_api.project_context_files import PROJECT_LIBRARY_PREFIX
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_library import (
     compile_project_library,
     ensure_project_library,
     project_library_digest,
 )
+from clue_api.project_library_refresh import ProjectLibraryRefresher
+from clue_api.projections_app import create_projections_app
+from clue_api.stage0_card_dsar import (
+    STAGE0_CARD_QUOTE_BINDING_KIND,
+    Stage0StatementEraser,
+)
+from clue_config import load_settings
 from clue_core import OnboardingInputKind
 from clue_research.stage0 import StatementRoute, record_statement, submit_onboarding_input
 from clue_spine import Project
@@ -93,8 +106,12 @@ async def _seed_statement(
     conn: AsyncConnection,
     project: Project,
     artifacts: DurableAgentArtifactStore,
-) -> None:
-    """One ``project_state`` statement, through the real capture-then-record write path."""
+) -> tuple[UUID, ArtifactRef]:
+    """One ``project_state`` statement, through the real capture-then-record write path.
+
+    Returns the statement's id and the captured evidence it quotes — what the two DSAR tests
+    erase, and what the erasure's reverse bindings are keyed on.
+    """
 
     ref = await artifacts.persist_body(
         workspace_id=project.workspace_id, data=_ANSWER.encode(), media_type="text/plain"
@@ -110,7 +127,7 @@ async def _seed_statement(
         actor="human",
     )
     start = _ANSWER.index(_QUOTE)
-    await record_statement(
+    recorded = await record_statement(
         conn,
         onboarding_input_id=captured.onboarding_input_id,
         workspace_id=project.workspace_id,
@@ -123,6 +140,7 @@ async def _seed_statement(
         quote_end=start + len(_QUOTE),
         created_by_actor="human",
     )
+    return UUID(str(recorded)), ref
 
 
 async def _seed_design_document(
@@ -483,6 +501,376 @@ def test_the_artifact_index_lists_design_documents_by_reference(tmp_path: Path) 
                     document_id,
                     second_id,
                 }
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+# =================================================================================================
+# the eager refresh: the writers, and DSAR
+# =================================================================================================
+#
+# The library is *lazily* correct: the next turn takes the digest and rebuilds what moved. These
+# tests are about the other half — the library being fresh for readers that are not turns (the
+# frontend's reads, the human's PUT round-trip) and for the one case the digest cannot see at all
+# (a DSAR erasure takes the words out of `decisions.md` without moving a single row the digest
+# hashes, which is why that one refresh is forced).
+
+
+_PLAN = """# Q4 expansion plan
+
+## Outcome
+Twenty qualified conversations with GI-focused ASCs by the end of the quarter.
+"""
+
+_EDITED_PLAN = """# Q4 expansion plan
+
+## Outcome
+Thirty qualified conversations, and the human typed this line.
+"""
+
+
+def _refresher(
+    conn: AsyncConnection,
+    storage: _MemoryStorage,
+    artifacts: DurableAgentArtifactStore,
+    factory: object,
+) -> ProjectLibraryRefresher:
+    return ProjectLibraryRefresher(
+        storage=storage,  # type: ignore[arg-type]
+        artifacts=artifacts,
+        workspaces=factory,  # type: ignore[arg-type]
+        conn_factory=conn_session_factory(conn),
+    )
+
+
+def test_the_agents_plan_write_refreshes_the_library_without_a_turn(tmp_path: Path) -> None:
+    """The plan the agent writes is readable in the library before any turn runs again.
+
+    Nothing depends on this for correctness — the next turn's digest would rebuild it anyway —
+    but the frontend reads the library's rendering, and a plan that appears only after the next
+    turn reads as a write that did not land.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "planwrite")
+            ws, project_id = project.workspace_id, project.project_id
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                await ensure_project_library(
+                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                )
+                tree = root / ws / "projects" / project_id / "library"
+                assert not (tree / "plan.md").exists()
+
+                written = await DbProjectDocumentService(
+                    storage,  # type: ignore[arg-type]
+                    conn_factory=conn_session_factory(conn),
+                    library=_refresher(conn, storage, artifacts, factory),
+                ).write_plan(
+                    ProjectPlanWrite(
+                        workspace_id=ws,
+                        brand_id=str(project.brand_id),
+                        project_id=project_id,
+                        turn_id=uuid4(),
+                        user_id="usr_founder",
+                        body=_PLAN,
+                        expected_version=None,
+                    )
+                )
+
+                assert written.version == 1
+                assert "Twenty qualified conversations" in (tree / "plan.md").read_text()
+                assert "Version 1" in (tree / "status.md").read_text()
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_the_humans_edit_through_the_route_refreshes_the_library(tmp_path: Path) -> None:
+    """The other hand on the same file: the PUT the project-document editor sends.
+
+    Through the real app, so the assertion covers the composition seam (the router is handed a
+    refresher) and not only the refresher itself.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "humanedit")
+            ws, project_id = project.workspace_id, project.project_id
+            plan = await write_project_plan(
+                conn,
+                storage,  # type: ignore[arg-type]
+                ProjectPlanWrite(
+                    workspace_id=ws,
+                    brand_id=str(project.brand_id),
+                    project_id=project_id,
+                    turn_id=uuid4(),
+                    user_id="usr_founder",
+                    body=_PLAN,
+                    expected_version=None,
+                ),
+            )
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                await ensure_project_library(
+                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                )
+                tree = root / ws / "projects" / project_id / "library"
+                assert "Twenty qualified conversations" in (tree / "plan.md").read_text()
+
+                app = create_projections_app(
+                    surface=None,  # type: ignore[arg-type]
+                    tool_invoker=None,  # type: ignore[arg-type]
+                    settings=load_settings(
+                        _env_file=None,
+                        frontend_read_enabled=True,
+                        auth_enabled=False,
+                        auth_environment="local",
+                        projections_auth_mode="local_header",
+                    ),
+                    conn_factory=conn_session_factory(conn),
+                    ingestion_storage=storage,  # type: ignore[arg-type]
+                    project_library=_refresher(conn, storage, artifacts, factory),
+                    manage_db_lifespan=False,
+                )
+                async with httpx.AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://library"
+                ) as client:
+                    response = await client.put(
+                        f"{FRONTEND_READ_PREFIX}/projects/{project_id}/documents/"
+                        f"{plan.document_id}",
+                        headers={"X-Workspace-Id": ws},
+                        json={"body": _EDITED_PLAN, "expected_revision": 1},
+                    )
+
+                assert response.status_code == 200, response.text
+                assert "the human typed this line" in (tree / "plan.md").read_text()
+                assert "Twenty qualified conversations" not in (tree / "plan.md").read_text()
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_erasing_a_quoted_statement_takes_its_words_out_of_decisions_md(tmp_path: Path) -> None:
+    """The DSAR case the digest cannot see.
+
+    Erasing a statement's evidence leaves every row the digest hashes exactly where it was — the
+    ``volunteered_statement`` row survives as audit — so the refresh after an erasure is forced.
+    The library tree is not an artifact and is therefore never tombstoned; it is *rewritten*.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "dsarstmt")
+            ws, project_id = project.workspace_id, project.project_id
+            statement_id, _ref = await _seed_statement(conn, project, artifacts)
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                before = await ensure_project_library(
+                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                )
+                tree = root / ws / "projects" / project_id / "library"
+                assert _QUOTE in (tree / "decisions.md").read_text()
+
+                await Stage0StatementEraser(
+                    privacy=AgentPrivacyService(
+                        storage=storage,  # type: ignore[arg-type]
+                        workspaces=factory,
+                        conn_factory=conn_session_factory(conn),
+                    ),
+                    conn_factory=conn_session_factory(conn),
+                    library=_refresher(conn, storage, artifacts, factory),
+                ).erase_statement(workspace_id=ws, statement_id=statement_id)
+
+                assert _QUOTE not in (tree / "decisions.md").read_text()
+                # The digest did not move — which is exactly why the erasure had to say so.
+                assert (
+                    await project_library_digest(conn, workspace_id=ws, project_id=project_id)
+                    == before.digest
+                )
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+async def _seed_turn(
+    conn: AsyncConnection,
+    project: Project,
+    artifacts: DurableAgentArtifactStore,
+    *,
+    evidence: ArtifactRef,
+) -> None:
+    """One journaled turn of this project that cites the captured evidence.
+
+    The privacy service's erasure resolves *which projects it touched* from the turns the erased
+    artifacts belong to, so a turn is what makes this the real DSAR shape rather than a direct
+    call to the library.
+    """
+
+    manifest = await artifacts.persist_body(
+        workspace_id=project.workspace_id,
+        data=b'{"schema_version": "1"}',
+        media_type="application/json",
+    )
+    thread_id = f"thr-dsar-{uuid4().hex[:8]}"
+    execution_id = uuid4()
+    turn_id = uuid4()
+    await conn.execute(
+        text("INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :project)"),
+        {"id": thread_id, "ws": project.workspace_id, "project": project.project_id},
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO execution "
+            "(id, workspace_id, project_id, started_by, parameter_manifest_hash, pin_manifest_hash)"
+            " VALUES (:id, :ws, :project, 'human', :hash, :hash)"
+        ),
+        {
+            "id": execution_id,
+            "ws": project.workspace_id,
+            "project": project.project_id,
+            "hash": "0" * 64,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO agent_turn (id, execution_id, workspace_id, project_id, thread_id, "
+            " actor_id, role, workspace_root_id, profile_name, profile_version, profile_sha256, "
+            " resource_manifest_key, resource_manifest_artifact_sha256, resource_manifest_sha256, "
+            " retention_class, requested_at) "
+            "VALUES (:id, :execution, :ws, :project, :thread, 'usr_founder', 'head_of_abm', "
+            " :root, 'head-of-abm', 'v1', :hash, :manifest_key, :manifest_sha, :manifest_sha, "
+            " 'agent-ephemeral-v1', now())"
+        ),
+        {
+            "id": turn_id,
+            "execution": execution_id,
+            "ws": project.workspace_id,
+            "project": project.project_id,
+            "thread": thread_id,
+            "root": f"root-{turn_id.hex[:8]}",
+            "hash": "0" * 64,
+            "manifest_key": manifest.artifact_key,
+            "manifest_sha": manifest.sha256,
+        },
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO agent_artifact_ref (id, turn_id, workspace_id, owner_kind, owner_id, "
+            " ref_role, ordinal, artifact_key, artifact_sha256, retention_class) "
+            "VALUES (:id, :turn, :ws, 'turn', :turn, 'user_message', 0, :key, :sha, "
+            " 'agent-ephemeral-v1')"
+        ),
+        {
+            "id": uuid4(),
+            "turn": turn_id,
+            "ws": project.workspace_id,
+            "key": evidence.artifact_key,
+            "sha": evidence.sha256,
+        },
+    )
+
+
+def test_the_privacy_services_erasure_refreshes_every_project_it_touched(tmp_path: Path) -> None:
+    """The erasure that actually runs in production: ``AgentPrivacyService.erase_subject``.
+
+    ``Stage0StatementEraser`` has no production composition yet; the DSAR route reaches the
+    privacy service, which erases the artifacts and purges the *thread* workspaces. The project
+    library sits beside the threads and survives that purge, so it is refreshed here — forced,
+    for the same reason as above.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "dsarprivacy")
+            ws, project_id = project.workspace_id, project.project_id
+            statement_id, evidence = await _seed_statement(conn, project, artifacts)
+            await _seed_turn(conn, project, artifacts, evidence=evidence)
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_artifact_subject "
+                    "(workspace_id, artifact_key, subject_entity_id, binding_kind) "
+                    "VALUES (:ws, :key, :subject, :kind)"
+                ),
+                {
+                    "ws": ws,
+                    "key": evidence.artifact_key,
+                    "subject": statement_id,
+                    "kind": STAGE0_CARD_QUOTE_BINDING_KIND,
+                },
+            )
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                await ensure_project_library(
+                    conn, storage, artifacts, factory, workspace_id=ws, project_id=project_id
+                )
+                tree = root / ws / "projects" / project_id / "library"
+                assert _QUOTE in (tree / "decisions.md").read_text()
+
+                await AgentPrivacyService(
+                    storage=storage,  # type: ignore[arg-type]
+                    workspaces=factory,
+                    conn_factory=conn_session_factory(conn),
+                    library=_refresher(conn, storage, artifacts, factory),
+                ).erase_subject(workspace_id=ws, subject_entity_id=statement_id)
+
+                assert _QUOTE not in (tree / "decisions.md").read_text()
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_a_refresh_that_fails_is_logged_and_never_reaches_the_writer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A write must never fail because a rendering did.
+
+    The digest is lazy, so a refresh that could not run is not even a correctness problem — the
+    next turn rebuilds. The refusal to raise is therefore the whole contract, and ``None`` is how
+    a caller that cares can tell nothing was installed.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, storage, artifacts = await _seed(conn, "refreshfails")
+            ws, project_id = project.workspace_id, project.project_id
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+
+                def boom(*args: object, **kwargs: object) -> object:
+                    raise RuntimeError("the library could not be compiled")
+
+                monkeypatch.setattr(project_library_refresh, "ensure_project_library", boom)
+                refresher = _refresher(conn, storage, artifacts, factory)
+
+                written = await DbProjectDocumentService(
+                    storage,  # type: ignore[arg-type]
+                    conn_factory=conn_session_factory(conn),
+                    library=refresher,
+                ).write_plan(
+                    ProjectPlanWrite(
+                        workspace_id=ws,
+                        brand_id=str(project.brand_id),
+                        project_id=project_id,
+                        turn_id=uuid4(),
+                        user_id="usr_founder",
+                        body=_PLAN,
+                        expected_version=None,
+                    )
+                )
+
+                # The write landed and is durable; only the rendering is missing.
+                assert written.version == 1
+                assert written.path == PLAN_PATH
+                assert await refresher.refresh(workspace_id=ws, project_id=project_id) is None
+                assert not (root / ws / "projects" / project_id / "library").exists()
             finally:
                 factory.close()
 

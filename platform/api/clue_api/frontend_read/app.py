@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
-from typing import Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -59,6 +59,9 @@ from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_storage import StorageBackend
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.frontend_read")
 
@@ -204,6 +207,7 @@ def build_frontend_read_router(
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
@@ -276,6 +280,8 @@ def build_frontend_read_router(
         conn_factory=conn_factory,
         storage=evidence_storage,
         allow_local_mutations=allow_local_mutations,
+        # The human's PUT refreshes the project library it just moved (2026-09-14).
+        library=project_library,
     )
     register_contact_routes(
         router,
@@ -325,6 +331,7 @@ def install_frontend_read_surface(
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -343,6 +350,7 @@ def install_frontend_read_surface(
                 evidence_storage=evidence_storage,
                 contact_email_lookup=contact_email_lookup,
                 secrets=secrets,
+                project_library=project_library,
             )
         )
 

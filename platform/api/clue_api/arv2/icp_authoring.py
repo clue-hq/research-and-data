@@ -35,7 +35,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import text
@@ -52,6 +52,9 @@ from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_db import ConnFactory, transaction
 from clue_storage import StorageBackend, artifact_key, content_address, record_artifact
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 __all__ = [
     "ICP_AUTHORING_SOURCE_KEY",
@@ -622,11 +625,22 @@ class DbIcpAuthoringService:
         *,
         conn_factory: ConnFactory = transaction,
         now: Callable[[], datetime] = _utcnow,
+        library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._storage = storage
         self._conn_factory = conn_factory
         self._now = now
+        self._library = library
 
     async def author(self, request: IcpAuthoringRequest) -> AuthoredIcp:
         async with self._conn_factory() as conn:
-            return await author_icp_document(conn, self._storage, request, now=self._now)
+            authored = await author_icp_document(conn, self._storage, request, now=self._now)
+        # After the commit, never inside it: the library's compile takes this project's row lock.
+        # Best-effort by contract — an authored document that landed must not report failure
+        # because its rendering could not be written. A brand-scoped write is refreshed too: the
+        # project's library serves the pinned document whatever scope authored it.
+        if self._library is not None:
+            await self._library.refresh(
+                workspace_id=request.workspace_id, project_id=request.project_id
+            )
+        return authored

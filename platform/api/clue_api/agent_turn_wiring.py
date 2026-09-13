@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid5
 
 from sqlalchemy import text
@@ -61,6 +61,9 @@ from clue_obs import get_logger
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
 from clue_storage.protocol import ArtifactNotFound
+
+if TYPE_CHECKING:  # the refresher's module imports this one; only the type is needed here
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 __all__ = [
     "DbAgentContextReceiptStore",
@@ -1689,10 +1692,12 @@ class AgentPrivacyService:
         storage: StorageBackend,
         workspaces: AgentWorkspaceFactory,
         conn_factory: ConnFactory = transaction,
+        library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._storage = storage
         self._workspaces = workspaces
         self._conn_factory = conn_factory
+        self._library = library
 
     async def erase_subject(
         self,
@@ -1771,6 +1776,9 @@ class AgentPrivacyService:
             subject_entity_id=project_subject,
             artifact_keys=exclusive_keys,
             reason_code=reason_code,
+            # This project is going away. Recompiling its library would rebuild a tree on disk
+            # behind the deletion — the opposite of what a project erasure is for.
+            refresh_libraries=False,
         )
         async with self._conn_factory() as conn:
             await conn.execute(
@@ -1793,6 +1801,7 @@ class AgentPrivacyService:
         subject_entity_id: UUID,
         artifact_keys: Sequence[str],
         reason_code: str = "dsar_subject_erasure",
+        refresh_libraries: bool = True,
     ) -> PrivacyEraseResult:
         """Erase an explicit artifact-key set on behalf of one subject.
 
@@ -2043,6 +2052,18 @@ class AgentPrivacyService:
                         "turn": turn["id"],
                         "reason": reason_code,
                     },
+                )
+        # The purge above removes *thread* workspaces. Each of those threads' projects also has a
+        # library beside them — a compiled rendering that quotes the interview in ``decisions.md``
+        # — and a rendering is not an artifact: nothing tombstones it, so it is rewritten here.
+        # Forced, because an erasure moves no row the library's digest hashes (the statement row
+        # survives as audit; only its evidence is gone), so an unforced refresh would do nothing.
+        # Best-effort, like every other refresh: a DSAR that erased must not report failure
+        # because a markdown tree could not be rebuilt, and the next turn rebuilds it anyway.
+        if self._library is not None and refresh_libraries:
+            for project_id in sorted({str(turn["project_id"]) for turn in turns}):
+                await self._library.refresh(
+                    workspace_id=workspace_id, project_id=project_id, force=True
                 )
         return PrivacyEraseResult(
             workspace_id=workspace_id,

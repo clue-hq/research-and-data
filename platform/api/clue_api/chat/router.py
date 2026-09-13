@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -207,6 +207,9 @@ from clue_spine import (
 )
 from clue_storage import StorageBackend, StorageError, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.chat")
 
@@ -670,6 +673,7 @@ def build_chat_router(
     tool_invoker: ToolInvoker,
     storage: StorageBackend | None = None,
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
 
@@ -2232,6 +2236,11 @@ def build_chat_router(
                 else gate_response_message(_gate_response(body))
             )
             digest = content_address(message.encode())
+            # Set when this request pins this project's ICP below. The pin changes which version
+            # the library serves at ``audience/icp-<key>.md``, so the tree is refreshed once the
+            # transaction that wrote the pin has committed. A replayed answer pins nothing and
+            # returns from inside the transaction, so it refreshes nothing either.
+            pinned_project_icp = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2640,6 +2649,7 @@ def build_chat_router(
                                 product_selection_version=selection_version,
                                 pinned_by_user_id=who.user_id,
                             )
+                            pinned_project_icp = True
                         except IcpConfirmationStale as exc:
                             raise _refuse(
                                 status_code=409,
@@ -2687,6 +2697,11 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     thread_id=thread_id,
                 )
+            # After the commit, never inside it: the library's compile takes this project's row
+            # lock. Best-effort by contract — an approval that confirmed and pinned must not
+            # report failure because its rendering could not be written.
+            if pinned_project_icp and project_library is not None:
+                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(
                     turn_id=str(submission.turn_id),
@@ -2710,6 +2725,7 @@ def install_chat_surface(
     auth_service: PrincipalService | None = None,
     storage: StorageBackend | None = None,
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
@@ -2753,5 +2769,6 @@ def install_chat_surface(
             tool_invoker=tool_invoker,
             storage=storage,
             transactional_tool_invoker_factory=transactional_tool_invoker_factory,
+            project_library=project_library,
         )
     )
