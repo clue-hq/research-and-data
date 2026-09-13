@@ -159,6 +159,11 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_agents.versioned_root import (
+    VersionedRootWriter,
+    VersionedWriteOutcome,
+    VersionedWriteRefused,
+)
 from clue_agents.workspace import (
     LIBRARY_DIR,
     PROJECTS_DIR,
@@ -318,6 +323,9 @@ __all__ = [
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",
+    "VersionedRootWriter",
+    "VersionedWriteOutcome",
+    "VersionedWriteRefused",
     "WorkspaceConfigurationError",
     "WorkspaceConflict",
     "WorkspaceEntry",

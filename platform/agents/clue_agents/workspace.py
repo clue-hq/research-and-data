@@ -13,14 +13,17 @@ import errno
 import fcntl
 import fnmatch
 import hashlib
+import json
 import os
 import re
 import stat
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from pathlib import PurePosixPath
+from types import MappingProxyType
 from typing import Final, Literal
 from uuid import uuid4
 
@@ -40,6 +43,11 @@ from deepagents.backends.protocol import (
 
 from clue_agents.contracts import ArtifactRef, WorkspacePolicy, normalize_virtual_path
 from clue_agents.ports import AgentArtifactSink, WorkspaceEntry
+from clue_agents.versioned_root import (
+    VersionedRootWriter,
+    VersionedWriteOutcome,
+    VersionedWriteRefused,
+)
 from clue_agents.workspace_policy import (
     PreparedWorkspaceRoot,
     WorkspaceConfigurationError,
@@ -71,6 +79,13 @@ __all__ = [
 LIBRARY_DIR: Final = "library"
 PROJECTS_DIR: Final = "projects"
 THREADS_DIR: Final = "threads"
+
+#: The manifest name every library generation carries — written by
+#: :class:`~clue_agents.library_tree.LibraryTree`, read back here. The literal is repeated rather
+#: than imported because that module imports this one; the name is frozen on disk either way.
+_LIBRARY_INDEX_NAME: Final = "index.json"
+#: A mount whose generation names no versions: every write under it is a first write.
+_NO_VERSIONS: Final[Mapping[str, int]] = MappingProxyType({})
 
 _DIRECTORY_MODE: Final = 0o700
 _READ_ONLY_DIRECTORY_MODE: Final = 0o500
@@ -144,7 +159,53 @@ def _validate_regular_file(metadata: os.stat_result) -> None:
         raise WorkspaceSecurityError("workspace file has an unexpected owner")
 
 
-MountMode = Literal["read_only", "read_write"]
+def _mounted_versions(directory_fd: int, *, mount_name: str) -> Mapping[str, int]:
+    """The ``path → version`` map a mounted library generation records about itself.
+
+    Read straight off the tree's own ``index.json`` — the manifest the generation was installed
+    with — so the versions the backend sends to the writer are the versions of the very bytes the
+    model is reading, and not a second opinion fetched from somewhere else that could already
+    have moved. A file with a null version is a compiled one that nobody versions; it is left out
+    of the map, which is exactly the "I read no version" the writer expects for it.
+
+    The index is parsed as plain JSON on purpose: its typed shape
+    (``ProjectLibraryIndexCard``) belongs to the API package, which this one may not import, and
+    the two fields read here are the whole contract. ``files[].path`` is already relative to the
+    tree — the card's ``workspace_path`` is the one that carries the mount's name — so the strip
+    below is a no-op on today's manifests and only keeps the key mount-relative if a future
+    manifest ever writes the served path there.
+    """
+
+    try:
+        file_fd = os.open(_LIBRARY_INDEX_NAME, _READ_FLAGS, dir_fd=directory_fd)
+    except FileNotFoundError:
+        return _NO_VERSIONS
+    except OSError as exc:
+        raise WorkspaceSecurityError("mounted library index is a link or is unreadable") from exc
+    try:
+        raw = _read_all(file_fd)
+    finally:
+        os.close(file_fd)
+    try:
+        document = json.loads(raw.decode("utf-8"))
+        entries = document["files"]
+        versions = {
+            str(entry["path"]).removeprefix(f"{mount_name}/"): int(entry["version"])
+            for entry in entries
+            if entry.get("version") is not None
+        }
+    except (UnicodeDecodeError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        raise WorkspaceConfigurationError("mounted library index is not a readable manifest") from (
+            exc
+        )
+    return MappingProxyType(versions)
+
+
+#: ``read_only`` serves somebody else's bytes; ``read_write`` is an ordinary writable tree under
+#: the thread's quota; ``versioned`` reads like the first and writes like neither — every write
+#: goes to the mount's :class:`~clue_agents.versioned_root.VersionedRootWriter` and comes back as
+#: a document version, and the tree the model reads is re-opened from whatever that produced.
+MountMode = Literal["read_only", "read_write", "versioned"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,11 +214,20 @@ class WorkspaceMount:
 
     ``directory_fd`` is an already-open, audited private directory descriptor. The backend owns
     it once the mount is accepted: :meth:`AnchoredAgentWorkspaceBackend.close` closes it.
+
+    The last three fields belong to a ``versioned`` mount and are absent from every other kind.
+    ``writer`` takes the writes; ``versions`` is the ``path → version`` map read off the mounted
+    generation's own manifest, which is what makes a write an *optimistic* one — the backend can
+    tell the writer which version the model was looking at; ``reopen`` returns a fresh descriptor
+    on the refreshed tree, so the mount is a frozen dataclass that gets *replaced*, never mutated.
     """
 
     name: str
     directory_fd: int
     mode: MountMode
+    writer: VersionedRootWriter | None = None
+    versions: Mapping[str, int] = _NO_VERSIONS
+    reopen: Callable[[], int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +248,11 @@ class MountRequest:
     #: here, so the mount is the one place the choice is made and the model's paths never move.
     #: It is a single directory name, never a path — the factory validates it as one segment.
     project_library_name: str = LIBRARY_DIR
+    #: When set (and ``project_library`` is on), the ``project`` mount is opened ``versioned``:
+    #: the model's ``write_file``/``edit_file`` under ``project/`` become document versions taken
+    #: by this writer. Left ``None`` the mount stays read-only, which is the state every caller
+    #: that has no documents to offer should be in — a mount is writable only on purpose.
+    project_writer: VersionedRootWriter | None = None
 
 
 _NO_MOUNTS: Final = MountRequest()
@@ -329,6 +404,14 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 raise WorkspaceConfigurationError("mount name is reserved or malformed")
             if mount.name in by_name:
                 raise WorkspaceConfigurationError("duplicate mount name")
+            versioned = mount.mode == "versioned"
+            if versioned != (mount.writer is not None) or versioned != (mount.reopen is not None):
+                # Both halves or neither: a versioned mount with no writer would silently fall
+                # through to a filesystem write on somebody else's tree, and a writer on a
+                # read-only mount would be a promise nothing keeps.
+                raise WorkspaceConfigurationError(
+                    "a versioned mount carries its writer and reopen, and nothing else does"
+                )
             _validate_private_directory(mount.directory_fd)
             by_name[mount.name] = mount
         self._mounts: dict[str, WorkspaceMount] = by_name
@@ -340,10 +423,22 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         self._closed = False
         self._outputs_snapshotted = False
         self._snapshot_refs: tuple[ArtifactRef, ...] = ()
+        self._written_documents: list[VersionedWriteOutcome] = []
 
     @property
     def workspace_root_id(self) -> str:
         return self._identity.workspace_root_id
+
+    @property
+    def written_documents(self) -> tuple[VersionedWriteOutcome, ...]:
+        """Every document version this turn's writes created, in the order they were taken.
+
+        A file write into a versioned mount is a durable, human-visible event, so the turn needs
+        to be able to say what it did — which document, at which version — without re-reading the
+        store and guessing which rows were its own.
+        """
+
+        return tuple(self._written_documents)
 
     @property
     def outputs_snapshotted(self) -> bool:
@@ -423,6 +518,9 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                     raise WorkspaceSecurityError("a mount cannot hold materialized resources")
                 if mount.mode == "read_only":
                     raise WorkspaceSecurityError("path is inside a read-only mount")
+                # A versioned mount is writable, but by its writer, never by this process; the
+                # prefix still has to be one the policy grants, so the authority check below
+                # stays in force for it exactly as for a read_write mount.
             prefixes = _MATERIALIZED_PREFIXES if materialize else self._policy.writable_prefixes
             if not _is_under(logical, prefixes):
                 raise WorkspaceSecurityError("path is outside the writable workspace authority")
@@ -528,6 +626,8 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
 
         A read-only mount is readable but never charged — nothing this workspace does can
         change its size, so counting it would spend the agent's budget on someone else's bytes.
+        A versioned mount is spared for the same reason: its bytes are the document store's,
+        and its writes are governed by the writer's own rules, not by this workspace's quota.
         """
 
         files = self._walk_files()
@@ -709,10 +809,15 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
 
     def write_text_sync(self, path: str, content: str) -> WorkspaceEntry:
         logical = self._validate_path(path, write=True)
+        mount = self._mount_for(logical)
+        if mount is not None and mount.mode == "versioned":
+            with self._filesystem_lock(exclusive=True):
+                return self._versioned_write(logical, mount, content)
         return self._create_file(logical, content.encode("utf-8"), read_only=False)
 
     def edit_text_sync(self, path: str, *, old: str, new: str) -> WorkspaceEntry:
         logical = self._validate_path(path, write=True)
+        mount = self._mount_for(logical)
         # Compare and replace under one process + filesystem lock, preventing lost updates.
         with self._filesystem_lock(exclusive=True):
             file_fd, metadata = self._open_file(logical)
@@ -727,12 +832,75 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 raise WorkspaceConflict("edit source text was not found")
             if count != 1:
                 raise WorkspaceConflict("edit source text is not unique")
+            edited = original.replace(old, new, 1)
+            if mount is not None and mount.mode == "versioned":
+                # An edit of a document is a whole new version of it: the same single-occurrence
+                # rule decides *what* the new text is, and the writer decides whether it lands.
+                # The read and the write stay under one lock for the same reason the thread
+                # root's edit does: two concurrent edits must not each win half of the result.
+                return self._versioned_write(logical, mount, edited)
             self._replace_file_unlocked(
                 logical,
-                original.replace(old, new, 1).encode("utf-8"),
+                edited.encode("utf-8"),
                 old_size=metadata.st_size,
             )
             return self._entry(logical)
+
+    def _versioned_write(
+        self,
+        logical: str,
+        mount: WorkspaceMount,
+        content: str,
+    ) -> WorkspaceEntry:
+        """Hand one write to the mount's writer, then re-read the tree it produced.
+
+        Caller holds the exclusive filesystem lock. Three things happen in order and none of them
+        is optional: the writer takes the write against the version the model read (a disagreement
+        is a refusal, surfaced to the model as a conflict it can act on); the refreshed
+        ``path → version`` map replaces the mount's, so the *next* write in this turn carries the
+        version this one just created; and the mount's descriptor is swapped for one on the new
+        generation, so the very next read shows what was written rather than the tree the turn
+        opened with. The old descriptor is closed here, under the exclusive lock, which is the one
+        moment no reader can be inside the tree.
+
+        A failure after the write has landed is reported as a conflict, not a success: the bytes
+        are durable but the view is stale, and the honest thing to tell the model is that it must
+        read again.
+        """
+
+        writer, reopen = mount.writer, mount.reopen
+        if writer is None or reopen is None:
+            raise WorkspaceConfigurationError("a versioned mount has no writer")
+        relative = logical[len(mount.name) + 1 :]
+        try:
+            outcome = writer.write(
+                path=relative,
+                content=content,
+                expected_version=mount.versions.get(relative),
+            )
+        except VersionedWriteRefused as exc:
+            raise WorkspaceConflict(f"{exc.code}: {exc.message}") from exc
+        self._written_documents.append(outcome)
+        try:
+            versions = writer.refresh()
+            directory_fd = reopen()
+        except Exception as exc:
+            raise WorkspaceConflict(
+                f"{outcome.path} was written at version {outcome.version} "
+                f"but the refreshed library could not be opened: {exc}"
+            ) from exc
+        # The filesystem lock already holds the re-entrant thread lock; taking it again states
+        # that the mount table is only ever mutated under it.
+        with self._thread_lock:
+            current = self._mounts[mount.name]
+            self._mounts[mount.name] = dataclass_replace(
+                current,
+                directory_fd=directory_fd,
+                versions=MappingProxyType(dict(versions)),
+            )
+            with suppress(OSError):
+                os.close(current.directory_fd)
+        return self._entry(logical)
 
     def materialize_bytes(self, path: str, data: bytes) -> WorkspaceEntry:
         """Trusted pre-model write into a read-only resource/context/input prefix."""
@@ -1559,15 +1727,57 @@ class AgentWorkspaceFactory:
                     ),
                     name="project",
                 )
-                opened.append(
-                    WorkspaceMount(name="project", directory_fd=directory_fd, mode="read_only")
-                )
+                if request.project_writer is None:
+                    opened.append(
+                        WorkspaceMount(name="project", directory_fd=directory_fd, mode="read_only")
+                    )
+                else:
+                    opened.append(
+                        WorkspaceMount(
+                            name="project",
+                            directory_fd=directory_fd,
+                            mode="versioned",
+                            writer=request.project_writer,
+                            versions=_mounted_versions(directory_fd, mount_name="project"),
+                            reopen=self._project_library_reopen(
+                                workspace_segment, project_segment
+                            ),
+                        )
+                    )
         except BaseException:
             for mount in opened:
                 with suppress(OSError):
                     os.close(mount.directory_fd)
             raise
         return tuple(opened)
+
+    def _project_library_reopen(
+        self,
+        workspace_segment: str,
+        project_segment: str,
+    ) -> Callable[[], int]:
+        """Build the callable a versioned ``project`` mount re-reads its tree through.
+
+        It always opens the project's *shared* ``library``, whatever tree the mount was opened on.
+        A turn pinned to a superseded generation reads that generation — but the moment it writes,
+        the write lands in the live library, and what it must then see is the library, not the
+        frozen snapshot it started from. The one honest view after a write is the current one.
+
+        :class:`~clue_agents.library_tree.LibraryTree` is imported here rather than at module
+        scope because it imports this module: the dependency runs one way, and this is the single
+        place the backend needs to reach back the other.
+        """
+
+        def reopen() -> int:
+            from clue_agents.library_tree import LibraryTree
+
+            parent_fd = self.project_parent_fd(workspace_segment, project_segment)
+            try:
+                return LibraryTree(parent_fd=parent_fd, name=LIBRARY_DIR).open_fd()
+            finally:
+                os.close(parent_fd)
+
+        return reopen
 
     def _open_library(self, segments: Sequence[str], *, name: str) -> int:
         """Walk one anchored, symlink-free chain below the root and keep only its leaf open."""

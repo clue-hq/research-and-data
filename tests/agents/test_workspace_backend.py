@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import os
 import stat
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import UUID
 
@@ -15,10 +18,15 @@ from clue_agents import (
     AgentResourceMaterializer,
     AgentWorkspaceBackend,
     AgentWorkspaceFactory,
+    AgentWorkspaceLease,
     AnchoredAgentWorkspaceBackend,
     ArtifactRef,
+    LibraryFile,
+    LibraryTree,
     MountMode,
     MountRequest,
+    VersionedWriteOutcome,
+    VersionedWriteRefused,
     WorkspaceConfigurationError,
     WorkspaceConflict,
     WorkspaceMount,
@@ -1099,6 +1107,279 @@ def test_reacquiring_a_live_thread_with_another_mount_request_conflicts(tmp_path
     finally:
         factory.close()
 
+
+# --- the versioned project mount ----------------------------------------------------------
+
+
+_DOCUMENT_ID = UUID("00000000-0000-0000-0000-0000000009a1")
+_VERSIONED_READABLE = (*DEFAULT_READABLE_PREFIXES, "project")
+_VERSIONED_WRITABLE = (*DEFAULT_WRITABLE_PREFIXES, "project")
+_REFUSAL = "plan.md is at version 3, you read version 2 — read it again"
+
+
+def _generation(bodies: Mapping[str, str], versions: Mapping[str, int]) -> list[LibraryFile]:
+    """One whole library generation: the documents, plus the manifest that versions them.
+
+    The manifest is shaped like the real ``ProjectLibraryIndexCard`` — a tree-relative ``path``
+    beside the ``workspace_path`` the mount serves it at, and a null ``version`` for a compiled
+    file — because the backend reads its version map straight out of it.
+    """
+
+    digest = hashlib.sha256(repr(sorted(versions.items())).encode("utf-8")).hexdigest()
+    index = {
+        "schema_version": "1",
+        "card_kind": "project_library_index",
+        "project_id": "project-1",
+        "library_sha256": digest,
+        "artifacts": 0,
+        "files": [
+            {
+                "path": path,
+                "workspace_path": f"project/{path}",
+                "kind": "plan",
+                "version": versions.get(path),
+                "status": "ready",
+                "summary": body.splitlines()[0] if body else "",
+                "artifact_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            }
+            for path, body in sorted(bodies.items())
+        ],
+    }
+    return [
+        *(LibraryFile(path, body.encode("utf-8")) for path, body in sorted(bodies.items())),
+        LibraryFile("index.json", json.dumps(index).encode("utf-8")),
+    ]
+
+
+def _install(factory: AgentWorkspaceFactory, writer: _RecordingWriter) -> None:
+    """Install the writer's current documents as the project library's live generation."""
+
+    files = _generation(writer.bodies, writer.versions)
+    digest = json.loads(bytes(files[-1].content))["library_sha256"]
+    parent_fd = factory.project_parent_fd("ws-1", "project-1")
+    try:
+        LibraryTree(parent_fd=parent_fd, name="library").replace(files, digest=digest)
+    finally:
+        os.close(parent_fd)
+
+
+@dataclass
+class _RecordingWriter:
+    """A stand-in document store: it versions what it is given and rebuilds the library.
+
+    It is the whole of the seam the backend depends on — take a write against the version the
+    reader had, then re-materialize the tree — so the tests can prove the backend's half without
+    a database behind it.
+    """
+
+    factory: AgentWorkspaceFactory | None = None
+    bodies: dict[str, str] = field(default_factory=dict)
+    versions: dict[str, int] = field(default_factory=dict)
+    calls: list[tuple[str, str, int | None]] = field(default_factory=list)
+    refuse: bool = False
+
+    def write(
+        self,
+        *,
+        path: str,
+        content: str,
+        expected_version: int | None,
+    ) -> VersionedWriteOutcome:
+        self.calls.append((path, content, expected_version))
+        if self.refuse:
+            raise VersionedWriteRefused("revision_conflict", _REFUSAL)
+        version = self.versions.get(path, 0) + 1
+        self.versions[path] = version
+        self.bodies[path] = content
+        return VersionedWriteOutcome(
+            path=path,
+            version=version,
+            document_id=_DOCUMENT_ID,
+            kind="plan",
+            status="ready",
+            replayed=False,
+        )
+
+    def refresh(self) -> dict[str, int]:
+        assert self.factory is not None
+        _install(self.factory, self)
+        return dict(self.versions)
+
+
+@contextmanager
+def _versioned_project(tmp_path: Path) -> Iterator[tuple[AgentWorkspaceLease, _RecordingWriter]]:
+    """A thread whose ``project`` mount is versioned, over a real installed library tree."""
+
+    _root, factory, _sink = make_factory(tmp_path)
+    writer = _RecordingWriter(bodies={"plan.md": "# Plan\nfirst\n"}, versions={"plan.md": 2})
+    writer.factory = factory
+    _install(factory, writer)
+    try:
+        lease = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(readable=_VERSIONED_READABLE, writable=_VERSIONED_WRITABLE),
+            mounts=MountRequest(project_library=True, project_writer=writer),
+        )
+        yield lease, writer
+    finally:
+        factory.close()
+
+
+def test_a_versioned_write_carries_the_read_version_and_re_reads_the_refreshed_library(
+    tmp_path: Path,
+) -> None:
+    with _versioned_project(tmp_path) as (lease, writer):
+        backend = lease.backend
+        # The mount's map comes from the generation's own manifest, so the first write tells the
+        # writer which version the model was looking at.
+        entry = backend.write_text_sync("project/plan.md", "# Plan\nsecond\n")
+        assert writer.calls == [("plan.md", "# Plan\nsecond\n", 2)]
+        assert entry.path == "project/plan.md"
+
+        # The entry, and every later read, come from the tree the writer just rebuilt.
+        assert backend.read_text_sync("project/plan.md") == "# Plan\nsecond\n"
+        assert entry.byte_count == len("# Plan\nsecond\n")
+
+        # …and the map moved with it: the next write is optimistic about version 3, not 2.
+        backend.write_text_sync("project/plan.md", "# Plan\nthird\n")
+        assert writer.calls[-1] == ("plan.md", "# Plan\nthird\n", 3)
+        # A path the library has never versioned is written with no expectation at all.
+        backend.write_text_sync("project/audience/icp.md", "# ICP\n")
+        assert writer.calls[-1][:2] == ("audience/icp.md", "# ICP\n")
+        assert writer.calls[-1][2] is None
+
+        assert [
+            (outcome.path, outcome.version, outcome.replayed) for outcome in
+            backend.written_documents
+        ] == [("plan.md", 3, False), ("plan.md", 4, False), ("audience/icp.md", 1, False)]
+        assert backend.written_documents[0].document_id == _DOCUMENT_ID
+
+        listed = [item.path for item in backend.list_entries_sync("project")]
+        assert listed == ["project/audience/icp.md", "project/index.json", "project/plan.md"]
+        assert {"path": "project/plan.md", "is_dir": False, "size": len("# Plan\nthird\n")} in (
+            backend.ls("project").entries or []
+        )
+
+
+def test_a_versioned_edit_replaces_one_occurrence_and_writes_the_whole_document(
+    tmp_path: Path,
+) -> None:
+    with _versioned_project(tmp_path) as (lease, writer):
+        backend = lease.backend
+        entry = backend.edit_text_sync("project/plan.md", old="first", new="second")
+        # The edit is read-then-write: the library's bytes decide what the new document says,
+        # and the writer takes the whole of it as one version.
+        assert writer.calls == [("plan.md", "# Plan\nsecond\n", 2)]
+        assert entry.path == "project/plan.md"
+        assert backend.read_text_sync("project/plan.md") == "# Plan\nsecond\n"
+        assert [outcome.version for outcome in backend.written_documents] == [3]
+
+        # The single-occurrence rule is the thread root's, unchanged, and nothing reaches the
+        # writer when it is not met.
+        with pytest.raises(WorkspaceConflict, match="edit source text was not found"):
+            backend.edit_text_sync("project/plan.md", old="absent", new="x")
+        backend.write_text_sync("project/plan.md", "# Plan\ntwice twice\n")
+        with pytest.raises(WorkspaceConflict, match="edit source text is not unique"):
+            backend.edit_text_sync("project/plan.md", old="twice", new="x")
+        assert len(writer.calls) == 2
+
+
+def test_a_refused_versioned_write_reaches_the_model_as_a_readable_conflict(
+    tmp_path: Path,
+) -> None:
+    with _versioned_project(tmp_path) as (lease, writer):
+        backend = lease.backend
+        writer.refuse = True
+        with pytest.raises(WorkspaceConflict) as raised:
+            backend.write_text_sync("project/plan.md", "# Plan\nsecond\n")
+        assert str(raised.value) == f"revision_conflict: {_REFUSAL}"
+
+        # The facade is what the model actually sees: the code rides in front of the sentence so
+        # the model can tell "you are behind" from "you may not write this".
+        assert backend.write("project/plan.md", "# Plan\nsecond\n").error == (
+            f"conflict: revision_conflict: {_REFUSAL}"
+        )
+        assert backend.edit("project/plan.md", "first", "second").error == (
+            f"conflict: revision_conflict: {_REFUSAL}"
+        )
+        # Nothing was recorded and the library still reads as it did.
+        assert backend.written_documents == ()
+        assert backend.read_text_sync("project/plan.md") == "# Plan\nfirst\n"
+
+
+def test_a_versioned_mount_is_read_only_to_everything_but_its_writer(tmp_path: Path) -> None:
+    with _versioned_project(tmp_path) as (lease, writer):
+        backend = lease.backend
+        # Trusted pre-model bytes never land in a mount, versioned or not.
+        with pytest.raises(WorkspaceSecurityError, match="materialized resources"):
+            backend.materialize_bytes("project/pinned.md", b"trusted")
+        # The mount is not the thread's to spend: its bytes are the document store's.
+        assert backend.usage_snapshot().file_count == 0
+        # …and the writer is the only way in, so nothing was written beside it.
+        assert writer.calls == []
+
+
+def test_a_project_mount_without_a_writer_stays_read_only(tmp_path: Path) -> None:
+    _root, factory, _sink = make_factory(tmp_path)
+    writer = _RecordingWriter(bodies={"plan.md": "# Plan\n"}, versions={"plan.md": 1})
+    writer.factory = factory
+    _install(factory, writer)
+    try:
+        lease = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(readable=_VERSIONED_READABLE, writable=_VERSIONED_WRITABLE),
+            mounts=MountRequest(project_library=True),
+        )
+        with pytest.raises(WorkspaceSecurityError, match="read-only mount"):
+            lease.backend.write_text_sync("project/plan.md", "nope")
+        assert (lease.backend.write("project/plan.md", "nope").error or "").startswith(
+            "permission_denied"
+        )
+        assert writer.calls == []
+    finally:
+        factory.close()
+
+
+def test_a_versioned_mount_carries_its_writer_and_reopen_or_is_refused(tmp_path: Path) -> None:
+    """Both halves or neither — a versioned mount with no writer would write to a real tree."""
+
+    harness = make_workspace(tmp_path)
+    harness.lease.backend.close()
+    mount_dir = tmp_path / "mount"
+    mount_dir.mkdir(mode=0o700)
+    writer = _RecordingWriter()
+    partial = [
+        {"mode": "versioned"},
+        {"mode": "versioned", "writer": writer},
+        {"mode": "versioned", "reopen": lambda: -1},
+        {"mode": "read_only", "writer": writer, "reopen": lambda: -1},
+    ]
+    try:
+        for fields in partial:
+            root_fd = os.open(harness.thread_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            mount_fd = os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                with pytest.raises(WorkspaceConfigurationError, match="versioned mount"):
+                    AnchoredAgentWorkspaceBackend(
+                        execution_fd=root_fd,
+                        identity=harness.lease.identity,
+                        policy=policy(),
+                        artifact_sink=RecordingArtifactSink(),
+                        mounts=(
+                            WorkspaceMount(name="project", directory_fd=mount_fd, **fields),  # type: ignore[arg-type]
+                        ),
+                    )
+            finally:
+                os.close(root_fd)
+                os.close(mount_fd)
+    finally:
+        harness.factory.close()
 
 # --- anchored library parents -------------------------------------------------------------
 
