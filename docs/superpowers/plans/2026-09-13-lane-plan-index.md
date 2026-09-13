@@ -30,16 +30,23 @@ worktrees sequenced by dependency, never by owner.
 | no cross-thread continuity except through rows compiled per turn; nothing persists within a thread either | plan 2 (library), plan 1 (the thread's folder) |
 | a bespoke tool per document; personas through an onboarding run | plan 3 |
 
-## Lane 2 — the gallery and the document surface (new worktree, frontend only)
+## Lane 2 — the gallery and the document surface (Semarang, frontend only)
+
+**Editor decision, 2026-09-13:** the founder selected MDXEditor. Visual editing and toolbar
+controls use that library; preview stays `react-markdown` + `remark-gfm`. The custom CodeMirror
+command/keymap plan is superseded. This checkout carries the planning revision; implementation
+and browser compatibility verification remain pending.
 
 | # | Plan | What it builds | Depends on |
 | --- | --- | --- | --- |
-| 1 | `2026-09-12-plan-tab-frontend.md` (re-activated; Task 7 re-keyed on the plan part) | The Plan tab beside Gallery and Target accounts; the project document surface (react-markdown + CodeMirror, tokens only); auto-open when the plan is written; the plan card click; ICP and persona documents as gallery cards that open on the same surface | the plan-3 (2026-09-12) routes, already on this branch; nothing in Lane 1 |
-| 2 | `2026-09-13-markdown-editor-toolbar.md` | The shared formatting toolbar and keymap over the CodeMirror editor, on the Knowledge editor and the document surface | Lane 2 plan 1 Task 5 |
+| 1 | `2026-09-12-plan-tab-frontend.md` (re-activated; Task 7 re-keyed on the plan part) | The Plan tab beside Gallery and Target accounts; the shared document surface (react-markdown preview + MDXEditor visual editing, Clue tokens); auto-open when the plan is written; the plan card click; ICP and persona documents as gallery cards that open on the same surface | the plan-3 (2026-09-12) routes, already on this branch; nothing in Lane 1 |
+| 2 | `2026-09-13-markdown-editor-toolbar.md` | The shared MDXEditor toolbar, Clue styling, source recovery and persistence/overflow verification on Knowledge and project documents | Lane 2 plan 1 Task 5 |
 
-**Run order:** 1 → 2. The worktree branches from this branch after Lane 1 plan 0 lands (so the
-frontend sees the repaired read tools when walking the chat) and rebases over Lane 1 as it
-merges; nothing in Lane 1 changes the document routes or the plan-part shape Lane 2 consumes.
+**Run order:** 1 → 2. Plan 1 Task 5 first verifies the MDXEditor foundation on a representative
+document, then migrates Knowledge to the shared editor; plan 2 adds the complete toolbar and
+cross-surface checks. Rebase over Lane 1 as it merges; its plan 0 hotfix is needed for the repaired
+read-tools chat walk, not for the document-editor prototype. Neither lane changes the document
+routes or plan-part shape consumed here.
 
 ## Where the lanes touch
 
@@ -50,4 +57,7 @@ merges; nothing in Lane 1 changes the document routes or the plan-part shape Lan
 ## Verification that closes each lane
 
 - Lane 1: each plan's final task is a live proof on the lane stack with SQL; the four owed memory notes gain "proven" sections; the reorganisation spec's §5 open questions are answered in the plan ledgers.
-- Lane 2: browser checks with `/browse` on :3020 at the end of each task, plus the frontend gate; the gallery shows a project ICP card after Lane 1 plan 3's persona/ICP walk.
+- Lane 2: browser checks on the verified active Semarang frontend origin at the end of each task,
+  plus the frontend gate; the gallery shows a project ICP card after Lane 1 plan 3's persona/ICP
+  walk. Preserve local env/database settings and sibling services. Editor checks include no-op
+  normalization, Save/reload, conflict retention, source recovery and long-content containment.

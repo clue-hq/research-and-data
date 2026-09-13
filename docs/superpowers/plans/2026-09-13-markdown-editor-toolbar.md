@@ -1,89 +1,99 @@
-# Markdown editor toolbar Implementation Plan (Lane 2, plan 2)
+# MDXEditor toolbar integration (Lane 2, plan 2)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Decision, 2026-09-13:** the founder selected MDXEditor. This supersedes the custom CodeMirror
+command/keymap plan. Library choice approved; the implementation tasks below are not executed.
 
-**Goal:** One shared formatting toolbar above the CodeMirror markdown editor, used by the Brand Context Knowledge editor and the project document surface (Plan tab, ICP and persona documents), with keyboard shortcuts, tokens-only styling, and every command unit-tested without a DOM.
+**Goal:** one Clue-themed visual Markdown editor/toolbar for Knowledge, Plan, ICP and persona
+documents, using the library's controls and formatting behavior.
 
-**Architecture:** Every command is a pure function `(state: EditorState) => TransactionSpec | null` in `components/markdown/commands.ts`, exercised with `EditorState.create` under `node --test` (no DOM needed). `MarkdownToolbar` is a React component that dispatches those specs on the `EditorView` the shared `useMarkdownSourceEditor` hook exposes; a `Compartment` adds the keymap. The toolbar renders only in edit mode; preview stays `react-markdown` + `remark-gfm`.
+**Architecture:** Lane 2 plan 1 Task 5 introduces shared `MarkdownArticle` (`react-markdown` +
+`remark-gfm`) and client-only `MarkdownEditor` (MDXEditor). This slice configures the full toolbar
+and verifies the complete flow. Existing hooks/repositories retain Save/Discard, permissions and
+version-conflict ownership. No `commands.ts`, custom `markdown-keymap.ts` or marker arithmetic.
 
-**Tech Stack:** Next.js App Router + TypeScript, CodeMirror 6 (`@codemirror/state`, `@codemirror/view`, `@codemirror/commands` — add it; `@codemirror/lang-markdown` present), `@clue/design-system` tokens, `node --test` via `tsx`.
+**Spec:** `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md`, revised 2026-09-13.
+**Dependency:** Lane 2 plan 1 Task 5; the remaining plan-1 surfaces precede final acceptance.
 
-**Spec:** `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md` (the brief; rulings R10, R11). Depends on `2026-09-12-plan-tab-frontend.md` Task 5 (the shared `components/markdown/` pieces).
+## Constraints
 
-## Global Constraints
+- Preserve Preview/Edit, explicit Save/Discard and the Markdown body + expected-revision API.
+  No backend, front-matter, confirmation-gate, database or environment changes.
+- Compose MDXEditor exports; no custom parser, serializer, formatting engine or parallel editor.
+- Our styles use Clue tokens/icons. Import vendor structural CSS and theme public APIs.
+- Replace the Knowledge-specific CodeMirror wrapper after verification; keep dependencies still
+  used elsewhere or by the library's source/code plugins.
+- Use the active Semarang frontend origin, verified from its local configuration/processes.
+  Historical :3020 examples belong to another lane; never stop a sibling stack to run this one.
 
-- **External libraries only (R10):** CodeMirror is the engine; no markdown parsing beyond the commands' own line/selection arithmetic.
-- **Buttons (v1):** Undo, Redo · H1, H2, H3 · Bold, Italic, Strikethrough, Inline code · Bullet list, Numbered list, Task list · Blockquote, Code block, Horizontal rule · Link, Table. No image, video, callout.
-- **Shortcuts:** ⌘/Ctrl+B bold, ⌘I italic, ⌘⇧X strikethrough, ⌘E inline code, ⌘K link, ⌘Z / ⌘⇧Z undo/redo (CodeMirror's `history` keymap), ⌘⇧7 numbered list, ⌘⇧8 bullet list.
-- **Styling:** `--clue-ds-*` tokens only; icon buttons 28×28; groups separated by 1px `--clue-ds-color-border-subtle` rules; pressed state on the active heading level and active inline marks (from the selection's surrounding text); the token test stays green. Icons come from `projectIconSources` (`ProjectIcon`); add missing glyphs there as SVG sources, never inline hex.
-- **Accessibility:** `role="toolbar"`, `aria-label="Formatting"`, roving tabindex with Arrow keys, `aria-pressed` on toggles, `aria-keyshortcuts` on each button, `title` with the shortcut.
-- **Gate:** `npm run design-system:build && npm run lint && npm run build` and `npm test` in `apps/frontend`.
-- **Commits:** local only, no push, no AI attribution.
+## Task 1: Verify the shared foundation
 
----
+**Files:** plan 1 Task 5's `apps/frontend/src/components/markdown/`; package/lockfile only if needed.
 
-### Task 1: Pure commands
+- [ ] Review the completed Task 5 prototype and chosen published release. Verify React 19/Next
+  build compatibility, client-only plugin initialization, Lexical coexistence and actual exported
+  controls. Do not repeat a successful foundation install or force unrelated version upgrades.
+- [ ] Load headings H1–H6, inline formatting, nested/task lists, links, tables and fenced code.
+  Enable parsing plugins needed by existing files even when their insertion controls are hidden.
+- [ ] Check initial normalization stays clean, Preview/Edit preserves the session, Discard resets
+  to saved content, and explicit external resets do not echo back as user changes.
+- [ ] Verify malformed/unsupported content remains recoverable through library source mode.
+  Import failure cannot result in an empty saved replacement. Record actual release/API gaps.
 
-**Files:**
-- Create: `apps/frontend/src/components/markdown/commands.ts`, `commands.test.ts`
-- Modify: `apps/frontend/package.json` (`"@codemirror/commands": "^6.8.0"` — `npm install`)
+## Task 2: Compose and theme the toolbar
 
-**Interfaces:**
+**Files:** create `components/markdown/markdown-toolbar.tsx`; update the shared editor and
+`markdown.module.css`; add missing glyphs to `features/projects/config/project-icon-sources.ts`.
 
-```ts
-import type { EditorState, TransactionSpec } from "@codemirror/state";
+`MarkdownToolbar` composes MDXEditor controls in the library context. It takes no `EditorView`
+and dispatches no homemade Markdown transactions.
 
-export type MarkdownCommand = (state: EditorState) => TransactionSpec | null;
+- [ ] Configure `toolbarPlugin` with `UndoRedo`, `BlockTypeSelect`, `BoldItalicUnderlineToggles`
+  (Bold/Italic), `StrikeThroughSupSubToggles` (Strikethrough), `CodeToggle`, `ListsToggle`,
+  `CreateLink`, `InsertTable`, `InsertCodeBlock`, and `InsertThematicBreak`.
+- [ ] Use headings/quote, lists, link/link-dialog, table, code-block/CodeMirror, thematic-break
+  and Markdown-shortcut plugins. Offer Paragraph/H1–H3/Blockquote using public configuration.
+  Keep H4–H6 import support; if menu filtering is unsupported, retain the native selector and
+  record the small UI difference rather than fork it.
+- [ ] Configure library source recovery without a new diff-review feature or a second editor.
+  Hide non-v1 insertion controls while preserving existing content. Native table editing is
+  included; no custom insertion dialog or fixed-size source template is required.
+- [ ] Theme editor prose/code, toolbar, popups/dialogs and source mode through public CSS classes,
+  variables and icon overrides. Use Clue tokens, 28×28 controls, wrapping groups and library
+  pressed/focus behavior. No generated-class selectors or dependency CSS forks.
+- [ ] Verify keyboard navigation, selection retention on toolbar clicks, dialog Escape/focus
+  return and read-only state in both modes. Audit Mod+B/I/Shift+X/E/K/Z/Shift+Z and list shortcuts;
+  reuse exported actions for any small binding adapter, or record a gap for review.
+- [ ] Check long URLs, backtick spans, fenced code and narrow panes cannot widen the outer
+  chat/document panel. Constrain flex/grid ancestors and local overflow; source text wraps
+  without line numbers or developer-style gutters.
+- [ ] Commit the coherent toolbar/theme change locally after relevant checks pass.
 
-export const toggleHeading: (level: 1 | 2 | 3) => MarkdownCommand;   // per selected line: set "#"*level+" ", remove when already that level, replace another level
-export const toggleInline: (marker: "**" | "*" | "~~" | "`") => MarkdownCommand; // wrap/unwrap the selection; empty selection → insert pair, cursor inside
-export const toggleLinePrefix: (kind: "bullet" | "numbered" | "task" | "quote") => MarkdownCommand; // "- ", "1. " renumbered, "- [ ] ", "> "; toggle off when every selected line has it
-export const wrapCodeBlock: MarkdownCommand;      // ```\n<sel>\n```; a selection already fenced is unfenced
-export const insertHorizontalRule: MarkdownCommand; // "\n---\n" at the cursor, on its own line
-export const insertLink: MarkdownCommand;         // "[<sel or text>](url)" with "url" selected
-export const insertTable: MarkdownCommand;        // 3×2 GFM table template on its own lines
-export function inlineMarkActive(state: EditorState, marker: string): boolean;   // selection or cursor inside a pair
-export function headingLevelAt(state: EditorState): 0 | 1 | 2 | 3;
-```
+## Task 3: Mount and verify all document contexts
 
-- [ ] **Step 1: Failing tests** (one `describe` per command; `EditorState.create({ doc, selection })` → apply spec with `state.update(spec).state.doc.toString()`): heading toggles on/off/replace across two selected lines; bold wraps `word` → `**word**`, unwraps, empty selection inserts `****` with cursor at 2; numbered list renumbers `1. 2. 3.` after toggling on three lines and strips when all three have it; task list on a bulleted line replaces `- ` with `- [ ] `; code block fences and unfences; rule inserts with surrounding newlines when the cursor is mid-line; link selects `url`; table inserts the template; `inlineMarkActive` true inside `**x|**`; `headingLevelAt` reads `## `.
-- [ ] **Step 2: Run — FAIL. Step 3: Implement. Step 4: `npm test` PASS. Step 5: Commit** — `feat(markdown): pure CodeMirror markdown commands with tests`.
+**Files:** Knowledge panel, project document surface, existing draft/save hooks, frontend
+architecture docs and focused integration tests.
 
----
+- [ ] Both surfaces use the shared editor; gallery ICP/persona cards open that project surface.
+  Remove obsolete Knowledge-only editor/hook/styles when imports are gone. Preserve the active
+  editor across Preview/Edit; scope drafts by document identity/path.
+- [ ] Check distinct drafts, explicit resets, busy state, returned-version handling and external
+  refresh. Keep a dirty draft on the original base revision so a 409 retains user changes.
+- [ ] Test our adapter/draft decisions; verify selection/history/formatting through real component
+  or browser interactions. Do not replace command tests with source-text assertions or duplicate
+  library internals. Add test tooling only if the existing setup cannot exercise the integration.
+- [ ] Run `npm run design-system:build`, `npm run lint`, `npm test`, `npm run build` in
+  `apps/frontend` and `git diff --check`. Attribute inherited failures without unrelated cleanup.
+- [ ] Browser checks on Semarang: Knowledge → Edit → format → Preview → Save → hard refresh;
+  repeat on Plan and gallery-opened ICP/persona. Verify Discard, untouched open/close, edit then
+  undo to initial content, switching documents, read-only, failed saves and version conflicts.
+  Use a disposable verification document for destructive test content.
+- [ ] Check nested/task lists, tables, fenced code, long inline text, unsupported input and narrow
+  chat/gallery panes. Saved Markdown may normalize formatting, but meaningful content must remain.
+- [ ] Update frontend architecture docs and `_memory/` with the version, evidence, remaining gaps
+  and live-proof status. Commit locally; no remote publication without a current instruction.
 
-### Task 2: The toolbar component and the keymap
+## Completion
 
-**Files:**
-- Create: `apps/frontend/src/components/markdown/markdown-toolbar.tsx`, `markdown-toolbar.module.css`, `markdown-keymap.ts`
-- Modify: `components/markdown/use-markdown-source-editor.ts` (expose `viewRef` and accept `extensions?: Extension[]`; add `history()` from `@codemirror/commands` if `minimalSetup` does not already include it — it does; keep `minimalSetup`), `components/markdown/markdown-source-editor.tsx` (render `<MarkdownToolbar view={…} />` above the editor when `toolbar !== false`), `features/projects/config/project-icon-sources.ts` (glyphs: `undo`, `redo`, `heading-1`, `heading-2`, `heading-3`, `bold`, `italic`, `strikethrough`, `code`, `list`, `list-ordered`, `list-checks`, `quote`, `code-block`, `minus`, `link`, `table`)
-- Test: `markdown-keymap.test.ts` (the keymap binds each shortcut to the matching command name — assert on the exported binding table, not on CodeMirror internals)
-
-**Interfaces:**
-
-```tsx
-export function MarkdownToolbar({ view }: { view: EditorView | null }): JSX.Element
-export const markdownKeymap: readonly KeyBinding[];   // built from the same command table
-```
-
-Behaviour: each button `onMouseDown={e => e.preventDefault()}` (keeps editor focus) and `onClick` dispatches `command(view.state)` when non-null; `aria-pressed` computed from `inlineMarkActive`/`headingLevelAt` on `view.state` (subscribe through an `updateListener` set in the hook, re-rendering on selection change with a `useSyncExternalStore`). Layout per the brief: `.toolbar` flex, gap 2px, padding `4px 8px`, `border-bottom: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle)`, background `var(--clue-ds-color-bg-neutral)`; `.group` flex with a 1px right rule; `.button` 28×28, radius `var(--clue-ds-product-radius-sm)`, `color: var(--clue-ds-color-content-subtle)`, hover `background: var(--clue-ds-color-bg-neutral-hover)`, pressed `background: var(--clue-ds-color-bg-neutral-active); color: var(--clue-ds-color-content-neutral)`. Verify each token name exists in `packages/design-system/generated/tokens.css`.
-
-- [ ] **Step 1: Failing keymap test. Step 2–3: implement; `npm test`, `npm run lint`, `npm run build`.**
-- [ ] **Step 4: Browser check** (:3020, `/browse`): Knowledge page → Edit → the toolbar renders; Bold on a selection; ⌘K inserts a link; Arrow keys move focus across buttons; Preview hides the toolbar.
-- [ ] **Step 5: Commit** — `feat(markdown): the shared formatting toolbar and keymap over the CodeMirror source editor`.
-
----
-
-### Task 3: Mount on both surfaces; close-out
-
-**Files:**
-- Modify: `features/brand-context/components/knowledge-panel.tsx` (already uses the shared editor after plan-tab Task 5; pass `toolbar`), `features/projects/components/project-document-surface.tsx` (same), `apps/frontend/docs/architecture/frontend.md` (a paragraph on `components/markdown/`), `_memory/` note
-
-- [ ] **Steps:** wire, gate, browser-check the Plan tab editing `plan.md` with the toolbar and saving a new version (the PUT path), commit — `feat(frontend): the markdown toolbar on the Knowledge editor and the project document surface`.
-
----
-
-## Self-review
-
-- **Brief coverage:** buttons and groups (T1–T2), shortcuts (T2), pure tested commands (T1), tokens-only styling and a11y (T2), both surfaces (T3), image/video/callout left out. ✔
-- **Placeholders:** none; icon glyphs are named and added to the one icon source map. ✔
-- **Type consistency:** `MarkdownCommand`, `inlineMarkActive`, `headingLevelAt`, `markdownKeymap`, `MarkdownToolbar({ view })` consistent across tasks. ✔
+One shared library editor serves all four contexts, controls reuse library behavior, saves persist
+through existing versioned routes, untouched content stays clean, parse errors preserve source,
+and long-content checks introduce no outer horizontal scroll. Nothing is implemented by this plan.

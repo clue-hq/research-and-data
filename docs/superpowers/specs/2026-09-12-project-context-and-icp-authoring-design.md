@@ -85,8 +85,8 @@ Two things the founder saw on 2026-09-12 while walking the project conversation:
 - **R8 — the read tools serve ARV2 rows only** (standing rule "ARV2 schema is the only truth").
   No bridge to the old lane's tables.
 - **R9 — build order:** project files → ICP authoring → plan document → read tools.
-- **R10 — external libraries only for markdown.** Rendering is `react-markdown` + `remark-gfm`; editing is CodeMirror 6. No in-house markdown parser, renderer or editor is ever built.
-- **R11 — the editor toolbar is its own slice.** A formatting toolbar (undo/redo; H1–H3; bold, italic, strikethrough, inline code; bullet, numbered and task lists; blockquote, code block, horizontal rule; link; table — image and video left out for v1) is designed and built once, as a shared component, after this work. `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md` holds the brief.
+- **R10 — external libraries only for markdown (revised 2026-09-13).** Preview is `react-markdown` + `remark-gfm`; the founder selected MDXEditor for visual editing. This supersedes the CodeMirror source-editor choice. MDXEditor owns formatting, parsing, serialization and any source/code editor plugins; no in-house Markdown engine or parallel source editor.
+- **R11 — one shared library toolbar (revised 2026-09-13).** Compose MDXEditor's controls for undo/redo; headings; bold, italic, strikethrough, inline code; bullet, numbered and task lists; blockquote, code block, horizontal rule; link and table. The native block selector and table editing replace custom heading buttons and source templates. Image/video insertion remains outside v1. Apply Clue tokens/icons and preserve existing Save/Discard/version behavior. `docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md` holds the revised brief; no custom CodeMirror command/keymap layer is required.
 - **R12 — this pass ships the backend and the agent capabilities only.** The Plan tab, the document surface and the gallery document cards are the deferred plan `2026-09-12-plan-tab-frontend.md`, executed later with the toolbar slice.
 
 ## 4. Design
@@ -201,12 +201,14 @@ contract of the Knowledge editor's PUT (new immutable version, `user_edit` stamp
 **Frontend.** Surface `"plan"` joins `ChatShellSurface`, `EditorShellSurface` and the URL
 vocabulary (`?surface=plan`). A third tab in `ArtifactTabs` (file icon + "Plan"). A `hidden`-
 toggled pane in `ArtifactStage` mounting `ProjectDocumentSurface` (breadcrumb header, Preview /
-Edit segmented control, Save / Discard, markdown article) which reuses `useMarkdownSourceEditor`,
-lifts `MarkdownSourceEditor` and the `.markdownPreview` rules into a shared component, and
-generalizes the Knowledge editor's draft state machine with an injected save. A pure
-`planWriteToOpen` signal (shape of `discoveryLaunchToOpen`) opens the tab once when a
-`write_project_document` tool part completes; clicking the plan card calls `openPlan`. The same
-surface opens a project ICP/persona document as a rail tab when chosen from the gallery, where
+Edit segmented control, Save / Discard, markdown article), using shared `MarkdownArticle`
+(react-markdown + remark-gfm) and `MarkdownEditor` (MDXEditor) components. The Knowledge
+editor's draft state machine is generalized with an injected save; initial normalization is not
+an edit and dirty drafts survive refreshed versions. A pure `planWriteToOpen` signal opens the
+tab once for a newly received plan part with `planRef.objectType === "project_document"`;
+parts present at initial hydration are banked without opening it. This follows the 2026-09-13
+lane-index revalidation and is independent of the authoring tool. Clicking the plan card calls
+`openPlan`. The same surface opens a project ICP/persona document as a rail tab when chosen from the gallery, where
 project documents appear as document cards (file icon, title, edited label; no thumbnail).
 
 ### 4.4 Read tools (plan 4)

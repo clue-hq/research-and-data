@@ -8,17 +8,18 @@
 
 **Goal:** The user reads and edits the project's `plan.md` in a Plan tab beside Gallery and Target accounts; the "proposed a plan" card in the chat opens the tab; the tab opens itself when the agent writes the plan; project-scoped ICP and persona documents appear in the gallery as document cards and open on the same surface.
 
-**Architecture:** Surface `"plan"` joins the chat shell; `ProjectDocumentSurface` is built from the Knowledge editor's pieces lifted into `components/markdown/` (react-markdown + remark-gfm for rendering, CodeMirror for editing — external libraries only, ruling R10); a pure `planWriteToOpen` signal transports the auto-open; the gallery gains document cards.
+**Architecture:** Surface `"plan"` joins the chat shell; `ProjectDocumentSurface` is built from the Knowledge editor's pieces lifted into `components/markdown/` (react-markdown + remark-gfm for preview, MDXEditor for visual editing — revised ruling R10, 2026-09-13); a pure `planWriteToOpen` signal transports the auto-open; the gallery gains document cards.
 
-**Tech Stack:** Next.js App Router + TypeScript, Zod, CSS modules with `@clue/design-system` tokens, `react-markdown` + `remark-gfm`, CodeMirror 6; `node --test` via `tsx`.
+**Tech Stack:** Next.js App Router + TypeScript, Zod, CSS modules with `@clue/design-system` tokens, `react-markdown` + `remark-gfm`, `@mdxeditor/editor`; `node --test` via `tsx`.
 
 **Spec:** `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3 (rulings R6, R7, R10, R11, R12). Depends on `docs/superpowers/plans/2026-09-12-project-plan-document.md` Tasks 1–3 and 9 (the backend and the grant).
 
 ## Global Constraints
 
 - Presentation truth is the dummy's Plan tab (ruling R6); every style uses `--clue-ds-*` tokens; the token test stays green.
-- Rendering and editing use external libraries only (ruling R10): `react-markdown` + `remark-gfm`, CodeMirror. No in-house markdown parser or renderer.
-- The toolbar (ruling R11) is a separate slice and is NOT built here; the editor ships with the Preview/Edit toggle the Knowledge page already has.
+- Rendering and editing use external libraries only (revised ruling R10): `react-markdown` + `remark-gfm` for preview, MDXEditor for visual editing. No in-house Markdown parser, serializer or formatting commands.
+- Task 5 introduces the MDXEditor foundation and content-preservation checks. The complete composed toolbar (revised R11) remains plan 2; retain Preview/Edit and Save/Discard in the document header.
+- Use the active Semarang frontend origin and its own database/configuration for verification; do not use another lane's :3020 examples or stop sibling services.
 - Frontend architecture, test runner and gate as in the parent plan.
 
 The task numbering keeps the parent plan's numbers (4–8) so cross-references hold.
@@ -71,25 +72,61 @@ BFF routes copy `app/api/projects/[projectId]/discovery/route.ts`: `GET` list; `
 
 ---
 
-### Task 5: Shared markdown pieces lifted from Brand Context
+### Task 5: Shared Markdown preview and MDXEditor foundation
+
+**Decision update, 2026-09-13:** the founder selected MDXEditor. Introduce the shared visual
+editor directly; do not first extract CodeMirror only to replace it in plan 2.
 
 **Files:**
-- Create: `apps/frontend/src/components/markdown/markdown-article.tsx`, `components/markdown/markdown-source-editor.tsx`, `components/markdown/markdown.module.css`, `components/markdown/use-markdown-source-editor.ts`
-- Modify: `features/brand-context/components/knowledge-panel.tsx` and `brand-context-header.tsx` to import the shared pieces; delete `features/brand-context/components/markdown-source-editor.tsx` and `hooks/use-markdown-source-editor.ts`; move the `.markdownPreview` and `.markdownEditor` blocks out of `brand-context.module.css` into `markdown.module.css`
+- Create: `apps/frontend/src/components/markdown/markdown-article.tsx`, `markdown-editor.tsx`,
+  `markdown-editor-client.tsx`, `markdown.module.css` and focused integration test fixtures.
+- Modify: `apps/frontend/package.json` / lockfile for a verified published `@mdxeditor/editor`
+  release; Knowledge panel/header and `use-knowledge-editor.ts` for the shared editor lifecycle.
+- Remove after migration: `features/brand-context/components/markdown-source-editor.tsx`,
+  `hooks/use-markdown-source-editor.ts` and unused editor CSS. Move preview styles to the shared
+  module. Keep any CodeMirror packages used elsewhere or by library source/code plugins.
 
-**Interfaces:**
+**Shared seam:**
 
 ```tsx
-export function MarkdownArticle({ markdown, className }: { markdown: string; className?: string })   // <article className={styles.markdownArticle}><Markdown remarkPlugins={[remarkGfm]}>…</Markdown></article>
-export default function MarkdownSourceEditor({ value, onChange, readOnly }: {...})   // default export for next/dynamic
-export function useMarkdownSourceEditor(value, onChange, readOnly): RefObject<HTMLDivElement>
+export function MarkdownArticle({ markdown, className }: { markdown: string; className?: string })
+// Preview uses react-markdown + remark-gfm.
+
+export function MarkdownEditor({ documentKey, value, resetKey, onChange, readOnly }: {
+  documentKey: string; value: string; resetKey: number;
+  onChange: (value: string) => void; readOnly: boolean;
+})
+// Client boundary lazy-loads the initialized MDXEditor and plugins with ssr:false.
+// value initializes the session; changes from typing are emitted, not fed back as replacements.
+// resetKey changes for explicit resets (e.g. Discard), not every keystroke or refreshed UUID.
 ```
 
-`markdown.module.css` = the `.markdownPreview` rules (renamed `.markdownArticle`) and `.markdownEditor` rules, with every `font: … "Satoshi", Arial, sans-serif` shorthand replaced by the typography tokens: h1 → `--clue-ds-typography-tittle-default-*`, h2 → `--clue-ds-typography-text-lg-medium-*`, h3–h6 → `--clue-ds-typography-text-default-medium-*`, p/li/table → `--clue-ds-typography-text-default-*`, code/pre → `--clue-ds-typography-code-*`. Colours and borders keep their existing semantic tokens. Verify each token name exists in `packages/design-system/generated/tokens.css` before use (the token test fails otherwise).
+Scope the session by workspace/project and stable document path. Feature hooks retain raw saved
+body, base revision and drafts; the shared adapter controls only the editor lifecycle. MDXEditor's
+initial normalization must not create a draft. Preserve the original body for untouched saves;
+verify undo back to the initial state. Use public library lifecycle APIs for external replacement,
+and preserve the session through Preview/Edit. A refreshed version must not erase dirty changes.
 
-- [ ] **Step 1: Move the files; update the two brand-context imports; run the 92 brand-context tests, `npm run lint`, `npm run build`, `npm test` (token test).**
-- [ ] **Step 2: Browser check** on this lane's frontend (:3020): the Knowledge page still renders and edits a document (Preview → Edit → type → Preview → Discard).
-- [ ] **Step 3: Commit** — `git commit -m "refactor(frontend): shared markdown article + source editor under components/markdown, typography on design tokens"`.
+Enable the native plugins required to import existing headings, inline marks, lists, tables, links
+and code blocks before migrating Knowledge. Retain source recovery for unimportable content and
+never send an empty replacement after a parser failure. See the revised toolbar brief for the
+content-preservation contract. Plan 2 supplies the complete toolbar, not a second editor.
+
+Preview and editor prose use Clue typography tokens; code and source mode use code tokens.
+Map library public CSS variables/classes and icon overrides to Clue, including dialogs/popovers.
+Vendor structural CSS is retained. Constrain the whole panel width; tables/code cannot widen
+the surrounding chat, and long URLs/inline code/source text wrap. No source line numbers.
+
+- [ ] **Step 1: Compatibility prototype.** Verify a published MDXEditor release in this Next/React
+  checkout, including client-only plugin imports and coexistence with existing Lexical dependencies.
+  Do not force unrelated package versions. Exercise a disposable representative Markdown document.
+- [ ] **Step 2: Shared integration.** Extract `MarkdownArticle`, introduce the MDXEditor boundary,
+  then migrate Knowledge. Preserve canEdit/read-only rules, Save/Discard, draft base revision,
+  conflicts and the return of a new document ID on save. Keep repository calls outside the editor.
+- [ ] **Step 3: Verify.** Focused draft/adapter tests and browser interactions for no-op opening,
+  initial normalization, edits/undo, source recovery, Preview/Edit, Discard, switching documents
+  and long-content wrapping. Run relevant Brand Context tests plus frontend lint/build/token tests.
+- [ ] **Step 4: Commit** — `refactor(frontend): shared Markdown preview and MDXEditor foundation`.
 
 ---
 
@@ -111,7 +148,9 @@ export function useProjectDocuments(projectId: string, { active, refreshToken }:
 export function useProjectDocumentEditor(
   document: ProjectDocumentDetail | undefined,
   save: (document: ProjectDocument, body: string) => Promise<ProjectDocumentDetail>,
-): { body; canEdit; dirty; discard; editorOpened; mode: "preview" | "edit"; error; save; setBody; saving; busy; saved; setMode }
+): { body; canEdit; dirty; discard; editorOpened; mode: "preview" | "edit"; error; save; setBody; saving; busy; saved; setMode; resetKey }
+// resetKey advances on Discard or an accepted external replacement of a clean session.
+// Typing and a new version UUID alone do not reset the editor. Knowledge uses the same rule.
 
 // components/project-document-surface.tsx
 export function ProjectDocumentSurface({ active, documentId, projectId, refreshToken }: { active: boolean; documentId: string | null; projectId: string; refreshToken?: number })
@@ -145,7 +184,7 @@ Layout (from the screenshot, tokens only): `.surface` grid `auto minmax(0,1fr)`;
 
 - [ ] **Step 1: Failing tests** — `chat-surface-params.test.ts`: `?surface=plan` hydrates `surface: "plan"`, `panelOpen: true`; pane params serialize back to `surface: "plan"` with no artifact vocabulary. A new `features/projects/hooks/use-project-document-editor.test.ts` is not possible (hooks need React); instead test the pure reducer pieces if you extract them (`draftAfterChange(drafts, path, base, body)` returns the drafts map with the entry removed when `body === base.body`) — put that pure function in `model/project-document-draft.ts` with a test.
 - [ ] **Step 2–3: implement.** Run `npm test`, `npm run lint`, `npm run build`.
-- [ ] **Step 4: Browser check** (:3020): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
+- [ ] **Step 4: Browser check** (on the active Semarang frontend): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
 - [ ] **Step 5: Commit** — `git commit -m "feat(chat-shell): the Plan surface — tab, pane, URL state, and the project document editor on shared markdown pieces"`.
 
 ---
