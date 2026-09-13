@@ -80,6 +80,13 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
+        # The operating manual's generated chapters. Each is an ordinary skill so the profile pins
+        # it like any other and the capability map discloses it with its path; the builder
+        # (`python -m clue_api.manual_build`) is their only writer.
+        "skill:manual-errors@v1",
+        "skill:manual-fields@v1",
+        "skill:manual-limits@v1",
+        "skill:manual-tools@v1",
         "skill:research-task@v1",
         "skill:research-task@v2",
         "skill:research-task@v3",

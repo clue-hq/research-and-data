@@ -28,6 +28,7 @@ from clue_agents.contracts import (
 from clue_core import ExecutionId, OperationId, operation_id_from_key
 
 __all__ = [
+    "RECEIPT_REFERENCE_VALUES_MAX_BYTES",
     "AgentExecutionStatus",
     "AgentPlanIssue",
     "AgentPlanPolicy",
@@ -39,6 +40,11 @@ __all__ = [
     "operation_id_for_plan_node",
     "review_agent_plan",
 ]
+
+#: The bound on one governed receipt's ``reference_values``, measured as canonical JSON bytes.
+#: Substantive output stays behind references, so a tool that would return a lot hands back
+#: ``artifact_refs``/``domain_refs`` and the model reads the file or the domain object instead.
+RECEIPT_REFERENCE_VALUES_MAX_BYTES = 16_384
 
 
 class _Value(BaseModel):
@@ -146,7 +152,7 @@ class GovernedOperationReceipt(_Value):
             ensure_ascii=False,
             allow_nan=False,
         ).encode()
-        if len(encoded) > 16_384:
+        if len(encoded) > RECEIPT_REFERENCE_VALUES_MAX_BYTES:
             raise ValueError("bounded operation receipt exceeds 16 KiB")
         return self
 

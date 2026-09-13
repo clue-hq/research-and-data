@@ -6,7 +6,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
-	redis-up redis-down
+	redis-up redis-down manual manual-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -33,6 +33,17 @@ test: ## Run the test suite
 	uv run pytest
 
 check: lint typecheck contracts test ## Run the full local gate (what CI runs)
+
+# --- the Head of ABM's operating manual -------------------------------------
+# The generated chapters are never hand-edited: the builder is their only writer. `manual-check`
+# is the drift gate; the field snapshot behind manual-fields is refreshed separately, by hand,
+# with `python -m clue_agents.manual.fields_snapshot` against a migrated database.
+
+manual: ## Regenerate the generated manual chapters (tools, fields, errors, limits)
+	uv run python -m clue_api.manual_build --write
+
+manual-check: ## Fail when a generated manual chapter is stale against the code
+	uv run python -m clue_api.manual_build --check
 
 # --- database (M0.3) --------------------------------------------------------
 # Postgres + pgvector lifecycle and the reviewed-migration workflow. The DB DSN is read from
