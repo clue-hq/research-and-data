@@ -147,3 +147,45 @@ in `validate_tool_output_references`; one pathological claim value can still exc
 body still says "correct … and call again" for an unbudgeted read refusal (manual-errors
 chapter); `arv2/README.md:1863` still names v49; the pre-existing design profile red resolves to
 a doubly-prefixed `openai/x-ai/grok-4.6`.
+
+## Plan 1 proven (2026-09-13, night) — thread-rooted workspace, `9b364ae0a..HEAD`
+
+Nine commits (SDD, Opus implementers, controller-reviewed): `24650d9f2` mount table on the backend
+(`WorkspaceMount`/`MountMode`, reserved first segment → own anchored fd, read-only or read-write, one
+quota); `234b889b5` + `20feb88e0` the factory rooted at `<ws>/projects/<project>/threads/<thread>/`
+(`WorkspaceIdentity.thread_id`, `MountRequest(brand, project_library)` honoured, one live lease per
+thread, `lease.release()` in a `finally` at all five acquire sites, purge/erase by thread, the
+workspace thread segment = the turn row's `thread_id` everywhere); `b23af9e88` per-turn materialize
+(`reset_materialized_trees`, per-lease `materialized` guard, verify-or-rebuild, `snapshot_outputs
+(empty_after=True)`); `8e919c06d` + `64030afc6` + `8d26b12a8` the runtime empties outputs at finalize,
+profile v51 (readable seven / writable `scratch, work, outputs` / 400 files / 20 MiB) and skill v28
+(§1 names `scratch/`), the factory tolerates a partially frozen tree; `447419972` cleanup purges
+threads (migration `5e78522ddf48`: `thread_id` column + `thread_purge` action; newest turn terminal and
+older than the window, or thread archived; dedupe per newest turn); `5e2557a73` the pin comment.
+Recipe stays 26. Layout as landed (ruling R1, amended twice): `_LAYOUT = (.deepagent, inputs,
+context, scratch, reads, work, outputs)`; `context/` stays because the assembler writes it; `work/`
+stays readable AND writable on v51 because the delegation ceiling intersects a child's workspace with
+the parent's on both lists (dropping it silently took the specialists' scratch pad away — measured).
+
+**Live walk on the lane stack** (workers on v51 from 22:11 IST, lane DB at `5e78522ddf48`), thread
+`thr_fd34ee23…` of project `prj_82aef3f5…`:
+- Turn `357c028b…` ("write a note into scratch/notes.md…"): completed in 90 s on v51; the model wrote
+  `scratch/notes.md` (1 024 B, 0600) through the built-in write tool; after finalize `outputs/` is
+  empty; on disk the thread directory is `…/projects/prj_82aef…/threads/thr_fd34ee…/` with
+  `.deepagent context inputs` at 0500 and `outputs reads scratch work` at 0700.
+- Turn `f03c161b…` ("quote the notebook"): same `workspace_root_id` (`awr_f55e31bc…`), completed in
+  50 s; `inputs/user-message.txt` held the second message while `scratch/notes.md` was byte-identical
+  (sha `20668325…`); the answer quoted the notebook's "Two researched accounts" section verbatim and
+  made no governed account read (`execution_node`: `record_interview_answer` ×1 only). Exactly one
+  directory under `threads/`.
+
+Stack note again: `next dev --hostname localhost` binds `[::1]` only; for the headless walk the
+frontend was restarted with `--hostname 0.0.0.0` (the runbook's `up` worked cleanly this time).
+Known: `tests/api/test_client_knowledge_privacy_s4e_db.py::test_dsar_reaches_every_agent_copy…` asserts
+whole-table counts and only passes on an empty DB (72 live `agent_tool_result` rows here) — needs a
+throwaway DB. Legacy `<ws>/<project>/<execution>/` directories are left in place (ruling R6).
+
+Deferred (ledger minors): flock scope if a read-write mount is ever shared; root `ls` hashes every
+mount file; constructor fd ownership on validation failure; a resume that rebuilds `MountRequest`
+differently conflicts (fail-closed); `cleanup_recorded` projection has no action filter; the design
+profile red is a doubled provider prefix (`openai/x-ai/grok-4.6`).
