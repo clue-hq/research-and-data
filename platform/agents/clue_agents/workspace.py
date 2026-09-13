@@ -1185,9 +1185,15 @@ class AgentWorkspaceFactory:
                 child_fd = os.open(name, _DIR_FLAGS, dir_fd=parent_fd)
                 try:
                     _validate_private_directory(child_fd)
-                    if stat.S_IMODE(os.fstat(child_fd).st_mode) != _DIRECTORY_MODE:
+                    # A scope level legitimately holds a frozen (0500) library tree beside its
+                    # 0700 working subdirectories — exactly the allowance `_audit_thread_root`
+                    # already makes for a frozen top-level entry. Every other mode is refused.
+                    if stat.S_IMODE(os.fstat(child_fd).st_mode) not in {
+                        _DIRECTORY_MODE,
+                        _READ_ONLY_DIRECTORY_MODE,
+                    }:
                         raise WorkspaceSecurityError(
-                            "active workspace scope directory must have mode 0700"
+                            "workspace scope directory must have mode 0700 or 0500"
                         )
                 finally:
                     os.close(child_fd)
@@ -1195,6 +1201,68 @@ class AgentWorkspaceFactory:
             raise
         except OSError as exc:
             raise WorkspaceSecurityError("workspace scope directory audit failed") from exc
+
+    @classmethod
+    def ensure_child_directory(cls, parent_fd: int, segment: str) -> int:
+        """Ensure one private 0700 child below an already-anchored parent descriptor.
+
+        The single seam a library materializer uses to nest one level (``brand/``, then
+        ``brand/<brand>/``) before writing a :class:`~clue_agents.library_tree.LibraryTree`
+        under it. Only the child itself is audited — its children are the frozen 0500
+        generations the materializer installs. The caller owns and closes the descriptor.
+        """
+
+        return cls._ensure_directory(
+            parent_fd, validate_workspace_segment(segment, label="directory segment")
+        )
+
+    def library_parent_fd(self, workspace_id: str) -> int:
+        """Ensure ``<ws>/library`` and return its descriptor. The caller owns and closes it.
+
+        This is where the workspace-wide libraries (today: ``brand/<brand>/<version>``) are
+        materialized, beside — never inside — any thread workspace.
+        """
+
+        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
+        with self._root_lock():
+            workspace_fd = self._ensure_directory(self._root_fd, workspace_segment)
+            try:
+                self._audit_scope_directories(workspace_fd)
+                library_fd = self._ensure_directory(workspace_fd, LIBRARY_DIR)
+            finally:
+                os.close(workspace_fd)
+            try:
+                self._audit_scope_directories(library_fd)
+            except BaseException:
+                os.close(library_fd)
+                raise
+            return library_fd
+
+    def project_parent_fd(self, workspace_id: str, project_id: str) -> int:
+        """Ensure ``<ws>/projects/<project>`` and return its descriptor.
+
+        The project's own ``library`` tree is written directly below it, beside ``threads``.
+        The caller owns and closes the descriptor.
+        """
+
+        chain = (
+            validate_workspace_segment(workspace_id, label="workspace_id"),
+            PROJECTS_DIR,
+            validate_workspace_segment(project_id, label="project_id"),
+        )
+        with self._root_lock():
+            parent_fd = self._root_fd
+            opened: list[int] = []
+            try:
+                for segment in chain:
+                    child_fd = self._ensure_directory(parent_fd, segment)
+                    opened.append(child_fd)
+                    self._audit_scope_directories(child_fd)
+                    parent_fd = child_fd
+                return opened.pop()
+            finally:
+                for descriptor in opened:
+                    os.close(descriptor)
 
     def create(
         self,

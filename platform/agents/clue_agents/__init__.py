@@ -106,6 +106,7 @@ from clue_agents.execution import (
     operation_id_for_plan_node,
     review_agent_plan,
 )
+from clue_agents.library_tree import LibraryFile, LibraryTree
 from clue_agents.model import ScriptedAgentChatModel
 from clue_agents.ports import (
     AgentArtifactReader,
@@ -281,6 +282,8 @@ __all__ = [
     "MemoryLayerSource",
     "ModelPolicy",
     "LIBRARY_DIR",
+    "LibraryFile",
+    "LibraryTree",
     "PROJECTS_DIR",
     "THREADS_DIR",
     "MountMode",

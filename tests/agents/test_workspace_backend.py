@@ -1050,3 +1050,139 @@ def test_reacquiring_a_live_thread_with_another_mount_request_conflicts(tmp_path
         assert resumed.backend is first.backend
     finally:
         factory.close()
+
+
+# --- anchored library parents -------------------------------------------------------------
+
+
+def test_the_library_parents_are_private_directories_the_scope_audit_accepts(
+    tmp_path: Path,
+) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        library_fd = factory.library_parent_fd("ws-1")
+        try:
+            assert stat.S_IMODE(os.fstat(library_fd).st_mode) == 0o700
+            brand_fd = factory.ensure_child_directory(library_fd, "brand")
+            try:
+                assert stat.S_IMODE(os.fstat(brand_fd).st_mode) == 0o700
+            finally:
+                os.close(brand_fd)
+        finally:
+            os.close(library_fd)
+        project_fd = factory.project_parent_fd("ws-1", "project-1")
+        try:
+            assert stat.S_IMODE(os.fstat(project_fd).st_mode) == 0o700
+        finally:
+            os.close(project_fd)
+
+        assert stat.S_IMODE((root / "ws-1/library").stat().st_mode) == 0o700
+        assert stat.S_IMODE((root / "ws-1/library/brand").stat().st_mode) == 0o700
+        assert stat.S_IMODE((root / "ws-1/projects/project-1").stat().st_mode) == 0o700
+        # Both helpers are idempotent and a thread still opens beside them.
+        os.close(factory.library_parent_fd("ws-1"))
+        os.close(factory.project_parent_fd("ws-1", "project-1"))
+        lease = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        assert lease.identity.thread_id == "thread-1"
+    finally:
+        factory.close()
+
+
+@pytest.mark.parametrize("segment", ["../escape", "with space", ".hidden", "", "a/b"])
+def test_the_library_parents_refuse_a_hostile_segment(tmp_path: Path, segment: str) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        with pytest.raises(WorkspaceConfigurationError):
+            factory.library_parent_fd(segment)
+        with pytest.raises(WorkspaceConfigurationError):
+            factory.project_parent_fd("ws-1", segment)
+        # Nothing on the refused path was created on the way to the refusal.
+        assert not (root / "ws-1").exists()
+
+        library_fd = factory.library_parent_fd("ws-1")
+        try:
+            with pytest.raises(WorkspaceConfigurationError):
+                factory.ensure_child_directory(library_fd, segment)
+        finally:
+            os.close(library_fd)
+        assert list((root / "ws-1/library").iterdir()) == []
+        assert not (root / "ws-1/projects").exists()
+    finally:
+        factory.close()
+
+
+def test_a_frozen_library_beside_threads_does_not_break_the_scope_audit(tmp_path: Path) -> None:
+    """A materialized 0500 project library must not lock every thread out of its project."""
+
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        first = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        library = root / "ws-1/projects/project-1/library"
+        library.mkdir(mode=0o700)
+        (library / "brief.md").write_text("# Brief\n")
+        os.chmod(library / "brief.md", 0o400)
+        os.chmod(library, 0o500)
+
+        sibling = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-2",
+            execution_id=ExecutionId(UUID("00000000-0000-0000-0000-0000000006f1")),
+            policy=policy(),
+        )
+        assert sibling.identity.thread_id == "thread-2"
+        first.release()
+        resumed = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        assert resumed.identity.thread_id == "thread-1"
+        os.close(factory.project_parent_fd("ws-1", "project-1"))
+    finally:
+        factory.close()
+
+
+@pytest.mark.parametrize("mode", [0o600, 0o755, 0o770])
+def test_any_other_sibling_directory_mode_is_still_refused(tmp_path: Path, mode: int) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        odd = root / "ws-1/projects/project-1/library"
+        odd.mkdir(mode=0o700)
+        os.chmod(odd, mode)
+        try:
+            with pytest.raises(WorkspaceSecurityError):
+                factory.create(
+                    workspace_id="ws-1",
+                    project_id="project-1",
+                    thread_id="thread-2",
+                    execution_id=ExecutionId(UUID("00000000-0000-0000-0000-0000000006f2")),
+                    policy=policy(),
+                )
+            with pytest.raises(WorkspaceSecurityError):
+                factory.project_parent_fd("ws-1", "project-1")
+        finally:
+            os.chmod(odd, 0o700)
+    finally:
+        factory.close()
