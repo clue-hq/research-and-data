@@ -1958,6 +1958,7 @@ function SceneDocumentCanvas({
       <ArtboardSurface
         artboard={artboard}
         assets={drawnScene?.assets}
+        assetLoadGeneration={loadGeneration}
         // Test/diagnostic hooks, not chrome: the honest engine + text
         // measurement state and the current selection, readable independently
         // of the approved visuals that now render them (Gates G-A / G-D).
@@ -2822,6 +2823,7 @@ function SceneTextEditOverlay({
 function ArtboardSurface({
   artboard,
   assets,
+  assetLoadGeneration,
   dataEngine,
   dataFontDiagnostics,
   dataMeasurement,
@@ -2830,6 +2832,7 @@ function ArtboardSurface({
 }: {
   artboard: SceneArtboardModel | null;
   assets: Scene["assets"] | undefined;
+  assetLoadGeneration: number;
   dataEngine: string;
   dataFontDiagnostics: number;
   dataMeasurement: string;
@@ -3025,7 +3028,13 @@ function ArtboardSurface({
   }, []);
 
   // Descriptor / viewport changes mark dirty; drawing happens in rAF.
-  useEffect(invalidate, [artboard, viewport]);
+  // A streamed generated asset can 404 before the save publishes its bytes.
+  // An authoritative reload is new availability evidence even when its digest
+  // URL stays identical. Retrying only then avoids a redraw-driven fetch storm.
+  useEffect(() => {
+    imagesRef.current?.retryFailed();
+  }, [assetLoadGeneration]);
+  useEffect(invalidate, [artboard, viewport, assetLoadGeneration]);
 
   return (
     <canvas

@@ -13,6 +13,7 @@ import type { SceneDocumentState } from "../hooks/use-scene-document";
 const ASSET_ID = "asset_ing_2b0928ca4f3a3c70";
 const DIGEST = "2b0928ca4f3a3c70c5c2fed22996f0428da219c953a14e71567b73c1d8af937a";
 let loadedScene: Scene;
+let loadGeneration = 1;
 const imageCaches: CanvasKitImageCache[] = [];
 const decodedImage = { delete() {} } as Image;
 
@@ -23,7 +24,7 @@ vi.mock(require.resolve("../hooks/use-scene-document"), () => ({
     kind: "ready", scene: loadedScene, engine: null,
     pageId: Object.keys(loadedScene.pages)[0], title: "Ad", error: null,
     engineStatus: { engineDisabled: false, reason: null, detail: null },
-    currentVersion: 1, undoDepth: 0, redoDepth: 0, loadGeneration: 1,
+    currentVersion: 1, undoDepth: 0, redoDepth: 0, loadGeneration,
     tokenGeneration: 0, fontDiagnostics: [], refresh() {},
   }),
 }));
@@ -60,7 +61,7 @@ try {
   else delete require.extensions[".css"];
 }
 
-for (const source of ["streamed display", "loaded document"] as const) {
+for (const source of ["streamed display", "loaded document", "published asset"] as const) {
   test(`the mounted canvas hydrates a newly available image from its ${source} without remounting`, async () => {
     const dom = new JSDOM("<div id='root'></div>");
     const originals = new Map<string, PropertyDescriptor | undefined>();
@@ -73,13 +74,16 @@ for (const source of ["streamed display", "loaded document"] as const) {
       Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
     }
     loadedScene = structuredClone(HARVESTED_AD_PAGE);
-    delete loadedScene.assets[ASSET_ID];
+    loadGeneration = 1;
+    if (source !== "published asset") delete loadedScene.assets[ASSET_ID];
     const originalScene = structuredClone(loadedScene);
     imageCaches.length = 0;
     const requests: string[] = [];
+    let published = source !== "published asset";
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (url) => {
       requests.push(String(url));
+      if (!published) return new Response(null, { status: 404 });
       return new Response(new Uint8Array([1, 2, 3]));
     };
     const root = createRoot(dom.window.document.getElementById("root")!);
@@ -97,7 +101,18 @@ for (const source of ["streamed display", "loaded document"] as const) {
       const cache = imageCaches[0];
       assert.ok(cache, "the mounted surface created its image cache");
       assert.equal(cache.get(ASSET_ID), null);
-      assert.deepEqual(requests, [], "a missing digest must not issue a request");
+      await act(async () => { await new Promise<void>((resolve) => setImmediate(resolve)); });
+      const url = `/api/clue/design-public/asset-store/${DIGEST}`;
+      assert.deepEqual(requests, source === "published asset" ? [url] : [],
+        "only a known digest may issue a request");
+
+      if (source === "published asset") {
+        await render(null);
+        assert.equal(cache.get(ASSET_ID), null);
+        assert.deepEqual(requests, [url], "ordinary redraws must not retry a 404");
+        published = true;
+        loadGeneration += 1; // The saved document has now been authoritatively reloaded.
+      }
 
       if (source === "loaded document") loadedScene = structuredClone(HARVESTED_AD_PAGE);
       await render(source === "streamed display" ? structuredClone(HARVESTED_AD_PAGE) : null);
@@ -105,7 +120,7 @@ for (const source of ["streamed display", "loaded document"] as const) {
       assert.deepEqual(imageCaches, [cache], "hydration reuses the failed-null cache entry");
       assert.equal(cache.get(ASSET_ID), null);
       await act(async () => { await new Promise<void>((resolve) => setImmediate(resolve)); });
-      assert.deepEqual(requests, [`/api/clue/design-public/asset-store/${DIGEST}`]);
+      assert.deepEqual(requests, source === "published asset" ? [url, url] : [url]);
       assert.equal(cache.get(ASSET_ID), decodedImage);
       if (source === "streamed display") assert.deepEqual(loadedScene, originalScene);
     } finally {
