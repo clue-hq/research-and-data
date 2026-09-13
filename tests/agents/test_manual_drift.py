@@ -26,12 +26,13 @@ from typing import get_args
 import pytest
 
 from clue_agents.catalog import ProfileDefinition, SkillHeader, _parse_frontmatter
-from clue_agents.contracts import AgentRole
+from clue_agents.contracts import AgentRole, ContextLayer
 from clue_agents.manual import build as manual
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     build_agent_profile_registry,
 )
+from clue_api.agent_turn_fleet_wiring import project_conversation_context_policy
 from clue_api.arv2.account_research_store import JobStage, JobStatus, JobSubject
 from clue_api.arv2.discovery_store import (
     PENDING_DISPOSITION,
@@ -50,6 +51,15 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: The capability map is prepended to every system prompt, so the skills block is context the
 #: model pays for on every turn of every thread.
 SKILLS_BLOCK_MAX_BYTES = 4096
+
+#: The share of the production L1 budget the resolved system prompt may occupy.
+#:
+#: L1 holds exactly one candidate and it is ``required``: the resolved system prompt (prompt body
+#: plus generated capability map). A required candidate that does not fit its layer budget is a
+#: hard assembly failure — the turn raises rather than dropping it — so a prompt that outgrows L1
+#: takes down every production turn on that profile. Holding it to 80% keeps a chapter's worth of
+#: headroom, and keeps that discovery offline.
+PROMPT_BUDGET_SHARE = 0.8
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.
 AUTHORITY_MARKS = ("(enforced)", "(asked of you)")
@@ -292,6 +302,26 @@ def test_the_capability_map_discloses_every_manual_chapter(resolved_head_of_abm:
     assert len(block.encode()) <= SKILLS_BLOCK_MAX_BYTES, (
         f"the disclosed-skills block is {len(block.encode())} bytes, over the "
         f"{SKILLS_BLOCK_MAX_BYTES} the prompt budget allows for it"
+    )
+
+
+def test_the_resolved_system_prompt_fits_the_production_identity_budget(
+    resolved_head_of_abm: object,
+) -> None:
+    """The whole disclosed prompt — body plus capability map — must fit L1 with room to spare.
+
+    The number is read from the production policy, never retyped here: this test's job is to fail
+    when the *prompt* grows, not to hold a second copy of the budget that can drift from it.
+    """
+
+    prompt_bytes = len(resolved_head_of_abm.system_prompt.encode())  # type: ignore[attr-defined]
+    budget = project_conversation_context_policy().budget_for(ContextLayer.L1_IDENTITY)
+    ceiling = int(budget * PROMPT_BUDGET_SHARE)
+    assert prompt_bytes <= ceiling, (
+        f"the resolved {PROFILE_NAME}@{manual.PROFILE_VERSION} system prompt is {prompt_bytes} "
+        f"bytes, over the {ceiling} allowed ({PROMPT_BUDGET_SHARE:.0%} of the {budget}-byte "
+        f"production L1 identity budget). L1's one candidate is required, so a prompt that "
+        f"exceeds the budget outright fails every production turn at context assembly"
     )
 
 

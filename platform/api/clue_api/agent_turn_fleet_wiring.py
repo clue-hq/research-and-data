@@ -231,16 +231,26 @@ def project_conversation_context_policy() -> ContextAssemblyPolicy:
 
     Identical to the trial's shape and for the same reason: L6 (thread history) is the layer a real
     conversation grows into, so it gets the large share, and L3's card is bounded by construction.
+
+    L1 is 40,000 bytes under the ``utf8-bytes-v1`` counter. It holds exactly one *required*
+    candidate — the resolved system prompt, which is the profile's prompt body plus the generated
+    capability map (:class:`clue_agents.context.IdentityLayerSource`) — so its budget is a direct
+    statement of how large a disclosed profile may grow. The v1 ceiling of 24,000 was set when the
+    Head of ABM disclosed a handful of skills; the fifteen-chapter operating manual took the
+    resolved prompt to ~23.7 KB, within 300 bytes of a hard assembly failure (a required candidate
+    that does not fit raises, it is never silently dropped). 40,000 restores the headroom the
+    manual needs; ``tests/agents/test_manual_drift.py`` holds the prompt to 80% of it so the next
+    chapter is caught offline rather than by a failed production turn.
     """
 
     return ContextAssemblyPolicy(
-        version="project-conversation-context-v1",
+        version="project-conversation-context-v2",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
+                (40_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
                 strict=True,
             )
         ),

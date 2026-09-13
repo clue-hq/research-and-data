@@ -34,6 +34,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentExecutionStatus, ScriptedAgentChatModel
+from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_api.agent_execution_wiring import postgres_agent_checkpointer
 from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
@@ -792,7 +793,12 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     )
                 ).scalar_one()
                 manifest = json.loads(await storage.get(str(manifest_key)))
-                assert [item["name"] for item in manifest["skills"]] == ["stage0-interview"]
+                # The manual is fifteen ordinary catalog skills, so the committed manifest names
+                # them alongside the interview skill. The chapter list is read from the builder
+                # rather than retyped, so adding a chapter does not make this assertion stale.
+                assert {item["name"] for item in manifest["skills"]} == {"stage0-interview"} | {
+                    f"manual-{chapter}" for chapter in MANUAL_CHAPTERS
+                }
                 surface = {f"{pin['name']}@{pin['version']}" for pin in manifest["tools"]}
                 assert "launch_arv2_account_research@1" in surface
                 assert "launch_arv2_person_research@1" in surface

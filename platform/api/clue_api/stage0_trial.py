@@ -399,16 +399,23 @@ MemoryWriteFactoryBuilder = Callable[
 
 
 def stage0_trial_context_policy() -> ContextAssemblyPolicy:
-    """Conservative seven-layer budget with room for a long kickoff interview."""
+    """Conservative seven-layer budget with room for a long kickoff interview.
+
+    L1 tracks the production conversation's 40,000 for the same reason: this trial resolves the
+    same ``HEAD_OF_ABM`` profile, so it carries the same required system prompt — prompt body plus
+    generated capability map — and the fifteen-chapter operating manual put that prompt within
+    300 bytes of the old 24,000 ceiling. A required L1 candidate that does not fit is a hard
+    assembly failure, so the trial would break on exactly the profile production runs.
+    """
 
     return ContextAssemblyPolicy(
-        version="stage0-trial-context-v1",
+        version="stage0-trial-context-v2",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
+                (40_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
                 strict=True,
             )
         ),
