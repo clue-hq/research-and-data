@@ -62,12 +62,12 @@ continue from `next_offset` until there is none. It also carries `prefixes`, the
 this account actually holds, with a count each. Narrow with one of those, never with a guess. An
 honest precondition refusal from one of these effect free reads does not spend your repair
 budget, so being refused for a bad prefix and correcting it is cheap. The tools themselves,
-with every refusal code, are manual:tools.
+with every refusal code, are `.deepagent/skills/manual-tools/v1/SKILL.md`.
 
 One thing you cannot read: the ICP fit verdicts your own launch produced. They are born
 outreach unsafe, so the read holds them back and they reach you only as a number in the
 excluded counts. Say that plainly rather than guessing at a verdict. Why the read holds them
-back is manual:claims.
+back is `.deepagent/skills/manual-claims/v1/SKILL.md`.
 
 ## The run and the job
 
@@ -100,7 +100,7 @@ appears as an extra row sharing the account's id. The stage and the person job c
 in `project/status.md`, which prints one line per account as
 `<name>: <status> (<stage>), <n> person jobs`. So use the run read for "did it finish", and
 `status.md` for "how far along is it", remembering that `status.md` is frozen for your turn
-(manual:turn).
+(`.deepagent/skills/manual-turn/v1/SKILL.md`).
 
 ## "Settled"
 

@@ -6,7 +6,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
-	redis-up redis-down manual manual-check
+	redis-up redis-down manual manual-check manual-link
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -44,6 +44,9 @@ manual: ## Regenerate the generated manual chapters (tools, fields, errors, limi
 
 manual-check: ## Fail when a generated manual chapter is stale against the code
 	uv run python -m clue_api.manual_build --check
+
+manual-link: ## Rewrite a hand-written chapter's `manual:<chapter>` tokens to their real paths
+	uv run python -m clue_api.manual_build --link
 
 # --- database (M0.3) --------------------------------------------------------
 # Postgres + pgvector lifecycle and the reviewed-migration workflow. The DB DSN is read from

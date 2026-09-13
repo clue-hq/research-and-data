@@ -45,6 +45,7 @@ from clue_toolbelt.registry import ToolRegistry
 __all__ = [
     "DEFAULT_CATALOG_ROOT",
     "GENERATED_CHAPTERS",
+    "HANDWRITTEN_CHAPTERS",
     "MANUAL_CHAPTERS",
     "MANUAL_VERSION",
     "Chapter",
@@ -57,6 +58,7 @@ __all__ = [
     "build_limits_chapter",
     "build_tools_chapter",
     "chapter_path",
+    "link_handwritten_chapters",
     "load_fields",
     "load_notes",
     "load_profile",
@@ -73,7 +75,7 @@ MANUAL_VERSION = "v1"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v53"
+PROFILE_VERSION = "v54"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -97,6 +99,12 @@ MANUAL_CHAPTERS: tuple[str, ...] = (
     "errors",
     "limits",
     "glossary",
+)
+
+#: The chapters a human writes. `--link` rewrites their cross-reference tokens in place; nothing
+#: else in this module touches their bytes, because there is no source to regenerate them from.
+HANDWRITTEN_CHAPTERS: tuple[str, ...] = tuple(
+    name for name in MANUAL_CHAPTERS if name not in GENERATED_CHAPTERS
 )
 
 _CHAPTER_SUMMARIES: Mapping[str, str] = {
@@ -883,8 +891,11 @@ def build_limits_chapter(
             f"- Readable: {_join_code(workspace.readable_prefixes)}.",
             f"- Writable: {_join_code(workspace.writable_prefixes)}.",
             f"- Allowed file types: {_join_code(workspace.allowed_extensions)}.",
-            f"- Retention class: `{workspace.retention_class}`; a workspace is kept for "
-            f"{settings.agent_workspace_retention_s:,.0f} seconds after its turn.",
+            f"- Retention class: `{workspace.retention_class}`. The directory belongs to the chat "
+            "thread, not to one turn. It is purged when the human archives the thread, or "
+            f"{settings.agent_workspace_retention_s:,.0f} seconds "
+            "(`CLUE_AGENT_WORKSPACE_RETENTION_S`) after the thread's newest turn reached a "
+            "terminal status. A turn still running, or awaiting input, keeps it.",
             "",
             "Everything a path means is manual:workspace; the errors these bounds produce are",
             "manual:errors.",
@@ -944,6 +955,48 @@ def chapter_path(catalog_root: Path, name: str, version: str) -> Path:
     return catalog_root / "skills" / f"manual-{name}" / version / "SKILL.md"
 
 
+def link_handwritten_chapters(
+    *,
+    catalog_root: Path = DEFAULT_CATALOG_ROOT,
+    version: str = MANUAL_VERSION,
+) -> dict[str, int]:
+    """Rewrite every `manual:<chapter>` token in the hand-written chapters to its path, in place.
+
+    The generated chapters are never touched: their tokens are resolved by :func:`render_skill`
+    while the body is rendered, so a rewrite here would fight the builder. The hand-written ones
+    have no source to render from, so the token in the committed file is the thing that has to
+    move. A token naming something that is not a chapter fails by name rather than writing a path
+    to a file that will never exist. Running this twice changes nothing: after the first pass
+    there is no token left to match.
+    """
+
+    links = materialized_links(version)
+
+    counts: dict[str, int] = {}
+    for name in HANDWRITTEN_CHAPTERS:
+        path = chapter_path(catalog_root, name, version)
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        found = 0
+
+        def replace(match: re.Match[str], chapter: str = name) -> str:
+            nonlocal found
+            target = match.group(1)
+            if target not in links:
+                raise ManualBuildError(
+                    f"chapter {chapter!r} links to manual:{target}, which is not a chapter"
+                )
+            found += 1
+            return f"`{links[target]}`"
+
+        rewritten = _LINK_TOKEN.sub(replace, text)
+        if rewritten != text:
+            path.write_text(rewritten, encoding="utf-8")
+        counts[name] = found
+    return counts
+
+
 def build_chapter_objects(
     *,
     toolbelt: ToolRegistry,
@@ -985,7 +1038,7 @@ def build_chapters(
 
 
 def run(argv: Sequence[str] | None, *, toolbelt: ToolRegistry, facts: CodeFacts) -> int:
-    """`--write` regenerates the chapters in place; `--check` fails on any drift."""
+    """`--write` regenerates the chapters; `--check` fails on drift; `--link` resolves tokens."""
 
     parser = argparse.ArgumentParser(
         prog="manual-build",
@@ -994,8 +1047,23 @@ def run(argv: Sequence[str] | None, *, toolbelt: ToolRegistry, facts: CodeFacts)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--write", action="store_true", help="regenerate the chapters in place")
     mode.add_argument("--check", action="store_true", help="fail when a chapter is stale")
+    mode.add_argument(
+        "--link",
+        action="store_true",
+        help="rewrite the hand-written chapters' `manual:<chapter>` tokens to their paths",
+    )
     parser.add_argument("--catalog-root", type=Path, default=DEFAULT_CATALOG_ROOT)
     parsed = parser.parse_args(argv)
+
+    if parsed.link:
+        counts = link_handwritten_chapters(catalog_root=parsed.catalog_root)
+        rewritten = {name: found for name, found in counts.items() if found}
+        if not rewritten:
+            print("no `manual:<chapter>` tokens left in the hand-written chapters")
+            return 0
+        for name, found in rewritten.items():
+            print(f"linked {found} cross-reference(s) in manual-{name}")
+        return 0
 
     rendered = build_chapters(toolbelt=toolbelt, facts=facts, catalog_root=parsed.catalog_root)
     stale: list[str] = []

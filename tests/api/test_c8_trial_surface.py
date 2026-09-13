@@ -22,6 +22,7 @@ from clue_agents.catalog import (
     FolderPromptCatalog,
     FolderSkillCatalog,
 )
+from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_agents.registry import (
     AgentCapabilityStatus,
     AgentProfileRegistry,
@@ -313,16 +314,23 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     That is a genuine degradation of the trial, accepted because the trial is quarantine-bound
     (master plan Phase 6). It is asserted here rather than discovered later — which is the job the
     original guard was doing, and the reason this test is inverted instead of deleted.
+
+    head-of-abm@v54 pins the fifteen operating-manual chapters beside it. A chapter requires no
+    tool, so no withholding can drop one, and the trial keeps the whole reference library while
+    losing the procedure. The manual describes the UNNARROWED grant, so on this surface its tools
+    chapter names tools the trial withholds; the trial's own refusals remain the truth there.
     """
 
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
-    assert trial.skill_disclosures() == ()
+    trial_disclosures = [item.resource.address for item in trial.skill_disclosures()]
+    assert "skill:stage0-interview@v31" not in trial_disclosures
+    assert trial_disclosures == [f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v30" in base_disclosures
+    assert "skill:stage0-interview@v31" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -354,7 +362,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v30")
+    body = base.open_skill("skill:stage0-interview@v31")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

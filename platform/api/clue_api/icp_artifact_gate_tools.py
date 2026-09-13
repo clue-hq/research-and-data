@@ -131,7 +131,8 @@ class OpenIcpArtifactGateTool(Tool):
         "Present one of this brand's ICP knowledge documents to the current human for "
         "confirmation. Supply the icp_key of the document you have read; the platform derives and "
         "persists the exact document, digest, permitted decisions, project and addressee. This "
-        "call confirms nothing. Then end the turn awaiting input with the returned gate_ref."
+        "call confirms nothing. Then end the turn awaiting input with the returned gate_ref. "
+        "Manual: .deepagent/skills/manual-tools/v1/SKILL.md#open_icp_confirmation_gate"
     )
     input_model: ClassVar[type[ToolInput]] = OpenIcpArtifactGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenIcpArtifactGateOutput

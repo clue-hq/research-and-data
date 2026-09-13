@@ -7,7 +7,7 @@
 # one sentence what the agent should do about it.
 #
 # Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
-#   - Every tool granted by `head-of-abm@v53` needs an entry. A missing entry fails the build by
+#   - Every tool granted by `head-of-abm@v54` needs an entry. A missing entry fails the build by
 #     name, so a newly granted tool cannot ship with unexplained refusals.
 #   - Every refusal code a tool can return needs a line. The builder renders exactly the codes
 #     listed here, so an unlisted code is invisible to the agent that will receive it.
@@ -25,7 +25,7 @@ author_icp_document:
     A proposed ICP document exists at the key you named, at a new version, attributed to the human
     whose turn this is. Nothing is confirmed: the human confirms it at the ICP gate, and only a
     confirmed version can be pinned or researched against.
-  skill_section: stage0-interview v30 section 5b, "Write the ICP document".
+  skill_section: stage0-interview v31 section 5b, "Write the ICP document".
   see_also: [documents-decisions, gates-authority]
   refusals:
     icp_authoring_not_composed: Tell the human ICP authoring is not wired on this deployment; nothing you do can compose it.
@@ -82,7 +82,7 @@ launch_arv2_account_research:
     project pinned and the product set the human confirmed. A successful call means queued, never
     finished and never that anything was found. The launched-task card appears in chat on its own.
     Read the run with read_arv2_account_research_run, and the accounts with read_project_accounts.
-  skill_section: stage0-interview v30 section 7, "Launch account research".
+  skill_section: stage0-interview v31 section 7, "Launch account research".
   see_also: [siblings, gates-authority, accounts-research]
   refusals:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.
@@ -104,7 +104,7 @@ launch_arv2_discovery:
     A discovery run is queued against the ICP version the project pinned. It approves nothing: the
     candidates land on the accounts table with a verdict each, and a human adds the ones they
     want. Read it back with read_discovery_run before proposing another.
-  skill_section: stage0-interview v30 section 7b, "Discover accounts for this project".
+  skill_section: stage0-interview v31 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
@@ -124,7 +124,7 @@ launch_arv2_person_research:
     A research run is queued for exactly the contacts you named. It researches people who already
     exist and never creates one; the persona you name is only the committee seat a person takes if
     they hold none. Queued is not finished.
-  skill_section: stage0-interview v30 section 8, "Research named people".
+  skill_section: stage0-interview v31 section 8, "Research named people".
   see_also: [siblings, accounts-research, claims]
   refusals:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.
@@ -194,7 +194,7 @@ open_icp_confirmation_gate:
     A gate card is waiting for the human, carrying the ICP document itself. Put the returned gate
     id in open_gate_refs and end the turn awaiting_input. Their approval mints a confirmed version
     and pins it to this project; you cannot confirm it yourself.
-  skill_section: stage0-interview v30 section 5, "Confirm the profile".
+  skill_section: stage0-interview v31 section 5, "Confirm the profile".
   see_also: [gates-authority, documents-decisions, humans-screens]
   refusals:
     gate_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
@@ -211,7 +211,7 @@ open_product_set_selection_gate:
     A gate card is waiting for the human, listing the brand's own products. Put the returned gate
     id in open_gate_refs and end the turn awaiting_input. Their choice becomes the project's
     confirmed product set, which the launches require.
-  skill_section: stage0-interview v30 section 5, "Confirm the products".
+  skill_section: stage0-interview v31 section 5, "Confirm the products".
   see_also: [gates-authority, documents-decisions, humans-screens]
   refusals:
     product_set_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
@@ -244,7 +244,7 @@ read_account_research:
     Nothing changes. You hold what the store actually says about one account, which is what a
     statement about that account must rest on. Never state a fact about an account from memory of
     an earlier thread.
-  skill_section: stage0-interview v30 section 7c, "Read before you speak about accounts".
+  skill_section: stage0-interview v31 section 7c, "Read before you speak about accounts".
   see_also: [claims, fields, accounts-research]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
@@ -259,7 +259,7 @@ read_arv2_account_research_run:
   afterwards: >-
     Nothing changes. You hold one research run's status and its per-account progress, which is how
     you answer "how is the research going?" without launching anything.
-  skill_section: stage0-interview v30 section 7, "Launch account research", for reading the run back.
+  skill_section: stage0-interview v31 section 7, "Launch account research", for reading the run back.
   see_also: [siblings, accounts-research]
   refusals:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and do not describe the run as finished or failed.
@@ -270,7 +270,7 @@ read_discovery_run:
     Nothing changes. You hold what the last discovery asked for, found, verified and had
     approved. Say that before proposing another run; do not launch one to answer a question this
     read already answers.
-  skill_section: stage0-interview v30 sections 7b and 7c.
+  skill_section: stage0-interview v31 sections 7b and 7c.
   see_also: [discovery, accounts-research]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
@@ -282,7 +282,7 @@ read_project_accounts:
   afterwards: >-
     Nothing changes. You hold the project's accounts with each one's research status, which is the
     list status.md only summarises.
-  skill_section: stage0-interview v30 section 7c, "Read before you speak about accounts".
+  skill_section: stage0-interview v31 section 7c, "Read before you speak about accounts".
   see_also: [accounts-research, discovery]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
@@ -293,7 +293,7 @@ record_interview_answer:
     Each routed statement is recorded against the human's own words, with the quote bound to the
     message it came from. Report what the receipt says was recorded, and never describe a refused
     statement as captured.
-  skill_section: stage0-interview v30 section 6, "Record what they told you".
+  skill_section: stage0-interview v31 section 6, "Record what they told you".
   see_also: [documents-decisions, claims]
   refusals:
     onboarding_input_not_found: Do not retry. The captured input is injected by the platform, so this is a platform fault to report.
@@ -311,7 +311,7 @@ request_persona_synthesis:
     A personas-only onboarding run is queued for the pinned ICP. It returns queued, never a
     document: the persona file lands under the profile's own scope on a later turn, so tell the
     human to expect it rather than describing it now.
-  skill_section: stage0-interview v30 section 5c, "Ask for the personas".
+  skill_section: stage0-interview v31 section 5c, "Ask for the personas".
   see_also: [documents-decisions, siblings]
   refusals:
     persona_synthesis_not_composed: Tell the human persona synthesis is not wired on this deployment, and say nothing was queued.
@@ -328,7 +328,7 @@ submit_ingestion:
   afterwards: >-
     An ingestion job is queued for the uploaded file. Queued is not read: the extracted content
     arrives later, so do not describe what the document says on this turn.
-  skill_section: stage0-interview v30 section 6, for an upload the human has already made.
+  skill_section: stage0-interview v31 section 6, for an upload the human has already made.
   see_also: [documents-decisions, workspace]
   refusals:
     ingestion_artifact_not_found: Use the artifact key from the human's own upload; do not author one.
@@ -341,7 +341,7 @@ write_project_document:
     The project's plan is written at a new version and the Plan tab shows it. Include the returned
     document id and version in domain_refs when you finalize, or the plan card never appears in
     the chat.
-  skill_section: stage0-interview v30 section 6b, "Write the plan".
+  skill_section: stage0-interview v31 section 6b, "Write the plan".
   see_also: [documents-decisions, humans-screens]
   refusals:
     project_documents_not_composed: Tell the human project documents are not wired on this deployment, and say the plan was not written.

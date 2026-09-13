@@ -136,7 +136,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # dropped. Everything else is v51's.
     # v53 (brand index path, 2026-09-14): v52's surface with the skill pin moved v29→v30 —
     # §1 names the brand library's manifest at its real mounted path, `brand/index.json`.
-    AgentRole.HEAD_OF_ABM: "v53",
+    # v54 (the operating manual, 2026-09-14): v53's surface with the manual disclosed. Fifteen
+    # `manual-*@v1` chapters join the skill pins, so the capability map names each one with a
+    # summary and an openable path and the agent can read the chapter instead of guessing. Every
+    # chapter grants no tool, so the governed surface is byte-for-byte v53's. Prompt pin v9→v10
+    # (the specialist-delegation paragraph is dropped, because this surface withholds delegation,
+    # and Stage 0 now points at the manual); skill pin v30→v31 (§1/§6/§7c/§10 name the chapter
+    # that answers the step's question, and §6 no longer claims an unrouted finalization is
+    # refused here).
+    AgentRole.HEAD_OF_ABM: "v54",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

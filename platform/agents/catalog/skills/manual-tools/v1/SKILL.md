@@ -11,7 +11,7 @@ tools: []
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---
-# Tools: the governed surface of head-of-abm@v53
+# Tools: the governed surface of head-of-abm@v54
 
 Every tool you hold, read off the live descriptor. The address is what the platform
 registered; the model calls it under the bare name. A call is one governed plan: it is
@@ -99,7 +99,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A proposed ICP document exists at the key you named, at a new version, attributed to the human whose turn this is. Nothing is confirmed: the human confirms it at the ICP gate, and only a confirmed version can be pinned or researched against.
 
-**Taught by.** stage0-interview v30 section 5b, "Write the ICP document".
+**Taught by.** stage0-interview v31 section 5b, "Write the ICP document".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-gates-authority/v1/SKILL.md`.
 
@@ -285,7 +285,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## launch_arv2_account_research@1
 
-**What it does.** Launch (or exactly replay) ARV2 account research: one governed research job per selected account on the shared fleet, pinned to the confirmed ICP artifact digest and the project's confirmed product-selection version. Call only when the current user action explicitly approves this exact account set and ICP. A successful result means the jobs were enqueued or replayed; it never means research has completed, and it authorizes no contact research.
+**What it does.** Launch (or exactly replay) ARV2 account research: one governed research job per selected account on the shared fleet, pinned to the confirmed ICP artifact digest and the project's confirmed product-selection version. Call only when the current user action explicitly approves this exact account set and ICP. A successful result means the jobs were enqueued or replayed; it never means research has completed, and it authorizes no contact research. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#launch_arv2_account_research
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -336,13 +336,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A research run is queued for exactly the accounts you named, pinned to the ICP version the project pinned and the product set the human confirmed. A successful call means queued, never finished and never that anything was found. The launched-task card appears in chat on its own. Read the run with read_arv2_account_research_run, and the accounts with read_project_accounts.
 
-**Taught by.** stage0-interview v30 section 7, "Launch account research".
+**Taught by.** stage0-interview v31 section 7, "Launch account research".
 
 **See also.** `.deepagent/skills/manual-siblings/v1/SKILL.md`, `.deepagent/skills/manual-gates-authority/v1/SKILL.md`, `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
 
 ## launch_arv2_discovery@1
 
-**What it does.** Launch (or exactly replay) ARV2 verified account discovery for one project: a long list built from the confirmed ICP document version the project pinned, then verified company by company against that document's hard gates. Call only when the current user action explicitly approves searching for new accounts for this project. The ICP, the gates and the provider ask all come from the pinned document and the deployment's settings — never from this call — and a successful result means the run was created or replayed, never that companies have been found or approved. It approves nothing and researches nothing.
+**What it does.** Launch (or exactly replay) ARV2 verified account discovery for one project: a long list built from the confirmed ICP document version the project pinned, then verified company by company against that document's hard gates. Call only when the current user action explicitly approves searching for new accounts for this project. The ICP, the gates and the provider ask all come from the pinned document and the deployment's settings — never from this call — and a successful result means the run was created or replayed, never that companies have been found or approved. It approves nothing and researches nothing. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#launch_arv2_discovery
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -385,13 +385,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A discovery run is queued against the ICP version the project pinned. It approves nothing: the candidates land on the accounts table with a verdict each, and a human adds the ones they want. Read it back with read_discovery_run before proposing another.
 
-**Taught by.** stage0-interview v30 section 7b, "Discover accounts for this project".
+**Taught by.** stage0-interview v31 section 7b, "Discover accounts for this project".
 
 **See also.** `.deepagent/skills/manual-discovery/v1/SKILL.md`, `.deepagent/skills/manual-siblings/v1/SKILL.md`, `.deepagent/skills/manual-gates-authority/v1/SKILL.md`.
 
 ## launch_arv2_person_research@1
 
-**What it does.** Launch (or exactly replay) ARV2 person research on named contacts of this workspace: one governed research job per person on the shared fleet, under a run of its own pinned to the project's currently confirmed ICP and product selection. Call only when the current user action explicitly approves researching these exact people. It researches existing contacts and never creates a person; a successful result means the jobs were enqueued or replayed, never that research has completed. `persona` is the committee seat each named person is given if they do not already hold one — it is what puts them on the account's contact list — and defaults to `user`.
+**What it does.** Launch (or exactly replay) ARV2 person research on named contacts of this workspace: one governed research job per person on the shared fleet, under a run of its own pinned to the project's currently confirmed ICP and product selection. Call only when the current user action explicitly approves researching these exact people. It researches existing contacts and never creates a person; a successful result means the jobs were enqueued or replayed, never that research has completed. `persona` is the committee seat each named person is given if they do not already hold one — it is what puts them on the account's contact list — and defaults to `user`. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#launch_arv2_person_research
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -439,7 +439,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A research run is queued for exactly the contacts you named. It researches people who already exist and never creates one; the persona you name is only the committee seat a person takes if they hold none. Queued is not finished.
 
-**Taught by.** stage0-interview v30 section 8, "Research named people".
+**Taught by.** stage0-interview v31 section 8, "Research named people".
 
 **See also.** `.deepagent/skills/manual-siblings/v1/SKILL.md`, `.deepagent/skills/manual-accounts-research/v1/SKILL.md`, `.deepagent/skills/manual-claims/v1/SKILL.md`.
 
@@ -579,7 +579,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## open_icp_confirmation_gate@2
 
-**What it does.** Present one of this brand's ICP knowledge documents to the current human for confirmation. Supply the icp_key of the document you have read; the platform derives and persists the exact document, digest, permitted decisions, project and addressee. This call confirms nothing. Then end the turn awaiting input with the returned gate_ref.
+**What it does.** Present one of this brand's ICP knowledge documents to the current human for confirmation. Supply the icp_key of the document you have read; the platform derives and persists the exact document, digest, permitted decisions, project and addressee. This call confirms nothing. Then end the turn awaiting input with the returned gate_ref. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#open_icp_confirmation_gate
 
 - Effect class: `write`.
 - Spends: no.
@@ -625,13 +625,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A gate card is waiting for the human, carrying the ICP document itself. Put the returned gate id in open_gate_refs and end the turn awaiting_input. Their approval mints a confirmed version and pins it to this project; you cannot confirm it yourself.
 
-**Taught by.** stage0-interview v30 section 5, "Confirm the profile".
+**Taught by.** stage0-interview v31 section 5, "Confirm the profile".
 
 **See also.** `.deepagent/skills/manual-gates-authority/v1/SKILL.md`, `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-humans-screens/v1/SKILL.md`.
 
 ## open_product_set_selection_gate@1
 
-**What it does.** Ask the current human which of this brand's products this project is about. The platform derives the candidates from the brand's own product rows and the current product catalog; you may pass the icp_key you are working from to pre-check its products. This call confirms nothing. End the turn awaiting input with the returned gate_ref.
+**What it does.** Ask the current human which of this brand's products this project is about. The platform derives the candidates from the brand's own product rows and the current product catalog; you may pass the icp_key you are working from to pre-check its products. This call confirms nothing. End the turn awaiting input with the returned gate_ref. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#open_product_set_selection_gate
 
 - Effect class: `write`.
 - Spends: no.
@@ -672,7 +672,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A gate card is waiting for the human, listing the brand's own products. Put the returned gate id in open_gate_refs and end the turn awaiting_input. Their choice becomes the project's confirmed product set, which the launches require.
 
-**Taught by.** stage0-interview v30 section 5, "Confirm the products".
+**Taught by.** stage0-interview v31 section 5, "Confirm the products".
 
 **See also.** `.deepagent/skills/manual-gates-authority/v1/SKILL.md`, `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-humans-screens/v1/SKILL.md`.
 
@@ -768,7 +768,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_account_research@1
 
-**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free.
+**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#read_account_research
 
 - Effect class: `read`.
 - Spends: no.
@@ -841,13 +841,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Nothing changes. You hold what the store actually says about one account, which is what a statement about that account must rest on. Never state a fact about an account from memory of an earlier thread.
 
-**Taught by.** stage0-interview v30 section 7c, "Read before you speak about accounts".
+**Taught by.** stage0-interview v31 section 7c, "Read before you speak about accounts".
 
 **See also.** `.deepagent/skills/manual-claims/v1/SKILL.md`, `.deepagent/skills/manual-fields/v1/SKILL.md`, `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
 
 ## read_arv2_account_research_run@1
 
-**What it does.** Read one ARV2 account-research run: what it was pinned to, its status, and the state of each account's job (including the failure code of anything that needs review). Effect-free; it never starts, resumes or changes research.
+**What it does.** Read one ARV2 account-research run: what it was pinned to, its status, and the state of each account's job (including the failure code of anything that needs review). Effect-free; it never starts, resumes or changes research. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#read_arv2_account_research_run
 
 - Effect class: `read`.
 - Spends: no.
@@ -884,13 +884,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Nothing changes. You hold one research run's status and its per-account progress, which is how you answer "how is the research going?" without launching anything.
 
-**Taught by.** stage0-interview v30 section 7, "Launch account research", for reading the run back.
+**Taught by.** stage0-interview v31 section 7, "Launch account research", for reading the run back.
 
 **See also.** `.deepagent/skills/manual-siblings/v1/SKILL.md`, `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
 
 ## read_discovery_run@1
 
-**What it does.** Read the project's latest discovery run (or one by id): status, what was asked for and found, how many candidates the verifier judged against the ICP, how many were shown and approved, and the top candidates with their verdict. Read this before proposing another discovery, and to answer what discovery found. It approves nothing. Effect-free.
+**What it does.** Read the project's latest discovery run (or one by id): status, what was asked for and found, how many candidates the verifier judged against the ICP, how many were shown and approved, and the top candidates with their verdict. Read this before proposing another discovery, and to answer what discovery found. It approves nothing. Effect-free. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#read_discovery_run
 
 - Effect class: `read`.
 - Spends: no.
@@ -950,13 +950,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Nothing changes. You hold what the last discovery asked for, found, verified and had approved. Say that before proposing another run; do not launch one to answer a question this read already answers.
 
-**Taught by.** stage0-interview v30 sections 7b and 7c.
+**Taught by.** stage0-interview v31 sections 7b and 7c.
 
 **See also.** `.deepagent/skills/manual-discovery/v1/SKILL.md`, `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
 
 ## read_project_accounts@1
 
-**What it does.** List the accounts in one project with each account's research status (not_started, in_progress, needs_review, completed, suspended) and how it joined the project. Filter by name or domain to find one account; page with limit and offset when total is larger than the page you received. Read this before saying how many accounts there are, which are researched, or before proposing more discovery. Effect-free.
+**What it does.** List the accounts in one project with each account's research status (not_started, in_progress, needs_review, completed, suspended) and how it joined the project. Filter by name or domain to find one account; page with limit and offset when total is larger than the page you received. Read this before saying how many accounts there are, which are researched, or before proposing more discovery. Effect-free. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#read_project_accounts
 
 - Effect class: `read`.
 - Spends: no.
@@ -1004,13 +1004,13 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Nothing changes. You hold the project's accounts with each one's research status, which is the list status.md only summarises.
 
-**Taught by.** stage0-interview v30 section 7c, "Read before you speak about accounts".
+**Taught by.** stage0-interview v31 section 7c, "Read before you speak about accounts".
 
 **See also.** `.deepagent/skills/manual-accounts-research/v1/SKILL.md`, `.deepagent/skills/manual-discovery/v1/SKILL.md`.
 
 ## record_interview_answer@1
 
-**What it does.** Invoke exact governed platform tool record_interview_answer@1.
+**What it does.** Invoke exact governed platform tool record_interview_answer@1. Manual: .deepagent/skills/manual-tools/v1/SKILL.md#record_interview_answer
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -1060,7 +1060,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** Each routed statement is recorded against the human's own words, with the quote bound to the message it came from. Report what the receipt says was recorded, and never describe a refused statement as captured.
 
-**Taught by.** stage0-interview v30 section 6, "Record what they told you".
+**Taught by.** stage0-interview v31 section 6, "Record what they told you".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-claims/v1/SKILL.md`.
 
@@ -1107,7 +1107,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** A personas-only onboarding run is queued for the pinned ICP. It returns queued, never a document: the persona file lands under the profile's own scope on a later turn, so tell the human to expect it rather than describing it now.
 
-**Taught by.** stage0-interview v30 section 5c, "Ask for the personas".
+**Taught by.** stage0-interview v31 section 5c, "Ask for the personas".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-siblings/v1/SKILL.md`.
 
@@ -1151,7 +1151,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** An ingestion job is queued for the uploaded file. Queued is not read: the extracted content arrives later, so do not describe what the document says on this turn.
 
-**Taught by.** stage0-interview v30 section 6, for an upload the human has already made.
+**Taught by.** stage0-interview v31 section 6, for an upload the human has already made.
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-workspace/v1/SKILL.md`.
 
@@ -1200,7 +1200,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **Afterwards.** The project's plan is written at a new version and the Plan tab shows it. Include the returned document id and version in domain_refs when you finalize, or the plan card never appears in the chat.
 
-**Taught by.** stage0-interview v30 section 6b, "Write the plan".
+**Taught by.** stage0-interview v31 section 6b, "Write the plan".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v1/SKILL.md`, `.deepagent/skills/manual-humans-screens/v1/SKILL.md`.
 

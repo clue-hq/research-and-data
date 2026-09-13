@@ -16,7 +16,7 @@ from clue_agents.manual import build as manual
 from clue_api.manual_build import build_facts, load_toolbelt, main
 
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v53"
+PROFILE_VERSION = "v54"
 
 
 @pytest.fixture(scope="module")
@@ -91,6 +91,46 @@ def test_check_exits_one_when_a_committed_chapter_is_altered(tmp_path: Path) -> 
     altered = copied / "skills" / "manual-limits" / "v1" / "SKILL.md"
     altered.write_bytes(altered.read_bytes() + b"\ndrifted\n")
     assert main(["--check", "--catalog-root", str(copied)]) == 1
+
+
+def test_link_rewrites_the_handwritten_chapters_once_and_leaves_the_generated_ones_alone(
+    tmp_path: Path,
+) -> None:
+    """`--link` is the hand-written half's rewriter: idempotent, and never the builder's files."""
+
+    copied = tmp_path / "catalog"
+    shutil.copytree(manual.DEFAULT_CATALOG_ROOT, copied)
+    generated_before = {
+        name: manual.chapter_path(copied, name, manual.MANUAL_VERSION).read_bytes()
+        for name in manual.GENERATED_CHAPTERS
+    }
+
+    target = manual.chapter_path(copied, "glossary", manual.MANUAL_VERSION)
+    target.write_text(target.read_text() + "\nA turn is manual:turn.\n", encoding="utf-8")
+
+    assert main(["--link", "--catalog-root", str(copied)]) == 0
+    linked = target.read_text(encoding="utf-8")
+    assert "`.deepagent/skills/manual-turn/v1/SKILL.md`" in linked
+    assert "manual:turn" not in linked
+
+    # A second pass has nothing left to match, so the bytes do not move.
+    assert main(["--link", "--catalog-root", str(copied)]) == 0
+    assert target.read_text(encoding="utf-8") == linked
+
+    for name, payload in generated_before.items():
+        assert manual.chapter_path(copied, name, manual.MANUAL_VERSION).read_bytes() == payload, (
+            f"--link rewrote the generated chapter manual-{name}; render_skill owns its tokens"
+        )
+
+
+def test_link_refuses_a_token_that_names_no_chapter(tmp_path: Path) -> None:
+    copied = tmp_path / "catalog"
+    shutil.copytree(manual.DEFAULT_CATALOG_ROOT, copied)
+    target = manual.chapter_path(copied, "glossary", manual.MANUAL_VERSION)
+    target.write_text(target.read_text() + "\nSee manual:nowhere.\n", encoding="utf-8")
+
+    with pytest.raises(manual.ManualBuildError, match="manual:nowhere, which is not a chapter"):
+        main(["--link", "--catalog-root", str(copied)])
 
 
 def test_committed_chapters_equal_a_fresh_build(toolbelt: object) -> None:

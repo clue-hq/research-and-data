@@ -52,7 +52,7 @@ scope itself, or claim a lineage.
 
 An ICP you author is always born `proposed`. **Only the gate mints `confirmed`.** Take
 `product_ids` from the catalog rather than inventing one; where the ids actually are, and why
-the catalog document does not carry them, is manual:workspace.
+the catalog document does not carry them, is `.deepagent/skills/manual-workspace/v1/SKILL.md`.
 
 ## The persona document
 
@@ -90,7 +90,7 @@ it. A later change of the set is a new gate and a new version, never an edit.
 A run is `full` (the whole brand walk, started from the onboarding flow) or `personas` (one
 persona turn for one already pinned ICP, which is the one you can request). Statuses are
 `queued`, `running`, `completed`, `completed_with_gaps` and `failed`. Where to read the outcome
-is manual:siblings.
+is `.deepagent/skills/manual-siblings/v1/SKILL.md`.
 
 ## Recorded decisions: how the human's words become durable
 

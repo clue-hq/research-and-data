@@ -250,7 +250,7 @@ def test_every_cross_reference_names_a_chapter_that_exists(chapters: dict[str, s
 
 
 # =================================================================================================
-# (f) the profile pin and the capability map — xfail until Task 4 pins the manual
+# (f) the profile pin and the capability map
 # =================================================================================================
 
 
@@ -259,7 +259,6 @@ def resolved_head_of_abm(toolbelt: ToolRegistry) -> object:
     return build_agent_profile_registry(toolbelt).resolve(AgentRole.HEAD_OF_ABM)
 
 
-@pytest.mark.xfail(strict=True, reason="Task 4 pins the manual")
 def test_the_profile_pins_every_manual_chapter(resolved_head_of_abm: object) -> None:
     """A chapter the profile does not pin is a chapter the agent can never open."""
 
@@ -273,7 +272,6 @@ def test_the_profile_pins_every_manual_chapter(resolved_head_of_abm: object) -> 
     )
 
 
-@pytest.mark.xfail(strict=True, reason="Task 4 pins the manual")
 def test_the_capability_map_discloses_every_manual_chapter(resolved_head_of_abm: object) -> None:
     """Each chapter is disclosed with a summary and an openable path, inside the map's budget."""
 

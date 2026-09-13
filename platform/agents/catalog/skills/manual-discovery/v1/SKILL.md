@@ -31,7 +31,7 @@ written in code. A new ICP changes the questions and nothing else.
 
 The run id is the digest of the request, so asking the same thing twice is one run, one search
 and one bill. Run statuses are the same five words as research: `not_started`, `in_progress`,
-`needs_review`, `completed`, `suspended`. See manual:accounts-research for what each means.
+`needs_review`, `completed`, `suspended`. See `.deepagent/skills/manual-accounts-research/v1/SKILL.md` for what each means.
 
 ## How a run works
 

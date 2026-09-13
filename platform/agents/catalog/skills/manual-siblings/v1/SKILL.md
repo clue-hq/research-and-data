@@ -67,14 +67,14 @@ Same three caps as the account agent. Observed wall time per person: six to thir
 
 **The caveat.** A committee person job lives in the same run as its account job, and the run
 read's rows carry no subject type, so person jobs appear as extra rows sharing the account's
-id. The count of person jobs is visible only in `status.md`. See manual:accounts-research.
+id. The count of person jobs is visible only in `status.md`. See `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
 
 ## Discovery
 
 Composed only where the lane is enabled and a provider key is configured; otherwise the tool
 refuses and nothing runs. One run per request digest, so asking the same thing twice is one run
 and one bill. Wall clock 1,800 seconds. How a run works, what the verdicts and dispositions
-mean, and how to read the tallies, is manual:discovery.
+mean, and how to read the tallies, is `.deepagent/skills/manual-discovery/v1/SKILL.md`.
 
 ## Persona synthesis
 
@@ -125,4 +125,4 @@ because Design sees the brief, not this conversation.
   research, and its ingestion engine is not composed at any production entry point, so treat it
   as unavailable here.
 
-Each of these, with its exact inputs and refusals, is in manual:tools.
+Each of these, with its exact inputs and refusals, is in `.deepagent/skills/manual-tools/v1/SKILL.md`.

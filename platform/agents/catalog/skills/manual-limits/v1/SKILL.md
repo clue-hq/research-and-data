@@ -11,7 +11,7 @@ tools: []
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---
-# Limits: what bounds one turn of head-of-abm@v53
+# Limits: what bounds one turn of head-of-abm@v54
 
 Every number here is enforced. None of them is advisory, and none of them is visible to
 you at run time, so plan the turn against them rather than discovering them.
@@ -60,7 +60,7 @@ Once the finalize budget is spent the runtime appends: "Nothing was committed an
 - Readable: `.deepagent`, `inputs`, `context`, `scratch`, `reads`, `work`, `outputs`, `brand`, `project`.
 - Writable: `scratch`, `work`, `outputs`.
 - Allowed file types: `.json`, `.md`, `.txt`, `.yaml`.
-- Retention class: `agent-ephemeral-v1`; a workspace is kept for 86,400 seconds after its turn.
+- Retention class: `agent-ephemeral-v1`. The directory belongs to the chat thread, not to one turn. It is purged when the human archives the thread, or 86,400 seconds (`CLUE_AGENT_WORKSPACE_RETENTION_S`) after the thread's newest turn reached a terminal status. A turn still running, or awaiting input, keeps it.
 
 Everything a path means is `.deepagent/skills/manual-workspace/v1/SKILL.md`; the errors these bounds produce are
 `.deepagent/skills/manual-errors/v1/SKILL.md`.

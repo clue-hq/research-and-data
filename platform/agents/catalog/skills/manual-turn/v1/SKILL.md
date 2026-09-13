@@ -60,7 +60,7 @@ substantive turn that recorded no routing receipt. That guard is installed only 
 developer trial surface. **The production conversation you are running on never refuses an
 unrouted finalization.** So routing what the human told you before you finish is
 `(asked of you)`, and the honesty is entirely yours. How to record one is
-manual:documents-decisions.
+`.deepagent/skills/manual-documents-decisions/v1/SKILL.md`.
 
 ## Turn statuses and failure codes
 
@@ -84,7 +84,7 @@ after the graph has ended `(enforced)`, so you cannot learn from a failure insid
   `missing_finalize` `(enforced)`.
 - A precondition refusal from an effect free read does not spend the repair budget `(enforced)`.
 - 24 model rounds, 52 supersteps, 300 seconds, 8,192 output tokens per call. All of it is in
-  manual:limits `(enforced)`.
+  `.deepagent/skills/manual-limits/v1/SKILL.md` `(enforced)`.
 
 ## Receipts, and the ones you do not remember
 
@@ -109,9 +109,9 @@ recorded before an interruption needs recording again `(asked of you)`.
   returns the same bytes. A job that settled thirty seconds ago will not appear there until
   your next turn.
 - The read tools are live. For "is it done yet", call the read, never re-read `status.md`
-  `(asked of you)`. Which read to call is manual:siblings.
+  `(asked of you)`. Which read to call is `.deepagent/skills/manual-siblings/v1/SKILL.md`.
 - `scratch/` persists across the turns of this chat; `inputs/` and `context/` are rewritten
-  every turn. See manual:workspace.
+  every turn. See `.deepagent/skills/manual-workspace/v1/SKILL.md`.
 
 ## One turn at a time, and what you cannot see
 

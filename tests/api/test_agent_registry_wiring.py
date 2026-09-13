@@ -19,6 +19,7 @@ from clue_agents import (
     RoleRegistryStatus,
     ToolPin,
 )
+from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
@@ -132,8 +133,11 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # the skill body are both in the manifest, so the digest moves again. v53 adds no address
         # either: it pins stage0-interview v30, which names the brand library's manifest at its
         # real mounted path (`brand/index.json`, the tree root) — the skill body is in the
-        # manifest, so the digest moves once more. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("7a16d436042ad838675a8ad59fa098ea0da503c3d45d164a44427f5c1ffdad35"),
+        # manifest, so the digest moves once more. v54 adds no address either: it discloses the
+        # fifteen `manual-*@v1` chapters (each granting no tool), pins prompt v10 and skill v31,
+        # and every one of those bodies is in the manifest, so the digest moves again. Digest
+        # measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("a59adaa1bc23ea1ceb7d16aa0ef524c5db4a619a75c8da85143a7f8da9835ff3"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -494,9 +498,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v53"
+    assert production.profile_ref.address == "profile:head-of-abm@v54"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v30"
+        "skill:stage0-interview@v31"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -540,7 +544,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v30")
+    body = production.open_skill("skill:stage0-interview@v31")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -594,11 +598,15 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     disclosures = head.skill_disclosures()
 
-    # One skill, since founder ruling 2 (2026-09-10) dropped `account-deep-steering@v8` with the
-    # five old-lane tools its frontmatter required. A skill cannot grant a tool its profile does
-    # not pin, so keeping it would have disclosed a procedure whose every step is uncallable.
-    assert len(disclosures) == 1
-    assert disclosures[0].resource.address == "skill:stage0-interview@v30"
+    # One procedure skill, since founder ruling 2 (2026-09-10) dropped `account-deep-steering@v8`
+    # with the five old-lane tools its frontmatter required. A skill cannot grant a tool its
+    # profile does not pin, so keeping it would have disclosed a procedure whose every step is
+    # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
+    # procedure, each granting no tool.
+    assert [item.resource.address for item in disclosures] == [
+        "skill:stage0-interview@v31",
+        *(f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS),
+    ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
@@ -706,7 +714,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v30")
+    body = head.open_skill("skill:stage0-interview@v31")
 
     assert required_guidance in body
 
@@ -754,9 +762,14 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
     assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
-    # v48 pins exactly one skill, so withdrawing that skill's tool leaves the profile with none —
-    # which is the ceiling doing its whole job rather than a weaker version of it.
-    assert [item.resource.address for item in head.skill_disclosures()] == []
+    # Withdrawing the Stage-0 skill's own routing tool takes the skill with it, which is the
+    # ceiling doing its whole job rather than a weaker version of it. v54's fifteen manual
+    # chapters survive, and must: a chapter requires no tool, so no withdrawal can make its
+    # procedure uncallable. What it can make is a chapter that over-describes the narrowed
+    # surface, which is the manual's honesty problem, not the ceiling's.
+    remaining = [item.resource.address for item in head.skill_disclosures()]
+    assert "skill:stage0-interview@v31" not in remaining
+    assert remaining == [f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS]
 
 
 def test_resolved_snapshot_materializes_through_c61_backend(
@@ -785,7 +798,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v9/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v10/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

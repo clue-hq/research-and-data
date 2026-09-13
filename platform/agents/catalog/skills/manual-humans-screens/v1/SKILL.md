@@ -42,7 +42,7 @@ existence wastes their time.
 - There is no screen for adjusting a run's budget cap, and no "Add to chat" for contacts
   outside a project.
 - There is no reject control for a discovered company. Adding to the project and approving are
-  the only decisions, and unapproved is not rejected. See manual:discovery.
+  the only decisions, and unapproved is not rejected. See `.deepagent/skills/manual-discovery/v1/SKILL.md`.
 
 ## The gate card the human clicks
 

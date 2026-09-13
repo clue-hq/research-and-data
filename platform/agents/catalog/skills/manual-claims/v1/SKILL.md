@@ -23,7 +23,7 @@ and every fact you read back is one.
 | Part | What it says |
 | --- | --- |
 | `entity_id`, `entity_type` | the resolved account or contact it is about, never a free text name |
-| `field_key` | the registered field it asserts. The registry is manual:fields |
+| `field_key` | the registered field it asserts. The registry is `.deepagent/skills/manual-fields/v1/SKILL.md` |
 | `value_json` | the value |
 | `source_url` | where a reader can go and check. It can be absent |
 | `source_key` | the registered source or resolver that produced it |

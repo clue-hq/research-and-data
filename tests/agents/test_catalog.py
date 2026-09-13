@@ -44,6 +44,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:content-drafter@v2",
         "prompt:design@v1",
         "prompt:head-of-abm@v1",
+        # The operating manual: v9 without the specialist-delegation paragraph this surface
+        # withholds, and with Stage 0 pointing at the `manual-*` chapters. Lexical, not numeric.
+        "prompt:head-of-abm@v10",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
         "prompt:head-of-abm@v4",
@@ -137,6 +140,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The brand index path: v29 with §1 naming the brand library's manifest where it is
         # actually mounted — `brand/index.json`, the tree root, beside `knowledge/`.
         "skill:stage0-interview@v30",
+        # The operating manual: v30 with §1, §6, §7c and §10 naming the chapter that answers the
+        # question the step raises, and §6 no longer claiming an unrouted finalization is refused.
+        "skill:stage0-interview@v31",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -222,6 +228,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v52",
         # The brand index path: v52 with stage0-interview v30.
         "profile:head-of-abm@v53",
+        # The operating manual: v53 plus the fifteen `manual-*@v1` chapter pins, with
+        # stage0-interview v31 and prompt head-of-abm v10.
+        "profile:head-of-abm@v54",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

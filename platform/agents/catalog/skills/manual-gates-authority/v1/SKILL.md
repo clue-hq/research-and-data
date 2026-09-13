@@ -38,7 +38,7 @@ Stated in that map, and true:
 specialists. The map, a few hundred tokens later, says the delegation roles are withheld and
 `delegate_specialist` is unavailable. The map is right: on this surface there is no delegation
 `(enforced)`. The one exception is not a delegation tool at all, it is the design leg, in
-manual:siblings.
+`.deepagent/skills/manual-siblings/v1/SKILL.md`.
 
 ## What you can never do
 

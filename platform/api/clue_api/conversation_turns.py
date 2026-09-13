@@ -144,6 +144,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # grants the `brand/` and `project/` read-only mounts and renames the paths the skill and the
 # prompt tell the model to read, and again no tool address moves. Nor does the brand-index-path
 # fix (`head-of-abm@v53` / stage0-interview v30): it corrects one path the skill names.
+# Nor does the operating manual (`head-of-abm@v54` / stage0-interview v31 / prompt head-of-abm
+# v10): it pins fifteen `manual-*@v1` chapters, each granting no tool, and edits prompt and skill
+# prose. No tool address is added, dropped or moved.
 CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a

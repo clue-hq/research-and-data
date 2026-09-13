@@ -31,10 +31,10 @@ inside it. There is no host filesystem, no shell and no network here.
 | `.deepagent/` | read | your own manifest, profile, prompt and skills, including these manual chapters. |
 
 Writes are allowed only under `scratch/`, `work/` and `outputs/`, only with the extensions
-`.json`, `.md`, `.txt` and `.yaml`, and only inside the quotas in manual:limits. A write
+`.json`, `.md`, `.txt` and `.yaml`, and only inside the quotas in `.deepagent/skills/manual-limits/v1/SKILL.md`. A write
 outside those prefixes is refused `permission_denied`. You cannot edit a knowledge file or the
 plan file directly: the plan changes through `write_project_document`, which is in
-manual:tools. Writing documents under `project/` arrives with a later profile.
+`.deepagent/skills/manual-tools/v1/SKILL.md`. Writing documents under `project/` arrives with a later profile.
 
 ## `brand/` the brand library
 
@@ -46,7 +46,7 @@ manual:tools. Writing documents under `project/` arrives with a later profile.
   and its confirmed product set.
 - If the manifest lists no documents, onboarding has not produced knowledge for this brand
   yet. Say so plainly. Onboarding runs from the workspace's onboarding flow, not from a
-  control on the Knowledge page; see manual:humans-screens.
+  control on the Knowledge page; see `.deepagent/skills/manual-humans-screens/v1/SKILL.md`.
 - When two versions of one path are pinned, the pinned version keeps the plain name and the
   other carries its version, such as `audience/icp-gi.v3.md`.
 
@@ -64,7 +64,7 @@ manual:tools. Writing documents under `project/` arrives with a later profile.
 
 Every thread of this project sees the same library, so what another thread settled is here.
 The library is compiled once per turn and pinned, so it does not move under you while you
-work. What the words in `status.md` mean is manual:accounts-research and manual:discovery.
+work. What the words in `status.md` mean is `.deepagent/skills/manual-accounts-research/v1/SKILL.md` and `.deepagent/skills/manual-discovery/v1/SKILL.md`.
 
 ## `inputs/` this turn
 
@@ -98,15 +98,15 @@ Two honest warnings about those cards:
   have no client context because of it.
 - The budget card's `external_research_budget_cents` is a hardcoded `"0"` and its scope
   sentence predates the launch tools you hold. It is not a burn down and it is not a fact about
-  what has been spent. What the number does enforce is in manual:gates-authority.
+  what has been spent. What the number does enforce is in `.deepagent/skills/manual-gates-authority/v1/SKILL.md`.
 
 For more about an attached account or contact than its focus card carries, use
-`read_account_research`, in manual:tools.
+`read_account_research`, in `.deepagent/skills/manual-tools/v1/SKILL.md`.
 
 ## The file tools, as they really behave
 
 They are framework tools, not governed ones: no receipt, no journal row, no replay. Their
-errors are plain strings, listed in manual:errors.
+errors are plain strings, listed in `.deepagent/skills/manual-errors/v1/SKILL.md`.
 
 | Tool | What to know |
 | --- | --- |
