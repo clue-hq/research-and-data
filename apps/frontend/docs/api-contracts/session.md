@@ -37,10 +37,33 @@ memberships[]: membership_id, workspace_id, role_key, permissions[]
 accepts it only when the resolved Clue user has a current active membership and returns the closed
 internal principal. The selected workspace is stored in the HttpOnly, SameSite=Lax
 `clue_workspace_id` cookie; changing it calls `/auth/v1/principal` before setting the cookie.
-The post-sign-in establishment route seeds the first active membership. Every BFF request reloads
-the active membership set; an absent or revoked selection falls back to the first currently active
-membership and replaces the cookie before proxying. Signing out erases the workspace cookie before
-ending the provider session.
+An absent or stale selection requires explicit workspace selection; it never falls back to a
+different active membership. Every BFF request reloads the active membership set. Signing out
+erases the workspace cookie before ending the provider session.
+
+## Pinned local comparison instances
+
+For simultaneous local brand reviews, `CLUE_LOCAL_WORKSPACE_ID` and
+`CLUE_LOCAL_WORKSPACE_NAME` optionally bind one frontend process to one **existing** workspace.
+Both settings default to empty. They require authenticated development mode and an explicit
+loopback `CLUE_APP_ORIGIN` port; production or incomplete configuration fails closed.
+
+The server pin precedes cookie selection in the shared session loader. The current identity
+must still have an active membership, and `/auth/v1/principal` must return that workspace.
+Missing/revoked access fails closed. Browser headers, another tab's cookie, workspace Server
+Actions and the selector page cannot change the bound workspace. Both provisioning paths are
+disabled because provisioning replay can modify the user's original self-serve workspace.
+
+Each instance uses a port-specific HttpOnly workspace cookie and Next compiler directory.
+The browser title and sidebar show the configured brand. The same-origin BFF and the backend's
+Clerk authorized-party allowlist must include the exact new loopback origins. Clerk identity
+and sign-out remain shared across localhost ports; this isolates workspace selection, not
+authentication accounts. Backend/database/storage remain shared behind existing tenancy.
+
+Run `node apps/frontend/scripts/local-workspace-instances.mjs run <manifest.json>` from the
+repository root. The local, uncommitted manifest contains an `instances` array of `{name, port,
+workspaceId}` objects. The manager refuses duplicate/occupied ports, records only its own PIDs,
+keeps separate logs beside the manifest, and supports `status` and `stop` with the same path.
 
 ## Same-origin BFF
 

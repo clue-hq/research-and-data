@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { selectWorkspaceAndContinue } from "@/features/session/data/session-actions";
-import { getWorkspaceSelectionSession } from "@/features/session/data/session-dal";
+import { getWorkspaceSelectionSession, requireWorkspaceMembership } from "@/features/session/data/session-dal";
+import { localWorkspaceInstance } from "@/auth/local-workspace";
 
 export default async function SelectWorkspacePage() {
+  const instance = localWorkspaceInstance();
+  if (instance) {
+    await requireWorkspaceMembership(instance.workspaceId);
+    redirect("/projects");
+  }
   const session = await getWorkspaceSelectionSession();
   if (session.memberships.length === 0) {
     redirect("/access-denied?code=WORKSPACE_FORBIDDEN");

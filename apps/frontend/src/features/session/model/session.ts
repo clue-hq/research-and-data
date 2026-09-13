@@ -45,11 +45,13 @@ export interface ProtectedSession {
 export function resolveWorkspaceMembership(
   session: AuthenticatedSession,
   requestedWorkspaceId: string | null | undefined,
+  pinnedWorkspaceId: string | null = null,
 ): SessionMembership | null {
-  if (requestedWorkspaceId) {
+  const workspaceId = pinnedWorkspaceId ?? requestedWorkspaceId;
+  if (workspaceId) {
     return (
       session.memberships.find(
-        (membership) => membership.workspace_id === requestedWorkspaceId,
+        (membership) => membership.workspace_id === workspaceId,
       ) ?? null
     );
   }

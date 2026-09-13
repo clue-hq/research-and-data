@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getProtectedSession } from "@/features/session/data/session-dal";
-import { WORKSPACE_COOKIE } from "@/features/session/model/session";
+import { workspaceCookieName } from "@/auth/local-workspace";
 
 export async function GET() {
   // getProtectedSession routes authentication failures through the shared handler
@@ -9,7 +9,7 @@ export async function GET() {
   const session = await getProtectedSession();
   if (!session) redirect("/");
   const cookieStore = await cookies();
-  cookieStore.set(WORKSPACE_COOKIE, session.principal.workspace_id, {
+  cookieStore.set(workspaceCookieName(), session.principal.workspace_id, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

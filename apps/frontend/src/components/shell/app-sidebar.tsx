@@ -12,6 +12,7 @@ import styles from "./app-sidebar.module.css";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ProjectSidebarTree } from "./project-sidebar-tree";
 import { SidebarIcon } from "./sidebar-icon";
+import { useLocalWorkspaceLabel } from "@/features/session/components/local-workspace-provider";
 
 function NavigationGroup({
   activeHref,
@@ -65,6 +66,7 @@ export function AppSidebar({
   toggleLabel?: string;
 }) {
   const projectsController = useSidebarProjectsController();
+  const localWorkspace = useLocalWorkspaceLabel();
 
   return (
     <>
@@ -99,6 +101,17 @@ export function AppSidebar({
             <DesignIcon className={`transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`} name="sidebar-toggle" size={12} />
           </button>
         </div>
+
+        {localWorkspace ? (
+          <div
+            aria-label={`Workspace: ${localWorkspace.name}`}
+            className="mx-2 mb-3 shrink-0 rounded-md border border-[var(--clue-border-neutral)] bg-[var(--clue-background-page)] px-2 py-2"
+            title={`${localWorkspace.name} · localhost:${localWorkspace.port}`}
+          >
+            <p className="truncate text-sm font-medium">{collapsed ? localWorkspace.name.slice(0, 1) : localWorkspace.name}</p>
+            {!collapsed ? <p className="text-xs text-[var(--clue-content-subtle)]">Local · {localWorkspace.port}</p> : null}
+          </div>
+        ) : null}
 
         <div className="clue-scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-2">
           <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={primaryNavigation} />
