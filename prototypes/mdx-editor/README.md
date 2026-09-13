@@ -48,6 +48,28 @@ native language control is hidden using its semantic `aria-label`, not a generat
 Source mode and blocks have no visible line numbers. Image insertion, AI writing,
 collaboration, diff review and production persistence are outside this prototype.
 
+## Plan tab review — Lane 2 step 4
+
+Open **http://localhost:3047/plan** on this same server. This is the visual review
+checkpoint for Plan-tab plan Tasks 6–7, before the live shell is integrated.
+
+- Gallery / Target accounts / Plan tab rail with Arrow keys, Home and End navigation.
+- Slim document-name header, Preview/Edit, Save/Discard and a centered Markdown article.
+  The document scrolls inside its pane; the header and tab rail stay in place.
+- Plan ready and the specified No plan yet state; split, full and 360px layouts.
+- The chat's collapsible plan card opens the Plan tab. Close and reopen the panel to
+  check draft retention. “Simulate plan arrival” opens the tab with sample content;
+  it does not run an agent, consume transcript events or call a backend.
+- The existing prototype's editor/session is reused, with lazy initial editor mounting
+  and the same library controls. Once opened, it stays mounted across Preview/Edit,
+  tab switches and panel closing. Opening Edit alone does not enable Save.
+- Saves use the distinct `clue:mdx-prototype:v1:plan-tab` browser key. Reset sample
+  affects only this sample. The root editor demo and real documents are unaffected.
+
+Real document reads/saves, URL state and transcript-driven auto-open belong to the
+production integration after visual approval. That integration also needs the local
+Semarang backend/schema rollout noted in the Lane 2 plan.
+
 ## Compatibility finding (initial prototype; resolved by Task 5)
 
 Verified release set: MDXEditor **4.2.5**, Next **16.2.12**, React/React DOM **19.2.4**,

@@ -165,6 +165,16 @@ project-document browser walk, and was not changed for this Knowledge migration.
 
 ### Task 6: The Plan surface — shell state, tab, pane, editor hook
 
+**Visual-review checkpoint — 2026-09-14:** the founder's agreed step 4 starts with a
+reviewable preview. `prototypes/mdx-editor/app/plan` serves it at
+`http://localhost:3047/plan`, reusing the approved prototype editor/session. It shows
+the third tab, document header, centered article, prescribed empty state, 360 px
+layout, local sample Save/Discard, plan-card opening and simulated plan arrival.
+This is sample-data UI only. The production Task 6 and Task 7 checkboxes below stay
+open until visual approval and real shell/repository/transcript integration. The
+local backend/schema rollout identified after Task 5 is still required for the live
+project-document acceptance walk.
+
 **Files:**
 - Modify: `features/chat-shell/model/chat-shell.ts` (`ChatShellSurface` adds `"plan"`), `features/chat-shell/hooks/use-editor-shell-controller.ts` (`EditorShellSurface` adds `"plan"`; action `{ type: "open-plan" }` → `{ ...state, editing: false, panelOpen: true, surface: "plan" }`; `openPlan` on the controller), `features/chat-shell/model/chat-surface-params.ts` (`parseChatSurface("plan")`; `chatSurfacePaneParams` returns `{ ...NO_PANE_PARAMS, surface: "plan" }`; both `surface` unions add `"plan"`) + `chat-surface-params.test.ts`
 - Create: `features/projects/hooks/use-project-documents.ts`, `features/projects/hooks/use-project-document-editor.ts`, `features/projects/components/project-document-surface.tsx`, `project-document-surface.module.css`
