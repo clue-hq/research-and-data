@@ -37,6 +37,8 @@ outside v1. Hide insertion controls without silently dropping those constructs f
 Use MDXEditor's source mode to recover content it cannot import. Keep source monospace, wrapped
 and without line numbers. Do not maintain another handwritten CodeMirror hook. A diff-review
 feature is out of scope. Server-owned front matter stays outside the editable body.
+Founder prototype review (2026-09-13): keep code blocks as simple monospace text, without
+a language picker or syntax-highlighting controls. Preserve existing fence metadata.
 
 ## Integration and preservation
 

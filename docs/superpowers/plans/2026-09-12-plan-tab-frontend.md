@@ -120,6 +120,11 @@ the surrounding chat, and long URLs/inline code/source text wrap. No source line
 - [ ] **Step 1: Compatibility prototype.** Verify a published MDXEditor release in this Next/React
   checkout, including client-only plugin imports and coexistence with existing Lexical dependencies.
   Do not force unrelated package versions. Exercise a disposable representative Markdown document.
+  - **2026-09-13 prototype:** `prototypes/mdx-editor/` runs on port 3047 with real controls,
+    Clue tokens, browser-only demo saves and source recovery. Next/React checks pass with
+    MDXEditor 4.2.5's Lexical 0.48 tree. The app's existing Lexical 0.49 packages produced
+    duplicate-instance errors in the first browser experiment. Step 1 stays open until
+    main-app dependency coexistence/alignment is resolved; see the prototype README.
 - [ ] **Step 2: Shared integration.** Extract `MarkdownArticle`, introduce the MDXEditor boundary,
   then migrate Knowledge. Preserve canEdit/read-only rules, Save/Discard, draft base revision,
   conflicts and the return of a new document ID on save. Keep repository calls outside the editor.
