@@ -52,14 +52,25 @@ from clue_agents.workspace_policy import (
 from clue_core import ExecutionId
 
 __all__ = [
+    "LIBRARY_DIR",
+    "PROJECTS_DIR",
+    "THREADS_DIR",
     "AgentWorkspaceFactory",
     "AgentWorkspaceLease",
     "AnchoredAgentWorkspaceBackend",
     "MountMode",
+    "MountRequest",
     "WorkspaceIdentity",
     "WorkspaceMount",
     "WorkspaceUsageSnapshot",
 ]
+
+#: The three scope folders below the prepared root. A workspace holds its shared ``library``
+#: beside ``projects``; a project holds its own ``library`` beside ``threads``; one thread
+#: directory is one persistent agent workspace.
+LIBRARY_DIR: Final = "library"
+PROJECTS_DIR: Final = "projects"
+THREADS_DIR: Final = "threads"
 
 _DIRECTORY_MODE: Final = 0o700
 _READ_ONLY_DIRECTORY_MODE: Final = 0o500
@@ -72,7 +83,7 @@ _DIR_FLAGS: Final = (
     | getattr(os, "O_CLOEXEC", 0)
 )
 _READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-_LAYOUT: Final = (".deepagent", "inputs", "context", "work", "delegations", "outputs")
+_LAYOUT: Final = (".deepagent", "inputs", "context", "scratch", "reads", "work", "outputs")
 # A mount claims one reserved first path segment. It is deliberately narrower than a
 # workspace segment: lowercase, no dot, no separator, so it can never collide with a
 # layout folder, a temporary-write residue, or a relative path component.
@@ -150,9 +161,27 @@ class WorkspaceMount:
 
 
 @dataclass(frozen=True, slots=True)
+class MountRequest:
+    """What the caller wants mounted; the factory turns it into open descriptors.
+
+    A request names durable directories that live *beside* the thread root — never inside it —
+    so a mount is a read of already-materialized bytes, never a copy into the agent's workspace.
+    """
+
+    #: ``(brand_id, knowledge_version)`` → ``<ws>/library/brand/<brand>/<version>``, read-only.
+    brand: tuple[str, str] | None = None
+    #: ``<ws>/projects/<project>/library`` → the ``project`` mount, read-only.
+    project_library: bool = False
+
+
+_NO_MOUNTS: Final = MountRequest()
+
+
+@dataclass(frozen=True, slots=True)
 class WorkspaceIdentity:
     workspace_id: str
     project_id: str
+    thread_id: str
     execution_id: ExecutionId
     workspace_root_id: str
     retention_class: str
@@ -169,7 +198,12 @@ class WorkspaceUsageSnapshot:
 
 
 class AgentWorkspaceLease:
-    """Trusted lifecycle handle. Only its backend/opaque identity reach later agent wiring."""
+    """Trusted lifecycle handle. Only its backend/opaque identity reach later agent wiring.
+
+    One lease is one turn's hold on a persistent thread workspace. Ending the turn
+    :meth:`release` s the hold; the thread directory and its ``scratch``/``reads`` folders
+    outlive every lease taken over them.
+    """
 
     def __init__(
         self,
@@ -178,13 +212,15 @@ class AgentWorkspaceLease:
         backend: AnchoredAgentWorkspaceBackend,
         workspace_segment: str,
         project_segment: str,
-        execution_segment: str,
+        thread_segment: str,
+        factory: AgentWorkspaceFactory,
     ) -> None:
         self.identity = identity
         self.backend = backend
         self._workspace_segment = workspace_segment
         self._project_segment = project_segment
-        self._execution_segment = execution_segment
+        self._thread_segment = thread_segment
+        self._factory = factory
         self._resources_frozen = False
         self._materialization_failed = False
         self._cleanup_authorized = False
@@ -218,7 +254,18 @@ class AgentWorkspaceLease:
             raise WorkspaceConflict("a frozen workspace cannot become materialization-failed")
         self._materialization_failed = True
 
+    def release(self) -> None:
+        """End this turn's hold on the thread. Nothing on disk is removed."""
+
+        self._factory.release(self)
+
     def authorize_cleanup(self, *, finalization_ref: ArtifactRef) -> None:
+        """Record that outputs are durably snapshotted under a same-workspace finalization.
+
+        Since the thread workspace persists, this no longer gates a deletion; it stays the
+        turn's honest statement that nothing unsaved is being dropped when the lease ends.
+        """
+
         if finalization_ref.workspace_id != self.identity.workspace_id:
             raise WorkspaceSecurityError("finalization artifact belongs to another workspace")
         if not self.backend.outputs_snapshotted:
@@ -230,7 +277,7 @@ class AgentWorkspaceLease:
 
 
 class AnchoredAgentWorkspaceBackend(BackendProtocol):
-    """File-only deepagents backend over one already-open execution root."""
+    """File-only deepagents backend over one already-open thread root."""
 
     virtual_mode: Literal[True] = True
 
@@ -947,8 +994,36 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         return responses
 
 
+@dataclass(frozen=True, slots=True)
+class _ActiveThread:
+    """The single live lease a thread may have, and what it was opened with."""
+
+    backend: AnchoredAgentWorkspaceBackend
+    execution_id: ExecutionId
+    mounts: MountRequest
+
+
+def _workspace_root_id(
+    workspace_segment: str,
+    project_segment: str,
+    thread_segment: str,
+) -> str:
+    """The opaque, model-safe root id. It names the thread, so it is stable across turns."""
+
+    digest = hashlib.sha256(
+        f"{workspace_segment}\0{project_segment}\0{thread_segment}".encode()
+    ).hexdigest()
+    return f"awr_{digest}"
+
+
 class AgentWorkspaceFactory:
-    """Create and remove one-shot execution workspaces below a prepared dedicated root."""
+    """Open, hold and remove one persistent workspace per chat thread below a prepared root.
+
+    The layout is ``<root>/<workspace>/projects/<project>/threads/<thread>/``. A thread
+    directory is created once and reopened by every later turn of that thread, so the agent's
+    ``scratch/`` and ``reads/`` folders survive between turns. At most one lease is live per
+    thread at a time, matching the one-turn-per-thread queue.
+    """
 
     def __init__(
         self,
@@ -961,13 +1036,14 @@ class AgentWorkspaceFactory:
         self._artifact_sink = artifact_sink
         self._lock = threading.RLock()
         self._closed = False
-        self._active: dict[tuple[str, str, str], AnchoredAgentWorkspaceBackend] = {}
+        # One live lease per thread: the key is ``(workspace, project, thread)``.
+        self._active: dict[tuple[str, str, str], _ActiveThread] = {}
 
     def close(self) -> None:
         with self._lock:
             if not self._closed:
-                for backend in tuple(self._active.values()):
-                    backend.close()
+                for active in tuple(self._active.values()):
+                    active.backend.close()
                 self._active.clear()
                 os.close(self._root_fd)
                 self._closed = True
@@ -1031,68 +1107,83 @@ class AgentWorkspaceFactory:
         *,
         workspace_id: str,
         project_id: str,
+        thread_id: str,
         execution_id: ExecutionId,
         policy: WorkspacePolicy,
+        mounts: MountRequest = _NO_MOUNTS,
     ) -> AgentWorkspaceLease:
+        """Open the thread's persistent workspace, creating whatever part of it is absent.
+
+        The thread directory outlives every turn, so an existing one is reopened (and audited),
+        never refused. What is refused is a second live lease over the same thread.
+        """
+
         workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
         project_segment = validate_workspace_segment(project_id, label="project_id")
-        execution_segment = validate_workspace_segment(str(execution_id), label="execution_id")
-        root_id = (
-            "awr_"
-            + hashlib.sha256(
-                f"{workspace_segment}\0{project_segment}\0{execution_segment}".encode()
-            ).hexdigest()
-        )
+        thread_segment = validate_workspace_segment(thread_id, label="thread_id")
+        validate_workspace_segment(str(execution_id), label="execution_id")
+        key = (workspace_segment, project_segment, thread_segment)
         identity = WorkspaceIdentity(
             workspace_id=workspace_id,
             project_id=project_id,
+            thread_id=thread_id,
             execution_id=execution_id,
-            workspace_root_id=root_id,
+            workspace_root_id=_workspace_root_id(
+                workspace_segment,
+                project_segment,
+                thread_segment,
+            ),
             retention_class=policy.retention_class,
         )
+        with self._lock:
+            if key in self._active:
+                raise WorkspaceConflict("this thread already has a live workspace lease")
 
         with self._root_lock():
-            workspace_fd = self._ensure_directory(self._root_fd, workspace_segment)
+            thread_fd = self._open_thread_root(
+                workspace_segment=workspace_segment,
+                project_segment=project_segment,
+                thread_segment=thread_segment,
+            )
             try:
-                self._audit_scope_directories(workspace_fd)
-                project_fd = self._ensure_directory(workspace_fd, project_segment)
-                try:
-                    self._audit_scope_directories(project_fd)
-                    try:
-                        os.mkdir(execution_segment, _DIRECTORY_MODE, dir_fd=project_fd)
-                    except FileExistsError:
-                        raise WorkspaceConflict(
-                            "execution workspace already exists and cannot be reused"
-                        ) from None
-                    execution_fd = os.open(execution_segment, _DIR_FLAGS, dir_fd=project_fd)
-                    _validate_private_directory(execution_fd)
-                    try:
-                        for directory in _LAYOUT:
-                            os.mkdir(directory, _DIRECTORY_MODE, dir_fd=execution_fd)
-                        os.fsync(execution_fd)
-                    except Exception:
-                        os.close(execution_fd)
-                        self._remove_tree(project_fd, execution_segment)
-                        raise
-                finally:
-                    os.close(project_fd)
-            finally:
-                os.close(workspace_fd)
+                mount_table = self._open_mounts(
+                    request=mounts,
+                    workspace_segment=workspace_segment,
+                    project_segment=project_segment,
+                )
+            except BaseException:
+                os.close(thread_fd)
+                raise
 
-        backend = AnchoredAgentWorkspaceBackend(
-            execution_fd=execution_fd,
-            identity=identity,
-            policy=policy,
-            artifact_sink=self._artifact_sink,
-        )
+        try:
+            backend = AnchoredAgentWorkspaceBackend(
+                execution_fd=thread_fd,
+                identity=identity,
+                policy=policy,
+                artifact_sink=self._artifact_sink,
+                mounts=mount_table,
+            )
+        except BaseException:
+            for descriptor in (thread_fd, *(mount.directory_fd for mount in mount_table)):
+                with suppress(OSError):
+                    os.close(descriptor)
+            raise
+
         with self._lock:
-            self._active[(workspace_segment, project_segment, execution_segment)] = backend
-        return AgentWorkspaceLease(
+            if key in self._active:
+                backend.close()
+                raise WorkspaceConflict("this thread already has a live workspace lease")
+            self._active[key] = _ActiveThread(
+                backend=backend,
+                execution_id=execution_id,
+                mounts=mounts,
+            )
+        return self._lease(
             identity=identity,
             backend=backend,
             workspace_segment=workspace_segment,
             project_segment=project_segment,
-            execution_segment=execution_segment,
+            thread_segment=thread_segment,
         )
 
     def acquire(
@@ -1100,42 +1191,45 @@ class AgentWorkspaceFactory:
         *,
         workspace_id: str,
         project_id: str,
+        thread_id: str,
         execution_id: ExecutionId,
         policy: WorkspacePolicy,
+        mounts: MountRequest = _NO_MOUNTS,
     ) -> AgentWorkspaceLease:
-        """Create or securely reopen the same execution root for durable crash recovery."""
+        """Take this turn's lease over the thread workspace.
+
+        The thread directory is created if absent and securely reopened if present. The live
+        lease is keyed by thread: re-acquiring for the *same* execution returns a lease over the
+        same backend (in-process crash resume), while a *different* execution while one is live
+        is a conflict, matching the one-turn-per-thread queue.
+        """
 
         workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
         project_segment = validate_workspace_segment(project_id, label="project_id")
-        execution_segment = validate_workspace_segment(str(execution_id), label="execution_id")
-        key = (workspace_segment, project_segment, execution_segment)
+        thread_segment = validate_workspace_segment(thread_id, label="thread_id")
+        key = (workspace_segment, project_segment, thread_segment)
         with self._lock:
-            backend = self._active.get(key)
-        if backend is None:
-            try:
-                return self.create(
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    execution_id=execution_id,
-                    policy=policy,
-                )
-            except WorkspaceConflict:
-                backend = self._reopen_backend(
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    execution_id=execution_id,
-                    workspace_segment=workspace_segment,
-                    project_segment=project_segment,
-                    execution_segment=execution_segment,
-                    policy=policy,
-                )
-                with self._lock:
-                    self._active[key] = backend
+            active = self._active.get(key)
+        if active is None:
+            return self.create(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                thread_id=thread_id,
+                execution_id=execution_id,
+                policy=policy,
+                mounts=mounts,
+            )
+        if active.execution_id != execution_id:
+            raise WorkspaceConflict("another execution holds this thread's live workspace lease")
+        if active.mounts != mounts:
+            raise WorkspaceConflict("the live workspace lease was opened with other mounts")
+        backend = active.backend
         backend.require_policy(policy)
-        lease = AgentWorkspaceLease(
+        return self._lease(
             identity=WorkspaceIdentity(
                 workspace_id=workspace_id,
                 project_id=project_id,
+                thread_id=thread_id,
                 execution_id=execution_id,
                 workspace_root_id=backend.workspace_root_id,
                 retention_class=policy.retention_class,
@@ -1143,69 +1237,147 @@ class AgentWorkspaceFactory:
             backend=backend,
             workspace_segment=workspace_segment,
             project_segment=project_segment,
-            execution_segment=execution_segment,
+            thread_segment=thread_segment,
+        )
+
+    def _lease(
+        self,
+        *,
+        identity: WorkspaceIdentity,
+        backend: AnchoredAgentWorkspaceBackend,
+        workspace_segment: str,
+        project_segment: str,
+        thread_segment: str,
+    ) -> AgentWorkspaceLease:
+        """Hand out one turn's lease, with its frozen state read from the durable trees."""
+
+        lease = AgentWorkspaceLease(
+            identity=identity,
+            backend=backend,
+            workspace_segment=workspace_segment,
+            project_segment=project_segment,
+            thread_segment=thread_segment,
+            factory=self,
         )
         if backend.materialized_trees_frozen():
             lease.restore_resources_frozen()
         return lease
 
-    def _reopen_backend(
+    def _open_thread_root(
         self,
         *,
-        workspace_id: str,
-        project_id: str,
-        execution_id: ExecutionId,
         workspace_segment: str,
         project_segment: str,
-        execution_segment: str,
-        policy: WorkspacePolicy,
-    ) -> AnchoredAgentWorkspaceBackend:
-        with self._root_lock():
-            workspace_fd = os.open(workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
+        thread_segment: str,
+    ) -> int:
+        """Ensure ``<ws>/projects/<project>/threads/<thread>`` and return its descriptor.
+
+        Caller holds the root lock and owns the returned descriptor.
+        """
+
+        chain = (workspace_segment, PROJECTS_DIR, project_segment, THREADS_DIR)
+        parent_fd = self._root_fd
+        opened: list[int] = []
+        try:
+            for segment in chain:
+                child_fd = self._ensure_directory(parent_fd, segment)
+                opened.append(child_fd)
+                self._audit_scope_directories(child_fd)
+                parent_fd = child_fd
+            thread_fd = self._ensure_directory(parent_fd, thread_segment)
             try:
-                _validate_private_directory(workspace_fd)
-                project_fd = os.open(project_segment, _DIR_FLAGS, dir_fd=workspace_fd)
+                existing = set(os.listdir(thread_fd))
+                for directory in _LAYOUT:
+                    if directory not in existing:
+                        os.mkdir(directory, _DIRECTORY_MODE, dir_fd=thread_fd)
+                self._audit_thread_root(thread_fd)
+                os.fsync(thread_fd)
+            except BaseException:
+                os.close(thread_fd)
+                raise
+            return thread_fd
+        finally:
+            for descriptor in opened:
+                os.close(descriptor)
+
+    @staticmethod
+    def _audit_thread_root(thread_fd: int) -> None:
+        """Reject any top-level entry a thread workspace is not allowed to hold."""
+
+        entries = set(os.listdir(thread_fd))
+        if entries != set(_LAYOUT):
+            raise WorkspaceSecurityError("thread root has an unexpected top-level layout")
+        for entry in entries:
+            metadata = os.stat(entry, dir_fd=thread_fd, follow_symlinks=False)
+            if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) not in {
+                _DIRECTORY_MODE,
+                _READ_ONLY_DIRECTORY_MODE,
+            }:
+                raise WorkspaceSecurityError("thread root contains an unsafe top-level entry")
+
+    def _open_mounts(
+        self,
+        *,
+        request: MountRequest,
+        workspace_segment: str,
+        project_segment: str,
+    ) -> tuple[WorkspaceMount, ...]:
+        """Open the requested durable libraries read-only. Caller holds the root lock."""
+
+        opened: list[WorkspaceMount] = []
+        try:
+            if request.brand is not None:
+                brand_id, knowledge_version = request.brand
+                directory_fd = self._open_library(
+                    (
+                        workspace_segment,
+                        LIBRARY_DIR,
+                        "brand",
+                        validate_workspace_segment(brand_id, label="brand_id"),
+                        validate_workspace_segment(knowledge_version, label="brand_version"),
+                    ),
+                    name="brand",
+                )
+                opened.append(
+                    WorkspaceMount(name="brand", directory_fd=directory_fd, mode="read_only")
+                )
+            if request.project_library:
+                directory_fd = self._open_library(
+                    (workspace_segment, PROJECTS_DIR, project_segment, LIBRARY_DIR),
+                    name="project",
+                )
+                opened.append(
+                    WorkspaceMount(name="project", directory_fd=directory_fd, mode="read_only")
+                )
+        except BaseException:
+            for mount in opened:
+                with suppress(OSError):
+                    os.close(mount.directory_fd)
+            raise
+        return tuple(opened)
+
+    def _open_library(self, segments: Sequence[str], *, name: str) -> int:
+        """Walk one anchored, symlink-free chain below the root and keep only its leaf open."""
+
+        parent_fd = self._root_fd
+        opened: list[int] = []
+        try:
+            for segment in segments:
                 try:
-                    _validate_private_directory(project_fd)
-                    execution_fd = os.open(execution_segment, _DIR_FLAGS, dir_fd=project_fd)
-                    _validate_private_directory(execution_fd)
-                    entries = set(os.listdir(execution_fd))
-                    if entries != set(_LAYOUT):
-                        os.close(execution_fd)
-                        raise WorkspaceSecurityError(
-                            "reopened execution root has an unexpected top-level layout"
-                        )
-                    for entry in entries:
-                        metadata = os.stat(entry, dir_fd=execution_fd, follow_symlinks=False)
-                        if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(
-                            metadata.st_mode
-                        ) not in {_DIRECTORY_MODE, _READ_ONLY_DIRECTORY_MODE}:
-                            os.close(execution_fd)
-                            raise WorkspaceSecurityError(
-                                "reopened execution root contains an unsafe top-level entry"
-                            )
-                finally:
-                    os.close(project_fd)
-            finally:
-                os.close(workspace_fd)
-        identity = WorkspaceIdentity(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            execution_id=execution_id,
-            workspace_root_id=(
-                "awr_"
-                + hashlib.sha256(
-                    f"{workspace_segment}\0{project_segment}\0{execution_segment}".encode()
-                ).hexdigest()
-            ),
-            retention_class=policy.retention_class,
-        )
-        return AnchoredAgentWorkspaceBackend(
-            execution_fd=execution_fd,
-            identity=identity,
-            policy=policy,
-            artifact_sink=self._artifact_sink,
-        )
+                    child_fd = os.open(segment, _DIR_FLAGS, dir_fd=parent_fd)
+                except FileNotFoundError:
+                    raise WorkspaceConfigurationError(
+                        f"{name} library is not materialized"
+                    ) from None
+                except OSError as exc:
+                    raise WorkspaceSecurityError("workspace library directory is unsafe") from exc
+                opened.append(child_fd)
+                _validate_private_directory(child_fd)
+                parent_fd = child_fd
+            return opened.pop()
+        finally:
+            for descriptor in opened:
+                os.close(descriptor)
 
     @classmethod
     def _remove_tree(cls, parent_fd: int, name: str) -> None:
@@ -1232,117 +1404,138 @@ class AgentWorkspaceFactory:
             os.close(directory_fd)
         os.rmdir(name, dir_fd=parent_fd)
 
-    def _delete_execution(self, lease: AgentWorkspaceLease) -> None:
-        lease.backend.close()
-        with self._lock:
-            self._active.pop(
-                (lease._workspace_segment, lease._project_segment, lease._execution_segment),
-                None,
-            )
+    @staticmethod
+    def _rmdir_if_empty(name: str, parent_fd: int) -> bool:
+        try:
+            os.rmdir(name, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+                raise
+            return False
+        return True
+
+    def _delete_thread(
+        self,
+        workspace_segment: str,
+        project_segment: str,
+        thread_segment: str,
+    ) -> bool:
+        """Remove one thread directory and every scope level it leaves empty behind it."""
+
+        chain = (workspace_segment, PROJECTS_DIR, project_segment, THREADS_DIR)
         with self._root_lock():
-            workspace_fd = os.open(lease._workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
+            parent_fd = self._root_fd
+            parents = [self._root_fd]
+            opened: list[int] = []
             try:
-                project_fd = os.open(
-                    lease._project_segment,
-                    _DIR_FLAGS,
-                    dir_fd=workspace_fd,
-                )
-                try:
-                    self._remove_tree(project_fd, lease._execution_segment)
+                for segment in chain:
                     try:
-                        os.rmdir(lease._project_segment, dir_fd=workspace_fd)
-                    except OSError as exc:
-                        if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
-                            raise
-                finally:
-                    os.close(project_fd)
+                        child_fd = os.open(segment, _DIR_FLAGS, dir_fd=parent_fd)
+                    except FileNotFoundError:
+                        return False
+                    opened.append(child_fd)
+                    parents.append(child_fd)
+                    parent_fd = child_fd
                 try:
-                    os.rmdir(lease._workspace_segment, dir_fd=self._root_fd)
-                except OSError as exc:
-                    if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
-                        raise
+                    os.stat(thread_segment, dir_fd=parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    return False
+                self._remove_tree(parent_fd, thread_segment)
+                for segment, level_fd in zip(
+                    reversed(chain),
+                    reversed(parents[:-1]),
+                    strict=True,
+                ):
+                    if not self._rmdir_if_empty(segment, level_fd):
+                        break
             finally:
-                os.close(workspace_fd)
+                for descriptor in opened:
+                    os.close(descriptor)
+        return True
+
+    def release(self, lease: AgentWorkspaceLease) -> None:
+        """Drop this turn's lease and close its backend. Nothing on disk is removed."""
+
+        key = (lease._workspace_segment, lease._project_segment, lease._thread_segment)
+        with self._lock:
+            active = self._active.get(key)
+            if active is not None and active.backend is lease.backend:
+                del self._active[key]
+        lease.backend.close()
 
     def cleanup(self, lease: AgentWorkspaceLease) -> None:
-        if not lease.cleanup_authorized:
-            raise WorkspaceSecurityError("workspace cleanup requires durable finalization")
-        self._delete_execution(lease)
+        """End the turn's hold on the thread. Kept under its old name for the runtime wiring."""
+
+        self.release(lease)
 
     def discard_failed_materialization(self, lease: AgentWorkspaceLease) -> None:
+        """Release a lease whose materialization failed before the model ever ran.
+
+        The thread workspace itself survives: the next turn's materialization resets and
+        rewrites the trusted trees from its own pinned snapshot.
+        """
+
         if not lease.materialization_failed or lease.resources_frozen:
             raise WorkspaceSecurityError(
                 "only a pre-model materialization failure may be discarded without finalization"
             )
-        self._delete_execution(lease)
+        self.release(lease)
+
+    def purge_thread(
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        thread_id: str,
+    ) -> bool:
+        """Remove one thread's persistent workspace. Idempotent; returns whether it existed.
+
+        Any live backend this process holds for the thread is closed first so it cannot keep
+        writing through an unlinked directory descriptor.
+        """
+
+        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
+        project_segment = validate_workspace_segment(project_id, label="project_id")
+        thread_segment = validate_workspace_segment(thread_id, label="thread_id")
+        with self._lock:
+            active = self._active.pop(
+                (workspace_segment, project_segment, thread_segment),
+                None,
+            )
+        if active is not None:
+            active.backend.close()
+        return self._delete_thread(workspace_segment, project_segment, thread_segment)
 
     def erase_for_privacy(
         self,
         *,
         workspace_id: str,
         project_id: str,
-        execution_id: ExecutionId,
+        thread_id: str,
     ) -> bool:
-        """Privileged, idempotent DSAR deletion of an execution workspace.
+        """Privileged, idempotent DSAR deletion of a thread workspace.
 
-        Unlike ordinary cleanup this does not require a finalization receipt: retaining
-        materialized personal data after an erasure request would be the unsafe outcome. Any
-        live backend held by this process is closed first so it cannot continue writing through
-        an unlinked directory descriptor. Returns whether the execution directory existed.
+        Unlike ordinary release this removes the bytes: retaining materialized personal data
+        after an erasure request would be the unsafe outcome. Returns whether it existed.
         """
 
-        workspace_segment = validate_workspace_segment(workspace_id, label="workspace_id")
-        project_segment = validate_workspace_segment(project_id, label="project_id")
-        execution_segment = validate_workspace_segment(str(execution_id), label="execution_id")
-        key = (workspace_segment, project_segment, execution_segment)
-        with self._lock:
-            active = self._active.pop(key, None)
-            if active is not None:
-                active.close()
-
-        with self._root_lock():
-            try:
-                workspace_fd = os.open(workspace_segment, _DIR_FLAGS, dir_fd=self._root_fd)
-            except FileNotFoundError:
-                return False
-            try:
-                try:
-                    project_fd = os.open(project_segment, _DIR_FLAGS, dir_fd=workspace_fd)
-                except FileNotFoundError:
-                    return False
-                try:
-                    try:
-                        os.stat(execution_segment, dir_fd=project_fd, follow_symlinks=False)
-                    except FileNotFoundError:
-                        return False
-                    self._remove_tree(project_fd, execution_segment)
-                    try:
-                        os.rmdir(project_segment, dir_fd=workspace_fd)
-                    except OSError as exc:
-                        if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
-                            raise
-                finally:
-                    os.close(project_fd)
-                try:
-                    os.rmdir(workspace_segment, dir_fd=self._root_fd)
-                except OSError as exc:
-                    if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
-                        raise
-            finally:
-                os.close(workspace_fd)
-        return True
+        return self.purge_thread(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            thread_id=thread_id,
+        )
 
     def purge_terminal(
         self,
         *,
         workspace_id: str,
         project_id: str,
-        execution_id: ExecutionId,
+        thread_id: str,
     ) -> bool:
-        """Remove a terminal execution root after the caller verifies durable retention policy."""
+        """Remove a thread workspace after the caller verifies durable retention policy."""
 
-        return self.erase_for_privacy(
+        return self.purge_thread(
             workspace_id=workspace_id,
             project_id=project_id,
-            execution_id=execution_id,
+            thread_id=thread_id,
         )

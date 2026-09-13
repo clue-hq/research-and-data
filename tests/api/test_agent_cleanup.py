@@ -7,7 +7,6 @@ from uuid import UUID
 
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
 from clue_config import Settings
-from clue_core import ExecutionId
 from tests.db.conftest import run_async
 
 
@@ -42,16 +41,16 @@ class _Conn:
 class _Workspaces:
     def __init__(self, *, removed: bool) -> None:
         self.removed = removed
-        self.calls: list[tuple[str, str, ExecutionId]] = []
+        self.calls: list[tuple[str, str, str]] = []
 
     def purge_terminal(
         self,
         *,
         workspace_id: str,
         project_id: str,
-        execution_id: ExecutionId,
+        thread_id: str,
     ) -> bool:
-        self.calls.append((workspace_id, project_id, execution_id))
+        self.calls.append((workspace_id, project_id, thread_id))
         return self.removed
 
 
@@ -64,6 +63,7 @@ def test_terminal_workspace_cleanup_is_identity_scoped_and_receipted() -> None:
             "execution_id": execution_id,
             "workspace_id": "ws-c68",
             "project_id": "project-c68",
+            "thread_id": "thread-c68",
             "workspace_root_id": "opaque-root-id",
             "status": "completed",
             "created_at": datetime(2026, 7, 26, tzinfo=UTC),
@@ -88,7 +88,7 @@ def test_terminal_workspace_cleanup_is_identity_scoped_and_receipted() -> None:
         assert result.considered == 1
         assert result.removed == 1
         assert result.already_absent == 0
-        assert workspaces.calls == [("ws-c68", "project-c68", ExecutionId(execution_id))]
+        assert workspaces.calls == [("ws-c68", "project-c68", "thread-c68")]
         assert conn.cutoff == datetime(2026, 7, 26, 23, tzinfo=UTC)
         assert conn.select_sql is not None
         assert "'awaiting_input'" not in conn.select_sql

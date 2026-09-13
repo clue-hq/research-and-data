@@ -181,11 +181,18 @@ class _RecordingWorkspaces:
     def __init__(self, inner: Any) -> None:
         self._inner = inner
         self.leases: list[Any] = []
+        self._last: dict[str, Any] = {}
 
     def acquire(self, **kwargs: Any) -> Any:
         lease = self._inner.acquire(**kwargs)
+        self._last = dict(kwargs)
         self.leases.append(lease)
         return lease
+
+    def reopen(self) -> Any:
+        """Take a fresh lease over the thread the turn used, after the turn released its own."""
+
+        return self._inner.acquire(**self._last)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
@@ -563,8 +570,10 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 )
 
                 # 3. the pinned documents are on the lease, read-only, at the pinned digest.
+                # The turn released its lease when it ended; the thread workspace itself
+                # persists, so these assertions read it back through a fresh lease.
                 assert len(workspaces.leases) == 1
-                lease = workspaces.leases[0]
+                lease = workspaces.reopen()
                 entry = lease.backend.stat_entry_sync(f"{INPUT_PREFIX}company/overview.md")
                 assert entry.sha256 == overview_sha
                 assert entry.read_only is True

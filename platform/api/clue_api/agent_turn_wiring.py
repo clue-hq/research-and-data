@@ -2021,7 +2021,7 @@ class AgentPrivacyService:
             removed = self._workspaces.erase_for_privacy(
                 workspace_id=workspace_id,
                 project_id=turn["project_id"],
-                execution_id=ExecutionId(turn["execution_id"]),
+                thread_id=turn["thread_id"],
             )
             if removed:
                 purged_roots.append(turn["workspace_root_id"])

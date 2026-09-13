@@ -10,7 +10,6 @@ from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory
 from clue_config import Settings
-from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 
 __all__ = ["AgentCleanupResult", "AgentWorkspaceCleanupJob"]
@@ -48,7 +47,7 @@ class AgentWorkspaceCleanupJob:
             result = await conn.execute(
                 text(
                     "SELECT t.id, t.execution_id, t.workspace_id, t.project_id, "
-                    "t.workspace_root_id, latest.status, latest.created_at "
+                    "t.thread_id, t.workspace_root_id, latest.status, latest.created_at "
                     "FROM agent_turn t "
                     "JOIN LATERAL (SELECT status, created_at FROM agent_turn_event "
                     " WHERE turn_id=t.id ORDER BY seq DESC LIMIT 1) latest ON true "
@@ -69,7 +68,7 @@ class AgentWorkspaceCleanupJob:
             did_remove = self._workspaces.purge_terminal(
                 workspace_id=row["workspace_id"],
                 project_id=row["project_id"],
-                execution_id=ExecutionId(row["execution_id"]),
+                thread_id=row["thread_id"],
             )
             removed += int(did_remove)
             absent += int(not did_remove)

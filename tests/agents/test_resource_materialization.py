@@ -86,7 +86,7 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
         )
 
         assert harness.lease.resources_frozen
-        manifest_path = harness.execution_path / ".deepagent/manifest.json"
+        manifest_path = harness.thread_path / ".deepagent/manifest.json"
         materialized = json.loads(manifest_path.read_text())
         assert materialized["aggregate_sha256"] == snapshot.manifest.aggregate_sha256
         assert resource_manifest_sha256(snapshot.manifest) == snapshot.manifest.aggregate_sha256
@@ -99,11 +99,11 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
         }
         assert expected_paths <= {entry.path for entry in harness.lease.backend.list_entries_sync()}
         for relative in expected_paths:
-            mode = (harness.execution_path / relative).stat().st_mode
+            mode = (harness.thread_path / relative).stat().st_mode
             assert stat.S_IMODE(mode) == 0o400
             assert not mode & 0o111
         for directory in (".deepagent", "inputs", "context"):
-            assert stat.S_IMODE((harness.execution_path / directory).stat().st_mode) == 0o500
+            assert stat.S_IMODE((harness.thread_path / directory).stat().st_mode) == 0o500
 
         with pytest.raises(WorkspaceConflict):
             AgentResourceMaterializer().materialize(
@@ -119,7 +119,7 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
             )
 
         # A cold process never trusts directory modes alone: every expected byte is re-hashed.
-        context_path = harness.execution_path / "context"
+        context_path = harness.thread_path / "context"
         seed_path = context_path / "project.json"
         context_path.chmod(0o700)
         seed_path.chmod(0o600)
@@ -182,10 +182,13 @@ def test_failed_materialization_never_writes_readiness_manifest_and_is_discardab
             )
         assert harness.lease.materialization_failed
         assert not harness.lease.resources_frozen
-        assert not (harness.execution_path / ".deepagent/manifest.json").exists()
+        assert not (harness.thread_path / ".deepagent/manifest.json").exists()
 
         harness.factory.discard_failed_materialization(harness.lease)
-        assert not harness.execution_path.exists()
+        # The thread workspace persists; only this turn's lease is dropped, and the next
+        # turn's materialization resets and rewrites the trusted trees.
+        assert harness.thread_path.exists()
+        assert not (harness.thread_path / ".deepagent/manifest.json").exists()
     finally:
         harness.factory.close()
 

@@ -723,151 +723,157 @@ class ProjectConversationTurnRunner:
         lease = self._engine.components.workspaces.acquire(
             workspace_id=workspace_id,
             project_id=scope.project_id,
+            thread_id=submission.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
-        focus_ref = DomainObjectRef(
-            workspace_id=workspace_id,
-            object_type="project",
-            object_id=scope.project_id,
-            version=None,
-        )
-        context_bundle = await self._compose_project_context(
-            submission=submission,
-            scope=scope,
-            documents=documents,
-            confirmed_icp=confirmed_icp,
-            product_set=product_set,
-            project_files=project_files,
-            focus_refs=submission_focus_refs,
-        )
-        card_ref = await self._artifact(
-            submission,
-            scope,
-            PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
-            project_conversation_card_payload(
+        try:
+            focus_ref = DomainObjectRef(
                 workspace_id=workspace_id,
-                project_id=scope.project_id,
-                project_name=scope.name,
-                project_status=scope.status,
-                brand_id=scope.brand_id,
-                product_id=scope.product_id,
+                object_type="project",
+                object_id=scope.project_id,
+                version=None,
+            )
+            context_bundle = await self._compose_project_context(
+                submission=submission,
+                scope=scope,
+                documents=documents,
+                confirmed_icp=confirmed_icp,
+                product_set=product_set,
+                project_files=project_files,
+                focus_refs=submission_focus_refs,
+            )
+            card_ref = await self._artifact(
+                submission,
+                scope,
+                PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+                project_conversation_card_payload(
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                    project_name=scope.name,
+                    project_status=scope.status,
+                    brand_id=scope.brand_id,
+                    product_id=scope.product_id,
+                    thread_id=submission.thread_id,
+                    # Ruling D5: neither card is compiled onto this surface any more. The envelope
+                    # says so honestly rather than advertising an artifact L3 does not carry.
+                    client_knowledge_available=False,
+                    stage0_project_state_available=False,
+                ),
+            )
+            budget_ref = await self._artifact(
+                submission,
+                scope,
+                "application/vnd.clue.agent-budget-envelope+json",
+                {
+                    "schema_version": "1",
+                    "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                    "external_research_budget_cents": "0",
+                    "scope": "conversation and Stage-0 domain writes only",
+                },
+            )
+            manifest_ref = await self._artifact(
+                submission,
+                scope,
+                "application/vnd.clue.agent-resource-manifest+json",
+                resolved.resource_manifest.model_dump(mode="json"),
+            )
+            request = AgentTurnRequest(
+                turn_id=turn_id,
                 thread_id=submission.thread_id,
-                # Ruling D5: neither card is compiled onto this surface any more. The envelope
-                # says so honestly rather than advertising an artifact L3 does not carry.
-                client_knowledge_available=False,
-                stage0_project_state_available=False,
-            ),
-        )
-        budget_ref = await self._artifact(
-            submission,
-            scope,
-            "application/vnd.clue.agent-budget-envelope+json",
-            {
-                "schema_version": "1",
-                "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                "external_research_budget_cents": "0",
-                "scope": "conversation and Stage-0 domain writes only",
-            },
-        )
-        manifest_ref = await self._artifact(
-            submission,
-            scope,
-            "application/vnd.clue.agent-resource-manifest+json",
-            resolved.resource_manifest.model_dump(mode="json"),
-        )
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=submission.thread_id,
-            constitution=AgentConstitution(
+                constitution=AgentConstitution(
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                    execution_id=execution_id,
+                    # The one identity rule of this module: the acting human, from the durable row.
+                    actor_id=submission.submitted_by_user_id,
+                    role=AgentRole.HEAD_OF_ABM,
+                    brand_id=scope.brand_id,
+                    product_id=scope.product_id,
+                    client_entity_id=(
+                        None if scope.client_entity_id is None else str(scope.client_entity_id)
+                    ),
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                    focus_refs=(focus_ref,),
+                    project_context_artifacts=context_bundle.artifacts,
+                ),
+                user_message_artifact_ref=user_message_ref,
+                focus_refs=submission_focus_refs,
+                requested_at=submission.requested_at,
+            )
+            brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
+            log.info(
+                "agent_turn.context_composed",
+                turn_id=str(turn_id),
                 workspace_id=workspace_id,
                 project_id=scope.project_id,
-                execution_id=execution_id,
-                # The one identity rule of this module: the acting human, from the durable row.
-                actor_id=submission.submitted_by_user_id,
-                role=AgentRole.HEAD_OF_ABM,
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 client_entity_id=(
                     None if scope.client_entity_id is None else str(scope.client_entity_id)
                 ),
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-                focus_refs=(focus_ref,),
-                project_context_artifacts=context_bundle.artifacts,
-            ),
-            user_message_artifact_ref=user_message_ref,
-            focus_refs=submission_focus_refs,
-            requested_at=submission.requested_at,
-        )
-        brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
-        log.info(
-            "agent_turn.context_composed",
-            turn_id=str(turn_id),
-            workspace_id=workspace_id,
-            project_id=scope.project_id,
-            brand_id=scope.brand_id,
-            product_id=scope.product_id,
-            client_entity_id=(
-                None if scope.client_entity_id is None else str(scope.client_entity_id)
-            ),
-            client_kb_version=scope.client_kb_version,
-            product_kb_version=scope.product_kb_version,
-            project_card_sha256=card_ref.sha256,
-            brand_knowledge_documents=len(documents),
-            brand_knowledge_index_sha256=(
-                None if brand_knowledge_index is None else brand_knowledge_index.artifact_ref.sha256
-            ),
-            knowledge_pin_created=knowledge_pin_created,
-            client_knowledge_available=False,
-            stage0_project_state_available=False,
-        )
-        observations = {item.card_kind: item for item in context_bundle.observations}
-        self._observe_context_card(
-            submission=submission,
-            scope=scope,
-            observation=_ContextCardObservation(
-                card_kind="project_conversation",
-                schema_version="2",
-                content_sha256=card_ref.sha256,
-                omitted_count=0,
-            ),
-        )
-        self._observe_context_card(
-            submission=submission,
-            scope=scope,
-            observation=observations.get("brand_knowledge_index"),
-            card_kind="brand_knowledge_index",
-            schema_version="1",
-        )
-        self._observe_context_card(
-            submission=submission,
-            scope=scope,
-            observation=observations.get("project_files_index"),
-            card_kind="project_files_index",
-            schema_version="1",
-        )
-        result = await self._execute_watched(
-            run=lambda: self._engine.execute(
-                request=request,
-                lease=lease,
-                budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                submitted_by_user_id=submission.submitted_by_user_id,
-                submitted_via_membership_id=submission.submitted_via_membership_id,
+                client_kb_version=scope.client_kb_version,
+                product_kb_version=scope.product_kb_version,
+                project_card_sha256=card_ref.sha256,
+                brand_knowledge_documents=len(documents),
+                brand_knowledge_index_sha256=(
+                    None
+                    if brand_knowledge_index is None
+                    else brand_knowledge_index.artifact_ref.sha256
+                ),
+                knowledge_pin_created=knowledge_pin_created,
+                client_knowledge_available=False,
+                stage0_project_state_available=False,
+            )
+            observations = {item.card_kind: item for item in context_bundle.observations}
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=_ContextCardObservation(
+                    card_kind="project_conversation",
+                    schema_version="2",
+                    content_sha256=card_ref.sha256,
+                    omitted_count=0,
+                ),
+            )
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get("brand_knowledge_index"),
+                card_kind="brand_knowledge_index",
+                schema_version="1",
+            )
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get("project_files_index"),
+                card_kind="project_files_index",
+                schema_version="1",
+            )
+            result = await self._execute_watched(
+                run=lambda: self._engine.execute(
+                    request=request,
+                    lease=lease,
+                    budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                    submitted_by_user_id=submission.submitted_by_user_id,
+                    submitted_via_membership_id=submission.submitted_via_membership_id,
+                    stream=stream,
+                    input_seeds=input_seeds,
+                ),
+                submission=submission,
+                turn_id=request.turn_id,
                 stream=stream,
-                input_seeds=input_seeds,
-            ),
-            submission=submission,
-            turn_id=request.turn_id,
-            stream=stream,
-        )
-        if result.outcome.status is AgentExecutionStatus.COMPLETED:
-            await self._complete_recipe(execution_id)
-        return result
+            )
+            if result.outcome.status is AgentExecutionStatus.COMPLETED:
+                await self._complete_recipe(execution_id)
+            return result
+        finally:
+            lease.release()
 
     async def _compose_project_context(
         self,

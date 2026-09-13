@@ -454,188 +454,192 @@ class PreparedAccountResearchTurnRunner:
         lease = self._workspaces.acquire(
             workspace_id=workspace_id,
             project_id=project.project_id,
+            thread_id=f"arv2-{account_run_id}",
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
-        focus_ref = DomainObjectRef(
-            workspace_id=workspace_id,
-            object_type="account",
-            object_id=str(account_entity_id),
-            version=None,
-        )
-        project_context_artifacts: tuple[ProjectContextArtifact, ...] = ()
-        if plan.research_directive is not None:
-            async with self._conn_factory() as conn:
-                effective_directive = await effective_account_research_directive(
-                    conn,
-                    workspace_id=workspace_id,
-                    directive_id=plan.research_directive.directive_id,
-                    account_id=account_entity_id,
-                    expected_pin=plan.research_directive,
+        try:
+            focus_ref = DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type="account",
+                object_id=str(account_entity_id),
+                version=None,
+            )
+            project_context_artifacts: tuple[ProjectContextArtifact, ...] = ()
+            if plan.research_directive is not None:
+                async with self._conn_factory() as conn:
+                    effective_directive = await effective_account_research_directive(
+                        conn,
+                        workspace_id=workspace_id,
+                        directive_id=plan.research_directive.directive_id,
+                        account_id=account_entity_id,
+                        expected_pin=plan.research_directive,
+                    )
+                directive_artifact_ref = await self._artifact(
+                    workspace_id,
+                    "application/vnd.clue.account-research-directive+json",
+                    effective_directive.model_dump(mode="json"),
+                    account_entity_id,
+                    project.project_id,
                 )
-            directive_artifact_ref = await self._artifact(
+                project_context_artifacts = (
+                    ProjectContextArtifact(
+                        name="research-directive",
+                        artifact_ref=directive_artifact_ref,
+                        domain_ref=DomainObjectRef(
+                            workspace_id=workspace_id,
+                            object_type="research_directive",
+                            object_id=str(plan.research_directive.directive_id),
+                            version=plan.research_directive.version,
+                        ),
+                    ),
+                )
+            card_ref = await self._artifact(
                 workspace_id,
-                "application/vnd.clue.account-research-directive+json",
-                effective_directive.model_dump(mode="json"),
+                ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
+                account_research_card_payload(
+                    workspace_id=workspace_id,
+                    project=project,
+                    project_run_id=project_run_id,
+                    account_run_id=account_run_id,
+                    account_entity_id=account_entity_id,
+                    account_run_status=account_run.status.value,
+                    tier=tier,
+                    plan=plan,
+                ),
                 account_entity_id,
                 project.project_id,
             )
-            project_context_artifacts = (
-                ProjectContextArtifact(
-                    name="research-directive",
-                    artifact_ref=directive_artifact_ref,
-                    domain_ref=DomainObjectRef(
-                        workspace_id=workspace_id,
-                        object_type="research_directive",
-                        object_id=str(plan.research_directive.directive_id),
-                        version=plan.research_directive.version,
-                    ),
-                ),
-            )
-        card_ref = await self._artifact(
-            workspace_id,
-            ACCOUNT_RESEARCH_CARD_MEDIA_TYPE,
-            account_research_card_payload(
-                workspace_id=workspace_id,
-                project=project,
-                project_run_id=project_run_id,
-                account_run_id=account_run_id,
-                account_entity_id=account_entity_id,
-                account_run_status=account_run.status.value,
-                tier=tier,
+            budget_limit = _effective_budget_limit(
+                self._settings,
+                budget_cap_cents=budget_cap_cents,
                 plan=plan,
-            ),
-            account_entity_id,
-            project.project_id,
-        )
-        budget_limit = _effective_budget_limit(
-            self._settings,
-            budget_cap_cents=budget_cap_cents,
-            plan=plan,
-        )
-        budget_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-budget-envelope+json",
-            {
-                "schema_version": "1",
-                "limit_millicents": budget_limit,
-                "project_budget_cap_cents": (
-                    str(project_run.budget_cap_cents)
-                    if project_run.budget_cap_cents is not None
-                    else None
-                ),
-                "account_budget_cap_cents": (
-                    str(budget_cap_cents) if budget_cap_cents is not None else None
-                ),
-            },
-            account_entity_id,
-            project.project_id,
-        )
-        manifest_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-resource-manifest+json",
-            resolved.resource_manifest.model_dump(mode="json"),
-            account_entity_id,
-            project.project_id,
-        )
-        user_message_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-turn-input+json",
-            {
-                "schema_version": "1",
-                "objective": "Research the remaining governed evidence gaps for this account.",
-                "project_run_id": str(project_run_id),
-                "account_run_id": str(account_run_id),
-                "account_entity_id": str(account_entity_id),
-                "tier": tier,
-                "planned_field_keys": sorted(
-                    field for aspect in plan.aspects for field in aspect.field_keys
-                ),
-                "strategy_contract": {
-                    "authority": "coverage_engine",
-                    "instruction": (
-                        "Omit strategy_hint unless a prior governed result names the exact next "
-                        "permitted engine strategy. Never use source-family names or skip the "
-                        "engine-owned waterfall."
+            )
+            budget_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-budget-envelope+json",
+                {
+                    "schema_version": "1",
+                    "limit_millicents": budget_limit,
+                    "project_budget_cap_cents": (
+                        str(project_run.budget_cap_cents)
+                        if project_run.budget_cap_cents is not None
+                        else None
+                    ),
+                    "account_budget_cap_cents": (
+                        str(budget_cap_cents) if budget_cap_cents is not None else None
                     ),
                 },
-                "research_directive_ref": (
-                    plan.research_directive.directive_ref
-                    if plan.research_directive is not None
-                    else None
+                account_entity_id,
+                project.project_id,
+            )
+            manifest_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-resource-manifest+json",
+                resolved.resource_manifest.model_dump(mode="json"),
+                account_entity_id,
+                project.project_id,
+            )
+            user_message_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-turn-input+json",
+                {
+                    "schema_version": "1",
+                    "objective": "Research the remaining governed evidence gaps for this account.",
+                    "project_run_id": str(project_run_id),
+                    "account_run_id": str(account_run_id),
+                    "account_entity_id": str(account_entity_id),
+                    "tier": tier,
+                    "planned_field_keys": sorted(
+                        field for aspect in plan.aspects for field in aspect.field_keys
+                    ),
+                    "strategy_contract": {
+                        "authority": "coverage_engine",
+                        "instruction": (
+                            "Omit strategy_hint unless a prior governed result names the exact "
+                            "next permitted engine strategy. Never use source-family names or "
+                            "skip the engine-owned waterfall."
+                        ),
+                    },
+                    "research_directive_ref": (
+                        plan.research_directive.directive_ref
+                        if plan.research_directive is not None
+                        else None
+                    ),
+                    "research_directive_sha256": (
+                        plan.research_directive.canonical_json_sha256
+                        if plan.research_directive is not None
+                        else None
+                    ),
+                },
+                account_entity_id,
+                project.project_id,
+            )
+            turn_id = uuid5(_TURN_NAMESPACE, str(account_run_id))
+            request = AgentTurnRequest(
+                turn_id=turn_id,
+                thread_id=f"account-research-{account_run_id}",
+                constitution=AgentConstitution(
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    execution_id=execution_id,
+                    actor_id="platform-account-research",
+                    role=AgentRole.ACCOUNT_RESEARCH,
+                    brand_id=project.brand_id,
+                    product_id=project.product_id,
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                    focus_refs=(focus_ref,),
+                    project_context_artifacts=project_context_artifacts,
                 ),
-                "research_directive_sha256": (
-                    plan.research_directive.canonical_json_sha256
-                    if plan.research_directive is not None
-                    else None
-                ),
-            },
-            account_entity_id,
-            project.project_id,
-        )
-        turn_id = uuid5(_TURN_NAMESPACE, str(account_run_id))
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=f"account-research-{account_run_id}",
-            constitution=AgentConstitution(
-                workspace_id=workspace_id,
-                project_id=project.project_id,
-                execution_id=execution_id,
-                actor_id="platform-account-research",
-                role=AgentRole.ACCOUNT_RESEARCH,
-                brand_id=project.brand_id,
-                product_id=project.product_id,
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                user_message_artifact_ref=user_message_ref,
                 focus_refs=(focus_ref,),
-                project_context_artifacts=project_context_artifacts,
-            ),
-            user_message_artifact_ref=user_message_ref,
-            focus_refs=(focus_ref,),
-            requested_at=account_run.started_at,
-        )
-        await self._turns.create(request=request, profile=resolved.profile)
-        committed = await self._turns.load_committed_outcome(
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-        )
-        if committed is not None:
-            await self._complete_recipe_if_needed(committed)
-            return committed
-        context = await self._contexts.assemble(
-            request=request,
-            profile=resolved.profile,
-            history=await self._history.load(
+                requested_at=account_run.started_at,
+            )
+            await self._turns.create(request=request, profile=resolved.profile)
+            committed = await self._turns.load_committed_outcome(
+                turn_id=turn_id,
                 workspace_id=workspace_id,
-                thread_id=request.thread_id,
-            ),
-        )
-        execution = build_account_research_execution(
-            request=request,
-            profiles=self._profiles,
-            tools=self._tools,
-            tool_invoker=self._tool_invoker,
-            executor=self._executor,
-            compatibility=self._compatibility,
-            artifacts=self._artifacts,
-            plans=self._plans,
-            checkpointer_factory=postgres_agent_checkpointer,
-            budget_limit_millicents=budget_limit,
-            conn_factory=self._conn_factory,
-        )
-        outcome = await self._runtime.run(
-            request=request,
-            context=context,
-            lease=lease,
-            execution=execution,
-            completion_guard=completion_guard,
-        )
-        await self._complete_recipe_if_needed(outcome)
-        return outcome
+            )
+            if committed is not None:
+                await self._complete_recipe_if_needed(committed)
+                return committed
+            context = await self._contexts.assemble(
+                request=request,
+                profile=resolved.profile,
+                history=await self._history.load(
+                    workspace_id=workspace_id,
+                    thread_id=request.thread_id,
+                ),
+            )
+            execution = build_account_research_execution(
+                request=request,
+                profiles=self._profiles,
+                tools=self._tools,
+                tool_invoker=self._tool_invoker,
+                executor=self._executor,
+                compatibility=self._compatibility,
+                artifacts=self._artifacts,
+                plans=self._plans,
+                checkpointer_factory=postgres_agent_checkpointer,
+                budget_limit_millicents=budget_limit,
+                conn_factory=self._conn_factory,
+            )
+            outcome = await self._runtime.run(
+                request=request,
+                context=context,
+                lease=lease,
+                execution=execution,
+                completion_guard=completion_guard,
+            )
+            await self._complete_recipe_if_needed(outcome)
+            return outcome
+        finally:
+            lease.release()
 
     async def _complete_recipe_if_needed(self, outcome: AgentTurnOutcome) -> None:
         if outcome.status is not AgentExecutionStatus.COMPLETED:

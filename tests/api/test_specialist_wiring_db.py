@@ -162,23 +162,32 @@ class _Workspaces:
     def __init__(self, factory: AgentWorkspaceFactory) -> None:
         self.factory = factory
         self.leases: list[AgentWorkspaceLease] = []
+        self._last: dict[str, Any] = {}
 
     def acquire(
         self,
         *,
         workspace_id: str,
         project_id: str,
+        thread_id: str,
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease:
-        lease = self.factory.create(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            execution_id=execution_id,
-            policy=resolved_profile.profile.workspace,
-        )
+        self._last = {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "execution_id": execution_id,
+            "policy": resolved_profile.profile.workspace,
+        }
+        lease = self.factory.create(**self._last)
         self.leases.append(lease)
         return lease
+
+    def reopen(self) -> AgentWorkspaceLease:
+        """Take a fresh lease over the child thread, after the run released its own."""
+
+        return self.factory.acquire(**self._last)
 
 
 class _Spend:
@@ -414,7 +423,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                 b"# Verdict\n\nrevise: missing evidence"
             )
             assert (
-                await workspaces.leases[0].backend.read_text(
+                await workspaces.reopen().backend.read_text(
                     "context/delegated/00-content-exemplar.md"
                 )
                 == "# Exemplar\n\nExact canonical copy."

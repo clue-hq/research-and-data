@@ -17,6 +17,7 @@ from clue_agents import (
     AnchoredAgentWorkspaceBackend,
     ArtifactRef,
     MountMode,
+    MountRequest,
     WorkspaceConfigurationError,
     WorkspaceConflict,
     WorkspaceMount,
@@ -26,7 +27,12 @@ from clue_agents import (
 )
 from clue_core import ExecutionId
 from tests.agents.workspace_helpers import (
+    DEFAULT_READABLE_PREFIXES,
+    DEFAULT_WRITABLE_PREFIXES,
+    EXECUTION_ID,
     RecordingArtifactSink,
+    expected_root_id,
+    make_factory,
     make_workspace,
     policy,
 )
@@ -71,7 +77,7 @@ def test_file_surface_is_relative_private_atomic_and_non_executable(tmp_path: Pa
         assert edited.byte_count == len("second")
         assert [item.path for item in backend.list_entries_sync("work")] == [entry.path]
 
-        host_file = harness.execution_path / entry.path
+        host_file = harness.thread_path / entry.path
         assert stat.S_IMODE(host_file.stat().st_mode) == 0o600
         assert not host_file.stat().st_mode & 0o111
         assert not any(path.name.startswith(".clue-tmp-") for path in host_file.parent.iterdir())
@@ -95,13 +101,14 @@ def test_agent_cannot_read_repository_environment_or_other_execution(tmp_path: P
     second = harness.factory.create(
         workspace_id="ws-1",
         project_id="project-1",
+        thread_id="thread-2",
         execution_id=second_id,
         policy=policy(),
     )
     try:
         second.backend.write_text_sync("work/private.md", "other")
         for target in (
-            str(harness.root / "ws-1" / "project-1" / str(second_id) / "work/private.md"),
+            str(harness.thread_path.parent / "thread-2" / "work/private.md"),
             "../../source/pyproject.toml",
             "../../.env",
             "/proc/self/environ",
@@ -113,6 +120,7 @@ def test_agent_cannot_read_repository_environment_or_other_execution(tmp_path: P
             harness.factory.create(
                 workspace_id="ws-1",
                 project_id="project-1",
+                thread_id="thread-2",
                 execution_id=second_id,
                 policy=policy(),
             )
@@ -133,13 +141,13 @@ def test_readonly_prefixes_and_source_extensions_are_rejected(tmp_path: Path) ->
             backend.edit_text_sync("context/card.json", old="true", new="false")
         with pytest.raises(WorkspaceSecurityError):
             backend.write_text_sync("work/attack.py", "import os")
-        injected = harness.execution_path / "work/injected.md"
+        injected = harness.thread_path / "work/injected.md"
         injected.write_text("executable")
         os.chmod(injected, 0o700)
         with pytest.raises(WorkspaceSecurityError):
             backend.read_text_sync("work/injected.md")
-        assert stat.S_IMODE((harness.execution_path / "context/card.json").stat().st_mode) == 0o400
-        assert stat.S_IMODE((harness.execution_path / "context").stat().st_mode) == 0o500
+        assert stat.S_IMODE((harness.thread_path / "context/card.json").stat().st_mode) == 0o400
+        assert stat.S_IMODE((harness.thread_path / "context").stat().st_mode) == 0o500
     finally:
         harness.close()
 
@@ -150,22 +158,22 @@ def test_symlinks_hardlinks_and_special_entries_fail_closed(tmp_path: Path) -> N
     outside = tmp_path / "outside.md"
     outside.write_text("host secret")
     try:
-        (harness.execution_path / "work/link.md").symlink_to(outside)
+        (harness.thread_path / "work/link.md").symlink_to(outside)
         with pytest.raises(WorkspaceSecurityError):
             backend.read_text_sync("work/link.md")
         with pytest.raises((WorkspaceConflict, WorkspaceSecurityError)):
             backend.write_text_sync("work/link.md", "replace")
 
-        real = harness.execution_path / "work/real.md"
+        real = harness.thread_path / "work/real.md"
         real.write_text("same")
         os.chmod(real, 0o600)
-        os.link(real, harness.execution_path / "work/hard.md")
+        os.link(real, harness.thread_path / "work/hard.md")
         with pytest.raises(WorkspaceSecurityError):
             backend.read_text_sync("work/real.md")
         with pytest.raises(WorkspaceSecurityError):
             backend.list_entries_sync("work")
 
-        fifo = harness.execution_path / "outputs/pipe.txt"
+        fifo = harness.thread_path / "outputs/pipe.txt"
         os.mkfifo(fifo, 0o600)
         with pytest.raises(WorkspaceSecurityError):
             backend.list_entries_sync("outputs")
@@ -183,15 +191,15 @@ def test_privacy_erasure_closes_live_backend_and_removes_materialized_tree(
         assert harness.factory.erase_for_privacy(
             workspace_id=harness.lease.identity.workspace_id,
             project_id=harness.lease.identity.project_id,
-            execution_id=harness.lease.identity.execution_id,
+            thread_id=harness.lease.identity.thread_id,
         )
-        assert not harness.execution_path.exists()
+        assert not harness.thread_path.exists()
         with pytest.raises(WorkspaceSecurityError, match="closed"):
             backend.read_text_sync("context/contact.md")
         assert not harness.factory.erase_for_privacy(
             workspace_id=harness.lease.identity.workspace_id,
             project_id=harness.lease.identity.project_id,
-            execution_id=harness.lease.identity.execution_id,
+            thread_id=harness.lease.identity.thread_id,
         )
     finally:
         harness.close()
@@ -273,6 +281,7 @@ def test_factory_securely_reopens_same_frozen_execution_after_process_restart(
     reopened = reopened_factory.acquire(
         workspace_id=identity.workspace_id,
         project_id=identity.project_id,
+        thread_id=identity.thread_id,
         execution_id=identity.execution_id,
         policy=active_policy,
     )
@@ -305,7 +314,7 @@ def test_concurrent_same_path_write_has_one_winner_and_no_partial_file(tmp_path:
         assert backend.read_text_sync("outputs/result.md").startswith("value-")
         assert not any(
             path.name.startswith(".clue-tmp-")
-            for path in (harness.execution_path / "outputs").iterdir()
+            for path in (harness.thread_path / "outputs").iterdir()
         )
     finally:
         harness.close()
@@ -364,7 +373,7 @@ def test_anchored_replace_overwrites_swapped_link_not_its_target(
         backend.edit_text_sync("work/plan.md", old="original", new="safe")
         assert backend.read_text_sync("work/plan.md") == "safe"
         assert outside.read_text() == "host secret"
-        assert not (harness.execution_path / "work/plan.md").is_symlink()
+        assert not (harness.thread_path / "work/plan.md").is_symlink()
     finally:
         harness.close()
 
@@ -403,6 +412,7 @@ def test_factory_rejects_unexpected_entries_between_scope_levels(tmp_path: Path)
             harness.factory.create(
                 workspace_id="ws-1",
                 project_id="project-2",
+                thread_id="thread-1",
                 execution_id=other_id,
                 policy=policy(),
             )
@@ -422,21 +432,18 @@ def test_failed_atomic_install_leaves_no_target_or_temporary_file(
     try:
         with pytest.raises(WorkspaceSecurityError):
             harness.lease.backend.write_text_sync("outputs/result.md", "complete")
-        assert not (harness.execution_path / "outputs/result.md").exists()
-        assert not tuple((harness.execution_path / "outputs").iterdir())
+        assert not (harness.thread_path / "outputs/result.md").exists()
+        assert not tuple((harness.thread_path / "outputs").iterdir())
     finally:
         harness.close()
 
 
-def test_output_snapshot_is_single_flight_durable_and_cleanup_gated(tmp_path: Path) -> None:
+def test_output_snapshot_is_single_flight_and_release_keeps_the_thread(tmp_path: Path) -> None:
     sink = RecordingArtifactSink()
     harness = make_workspace(tmp_path, sink=sink)
     backend = harness.lease.backend
     backend.write_text_sync("outputs/report.md", "final")
     try:
-        with pytest.raises(WorkspaceSecurityError):
-            harness.factory.cleanup(harness.lease)
-
         first, second = asyncio.run(_snapshot_twice(backend))
         assert first == second
         assert len(sink.records) == 1
@@ -452,8 +459,12 @@ def test_output_snapshot_is_single_flight_durable_and_cleanup_gated(tmp_path: Pa
             byte_count=2,
         )
         harness.lease.authorize_cleanup(finalization_ref=finalization)
+        # Releasing the lease ends the turn; the persistent thread directory survives it.
         harness.factory.cleanup(harness.lease)
-        assert not harness.execution_path.exists()
+        assert harness.thread_path.exists()
+        assert (harness.thread_path / "outputs/report.md").exists()
+        with pytest.raises(WorkspaceSecurityError, match="closed"):
+            backend.read_text_sync("outputs/report.md")
     finally:
         harness.factory.close()
 
@@ -474,7 +485,15 @@ def test_output_snapshot_rejects_untrusted_artifact_refs(
             asyncio.run(harness.lease.backend.snapshot_outputs())
         assert not harness.lease.backend.outputs_snapshotted
         with pytest.raises(WorkspaceSecurityError):
-            harness.factory.cleanup(harness.lease)
+            harness.lease.authorize_cleanup(
+                finalization_ref=ArtifactRef(
+                    workspace_id="ws-1",
+                    artifact_key="ws-1/finalization",
+                    sha256="f" * 64,
+                    media_type="application/json",
+                    byte_count=2,
+                )
+            )
     finally:
         harness.close()
 
@@ -496,12 +515,13 @@ _MOUNT_READABLE = (
     ".deepagent",
     "inputs",
     "context",
+    "scratch",
+    "reads",
     "work",
-    "delegations",
     "outputs",
     "library",
 )
-_MOUNT_WRITABLE = ("work", "delegations", "outputs", "library")
+_MOUNT_WRITABLE = ("scratch", "work", "outputs", "library")
 
 
 @contextmanager
@@ -521,7 +541,7 @@ def _mounted_backend(
     (mount_dir / "plan.md").write_text("# Plan\n")
     os.chmod(mount_dir / "plan.md", 0o400)
     mount_fd = os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    root_fd = os.open(harness.execution_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    root_fd = os.open(harness.thread_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     backend: AnchoredAgentWorkspaceBackend | None = None
     try:
         backend = AnchoredAgentWorkspaceBackend(
@@ -624,7 +644,7 @@ def test_a_mount_name_may_not_shadow_the_layout_or_be_malformed(
     mount_dir = tmp_path / "mount"
     mount_dir.mkdir(mode=0o700)
     fds = [
-        os.open(harness.execution_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW),
+        os.open(harness.thread_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW),
         *(os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) for _ in names),
     ]
     try:
@@ -668,3 +688,290 @@ def test_a_read_write_mount_takes_writes_under_the_thread_quota(tmp_path: Path) 
             backend.write_text_sync("work/overflow.md", "x")
         with pytest.raises(WorkspaceQuotaExceeded):
             backend.write_text_sync("library/overflow.md", "x")
+
+
+# --- the thread-rooted workspace ----------------------------------------------------------
+
+
+_SECOND_EXECUTION = ExecutionId(UUID("00000000-0000-0000-0000-000000000621"))
+
+
+def test_the_factory_roots_the_workspace_at_the_thread(tmp_path: Path) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        lease = factory.create(
+            workspace_id="ws_a",
+            project_id="prj_a",
+            thread_id="thr_a",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        thread = root / "ws_a" / "projects" / "prj_a" / "threads" / "thr_a"
+        assert sorted(path.name for path in thread.iterdir()) == [
+            ".deepagent",
+            "context",
+            "inputs",
+            "outputs",
+            "reads",
+            "scratch",
+            "work",
+        ]
+        for path in (
+            thread,
+            thread.parent,
+            thread.parent.parent,
+            thread.parent.parent.parent,
+            thread.parent.parent.parent.parent,
+        ):
+            assert stat.S_IMODE(path.stat().st_mode) == 0o700
+        assert lease.identity.thread_id == "thr_a"
+        assert lease.identity.execution_id == EXECUTION_ID
+        assert lease.identity.workspace_root_id == expected_root_id("ws_a", "prj_a", "thr_a")
+    finally:
+        factory.close()
+
+
+def test_scratch_and_reads_survive_across_turns_of_the_thread(tmp_path: Path) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        first = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        first.backend.write_text_sync("scratch/notes.md", "one\n")
+        # ``reads/`` is a trusted-writer folder: the policy's writable prefixes exclude it.
+        read_back = root / "ws-1/projects/project-1/threads/thread-1/reads/account.md"
+        read_back.write_text("read-back\n")
+        os.chmod(read_back, 0o600)
+        first.backend.write_text_sync("outputs/report.md", "final\n")
+        asyncio.run(first.backend.snapshot_outputs())
+        first.release()
+        assert first.backend._closed is True
+
+        second = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=_SECOND_EXECUTION,
+            policy=policy(),
+        )
+        assert second.backend is not first.backend
+        assert second.identity.execution_id == _SECOND_EXECUTION
+        assert second.identity.workspace_root_id == first.identity.workspace_root_id
+        assert second.backend.read_text_sync("scratch/notes.md") == "one\n"
+        assert second.backend.read_text_sync("reads/account.md") == "read-back\n"
+        second.backend.edit_text_sync("scratch/notes.md", old="one\n", new="one\ntwo\n")
+        assert (root / "ws-1/projects/project-1/threads/thread-1/scratch/notes.md").read_text() == (
+            "one\ntwo\n"
+        )
+    finally:
+        factory.close()
+
+
+def test_one_live_lease_per_thread(tmp_path: Path) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        first = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        with pytest.raises(WorkspaceConflict):
+            factory.acquire(
+                workspace_id="ws-1",
+                project_id="project-1",
+                thread_id="thread-1",
+                execution_id=_SECOND_EXECUTION,
+                policy=policy(),
+            )
+        # The same execution re-acquiring is in-process crash resume, not a second turn.
+        resumed = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        assert resumed.backend is first.backend
+        # A sibling thread of the same project is unaffected.
+        sibling = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-2",
+            execution_id=_SECOND_EXECUTION,
+            policy=policy(),
+        )
+        assert sibling.backend is not first.backend
+        assert (root / "ws-1/projects/project-1/threads/thread-2").is_dir()
+        # Releasing the first lease frees the thread for the next turn, and releasing twice
+        # is a no-op rather than an error.
+        first.release()
+        first.release()
+        after = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=_SECOND_EXECUTION,
+            policy=policy(),
+        )
+        assert after.backend is not first.backend
+        # A late second release from the finished turn must not close the new turn's backend.
+        first.release()
+        assert after.backend.write_text_sync("scratch/next.md", "two").path == "scratch/next.md"
+    finally:
+        factory.close()
+
+
+def test_purge_thread_removes_the_directory_and_reports_absence_the_second_time(
+    tmp_path: Path,
+) -> None:
+    harness = make_workspace(tmp_path)
+    try:
+        harness.lease.backend.write_text_sync("scratch/notes.md", "one\n")
+        assert harness.factory.purge_thread(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+        )
+        assert not harness.thread_path.exists()
+        # The now-empty scope levels go with it, up to the prepared root itself.
+        assert not (harness.root / "ws-1").exists()
+        assert harness.root.is_dir()
+        with pytest.raises(WorkspaceSecurityError, match="closed"):
+            harness.lease.backend.read_text_sync("scratch/notes.md")
+        assert not harness.factory.purge_thread(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+        )
+    finally:
+        harness.factory.close()
+
+
+@pytest.mark.parametrize("thread_id", ["../thr", "", "thr/one", "thr thread"])
+def test_a_thread_id_is_validated_like_every_other_segment(tmp_path: Path, thread_id: str) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        with pytest.raises(WorkspaceConfigurationError):
+            factory.create(
+                workspace_id="ws-1",
+                project_id="project-1",
+                thread_id=thread_id,
+                execution_id=EXECUTION_ID,
+                policy=policy(),
+            )
+        assert not (root / "ws-1" / "projects" / "project-1" / "threads").exists()
+    finally:
+        factory.close()
+
+
+# --- requested mounts ---------------------------------------------------------------------
+
+
+def _library(root: Path, *parts: str) -> Path:
+    path = root
+    for part in parts:
+        path = path / part
+        if not path.exists():
+            path.mkdir(mode=0o700)
+    return path
+
+
+def test_a_mount_request_opens_the_brand_and_project_libraries_read_only(
+    tmp_path: Path,
+) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    brand = _library(root, "ws-1", "library", "brand", "brand-1", "v3")
+    (brand / "kit.md").write_text("# Kit\n")
+    os.chmod(brand / "kit.md", 0o400)
+    project = _library(root, "ws-1", "projects", "project-1", "library")
+    (project / "brief.md").write_text("# Brief\n")
+    os.chmod(project / "brief.md", 0o400)
+    active = policy(
+        readable=(*DEFAULT_READABLE_PREFIXES, "brand", "project"),
+        writable=DEFAULT_WRITABLE_PREFIXES,
+    )
+    try:
+        lease = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=active,
+            mounts=MountRequest(brand=("brand-1", "v3"), project_library=True),
+        )
+        assert lease.backend.read_text_sync("brand/kit.md") == "# Kit\n"
+        assert lease.backend.read_text_sync("project/brief.md") == "# Brief\n"
+        with pytest.raises(WorkspaceSecurityError):
+            lease.backend.write_text_sync("brand/new.md", "nope")
+        with pytest.raises(WorkspaceSecurityError):
+            lease.backend.write_text_sync("project/new.md", "nope")
+        # The mounts are outside the thread root and are never copied into it.
+        assert not (root / "ws-1/projects/project-1/threads/thread-1/brand").exists()
+    finally:
+        factory.close()
+
+
+@pytest.mark.parametrize(
+    "request_",
+    [
+        MountRequest(brand=("brand-1", "v3")),
+        MountRequest(project_library=True),
+    ],
+)
+def test_a_mount_request_for_an_unmaterialized_library_is_refused(
+    tmp_path: Path, request_: MountRequest
+) -> None:
+    _root, factory, _sink = make_factory(tmp_path)
+    try:
+        with pytest.raises(WorkspaceConfigurationError, match="library is not materialized"):
+            factory.create(
+                workspace_id="ws-1",
+                project_id="project-1",
+                thread_id="thread-1",
+                execution_id=EXECUTION_ID,
+                policy=policy(),
+                mounts=request_,
+            )
+    finally:
+        factory.close()
+
+
+def test_reacquiring_a_live_thread_with_another_mount_request_conflicts(tmp_path: Path) -> None:
+    root, factory, _sink = make_factory(tmp_path)
+    _library(root, "ws-1", "projects", "project-1", "library")
+    active = policy(readable=(*DEFAULT_READABLE_PREFIXES, "project"))
+    try:
+        first = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=active,
+            mounts=MountRequest(project_library=True),
+        )
+        with pytest.raises(WorkspaceConflict):
+            factory.acquire(
+                workspace_id="ws-1",
+                project_id="project-1",
+                thread_id="thread-1",
+                execution_id=EXECUTION_ID,
+                policy=active,
+                mounts=MountRequest(),
+            )
+        resumed = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=active,
+            mounts=MountRequest(project_library=True),
+        )
+        assert resumed.backend is first.backend
+    finally:
+        factory.close()

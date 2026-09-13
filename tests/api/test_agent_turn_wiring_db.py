@@ -185,6 +185,7 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 execution_id=execution_id,
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
+                thread_id="thread-c63",
             )
             runtime_profile = profile()
             turn_request = AgentTurnRequest(
@@ -418,7 +419,7 @@ def test_durable_turn_history_replay_and_dsar_are_body_free_and_fail_closed(
                 subject_entity_id=UUID("00000000-0000-0000-0000-000000000699"),
             )
             assert erased.affected_turn_ids == (turn_request.turn_id,)
-            assert not harness.execution_path.exists()
+            assert not harness.thread_path.exists()
             with pytest.raises(ArtifactNotFound):
                 await artifacts.read(user_message)
             blocked = await replay.inspect(

@@ -47,11 +47,19 @@ DEFAULT_READABLE_PREFIXES: tuple[str, ...] = (
     ".deepagent",
     "inputs",
     "context",
+    "scratch",
+    "reads",
     "work",
-    "delegations",
     "outputs",
 )
-DEFAULT_WRITABLE_PREFIXES: tuple[str, ...] = ("work", "delegations", "outputs")
+DEFAULT_WRITABLE_PREFIXES: tuple[str, ...] = ("scratch", "work", "outputs")
+
+
+def expected_root_id(workspace_id: str, project_id: str, thread_id: str) -> str:
+    """The opaque workspace root id the factory derives for one thread."""
+
+    digest = hashlib.sha256(f"{workspace_id}\0{project_id}\0{thread_id}".encode()).hexdigest()
+    return f"awr_{digest}"
 
 
 def policy(
@@ -73,13 +81,36 @@ def policy(
     )
 
 
+def make_factory(
+    tmp_path: Path,
+    *,
+    sink: RecordingArtifactSink | None = None,
+) -> tuple[Path, AgentWorkspaceFactory, RecordingArtifactSink]:
+    """A prepared private root plus its factory, with no lease opened yet."""
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "source"
+    home = tmp_path / "home"
+    source.mkdir(mode=0o700)
+    home.mkdir(mode=0o700)
+    root = tmp_path / "agent-runtime"
+    prepared = WorkspaceRootPolicy(
+        configured_root=root,
+        source_root=source,
+        home_root=home,
+    ).prepare()
+    recording_sink = sink or RecordingArtifactSink()
+    factory = AgentWorkspaceFactory(prepared_root=prepared, artifact_sink=recording_sink)
+    return root, factory, recording_sink
+
+
 @dataclass
 class WorkspaceHarness:
     root: Path
     factory: AgentWorkspaceFactory
     sink: RecordingArtifactSink
     lease: AgentWorkspaceLease
-    execution_path: Path
+    thread_path: Path
 
     def close(self) -> None:
         self.lease.backend.close()
@@ -94,26 +125,13 @@ def make_workspace(
     execution_id: ExecutionId = EXECUTION_ID,
     workspace_id: str = "ws-1",
     project_id: str = "project-1",
+    thread_id: str = "thread-1",
 ) -> WorkspaceHarness:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    source = tmp_path / "source"
-    home = tmp_path / "home"
-    source.mkdir(mode=0o700)
-    home.mkdir(mode=0o700)
-    root = tmp_path / "agent-runtime"
-    prepared = WorkspaceRootPolicy(
-        configured_root=root,
-        source_root=source,
-        home_root=home,
-    ).prepare()
-    recording_sink = sink or RecordingArtifactSink()
-    factory = AgentWorkspaceFactory(
-        prepared_root=prepared,
-        artifact_sink=recording_sink,
-    )
+    root, factory, recording_sink = make_factory(tmp_path, sink=sink)
     lease = factory.create(
         workspace_id=workspace_id,
         project_id=project_id,
+        thread_id=thread_id,
         execution_id=execution_id,
         policy=active_policy or policy(),
     )
@@ -122,5 +140,5 @@ def make_workspace(
         factory=factory,
         sink=recording_sink,
         lease=lease,
-        execution_path=root / workspace_id / project_id / str(execution_id),
+        thread_path=root / workspace_id / "projects" / project_id / "threads" / thread_id,
     )

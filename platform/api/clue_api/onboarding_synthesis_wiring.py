@@ -941,132 +941,141 @@ class OnboardingSynthesisLauncher:
         lease = self._components.workspaces.acquire(
             workspace_id=workspace_id,
             project_id=project_id,
+            thread_id=thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
+        try:
+            # 5. the four trusted artifacts --------------------------------------------------------
+            card_ref = await self._artifact(
+                workspace_id,
+                SYNTHESIS_CARD_MEDIA_TYPE,
+                {
+                    "schema_version": "2",
+                    "brand_id": brand_id,
+                    "company_domain": company_domain,
+                    "task": task,
+                    "icp": (
+                        None
+                        if icp is None
+                        else {
+                            "key": icp.icp_key,
+                            "document_id": str(icp.document_id),
+                            "version": icp.version,
+                        }
+                    ),
+                    "inputs": [
+                        {
+                            "path": str(row["path"]),
+                            "kind": str(row["kind"]),
+                            "version": int(row["version"]),
+                        }
+                        for row in selected.seeds
+                    ],
+                    # Two honest lists rather than one: what the model is already holding,
+                    # and what it can open. Both are `inputs/` paths, because that is the
+                    # path it must cite.
+                    "context_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.focus],
+                    "seeded_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
+                    "persona_vocabulary": list(_PERSONA_VOCABULARY),
+                },
+                project_id,
+            )
+            budget_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-budget-envelope+json",
+                {"schema_version": "1", "limit_millicents": BUDGET_LIMIT_MILLICENTS},
+                project_id,
+            )
+            manifest_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-resource-manifest+json",
+                resolved.resource_manifest.model_dump(mode="json"),
+                project_id,
+            )
+            user_message_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-turn-input+json",
+                {
+                    "schema_version": "1",
+                    "objective": _objective(task=task, icp=icp, focus=selected.focus),
+                    "onboarding_run_id": str(run_id),
+                    "onboarding_step_id": str(step_id),
+                    "input_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
+                },
+                project_id,
+            )
 
-        # 5. the four trusted artifacts ----------------------------------------------------------
-        card_ref = await self._artifact(
-            workspace_id,
-            SYNTHESIS_CARD_MEDIA_TYPE,
-            {
-                "schema_version": "2",
-                "brand_id": brand_id,
-                "company_domain": company_domain,
-                "task": task,
-                "icp": (
-                    None
-                    if icp is None
-                    else {
-                        "key": icp.icp_key,
-                        "document_id": str(icp.document_id),
-                        "version": icp.version,
-                    }
-                ),
-                "inputs": [
-                    {
-                        "path": str(row["path"]),
-                        "kind": str(row["kind"]),
-                        "version": int(row["version"]),
-                    }
-                    for row in selected.seeds
-                ],
-                # Two honest lists rather than one: what the model is already holding, and what it
-                # can open. Both are `inputs/` paths, because that is the path it must cite.
-                "context_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.focus],
-                "seeded_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
-                "persona_vocabulary": list(_PERSONA_VOCABULARY),
-            },
-            project_id,
-        )
-        budget_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-budget-envelope+json",
-            {"schema_version": "1", "limit_millicents": BUDGET_LIMIT_MILLICENTS},
-            project_id,
-        )
-        manifest_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-resource-manifest+json",
-            resolved.resource_manifest.model_dump(mode="json"),
-            project_id,
-        )
-        user_message_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-turn-input+json",
-            {
-                "schema_version": "1",
-                "objective": _objective(task=task, icp=icp, focus=selected.focus),
-                "onboarding_run_id": str(run_id),
-                "onboarding_step_id": str(step_id),
-                "input_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
-            },
-            project_id,
-        )
-
-        # 6. the turn request --------------------------------------------------------------------
-        turn_id = uuid5(TURN_NAMESPACE, identity_key)
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=thread_id,
-            constitution=AgentConstitution(
-                workspace_id=workspace_id,
-                project_id=project_id,
-                execution_id=execution_id,
-                actor_id="system",
-                role=AgentRole.ONBOARDING_SYNTHESIS,
-                brand_id=brand_id,
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-            ),
-            user_message_artifact_ref=user_message_ref,
-            # L5: the documents the task cannot be done without, as their own markdown. The exact
-            # version is pinned, so a document that moved under us fails loudly instead of
-            # serving the model a different text than the one this card names.
-            focus_refs=tuple(
-                DomainObjectRef(
+            # 6. the turn request ------------------------------------------------------------------
+            turn_id = uuid5(TURN_NAMESPACE, identity_key)
+            request = AgentTurnRequest(
+                turn_id=turn_id,
+                thread_id=thread_id,
+                constitution=AgentConstitution(
                     workspace_id=workspace_id,
-                    object_type="brand_knowledge_document",
-                    object_id=str(row["document_id"]),
-                    version=int(row["version"]),
+                    project_id=project_id,
+                    execution_id=execution_id,
+                    actor_id="system",
+                    role=AgentRole.ONBOARDING_SYNTHESIS,
+                    brand_id=brand_id,
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                ),
+                user_message_artifact_ref=user_message_ref,
+                # L5: the documents the task cannot be done without, as their own markdown.
+                # The exact version is pinned, so a document that moved under us fails loudly
+                # instead of serving the model a different text than the one this card names.
+                focus_refs=tuple(
+                    DomainObjectRef(
+                        workspace_id=workspace_id,
+                        object_type="brand_knowledge_document",
+                        object_id=str(row["document_id"]),
+                        version=int(row["version"]),
+                    )
+                    for row in selected.focus
+                ),
+                requested_at=requested_at,
+            )
+            await self._components.turns.create(request=request, profile=resolved.profile)
+
+            # 7. replay short-circuit --------------------------------------------------------------
+            outcome = await self._components.turns.load_committed_outcome(
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+            )
+            if outcome is None:
+                outcome = await self._run_turn(
+                    request=request,
+                    resolved=resolved,
+                    lease=lease,
+                    input_seeds=input_seeds,
                 )
-                for row in selected.focus
-            ),
-            requested_at=requested_at,
-        )
-        await self._components.turns.create(request=request, profile=resolved.profile)
 
-        # 7. replay short-circuit ----------------------------------------------------------------
-        outcome = await self._components.turns.load_committed_outcome(
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-        )
-        if outcome is None:
-            outcome = await self._run_turn(
-                request=request,
-                resolved=resolved,
-                lease=lease,
-                input_seeds=input_seeds,
-            )
+            # 8. close the durable recipe ----------------------------------------------------------
+            await self._complete_recipe_if_needed(outcome)
 
-        # 8. close the durable recipe ------------------------------------------------------------
-        await self._complete_recipe_if_needed(outcome)
-
-        cost_usd = await self._cost_usd(execution_id=execution_id, workspace_id=workspace_id)
-        if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:
+            cost_usd = await self._cost_usd(execution_id=execution_id, workspace_id=workspace_id)
+            if (
+                outcome.status is not AgentExecutionStatus.COMPLETED
+                or outcome.finalization_ref is None
+            ):
+                return _TaskOutcome(
+                    "failed",
+                    outcome.failure_code or "turn_not_completed",
+                    f"the synthesis turn ended {outcome.status.value}",
+                    cost_usd,
+                    None,
+                    None,
+                )
             return _TaskOutcome(
-                "failed",
-                outcome.failure_code or "turn_not_completed",
-                f"the synthesis turn ended {outcome.status.value}",
-                cost_usd,
-                None,
-                None,
+                "completed", None, None, cost_usd, turn_id, outcome.finalization_ref
             )
-        return _TaskOutcome("completed", None, None, cost_usd, turn_id, outcome.finalization_ref)
+        finally:
+            lease.release()
 
     # --- the turn ------------------------------------------------------------------------------
 
