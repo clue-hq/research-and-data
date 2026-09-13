@@ -538,7 +538,10 @@ class AgentFinalizationAuthority:
             )
             self._lease.authorize_cleanup(finalization_ref=existing)
             return existing
-        expected_outputs = tuple(await self._lease.backend.snapshot_outputs())
+        # Snapshot-then-empty: the first call of the turn persists and clears ``outputs/``
+        # for the thread's next turn, and any later call returns that same single-flight
+        # answer, so the two sites agree without re-walking an emptied folder.
+        expected_outputs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
         if envelope.output_refs != expected_outputs:
             raise ValueError("finalization outputs differ from the frozen workspace snapshot")
         await self._turns.record_workspace_usage(
@@ -1168,7 +1171,7 @@ class GovernedAgentToolFactory:
                     ]
                 )
             )
-            output_refs = tuple(await self._lease.backend.snapshot_outputs())
+            output_refs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
             envelope = AgentFinalizeEnvelope(
                 finalization_id=uuid5(
                     _FINALIZATION_NAMESPACE,

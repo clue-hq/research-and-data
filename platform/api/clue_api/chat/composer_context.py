@@ -40,7 +40,7 @@ __all__ = [
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v50"
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v51"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

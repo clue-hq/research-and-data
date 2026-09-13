@@ -118,7 +118,13 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # an overview renders on first page view (so `overview_not_written` is not a failure) and that
     # claims are read to the end before a count is stated. No tool is added or dropped. Everything
     # else is v49's.
-    AgentRole.HEAD_OF_ABM: "v50",
+    # v51 (thread workspace, 2026-09-13): v50's surface with the workspace block moved to the
+    # thread layout — the turn now runs in one persistent directory per chat thread, so `scratch/`
+    # is the agent's notebook (readable and writable, and it survives the turn), `reads/` is
+    # readable, `work/` is dropped, and the quota rises to 400 files / 20 MiB. stage0-interview
+    # v28 §1 names the notebook: what to keep in `scratch/` and what belongs in the project's own
+    # files instead. No tool is added or dropped. Everything else is v50's.
+    AgentRole.HEAD_OF_ABM: "v51",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

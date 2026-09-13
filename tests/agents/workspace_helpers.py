@@ -6,12 +6,19 @@ from pathlib import Path
 from uuid import UUID
 
 from clue_agents import (
+    AgentResourceSnapshot,
+    AgentRole,
     AgentWorkspaceFactory,
     AgentWorkspaceLease,
     ArtifactRef,
+    ResourceBody,
+    ResourceKind,
     WorkspacePolicy,
     WorkspaceRootPolicy,
+    WorkspaceSeedFile,
+    build_agent_resource_manifest,
 )
+from clue_agents.contracts import AgentResourceRef
 from clue_core import ExecutionId
 
 EXECUTION_ID = ExecutionId(UUID("00000000-0000-0000-0000-000000000611"))
@@ -142,3 +149,50 @@ def make_workspace(
         lease=lease,
         thread_path=root / workspace_id / "projects" / project_id / "threads" / thread_id,
     )
+
+
+def resource_ref(kind: ResourceKind, name: str, content: bytes) -> AgentResourceRef:
+    """One pinned resource address at the digest of the bytes the caller will materialize."""
+
+    return AgentResourceRef(
+        kind=kind,
+        name=name,
+        version="1.0.0",
+        sha256=hashlib.sha256(content).hexdigest(),
+    )
+
+
+def resource_snapshot() -> tuple[AgentResourceSnapshot, tuple[WorkspaceSeedFile, ...]]:
+    """A small profile/prompt/skill snapshot plus one context seed, for materialization tests."""
+
+    profile_bytes = b"role: head_of_abm\n"
+    prompt_bytes = b"You are the governed Head of ABM.\n"
+    skill_bytes = b"# Project planning\nUse evidence.\n"
+    profile = resource_ref(ResourceKind.PROFILE, "head-of-abm", profile_bytes)
+    prompt = resource_ref(ResourceKind.PROMPT, "head-of-abm", prompt_bytes)
+    skill = resource_ref(ResourceKind.SKILL, "project-planning", skill_bytes)
+    manifest = build_agent_resource_manifest(
+        role=AgentRole.HEAD_OF_ABM,
+        profile=profile,
+        prompt=prompt,
+        skills=(skill,),
+        tools=(),
+    )
+    snapshot = AgentResourceSnapshot(
+        manifest=manifest,
+        bodies=(
+            ResourceBody(profile, profile_bytes, "application/yaml"),
+            ResourceBody(prompt, prompt_bytes, "text/markdown"),
+            ResourceBody(skill, skill_bytes, "text/markdown"),
+        ),
+    )
+    context = b'{"project":"project-1"}'
+    seeds = (
+        WorkspaceSeedFile(
+            path="context/project.json",
+            content=context,
+            sha256=hashlib.sha256(context).hexdigest(),
+            media_type="application/json",
+        ),
+    )
+    return snapshot, seeds

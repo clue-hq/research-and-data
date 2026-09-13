@@ -23,61 +23,23 @@ from clue_agents import (
     build_agent_resource_manifest,
     resource_manifest_sha256,
 )
-from clue_agents.contracts import AgentResourceRef
 from clue_core import ExecutionId
-from tests.agents.workspace_helpers import WorkspaceHarness, make_workspace, policy
+from tests.agents.workspace_helpers import (
+    WorkspaceHarness,
+    make_workspace,
+    policy,
+    resource_ref,
+    resource_snapshot,
+)
 
 _SECOND_EXECUTION = ExecutionId(UUID("00000000-0000-0000-0000-000000000622"))
-
-
-def _ref(kind: ResourceKind, name: str, content: bytes) -> AgentResourceRef:
-    return AgentResourceRef(
-        kind=kind,
-        name=name,
-        version="1.0.0",
-        sha256=hashlib.sha256(content).hexdigest(),
-    )
-
-
-def _snapshot() -> tuple[AgentResourceSnapshot, tuple[WorkspaceSeedFile, ...]]:
-    profile_bytes = b"role: head_of_abm\n"
-    prompt_bytes = b"You are the governed Head of ABM.\n"
-    skill_bytes = b"# Project planning\nUse evidence.\n"
-    profile = _ref(ResourceKind.PROFILE, "head-of-abm", profile_bytes)
-    prompt = _ref(ResourceKind.PROMPT, "head-of-abm", prompt_bytes)
-    skill = _ref(ResourceKind.SKILL, "project-planning", skill_bytes)
-    manifest = build_agent_resource_manifest(
-        role=AgentRole.HEAD_OF_ABM,
-        profile=profile,
-        prompt=prompt,
-        skills=(skill,),
-        tools=(),
-    )
-    snapshot = AgentResourceSnapshot(
-        manifest=manifest,
-        bodies=(
-            ResourceBody(profile, profile_bytes, "application/yaml"),
-            ResourceBody(prompt, prompt_bytes, "text/markdown"),
-            ResourceBody(skill, skill_bytes, "text/markdown"),
-        ),
-    )
-    context = b'{"project":"project-1"}'
-    seeds = (
-        WorkspaceSeedFile(
-            path="context/project.json",
-            content=context,
-            sha256=hashlib.sha256(context).hexdigest(),
-            media_type="application/json",
-        ),
-    )
-    return snapshot, seeds
 
 
 def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
     tmp_path: Path,
 ) -> None:
     harness = make_workspace(tmp_path)
-    snapshot, seeds = _snapshot()
+    snapshot, seeds = resource_snapshot()
     try:
         materializer = AgentResourceMaterializer()
         materializer.materialize(
@@ -146,11 +108,11 @@ def test_exact_resources_and_context_are_copied_frozen_and_manifested_last(
 
 
 def test_wrong_hash_and_manifest_body_mismatch_fail_before_materialization() -> None:
-    profile = _ref(ResourceKind.PROFILE, "head-of-abm", b"expected")
+    profile = resource_ref(ResourceKind.PROFILE, "head-of-abm", b"expected")
     with pytest.raises(WorkspaceSecurityError):
         ResourceBody(profile, b"different", "application/yaml")
 
-    prompt = _ref(ResourceKind.PROMPT, "head-of-abm", b"prompt")
+    prompt = resource_ref(ResourceKind.PROMPT, "head-of-abm", b"prompt")
     manifest = build_agent_resource_manifest(
         role=AgentRole.HEAD_OF_ABM,
         profile=profile,
@@ -177,7 +139,7 @@ def test_wrong_hash_and_manifest_body_mismatch_fail_before_materialization() -> 
 def test_failed_materialization_never_writes_readiness_manifest_and_is_discardable(
     tmp_path: Path,
 ) -> None:
-    snapshot, seeds = _snapshot()
+    snapshot, seeds = resource_snapshot()
     harness = make_workspace(
         tmp_path,
         active_policy=policy(max_total_bytes=20, max_file_bytes=20, max_file_count=20),
@@ -241,7 +203,7 @@ def test_a_new_turn_rewrites_the_materialized_trees_of_a_persistent_thread(
     tmp_path: Path,
 ) -> None:
     harness = make_workspace(tmp_path)
-    snapshot, _ = _snapshot()
+    snapshot, _ = resource_snapshot()
     first_seeds = (_seed("inputs/user-message.md", "the first turn's ask"),)
     second_seeds = (_seed("inputs/current-context/summary.md", "the second turn's ask"),)
     materializer = AgentResourceMaterializer()
@@ -283,7 +245,7 @@ def test_a_new_turn_rewrites_the_materialized_trees_of_a_persistent_thread(
 
 def test_verify_rebuilds_a_materialized_tree_that_lost_a_file(tmp_path: Path) -> None:
     harness = make_workspace(tmp_path)
-    snapshot, seeds = _snapshot()
+    snapshot, seeds = resource_snapshot()
     materializer = AgentResourceMaterializer()
     second: AgentWorkspaceLease | None = None
     try:
@@ -319,7 +281,7 @@ def test_verify_still_fails_loudly_when_the_rebuilt_bytes_are_wrong(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = make_workspace(tmp_path)
-    snapshot, seeds = _snapshot()
+    snapshot, seeds = resource_snapshot()
     materializer = AgentResourceMaterializer()
     try:
         materializer.materialize(lease=harness.lease, snapshot=snapshot, seed_files=seeds)

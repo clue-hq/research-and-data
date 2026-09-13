@@ -137,7 +137,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # exact replay input for turns already pinned to it. The reads' fix waves minted
 # `head-of-abm@v49` / stage0-interview v26 and then `head-of-abm@v50` / stage0-interview v27, but
 # NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved — only the three tools'
-# schema digests, which the profile and the skill pin and this file does not.
+# schema digests, which the profile and the skill pin and this file does not. The thread-workspace
+# wave (`head-of-abm@v51` / stage0-interview v28) mints no revision either, for the same reason:
+# it moves the profile's workspace block and the skill's §1 text, not a tool address.
 CONVERSATION_RECIPE_VERSION = 26
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a

@@ -1353,7 +1353,13 @@ class AgentWorkspaceFactory:
             thread_segment=thread_segment,
             factory=self,
         )
-        if backend.materialized_trees_frozen():
+        try:
+            frozen = backend.materialized_trees_frozen()
+        except WorkspaceSecurityError:
+            # A crash between the three freezes leaves a partial tree: not this turn's truth,
+            # so the lease stays unfrozen and the materializer's rebuild repairs it.
+            frozen = False
+        if frozen:
             lease.restore_resources_frozen()
         return lease
 

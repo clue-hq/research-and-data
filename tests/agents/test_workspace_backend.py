@@ -12,6 +12,7 @@ from uuid import UUID
 import pytest
 
 from clue_agents import (
+    AgentResourceMaterializer,
     AgentWorkspaceBackend,
     AgentWorkspaceFactory,
     AnchoredAgentWorkspaceBackend,
@@ -35,6 +36,7 @@ from tests.agents.workspace_helpers import (
     make_factory,
     make_workspace,
     policy,
+    resource_snapshot,
 )
 
 
@@ -797,6 +799,49 @@ def test_scratch_and_reads_survive_across_turns_of_the_thread(tmp_path: Path) ->
         assert (root / "ws-1/projects/project-1/threads/thread-1/scratch/notes.md").read_text() == (
             "one\ntwo\n"
         )
+    finally:
+        factory.close()
+
+
+def test_a_partially_frozen_thread_reopens_unfrozen_and_is_rebuilt(tmp_path: Path) -> None:
+    """A crash between the three freezes must be repairable, not a permanently dead thread."""
+
+    root, factory, _sink = make_factory(tmp_path)
+    materializer = AgentResourceMaterializer()
+    snapshot, seeds = resource_snapshot()
+    try:
+        first = factory.create(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=EXECUTION_ID,
+            policy=policy(),
+        )
+        materializer.materialize(lease=first, snapshot=snapshot, seed_files=seeds)
+        first.release()
+        # The crash: ``context/`` was frozen and the other two never were, so the three
+        # trusted trees disagree and ``materialized_trees_frozen`` refuses to answer.
+        thread_root = root / "ws-1/projects/project-1/threads/thread-1"
+        os.chmod(thread_root / "inputs", 0o700)
+        os.chmod(thread_root / ".deepagent", 0o700)
+
+        second = factory.acquire(
+            workspace_id="ws-1",
+            project_id="project-1",
+            thread_id="thread-1",
+            execution_id=_SECOND_EXECUTION,
+            policy=policy(),
+        )
+        with pytest.raises(WorkspaceSecurityError):
+            second.backend.materialized_trees_frozen()
+        assert second.resources_frozen is False
+
+        # Either branch of the turn wiring repairs it; this is the resume branch.
+        materializer.verify_materialized(lease=second, snapshot=snapshot, seed_files=seeds)
+        assert second.resources_frozen is True
+        assert second.materialized is True
+        assert second.backend.materialized_trees_frozen() is True
+        assert second.backend.read_text_sync("context/project.json") == '{"project":"project-1"}'
     finally:
         factory.close()
 

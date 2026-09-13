@@ -105,6 +105,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The read tools' hotfix: v26 with `read_account_research`'s paged/prefixed contract and
         # `read_discovery_run`'s repaired input re-measured, and the §7c/§1 text they need.
         "skill:stage0-interview@v27",
+        # The thread workspace: v27 with the §1 bullet that names `scratch/` as the notebook that
+        # persists across the turns of one chat.
+        "skill:stage0-interview@v28",
         "skill:stage0-interview@v3",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -183,6 +186,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v5",
         # The read tools' hotfix: v49 with the three reads re-pinned and stage0-interview v27.
         "profile:head-of-abm@v50",
+        # The thread workspace: v50 with `scratch/`/`reads/` granted, `work/` dropped, the quota
+        # raised for a notebook that persists, and stage0-interview v28.
+        "profile:head-of-abm@v51",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",
