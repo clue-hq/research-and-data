@@ -326,7 +326,8 @@ class _FinalizingExecution:
 
 
 class _EmptyOutputBackend:
-    async def snapshot_outputs(self) -> tuple[ArtifactRef, ...]:
+    async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
+        del empty_after
         return ()
 
 

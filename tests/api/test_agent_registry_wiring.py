@@ -127,7 +127,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # thread layout (`scratch/`/`reads/` granted, `work/` dropped, quota raised) and pins
         # stage0-interview v28, whose §1 names the notebook — the skill body is in the manifest,
         # so the digest moves. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("6d718623ea78be0ba84aa6f83f80f82ad3a942b2f6c7583f00e611db141919a7"),
+        AgentRole.HEAD_OF_ABM: ("23e39e89b0b59242d6d14709a3f6c4bb8684d79b3cc48c0ff8c6a4865ddb2327"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
