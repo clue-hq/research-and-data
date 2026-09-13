@@ -5,6 +5,13 @@ skill file and passing resource tests are not evidence of universal creative
 quality. This document records the sequential validation of the first Design
 Agent V1 skill, not a new brand ingestion workflow.
 
+September 13 review: the founder rejected the corrected wide artifact's overall
+branding and composition. Removing the invented lighting passed a narrow repair
+check; it did not make the creative acceptable. Earlier "usable" labels below
+describe an independent draft assessment, not founder approval or a production
+quality pass. See `design-agent-v1-harness-audit.md` for the subsequent audit and
+proposed evaluation reset.
+
 ## Scope and sequence
 
 1. Restore the existing local stack and verify the active brand, original asset
@@ -97,7 +104,7 @@ The live model configuration was `x-ai/grok-4.6` for the design reasoning and
 | Measured contrast repair | 9m 33s | 9m 23s | 35 | Usable awareness composition: dark native copy, authentic wordmark and no white plate; existing artwork reused |
 | Authentic product plus new atmosphere | 18m 35s | 18m 24s | 57 | Usable draft with crop debt: authentic UI, new background, native copy/button; some avatars still clipped at the left |
 | New concept in wide format | 8m 31s | 8m 19s | 34 | Failed brand review: retained dots and palette but invented luminous points and connecting trails |
-| Wide treatment correction | 6m 29s | 6m 13s | 29 | Targeted correction passed inspection: matte field and dots retained, unsupported lighting removed; all foreground nodes unchanged |
+| Wide treatment correction | 6m 29s | 6m 13s | 29 | Lighting repair only; overall creative rejected in September 13 founder review. Foreground nodes were unchanged, including the unsatisfactory composition |
 
 These are individual attempts, not median or percentile performance. The repair
 adds time to the earlier candidate; it is not a fresh generation in 9m 33s. A
@@ -157,7 +164,10 @@ not independent evidence that a fresh run will always make the right choice.
 
 The correction returned new model pixels conditioned on the original source
 digest. Its 1536×864 raster was cover-fitted into the 1200×628 scene; this is not
-native generation at the requested aspect. Independent inspection confirmed
+native generation at the requested aspect. The subsequent code audit confirmed
+that the active adapter snaps 1.91:1 to 16:9 before the provider call; this is
+adapter negotiation, not proof that the model ignored its wire request.
+Independent inspection confirmed
 that the conspicuous glow, sparks and connecting lines were removed. Comparing
 saved scenes showed only the background image node changed: headline, support,
 wordmark and white plate were unchanged. This fixes the rejected image treatment;
