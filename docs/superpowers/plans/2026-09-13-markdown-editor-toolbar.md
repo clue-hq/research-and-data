@@ -101,6 +101,9 @@ and long-content checks introduce no outer horizontal scroll. Implementation and
 
 ## Acceptance — 2026-09-14
 
+The consolidated [flow acceptance record](2026-09-14-lane2-flow-acceptance.md) closes the
+founder's final verification step and distinguishes browser evidence from automated gates.
+
 - MDXEditor 4.2.5, React 19.2.4 and Next 16.2.12; no reinstall or dependency fork.
   The extracted MarkdownToolbar composes native controls. Knowledge and every project
   Markdown file use it through the same client-only editor boundary.

@@ -2,7 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** ACTIVE as Lane 2's first plan (founder, 2026-09-13; see `2026-09-13-lane-plan-index.md`). It was deferred by ruling R12 on 2026-09-12; the backend it depends on (plan-3 routes, the plan card) has shipped. Runs in its own worktree, frontend-only; the toolbar slice (`2026-09-13-markdown-editor-toolbar.md`) follows it.
+**Status:** frontend implementation and acceptance COMPLETE, 2026-09-14, including the Task 8
+founder amendment replacing the permanent Plan tab with named file tabs. See
+[`2026-09-14-lane2-flow-acceptance.md`](2026-09-14-lane2-flow-acceptance.md). Originally
+re-activated as Lane 2's first plan on 2026-09-13 after R12 deferred it; the historical tasks
+below describe that sequence, with Task 8's amendment governing the final tab behavior.
 
 **Re-validated against `2026-09-13-agent-workspace-reorganization-design.md` (W6):** the agent will stop calling `write_project_document@1` once Lane 1's plan 3 lands and will write `project/plan.md` with its file tool instead; the plan card is then rendered from the turn's document rows. This plan therefore keys the auto-open on the **plan part** in the transcript (Task 7), which exists in both worlds, not on a tool call. The document list/detail/PUT routes are unchanged by Lane 1. Persona documents live at `audience/persona-<key>.md` (ruling P3-a), so Task 8's gallery cards use the existing `icp_key` on the wire and need no path assumptions.
 

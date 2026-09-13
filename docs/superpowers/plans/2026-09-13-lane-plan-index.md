@@ -34,12 +34,21 @@ worktrees sequenced by dependency, never by owner.
 
 **Editor decision, 2026-09-13:** the founder selected MDXEditor. Visual editing and toolbar
 controls use that library; preview stays `react-markdown` + `remark-gfm`. The custom CodeMirror
-command/keymap plan is superseded. This checkout carries the planning revision; implementation
-and browser compatibility verification remain pending.
+command/keymap plan is superseded.
+
+**Frontend acceptance complete, 2026-09-14:** Knowledge, Plan, ICP and persona documents use
+the shared editor. Saving/reload, conflicts, drafts, undo/discard, source recovery and overflow
+checks passed, along with the frontend gates. See the [acceptance record](2026-09-14-lane2-flow-acceptance.md)
+for evidence and the distinction between controlled stream verification and the separate
+Lane-1 model-generated document walk.
+
+**Founder amendment, 2026-09-14:** there is no permanent Plan/Documents tab. Gallery cards
+and fresh agent file writes open closable tabs named for their files. Gallery includes Plan,
+ICP and persona documents; design creation/update also opens the corresponding file.
 
 | # | Plan | What it builds | Depends on |
 | --- | --- | --- | --- |
-| 1 | `2026-09-12-plan-tab-frontend.md` (re-activated; Task 7 re-keyed on the plan part) | The Plan tab beside Gallery and Target accounts; the shared document surface (react-markdown preview + MDXEditor visual editing, Clue tokens); auto-open when the plan is written; the plan card click; ICP and persona documents as gallery cards that open on the same surface | the plan-3 (2026-09-12) routes, already on this branch; nothing in Lane 1 |
+| 1 | `2026-09-12-plan-tab-frontend.md` (completed with the founder amendment above) | Named file tabs opened from Gallery or fresh writes; shared document preview/editing with Clue tokens; clickable document references; Plan, ICP and persona Gallery cards | the plan-3 (2026-09-12) routes, already on this branch; nothing in Lane 1 |
 | 2 | `2026-09-13-markdown-editor-toolbar.md` | The shared MDXEditor toolbar, Clue styling, source recovery and persistence/overflow verification on Knowledge and project documents | Lane 2 plan 1 Task 5 |
 
 **Run order:** 1 → 2. Plan 1 Task 5 first verifies the MDXEditor foundation on a representative
@@ -58,6 +67,8 @@ routes or plan-part shape consumed here.
 
 - Lane 1: each plan's final task is a live proof on the lane stack with SQL; the four owed memory notes gain "proven" sections; the reorganisation spec's §5 open questions are answered in the plan ledgers.
 - Lane 2: browser checks on the verified active Semarang frontend origin at the end of each task,
-  plus the frontend gate; the gallery shows a project ICP card after Lane 1 plan 3's persona/ICP
-  walk. Preserve local env/database settings and sibling services. Editor checks include no-op
+  plus the frontend gate (completed; see acceptance record). The Gallery-to-editor path is proven
+  with persisted project documents and controlled streams. The real Lane 1 plan 3 persona/ICP
+  generation walk remains a cross-lane integration check, not a claim of this frontend acceptance.
+  Preserve local env/database settings and sibling services. Editor checks include no-op
   normalization, Save/reload, conflict retention, source recovery and long-content containment.
