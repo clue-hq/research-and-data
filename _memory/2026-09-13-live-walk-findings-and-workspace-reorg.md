@@ -228,3 +228,48 @@ versions; cross-process first-write race on an absent brand version; a running d
 refresh when it settles; brand-vs-project same-path version comparison is cross-scope; the chat-router
 pin hook has no test of its own; `erase_artifacts` refreshes only projects of the turns it touched;
 whole-table-count tests (privacy files, `test_production_context_s3_db.py`) need a throwaway DB.
+
+## Plan 2b proven (2026-09-14) — the operating manual, `7d4c2def9..HEAD`
+
+Eight commits (SDD, Opus implementers, controller-reviewed; order 1→3→2→4→5 by ruling): `e6b87359e`
+the builder (`clue_agents.manual` renders; `clue_api.manual_build --write|--check|--link` is the
+toolbelt-aware entry point because agents may not import clue_api; `make manual` / `manual-check` /
+`manual-link`) and the four generated chapters (`manual-tools` 79 KB: 21 tools in profile order with
+descriptor inputs/outputs, `#:` vocabularies lifted from the model source, refusal codes and next moves
+from the founder-review file `platform/agents/catalog/manual/tool_notes.yaml` (119 codes);
+`manual-fields` from the committed `fields.json` snapshot, 161 keys; `manual-errors`; `manual-limits`
+with every number imported); `f3a4cf475` the implementer's builder memory note; `738496a81`+`2251a4dd6`
+the eleven hand-written chapters (each with a `<!-- sources -->` line; the two authority chapters mark
+every rule `(enforced)`/`(asked of you)`); `b7a3d5386` ten drift guards (`tests/agents/test_manual_drift.py`:
+generated chapters current, tool coverage, enum ownership, fields, links, pin + map ≤ 4 KB, refusal codes
+both ways, builder pin, markers, front matter); `fc2dbfd78` profile v54 pins v31 + prompt v10 + fifteen
+chapters, prompt v10 drops the withheld delegation paragraph and points at the manual, skill v31 points
+at chapters (and drops the false "platform refuses an unrouted finalization" claim), ten tool
+descriptions end with their manual anchor (no digest moved), the `--link` pass rewrote 146 tokens;
+`fade39b90` the L1 identity budget raised 24,000 → 40,000 bytes on the production conversation and the
+Stage-0 trial (policies v2) with an offline guard (prompt ≤ 80% of L1), after the first live turn on v54
+failed at context assembly (resolved prompt 23,727 B, 273 B of headroom). Recipe stays 26.
+
+**Founder decisions ruled provisionally (all four are text-only to overturn; each names the chapters):**
+(1) routing-receipt guard is trial-only, production refuses nothing — `manual-turn`, `manual-gates-authority`,
+skill v31 §6; (2) `assumptions` are stored and never shown — `manual-turn`; (3) no spend gate on the three
+ARV2 launches; the ICP pin and product set are the only authority; persona synthesis and a design leg's
+first message spend without a gate — `manual-gates-authority`, `manual-siblings`; (4) `route_key` stays free
+text; the chapter lists the closed vocabulary `(asked of you)` — `manual-documents-decisions`.
+**Founder content review is pending on the committed v1 chapters** (ruling M9): a correction re-mints
+the chapter as v2 and the profile as v55.
+
+**Live walk** (thread `thr_fd34ee23…`, v54, after the L1 fix): "what do outreach unsafe and sensitive
+mean?" → `read_file` of `manual-claims` and a correct distinction; "what do suspended and needs_review
+mean?" → `manual-accounts-research` (paused by a worker restart vs failed awaiting a human; pause/resume
+human-only); "can you approve the budget?" → `manual-gates-authority`, a correct refusal naming the
+human-only `adjust_budget`, the two gates it can open and the absence of a budget gate. Zero repair
+lines; `record_interview_answer` the only governed node per turn. The first attempt on v54 (turn
+`3b443795…`) failed before the model with `required l1_identity context exceeds its hard layer budget`;
+it remains at `requested` with a failed fleet task, superseded by the later turns.
+
+Deferred: prompt v10's front-matter summary still mentions delegation; `record_interview_answer` has a
+frozen fallback description; the C8 trial keeps the fifteen chapters while withholding the Stage-0
+skill; 255 B of disclosure headroom under the 4 KB heuristic and `tool_notes.yaml`'s "taught by" version
+is hand-maintained; a turn assembled under policy v1 and re-driven after the bump would raise on its
+context receipt id; chapter lengths exceed the 2–6 KB aim (gates 10.5 KB, glossary 16 KB).
