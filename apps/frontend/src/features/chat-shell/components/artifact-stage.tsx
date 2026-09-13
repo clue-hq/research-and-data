@@ -33,6 +33,7 @@ import type {
 } from "@/features/design-editor/engine/webDocuments";
 import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
+import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ProjectDocumentSurface } from "@/features/projects/components/project-document-surface";
 import { ProjectTargetAccounts } from "@/features/accounts/components/project-target-accounts";
 import type { ChatContextRef } from "@/features/projects/model/chat-context-handoff";
@@ -73,9 +74,8 @@ export function ArtifactStage({
   onCloseArtifact,
   onOpenGallery,
   onOpenTargetAccounts,
-  onOpenPlan,
+  documentTabs,
   canEditDocuments = false,
-  planRefreshToken,
   panelOpen = true,
   onOpenGalleryArtifact,
   onRenameArtifact,
@@ -159,9 +159,8 @@ export function ArtifactStage({
    * project in hand — absent, the tab is simply not rendered, which is the
    * same gate the branch expresses through `projectId`. */
   onOpenTargetAccounts?: () => void;
-  onOpenPlan?: () => void;
+  documentTabs?: ReturnType<typeof useProjectDocumentTabs>;
   canEditDocuments?: boolean;
-  planRefreshToken?: number;
   panelOpen?: boolean;
   /** The Target accounts tab's "Add to chat" (founder request 2026-09-11):
    * prepares the selected accounts against the open chat and lands them in
@@ -269,7 +268,7 @@ export function ArtifactStage({
         onCloseArtifact={onCloseArtifact}
         onOpenGallery={onOpenGallery}
         onOpenTargetAccounts={projectId ? onOpenTargetAccounts : undefined}
-        onOpenPlan={projectId ? onOpenPlan : undefined}
+        documentTabs={documentTabs}
         onRenameArtifact={onRenameArtifactFor}
         onToggleMaximized={onToggleMaximized}
         onTogglePanel={onTogglePanel}
@@ -281,11 +280,11 @@ export function ArtifactStage({
           <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
         </div>
       ) : null}
-      {projectId && onOpenPlan ? (
-        <div className={styles.workspaceSurface} hidden={surface !== "plan"}>
-          <ProjectDocumentSurface active={panelOpen && surface === "plan"} canWrite={canEditDocuments} key={projectId} projectId={projectId} refreshToken={planRefreshToken} />
+      {projectId && documentTabs ? documentTabs.visited.map((path) => (
+        <div key={path} className={styles.workspaceSurface} hidden={surface !== "plan" || documentTabs.selectedPath !== path}>
+          <ProjectDocumentSurface active={panelOpen && surface === "plan" && documentTabs.selectedPath === path} canWrite={canEditDocuments} projectId={projectId} list={documentTabs.list} documentPath={path} />
         </div>
-      ) : null}
+      )) : null}
       {showingArtifact ? (
         <>
           <ArtifactHeader
@@ -365,6 +364,10 @@ export function ArtifactStage({
       >
         <ProjectGallery
           artifacts={artifacts}
+          documents={documentTabs?.list.documents}
+          documentsLoading={documentTabs?.list.loading || documentTabs?.opening}
+          documentsError={documentTabs?.list.error || documentTabs?.error}
+          onRetryDocuments={documentTabs?.list.reload}
           onOpenArtifact={onOpenGalleryArtifact}
           projectTitle={projectTitle}
         />

@@ -2,6 +2,7 @@
 
 import { MarkdownArticle } from "@/components/markdown/markdown-article";
 import { MarkdownEditor } from "@/components/markdown/markdown-editor";
+import type { useProjectDocuments } from "../hooks/use-project-documents";
 import { useProjectDocumentSurface } from "../hooks/use-project-document-surface";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-document-surface.module.css";
@@ -10,32 +11,33 @@ export function ProjectDocumentSurface(props: {
   active: boolean;
   projectId: string;
   canWrite: boolean;
-  refreshToken?: number;
+  list: ReturnType<typeof useProjectDocuments>;
+  documentPath?: string;
 }) {
   const state = useProjectDocumentSurface(props);
   const { document, editor } = state;
   if (!document) {
     return (
-      <section className={styles.empty} aria-label="Project plan">
+      <section className={styles.empty} aria-label="Project document">
         {state.error ? (
           <>
             <p role="alert">{state.error}</p>
             <button type="button" className={styles.secondary} onClick={state.reload}>Try again</button>
           </>
         ) : state.loading ? (
-          <p role="status">Loading plan…</p>
+          <p role="status">Loading document…</p>
         ) : (
           <>
             <ProjectIcon name="file-text" size={24} />
-            <h2>No plan yet.</h2>
-            <p>Once the strategy, the profile and the products are settled, the plan is written here.</p>
+            <h2>No document selected.</h2>
+            <p>Open a file from Gallery to view or edit it.</p>
           </>
         )}
       </section>
     );
   }
   return (
-    <section className={styles.surface} aria-label="Project plan" data-document-path={document.path}>
+    <section className={styles.surface} aria-label="Project document" data-document-path={document.path}>
       <header className={styles.header}>
         <div className={styles.name}>
           <ProjectIcon name="file-text" size={12} />

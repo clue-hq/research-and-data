@@ -2348,4 +2348,21 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
   inline/code-block text without widening the page. Controlled, held backend streams verified
   Plan-card clicks, new-write auto-open, duplicate delivery, and cold backlog replay. No provider
   or fleet execution was used. The fixture is archived with its append-only audit records retained.
-- **Remaining:** project ICP/persona Gallery document cards and selection (Task 8).
+- **Named file tabs and Gallery documents (Task 8, founder amendment 2026-09-14):**
+  the fixed Plan tab above is superseded. Gallery and Target accounts remain navigation;
+  document tabs exist only after an explicit Gallery/card click, direct document link, or
+  fresh agent write. All three Markdown kinds appear as Documents cards, alongside designs.
+  The file tab/header uses the backend title, never a fabricated design artifact. Existing
+  backend Plan/persona title rules remain unchanged; this slice does not introduce rename.
+- A shared browser list hook supplies Gallery and the mounted document surfaces. A card
+  opens its stable path using `?surface=plan&document=<path>`. A transcript reference resolves
+  its immutable ID through the repository to a path, then loads the current listed version.
+  Old `?surface=plan` links still select `project/plan.md`. No artifact identity param is added.
+- Each opened Markdown file retains its own mounted editor session, even after closing its
+  tab, until leaving the chat. Switching, closing and reopening preserve drafts and native
+  undo. Closing the active last file returns to Gallery; closed files remain Gallery cards.
+- Fresh persisted document references open the referenced file, not always the canonical plan.
+  Cursor baselines and duplicate guards remain. Design feed IDs/update timestamps are baselined
+  at mount; only new or changed files from the active chat auto-open, once per update.
+- Scope stays with the existing three-kind Markdown API and design documents. Arbitrary file
+  formats, dynamic backend kinds and document rename require a separate contract amendment.

@@ -38,6 +38,7 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
+import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -251,6 +252,13 @@ export function ChatSurface({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const documentTabs = useProjectDocumentTabs({
+    projectId, active: shell.panelOpen && (shell.surface === "gallery" || shell.surface === "plan"),
+    initialPath: paneState.surface === "plan" ? searchParams.get("document") || "project/plan.md" : undefined,
+    writeRevision: chat.planWriteRevision, writtenDocumentId: chat.writtenProjectDocumentId,
+    onOpen: shell.openPlan, onEmpty: shell.openGallery,
+  });
+  const selectedDocumentPath = documentTabs.selectedPath;
   const {
     edit: editParam,
     selection: selectionParam,
@@ -297,21 +305,10 @@ export function ChatSurface({
     reloadSceneCanvas();
   }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
 
-  // Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: the
-  // leg-born document opens ITSELF next to the Gallery, so the user watches the
-  // page land instead of hunting for the card. The whole rule is the pure
-  // `../model/artifact-auto-open`; this effect is only its transport, and it
-  // reuses the exact `shell.openArtifact` the gallery card's own click uses (so
-  // the tab, its activation, and the R6 dock choreography behave identically
-  // whether the user opened it or the leg did).
-  //
-  // The trigger is the FEED, never the frame: `leg.opened` carries only a leg
-  // id and names no document, and on a cold load the replayed backlog re-fires
-  // it — keying off the frame would re-open the tab on every page load. What
-  // the frame does do is refresh the feed, so the born card arrives in props on
-  // its own; everything already there at mount is banked as known and can never
-  // auto-open.
+  // Open a named design tab on each new/updated file from this chat. Baseline the
+  // server-fetched feed at mount so replayed history cannot open old files.
   const knownArtifactIds = useRef<Set<string> | null>(null);
+  const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
   const feedArtifacts = artifacts ?? NO_ARTIFACTS;
   useEffect(() => {
@@ -321,6 +318,7 @@ export function ChatSurface({
       // render (no render-phase side effects), which is the same set: the
       // chats page awaits `loadGalleryFeed` server-side, so the first client
       // render already holds the complete feed.
+      knownArtifactUpdates.current = new Map(feedArtifacts.map((artifact) => [artifact.id, artifact.updatedAt]));
       knownArtifactIds.current = new Set(
         feedArtifacts.map((artifact) => artifact.id),
       );
@@ -330,26 +328,18 @@ export function ChatSurface({
       activeThreadId: chat.activeThreadId,
       artifacts: feedArtifacts,
       knownArtifactIds: known,
+      knownUpdates: knownArtifactUpdates.current,
     });
     // Bank everything this delivery carried — including the one being opened —
     // before acting on the decision. That is what makes a document open at
-    // most once: a tab the user then closes stays closed, and the next feed
+    // most once per update: a closed tab stays closed until another write, and a feed
     // refresh (the URL write-back below re-renders the page too) is inert.
-    for (const artifact of feedArtifacts) known.add(artifact.id);
+    for (const artifact of feedArtifacts) { known.add(artifact.id); knownArtifactUpdates.current.set(artifact.id, artifact.updatedAt); }
     if (opening === null) return;
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
   // The controller distinguishes live writes from late history replay using server cursors.
-  const handledPlanWriteRevision = useRef(0);
-  const planRefreshToken = chat.planWriteRevision;
-  const openPlan = shell.openPlan;
-  useEffect(() => {
-    if (planRefreshToken <= handledPlanWriteRevision.current) return;
-    handledPlanWriteRevision.current = planRefreshToken;
-    openPlan();
-  }, [planRefreshToken, openPlan]);
-
   // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
   // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only
   // transports it, banking every tool call id it has seen so a replayed backlog opens nothing.
@@ -388,6 +378,8 @@ export function ChatSurface({
     query.delete("surface");
     query.delete("edit");
     query.delete("selection");
+    query.delete("document");
+    if (surfaceParam === "plan" && selectedDocumentPath) query.set("document", selectedDocumentPath);
     if (surfaceParam) query.set("surface", surfaceParam);
     if (editParam) query.set("edit", editParam);
     if (selectionParam) query.set("selection", selectionParam);
@@ -398,7 +390,7 @@ export function ChatSurface({
     if (next === searchParams.toString()) return;
     // replace, never push: pane toggles must not grow browser history.
     router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
-  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam]);
+  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam, selectedDocumentPath]);
 
   return (
     <main
@@ -520,7 +512,7 @@ export function ChatSurface({
               <ConversationContent
                 chat={chat}
                 contextHandoffError={controller.contextHandoffError}
-                onOpenPlan={openPlan}
+                onOpenPlan={(id) => void documentTabs.openById(id)}
                 projectId={projectId}
                 workspace={workspace}
               />
@@ -722,9 +714,8 @@ export function ChatSurface({
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
         onOpenTargetAccounts={shell.openTargetAccounts}
-        onOpenPlan={openPlan}
+        documentTabs={documentTabs}
         canEditDocuments={canEditDocuments}
-        planRefreshToken={planRefreshToken}
         panelOpen={shell.panelOpen}
         targetAccountsBusy={discovery.live}
         targetAccountsRefreshToken={discovery.tick + research.tick}
@@ -745,8 +736,13 @@ export function ChatSurface({
           const target = galleryCardTarget({
             id: artifact.id,
             title: artifact.title,
-            type: artifact.source.type,
+            type: artifact.source?.type,
+            document: artifact.document,
           });
+          if (target.surface === "plan") {
+            documentTabs.openPath(target.documentPath);
+            return;
+          }
           if (target.surface === "target-accounts") {
             shell.openTargetAccounts();
             return;

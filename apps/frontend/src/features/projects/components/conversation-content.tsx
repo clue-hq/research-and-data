@@ -39,7 +39,7 @@ export function ConversationContent({
 }: {
   chat: ProjectChatController;
   contextHandoffError: string | null;
-  onOpenPlan?: () => void;
+  onOpenPlan?: (documentId: string) => void;
   projectId: string;
   workspace: ProjectWorkspace;
 }) {

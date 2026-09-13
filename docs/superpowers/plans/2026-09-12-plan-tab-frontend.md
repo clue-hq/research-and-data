@@ -300,13 +300,22 @@ were dispatched. No environment settings or other workspace processes changed.
 
 ### Task 8: Project documents in the gallery
 
+**Founder amendment, 2026-09-14:** there is no permanent Plan or Documents tab. A
+Gallery-card click or a fresh agent write opens a closable tab named from the returned
+document title. Gallery includes the plan as well as ICP/persona files. Design files
+also open on fresh creation/update; cold replay must not reopen old tabs. The internal
+`surface=plan` alias is retained, with `document=<stable path>` selecting Markdown.
+This supersedes the plan-only tab and plan exclusion in the original tasks below.
+Backend document kinds, naming rules, paths, permissions and version APIs are unchanged.
+
+
 **Files:**
 - Modify: `features/gallery/model/project-gallery.ts` (`GalleryArtifact` gains `documentKind?: "icp-definition" | "audience-persona" | "project-plan"` and `documentId?: string`), `features/gallery/components/gallery-artifact-card.tsx` (a document card: `file-text` icon in the preview frame, no image; title; `editedLabel`), `features/chat-shell/model/gallery-card-target.ts` (+ test) (`documentKind` present → `{ surface: "plan", documentId }`), `features/chat-shell/components/chat-surface.tsx` (`onOpenGalleryArtifact`: `if (target.surface === "plan") { setOpenDocumentId(target.documentId); shell.openPlan(); return; }`), the gallery feed composition (`app/(protected)/projects/[projectId]/chats/[chatId]/page.tsx`): merge `listProjectDocuments(projectId)` (ICP and persona kinds only; the plan has its own tab) into the feed's cards as document cards, mapped by `toDocumentCard(document): ProjectArtifact`-shaped `GalleryArtifact`
 - Test: `gallery-card-target.test.ts` (document → plan surface), `project-gallery.test.ts` (document cards sort by `updatedAt` with the rest; the type filter "Documents" appears only when a document card exists)
 
-- [ ] **Step 1: Failing tests. Step 2–3: implement; `npm test`, lint, build.**
-- [ ] **Step 4: Browser check**: with a project-local ICP present (plan 2's walk), the gallery shows a document card; clicking it opens the Plan surface on that document, with the header naming it ("GI-focused ASCs"), Preview/Edit working, and Save minting a new version (verify with `SELECT version, status FROM brand_knowledge_document WHERE project_id = :p AND path = 'audience/icp-gi-dac.md' ORDER BY version`).
-- [ ] **Step 5: Commit** — `git commit -m "feat(gallery): project ICP and persona documents appear as document cards and open on the document surface"`.
+- [x] **Step 1: Failing tests. Step 2–3: implement; `npm test`, lint, build.**
+- [x] **Step 4: Browser check**: with a project-local ICP present (plan 2's walk), the gallery shows a document card; clicking it opens the Plan surface on that document, with the header naming it ("GI-focused ASCs"), Preview/Edit working, and Save minting a new version (verify with `SELECT version, status FROM brand_knowledge_document WHERE project_id = :p AND path = 'audience/icp-gi-dac.md' ORDER BY version`).
+- [x] **Step 5: Commit** — `git commit -m "feat(gallery): project ICP and persona documents appear as document cards and open on the document surface"`.
 
 ---
 
@@ -315,3 +324,12 @@ were dispatched. No environment settings or other workspace processes changed.
 
 - Coverage of spec §4.3's frontend half: model/repository/BFF (T4), shared markdown pieces (T5), surface/tab/pane/editor (T6), auto-open + card click + labels (T7), gallery document cards (T8). ✔
 - Placeholder scan: none beyond the parent's. ✔
+
+
+**Task 8 acceptance, 2026-09-14:** all three document kinds appear in Gallery and route by
+stable path to separate named tabs. One shared list read supplies the Gallery and surfaces;
+failed reads are explicit. Native editor sessions persist through tab switching/closing.
+Real browser saves and artifact/DB revisions verified all kinds. Controlled held streams
+verified exact persona-ref auto-open, card-click opening, duplicate delivery and cold replay.
+No model calls or fleet execution. The suite now has 2,270 passing tests; tokens/lint/build
+pass. New chat-card visual feedback is tracked separately with an isolated compact preview.

@@ -32,7 +32,7 @@ import styles from "./project-flow.module.css";
  */
 export interface ChatPartActions {
   busy: boolean;
-  onOpenPlan?: () => void;
+  onOpenPlan?: (documentId: string) => void;
   gateFor(part: ChatGatePart): GateCardModel | null;
   onGateDecision(
     card: GateCardModel,
@@ -76,8 +76,8 @@ export function ChatMessagePartView({
       return (
         <Plan className={styles.planSummary} defaultOpen={false}>
           <PlanHeader>
-            {part.planRef?.objectType === "project_document" && actions.onOpenPlan ? (
-              <button type="button" className={`${styles.planSummaryTitle} ${styles.planDocumentLink}`} onClick={actions.onOpenPlan}>
+            {part.planRef?.objectType === "project_document" && part.planRef.objectId && actions.onOpenPlan ? (
+              <button type="button" className={`${styles.planSummaryTitle} ${styles.planDocumentLink}`} onClick={() => { if (part.planRef.objectId) actions.onOpenPlan?.(part.planRef.objectId); }}>
                 {part.title}<ProjectIcon name="chevron-right" size={12} />
               </button>
             ) : <PlanTitle>{part.title}</PlanTitle>}

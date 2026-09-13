@@ -63,3 +63,14 @@ test("unrelated, failed, and cursorless events cannot announce a Plan write", ()
   assert.equal(tracker.observe(unrelated), false);
   assert.equal(tracker.observe(event(4)), true);
 });
+
+
+test("a document part without a persistent ID cannot open a file tab", () => {
+  const tracker = new ProjectPlanWriteTracker();
+  const missing = { ...event(1), part: ChatPartSnapshotSchema.parse({
+    part_id: "unaddressed", kind: "plan", revision: 1, title: "Draft",
+    plan_ref: { object_type: "project_document" },
+  }) };
+  assert.equal(tracker.observe(missing), false);
+  assert.equal(tracker.observe(event(2)), true);
+});

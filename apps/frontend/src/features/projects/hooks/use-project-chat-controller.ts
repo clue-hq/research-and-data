@@ -121,6 +121,7 @@ export interface ProjectChatController {
   designRefresh: DesignRefreshCounters;
   /** New project Plan writes observed after this thread visit's initial server cursors. */
   planWriteRevision: number;
+  writtenProjectDocumentId?: string;
   /** True only when the current stream has observed an open design leg. */
   designLegOpen: boolean;
   submitting: boolean;
@@ -215,6 +216,7 @@ export function useProjectChatController({
   >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
   const [planWriteRevision, setPlanWriteRevision] = useState(0);
+  const [writtenProjectDocumentId, setWrittenProjectDocumentId] = useState<string>();
   const [planWrites] = useState(() => new ProjectPlanWriteTracker());
   const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
     feedRevision: 0,
@@ -481,6 +483,7 @@ export function useProjectChatController({
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
           if (planWrites.observe(event)) {
+            if (event.part?.kind === "plan") setWrittenProjectDocumentId(event.part.planRef.objectId ?? undefined);
             setPlanWriteRevision((revision) => revision + 1);
           }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
@@ -990,6 +993,7 @@ export function useProjectChatController({
     queuedTurns: queue.queuedTurns,
     designRefresh,
     planWriteRevision,
+    writtenProjectDocumentId,
     designLegOpen: stream.designLeg.open,
     submitting,
     hasOlderMessages: olderCursor !== null,

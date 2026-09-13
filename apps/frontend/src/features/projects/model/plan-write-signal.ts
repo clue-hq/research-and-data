@@ -22,7 +22,8 @@ export class ProjectPlanWriteTracker {
       eventId === null ||
       !["part.created", "part.updated", "part.completed"].includes(event.type) ||
       part?.kind !== "plan" ||
-      part.planRef.objectType !== "project_document"
+      part.planRef.objectType !== "project_document" ||
+      !part.planRef.objectId
     ) return false;
 
     const seen = this.seenParts.has(part.partId);

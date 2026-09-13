@@ -50,6 +50,10 @@ export function toProjectDocumentDetail(wire: z.infer<typeof ProjectDocumentDeta
   return { ...toProjectDocument(wire), markdown: wire.markdown, frontMatter: wire.front_matter };
 }
 
+export function selectedProjectDocument(documents: readonly ProjectDocument[], path?: string): ProjectDocument | null {
+  return path ? documents.find((document) => document.path === path) ?? null : planDocumentOf(documents);
+}
+
 export function planDocumentOf(documents: readonly ProjectDocument[]): ProjectDocument | null {
   return documents.find((document) => document.path === "project/plan.md") ?? null;
 }

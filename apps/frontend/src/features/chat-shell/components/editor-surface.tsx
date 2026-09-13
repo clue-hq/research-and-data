@@ -270,7 +270,7 @@ export function EditorSurface({
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
+            kind: artifact.source?.type === "website" ? "web" : "ad",
             title: artifact.title,
           })
         }
