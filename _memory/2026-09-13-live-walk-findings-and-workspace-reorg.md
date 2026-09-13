@@ -189,3 +189,42 @@ Deferred (ledger minors): flock scope if a read-write mount is ever shared; root
 mount file; constructor fd ownership on validation failure; a resume that rebuilds `MountRequest`
 differently conflicts (fail-closed); `cleanup_recorded` projection has no action filter; the design
 profile red is a doubled provider prefix (`openai/x-ai/grok-4.6`).
+
+## Plan 2 proven (2026-09-14, early) — workspace libraries, `09739f3cb..HEAD`
+
+Eleven commits (SDD, Opus implementers, controller-reviewed), run in the order 1→2→3→5→4→6 so every
+intermediate state kept the files readable somewhere: `3b236c669` `LibraryTree` (atomic read-only trees
+under an anchored parent; one superseded generation kept for in-flight readers; the scope audit accepts
+0500 beside 0700); `20dab21d7`+`037de8aae` the brand library at `<ws>/library/brand/<brand>/<version>/`
+(content-addressed by the knowledge pin digest; index compiled unbounded and refused if it would omit);
+`d1dd28b8c` the project library at `<ws>/projects/<project>/library/` (digest over eight row sources incl.
+`project_account`; one version per path with the pinned ICP winning in both scopes; `artifacts/index.json`
+by reference through the gallery's own query); `f77603bfa`+`781fd1495` profile v52 (readable +`brand`,
+`project`), skill v29, prompt v9 (both onboarding pointers name the `/onboarding` flow); `710f83d2f` the
+turn mounts both libraries, the seeds stop, the pin records the library incl. its manifest, replay mounts
+a per-turn `pinned-<turn12>` tree only when the live digest moved (removed in the turn's `finally`), the
+context card is the pinned manifest at `context/project/project_library_index.json`; `ce74995b7`
+`ProjectLibraryRefresher` after the plan write, the human PUT, ICP authoring, the ICP pin, and DSAR
+(forced, on both erasure paths; the API process now composes its own factory on the shared root);
+`670c76e3d` skill v30 / profile v53 — the brand manifest is `brand/index.json` (the plan's skill text said
+`brand/knowledge/index.json`; the first live turn on v52 hit "file does not exist"). Recipe stays 26.
+Onboarding synthesis keeps its own `inputs/brand/knowledge/` seeds (own profile/prompt/skill; not on the
+mount path). The two seed helpers stay as uncomposed functions with seed-legal defaults.
+
+**Live walk** (thread `thr_fd34ee23…`, project `prj_82aef3f5…`): turn `e1519ad1…` on v52 read
+`project/status.md` from the mount ("Accounts in this project: 34" — matches the library; only
+`record_interview_answer` as a governed node; pin = 5 library files incl. `index.json`; no `pinned-*`
+tree left); turn `303d57ff…` on v53 read `brand/index.json` (24 documents, omitted_count 0) and
+`brand/knowledge/company/overview.md` ("# Company overview"). On disk: `library/brand/brd_1703…/
+f5fc1189d03aa8f3/{index.json, knowledge/}` (0400/0500), `projects/prj_82aef…/library/{artifacts/,
+audience/, decisions.md, index.json, status.md}`, the thread's `inputs/` holding only
+`user-message.txt`, `context/project/project_library_index.json` present. The API twins booted with the
+workspace root (the dev-stack script exports it to them).
+
+Numbering note for plan 2b: it planned skill v30 / profile v53; those are now taken (v31 / v54 next).
+Deferred (ledger minors): a microsecond "not materialized" window between the two renames; the plan-1
+mount open does not apply LibraryTree's stricter 0500 audit; no reclamation of superseded brand
+versions; cross-process first-write race on an absent brand version; a running discovery run's tallies
+refresh when it settles; brand-vs-project same-path version comparison is cross-scope; the chat-router
+pin hook has no test of its own; `erase_artifacts` refreshes only projects of the turns it touched;
+whole-table-count tests (privacy files, `test_production_context_s3_db.py`) need a throwaway DB.
