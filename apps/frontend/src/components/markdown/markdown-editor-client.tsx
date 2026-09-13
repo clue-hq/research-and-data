@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { EditorView } from "@codemirror/view";
-import { useCellValues } from "@mdxeditor/gurx";
 import {
-  MDXEditor, UndoRedo, BlockTypeSelect, BoldItalicUnderlineToggles,
-  StrikeThroughSupSubToggles, CodeToggle, ListsToggle, CreateLink, InsertTable,
-  InsertCodeBlock, InsertThematicBreak, DiffSourceToggleWrapper, ConditionalContents,
+  MDXEditor,
   headingsPlugin, quotePlugin, listsPlugin, linkPlugin,
   linkDialogPlugin, tablePlugin, thematicBreakPlugin, codeBlockPlugin, codeMirrorPlugin,
   diffSourcePlugin, toolbarPlugin, markdownShortcutPlugin, imagePlugin,
-  markdownProcessingError$, viewMode$, type MDXEditorProps, type IconKey, type ViewMode,
+  type MDXEditorProps, type IconKey, type ViewMode,
 } from "@mdxeditor/editor";
 import {
   Undo2, Redo2, Bold, Italic, Underline, Code, Strikethrough, Superscript, Subscript,
@@ -22,6 +19,7 @@ import {
 } from "lucide-react";
 import "@mdxeditor/editor/style.css";
 import styles from "./markdown.module.css";
+import { MarkdownToolbar } from "./markdown-toolbar";
 
 export type EditorState = { error: string | null; viewMode: ViewMode };
 export type EditorProps = Pick<MDXEditorProps, "markdown" | "onChange" | "onError" | "readOnly"> & {
@@ -57,23 +55,6 @@ const codeExtensions = [EditorView.lineWrapping, EditorView.theme({
   "&.cm-focused": { outline: "none" },
 })];
 
-function EditorToolbar({ onState }: { onState: EditorProps["onState"] }) {
-  const [error, viewMode] = useCellValues(markdownProcessingError$, viewMode$);
-  useEffect(() => onState({ error: error?.error ?? null, viewMode }), [error, viewMode, onState]);
-  return <DiffSourceToggleWrapper options={["rich-text", "source"]} SourceToolbar={<span className={styles.sourceLabel}>Markdown source</span>}>
-    <ConditionalContents options={[
-      { when: (editor) => editor?.editorType === "codeblock", contents: () => <span className={styles.sourceLabel}>Monospace</span> },
-      { fallback: () => <>
-        <span className={styles.toolbarGroup}><UndoRedo /></span>
-        <span className={styles.toolbarGroup}><BlockTypeSelect /></span>
-        <span className={styles.toolbarGroup}><BoldItalicUnderlineToggles options={["Bold", "Italic"]} /><StrikeThroughSupSubToggles options={["Strikethrough"]} /><CodeToggle /></span>
-        <span className={styles.toolbarGroup}><ListsToggle /></span>
-        <span className={styles.toolbarGroup}><CreateLink /><InsertTable /><InsertCodeBlock /><InsertThematicBreak /></span>
-      </> },
-    ]} />
-  </DiffSourceToggleWrapper>;
-}
-
 /** Imported only through next/dynamic(ssr: false), including every editor plugin. */
 export default function MarkdownEditorClient({ onState, initialViewMode = "rich-text", ...props }: EditorProps) {
   // Keep plugin/toolbar component identities stable while the parent tracks a draft.
@@ -84,7 +65,7 @@ export default function MarkdownEditorClient({ onState, initialViewMode = "rich-
       codeMirrorPlugin({ codeBlockLanguages: { text: "Plain text" }, autoLoadLanguageSupport: false, codeMirrorExtensions: codeExtensions }),
       diffSourcePlugin({ viewMode: initialViewMode, codeMirrorExtensions: codeExtensions }),
       markdownShortcutPlugin(),
-      toolbarPlugin({ toolbarClassName: styles.toolbar, toolbarContents: () => <EditorToolbar onState={onState} /> }),
+      toolbarPlugin({ toolbarClassName: styles.toolbar, toolbarContents: () => <MarkdownToolbar onState={onState} /> }),
     ], [onState, initialViewMode]);
   return <MDXEditor {...props} className={`${styles.editor}${props.readOnly ? ` ${styles.readOnly}` : ""}`} contentEditableClassName={styles.prose}
     placeholder="Start writing…"
