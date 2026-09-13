@@ -63,11 +63,19 @@ restated below where they bind this design.
 - **W5 — the thread scratchpad persists.** `thread/` survives across turns of the same thread,
   is unversioned, not part of the record, quota'd, and purged with the thread's retention. It is
   the agent's notebook, nothing more.
-- **W6 — one document write tool.** `save_project_document@1` (`path`, `body`,
-  `expected_version`) replaces `author_icp_document@1`, `write_project_document@1` and
-  `request_persona_synthesis@1`. The path's folder decides the document kind and its validation:
-  `audience/` is an ICP (key rules, front matter, lineage), `personas/` is a persona document,
-  `plan.md` is the plan. One skill per document kind says what a good one contains.
+- **W6 — the project is written with the agent's ordinary file tools.** No new governed tool.
+  deepagents' own `write_file` and `edit_file` work under `project/`; the backend treats that
+  prefix as a *versioned root*: a write there goes through the same document writer the human PUT
+  uses, lands a new version row and blob, re-materializes the file, and returns the tool's normal
+  result. The path's folder decides the document kind and its validation: `audience/` is an ICP
+  (key rules, front matter, lineage), `personas/` is a persona document, `plan.md` is the plan.
+  The expected version is the `version:` in the file the turn was mounted against, never a model
+  argument; a stale write, a taken ICP key or a compiled file come back as the write tool's error
+  string. One skill per document kind says what a good one contains and where to save it.
+  `author_icp_document@1`, `write_project_document@1` and `request_persona_synthesis@1` retire.
+  (Chosen over a governed `save_project_document@1` on 2026-09-13: one write verb, `edit_file`
+  on project documents, no version argument to mis-copy; the trade is a sync-to-async bridge in
+  the backend and the plan card reading rows instead of receipts.)
 - **W7 — the pin gate stays.** Saving an ICP stores a `proposed` version. The agent then proposes
   it through the existing confirmation gate; the human's approval pins it. Same for the product
   set. Personas, the plan and decisions are save-and-done.
@@ -155,20 +163,35 @@ are not the model's to fill.
   ends.
 - **DSAR.** Unchanged: compiled files reverse-bind quotes; erasure re-runs the refresh.
 
-### 4.4 The one write tool
+### 4.4 Writing to the project (the versioned root)
 
-`save_project_document@1` — inputs `path` (folder-qualified), `body` (markdown), `expected_version`
-(the `version:` the agent read; `null` for a new document). Behaviour by folder:
+The multi-root backend's `project/` root is read-through and write-through. `read_file` serves the
+materialized file. `write_file(path, content)` and `edit_file(path, old, new)` under `project/`:
+
+1. Resolve the kind from the folder (table below); refuse anything else with
+   `unknown_project_path`.
+2. Take the expected version from the mounted file's `version:` front matter (`null` when the
+   file did not exist at mount time).
+3. Run the plan-3 document writer (`project_documents`) on a worker thread with its own
+   connection: `_lock_project` first, the revision check, the kind's validation, the INSERT,
+   the blob, then re-materialize the library file and its index entry. The version row is stamped
+   with the writing turn's id.
+4. Return deepagents' `WriteResult`/`EditResult`. A refusal is the result's error string, worded
+   for the model: `revision conflict: plan.md is at version 3, you read version 2 — read it again`;
+   `icp key 'gi-dac' is taken by a brand document — choose another key or derive from it`;
+   `status.md is compiled — it cannot be written`.
 
 | Folder | Kind | Validation kept from | Result |
 | --- | --- | --- | --- |
 | `audience/icp-<key>.md` | `icp-definition` | plan 2: key rules, front matter, `derived_from`, `icp_key_taken_*` | `proposed` version; the agent then opens the gate (W7) |
 | `personas/<icp-key>.md` | `persona` | plan 2 persona document rules | `ready` |
 | `plan.md` | `project-plan` | plan 3: replay key, revision conflict, `version:` in front matter | `ready` |
-| `decisions.md`, `status.md` | compiled | — | refused: `compiled_file_read_only` |
+| `decisions.md`, `status.md`, `artifacts/`, `index.json` | compiled | — | refused |
 
-The receipt is the document's id, path, version and status. The human PUT (plan 3's routes) is
-the same writer.
+These writes are not governed operations: no plan validation, no receipt, no failure-budget
+count. The durable record is the version row (turn-stamped). The plan card at turn close and the
+inspector read the rows written by the turn instead of a receipt. The human PUT (plan 3's routes)
+is the same writer, so a human edit and an agent write meet at the same revision check.
 
 ### 4.5 Reads
 
@@ -194,7 +217,7 @@ before it is written (standing rule).
 - Retire: `author_icp_document@1`, `write_project_document@1`, `request_persona_synthesis@1`
   (kept registered for replay of historical receipts, ungranted from the next profile version), the
   personas-only `onboarding_run.kind`'s production entry point, the per-turn brand copy, the
-  `project_files_index` card.
+  `project_files_index` card, and the receipt-based plan-card mapping for `project_document`.
 - Stay: the versioned document store and its scope columns, the ICP confirmation gate, the
   compiled `status.md`/`decisions.md`, the display-gated claims read, the human document routes,
   the receipt bound, the workspace security model (fd anchoring, `O_NOFOLLOW`, 0700, segment
@@ -213,7 +236,9 @@ before it is written (standing rule).
    quotas, replay re-mount, tests against the security model.
 2. **Libraries** — brand library materialization by version; project library materialization,
    refresh triggers, `ProjectLibraryIndexCard@1`, the turn pin over the library index.
-3. **One write tool and the document skills** — `save_project_document@1`, retirement of the
+3. **The versioned project root and the document skills** — write-through `project/` in the
+   backend (kind resolution, mounted-version check, the sync bridge to the document writer,
+   turn-stamped rows, error strings), the plan card and inspector reading rows, retirement of the
    three tools, profile/skill/recipe grant, gate hand-off for ICPs, personas by the Head of ABM.
 4. **Reads that page and spill** — pagination on the three reads, `read_claims@1`,
    `read_artifact@1`, the spill contract, W10 in the runtime, the `read_discovery_run` contract
