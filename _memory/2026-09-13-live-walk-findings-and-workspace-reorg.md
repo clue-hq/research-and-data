@@ -76,3 +76,20 @@ Lane 1: `2026-09-13-read-tools-hotfix.md` (plan 0), `2026-09-13-workspace-multi-
 v26 → v27 (plan 3 drops three tools) → v28 (plan 4 adds two reads). Ruling P3-a in plan 3:
 personas keep the existing `audience/persona-<key>.md` path (the spec's `personas/` folder was
 illustrative). Not started; the hotfix is first.
+
+## Operating manual study (2026-09-13, evening) — `docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md`
+
+Five parallel read-only inventories (7,266 lines, every claim `file:line`) now live under
+`docs/superpowers/research/2026-09-13-head-of-abm-manual/` (A tools, B context/workspace, C domain
+model, D authority/gates/screens, E runtime/siblings). Headline: 21 tools granted, 16 taught, 3
+dead (`get_research_view@1` flag-off + pins `project_run`; the directive pair feeds ungranted
+consumers) and `submit_ingestion@1` unwired; 22 domain terms with no word; status vocabularies
+only in `#:` comments; the 161-field registry surfaced nowhere; 27 runtime facts never told (3-refusal
+budget shared and per-parallel-call, 2 finalize repairs, 16 KiB receipt, 52 supersteps/300 s, only
+`finalize_turn.user_message` reaches the human, `status.md` frozen per turn vs live reads);
+prompt-only rules (never widen the set, routing-receipt guard is trial-only); prompt teaches
+delegation the surface withholds; `product/catalog.md` carries no product ids. The design proposes
+`.deepagent/manual/<version>/` (13 chapters, generated where code is the source, hand-written where
+judgment is), disclosed through the capability map, cross-referenced by path, drift-tested,
+pinned in the profile; §7 maps 17 defects to lanes; §9 lists five founder decisions. `.superpowers/`
+added to `.gitignore` (it was not ignored).
