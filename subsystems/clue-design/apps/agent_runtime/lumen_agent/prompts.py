@@ -1176,7 +1176,9 @@ tool verifies their freshness. {review}
 After any mutation judge the new current pixels; never reuse an old acceptance.
 6. If defects remain, repair the smallest coherent composition and repeat. Append
 round verdict and one concrete remaining issue to rounds/index.md. Finalize
-accepted only with clean current preflight and current accepted critique. Use
+accepted only with clean current preflight and current accepted critique. Omit
+critique_json in finalize_run to reuse the registered review; do not rewrite its
+JSON. The tool still verifies that review against the current scene and pixels. Use
 completed_with_warnings for an unaccepted valid draft, failed for an unmet request,
 or edit_applied for a verified scoped edit. Announce collateral changes honestly.
 
@@ -1212,9 +1214,14 @@ The director has no scene mutation tools; the author uses the compiler.""",
             f"{target_llm_calls} model calls, with at most {inner_iterations} internal "
             "author iterations per round. Read relevant sources in one gather, validate "
             "the direction and delegate promptly. Target one authoring round and one "
-            "repair when needed. Judge the rendered result before finishing; first "
-            "preview is not finished delivery. Use the reported BUDGET LEFT to avoid "
-            "starting a round you cannot finish. Record unresolved issues honestly."
+            "focused repair when needed. Judge the rendered result before finishing; "
+            "first preview is not finished delivery. At the first review, follow the "
+            "candidate budget guidance: a target miss is recorded, but does not by "
+            "itself forbid the one necessary repair. Repair only concrete defects, "
+            "preserving the direction and existing assets. After that repair, finish "
+            "honestly; do not open a third round. Use target_exceeded when voluntarily "
+            "stopping for the target, not budget_exhausted unless a hard limit fired. "
+            "Record unresolved issues and measured delivery time honestly."
         )
     return "\n\n".join(sections)
 

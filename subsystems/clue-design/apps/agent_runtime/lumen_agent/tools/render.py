@@ -214,7 +214,12 @@ def _render_preview_text(
     # render that succeeded.
     if budget is not None:
         try:
-            lines.append(budget.status_line())
+            if checkpoint and getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate":
+                lines.append(
+                    budget.candidate_status_line(current_round=tools_current_round(tools))
+                )
+            else:
+                lines.append(budget.status_line())
         except Exception:  # noqa: BLE001 - never fail a render over a status line
             logger.warning("render_budget_line_failed")
     return "\n".join(lines)

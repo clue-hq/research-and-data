@@ -4891,6 +4891,10 @@ class LumenDesignTools:
     ) -> str:
         """Write the final run summary in a later-API-compatible local format.
 
+        Omit `critique_json` to use the latest registered visual review; do not
+        rewrite its JSON. Acceptance still checks that review, current scene,
+        preflight and rendered bytes. Omission never creates a passing review.
+
         `ops_valid_through_iteration` names the last iteration whose applied
         operations are part of the returned draft scene (the keep-best snapshot
         can restore an EARLIER iteration's scene; ops from later iterations must
@@ -4908,9 +4912,9 @@ class LumenDesignTools:
         try:
             critique = json.loads(critique_json) if critique_json.strip() else {}
         except (ValueError, TypeError):
-            return "REFUSED: critique_json must be valid JSON. Submit a typed visual critique."
+            return self._finalize_refusal("critique_json must be valid JSON.")
         if not isinstance(critique, dict):
-            return "REFUSED: critique_json must be an object."
+            return self._finalize_refusal("critique_json must be an object.")
         if not critique and self._latest_visual_critique is not None:
             critique = dict(self._latest_visual_critique)
         # RC (D5; adversarial-gate F1 — the deterministic anti-rubber-stamp
@@ -4931,28 +4935,18 @@ class LumenDesignTools:
         # `score: 0`, which this gate refuses exactly as an omission did.
         if self.config.reference_assets or self._selected_reference_ids:
             critique = stamp_reference_fidelity(critique)
-        if status in {"accepted", "succeeded", "success", "completed"} and (
-            self.config.reference_assets or self._selected_reference_ids
-        ):
-            fidelity = (critique or {}).get("reference_fidelity") or {}
-            score = fidelity.get("score")
-            if (
-                not isinstance(score, int) or isinstance(score, bool)
-                or score <= 1 or fidelity.get("regressed_to_house_style")
-            ):
-                reason = (
-                    "no reference_fidelity judgment in the critique"
-                    if not fidelity
-                    else f"reference_fidelity score is {score!r}"
-                )
+        if status == "accepted":
+            reason = self._reference_fidelity_error(critique)
+            if reason:
                 self.record(
                     "coordinator",
                     "finalize_refused_reference_fidelity",
                     output_summary=reason,
                 )
-                return (
-                    "REFUSED: this turn has selected image references, and a run "
-                    f"cannot finalize as accepted with {reason}. Send the "
+                return self._finalize_refusal(
+                    "this turn has selected image references, and a run "
+                    f"cannot finalize as accepted with {reason}.",
+                    fallback="Send the "
                     "reviewer back for an explicit reference_fidelity judgment "
                     "(view each reference:<n> against the preview); accept only "
                     "at score >= 2, or finalize honestly with a non-accepted "
@@ -5026,10 +5020,7 @@ class LumenDesignTools:
             refusal = self._acceptance_error(critique)
             if refusal:
                 self.record("coordinator", "finalize_refused", output_summary=refusal)
-                return (
-                    f"REFUSED: {refusal} Repair and re-run preflight, render, and review, "
-                    "or preserve the draft with a non-accepted status."
-                )
+                return self._finalize_refusal(refusal)
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -5061,6 +5052,40 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _reference_fidelity_error(self, critique: JsonObject) -> str | None:
+        """Shared reference gate for finalization and payload-recovery advice."""
+        if not (self.config.reference_assets or self._selected_reference_ids):
+            return None
+        fidelity = critique.get("reference_fidelity") or {}
+        if not isinstance(fidelity, dict) or not fidelity:
+            return "no reference_fidelity judgment in the critique"
+        score = fidelity.get("score")
+        if not isinstance(score, int) or isinstance(score, bool) or score <= 1:
+            return f"reference_fidelity score is {score!r}"
+        if fidelity.get("regressed_to_house_style"):
+            return "the reference review reports a regression to house style"
+        return None
+
+    def _finalize_refusal(self, reason: str, *, fallback: str | None = None) -> str:
+        """Distinguish a review-copy error from evidence that needs repair."""
+        registered = self._latest_visual_critique
+        if (
+            registered is not None
+            and self._reference_fidelity_error(registered) is None
+            and self._acceptance_error(registered) is None
+        ):
+            recovery = (
+                "The current registered review is valid. Retry finalize_run without "
+                "critique_json to use it; the same acceptance checks will run. "
+                "This payload error does not require a new render or review."
+            )
+        else:
+            recovery = fallback or (
+                "Repair and re-run preflight, render, and review, or preserve the "
+                "draft with a non-accepted status."
+            )
+        return f"REFUSED: {reason} {recovery}"
 
     def _contiguous_sink_extra(self, sink_extra: JsonObject) -> JsonObject:
         """Make an op-bearing sink push begin where the client's cursor stands.

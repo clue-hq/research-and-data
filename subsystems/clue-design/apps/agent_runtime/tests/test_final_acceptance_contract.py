@@ -127,6 +127,77 @@ def test_complete_current_evidence_can_be_accepted(tools):
     assert (tools.trace_dir / "final_scene.json").exists()
 
 
+@pytest.mark.parametrize(
+    "submitted",
+    [
+        "{",
+        "[]",
+        '{"accepted": true}',
+        json.dumps({**_critique(), "summary": "Director rewrote the author's review."}),
+    ],
+)
+def test_payload_only_refusal_reuses_current_review_without_render_or_repair(tools, submitted):
+    _prepare(tools)
+    receipt = tools._review_receipt
+    scene_before = json.dumps(tools.scene, sort_keys=True)
+    pixels_before = {
+        item["path"]: Path(item["path"]).read_bytes()
+        for item in tools.latest_export_summary["artifacts"]
+    }
+
+    refusal = tools.finalize_run("accepted", "review_complete", "Ready", submitted)
+    assert refusal.startswith("REFUSED")
+    assert "Retry finalize_run without critique_json" in refusal
+    assert not (tools.trace_dir / "final.json").exists()
+
+    # Retry the documented default; no new author, render, preflight or review.
+    final = json.loads(tools.finalize_run("accepted", "review_complete", "Ready"))
+    assert final["status"] == "accepted"
+    assert final["acceptance_receipt"] == receipt
+    assert json.dumps(tools.scene, sort_keys=True) == scene_before
+    assert all(Path(path).read_bytes() == data for path, data in pixels_before.items())
+
+
+@pytest.mark.parametrize("defect", ["stale_scene", "failed_review", "missing_review"])
+def test_omitting_critique_never_bypasses_invalid_registered_evidence(tools, defect):
+    _prepare(tools, _critique(accepted=defect != "failed_review"))
+    if defect == "stale_scene":
+        _compile(tools)
+    elif defect == "missing_review":
+        tools.submit_visual_critique('{"accepted": true}')
+
+    refusal = tools.finalize_run("accepted", "review_complete", "Ready")
+    assert refusal.startswith("REFUSED")
+    assert "Retry finalize_run without critique_json" not in refusal
+    assert not (tools.trace_dir / "final.json").exists()
+
+
+@pytest.mark.parametrize("score", [1, 2])
+@pytest.mark.parametrize("submitted", ["{", '{"accepted": true}'])
+def test_reuse_advice_obeys_the_same_reference_fidelity_gate(tools, score, submitted):
+    tools._selected_reference_ids.add("source-reference")
+    _prepare(
+        tools,
+        {
+            **_critique(),
+            "reference_fidelity": {
+                "score": score,
+                "reasons": "Compared the selected source and current preview.",
+                "regressed_to_house_style": False,
+            },
+        },
+    )
+    refusal = tools.finalize_run("accepted", "review_complete", "Ready", submitted)
+    assert refusal.startswith("REFUSED")
+    assert ("Retry finalize_run without critique_json" in refusal) == (score >= 2)
+    assert not (tools.trace_dir / "final.json").exists()
+    retried = tools.finalize_run("accepted", "review_complete", "Ready")
+    if score >= 2:
+        assert json.loads(retried)["status"] == "accepted"
+    else:
+        assert retried.startswith("REFUSED")
+
+
 @pytest.mark.parametrize("failure", [None, "other_svg_error", "invalid_png", "debug_only"])
 def test_png_acceptance_excuses_only_the_existing_svg_font_embedding_refusal(
     tools, monkeypatch, failure
