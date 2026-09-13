@@ -38,3 +38,16 @@
   in presentation. No new dependency, backend implementation or env flag.
 - Closing: frontend implementation complete and local commit only. Remaining acceptance needs
   an authenticated browser; next implementation is Gallery ICP/persona document cards (Task 8).
+
+## Login follow-up
+
+- Founder supplied a test login directly. Normal email/password sign-in and Clerk's documented
+  test-email verification succeeded; credentials were not written to files.
+- Opening the existing Semarang project redirects to profile setup. The session DAL routes
+  an unprovisioned identity or an identity without workspace membership there. The test login
+  therefore does not yet provide access to the project needed for the remaining browser checks.
+- Asked the founder to complete setup/open the intended workspace or use its existing test
+  account. Did not create a workspace, alter memberships, or bypass authentication.
+- Confirmed the previous disposable Plan fixture has no remaining document rows. No fresh
+  fixture was created. Implementation, environment settings, and running processes unchanged;
+  reload/conflict/keyboard/narrow-layout/live-plan walkthrough checks remain pending.
