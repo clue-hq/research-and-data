@@ -121,9 +121,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v51 (thread workspace, 2026-09-13): v50's surface with the workspace block moved to the
     # thread layout — the turn now runs in one persistent directory per chat thread, so `scratch/`
     # is the agent's notebook (readable and writable, and it survives the turn), `reads/` is
-    # readable, `work/` is dropped, and the quota rises to 400 files / 20 MiB. stage0-interview
-    # v28 §1 names the notebook: what to keep in `scratch/` and what belongs in the project's own
-    # files instead. No tool is added or dropped. Everything else is v50's.
+    # readable, `work/` stays readable and writable — the Head of ABM's own skill never names it,
+    # but the registry intersects a child's workspace with its parent's, so dropping it would take
+    # every delegated specialist's scratch pad away — and the quota rises to 400 files / 20 MiB.
+    # stage0-interview v28 §1 names the notebook: what to keep in `scratch/` and what belongs in
+    # the project's own files instead. No tool is added or dropped. Everything else is v50's.
     AgentRole.HEAD_OF_ABM: "v51",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
