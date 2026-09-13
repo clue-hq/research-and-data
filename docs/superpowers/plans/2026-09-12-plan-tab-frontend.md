@@ -1,8 +1,10 @@
-# Plan Tab Frontend Implementation Plan (DEFERRED)
+# Plan Tab Frontend Implementation Plan (Lane 2, plan 1)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** DEFERRED by founder ruling 2026-09-12 (R12): the backend and agent capabilities ship first; this plan runs later, together with the markdown toolbar slice (`docs/superpowers/specs/2026-09-12-markdown-editor-toolbar-design.md`).
+**Status:** ACTIVE as Lane 2's first plan (founder, 2026-09-13; see `2026-09-13-lane-plan-index.md`). It was deferred by ruling R12 on 2026-09-12; the backend it depends on (plan-3 routes, the plan card) has shipped. Runs in its own worktree, frontend-only; the toolbar slice (`2026-09-13-markdown-editor-toolbar.md`) follows it.
+
+**Re-validated against `2026-09-13-agent-workspace-reorganization-design.md` (W6):** the agent will stop calling `write_project_document@1` once Lane 1's plan 3 lands and will write `project/plan.md` with its file tool instead; the plan card is then rendered from the turn's document rows. This plan therefore keys the auto-open on the **plan part** in the transcript (Task 7), which exists in both worlds, not on a tool call. The document list/detail/PUT routes are unchanged by Lane 1. Persona documents live at `audience/persona-<key>.md` (ruling P3-a), so Task 8's gallery cards use the existing `icp_key` on the wire and need no path assumptions.
 
 **Goal:** The user reads and edits the project's `plan.md` in a Plan tab beside Gallery and Target accounts; the "proposed a plan" card in the chat opens the tab; the tab opens itself when the agent writes the plan; project-scoped ICP and persona documents appear in the gallery as document cards and open on the same surface.
 
@@ -157,13 +159,19 @@ Layout (from the screenshot, tokens only): `.surface` grid `auto minmax(0,1fr)`;
 **Interfaces:**
 
 ```ts
-export const PLAN_WRITE_TOOL = "write_project_document";
-export function planWriteToOpen({ transcript, knownToolCallIds }): string | null   // identical rule to discoveryLaunchToOpen, keyed on PLAN_WRITE_TOOL
+// The signal is the plan PART, not a tool call (re-validation 2026-09-13): the part is emitted at
+// turn close from the finalization's domain refs today and from the turn's document rows after
+// Lane 1 plan 3, so this rule survives the retirement of write_project_document@1.
+export const PLAN_PART_OBJECT_TYPE = "project_document";
+export function planWriteToOpen({ transcript, knownPlanPartIds }): string | null
+//   returns the id of the newest "plan" part whose planRef.objectType === PLAN_PART_OBJECT_TYPE
+//   and whose id is not in knownPlanPartIds, once chat.loading is false; null otherwise.
+//   Same shape and invariants as discoveryLaunchToOpen, with the part id in place of the tool call id.
 ```
 
-The effect in `chat-surface.tsx` copies the discovery effect (lines 341–370) with its own `knownPlanWriteIds` ref, calling `shell.openPlan()` and `setPlanPrime(c => c + 1)`; both invariants hold (wait on `chat.loading`; bank only `output-available`). Where `ChatPartActions` is built (in `use-project-chat-controller.ts` or `chat-surface.tsx` — find the object literal that supplies `gateFor`), add `onOpenPlan: shell.openPlan`.
+The effect in `chat-surface.tsx` copies the discovery effect (lines 341–370) with its own `knownPlanPartIds` ref, calling `shell.openPlan()` and `setPlanPrime(c => c + 1)`; both invariants hold (wait on `chat.loading`; bank every plan part already in the transcript on first load so an old plan does not re-open the tab). Where `ChatPartActions` is built (in `use-project-chat-controller.ts` or `chat-surface.tsx` — find the object literal that supplies `gateFor`), add `onOpenPlan: shell.openPlan`.
 
-- [ ] **Step 1: Failing tests** — `plan-write-signal.test.ts` (copy `discovery-launch-signal.test.ts`'s cases against the new tool name); the contract test asserts `/planWriteToOpen\(\{[\s\S]*?openPlan\(\);\s*setPlanPrime\(/` in `chat-surface.tsx` and that `chat-message-part.tsx` matches `/planRef\.objectType === "project_document"/`; the label test.
+- [ ] **Step 1: Failing tests** — `plan-write-signal.test.ts` (copy `discovery-launch-signal.test.ts`'s cases, keyed on a `plan` part with `planRef.objectType === "project_document"`; plus: a part with another object type is ignored; a part present on first load is banked, not opened); the contract test asserts `/planWriteToOpen\(\{[\s\S]*?openPlan\(\);\s*setPlanPrime\(/` in `chat-surface.tsx` and that `chat-message-part.tsx` matches `/planRef\.objectType === "project_document"/`; the label test (`write_project_document: "Write the project plan"` stays for transcript history).
 - [ ] **Step 2–3: implement; run `npm test`, lint, build.**
 - [ ] **Step 4: Commit** — `git commit -m "feat(chat-shell): the Plan tab opens itself when the agent writes the plan, and the plan card opens it on click"`.
 

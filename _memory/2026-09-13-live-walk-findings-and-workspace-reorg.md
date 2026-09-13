@@ -48,10 +48,10 @@ artifacts at close; retention 24 h; quota 200 files / 10 MiB per turn. Isolation
 ## Rulings taken (founder, in discussion) → `docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md`
 
 W1 four levels (workspace library / project library / thread scratchpad / turn); W2 the project
-library is a materialized view of rows, mounted read-only, written through one save operation;
+library is a materialized view of rows, mounted as a versioned root (read-through, write-through);
 W3 pinned/current version only in view; W4 artifacts by reference; W5 thread scratchpad persists;
-W6 one `save_project_document@1` replaces the three document tools, folder decides kind, one skill
-per kind; W7 the pin gate stays human; W8 personas written by the Head of ABM, not via an
+W6 (option B, chosen later the same day) the project is written with deepagents' own `write_file`/`edit_file`
+over a versioned root — no new governed tool — folder decides kind, one skill per kind; W7 the pin gate stays human; W8 personas written by the Head of ABM, not via an
 onboarding run; W9 reads page (`offset`/`limit`/`next_offset`) and spill to `reads/` above the
 receipt bound, plus `read_claims@1` and `read_artifact@1`; W10 honest read refusals do not spend
 the failure budget; W11 brand knowledge mounted once per version. Constraints kept: Postgres is
@@ -65,3 +65,14 @@ receipts. Build order in the spec §6; the two contract/receipt defects ship fir
 - Hotfix on the current tools before the reorganisation: `pass` alias on input, byte-bounded reads,
   prefixes in the `no_claims_under_prefix` refusal, W10 in the runtime.
 - Decision: render the overview at research completion vs on first view.
+
+## Plans drawn (2026-09-13, later) — `docs/superpowers/plans/2026-09-13-lane-plan-index.md`
+
+Lane 1: `2026-09-13-read-tools-hotfix.md` (plan 0), `2026-09-13-workspace-multi-root-backend.md`
+(1), `2026-09-13-workspace-libraries.md` (2), `2026-09-13-versioned-project-root-and-document-skills.md`
+(3), `2026-09-13-paged-and-spilled-reads.md` (4). Lane 2: `2026-09-12-plan-tab-frontend.md`
+(re-activated; auto-open keyed on the plan part, not the tool call) and
+`2026-09-13-markdown-editor-toolbar.md`. Version ladder: skill v27…v31, profile v50…v54, recipe
+v26 → v27 (plan 3 drops three tools) → v28 (plan 4 adds two reads). Ruling P3-a in plan 3:
+personas keep the existing `audience/persona-<key>.md` path (the spec's `personas/` folder was
+illustrative). Not started; the hotfix is first.
