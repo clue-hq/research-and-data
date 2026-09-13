@@ -11,6 +11,11 @@ prompt for it, how to keep it on-brand, and how to use what comes back. The
 five-component prompt template lives in `knowledge/images/prompts`; the scrim
 rule and the placement idioms live in `knowledge/images/placement`.
 
+For scene imagery guided by visual references, first use
+`skills/reference-image-direction` to choose the operation, observed qualities
+to preserve and component boundaries. Reuse that direction here; this skill
+continues to own the generation/placement mechanics and variant custody.
+
 ## 1. Why the image decides the design
 
 Look at any professional ad. The typography is simple. The layout is
