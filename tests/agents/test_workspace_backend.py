@@ -469,6 +469,36 @@ def test_output_snapshot_is_single_flight_and_release_keeps_the_thread(tmp_path:
         harness.factory.close()
 
 
+def test_output_snapshot_can_empty_the_folder_for_the_next_turn(tmp_path: Path) -> None:
+    sink = RecordingArtifactSink()
+    harness = make_workspace(tmp_path, sink=sink)
+    backend = harness.lease.backend
+    backend.write_text_sync("outputs/report.md", "final")
+    backend.write_text_sync("outputs/drafts/note.md", "draft")
+    backend.write_text_sync("scratch/notes.md", "kept across turns")
+    outputs = harness.thread_path / "outputs"
+    try:
+        refs = asyncio.run(backend.snapshot_outputs(empty_after=True))
+        assert [record[1] for record in sink.records] == [
+            "outputs/drafts/note.md",
+            "outputs/report.md",
+        ]
+        assert len(refs) == 2
+        assert backend.outputs_snapshotted
+        # The durable copies are made; the turn's folder starts the next turn empty and writable.
+        assert tuple(outputs.iterdir()) == ()
+        assert stat.S_IMODE(outputs.stat().st_mode) == 0o700
+
+        replay = asyncio.run(backend.snapshot_outputs(empty_after=True))
+        assert list(replay) == list(refs)
+        assert len(sink.records) == 2
+
+        # Nothing outside outputs/ is touched.
+        assert backend.read_text_sync("scratch/notes.md") == "kept across turns"
+    finally:
+        harness.close()
+
+
 @pytest.mark.parametrize("failure", ["workspace", "digest"])
 def test_output_snapshot_rejects_untrusted_artifact_refs(
     tmp_path: Path,

@@ -222,12 +222,21 @@ class AgentWorkspaceLease:
         self._thread_segment = thread_segment
         self._factory = factory
         self._resources_frozen = False
+        self._materialized = False
         self._materialization_failed = False
         self._cleanup_authorized = False
 
     @property
     def resources_frozen(self) -> bool:
+        """Whether the trusted trees on disk are frozen — last turn's or this turn's."""
+
         return self._resources_frozen
+
+    @property
+    def materialized(self) -> bool:
+        """Whether *this* turn wrote and verified its own pinned bytes into the thread."""
+
+        return self._materialized
 
     @property
     def materialization_failed(self) -> bool:
@@ -238,20 +247,34 @@ class AgentWorkspaceLease:
         return self._cleanup_authorized
 
     def mark_resources_frozen(self) -> None:
-        if self._resources_frozen or self._materialization_failed:
+        """Record that the materialized trees are frozen again after this turn's write."""
+
+        if self._materialization_failed:
             raise WorkspaceConflict("workspace resources cannot be frozen in the current state")
         self._resources_frozen = True
 
     def restore_resources_frozen(self) -> None:
-        """Restore trusted lifecycle state after reopening an audited execution root."""
+        """Restore trusted lifecycle state after reopening an audited thread root."""
 
         if self._materialization_failed:
             raise WorkspaceConflict("failed materialization cannot be restored as frozen")
         self._resources_frozen = True
 
+    def mark_materialized(self) -> None:
+        """Record that this turn's pinned resources, inputs and context are verified on disk."""
+
+        if self._materialization_failed:
+            raise WorkspaceConflict("a failed materialization cannot become materialized")
+        if not self._resources_frozen:
+            raise WorkspaceConflict("materialized resources must be frozen before the model runs")
+        self._materialized = True
+
     def mark_materialization_failed(self) -> None:
-        if self._resources_frozen:
-            raise WorkspaceConflict("a frozen workspace cannot become materialization-failed")
+        if self._materialized:
+            raise WorkspaceConflict("a materialized workspace cannot become materialization-failed")
+        # The reset unfroze the trusted trees and the write never finished, so nothing on
+        # disk is this turn's pinned truth any more.
+        self._resources_frozen = False
         self._materialization_failed = True
 
     def release(self) -> None:
@@ -720,6 +743,66 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             for prefix in _MATERIALIZED_PREFIXES:
                 self._freeze_tree(prefix)
 
+    def reset_materialized_trees(self) -> None:
+        """Empty the three trusted trees so this turn can write its own pinned bytes.
+
+        The thread directory persists across turns, so last turn's resources, inputs and
+        context are still frozen on disk. Resetting restores owner-write and removes every
+        file and subdirectory below the three prefixes, leaving the folders themselves in
+        place and writable. ``scratch``/``reads``/``work``/``outputs`` are never touched.
+        """
+
+        with self._filesystem_lock(exclusive=True):
+            for prefix in _MATERIALIZED_PREFIXES:
+                self._reset_tree(prefix)
+
+    def _reset_tree(self, name: str) -> None:
+        """Unfreeze and empty one top-level folder, keeping the folder itself at 0700."""
+
+        try:
+            metadata = os.stat(name, dir_fd=self._root_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            os.mkdir(name, _DIRECTORY_MODE, dir_fd=self._root_fd)
+            return
+        except OSError as exc:
+            raise WorkspaceSecurityError("workspace tree could not be reset") from exc
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise WorkspaceSecurityError("workspace tree is not a directory")
+        try:
+            # O_NOFOLLOW | O_DIRECTORY refuses a swapped symlink; the frozen 0500 mode is
+            # restored top-down so the children below it can be unlinked.
+            directory_fd = os.open(name, _DIR_FLAGS, dir_fd=self._root_fd)
+            try:
+                os.fchmod(directory_fd, _DIRECTORY_MODE)
+                _validate_private_directory(directory_fd)
+                self._empty_directory(directory_fd)
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except WorkspaceError:
+            raise
+        except OSError as exc:
+            raise WorkspaceSecurityError("workspace tree could not be reset") from exc
+
+    @classmethod
+    def _empty_directory(cls, directory_fd: int) -> None:
+        """Remove every entry below one already-writable directory, refusing odd entries."""
+
+        for child in os.listdir(directory_fd):
+            child_metadata = os.stat(child, dir_fd=directory_fd, follow_symlinks=False)
+            if stat.S_ISDIR(child_metadata.st_mode):
+                child_fd = os.open(child, _DIR_FLAGS, dir_fd=directory_fd)
+                try:
+                    os.fchmod(child_fd, _DIRECTORY_MODE)
+                    cls._empty_directory(child_fd)
+                finally:
+                    os.close(child_fd)
+                os.rmdir(child, dir_fd=directory_fd)
+            elif stat.S_ISREG(child_metadata.st_mode):
+                os.unlink(child, dir_fd=directory_fd)
+            else:
+                raise WorkspaceSecurityError("workspace reset found a link or special file")
+
     def _freeze_tree(self, prefix: str) -> None:
         current = os.dup(self._root_fd)
         try:
@@ -823,7 +906,13 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
     async def edit_text(self, path: str, *, old: str, new: str) -> WorkspaceEntry:
         return await asyncio.to_thread(self.edit_text_sync, path, old=old, new=new)
 
-    async def snapshot_outputs(self) -> Sequence[ArtifactRef]:
+    async def snapshot_outputs(self, *, empty_after: bool = False) -> Sequence[ArtifactRef]:
+        """Persist ``outputs/`` durably, optionally emptying it for the thread's next turn.
+
+        With ``empty_after``, the folder itself survives — writable and empty — while the
+        snapshot refs stay this turn's durable answer for the single-flight replay.
+        """
+
         async with self._snapshot_lock:
             if self._outputs_snapshotted:
                 return self._snapshot_refs
@@ -863,6 +952,11 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 refs.append(ref)
             self._snapshot_refs = tuple(refs)
             self._outputs_snapshotted = True
+            if empty_after:
+                # Only after every byte is durable: the folder is emptied, never removed,
+                # and nothing outside outputs/ is touched.
+                with self._filesystem_lock(exclusive=True):
+                    self._reset_tree("outputs")
             return self._snapshot_refs
 
     # --- deepagents BackendProtocol compatibility -----------------------------------------
