@@ -1023,3 +1023,82 @@ def test_turn_close_projects_a_written_project_plan_as_the_plan_card(tmp_path: P
             assert parts[0]["plan_ref"]["object_id"] == str(document_id)
 
     run_async(scenario())
+
+
+def test_turn_close_names_the_written_icp_and_personas_on_their_own_cards(
+    tmp_path: Path,
+) -> None:
+    """The other two documents a turn can write are cards too, under the names the human uses.
+
+    The plan was the first document the versioned ``project/`` mount could take; an ICP proposal
+    and a persona set are the other two, and each arrives in ``domain_refs`` as its own object
+    type. A human reading the thread should see ``ICP`` / ``v2`` and ``Personas`` / ``v1`` — not
+    ``project icp document`` / ``2``, which is the row's name for it, not theirs.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-docs", label="docs")
+            emitter = await _emitter(conn, seeded)
+            icp_id = uuid5(NAMESPACE_URL, "lane-d5:docs:icp")
+            persona_id = uuid5(NAMESPACE_URL, "lane-d5:docs:persona")
+            message = ArtifactRef(
+                workspace_id=seeded.workspace_id,
+                artifact_key=f"{seeded.workspace_id}/{'2' * 64}",
+                sha256="2" * 64,
+                media_type="text/markdown",
+                byte_count=2,
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid4(),
+                execution_id=uuid5(NAMESPACE_URL, "lane-d5:docs:execution"),
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=message,
+                domain_refs=(
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_icp_document",
+                        object_id=str(icp_id),
+                        version=2,
+                    ),
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_persona_document",
+                        object_id=str(persona_id),
+                        version=1,
+                    ),
+                ),
+                finalized_at=NOW_UTC,
+            )
+            outcome = AgentTurnOutcome(
+                turn_id=seeded.turn_id,
+                execution_id=envelope.execution_id,
+                status=AgentExecutionStatus.COMPLETED,
+                finalization_ref=ArtifactRef(
+                    workspace_id=seeded.workspace_id,
+                    artifact_key=f"{seeded.workspace_id}/{'0' * 64}",
+                    sha256="0" * 64,
+                    media_type="application/json",
+                    byte_count=2,
+                ),
+            )
+            await ConversationTurnEngine._project_turn_close(
+                None,  # type: ignore[arg-type] -- the method reads only its keyword arguments
+                stream=emitter,
+                outcome=outcome,
+                envelope=envelope,
+                assistant_message=None,
+                replayed=False,
+            )
+
+            parts = await _parts(conn, seeded, PartKind.PLAN)
+            assert [(part["title"], part["revision_label"]) for part in parts] == [
+                ("ICP", "v2"),
+                ("Personas", "v1"),
+            ]
+            assert [part["plan_ref"]["object_id"] for part in parts] == [
+                str(icp_id),
+                str(persona_id),
+            ]
+
+    run_async(scenario())

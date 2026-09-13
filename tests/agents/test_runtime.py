@@ -33,6 +33,7 @@ from clue_agents import (
     SpecialistTaskEnvelope,
     ValidatedOperation,
     ValidatedPlan,
+    VersionedWriteOutcome,
     WorkspaceEntry,
     operation_id_for_plan_node,
 )
@@ -326,6 +327,10 @@ class _FinalizingExecution:
 
 
 class _EmptyOutputBackend:
+    """A turn that froze nothing and wrote no document — the empty case of both finalize reads."""
+
+    written_documents: tuple[VersionedWriteOutcome, ...] = ()
+
     async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
         del empty_after
         return ()

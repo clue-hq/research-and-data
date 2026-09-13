@@ -60,6 +60,7 @@ from clue_agents import (
     MountRequest,
     ProjectContextArtifact,
 )
+from clue_agents.bridge import process_bridge
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_gate import gate_answer_for_turn
@@ -129,6 +130,7 @@ from clue_api.project_library import (
     materialize_pinned_project_library,
     pinned_library_digest,
 )
+from clue_api.project_root_writer import ProjectRootWriter, bridge_transaction
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -370,6 +372,7 @@ class ProjectConversationTurnRunner:
         design_legs: DesignLegTurnRunner | None = None,
         storage: StorageBackend | None = None,
         conn_factory: ConnFactory = transaction,
+        project_writer_conn_factory: ConnFactory = bridge_transaction,
         streaming: bool = True,
         stream_policy: TurnStreamPolicy | None = None,
         stop_poll_interval_s: float = 0.25,
@@ -385,6 +388,12 @@ class ProjectConversationTurnRunner:
         # so once per turn — it never falls back to "current" documents nobody pinned.
         self._storage = storage
         self._conn_factory = conn_factory
+        # The project mount's writer opens its *own* transaction, on the bridge loop, because the
+        # deepagents backend calls it synchronously from a worker thread and a connection belongs
+        # to the loop that made it. It is therefore a second factory, never ``conn_factory``: that
+        # one's engine is this process's, and crossing the two loops is the exact hazard the
+        # bridge exists to avoid. A test replaces it with a factory yielding its own connection.
+        self._project_writer_conn_factory = project_writer_conn_factory
         # D3 streaming is on for the production conversation and switchable off in one place, so a
         # deployment that must fall back to non-streaming turns changes a flag, not a code path.
         self._streaming = streaming
@@ -702,7 +711,29 @@ class ProjectConversationTurnRunner:
                     # A pin with no manifest — written before the library existed. There is
                     # nothing to replay from, so the live tree is the honest answer.
                     library_digest = installed
-            mounts = replace(mounts, project_library=True)
+            # The mount is opened *versioned*: the model reads the project's tree as plain files
+            # and a write under it is taken by this writer as a new version of the document that
+            # path names. Exactly one writer is built per turn attempt and passed as one instance
+            # — ``MountRequest`` compares by value, and a second, equal-but-distinct writer would
+            # make two otherwise identical requests unequal.
+            #
+            # A replay attempt keeps its pinned tree *and* the writer (ruling P3-3): the pinned
+            # generation is what the model re-reads, and the first accepted write reopens the
+            # mount on the project's shared library, which is where the version it just minted
+            # actually lives.
+            project_writer = ProjectRootWriter(
+                bridge=process_bridge(),
+                storage=storage,
+                artifacts=self._engine.artifacts,
+                workspaces=self._engine.components.workspaces,
+                workspace_id=workspace_id,
+                brand_id=scope.brand_id,
+                project_id=scope.project_id,
+                turn_id=turn_id,
+                user_id=submission.submitted_by_user_id,
+                conn_factory=self._project_writer_conn_factory,
+            )
+            mounts = replace(mounts, project_library=True, project_writer=project_writer)
             if pinned_tree_name is not None:
                 mounts = replace(mounts, project_library_name=pinned_tree_name)
             log.info(
@@ -1661,6 +1692,7 @@ def build_agent_turn_work_handler(
     design_exit_judge: DesignLegExitJudge | None = None,
     design_leg_finisher: DesignLegFinisher | None = None,
     conn_factory: ConnFactory = transaction,
+    project_writer_conn_factory: ConnFactory = bridge_transaction,
     streaming: bool = True,
     stream_policy: TurnStreamPolicy | None = None,
     stop_poll_interval_s: float = 0.25,
@@ -1679,6 +1711,10 @@ def build_agent_turn_work_handler(
 
     ``storage`` (ARV2 onboarding O6) is the blob backend this worker reads the brand's pinned
     knowledge documents from. Without it a turn composes no knowledge and says so once.
+
+    ``project_writer_conn_factory`` is the transaction the versioned ``project/`` mount's writes
+    open. It defaults to the bridge loop's own engine because those writes happen off this
+    worker's loop, and it is separate from ``conn_factory`` for exactly that reason.
     """
 
     engine = build_conversation_turn_engine(
@@ -1714,6 +1750,7 @@ def build_agent_turn_work_handler(
             design_legs=design_legs_runner,
             storage=storage,
             conn_factory=conn_factory,
+            project_writer_conn_factory=project_writer_conn_factory,
             streaming=streaming,
             stream_policy=stream_policy,
             stop_poll_interval_s=stop_poll_interval_s,

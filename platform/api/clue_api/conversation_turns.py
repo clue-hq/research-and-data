@@ -21,7 +21,9 @@ local session file; production reads durable project state), so each surface bui
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -49,8 +51,16 @@ from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
     build_agent_context_assembler,
 )
-from clue_api.agent_runtime_wiring import CompletionGuard
+from clue_api.agent_runtime_wiring import (
+    PROJECT_DOCUMENT_OBJECT_TYPES,
+    CompletionGuard,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.project_documents import (
+    ICP_DEFINITION_KIND,
+    PERSONA_KIND,
+    PLAN_KIND,
+)
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
@@ -149,11 +159,24 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # prose. No tool address is added, dropped or moved.
 CONVERSATION_RECIPE_VERSION = 26
 
+#: What the human calls each project document the turn can write. The key is the object type the
+#: finalization carries, which ``PROJECT_DOCUMENT_OBJECT_TYPES`` derived from the document's kind,
+#: so the three names are read off the one mapping rather than re-typed here and left to drift.
+#: These are the names on the card: "the plan", "the ICP", "the personas" — never the row's kind,
+#: and never the object type with its underscores swapped for spaces.
+_DOCUMENT_PART_TITLES: Mapping[str, str] = MappingProxyType(
+    {
+        PROJECT_DOCUMENT_OBJECT_TYPES[PLAN_KIND]: "Plan",
+        PROJECT_DOCUMENT_OBJECT_TYPES[ICP_DEFINITION_KIND]: "ICP",
+        PROJECT_DOCUMENT_OBJECT_TYPES[PERSONA_KIND]: "Personas",
+    }
+)
+
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
 _PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
-    {"research_directive", "agent_plan", "plan", "project_document"}
+    {"research_directive", "agent_plan", "plan", *_DOCUMENT_PART_TITLES}
 )
 
 
@@ -480,17 +503,22 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
-                    # The project's plan is the one member of this set with a name of its own: the
-                    # human calls the document "the plan", not "the project document", and its
-                    # version is a file revision they can see in the editor, so it reads as "v3"
-                    # rather than a bare ordinal.
-                    is_plan_document = ref.object_type == "project_document"
+                    # The project's documents are the members of this set with names of their own:
+                    # the human calls them "the plan", "the ICP", "the personas", not "the project
+                    # document", and each version is a file revision they can see in the editor, so
+                    # it reads as "v3" rather than a bare ordinal. Everything else in the set keeps
+                    # the old generic rendering.
+                    document_title = _DOCUMENT_PART_TITLES.get(ref.object_type)
                     await stream.emit_plan_part(
                         ref=ref,
-                        title="Plan" if is_plan_document else ref.object_type.replace("_", " "),
+                        title=(
+                            document_title
+                            if document_title is not None
+                            else ref.object_type.replace("_", " ")
+                        ),
                         revision_label=(
                             f"v{ref.version}"
-                            if is_plan_document and ref.version is not None
+                            if document_title is not None and ref.version is not None
                             else (None if ref.version is None else str(ref.version))
                         ),
                     )

@@ -10,6 +10,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from types import MappingProxyType
 from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
@@ -38,6 +39,7 @@ from clue_agents import (
     GovernedOperationReceipt,
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
+    VersionedWriteOutcome,
 )
 from clue_agents.contracts import (
     MODEL_FORBIDDEN_AUTHORITY_KEYS,
@@ -56,6 +58,11 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.arv2.project_documents import (
+    ICP_DEFINITION_KIND,
+    PERSONA_KIND,
+    PLAN_KIND,
+)
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.client_context_authority import trusted_client_kb_version_fields
 from clue_api.client_knowledge_privacy import stream_tool_receipt
@@ -69,7 +76,22 @@ from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
 from clue_toolbelt import ToolEffectClass, ToolRegistry
 
+#: What a document the turn *wrote* is called in the finalization's ``domain_refs``. The versioned
+#: ``project/`` mount reports the document **kind** it took — the folder decided that, not the
+#: model — and the turn surface reads an object **type**, so the translation lives here, once, on
+#: the boundary where a write becomes a reference. A kind with no entry is deliberately not
+#: referenced: the card set on the other side is closed, so a ref nothing can name renders nothing,
+#: and inventing a type for it would only put an unnameable card in front of a human.
+PROJECT_DOCUMENT_OBJECT_TYPES: Mapping[str, str] = MappingProxyType(
+    {
+        PLAN_KIND: "project_document",
+        ICP_DEFINITION_KIND: "project_icp_document",
+        PERSONA_KIND: "project_persona_document",
+    }
+)
+
 __all__ = [
+    "PROJECT_DOCUMENT_OBJECT_TYPES",
     "AgentFinalizationAuthority",
     "DurableAgentModelCallHandler",
     "DurableDeepAgentTurnRunner",
@@ -415,6 +437,52 @@ class DelegateSpecialistRequest(_ModelInput):
         if any(not item or len(item) > 16_384 for item in self.verbatim_context):
             raise ValueError("verbatim context items must contain 1..16384 characters")
         return self
+
+
+def _with_written_documents(
+    declared: Sequence[DomainObjectRef],
+    *,
+    written: Sequence[VersionedWriteOutcome],
+    workspace_id: str,
+) -> tuple[DomainObjectRef, ...]:
+    """Add the documents this turn actually wrote to the refs the model declared.
+
+    A write into the versioned ``project/`` mount is a durable, human-visible event that the model
+    has no way to cite: it typed a file path, and what came back was a *version* of a document it
+    never named. So the turn says it on the model's behalf, from the outcomes the backend recorded
+    — the card the human sees is then built from the rows the turn wrote, not from a claim the
+    model remembered to make.
+
+    The model's own refs keep their places and come first: it may legitimately point at objects it
+    only read, and this is an addition, never a replacement. Deduplication is on the whole identity
+    ``(object_type, object_id, version)``, so a model that *did* cite its write gets one card, and
+    a turn that wrote the same document twice contributes one ref per version it minted.
+    """
+
+    merged: dict[tuple[str, str, int | None], DomainObjectRef] = {}
+    for ref in declared:
+        merged.setdefault((ref.object_type, ref.object_id, ref.version), ref)
+    for outcome in written:
+        object_type = PROJECT_DOCUMENT_OBJECT_TYPES.get(outcome.kind)
+        if object_type is None:
+            log.warning(
+                "agent_turn.written_document_kind_unreferenced",
+                kind=outcome.kind,
+                path=outcome.path,
+                document_id=str(outcome.document_id),
+            )
+            continue
+        key = (object_type, str(outcome.document_id), outcome.version)
+        merged.setdefault(
+            key,
+            DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type=object_type,
+                object_id=str(outcome.document_id),
+                version=outcome.version,
+            ),
+        )
+    return tuple(merged.values())
 
 
 def _with_trusted_runtime(
@@ -1172,6 +1240,11 @@ class GovernedAgentToolFactory:
                 )
             )
             output_refs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
+            domain_refs = _with_written_documents(
+                model_input.domain_refs,
+                written=self._lease.backend.written_documents,
+                workspace_id=workspace_id,
+            )
             envelope = AgentFinalizeEnvelope(
                 finalization_id=uuid5(
                     _FINALIZATION_NAMESPACE,
@@ -1181,7 +1254,7 @@ class GovernedAgentToolFactory:
                 status=model_input.status,
                 user_message_artifact_ref=final_message_ref,
                 output_refs=output_refs,
-                domain_refs=model_input.domain_refs,
+                domain_refs=domain_refs,
                 open_gate_refs=model_input.open_gate_refs,
                 assumption_refs=assumption_refs,
                 next_action_refs=next_action_refs,

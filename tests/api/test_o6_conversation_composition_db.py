@@ -34,6 +34,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import AgentExecutionStatus, ScriptedAgentChatModel
+from clue_agents.bridge import process_bridge
 from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_api.agent_execution_wiring import postgres_agent_checkpointer
 from clue_api.agent_platform_wiring import (
@@ -61,6 +62,8 @@ from clue_api.brand_knowledge_context import (
     load_or_create_knowledge_pin,
     read_pinned_documents,
 )
+from clue_api.chat.turn_events import list_turn_events
+from clue_api.chat.turn_parts import PartKind
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
     StorageExecutionParameterStore,
@@ -185,6 +188,12 @@ class _RecordingWorkspaces:
         self._inner = inner
         self.leases: list[Any] = []
         self.mounts: list[Any] = []
+        #: Add ``project`` to the resolved profile's writable prefixes at acquire time. The
+        #: promoted ``head-of-abm@v54`` reads the project mount but does not write it — granting
+        #: that is the *profile's* change, and it is the next task's, not this one's. A test that
+        #: must prove the versioned mount works end to end flips it here rather than minting a
+        #: profile version whose only purpose is to be a fixture.
+        self.grant_project_writes = False
         #: Called with the turn's own lease while it is still open. The mounted libraries are
         #: only readable *during* the turn — a replay's pinned tree is removed when the turn
         #: ends — so a test that wants to see what the model saw has to look from here.
@@ -192,6 +201,14 @@ class _RecordingWorkspaces:
         self._last: dict[str, Any] = {}
 
     def acquire(self, **kwargs: Any) -> Any:
+        if self.grant_project_writes:
+            policy = kwargs["policy"]
+            kwargs["policy"] = type(policy).model_validate(
+                {
+                    **policy.model_dump(),
+                    "writable_prefixes": (*policy.writable_prefixes, "project"),
+                }
+            )
         lease = self._inner.acquire(**kwargs)
         self._last = dict(kwargs)
         self.leases.append(lease)
@@ -371,7 +388,12 @@ class _Stack:
     components: AgentPlatformComponents
 
 
-async def _build_stack(conn: AsyncConnection, *, tmp_path: Path) -> _Stack:
+async def _build_stack(
+    conn: AsyncConnection,
+    *,
+    tmp_path: Path,
+    responses: Sequence[AIMessage] | None = None,
+) -> _Stack:
     """Compose the real toolbelt, registry, recipes, executor and workspace factory."""
 
     factory = conn_session_factory(conn)
@@ -440,7 +462,7 @@ async def _build_stack(conn: AsyncConnection, *, tmp_path: Path) -> _Stack:
         )
     )
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=factory)
-    models = _ScriptedModels(_responses())
+    models = _ScriptedModels(_responses() if responses is None else responses)
     components = AgentPlatformComponents(
         profiles=profiles,
         models=models,
@@ -481,6 +503,7 @@ async def _run_turn(
     workspace_id: str,
     submission: Any,
     worker_id: str,
+    streaming: bool = False,
 ) -> Any:
     """Dispatch, claim and run one queued turn through the production AGENT_TURN handler."""
 
@@ -510,7 +533,11 @@ async def _run_turn(
         queue=_ConnQueue(conn),  # type: ignore[arg-type]
         storage=stack.storage,
         conn_factory=stack.conn_factory,
-        streaming=False,
+        # The versioned project mount writes on the bridge loop, which is where this test's
+        # connection was made — so the writer joins the rolled-back transaction everything else
+        # here runs in, instead of opening the bridge's own engine and committing.
+        project_writer_conn_factory=stack.conn_factory,
+        streaming=streaming,
     )
     return await handler.handle(
         WorkContext(
@@ -1156,3 +1183,165 @@ def test_two_turns_of_one_thread_share_one_persistent_workspace(tmp_path: Path) 
                 stack.workspaces.close()
 
     run_async(scenario())
+
+
+PLAN_BODY = "# Plan\n\nWe research thirty accounts."
+
+
+def _plan_writing_responses() -> tuple[AIMessage, ...]:
+    """Write the plan into the mounted project tree, then finalize — two model rounds."""
+
+    return (
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "write_file",
+                    "args": {"file_path": "project/plan.md", "content": PLAN_BODY},
+                    "id": "o6t7-write-plan",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "finalize_turn",
+                    "args": {
+                        "status": "awaiting_input",
+                        "user_message": "I wrote the plan. Does it match what you had in mind?",
+                    },
+                    "id": "o6t7-finalize-plan",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+    )
+
+
+def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan_card(
+    tmp_path: Path,
+) -> None:
+    """The versioned ``project/`` mount, end to end, through the production turn.
+
+    The model calls the ordinary ``write_file`` on a path in the tree it was given. Nothing in
+    that call is a file: the mount hands it to the turn's :class:`ProjectRootWriter`, which takes
+    it as version 1 of this project's plan, and the turn's finalization then carries a reference
+    to the row it wrote — which the model never declared, because the model only ever typed a
+    path. The card the human is shown is built from that reference, so what the chat says the turn
+    did and what the database holds are the same fact, not two.
+
+    Two boundaries are substituted, and both are named: the scripted model as always, and
+    ``project`` added to the resolved profile's writable prefixes, which the promoted profile does
+    not yet grant. Everything between them is production — the real mount, the real writer, the
+    real document tables and the real turn stream.
+
+    The whole scenario runs on the **bridge** loop, because the writer's transaction does: a
+    connection belongs to the loop that made it, and this test hands the writer its own.
+    """
+
+    async def scenario() -> None:
+        # LangGraph installs a concurrent index; do it before the rollback fixture's transaction.
+        async with postgres_agent_checkpointer(ExecutionId(uuid4())):
+            pass
+        async with rollback_conn() as conn:
+            workspace_id = f"o6t7-{uuid4().hex[:8]}"
+            project = await seed_project(conn, workspace_id, name="O6 T7 plan project")
+            stack = await _build_stack(conn, tmp_path=tmp_path, responses=_plan_writing_responses())
+            stack.workspaces.grant_project_writes = True
+            try:
+                await _seed_document(
+                    conn,
+                    artifacts=stack.artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path="company/overview.md",
+                    kind="company-overview",
+                    version=1,
+                    status="ready",
+                    body=OVERVIEW,
+                )
+                submission = await _capture_submission(
+                    conn,
+                    artifacts=stack.artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    label="plan",
+                    message_body="Write the plan.",
+                )
+                result = await _run_turn(
+                    conn,
+                    stack,
+                    workspace_id=workspace_id,
+                    submission=submission,
+                    worker_id="o6t7-plan-worker",
+                    streaming=True,
+                )
+                assert result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
+
+                # 1. the row — the project's own plan, version 1, ready, born of this turn.
+                document = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT document_id, project_id, path, kind, version, status "
+                                "FROM brand_knowledge_document "
+                                "WHERE workspace_id = :ws AND project_id = :project "
+                                "ORDER BY version"
+                            ),
+                            {"ws": workspace_id, "project": project.project_id},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                assert len(document) == 1
+                assert (
+                    document[0]["path"],
+                    document[0]["kind"],
+                    document[0]["version"],
+                    document[0]["status"],
+                ) == ("project/plan.md", "project-plan", 1, "ready")
+
+                # 2. the finalization references it, though the model declared no refs at all.
+                refs = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT r.object_type, r.object_id, r.object_version "
+                                "FROM agent_finalization_domain_ref r "
+                                "JOIN agent_finalization f ON f.id = r.finalization_id "
+                                "WHERE f.turn_id = :turn AND r.ref_role = 'output' "
+                                "ORDER BY r.ordinal"
+                            ),
+                            {"turn": submission.turn_id},
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                assert [
+                    (row["object_type"], row["object_id"], row["object_version"]) for row in refs
+                ] == [("project_document", str(document[0]["document_id"]), 1)]
+
+                # 3. …and the human is shown a card that says so, under the document's own name.
+                events = await list_turn_events(
+                    conn, workspace_id=workspace_id, turn_id=submission.turn_id
+                )
+                plan_parts = [
+                    dict(row.payload["part"])
+                    for row in events
+                    if row.part_kind == PartKind.PLAN.value and "part" in row.payload
+                ]
+                assert len(plan_parts) == 1
+                assert plan_parts[0]["title"] == "Plan"
+                assert plan_parts[0]["revision_label"] == "v1"
+                assert plan_parts[0]["plan_ref"]["object_id"] == str(document[0]["document_id"])
+            finally:
+                stack.workspaces.close()
+
+    # Generous: a cold lane database, a compiled library and two model rounds all happen inside
+    # this one call, and a slow database must fail as a failure rather than as a bridge timeout.
+    process_bridge().run(scenario(), timeout_s=600.0)
