@@ -883,6 +883,138 @@ def test_the_claims_read_fits_the_governed_receipt_and_pages_the_rest() -> None:
     run_async(scenario())
 
 
+def test_an_account_whose_every_claim_is_held_back_reads_empty_with_its_counts() -> None:
+    """The gate now runs before the prefix filter, and an unnarrowed read must not turn that into
+    a refusal: "there is something here and you may not have it" is the whole point of ``excluded``.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="sensitive",
+                field_key="account.resonance.buying_culture",
+                value="A fact about the founder's health",
+                use_class=UseClass.SENSITIVE,
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
+            )
+            assert research.claims == ()
+            assert research.excluded == {"sensitive": 1, "unverified": 0, "outreach_unsafe": 0}
+            # No servable claim, so no family is advertised either.
+            assert research.prefixes == {}
+
+    run_async(scenario())
+
+
+def test_a_prefix_that_matches_nothing_is_refused_with_the_prefixes_that_exist() -> None:
+    """The live turn asked for ``firmographic`` and was told only that nothing matched."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="a",
+                field_key="core.legal_name",
+                value="Alpha Health LLC",
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="b",
+                field_key="account.resonance.culture",
+                value="warm",
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="c",
+                field_key="account.resonance.frustrations",
+                value="fax",
+            )
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="claims",
+                    settings=VERIFYING,
+                    field_prefix="firmographic",
+                )
+            assert refused.value.code == "no_claims_under_prefix"
+            # Naming the families is the whole fix: the live turn guessed a second prefix because
+            # the refusal told it only that its first guess was wrong.
+            assert "account.resonance (2)" in str(refused.value)
+            assert "core.legal_name (1)" in str(refused.value)
+
+    run_async(scenario())
+
+
+def test_the_claims_read_names_the_account_s_claim_families() -> None:
+    """A narrowed page still says what else the account holds, so the model need not guess."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="a",
+                field_key="core.legal_name",
+                value="Alpha Health LLC",
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="b",
+                field_key="account.resonance.culture",
+                value="warm",
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
+                field_prefix="core",
+            )
+            # The families are the whole account's, so a narrowed page still shows what else exists.
+            assert research.prefixes == {"account.resonance": 1, "core.legal_name": 1}
+            assert [view.field_key for view in research.claims] == ["core.legal_name"]
+
+    run_async(scenario())
+
+
 def test_a_long_overview_body_is_capped_and_says_so() -> None:
     """M4: the stored body has no bound of its own, so the read gives it one."""
 

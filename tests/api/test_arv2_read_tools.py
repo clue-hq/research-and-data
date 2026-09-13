@@ -429,8 +429,10 @@ def test_the_account_read_never_calls_the_claims_it_serves_verified() -> None:
 
     assert "verified claims" not in description
     assert "the claims the account pages show" in description
+    # Case-folded: the sentence naming the held-back classes opens the description's third
+    # sentence, so "Sensitive" is capitalised there — the word is what matters, not its case.
     for reason in ("sensitive", "unverified tier-4", "outreach-unsafe"):
-        assert reason in description
+        assert reason in description.lower()
 
 
 def test_the_account_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:

@@ -24,7 +24,8 @@ call, one :class:`DbArv2ReadService` that opens one transaction per call.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Protocol
 from uuid import UUID
@@ -90,6 +91,7 @@ __all__ = [
     "ReadProjectAccountsOutput",
     "ReadProjectAccountsTool",
     "build_arv2_read_tools",
+    "claim_prefixes",
     "list_project_accounts",
     "read_account_research",
     "read_discovery_run",
@@ -329,7 +331,8 @@ class AccountResearch:
     #: Where the next page starts, or ``None`` when this page ends the list.
     next_offset: int | None
     #: The account's claim families with their servable counts — the prefixes a narrowed read
-    #: may ask for (Task 3 fills it; ``{}`` until then).
+    #: may ask for. The whole account's, never this page's: a narrowed read still says what
+    #: else is there, so a wrong guess costs one call rather than a series of them.
     prefixes: dict[str, int]
 
 
@@ -514,6 +517,21 @@ def _is_sensitive(claim: Claim) -> bool:
     return claim.use_class is UseClass.SENSITIVE
 
 
+def claim_prefixes(claims: Iterable[Claim]) -> dict[str, int]:
+    """The claim families on an account: the first two dotted segments of each field key, with
+    a count.
+
+    Two segments, so ``account.resonance.culture`` and ``account.resonance.frustrations`` are
+    one family while ``core.legal_name`` — which has no third segment — is its own. Sorted by
+    count, then name, so the model reads the biggest family first.
+    """
+
+    counts: Counter[str] = Counter(
+        ".".join(str(claim.field_key).split(".")[:2]) for claim in claims
+    )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
 def _is_unverified_synthesis(claim: Claim) -> bool:
     """Under a verifying posture, an unjudged tier-4 synthesis is not a fact yet."""
 
@@ -528,10 +546,10 @@ async def _account_claims(
     field_prefix: str | None,
     settings: Settings,
     offset: int,
-) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int], int | None]:
+) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int], int | None, dict[str, int]]:
     """One page of the account's live claims under ``field_prefix``, **gated exactly as the account
-    page gates them**, bounded, plus whether more is left, what was held back, and where the next
-    page starts.
+    page gates them**, bounded, plus whether more is left, what was held back, where the next
+    page starts, and which claim families the account holds.
 
     The gate is :mod:`clue_api.arv2.display.gather`'s, predicate for predicate: a special-category
     value never leaves the store, an unjudged tier-4 synthesis is held back under a verifying
@@ -541,7 +559,10 @@ async def _account_claims(
 
     Exclusions are **counted, not hidden**: an account whose every claim is held back comes back
     with an empty list and a non-zero ``excluded``, which says "there is something here and you may
-    not have it" rather than "there is nothing here".
+    not have it" rather than "there is nothing here". The gate runs over the whole account
+    *before* ``field_prefix`` narrows it, so ``excluded`` counts the account rather than the
+    matching subset — and the families it reports are the account's, which is the point: a read
+    that guessed the wrong prefix is answered with the right ones instead of with a bare no.
 
     The page is bounded twice: by :data:`MAX_CLAIMS` and — the binding one on a real account — by
     :data:`READ_REFERENCES_BUDGET_BYTES`, measured in the receipt's own encoding. Whatever does not
@@ -563,22 +584,12 @@ async def _account_claims(
         raise Arv2ReadRefused("account_not_researched", "no claims about this account yet")
     # ``claims_for_entities`` already orders by ``(field_key, collected_at DESC, id)``, which is
     # the grouping the agent reads: one field's newest value first.
-    matching = [
-        claim
-        for claim in claims
-        if field_prefix is None or claim.field_key.startswith(field_prefix)
-    ]
-    if not matching:
-        # A distinct code: the account IS researched, and saying otherwise because one prefix came
-        # back empty is a false statement about the account in the machine-readable half.
-        raise Arv2ReadRefused(
-            "no_claims_under_prefix",
-            f"this account has claims, but none under {field_prefix}",
-        )
-
+    #
+    # The gate runs first and ``field_prefix`` narrows second, so the families below are the
+    # account's *servable* ones — never a family made entirely of claims the caller may not have.
     excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
-    kept: list[Claim] = []
-    for claim in matching:
+    gated: list[Claim] = []
+    for claim in claims:
         if _is_sensitive(claim):
             excluded["sensitive"] += 1
             continue
@@ -588,7 +599,25 @@ async def _account_claims(
         if not claim.outreach_safe:
             excluded["outreach_unsafe"] += 1
             continue
-        kept.append(claim)
+        gated.append(claim)
+
+    prefixes = claim_prefixes(gated)
+    kept = [
+        claim for claim in gated if field_prefix is None or claim.field_key.startswith(field_prefix)
+    ]
+    if field_prefix is not None and not kept:
+        # Only a *narrowed* read refuses: an unnarrowed one whose every claim is held back is the
+        # empty-list-with-counts answer promised above, not a missing prefix.
+        #
+        # A distinct code: the account IS researched, and saying otherwise because one prefix came
+        # back empty is a false statement about the account in the machine-readable half. The
+        # families come with it — the 2026-09-13 turn asked for 'firmographic', was told only
+        # that nothing matched, and guessed again.
+        listed = ", ".join(f"{name} ({count})" for name, count in list(prefixes.items())[:12])
+        raise Arv2ReadRefused(
+            "no_claims_under_prefix",
+            f"this account has claims, but none under {field_prefix!r}; its families are: {listed}",
+        )
 
     if offset >= len(kept) and offset > 0:
         # An offset past the end is the caller's mistake, not an empty account: answering it with
@@ -621,7 +650,7 @@ async def _account_claims(
     served = tuple(views[:fitted])
     end = offset + len(served)
     truncated = cut or end < len(kept)
-    return served, truncated, excluded, (end if truncated else None)
+    return served, truncated, excluded, (end if truncated else None), prefixes
 
 
 async def read_account_research(
@@ -653,6 +682,7 @@ async def read_account_research(
     truncated = False
     excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
     next_offset: int | None = None
+    prefixes: dict[str, int] = {}
     if section == "overview":
         if offset != 0:
             raise Arv2ReadRefused("offset_not_paged", "the overview is not paged; omit offset")
@@ -660,7 +690,7 @@ async def read_account_research(
             conn, workspace_id=workspace_id, account_uuid=account_uuid
         )
     else:
-        claims, truncated, excluded, next_offset = await _account_claims(
+        claims, truncated, excluded, next_offset, prefixes = await _account_claims(
             conn,
             workspace_id=workspace_id,
             account_uuid=account_uuid,
@@ -678,8 +708,7 @@ async def read_account_research(
         excluded=excluded,
         offset=offset,
         next_offset=next_offset,
-        # Task 3 fills this; declared here so the shape does not change under the model twice.
-        prefixes={},
+        prefixes=prefixes,
     )
 
 
@@ -688,7 +717,7 @@ async def read_account_research(
 # =================================================================================================
 
 
-class DiscoveryCandidateView(BaseModel, frozen=True):
+class DiscoveryCandidateView(BaseModel):
     """One company a discovery run surfaced, with the verdict the verifier gave it."""
 
     #: ``serialize_by_alias`` is load-bearing, not decoration: the runner's canonical form is
@@ -1123,12 +1152,14 @@ class ReadAccountResearchTool(Tool):
     name = "read_account_research"
     version = "1"
     model_description = (
-        "Read what research found about one account: section='overview' returns the written "
-        "overview sections (prose with the claim ids they cite); section='claims' returns the "
-        "the claims the account pages show, grouped by field (value, source, evidence, tier, "
-        "verification status), optionally under a field prefix — sensitive, unverified tier-4 and "
-        "outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying "
-        "anything specific about an account. Effect-free."
+        "Read what research found about one account. section='overview' returns the written "
+        "overview sections (prose citing claim ids); when the overview is not written yet the "
+        "read refuses with overview_not_written — then read section='claims'. section='claims' "
+        "returns the claims the account pages show, one page at a time: follow next_offset "
+        "until it is null, or narrow with field_prefix to one of the families listed in "
+        "'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and "
+        "outreach-unsafe claims are held back and counted in 'excluded'. Read this before "
+        "saying anything specific about an account. Effect-free."
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
