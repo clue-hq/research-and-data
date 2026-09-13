@@ -1,8 +1,52 @@
 # Design Agent V1: a coherent skill family and a cross-brand test
 
-Status: reviewed implementation proposal, 2026-09-13. No new family has been
-loaded into the runtime and no new creative benchmark has been run for this
-proposal. Branch: `codex/design-agent-v1`.
+Status: implementation in local validation, 2026-09-13. The four-playbook scene
+family is implemented and enabled on localhost. Reference custody, acceptance,
+timing and crop safeguards are implemented. Live ordinary-request diagnostics
+have run; the paired cross-brand benchmark below is not complete and the
+four-minute finished-creative target has not passed. Branch: `codex/design-agent-v1`.
+
+## Implementation evidence and remaining gate
+
+- A separate scene knowledge view now serves the family and removes conflicting
+  fixed-layout policy from that view. Website knowledge remains compatible.
+- Ordered source bytes, roles, framing and provider outputs are recorded. A real
+  Conduit image run used three inspected sources and generated a new, matching
+  blurred background; it still failed composition and delivery-time review.
+- Final acceptance requires current preflight, rendered bytes and a registered
+  passing critique. Valid unaccepted drafts survive. Model acceptance alone is
+  still not human visual acceptance.
+- Clue and Google Cloud ordinary awareness requests completed with distinct brand
+  typography/identity. Neither establishes the four-minute finished-delivery
+  target. Source fixtures for Conduit, Clue, AWS and Google Cloud are isolated
+  local test workspaces with explicitly partial kits and evidence gaps.
+- Live failures motivated an exact source-pixel crop tool, content-based preview
+  freshness, and trusted checkpoint persistence even when an existing preview is
+  reused. These repairs are part of the implementation, not improved benchmark
+  scores. Preserve the earlier failures in the denominator.
+- Clue and Google Cloud native text edits survived save/reload; restored scenes
+  and exported PNGs exactly matched their original outputs. AWS durably saved a
+  31-operation checkpoint before stopping, but its own review rejected the
+  composition. Its kit also lacks the declared Arial font file. It remains an
+  unaccepted draft with a partial-fixture gap.
+- Runtime tracing identified avoidable final-critique reserialization and a
+  conflict between the four-minute target and legacy four-minute repair-floor
+  guidance. Candidate fixes reuse the registered review and permit one focused
+  quality repair when hard headroom exists. Target misses remain visible;
+  changing this guidance does not demonstrate a faster or better live output.
+- A subsequent ordinary AWS repair on the final runtime resized the existing
+  logo and made support readable without changing the copy. It finalized once
+  using the registered review and exported through the browser. It took 5m10s,
+  remained a scoped edit rather than strict creative acceptance, and did not
+  resolve the weak overall composition or the partial brand-kit warning.
+- The 16-row comparison manifest is prepared in ignored evaluation storage.
+  Diagnostics changed code between runs, so they cannot establish a controlled
+  old/new-guidance win. Freeze the final runtime and reset eligible output/caches
+  before that comparison. Human review, repeatability, proof/workflow coverage
+  and promotion remain open.
+
+Operational results and exact verification are recorded in
+[`_memory/2026-09-13-design-skill-family-implementation.md`](../../../_memory/2026-09-13-design-skill-family-implementation.md).
 
 ## Decision
 
@@ -26,7 +70,8 @@ agents being added to each customer generation run.
 The [previous audit](design-agent-v1-harness-audit.md) established that skills
 are discoverable and selected reference pixels can reach the image provider.
 It did not establish autonomous short-request performance or cross-brand quality.
-The current checkout adds the following evidence:
+The following table records the pre-implementation findings at `e0d73952`;
+the implementation status above describes which mechanisms have since changed:
 
 | Finding | Evidence and implication |
 | --- | --- |
@@ -86,7 +131,7 @@ existing runtime and asset seams; a Markdown field alone cannot enforce it.
 
 Six responsibilities are the target architecture, not an instruction to add six
 replacement directories or delete/rename all 28 existing skills immediately.
-The smallest first implementation adds `scene-creative-direction`, one scene
+The smallest first implementation adds `scene-brief-copy`, one scene
 family contract and routing table, four playbooks and selected component
 resources. It reuses existing tool and craft mechanisms. Keep directories flat
 for the current loader and account for existing readers before changing paths.
@@ -261,11 +306,11 @@ silently alter a running benchmark.
 
 ## Cross-brand benchmark
 
-The current read-only local inventory found only Conduit among Conduit/Convert,
-Clue, Amazon/AWS and Google: two projects and one distinct brand kit. This is
-presence, not asset readiness. No additional workspace was created by this review.
-Amazon and Google product selection is pending; AWS and Google Cloud are the
-provisional B2B choices, not confirmed brand bindings.
+The planning inventory initially found only Conduit. Implementation prepared
+separate local source fixtures for Conduit, Clue, AWS and Google Cloud through
+existing ingestion and kit seams. The original Conduit workspace is preserved.
+These are approved partial kits, not production-ready product libraries: missing
+proof, authentic product UI and other readiness gaps are recorded per fixture.
 
 Before any batch, each workspace needs a verified company/product identity,
 supported claims, inspected logo variants, usable fonts and source availability.
@@ -371,3 +416,110 @@ were established.
 
 Harvested references and human preference can assess visual fit. They do not
 establish CTR, conversion or ROAS. Those require a separate campaign experiment.
+
+## Implementation work packages
+
+Execution authorized by the founder on 2026-09-13. Baseline code is `e0d73952`.
+Work in the existing branch/worktree. Use focused behavioral tests, preserve
+website behavior, keep customer artifacts in ignored local storage, and never
+push. Parallel implementers have disjoint file ownership; the coordinator owns
+shared integration and local commits. Do not spawn additional agents from a
+worker, edit another owner's files, create worktrees, or change models/services.
+
+### Task 1: Scene skill family and materialized knowledge view
+
+Own runtime `materialize.py`, `harness.py`, `prompts.py`, `config.py`, new
+`models/creative_direction.py`, `knowledge_docs/` and focused new/affected tests
+for these areas. The coordinator owns `tools/substrate.py`, render/view tools,
+other models and runtime finalization. Task 2 owns the image provider/cache.
+Task 3 owns evaluation scripts.
+
+Implement the minimal scene family: one autonomous brief/copy entry point,
+four playbooks (type-led positioning, authentic product, attributed proof,
+workflow contrast), a shared direction contract and coherent scene routing.
+Preserve existing website skill index, prompts and pins. Remove contradictory
+legacy policy from the delivered scene view instead of adding one more rule
+beside it. Use canonical shared mechanics and preserve current skill IDs for
+other callers. Selective loading must work through the actual materializer and
+DeepAgents harness; content stamps must include the view. Support old/new scene
+bundles for controlled evaluation, with the old behavior as a compatible
+default until the coordinator enables the candidate locally. Any added runtime
+flag must have default parity in root/subsystem examples; coordinate ownership
+with the root before editing env examples. Never print or modify secret values.
+
+The direction record must carry copy, evidence references, playbook, intent,
+source roles, preserve/vary choices, layer plan, placement and review needs.
+Define a small typed schema and tell the coordinator the exact file/tool seam
+for validation; do not invent unavailable commands. Shared component guidance
+must preserve native text/geometry and authentic independent logo/product
+images, allow optional CTAs and typography-only results, and recompose rather
+than force fixed patterns. Never hardcode a company or the control-test copy.
+
+Write failing behavior tests before code changes for view isolation, discovery,
+materialization stamp invalidation and valid/invalid direction records. Test
+actual behavior rather than required-word presence alone. Use prior failed
+controls as negative skill evidence; include short-request evaluation cases.
+Report exact modified files, red/green commands and unresolved integration
+needs. Do not claim visual quality from these offline tests.
+
+### Task 2: Provider reference custody, cache identity and aspect reporting
+
+Own `apps/api/lumen_api/image_provider.py`, `image_cache.py` and their focused
+tests only. The coordinator integrates runtime/API callers; propose their
+changes without editing `tools/substrate.py`, `main.py` or shared config files.
+
+Preserve the order of input references in generation-cache identity and include
+operation/reference-framing semantics when supplied. Keep compatible defaults
+for existing callers and valid cache hits. Add a precise optional role-aware
+reference interface for source/treatment/composition inputs if the existing
+adapter can carry it; authentic UI/logo preservation must use existing edit or
+placement paths, never a promise that generation preserves exact pixels.
+Distinguish requested canvas/aspect, effective provider negotiation and returned
+image dimensions in result/provenance. Do not expand provider capabilities from
+guesswork, change the configured model or call paid providers for unit tests.
+
+Demonstrate the reversed-order cache collision with a failing test, then fix
+it. Test same-request stability, role/operation sensitivity, source edit digest,
+uncorrupted reference transport and aspect negotiation with fake transport.
+Report the exact optional signature/provenance fields for coordinator wiring,
+red/green commands and compatibility concerns. No services, database writes,
+browser actions, new dependencies or external image experiment access.
+
+### Task 3: Evaluation measurement and reproducible case preparation
+
+Own `scripts/run_view.py`, focused tests and a minimal reusable evaluation
+helper only if existing tooling cannot express the cases. No runtime/API/
+knowledge/config files, live provider calls, browser actions or database writes.
+Read-only local database metadata and source discovery are allowed; do not
+print credentials or customer content.
+
+Implement explicit finished-creative measurement separated from queue time,
+first preview, agent completion and save time. The current four-minute first-
+preview label must not imply the four-minute finished-creative goal is met.
+Preserve existing historical metrics and label absent evidence as unavailable.
+Prepare the four-brand/two-normal-request paired matrix, snapshot/receipt
+requirements and first-pass versus repair separation using existing run-view
+surfaces. Record a frozen eligible-source corpus and generated-result cache
+isolation requirement; do not claim isolation unless the execution seam
+enforces it. Tell the coordinator what is still needed for real local launch.
+
+Write behavior tests for timing semantics, missing timestamps, retries and
+comparison validity. Keep new files minimal; raw evidence belongs in ignored
+local control storage. Report red/green commands and metadata-readiness gaps.
+
+### Task 4: Coordinator acceptance, integration and live verification
+
+Own runtime acceptance, fresh preflight/preview/review binding, selected-source
+review registration, caller wiring and source role integration; coordinate all
+shared files. Enforce validated current-scene acceptance while retaining honest
+drafts and edit-scoped advisory semantics. Add targeted failing regressions.
+Inspect and review each implementation diff, resolve actual test failures and
+run the applicable combined runtime/API/website-equivalence gates.
+
+Freeze baseline and candidate inputs; restore the existing local app as needed.
+Run an ordinary-request Conduit comparison through the real platform, inspect
+images and native scenes, and verify edit/save/reload/export in the browser.
+Prepare other brands via normal local platform paths and run the benchmark only
+when readiness and isolation are real. Record timing, input receipts and first
+delivery separately from repairs. Fix observed failures at their responsible
+layer, keep failed outputs, and report remaining quality gaps honestly.
