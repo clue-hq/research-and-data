@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "skills": [
+    "scene-brief-copy",
+    "type-led-positioning",
+    "authentic-product",
+    "attributed-proof",
+    "workflow-contrast",
+    "create-design",
+    "plan-design",
+    "reference-image-direction",
+    "reference-conditioned-ads",
+    "generative-imagery",
+    "brand-imagery",
+    "visual-review",
+    "repair-design",
+    "brand-and-tokens",
+    "effects",
+    "tools"
+  ],
+  "playbooks": [
+    "type-led-positioning",
+    "authentic-product",
+    "attributed-proof",
+    "workflow-contrast"
+  ],
+  "knowledge": [
+    "knowledge/scene/direction-contract.md",
+    "knowledge/scene/components.md",
+    "knowledge/scene/references.md",
+    "knowledge/scene/review.md",
+    "knowledge/lumen-dsl/grammar.md",
+    "knowledge/lumen-dsl/text.md",
+    "knowledge/lumen-dsl/colors.md",
+    "knowledge/lumen-dsl/layout.md",
+    "knowledge/lumen-dsl/directives.md",
+    "knowledge/lumen-dsl/diagnostics.md",
+    "knowledge/design/artboard-frame-authoring.md",
+    "knowledge/design/font-library.md",
+    "knowledge/design-systems/brand-kits.md",
+    "knowledge/design-systems/token-taxonomy.md",
+    "knowledge/design-systems/brand-validation.md",
+    "knowledge/design-systems/modes.md",
+    "knowledge/export/print-geometry.md",
+    "knowledge/export/preview-quality.md",
+    "knowledge/loop/layout-cluster-repair.md",
+    "knowledge/scene/image-grammar.md"
+  ],
+  "pinned_knowledge": [
+    "knowledge/lumen-dsl/grammar.md",
+    "knowledge/lumen-dsl/directives.md",
+    "knowledge/design/artboard-frame-authoring.md",
+    "knowledge/scene/components.md"
+  ],
+  "section_overrides": {
+    "knowledge/lumen-dsl/grammar.md": [
+      {
+        "start": "## Images, icons & the scrim idiom",
+        "end": "## Two ways to change an existing scene",
+        "replacement": "knowledge/scene/image-grammar.md"
+      }
+    ]
+  }
+}

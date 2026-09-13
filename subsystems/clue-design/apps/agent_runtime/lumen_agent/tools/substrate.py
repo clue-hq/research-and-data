@@ -21,8 +21,12 @@ from lumen_api.export_policy import partition_export_diagnostics
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
+    from lumen_api.image_provider import image_request_receipt_fields as _image_receipt_fields
 except Exception:  # pragma: no cover - keeps the runtime importable without the API package
     image_provider = None  # type: ignore[assignment]
+
+    def _image_receipt_fields(record: dict) -> dict:
+        return {}
 
 try:  # generation cache (request -> asset), so the loop doesn't re-pay per iteration
     from lumen_api import image_cache
@@ -400,6 +404,14 @@ class LumenDesignTools:
         # accepted run that still carries a BLOCKING export error. None means
         # preflight has not run this turn (distinct from `[]`, "ran, clean").
         self._latest_preflight_diagnostics: Optional[list[JsonObject]] = None
+        # Runtime-owned receipts bind acceptance to the exact reviewed scene
+        # and bytes. Agent-authored JSON alone cannot certify a new render.
+        self._preflight_scene_stamp: str | None = None
+        self._preview_receipt: JsonObject | None = None
+        self._review_receipt: JsonObject | None = None
+        self._latest_visual_critique: JsonObject | None = None
+        self._selected_reference_ids: set[str] = set()
+        self._pending_pruned_pages: list[str] = []
         self._write_json(
             self.trace_dir / "input.json",
             {
@@ -997,6 +1009,9 @@ class LumenDesignTools:
         label: Optional[str] = None,
         condition_on_references: bool = True,
         reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
     ) -> str:
         """Generate a raster image asset from a text prompt and register it in the
         scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
@@ -1043,6 +1058,9 @@ class LumenDesignTools:
             transparent_background=transparent_background,
             condition_on_references=condition_on_references,
             reference_asset_ids=reference_asset_ids,
+            reference_roles=reference_roles,
+            reference_framing=reference_framing,
+            operation=operation,
         )
         diagnostics = diagnostics_from(raw_diagnostics)
         if record is None:
@@ -1126,6 +1144,7 @@ class LumenDesignTools:
             "provenance": record.get("provenance"),
             "source": record.get("source"),
             "license": (record.get("license") or {}).get("name"),
+            **_image_receipt_fields(record),
         }
         if "reference_inputs" in meta:
             image["reference_inputs"] = meta["reference_inputs"]
@@ -1708,6 +1727,9 @@ class LumenDesignTools:
         transparent_background: bool,
         condition_on_references: bool = True,
         reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
     ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
         """Produce + ingest one image asset record. Prefers the configured T2I
         model; on a missing config or any model/ingest failure it falls back to the
@@ -1727,6 +1749,12 @@ class LumenDesignTools:
         diagnostics: List[JsonObject] = []
         fallback: Optional[JsonObject] = None
         selected_receipt = None
+        if reference_roles is not None and reference_asset_ids is not None and (
+            len(reference_asset_ids) != len(set(reference_asset_ids))
+        ):
+            return None, {}, diagnostics, (
+                "image.reference_invalid", "Role-aware selections require distinct asset IDs."
+            )
         if reference_asset_ids is not None:
             reference_images, reference_digests, selected_receipt, error = (
                 self._collect_selected_reference_previews(reference_asset_ids)
@@ -1735,6 +1763,20 @@ class LumenDesignTools:
                 # A bad selection is a correctable tool error, not permission
                 # to spend on unconditioned imagery or mutate the scene.
                 return None, {}, diagnostics, error
+        else:
+            reference_images, reference_digests = self._collect_reference_previews(
+                condition_on_references, diagnostics
+            )
+        if reference_roles is not None or reference_framing is not None:
+            try:
+                from lumen_api.image_provider import resolve_reference_framing
+                resolve_reference_framing(
+                    reference_images or [], reference_roles, reference_framing
+                )
+            except Exception as error:
+                return None, {}, diagnostics, ("image.reference_invalid", str(error))
+        if selected_receipt:
+            self._selected_reference_ids.update(item["asset_id"] for item in selected_receipt)
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
@@ -1743,10 +1785,6 @@ class LumenDesignTools:
             # preview bytes (order-sorted) so the style rides the model call and
             # the cache keys on their pixel digests. No references / opt-out →
             # (None, None) and the request is byte-identical to a plain generation.
-            if reference_asset_ids is None:
-                reference_images, reference_digests = self._collect_reference_previews(
-                    condition_on_references, diagnostics
-                )
             # Generation cache: re-use the asset an identical earlier request
             # produced (the loop re-requests the same hero each iteration) instead
             # of re-paying the model. Checked BEFORE the provider call.
@@ -1762,6 +1800,9 @@ class LumenDesignTools:
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
                     reference_digests=reference_digests,
+                    reference_roles=reference_roles,
+                    reference_framing=reference_framing,
+                    operation=operation,
                 )
                 cached = image_cache.lookup(store_root, cache_key)
                 if cached:
@@ -1770,6 +1811,7 @@ class LumenDesignTools:
                         {
                             "mode": "cached",
                             "model": (cached.get("source") or {}).get("model"),
+                            **_image_receipt_fields(cached),
                             **(
                                 {"reference_inputs": selected_receipt}
                                 if selected_receipt is not None
@@ -1788,6 +1830,11 @@ class LumenDesignTools:
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
                     reference_images=reference_images,
+                    **{key: value for key, value in {
+                        "reference_roles": reference_roles,
+                        "reference_framing": reference_framing,
+                        "operation": operation,
+                    }.items() if value is not None},
                     request_id=asset_id,
                 )
                 if reference_digests:
@@ -1827,6 +1874,7 @@ class LumenDesignTools:
                             "actual_width": getattr(result, "width", None),
                             "actual_height": getattr(result, "height", None),
                             "aspect_ratio_honored": getattr(result, "aspect_ratio_honored", None),
+                            **_image_receipt_fields(record),
                             **(
                                 {"reference_inputs": selected_receipt}
                                 if selected_receipt is not None
@@ -2190,6 +2238,7 @@ class LumenDesignTools:
         prompt: str,
         remove_background: bool = False,
         label: Optional[str] = None,
+        operation: str | None = None,
     ) -> str:
         """Edit the raster image currently placed in `node_id` with a text
         instruction (Phase 3c) — recolor / adjust warmth / remove or replace the
@@ -2249,11 +2298,15 @@ class LumenDesignTools:
                     model=model_id(),
                     transparent_background=transparent,
                     source_digest=source_digest,
+                    operation=operation,
                 )
                 cached = image_cache.lookup(store_root, cache_key)
                 if cached:
                     record = cached
-                    meta = {"mode": "cached", "model": (cached.get("source") or {}).get("model")}
+                    meta = {
+                        "mode": "cached", "model": (cached.get("source") or {}).get("model"),
+                        **_image_receipt_fields(cached),
+                    }
             if record is None:
                 try:
                     result = image_provider.edit(
@@ -2261,6 +2314,7 @@ class LumenDesignTools:
                         source_images=[(source_bytes, source_mime)],
                         transparent_background=transparent,
                         request_id=asset_id,
+                        **({"operation": operation} if operation is not None else {}),
                     )
                     ingest = self.core.ingest_asset(
                         store_root=store_root,
@@ -2284,7 +2338,9 @@ class LumenDesignTools:
                         diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
                         if cache_key is not None and image_cache is not None:
                             image_cache.store(store_root, cache_key, record)
-                        meta = {"mode": "model", "model": result.model}
+                        meta = {
+                            "mode": "model", "model": result.model, **_image_receipt_fields(record)
+                        }
                     else:
                         detail = (ingest.get("error") or {}).get("message", "unknown error")
                         edit_error = ("image_edit.ingest_failed", f"edited image could not be ingested ({detail})")
@@ -2378,6 +2434,7 @@ class LumenDesignTools:
                 "provenance": record.get("provenance"),
                 "source": record.get("source"),
                 "placement": place_result.get("placement"),
+                **_image_receipt_fields(record),
             },
             "diagnostics": [d.model_dump(mode="json") for d in diags],
         }
@@ -2567,6 +2624,9 @@ class LumenDesignTools:
         preserve_transparency: Optional[bool] = None,
         label: Optional[str] = None,
         reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
     ) -> str:
         """Generate or place a design asset. Pick `action`:
 
@@ -2580,7 +2640,11 @@ class LumenDesignTools:
           Omit it to use turn attachments; [] uses no references. A selection
           replaces automatic attachments. Source pixels and their digest are
           verified before spending; unavailable selections return an error.
-          Successful model/cache results report exact `reference_inputs`.
+          Optional reference_roles align with selected IDs: source, treatment,
+          composition. reference_framing states what to preserve/vary; operation
+          records intent such as close_companion. These participate in caching.
+          Successful model/cache results report exact `reference_inputs` and
+          persisted provider `image_request_receipt` when available.
           Viewing an asset alone does not attach it. Keep exact UI and logos as
           separate source layers; this action produces a new raster component.
         - `action="edit_image"` — edit the image already placed in `node_id` with a
@@ -2621,8 +2685,16 @@ class LumenDesignTools:
                 transparent_background,
                 label,
                 reference_asset_ids=reference_asset_ids,
+                reference_roles=reference_roles,
+                reference_framing=reference_framing,
+                operation=operation,
             )
         if action == "edit_image":
+            if reference_roles is not None or reference_framing is not None:
+                return self._tool_error(
+                    "asset.bad_request",
+                    "edit_image uses the placed source; reference_roles/framing apply to generate_image.",
+                )
             if not node_id:
                 return self._tool_error(
                     "asset.bad_request", "action='edit_image' requires `node_id`."
@@ -2631,7 +2703,9 @@ class LumenDesignTools:
                 return self._tool_error(
                     "asset.bad_request", "action='edit_image' requires `prompt`."
                 )
-            return self.edit_image(node_id, prompt, transparent_background, label)
+            return self.edit_image(
+                node_id, prompt, transparent_background, label, operation=operation
+            )
         if action == "generate_qr":
             if not data:
                 return self._tool_error(
@@ -2875,6 +2949,8 @@ class LumenDesignTools:
         (the kit passed by value in config — the document's attached kit — or the
         platform default)."""
         iteration_dir = self._iteration_dir()
+        self._preflight_scene_stamp = None
+        self._latest_preflight_diagnostics = None
         try:
             # K2 belt: catch kit-asset references that arrived via structured
             # edits / raw operations (compile has its own reconcile pass).
@@ -3077,6 +3153,7 @@ class LumenDesignTools:
                 payload["text_collisions"] = advisory
                 output_summary = f"{output_summary}; text collisions advised"
         self.latest_preflight_has_errors = bool(summary.has_errors)
+        self._preflight_scene_stamp = self._scene_stamp()
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
@@ -3456,6 +3533,17 @@ class LumenDesignTools:
             self.latest_preview_bundle = payload["reviewer"]
             self.latest_export_summary = payload["reviewer"]
             self._stamp_preview_rendered()
+        elif (
+            not debug_only
+            and desired_critic_format == "png"
+            and checkpoint_acceptance(canonical_summary, critic_summary).accepted
+        ):
+            # Keep the existing narrow SVG font-embedding exception: the valid
+            # PNG is reviewable and exportable. The bundle still reports the
+            # canonical SVG refusal above; no other export error is excused.
+            self.latest_preview_bundle = critic_summary
+            self.latest_export_summary = critic_summary
+            self._stamp_preview_rendered()
         else:
             self.latest_preview_bundle = None
             self.latest_export_summary = None
@@ -3713,7 +3801,11 @@ class LumenDesignTools:
     def submit_visual_critique(self, critique_json: str) -> str:
         """Persist structured reviewer output and fail closed on malformed critique JSON."""
         iteration_dir = self._iteration_dir()
+        self._latest_visual_critique = None
+        self._review_receipt = None
         try:
+            if self.config.reference_assets or self._selected_reference_ids:
+                critique_json = json.dumps(stamp_reference_fidelity(json.loads(critique_json)))
             critique = VisualCritique.model_validate_json(critique_json)
         except Exception as error:  # pydantic raises provider/version-specific errors.
             raw_payload = parse_json_object(critique_json)
@@ -3740,6 +3832,11 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         payload = {"status": ToolStatus.ok.value, "critique": critique.model_dump(mode="json")}
+        self._latest_visual_critique = payload["critique"]
+        self._review_receipt = {
+            "scene": self._scene_stamp(),
+            "preview": self._current_preview_receipt(),
+        }
         self._write_json(iteration_dir / "critique.json", payload)
         self.record(
             "visual-reviewer",
@@ -3750,6 +3847,57 @@ class LumenDesignTools:
             ),
             payload=payload,
         )
+        return json.dumps(payload, indent=2)
+
+    def observe_written_critique(self, path: Path, content: str) -> None:
+        """Register fast-loop self-review only from this run's canonical file."""
+        workspace = self.trace_dir / "workspace"
+        round_number = self._fast_loop_round_number()
+        expected = (
+            workspace / "rounds" / f"round_{round_number}" / "critique.json"
+            if round_number else workspace / "critique.json"
+        )
+        if path.resolve() != expected.resolve():
+            return
+        self.submit_visual_critique(content)
+
+    def validate_creative_direction(self) -> str:
+        """Validate this run's creative-direction.json against its delivered catalog.
+
+        Checks the compact handoff and source availability, not visual quality
+        or truth of model-authored evidence excerpts. Writes no scene geometry.
+        """
+        from ..materialize import scene_view_manifest
+        from ..models.creative_direction import CREATIVE_DIRECTION_FILENAME, CreativeDirection
+
+        path = self.trace_dir / "workspace" / CREATIVE_DIRECTION_FILENAME
+        try:
+            direction = CreativeDirection.model_validate_json(path.read_text())
+            descriptor = self.config.workspace_root / ".deepagent/knowledge-view.json"
+            manifest = (
+                json.loads(descriptor.read_text()) if descriptor.is_file() else scene_view_manifest()
+            )
+            if direction.playbook not in manifest.get("playbooks", []):
+                raise ValueError("Playbook is not in the delivered scene catalog.")
+            available = {
+                **(self.config.reference_assets or {}),
+                **(self.config.brand_kit_assets or {}),
+                **(self.config.asset_library or {}),
+                **(self.scene.get("assets") or {}),
+            }
+            unknown = sorted({item.asset_id for item in direction.source_roles} - set(available))
+            if unknown:
+                raise ValueError(f"Sources are unavailable in this run: {', '.join(unknown)}")
+        except (OSError, ValueError) as error:
+            self.record("coordinator", "creative_direction_invalid", output_summary=str(error))
+            return self._tool_error("direction.invalid", str(error))
+        payload = {
+            "status": "ok",
+            "direction": direction.model_dump(mode="json"),
+            "source_ids": [item.asset_id for item in direction.source_roles],
+            "evidence_verified": False,
+        }
+        self.record("coordinator", "creative_direction_validated", payload=payload)
         return json.dumps(payload, indent=2)
 
     def recommend_edit_surface(self, intent: str, context_json: str = "{}") -> str:
@@ -4614,7 +4762,16 @@ class LumenDesignTools:
         the turn caused or must fix them. `"null"` (default) means either an
         unseeded run or a run with no unaddressed baseline issues.
         """
-        critique = json.loads(critique_json) if critique_json.strip() else {}
+        if status in {"succeeded", "success", "completed"}:
+            status = "accepted"
+        try:
+            critique = json.loads(critique_json) if critique_json.strip() else {}
+        except (ValueError, TypeError):
+            return "REFUSED: critique_json must be valid JSON. Submit a typed visual critique."
+        if not isinstance(critique, dict):
+            return "REFUSED: critique_json must be an object."
+        if not critique and self._latest_visual_critique is not None:
+            critique = dict(self._latest_visual_critique)
         # RC (D5; adversarial-gate F1 — the deterministic anti-rubber-stamp
         # guard, the tool-level twin of the edit-scoped acceptance refusal):
         # a REFERENCE turn can never finalize as "accepted" without an explicit
@@ -4631,12 +4788,17 @@ class LumenDesignTools:
         # re-serialized on the way here. `stamp_reference_fidelity` only ever
         # promotes a score the author WROTE — an unjudged self-audit stamps
         # `score: 0`, which this gate refuses exactly as an omission did.
-        if self.config.reference_assets or {}:
+        if self.config.reference_assets or self._selected_reference_ids:
             critique = stamp_reference_fidelity(critique)
-        if status == "accepted" and (self.config.reference_assets or {}):
+        if status in {"accepted", "succeeded", "success", "completed"} and (
+            self.config.reference_assets or self._selected_reference_ids
+        ):
             fidelity = (critique or {}).get("reference_fidelity") or {}
             score = fidelity.get("score")
-            if not isinstance(score, int) or score <= 1:
+            if (
+                not isinstance(score, int) or isinstance(score, bool)
+                or score <= 1 or fidelity.get("regressed_to_house_style")
+            ):
                 reason = (
                     "no reference_fidelity judgment in the critique"
                     if not fidelity
@@ -4648,7 +4810,7 @@ class LumenDesignTools:
                     output_summary=reason,
                 )
                 return (
-                    "REFUSED: this turn has user-attached references, and a run "
+                    "REFUSED: this turn has selected image references, and a run "
                     f"cannot finalize as accepted with {reason}. Send the "
                     "reviewer back for an explicit reference_fidelity judgment "
                     "(view each reference:<n> against the preview); accept only "
@@ -4712,12 +4874,21 @@ class LumenDesignTools:
         # NEVER silently: the pruned ids are announced in the result summary.
         # Never remove the last remaining page (a design must keep one page).
         pruned_pages = self._prune_empty_pages()
-        if pruned_pages:
+        self._pending_pruned_pages.extend(pruned_pages)
+        if self._pending_pruned_pages:
             note = (
-                f"Pruned {len(pruned_pages)} empty page(s) with no children "
-                f"before finalizing: {', '.join(pruned_pages)}."
+                f"Pruned {len(self._pending_pruned_pages)} empty page(s) with no children "
+                f"before finalizing: {', '.join(self._pending_pruned_pages)}."
             )
             summary = f"{summary}\n{note}" if summary else note
+        if status in {"accepted", "succeeded", "success", "completed"}:
+            refusal = self._acceptance_error(critique)
+            if refusal:
+                self.record("coordinator", "finalize_refused", output_summary=refusal)
+                return (
+                    f"REFUSED: {refusal} Repair and re-run preflight, render, and review, "
+                    "or preserve the draft with a non-accepted status."
+                )
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -4733,6 +4904,7 @@ class LumenDesignTools:
             "ops_valid_through_iteration": ops_valid_through_iteration,
             "baseline_advisory": baseline_advisory,
             "accommodation": accommodation,
+            "acceptance_receipt": self._review_receipt if status == "accepted" else None,
         }
         self._write_json(self.trace_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the
@@ -4883,6 +5055,60 @@ class LumenDesignTools:
         been mutated past this stamp (sweep A3 stale-black-frame contract)."""
         self._preview_scene_version = self._scene_mutation_count()
         self._preview_rendered_iteration = self.iteration
+        self._preview_receipt = self._current_preview_receipt()
+
+    def _scene_stamp(self) -> str:
+        # A director repeats preflight after the author's review. The helper
+        # returns a scene even when nothing changed; that must preserve review
+        # validity. Acceptance binds content and rendered bytes, not call count.
+        content = json.dumps(self.scene, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    def _current_preview_receipt(self) -> JsonObject | None:
+        summary = self.latest_export_summary or {}
+        artifacts = summary.get("artifacts") or []
+        if not artifacts or any(not item.get("valid") for item in artifacts):
+            return None
+        digests = []
+        try:
+            for item in artifacts:
+                path = Path(item["path"]).resolve()
+                path.relative_to(self.trace_dir.resolve())
+                data = path.read_bytes()
+                if not data:
+                    return None
+                digests.append({"path": str(path), "sha256": hashlib.sha256(data).hexdigest()})
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return {"scene": self._scene_stamp(), "artifacts": digests}
+
+    def _acceptance_error(self, critique: JsonObject) -> str | None:
+        """Check evidence at the final write boundary, independent of agent prose."""
+        try:
+            typed = VisualCritique.model_validate(critique)
+        except ValidationError:
+            return "A complete typed visual critique is required for acceptance."
+        if not typed.accepted or any(
+            issue.severity in {DiagnosticSeverity.error, DiagnosticSeverity.blocker}
+            for issue in typed.issues
+        ):
+            return "The visual critique rejected this creative or contains blocking issues."
+        if typed.model_dump(mode="json") != self._latest_visual_critique:
+            return "The final critique differs from the registered visual review."
+        if self._preflight_scene_stamp != self._scene_stamp():
+            return "The current scene has no fresh preflight."
+        diagnostics = self._latest_preflight_diagnostics
+        if diagnostics is None:
+            return "Preflight did not complete."
+        blocking, advisory = partition_export_diagnostics(diagnostics)
+        if blocking or (self.latest_preflight_has_errors and not advisory):
+            return "Blocking preflight errors remain."
+        current = self._current_preview_receipt()
+        if current is None or current != self._preview_receipt:
+            return "The preview is missing, changed, or does not represent the current scene."
+        if self._review_receipt != {"scene": self._scene_stamp(), "preview": current}:
+            return "The registered critique does not review the current scene and preview bytes."
+        return None
 
     def _replace_scene_from_core_response(
         self,

@@ -39,7 +39,7 @@ from lumen_agent.prompts import (
 from lumen_agent.prompts import BATCHING_RULE, SHARED_SURFACE_CONTRACT
 from lumen_agent.tools.substrate import LumenDesignTools
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 
 
 # --- deepagents stub --------------------------------------------------------
@@ -875,7 +875,8 @@ def test_finalize_refuses_accepted_reference_turn_without_fidelity(tmp_path, mon
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(tools, critique='{"accepted": true, "summary": "looks good"}')
+    critique = prepare_acceptance_evidence(tools)
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
     assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
@@ -886,11 +887,15 @@ def test_finalize_refuses_accepted_reference_turn_with_low_fidelity(tmp_path, mo
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique='{"reference_fidelity": {"score": 1, "reasons": "ignored", "regressed_to_house_style": true}}',
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "Only the palette carried over.", "issues": [],
+        "reference_fidelity": {
+            "score": 1, "reasons": "ignored", "regressed_to_house_style": True,
+        },
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
+    assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
 
 
@@ -899,20 +904,27 @@ def test_finalize_accepts_reference_turn_with_explicit_fidelity(tmp_path, monkey
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique='{"reference_fidelity": {"score": 3, "reasons": "adopts the qualities", "regressed_to_house_style": false}}',
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "The current render adopts the reference qualities.",
+        "issues": [], "reference_fidelity": {
+            "score": 3, "reasons": "adopts the qualities", "regressed_to_house_style": False,
+        },
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert not result.startswith("REFUSED")
+    assert json.loads(result)["status"] == "accepted"
     assert (tools.trace_dir / "final.json").exists()
 
 
 def test_finalize_without_references_never_requires_fidelity(tmp_path, monkeypatch):
-    """The guard is reference-turn-only: a plain turn accepts exactly as before."""
+    """A fully reviewed plain turn requires no reference-fidelity judgment."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     tools = _tools_only(runtime_config(tmp_path))
-    result = _finalize(tools, critique='{"accepted": true}')
+    critique = prepare_acceptance_evidence(tools)
+    result = _finalize(tools, critique=json.dumps(critique))
     assert not result.startswith("REFUSED")
+    assert json.loads(result)["status"] == "accepted"
+    assert json.loads(result)["critique"] == critique
     assert (tools.trace_dir / "final.json").exists()
 
 
@@ -941,6 +953,7 @@ def test_finalize_accepts_when_the_fidelity_judgment_was_written_as_prose(tmp_pa
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
+    prepare_acceptance_evidence(tools, json.loads(_PROSE_ONLY_CRITIQUE))
     result = _finalize(tools, critique=_PROSE_ONLY_CRITIQUE)
     assert not result.startswith("REFUSED")
 
@@ -956,13 +969,13 @@ def test_finalize_still_refuses_when_the_prose_score_is_low(tmp_path, monkeypatc
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique=json.dumps(
-            {"accepted": True, "acceptance_notes": ["reference_fidelity: 1 — palette only"]}
-        ),
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "Palette alone matches.", "issues": [],
+        "acceptance_notes": ["reference_fidelity: 1 — palette only"],
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
+    assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
 
 

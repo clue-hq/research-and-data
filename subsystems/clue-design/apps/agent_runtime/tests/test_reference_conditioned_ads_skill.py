@@ -33,12 +33,17 @@ normative rule.
 
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from lumen_agent.knowledge import parse_frontmatter, required_decision_keys
+from lumen_agent.tools.substrate import LumenDesignTools
+
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 KNOWLEDGE_DOCS = RUNTIME_ROOT / "knowledge_docs"
@@ -305,18 +310,37 @@ def test_the_score_ladder_matches_the_one_the_runtime_teaches() -> None:
     assert "bar for acceptance" in rung_two
 
 
-def test_the_acceptance_threshold_is_the_one_finalize_run_enforces() -> None:
+@pytest.mark.parametrize("score", [None, 0, 1, 2, 3])
+def test_the_acceptance_threshold_is_the_one_finalize_run_enforces(
+    tmp_path, monkeypatch, score
+) -> None:
     """`finalize_run` refuses an accepted finalize on a reference turn at
     `score <= 1`, and treats a MISSING judgment the same way (W1.5 stamps an
     unjudged critique `score: 0`, which the same branch refuses). The skill must
     state both halves — "2 or better" alone would let an author think an unscored
     audit is merely untidy rather than blocking."""
 
-    substrate = (RUNTIME_ROOT / "lumen_agent" / "tools" / "substrate.py").read_text(
-        encoding="utf-8"
-    )
-    assert 'if status == "accepted" and (self.config.reference_assets or {}):' in substrate
-    assert "if not isinstance(score, int) or score <= 1:" in substrate
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = replace(runtime_config(tmp_path), reference_assets={
+        "reference_test": {"record": {"id": "reference_test"}, "order": 0},
+    })
+    tools = LumenDesignTools(config, "Create an ad in the reference family.")
+    critique = {"accepted": True, "summary": "Reviewed the rendered ad.", "issues": []}
+    if score is not None:
+        critique["reference_fidelity"] = {
+            "score": score, "reasons": "Compared visual hierarchy and composition.",
+            "regressed_to_house_style": False,
+        }
+    prepare_acceptance_evidence(tools, critique)
+    result = tools.finalize_run("accepted", "review_complete", "Ready.", json.dumps(critique))
+    if score is None or score <= 1:
+        assert result.startswith("REFUSED")
+        assert "reference_fidelity" in result
+        assert not (tools.trace_dir / "final.json").exists()
+    else:
+        assert json.loads(result)["status"] == "accepted"
+        final = json.loads((tools.trace_dir / "final.json").read_text())
+        assert final["critique"]["reference_fidelity"]["score"] == score
 
     from lumen_agent.critique_fidelity import UNJUDGED_REASONS, stamp_reference_fidelity
 

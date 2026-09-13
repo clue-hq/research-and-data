@@ -4,8 +4,8 @@ The agent reads its skills and knowledge from INSIDE its virtual-mode workspace.
 This module derives that read-only content from the repo's authored source tree:
 
     <repo>/apps/agent_runtime/knowledge_docs/        (source of truth, git-tracked)
-        →  <workspace>/knowledge_docs/                (full tree copy)
-        →  <workspace>/.deepagent/skills/<name>/…     (every skill dir, flat)
+        →  <workspace>/knowledge_docs/                (selected knowledge view)
+        →  <workspace>/.deepagent/skills/<name>/…     (selected skills, flat)
         →  <workspace>/.deepagent/AGENTS.md           (from knowledge_docs/AGENT.md)
 
 The repo tree is the SINGLE source of truth; the workspace copy is derived and is
@@ -20,12 +20,18 @@ be unlinked: waiters must keep sharing the same inode. Closing the descriptor
 (including process exit) releases the lock, so interrupted syncs are retryable.
 Authored sources must remain fixed while turns using this shared root are live;
 this initialization lock does not pin different source versions for active runs.
+The default legacy view preserves original website/scene resources and excludes
+the authored views/ definitions. Candidate scene selection is explicit; its
+manifest references shared mechanics and applies scoped policy projections.
+The scene harness uses a separate candidate root, so interleaved web/legacy
+turns cannot replace knowledge under an active candidate backend.
 """
 
 from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -51,15 +57,51 @@ def _iter_source_files(root: Path):
     return sorted(files, key=lambda p: p.relative_to(root).as_posix())
 
 
-def _content_stamp(root: Path) -> str:
-    """A sha256 over (relative path, bytes) of every file under ``root``.
+def scene_view_manifest(root: Path | None = None) -> dict:
+    """The versioned authored catalog, shared by delivery and runtime validation."""
+    source = root or _PACKAGE_KNOWLEDGE_DOCS
+    manifest = json.loads((source / "views/scene/manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("schema_version") != 1:
+        raise RuntimeError("Unsupported scene knowledge view manifest")
+    return manifest
+
+
+def _view_files(root: Path, knowledge_view: str) -> dict[str, Path]:
+    if knowledge_view == "legacy":
+        return {
+            p.relative_to(root).as_posix(): p for p in _iter_source_files(root)
+            if p.relative_to(root).parts[0] != "views"
+        }
+    if knowledge_view != "scene":
+        raise RuntimeError(f"Unknown knowledge view: {knowledge_view}")
+    manifest = scene_view_manifest(root)
+    overlay = root / "views/scene"
+    selected = ["AGENT.md", *manifest["knowledge"], *(
+        f"skills/{name}/SKILL.md" for name in manifest["skills"]
+    )]
+    result = {}
+    for relative in selected:
+        path = Path(relative)
+        if path.is_absolute() or ".." in path.parts or path.parts[0] == "views":
+            raise RuntimeError(f"Invalid knowledge view path: {relative}")
+        source = overlay / path if (overlay / path).is_file() else root / path
+        if not source.is_file():
+            raise RuntimeError(f"Scene knowledge view source missing: {relative}")
+        result[relative] = source
+    return result
+
+
+def _content_stamp(root: Path, knowledge_view: str = "legacy") -> str:
+    """A sha256 over selected source paths/bytes and the view's manifest.
 
     Deterministic and order-independent: identical source trees produce an
     identical stamp, so an unchanged repo tree never triggers a re-copy.
     """
     digest = hashlib.sha256()
-    for path in _iter_source_files(root):
-        rel = path.relative_to(root).as_posix()
+    if knowledge_view != "legacy":
+        digest.update(knowledge_view.encode("utf-8") + b"\0")
+        digest.update((root / "views/scene/manifest.json").read_bytes() + b"\0")
+    for rel, path in sorted(_view_files(root, knowledge_view).items()):
         digest.update(rel.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -67,7 +109,36 @@ def _content_stamp(root: Path) -> str:
     return digest.hexdigest()
 
 
-def materialize_agent_workspace(config, *, source_knowledge_docs: Path | None = None) -> Path:
+def _project_scene_sections(destination: Path, manifest: dict) -> None:
+    """Replace selected policy sections without duplicating shared mechanics.
+
+    Heading anchors must be unique; a changed shared document fails loudly so
+    a stale projection cannot quietly restore conflicting policy.
+    """
+    available = set(manifest["knowledge"])
+    for relative, overrides in manifest.get("section_overrides", {}).items():
+        if relative not in available:
+            raise RuntimeError(f"Section override outside scene view: {relative}")
+        target = destination / relative
+        content = target.read_text(encoding="utf-8")
+        for override in overrides:
+            replacement_path = override["replacement"]
+            if replacement_path not in available:
+                raise RuntimeError(f"Section replacement outside scene view: {replacement_path}")
+            start, end = override["start"], override["end"]
+            if content.count(start) != 1 or content.count(end) != 1:
+                raise RuntimeError(f"Scene section anchors changed: {relative}")
+            start_at, end_at = content.index(start), content.index(end)
+            if end_at <= start_at:
+                raise RuntimeError(f"Scene section anchors reversed: {relative}")
+            replacement = (destination / replacement_path).read_text(encoding="utf-8")
+            content = content[:start_at] + replacement.rstrip() + "\n\n" + content[end_at:]
+        target.write_text(content, encoding="utf-8")
+
+
+def materialize_agent_workspace(
+    config, *, source_knowledge_docs: Path | None = None, knowledge_view: str = "legacy"
+) -> Path:
     """Sync the repo knowledge tree into the workspace; return the workspace root.
 
     Called before agent construction (harness path — which both the API and CLI
@@ -92,7 +163,7 @@ def materialize_agent_workspace(config, *, source_knowledge_docs: Path | None = 
         workspace_root.mkdir(parents=True, exist_ok=True)
         with (workspace_root / _LOCK_NAME).open("a") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            stamp = _content_stamp(source)
+            stamp = _content_stamp(source, knowledge_view)
             if stamp_path.exists() and stamp_path.read_text(encoding="utf-8") == stamp:
                 # Decision (debug detail): announce the no-op sync decision so a run
                 # trace shows the materializer was consulted and found the workspace
@@ -121,13 +192,28 @@ def materialize_agent_workspace(config, *, source_knowledge_docs: Path | None = 
             deepagent_dir.mkdir(parents=True, exist_ok=True)
             # Full knowledge tree (its skills/ subtree included, so intra-doc relative
             # references keep resolving).
-            shutil.copytree(source, knowledge_dest)
+            if knowledge_view == "legacy":
+                shutil.copytree(source, knowledge_dest, ignore=shutil.ignore_patterns("views"))
+            else:
+                for relative, src in _view_files(source, knowledge_view).items():
+                    dest = knowledge_dest / relative
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest)
+                _project_scene_sections(knowledge_dest, scene_view_manifest(source))
+                skills_src = knowledge_dest / _SKILLS_SUBDIR
+                agent_doc_src = knowledge_dest / _AGENT_DOC
             # Canonical skill copies under /.deepagent/skills (the SkillsMiddleware
             # source), and the agent operating doc as /.deepagent/AGENTS.md.
             if skills_src.is_dir():
                 shutil.copytree(skills_src, deepagent_skills)
             if agent_doc_src.is_file():
                 shutil.copy2(agent_doc_src, deepagent_dir / "AGENTS.md")
+
+            if knowledge_view == "scene":
+                descriptor = {**scene_view_manifest(source), "view": "scene", "stamp": stamp}
+                (deepagent_dir / "knowledge-view.json").write_text(
+                    json.dumps(descriptor, indent=2), encoding="utf-8"
+                )
 
             stamp_path.write_text(stamp, encoding="utf-8")
             skill_count = (

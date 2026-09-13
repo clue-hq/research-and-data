@@ -51,7 +51,7 @@ from lumen_agent.prompts import (
 from lumen_agent.tools import render as render_mod
 from lumen_agent.tools.substrate import LumenDesignTools
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 from test_deepagent_harness import _install_deepagents_stub, _tool_name
 
 
@@ -1465,7 +1465,9 @@ def test_a_budget_breach_after_the_agent_finalized_keeps_the_real_final(
     real_invoke = _BudgetBlowingAgent.invoke
 
     def invoke_after_finalize(self, *args, **kwargs):
-        holder["tools"].finalize_run("accepted", "reviewer_accepted", "shipped")
+        prepare_acceptance_evidence(holder["tools"])
+        result = holder["tools"].finalize_run("accepted", "reviewer_accepted", "shipped")
+        assert json.loads(result)["status"] == "accepted"
         return real_invoke(self, *args, **kwargs)
 
     monkeypatch.setattr(_BudgetBlowingAgent, "invoke", invoke_after_finalize)

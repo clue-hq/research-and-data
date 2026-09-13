@@ -88,6 +88,14 @@ def _render_references_md(tools: LumenDesignTools) -> str:
     pixels are seen via view("reference:<n>"), and the DIRECTOR (not this scaffold)
     writes reference-brief.md by perceiving them."""
     entries = _reference_entries(tools)
+    direction_instruction = (
+        "- Record the observed reference properties and source roles in the shared "
+        "`creative-direction.json` before authoring. This table only lists the inputs."
+        if tools.config.scene_skill_bundle == "candidate"
+        else "- `reference-brief.md` does not exist yet: the Design Director MUST write it "
+        "(by viewing every reference) BEFORE round 1. This table does not describe "
+        "the references — it only lists them."
+    )
     lines: list[str] = [
         f"# References — run {tools.run_id}",
         "",
@@ -96,9 +104,7 @@ def _render_references_md(tools: LumenDesignTools) -> str:
         "",
         "- To SEE a reference, call `view(\"reference:<n>\")` (1-based, matching the "
         "index column) — judge by looking, never from this metadata.",
-        "- `reference-brief.md` does not exist yet: the Design Director MUST write it "
-        "(by viewing every reference) BEFORE round 1. This table does not describe "
-        "the references — it only lists them.",
+        direction_instruction,
         "- Any `advisory title/description` below is optional describe-chain text; it "
         "is NOT load-bearing and is frequently absent — never trust it over the pixels.",
         "",

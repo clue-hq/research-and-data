@@ -46,6 +46,7 @@ WHAT THIS SUBCLASS ADDS (only what stock does NOT provide):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 from deepagents.backends.filesystem import FilesystemBackend
@@ -75,6 +76,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         max_file_size_mb: int = 10,
         custom_components_root: str | Path | None = None,
         reference_turn: bool = False,
+        critique_observer: Callable[[Path, str], None] | None = None,
     ) -> None:
         super().__init__(
             root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb
@@ -83,6 +85,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         # owes a typed `reference_fidelity`, so only a reference turn normalizes
         # its self-audit; an ordinary turn's `critique.json` is written verbatim.
         self._reference_turn = bool(reference_turn)
+        self._critique_observer = critique_observer
         # Stored from the constructor arg (not ``self.cwd``) so the class also works
         # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
         self._workspace_root = str(Path(root_dir))
@@ -218,7 +221,10 @@ class AgentWorkspaceBackend(FilesystemBackend):
             return WriteResult(error=error)
         if self._is_component_projection_key(file_path):
             return WriteResult(error=self._projection_write_message())
-        return super().write(file_path, self._normalize_self_audit(file_path, content))
+        result = super().write(file_path, self._normalize_self_audit(file_path, content))
+        if not result.error:
+            self._observe_critique(file_path)
+        return result
 
     def edit(
         self,
@@ -231,9 +237,17 @@ class AgentWorkspaceBackend(FilesystemBackend):
             return EditResult(error=error)
         if self._is_component_projection_key(file_path):
             return EditResult(error=self._projection_write_message())
-        return super().edit(
+        result = super().edit(
             file_path,
             old_string,
             new_string,
             replace_all=replace_all,
         )
+        if not result.error:
+            self._observe_critique(file_path)
+        return result
+
+    def _observe_critique(self, file_path: str) -> None:
+        if self._critique_observer is not None and self._is_critique_key(file_path):
+            path = self._resolve_path(file_path)
+            self._critique_observer(path, path.read_text(encoding="utf-8"))

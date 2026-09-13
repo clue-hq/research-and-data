@@ -16,6 +16,7 @@ See ``docs/deepagent-architecture.md`` for the ratified design.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -300,11 +301,21 @@ def create_design_deepagent(
         ) from error
 
     runtime_config = config or AgentRuntimeConfig.from_env()
+    scene_candidate = runtime_config.scene_skill_bundle == "candidate"
+    if scene_candidate:
+        # Shared hosts may assemble web/legacy and candidate turns concurrently.
+        # Keep their derived knowledge and backend roots disjoint for the entire
+        # run, not merely while the materializer's initialization lock is held.
+        runtime_config = replace(
+            runtime_config, trace_dir=runtime_config.trace_dir / "scene-candidate"
+        )
 
     # W-isolation (D2): sync the repo's skills + knowledge into the isolated
     # workspace BEFORE anything the model can touch. Loud RuntimeError on failure —
     # never a silent half-workspace. Idempotent (content-stamp guarded).
-    materialize_agent_workspace(runtime_config)
+    materialize_agent_workspace(
+        runtime_config, knowledge_view="scene" if scene_candidate else "legacy"
+    )
 
     tools = LumenDesignTools(
         runtime_config,
@@ -330,6 +341,7 @@ def create_design_deepagent(
     backend = AgentWorkspaceBackend(
         root_dir=str(runtime_config.workspace_root),
         reference_turn=bool(runtime_config.reference_assets),
+        critique_observer=tools.observe_written_critique,
     )
 
     from .llm import assert_all_role_models_support_image_input
@@ -480,6 +492,7 @@ def create_design_deepagent(
                 fast_loop=fast_loop,
                 frame_payload=frame_payload,
                 inner_iterations=runtime_config.fast_loop_inner_iterations,
+                scene_skill_bundle=runtime_config.scene_skill_bundle,
             ),
             "model": author_model,
             "tools": author_tools,
@@ -492,7 +505,10 @@ def create_design_deepagent(
                 "kit's real assets. Returns a structured VisualCritique and "
                 "writes it to the round directory."
             ),
-            "system_prompt": build_reviewer_prompt(workspace_str, has_references=has_references),
+            "system_prompt": build_reviewer_prompt(
+                workspace_str, has_references=has_references,
+                scene_skill_bundle=runtime_config.scene_skill_bundle,
+            ),
             "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": workspace_skills,
@@ -548,6 +564,8 @@ def create_design_deepagent(
         tools.record_gap,
         tools.finalize_run,
     ]
+    if scene_candidate:
+        orchestrator_tools.insert(-1, tools.validate_creative_direction)
     # Brief clarification (opening-move only): the orchestrator may ask the user
     # up to 4 questions on a genuinely under-specified brief. Two structural
     # suppressors keep it honest and bounded, both decided BEFORE any LLM call:
@@ -576,15 +594,22 @@ def create_design_deepagent(
             scene_reviewer=runtime_config.scene_reviewer_enabled,
             # §5.7: composed at assembly time so selecting a format skill costs
             # no `ls` — see _materialized_skill_index for the skill interface.
-            skills=_materialized_skill_index(runtime_config) if fast_loop else None,
+            skills=(
+                _materialized_skill_index(runtime_config) if fast_loop or scene_candidate else None
+            ),
             # D1: the prompt is handed the TARGET, never the backstop.
             target_llm_calls=runtime_config.fast_loop_target_llm_calls,
             target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
             inner_iterations=runtime_config.fast_loop_inner_iterations,
+            scene_skill_bundle=runtime_config.scene_skill_bundle,
         ),
         subagents=subagents,
         name="lumen-design-deepagent",
         checkpointer=checkpointer,
+        **(
+            {"skills": workspace_skills, "memory": ["/.deepagent/AGENTS.md"]}
+            if scene_candidate else {}
+        ),
     )
     return agent, tools
 

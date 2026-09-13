@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from py_lumen_config import settings
 
@@ -215,6 +215,8 @@ class AgentRuntimeConfig:
     # byte-identical to the pre-fast-loop behaviour, which is the contract the
     # flag-off tests pin. Web turns never consult it (§3 non-goal).
     fast_loop: bool = False
+    # Scene-only knowledge rollout. Web harnesses always materialize legacy.
+    scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
     # R3 kill-switch: re-enable the `lumen-visual-reviewer` subagent on scene
     # turns WITHOUT leaving the fast loop. Read through
     # `scene_reviewer_enabled`, never directly — that property is the single
@@ -292,6 +294,7 @@ class AgentRuntimeConfig:
             brandfetch_client_id=(settings.brandfetch_client_id.strip() or None),
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
+            scene_skill_bundle=settings.lumen_agent_scene_skill_bundle,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,
             web_reviewer=settings.lumen_agent_web_reviewer,

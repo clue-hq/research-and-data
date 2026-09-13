@@ -27,7 +27,7 @@ from PIL import Image
 from lumen_agent.tools.substrate import LumenDesignTools
 from lumen_agent.tools import view as view_mod
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 
 
 # --- helpers ----------------------------------------------------------------
@@ -407,6 +407,12 @@ def test_finalize_prunes_empty_pages_with_announced_note(tmp_path, monkeypatch):
         "assets": {},
     }
 
+    prepare_acceptance_evidence(tools)
+    # Finalize hygiene changes the reviewed scene; a fresh review is required.
+    refused = tools.finalize_run("succeeded", "done", "Delivered the ad.")
+    assert refused.startswith("REFUSED")
+    assert not (tools.trace_dir / "final.json").exists()
+    prepare_acceptance_evidence(tools)
     result = json.loads(tools.finalize_run("succeeded", "done", "Delivered the ad."))
 
     assert "empty" not in tools.scene["pages"]
@@ -430,6 +436,7 @@ def test_finalize_keeps_a_single_empty_page(tmp_path, monkeypatch):
         "slots": {},
         "assets": {},
     }
+    prepare_acceptance_evidence(tools)
     result = json.loads(tools.finalize_run("succeeded", "done", "Delivered."))
     # Never strip to zero pages: a lone empty page is kept, no prune note.
     assert "only" in tools.scene["pages"]
@@ -472,7 +479,16 @@ def test_finalize_refuses_acceptance_while_a_blocking_export_error_stands(
 
 def test_finalize_allows_acceptance_with_only_advisory_lints(tmp_path, monkeypatch):
     tools = _tools(tmp_path, monkeypatch)
-    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0820")]
+    real_preflight = tools.core.preflight_scene
+
+    def advisory_preflight(*args, **kwargs):
+        result = real_preflight(*args, **kwargs)
+        result["diagnostics"] = [_diagnostic("LUMV0820")]
+        result["preflight"]["has_errors"] = True
+        return result
+
+    monkeypatch.setattr(tools.core, "preflight_scene", advisory_preflight)
+    prepare_acceptance_evidence(tools)
 
     result = json.loads(tools.finalize_run("accepted", "done", "Delivered the ad."))
 
@@ -493,13 +509,16 @@ def test_finalize_guard_only_binds_accepted_runs(tmp_path, monkeypatch):
     assert result["status"] == "failed"
 
 
-def test_finalize_guard_is_inert_when_preflight_never_ran(tmp_path, monkeypatch):
+def test_finalize_refuses_acceptance_when_preflight_never_ran(tmp_path, monkeypatch):
     tools = _tools(tmp_path, monkeypatch)
+    prepare_acceptance_evidence(tools, preflight=False)
     assert tools._latest_preflight_diagnostics is None
 
-    result = json.loads(tools.finalize_run("accepted", "done", "Delivered."))
+    result = tools.finalize_run("accepted", "done", "Delivered.")
 
-    assert result["status"] == "accepted"
+    assert result.startswith("REFUSED")
+    assert "preflight" in result.lower()
+    assert not (tools.trace_dir / "final.json").exists()
 
 
 # --- Task 3: brand_logo_auto place-once (no re-injection) -------------------

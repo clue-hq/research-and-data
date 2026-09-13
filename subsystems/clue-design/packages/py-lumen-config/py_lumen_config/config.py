@@ -17,6 +17,7 @@ Notes:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -363,6 +364,9 @@ class Settings(BaseSettings):
     # the production loop — proven live across the reference-ads acceptance
     # runs. Set LUMEN_AGENT_FAST_LOOP=0 to fall back to the legacy loop.
     lumen_agent_fast_loop: bool = True
+    # Scene-only knowledge selection; separate workspace roots prevent mixing
+    # knowledge during concurrent control/candidate runs. Website is unchanged.
+    lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the

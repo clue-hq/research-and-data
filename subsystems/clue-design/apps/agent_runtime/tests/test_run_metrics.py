@@ -28,7 +28,7 @@ from lumen_agent.run_metrics import (
 )
 from lumen_agent.trace_callbacks import TraceCallbackHandler, attach_trace_callback
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 from test_deepagent_harness import _install_deepagents_stub, _tools_only
 
 
@@ -435,7 +435,9 @@ def test_successful_run_emits_metrics_after_its_finalize(tmp_path, monkeypatch):
         capture["kwargs"] = kwargs
 
         def _finalize(*a, **k):
-            holder["tools"].finalize_run("accepted", "review_passed", "looks good")
+            prepare_acceptance_evidence(holder["tools"])
+            result = holder["tools"].finalize_run("accepted", "review_passed", "looks good")
+            assert json.loads(result)["status"] == "accepted"
             return {"messages": []}
 
         return types.SimpleNamespace(invoke=_finalize, kwargs=kwargs)

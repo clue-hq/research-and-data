@@ -5,6 +5,7 @@ Exercises the public asset tool and provider boundary. No network or model spend
 
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pytest
 from agent_fixtures import FakeCoreClient
@@ -23,6 +24,88 @@ def _provider(monkeypatch):
     provenance = {"created_by": "agent", "source_label": "image generation", "notes": []}
     _install_image_model(monkeypatch, calls, provenance)
     return calls
+
+
+def test_public_tool_carries_role_and_operation_semantics_to_provider_and_cache(
+    tmp_path, monkeypatch
+):
+    tools, record, _ = _library_tools(tmp_path, monkeypatch)
+    _give_page(tools)
+    calls = _provider(monkeypatch)
+    modes = []
+    for role in ("treatment", "composition", "composition"):
+        calls.clear()
+        result = json.loads(tools.asset(
+            action="generate_image", prompt="a companion",
+            reference_asset_ids=[record["id"]], reference_roles=[role],
+            reference_framing="Preserve the supplied treatment.", operation="close_companion",
+        ))["image"]
+        modes.append(result["mode"])
+        if result["mode"] == "model":
+            assert calls["reference_roles"] == [role]
+            assert calls["operation"] == "close_companion"
+    assert modes == ["model", "model", "cached"]
+
+
+@pytest.mark.parametrize("action", ["generate_image", "edit_image"])
+def test_public_tool_returns_the_persisted_receipt_on_fresh_and_cached_images(
+    tmp_path, monkeypatch, action
+):
+    tools, record, _ = _library_tools(tmp_path, monkeypatch)
+    _give_page(tools)
+    tools.scene["assets"][record["id"]] = record
+    tools.scene["nodes"]["hero"] = {
+        "id": "hero", "kind": {"kind": "image", "asset_id": record["id"]},
+        "asset_placement": {"fit": "contain", "focal_point": {"x": 0.2, "y": 0.7}},
+    }
+    receipt = {
+        "provider_operation": "generate" if action == "generate_image" else "edit",
+        "operation": "close_companion",
+        "output_dimensions": {"width": 512, "height": 512},
+    }
+    calls = []
+
+    def fake_model(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            image_bytes=_solid_png(512), mime_type="image/png", model="test/image-model",
+            provenance={"created_by": "agent", "notes": ["image_request=" + json.dumps(receipt)]},
+            license={"name": "generated_commercial_use", "allow_export": True},
+        )
+
+    monkeypatch.setattr("lumen_agent.tools.substrate.image_provider", SimpleNamespace(
+        is_configured=lambda: True, configured_model_id=lambda: "test/image-model",
+        generate=fake_model, edit=fake_model,
+    ))
+    arguments = (
+        {"reference_asset_ids": [record["id"]]} if action == "generate_image"
+        else {"node_id": "hero"}
+    )
+    key = "image" if action == "generate_image" else "image_edit"
+    outputs = [json.loads(tools.asset(
+        action=action, prompt="same companion", operation="close_companion", **arguments,
+    ))[key] for _ in range(2)]
+    assert [output["mode"] for output in outputs] == ["model", "cached"]
+    assert len(calls) == 1
+    assert all(output["image_request_receipt"] == receipt for output in outputs)
+    if action == "edit_image":
+        assert all(output["source_asset_id"] == record["id"] for output in outputs)
+        assert all(output["placement"]["fit"] == "contain" for output in outputs)
+
+
+@pytest.mark.parametrize("roles", [["invalid"], [], ["source", "treatment"]])
+def test_bad_roles_refuse_without_provider_or_scene_write(tmp_path, monkeypatch, roles):
+    tools, record, _ = _library_tools(tmp_path, monkeypatch)
+    _give_page(tools)
+    calls = _provider(monkeypatch)
+    before = json.dumps(tools.scene, sort_keys=True)
+    result = json.loads(tools.asset(
+        action="generate_image", prompt="companion",
+        reference_asset_ids=[record["id"]], reference_roles=roles,
+    ))
+    assert result["image"]["status"] == "error"
+    assert calls == {}
+    assert json.dumps(tools.scene, sort_keys=True) == before
 
 
 def test_public_tool_uses_selected_library_original_and_reports_custody(tmp_path, monkeypatch):

@@ -366,10 +366,25 @@ def _render_asset_index(rows: list[JsonObject], omitted: int) -> str:
 def pinned_knowledge_paths(config: Any) -> tuple[str, ...]:
     """The configured pin list, or :data:`DEFAULT_PINNED_KNOWLEDGE`."""
     raw = getattr(config, "fast_loop_pinned_knowledge", None)
+    descriptor = _materialized_scene_view(config)
+    if descriptor and not raw:
+        return tuple(descriptor["pinned_knowledge"])
     if not raw:
         return DEFAULT_PINNED_KNOWLEDGE
     entries = tuple(part.strip() for part in str(raw).split(",") if part.strip())
     return entries or DEFAULT_PINNED_KNOWLEDGE
+
+
+def _materialized_scene_view(config: Any) -> dict | None:
+    """Inspect delivered view identity; a web turn can carry the scene flag too."""
+    workspace = getattr(config, "workspace_root", None)
+    if workspace is None:
+        return None
+    path = Path(workspace) / ".deepagent/knowledge-view.json"
+    if not path.is_file():
+        return None
+    descriptor = json.loads(path.read_text(encoding="utf-8"))
+    return descriptor if descriptor.get("view") == "scene" else None
 
 
 def _knowledge_root() -> Path:
@@ -388,9 +403,15 @@ def build_pinned_knowledge(config: Any) -> list[tuple[str, str]]:
     override must not take a design turn down, and the author still has the
     read-only knowledge tree at ``/knowledge_docs/`` for anything not pinned.
     """
-    root = _knowledge_root()
+    scene_view = _materialized_scene_view(config)
+    root = Path(config.workspace_root) / "knowledge_docs" if scene_view else _knowledge_root()
     pinned: list[tuple[str, str]] = []
     for relative in pinned_knowledge_paths(config):
+        if scene_view and (
+            Path(relative).is_absolute() or ".." in Path(relative).parts
+            or relative not in scene_view["knowledge"]
+        ):
+            raise RuntimeError(f"Pin is outside the selected scene view: {relative}")
         source = root / relative
         try:
             text = source.read_text(encoding="utf-8")
