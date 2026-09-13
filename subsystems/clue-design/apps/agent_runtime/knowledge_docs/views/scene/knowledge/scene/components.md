@@ -42,6 +42,15 @@ whole source or choose a different source. Keep tabs, labels and proof named in
 the copy readable; inspect geometry once and repair the complete image/frame
 pair together instead of spending several compiles on coordinate nudges.
 
+For exact source-pixel extraction, inspect the original image and its dimensions,
+then use `asset(action="crop_image", asset_id=..., crop_rect=[left, top, right, bottom])`.
+Use integer bounds in original pixels, not preview pixels:
+`0 <= left < right <= source_width`, `0 <= top < bottom <= source_height`;
+right and bottom are excluded. The source stays intact and the result is a new
+image asset. Inspect it before explicitly placing it in an independent image node
+with `asset(action="place", ..., fit="contain")`. Cropping cannot remove a background
+baked inside the selected rectangle or recover missing/occluded product content.
+
 An inspected reference's soft material, blur, tonal variation or texture is part
 of its treatment. A flat brand-color rectangle does not preserve those properties.
 Reuse appropriate source artwork or generate the separately placeable treatment;

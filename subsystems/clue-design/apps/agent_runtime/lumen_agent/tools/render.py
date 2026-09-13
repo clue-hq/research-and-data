@@ -4,22 +4,73 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
 from ..workspace import workspace_root
-from .substrate import LumenDesignTools, checkpoint_acceptance
+from .substrate import LumenDesignTools, checkpoint_acceptance, combined_preview_artifacts
 from .view import _latest_preview_png
 
 logger = get_logger("lumen_agent.tools.render")
 
-def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Optional[Path]:
+
+def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Path | None:
     if not current_round:
         return None
     candidate = workspace_root(tools) / "rounds" / f"round_{current_round}"
     return candidate if candidate.exists() else None
+
+
+def _reusable_preview_bundle(tools: LumenDesignTools) -> dict | None:
+    """Reuse only the trusted, current, clean SVG/PNG bundle, never a debug export."""
+    receipt = getattr(tools, "_preview_receipt", None)
+    if not receipt or getattr(tools, "latest_preflight_has_errors", None) is not False:
+        return None
+    if getattr(tools, "_preflight_scene_stamp", None) != tools._scene_stamp():
+        return None
+    if tools._current_preview_receipt() != receipt:
+        return None
+    iteration = getattr(tools, "_preview_rendered_iteration", None)
+    if iteration is None:
+        return None
+    bundle_path = tools.trace_dir / "iterations" / f"{iteration:03d}" / "preview_bundle.json"
+    try:
+        payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("debug_only") is not False:
+            return None
+        canonical, critic, reviewer = (
+            payload.get(key) for key in ("canonical", "critic", "reviewer")
+        )
+        if any(not isinstance(summary, dict) for summary in (canonical, critic, reviewer)):
+            return None
+        if any(
+            summary.get("status") != "ok" or summary.get("validation_errors")
+            for summary in (canonical, critic, reviewer)
+        ):
+            return None
+        if canonical.get("requested_format") != "svg" or critic.get("requested_format") != "png":
+            return None
+        # The manifest is agent-visible. Its claims must match the in-memory
+        # export summary whose exact artifact bytes were checked by the receipt.
+        if reviewer != tools.latest_export_summary:
+            return None
+        artifacts = reviewer.get("artifacts") or []
+        if {artifact.get("format") for artifact in artifacts} != {"svg", "png"}:
+            return None
+        if combined_preview_artifacts(canonical, critic, "png") != artifacts:
+            return None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    payload["unchanged"] = (
+        "reused current validated preview; scene content and artifact bytes are unchanged."
+    )
+    tools.record(
+        "coordinator", "preview_reused",
+        output_summary=f"reused canonical SVG and PNG from iteration {iteration}",
+        payload={"rendered_iteration": iteration, "receipt": receipt},
+    )
+    return payload
 
 
 def _render_preview_text(
@@ -42,11 +93,13 @@ def _render_preview_text(
     finalize" is actually decided, and the last thing the orchestrator reads
     before deciding it. Handing the number over anywhere else would mean handing
     it over at a moment nobody can act on."""
-    raw = tools.export_preview_bundle(critic_format="png")
-    try:
-        payload = json.loads(raw)
-    except (TypeError, ValueError):
-        return f"render_preview: unexpected export output:\n{raw}"
+    payload = _reusable_preview_bundle(tools)
+    if payload is None:
+        raw = tools.export_preview_bundle(critic_format="png")
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return f"render_preview: unexpected export output:\n{raw}"
 
     reviewer = payload.get("reviewer") or {}
     status = reviewer.get("status")
@@ -55,7 +108,7 @@ def _render_preview_text(
 
     lines: list[str] = [f"render_preview: status={status}"]
     png_path = _latest_preview_png(tools)
-    copied_to: Optional[str] = None
+    copied_to: str | None = None
     if png_path is not None:
         round_dir = _current_round_dir(tools, tools_current_round(tools))
         dest_dir = round_dir if round_dir is not None else (workspace_root(tools) / "previews")

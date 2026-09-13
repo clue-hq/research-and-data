@@ -41,6 +41,9 @@ PAGE_REQUIRED_CODE = "scene.page_required"
 from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..critique_fidelity import stamp_reference_fidelity
+from ..image_crop import (
+    ImageCropError, crop_source_pixels, has_generated_image_origin, require_supported_crop_origin,
+)
 from ..retokenize import (
     build_logo_placement_operations,
     build_retokenize_operations,
@@ -381,11 +384,10 @@ class LumenDesignTools:
         # yet. Recorded on every checkpoint so a reader can tell a clean round's
         # commit from one taken with diagnostics still standing.
         self.latest_preflight_has_errors: Optional[bool] = None
-        # Staleness contract (sweep A3): the scene-mutation count captured the
-        # last time a valid preview was rendered. `view("preview")` compares it
-        # against the current count so it never silently serves a render that
-        # predates a scene edit. None = nothing rendered yet.
+        # Keep the operation counter for diagnostics. Preview freshness binds
+        # actual content: failed/no-op core responses can increment the counter.
         self._preview_scene_version: Optional[int] = None
+        self._preview_scene_stamp: Optional[str] = None
         # L4b unchanged-scene re-review guard: the iteration at which the last
         # valid preview was rendered, stamped alongside _preview_scene_version.
         # None = nothing rendered yet. Names "round N" in the unchanged fact
@@ -2182,6 +2184,120 @@ class LumenDesignTools:
         no derived thumbnail), which the caller skips and counts in `_omitted`."""
         return asset_preview_path(record, self.config.effective_asset_store_root)
 
+    def _crop_source_record(self, asset_id: str) -> Optional[JsonObject]:
+        """Resolve crop custody only within this run's authorized records."""
+        record = (self.scene.get("assets") or {}).get(asset_id)
+        if record is None:
+            for manifest in (
+                self.config.brand_kit_assets, self.config.asset_library, self.config.reference_assets
+            ):
+                entry = (manifest or {}).get(asset_id)
+                if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
+                    record = entry["record"]
+                    break
+        return record if isinstance(record, dict) and record.get("id") == asset_id else None
+
+    def crop_image(self, asset_id: str, crop_rect: Any, label: Optional[str] = None) -> str:
+        """Register a lossless source rectangle as a separate, unplaced image."""
+        refusal = self._refuse_without_page("crop_image")
+        if refusal is not None:
+            return refusal
+        record = self._crop_source_record(asset_id)
+        if (
+            not isinstance(record, dict)
+            or record.get("id") != asset_id
+            or record.get("status") != "ready"
+        ):
+            return self._tool_error(
+                "asset.crop_unavailable", "Crop source is not a ready asset in this run's context."
+            )
+        try:
+            require_supported_crop_origin(record, self._crop_source_record)
+        except ImageCropError as error:
+            return self._tool_error(error.code, str(error))
+        media = record.get("media") or {}
+        digest = (media.get("digest") or {}).get("value")
+        mime = media.get("mime_type")
+        if (
+            record.get("kind") not in {"raster_image", "logo"}
+            or mime not in PREVIEWABLE_MIME_TYPES
+            or (media.get("digest") or {}).get("algorithm") != "sha256"
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            return self._tool_error(
+                "asset.crop_invalid_source",
+                "Crop requires an original raster with a valid SHA-256 digest.",
+            )
+        license = record.get("license")
+        # Mirror AssetRecord::allows_modification: absent license permits; a
+        # present license with a missing flag defaults to false in the engine.
+        if license is not None and license.get("allow_modification") is not True:
+            return self._tool_error(
+                "asset.crop_license", "The source license does not permit modification."
+            )
+        try:
+            source_path = blob_path_for_digest(self.config.effective_asset_store_root, digest)
+            source_bytes = source_path.read_bytes()
+        except OSError:
+            return self._tool_error("asset.crop_missing", "Original source bytes are not materialized.")
+        if hashlib.sha256(source_bytes).hexdigest() != digest:
+            return self._tool_error(
+                "asset.crop_corrupt", "Source bytes do not match their frozen digest."
+            )
+        try:
+            cropped = crop_source_pixels(
+                source_bytes, source_asset_id=asset_id, mime_type=mime, rect=crop_rect,
+                source_generated=has_generated_image_origin(record),
+            )
+        except ImageCropError as error:
+            return self._tool_error(error.code, str(error))
+        derived_id = f"asset_crop_{self.run_id[:12]}_{uuid4().hex}"
+        provenance = copy.deepcopy(record.get("provenance") or {})
+        provenance["notes"] = [
+            *(provenance.get("notes") or []),
+            "asset_derivation=" + json.dumps(cropped.receipt, sort_keys=True),
+        ]
+        try:
+            ingested = self.core.ingest_asset(
+                store_root=str(self.config.effective_asset_store_root),
+                bytes_base64=base64.b64encode(cropped.png_bytes).decode("ascii"),
+                asset_id=derived_id,
+                label=label or f"Crop of {record.get('label') or asset_id}",
+                declared_mime_type="image/png",
+                kind="raster_image",
+                filename=f"{derived_id}.png",
+                license=copy.deepcopy(license),
+                provenance=provenance,
+                # `edited` means MODEL-edited in the existing engine schema.
+                # A deterministic crop has no model; its lineage is the receipt.
+                source={"kind": "manual", "label": f"deterministic crop of {asset_id}"},
+                tags=[*(record.get("tags") or []), "crop"],
+            )
+            derived = ingested["asset"]["record"]
+            with self._image_registration_lock:
+                operations = [{"kind": "upsert_asset", "asset": derived}]
+                response = self.core.apply_operations(self.scene, operations)
+                self._replace_scene_from_core_response(response, "crop_image", operations)
+        except CoreError as error:
+            return self._tool_error(error.code, error.message)
+        payload = {
+            "image_crop": {
+                "status": "ok", "asset_id": derived_id, "mode": "deterministic",
+                "crop_receipt": cropped.receipt,
+            },
+            "diagnostics": ingested.get("diagnostics") or [],
+            "next": (
+                "Inspect the new asset, then place it explicitly in an independent image node "
+                "with asset(action='place')."
+            ),
+        }
+        self.record(
+            "coordinator", "image_cropped", input_summary=asset_id,
+            output_summary=derived_id, payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
     def _resolve_node_image_source(
         self, node_id: str
     ) -> tuple[Optional[JsonObject], Optional[bytes], Optional[str], Optional[str], Optional[tuple]]:
@@ -2461,8 +2577,7 @@ class LumenDesignTools:
             asset_id = (node.get("kind") or {}).get("asset_id")
             if not asset_id:
                 continue
-            source_kind = ((assets.get(asset_id) or {}).get("source") or {}).get("kind")
-            if source_kind in ("generated", "edited"):
+            if has_generated_image_origin(assets.get(asset_id) or {}):
                 return True
         return False
 
@@ -2627,6 +2742,9 @@ class LumenDesignTools:
         reference_roles: list[str] | None = None,
         reference_framing: str | None = None,
         operation: str | None = None,
+        # Preserve raw element types through tool validation; crop_source_pixels
+        # refuses bools/floats instead of Pydantic coercing them to integers.
+        crop_rect: list[Any] | None = None,
     ) -> str:
         """Generate or place a design asset. Pick `action`:
 
@@ -2655,6 +2773,16 @@ class LumenDesignTools:
           This source-only route does not accept reference_asset_ids, reference_roles
           or reference_framing. For selected-reference changes, generate_image with
           those inputs, inspect the result and place it explicitly.
+        - `action="crop_image"` — extract an exact rectangle from an inspected
+          original raster `asset_id`, without a model or resampling. `crop_rect`
+          is four integers [left, top, right, bottom] in ORIGINAL source pixels,
+          half-open; right/bottom excluded. Use original dimensions, not preview
+          dimensions. Bounds must be nonempty and inside the source. Nonidentity
+          EXIF orientation and animated/unsupported images are refused. Preserves
+          decoded pixels/alpha and original asset; returns a separate image asset
+          and crop_receipt with source digest/rect. Inspect, then explicitly place
+          it in an independent image node. Cannot recover occluded or absent UI,
+          nor remove backgrounds baked inside the selected rectangle.
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
@@ -2714,6 +2842,10 @@ class LumenDesignTools:
             return self.edit_image(
                 node_id, prompt, transparent_background, label, operation=operation
             )
+        if action == "crop_image":
+            if not asset_id:
+                return self._tool_error("asset.bad_request", "action='crop_image' requires `asset_id`.")
+            return self.crop_image(asset_id, crop_rect, label)
         if action == "generate_qr":
             if not data:
                 return self._tool_error(
@@ -2774,6 +2906,7 @@ class LumenDesignTools:
             valid_actions=[
                 "generate_image",
                 "edit_image",
+                "crop_image",
                 "generate_qr",
                 "place",
                 "use_brand_asset",
@@ -3470,7 +3603,7 @@ class LumenDesignTools:
         # the inner export_preview calls re-stamp them, so we can tell whether
         # this successful export re-renders byte-identical pixels (no mutation
         # since the last render → re-reviewing yields no new information).
-        prev_preview_version = self._preview_scene_version
+        prev_preview_stamp = self._preview_scene_stamp
         prev_preview_iteration = self._preview_rendered_iteration
         desired_critic_format = (critic_format or self.config.preview_format).lower()
         refusal = self._unresolved_token_paint_refusal(desired_critic_format)
@@ -3592,8 +3725,8 @@ class LumenDesignTools:
         if (
             not debug_only
             and payload["reviewer"]["status"] == ToolStatus.ok.value
-            and prev_preview_version is not None
-            and self._scene_mutation_count() == prev_preview_version
+            and prev_preview_stamp is not None
+            and self._scene_stamp() == prev_preview_stamp
         ):
             render_label = (
                 f"the previous render (iteration {prev_preview_iteration})"
@@ -5051,17 +5184,16 @@ class LumenDesignTools:
         return empty_ids
 
     def _scene_mutation_count(self) -> int:
-        """Monotonic count of applied scene mutations. `scene_update_sources`
-        grows on every `_replace_scene_from_core_response` and never on export,
-        so it is the cheapest honest 'has the scene changed since render?'
-        signal the staleness contract (view("preview")) needs."""
+        """Core response/update counter for diagnostics, including no-op responses.
+
+        Freshness decisions use `_scene_stamp`, not this activity counter.
+        """
         return len(self.scene_update_sources)
 
     def _stamp_preview_rendered(self) -> None:
-        """Record the scene-mutation count at the moment a valid preview was
-        rendered. view("preview") refuses to serve the PNG once the scene has
-        been mutated past this stamp (sweep A3 stale-black-frame contract)."""
+        """Bind a valid preview to current scene content and rendered bytes."""
         self._preview_scene_version = self._scene_mutation_count()
+        self._preview_scene_stamp = self._scene_stamp()
         self._preview_rendered_iteration = self.iteration
         self._preview_receipt = self._current_preview_receipt()
 

@@ -4,9 +4,9 @@ Covers the IMPLEMENTATION-BRIEF §8 test list: workspace scaffolding, the `view`
 tool's content structure, the D5 tool-surface contract, the D6 prompt contract,
 the constitution state schema, and the runner's honest-failure guarantees.
 
-deepagents is stubbed (as the existing factory test stubs it) so `create_deep_agent`
-never builds a real model and no network call fires. `init_model` is monkeypatched
-to a sentinel for the same reason.
+Only `create_deep_agent` and `init_model` are stubbed, so no real model is built
+and no network call fires. Filesystem and state classes stay real: replacing a
+filesystem module would permanently change a lazily imported backend base class.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sys
 import threading
 import types
 from dataclasses import replace
@@ -45,43 +44,12 @@ from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_
 # --- deepagents stub --------------------------------------------------------
 
 
-class _FakeFilesystemBackend:
-    # Accept the RIDER-1 kwargs (RepoRootedFilesystemBackend subclasses this stub
-    # when deepagents is monkeypatched, and forwards virtual_mode/max_file_size_mb
-    # to super().__init__).
-    def __init__(self, root_dir: str, virtual_mode=None, max_file_size_mb: int = 10) -> None:
-        self.root_dir = root_dir
-        self.virtual_mode = virtual_mode
-        self.max_file_size_mb = max_file_size_mb
-
-
-class _FakeFilesystemPermission:
-    def __init__(self, operations, paths, mode="allow") -> None:
-        self.operations = operations
-        self.paths = paths
-        self.mode = mode
-
-
-class _FakeDeepAgentState(dict):
-    """Stand-in for deepagents.DeepAgentState — a dict subclass, like the real
-    one (which is a TypedDict over dict)."""
-
-
 def _install_deepagents_stub(monkeypatch, capture: dict):
     def fake_create_deep_agent(**kwargs):
         capture["kwargs"] = kwargs
         return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []}, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr(
         "lumen_agent.harness.init_model",
@@ -717,16 +685,7 @@ def test_runner_honest_failure_on_invoke_exception(tmp_path, monkeypatch):
 
         return types.SimpleNamespace(invoke=_boom, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
 
@@ -763,16 +722,7 @@ def test_runner_honest_failure_on_api_timeout_error(tmp_path, monkeypatch):
 
         return types.SimpleNamespace(invoke=_timeout, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
 

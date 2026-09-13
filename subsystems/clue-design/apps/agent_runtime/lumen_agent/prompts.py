@@ -1167,11 +1167,12 @@ fix a refusal before delegation.
 path and only this round's change/delta. Delegate task(subagent_type='lumen-dsl-author',
 description=...) with the validated record INLINE, the selected playbook and the
 round path. Include previous critique/report for repairs. Subagents have no memory.
-5. Read author_report.md and critique.json together, then view('preview'). Reuse
-the author's current preflight/render receipts when the scene is unchanged.
-Only call preflight_design() and then render_preview() if those receipts are absent
-or stale, or a real mutation requires a fresh check. The finalization tool verifies
-their freshness. {review}
+5. Read author_report.md and critique.json together. If preflight is absent or
+stale, call preflight_design() first. Then always call render_preview() to perform
+the trusted round checkpoint, and view('preview'). render_preview reuses the
+author's current validated pixels when scene content, artifact bytes and clean
+preflight are unchanged; otherwise it renders fresh pixels. The finalization
+tool verifies their freshness. {review}
 After any mutation judge the new current pixels; never reuse an old acceptance.
 6. If defects remain, repair the smallest coherent composition and repeat. Append
 round verdict and one concrete remaining issue to rounds/index.md. Finalize

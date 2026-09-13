@@ -193,15 +193,6 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _scene_mutation_count(tools: LumenDesignTools) -> int:
-    """Monotonic count of applied scene mutations. `scene_update_sources` grows
-    on every `_replace_scene_from_core_response` (compile, structured edit,
-    retokenize, logo placement, preflight resolution) and never on export, so it
-    is the substrate's existing, cheap 'has the scene changed since render?'
-    signal — no new bookkeeping needed."""
-    return len(getattr(tools, "scene_update_sources", []) or [])
-
-
 def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
     """Build the ToolMessage content (a LIST of blocks) for `view(target)`.
 
@@ -227,13 +218,15 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
         # view is a cheap read; re-rendering inside it would couple this read to
         # the export machinery (which can itself fail and kill the turn, the
         # very A2 failure mode this pass hardens). Tell the agent to render.
-        rendered_at = getattr(tools, "_preview_scene_version", None)
-        current = _scene_mutation_count(tools)
-        if rendered_at is not None and current > rendered_at:
+        rendered_scene = getattr(tools, "_preview_scene_stamp", None)
+        receipt = getattr(tools, "_preview_receipt", None)
+        changed_scene = rendered_scene is not None and tools._scene_stamp() != rendered_scene
+        changed_artifacts = receipt is not None and tools._current_preview_receipt() != receipt
+        if changed_scene or changed_artifacts:
             content = [
                 _text_block(
-                    "view: preview is STALE — the scene changed "
-                    f"({current - rendered_at} mutation(s)) since the last render "
+                    "view: preview is STALE — scene content or rendered bytes changed "
+                    "since the last verified render "
                     f"(iteration {getattr(tools, 'iteration', '?')}). The PNG on disk "
                     f"({png}) does not reflect the current tree. Call render_preview() "
                     "first, then view(\"preview\") again."
