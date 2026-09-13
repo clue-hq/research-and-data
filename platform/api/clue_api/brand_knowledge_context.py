@@ -731,7 +731,7 @@ def compile_brand_knowledge_index_card(
     documents: Sequence[PinnedDocument],
     confirmed_icp: ConfirmedIcpRef | None,
     product_set: ProjectProductSet | None,
-    max_bytes: int = 8192,
+    max_bytes: int | None = 8192,
     prefix: str = INPUT_PREFIX,
     library_sha256: str | None = None,
 ) -> BrandKnowledgeIndexCard:
@@ -742,6 +742,11 @@ def compile_brand_knowledge_index_card(
     riding the opening context. Nothing else is droppable — the company, catalog, proof, ICP and
     persona lines are what the Stage-0 procedure is written against — so a budget below that floor
     yields a card that is as small as it can honestly be rather than a card missing its spine.
+
+    ``max_bytes=None`` means **no budget**, and is what a card compiled as a durable manifest
+    rather than as opening context asks for: an index that sits on disk and is opened by path costs
+    a turn nothing until it is read, so dropping a line from it would buy nothing and would leave
+    the manifest under-listing the very files it describes.
 
     **The entries are the brand's documents only.** A project-scoped document rides the pinned set
     (that is how its bytes reach the turn, and how ``confirmed_icp`` names it) but it is listed by
@@ -792,7 +797,7 @@ def compile_brand_knowledge_index_card(
 
     omitted_count = 0
     card = build(omitted_count)
-    while len(card.canonical_bytes()) > max_bytes:
+    while max_bytes is not None and len(card.canonical_bytes()) > max_bytes:
         droppable = [index for index, kind in enumerate(kinds) if kind == _PRODUCT_RESEARCH_KIND]
         if not droppable:
             break

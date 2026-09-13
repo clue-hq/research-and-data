@@ -34,6 +34,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.brand_knowledge_context import (
     BRAND_LIBRARY_PREFIX,
     INPUT_PREFIX,
+    compile_brand_knowledge_index_card,
     knowledge_seed_files,
     load_or_create_knowledge_pin,
     read_pinned_documents,
@@ -290,6 +291,99 @@ def test_the_shared_brand_library_gives_the_plain_name_to_the_newest_version(
                     3: f"{BRAND_LIBRARY_PREFIX}audience/icp-gi.md",
                     2: f"{BRAND_LIBRARY_PREFIX}audience/icp-gi.v2.md",
                 }
+            finally:
+                factory.close()
+
+    run_async(scenario())
+
+
+def test_the_library_index_lists_every_file_it_serves(tmp_path: Path) -> None:
+    """A manifest of a tree has no context budget, so it never drops a line.
+
+    The 8 KiB default belongs to the turn's *opening* card, where every line is spent whether or
+    not the model reads it. This index is read from disk by path: an omitted entry would buy
+    nothing and would leave the manifest under-listing the files sitting beside it. The control in
+    this test is the default-budget card compiled over the same documents — it really does omit.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-libfull-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 library full")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="company/overview.md",
+                kind="company-overview",
+                version=1,
+                status="ready",
+                body=OVERVIEW,
+            )
+            # A catalog this wide is what puts the default card over its budget.
+            research_paths = [f"product/research-line-{index:02d}.md" for index in range(24)]
+            for index, path in enumerate(research_paths):
+                await _seed_document(
+                    conn,
+                    artifacts=artifacts,
+                    workspace_id=workspace_id,
+                    brand_id=project.brand_id,
+                    path=path,
+                    kind="product-research",
+                    version=1,
+                    status="ready",
+                    body=(
+                        "---\nkind: product-research\n---\n\n"
+                        f"Product line {index:02d} sells scheduling and anesthesia billing to "
+                        "independent gastroenterology groups, and this paragraph is long enough "
+                        "to fill the index summary it is truncated into.\n"
+                    ),
+                )
+            turn_id = await _submitted_turn(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                brand_id=project.brand_id,
+                label="libfull",
+            )
+            pin, _created = await load_or_create_knowledge_pin(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+                brand_id=project.brand_id,
+                project_id=project.project_id,
+            )
+            documents = await read_pinned_documents(conn, storage, pin=pin)
+
+            # The control: at the opening card's budget, entries really are dropped.
+            bounded = compile_brand_knowledge_index_card(
+                brand_id=project.brand_id,
+                documents=documents,
+                confirmed_icp=None,
+                product_set=None,
+            )
+            assert bounded.omitted_count > 0
+
+            root, factory, _sink = make_factory(tmp_path)
+            try:
+                version = await ensure_brand_library(factory, pin=pin, documents=documents)
+                tree = root / workspace_id / "library" / "brand" / project.brand_id / version
+                index = json.loads((tree / "index.json").read_text())
+                assert index["omitted_count"] == 0
+                assert {entry["path"] for entry in index["documents"]} == {
+                    "company/overview.md",
+                    *research_paths,
+                }
+                # …and every listed path is really a file in the tree it describes.
+                for entry in index["documents"]:
+                    served = entry["workspace_path"].removeprefix(BRAND_LIBRARY_PREFIX)
+                    assert (tree / "knowledge" / served).is_file()
             finally:
                 factory.close()
 

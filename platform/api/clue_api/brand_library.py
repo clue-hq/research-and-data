@@ -34,7 +34,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from typing import Final
 
-from clue_agents import AgentWorkspaceFactory
+from clue_agents import AgentWorkspaceFactory, WorkspaceConflict
 from clue_agents.library_tree import LibraryFile, LibraryTree
 from clue_api.brand_knowledge_context import (
     BRAND_LIBRARY_PREFIX,
@@ -78,6 +78,12 @@ def brand_library_files(
     A project-scoped document is skipped for the same reason the seeds skip it — it belongs to one
     project, and this tree belongs to the brand. ``pinned_document_id=None`` is the brand-wide
     naming rule: the newest version of a path answers to the plain name here.
+
+    The index is compiled **unbounded** (``max_bytes=None``). The 8 KiB default is the budget for a
+    turn's *opening context* card, where every line is spent whether or not the model reads it;
+    this card is a manifest of a tree, read from disk by path, so a dropped line would only make
+    the manifest under-list the files sitting beside it. The count is asserted rather than trusted:
+    an index that does not list everything it serves is refused, never installed.
     """
 
     paths = workspace_paths(documents, pinned_document_id=None, prefix=BRAND_LIBRARY_PREFIX)
@@ -89,7 +95,10 @@ def brand_library_files(
         product_set=None,
         prefix=BRAND_LIBRARY_PREFIX,
         library_sha256=pin.documents_sha256,
+        max_bytes=None,
     )
+    if card.omitted_count:
+        raise WorkspaceConflict("a brand library index must list every document it serves")
     return (
         LibraryFile(path=_INDEX_NAME, content=card.canonical_bytes()),
         *(
