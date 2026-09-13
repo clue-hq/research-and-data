@@ -2,7 +2,7 @@
   "skill": "reference-image-direction",
   "version": 2,
   "scope": "Design-agent image direction only; no brand ingestion or library expansion",
-  "execution_status": "local_validation_in_progress",
+  "execution_status": "local_validation_partial",
   "protocol": {
     "comparison": "Freeze each source snapshot and record differences. The initial live comparison changes both guidance and reference-selection tools; it measures the combined system change, not a prompt-only causal effect. Keep briefs, source bytes and model configuration equal for the close-companion baseline and candidate.",
     "inputs": "Resolve fixture requirements to authorized current-run assets and record IDs and digests before either run. Fixture descriptions alone do not replace image inputs.",
@@ -64,12 +64,36 @@
         "Names why a new subject serves the message",
         "Chooses new concept rather than forced source reuse",
         "Describes specific observed treatment to carry forward",
+        "Separates a permitted subject change from an unsupported lighting, material or motif change",
+        "Can use a new arrangement of observed forms with native explanatory copy when a literal metaphor would change the brand's character",
         "Does not present a metaphor as actual product functionality"
       ],
       "failure_examples": [
         "Copies an irrelevant subject",
-        "Defaults to an abstract gradient without relating it to the message",
+        "Uses arbitrary atmosphere with no source-grounded treatment or stated role in the creative",
+        "Matches the palette and texture but invents a different lighting language to illustrate a campaign keyword",
         "Invents a testimonial or result"
+      ]
+    },
+    {
+      "id": "treatment-preservation-after-rejection",
+      "fixture_requirements": [
+        "Original matte textured brand field",
+        "Rejected generated companion that retained the pattern but invented luminous motifs",
+        "Existing scene with useful native copy and authentic logo"
+      ],
+      "brief": "The pattern belongs to the brand, but the invented lighting does not. Create a new companion from the original visual language and preserve the editable foreground.",
+      "observe": [
+        "Inspects the original source and the rejected candidate",
+        "Uses the original as the generation input rather than reinforcing the rejected treatment",
+        "Preserves distinct treatment dimensions instead of accepting a palette-only match",
+        "Views the generated component and final scene before accepting",
+        "Retains native foreground layers and reports any unrelated changes"
+      ],
+      "failure_examples": [
+        "Rationalizes unsupported lighting as a metaphor for the campaign",
+        "Sends the rejected image as the only reference for a new companion",
+        "Accepts conspicuous treatment drift because the dot pattern matches"
       ]
     },
     {

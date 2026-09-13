@@ -39,6 +39,15 @@ Record a few discriminating observations, with reference IDs:
 - **Uncertainty:** distinguish observed appearance from inferred technique.
   Tiny compressed pixels rarely identify a filter, shader or exact setting.
 
+Keep **subject departure** and **treatment departure** separate. Authorization
+to invent an explanatory subject is not authorization to replace the brand's
+lighting, surface, edges or characteristic forms. Before spending, scan the
+component prompt for additions that came from your own associations rather than
+the sources. Each significant addition needs a reason grounded in the brief and
+a rendering consistent with the observed treatment. Otherwise remove it. The
+message may be expressed by copy over a fresh arrangement of existing forms;
+every abstract benefit does not need a literal network, object or diagram.
+
 ### Effects vocabulary
 
 | Appearance | Useful observation | Implementation boundary |
@@ -134,6 +143,36 @@ labels and behavior while superficially matching its style. Matching appearance
 does not establish product truth. If only a finished ad is available, visible
 screen pixels may be reusable, but hidden areas remain unavailable.
 
+**Crop once, using source geometry.** Identify the source rectangle containing
+the complete feature, including its left and right controls. Let the original
+image be `S_w × S_h`, the selected source rectangle be `(l,t,r,b)` in source
+pixels, and the clipping viewport be `V_w × V_h`. For a cover crop:
+
+```text
+k = max(V_w / (r-l), V_h / (b-t))
+image size = (S_w*k, S_h*k)
+x = -l*k - ax*((r-l)*k - V_w)
+y = -t*k - ay*((b-t)*k - V_h)
+```
+
+`ax,ay` are anchors from 0 to 1: center is .5,.5; use a top anchor when the
+header must survive and lower rows may leave the frame. Match the image node's
+aspect to its original pixels and use `fit="contain"` inside that node; the
+parent's supported clip provides the crop. Do not add a second cover crop by
+giving the image node an unrelated aspect. Account for the engine's declared
+bleed policy for oversized clipped children. If all selected pixels must stay
+visible, match the viewport to the selected region's aspect ratio instead.
+Include all protected elements when choosing that rectangle: controls, faces,
+logos or proof values should not straddle the crop edge. A cover crop cannot
+preserve an entire selected rectangle at an incompatible viewport aspect;
+choose contain or change the viewport when both edges matter. Declaring bleed
+does not make a clipped control or half-visible avatar a successful crop.
+
+Inspect the actual preview after placement. Increasing width blindly magnifies
+both edges and can worsen a clipped control. Preserve a usable original or
+contain placement if the source rectangle or supported crop is uncertain;
+report the limitation rather than replacing authentic UI with invented pixels.
+
 ### C. A new concept when existing subjects are irrelevant
 
 **Observed:** a brand uses carefully lit physical objects on restrained grounds.
@@ -148,6 +187,17 @@ explaining the mechanism requires a diagram instead of a physical metaphor.
 
 **Counterexample:** reproducing an unrelated reference subject merely because
 it is available, or interpreting one example metaphor as a universal brand motif.
+
+**A different source requires a different decision.** If the reference is a
+matte, softly blurred color field with a printed dot pattern, a campaign about
+coordination does not imply luminous nodes and connecting light trails. Those
+add a new motif and lighting language even if the palette and dot texture match.
+A fresh arrangement of the observed soft forms can remain a new image while
+the native headline conveys coordination. If an actual explanatory diagram is
+required, keep its supported native geometry distinct and style it from the
+brand evidence; do not silently recast the entire background as a technology
+illustration. This is a treatment-preservation rule, not a universal ban on
+glow or networks for brands whose references actually use them.
 
 ### D. A separate foreground element
 
