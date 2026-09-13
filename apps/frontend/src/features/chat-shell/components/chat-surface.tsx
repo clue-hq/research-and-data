@@ -38,6 +38,7 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
+import { planWriteToOpen, projectPlanPartIds } from "../model/plan-write-signal";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
@@ -85,6 +86,7 @@ function completedToolCallIds(transcript: ProjectChatController["transcript"]): 
 
 export function ChatSurface({
   artifacts,
+  canEditDocuments = false,
   chat,
   controller,
   documentIds,
@@ -98,6 +100,7 @@ export function ChatSurface({
    * props, never the workspace schema (`workspace.artifacts` stays the
    * schema-hard empty tuple). */
   artifacts?: ProjectArtifact[];
+  canEditDocuments?: boolean;
   chat: ProjectChatController;
   controller: ReturnType<typeof useProjectWorkspaceController>;
   /** Artifact id → design-document id over the whole feed. Consumed by the
@@ -338,6 +341,22 @@ export function ChatSurface({
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
+  // Open a newly written Plan once; initial and paginated history never choose the user’s tab.
+  const knownPlanPartIds = useRef<Set<string> | null>(null);
+  const planHistoryStartId = useRef<string | undefined>(undefined);
+  const [planRefreshToken, setPlanRefreshToken] = useState(0);
+  const openPlan = shell.openPlan;
+  useEffect(() => {
+    if (chat.loading) return;
+    const known = knownPlanPartIds.current;
+    if (known === null) planHistoryStartId.current = chat.transcript[0]?.id;
+    const opening = planWriteToOpen({ transcript: chat.transcript, knownPlanPartIds: known, historyStartId: planHistoryStartId.current });
+    knownPlanPartIds.current = new Set([...(known ?? []), ...projectPlanPartIds(chat.transcript)]);
+    if (opening === null) return;
+    setPlanRefreshToken((value) => value + 1);
+    openPlan();
+  }, [chat.loading, chat.transcript, openPlan]);
+
   // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
   // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only
   // transports it, banking every tool call id it has seen so a replayed backlog opens nothing.
@@ -508,6 +527,7 @@ export function ChatSurface({
               <ConversationContent
                 chat={chat}
                 contextHandoffError={controller.contextHandoffError}
+                onOpenPlan={openPlan}
                 projectId={projectId}
                 workspace={workspace}
               />
@@ -709,6 +729,10 @@ export function ChatSurface({
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
         onOpenTargetAccounts={shell.openTargetAccounts}
+        onOpenPlan={openPlan}
+        canEditDocuments={canEditDocuments}
+        planRefreshToken={planRefreshToken}
+        panelOpen={shell.panelOpen}
         targetAccountsBusy={discovery.live}
         targetAccountsRefreshToken={discovery.tick + research.tick}
         onAddAccountsToChat={

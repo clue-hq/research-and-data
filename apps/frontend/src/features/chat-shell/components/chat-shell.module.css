@@ -429,7 +429,10 @@
   flex: 1 1 auto;
   min-width: 0;
   height: 34px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
 
 .galleryTabSegment {
@@ -3127,6 +3130,8 @@
   }
 
   .artifactTabs { padding-left: 52px; padding-right: 12px; }
+  .galleryTab { padding-inline: 6px; }
+  .galleryTabSegment { padding-right: 0; margin-right: 0; border-right: 0; }
   .artifactTabActions > button:first-child { display: none; }
 
   .shellPanelOpen .chatPane {

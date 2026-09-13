@@ -33,11 +33,13 @@ import styles from "./project-flow.module.css";
 export function ConversationContent({
   chat,
   contextHandoffError,
+  onOpenPlan,
   projectId,
   workspace,
 }: {
   chat: ProjectChatController;
   contextHandoffError: string | null;
+  onOpenPlan?: () => void;
   projectId: string;
   workspace: ProjectWorkspace;
 }) {
@@ -67,6 +69,7 @@ export function ConversationContent({
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
+      onOpenPlan,
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
@@ -78,7 +81,7 @@ export function ConversationContent({
         void chat.recoverGate(card);
       },
     }),
-    [chat],
+    [chat, onOpenPlan],
   );
 
   return (

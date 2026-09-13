@@ -108,6 +108,7 @@ export function ArtifactTabs({
   onCloseArtifact,
   onOpenGallery,
   onOpenTargetAccounts,
+  onOpenPlan,
   onRenameArtifact,
   onToggleMaximized,
   onTogglePanel,
@@ -122,6 +123,7 @@ export function ArtifactTabs({
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery?: () => void;
   onOpenTargetAccounts?: () => void;
+  onOpenPlan?: () => void;
   onRenameArtifact: (artifactId: string, title: string) => void;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
@@ -129,6 +131,11 @@ export function ArtifactTabs({
   /** True while the project's discovery run is live: the Target accounts label spins. */
   targetAccountsBusy?: boolean;
 }) {
+  const tabListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabListRef.current?.querySelector('[role="tab"][aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [surface]);
+
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
 
@@ -156,6 +163,7 @@ export function ArtifactTabs({
         aria-label="Artifact tabs"
         className={styles.artifactTabList}
         onKeyDown={handleTabListKeyDown}
+        ref={tabListRef}
         role="tablist"
       >
         {galleryTabVisible ? (
@@ -185,6 +193,19 @@ export function ArtifactTabs({
                 {targetAccountsBusy ? (
                   <ProjectIcon className={styles.galleryTabSpinner} name="loader" size={12} />
                 ) : null}
+              </button>
+            ) : null}
+            {onOpenPlan ? (
+              <button
+                aria-selected={surface === "plan"}
+                className={`${styles.galleryTab} ${surface === "plan" ? styles.galleryTabActive : ""}`}
+                onClick={onOpenPlan}
+                role="tab"
+                tabIndex={surface === "plan" ? 0 : -1}
+                type="button"
+              >
+                <ProjectIcon name="file-text" size={12} />
+                <span>Plan</span>
               </button>
             ) : null}
           </div>

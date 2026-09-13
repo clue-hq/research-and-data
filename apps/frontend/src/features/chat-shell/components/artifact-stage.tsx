@@ -33,6 +33,7 @@ import type {
 } from "@/features/design-editor/engine/webDocuments";
 import type { RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
+import { ProjectDocumentSurface } from "@/features/projects/components/project-document-surface";
 import { ProjectTargetAccounts } from "@/features/accounts/components/project-target-accounts";
 import type { ChatContextRef } from "@/features/projects/model/chat-context-handoff";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
@@ -72,6 +73,10 @@ export function ArtifactStage({
   onCloseArtifact,
   onOpenGallery,
   onOpenTargetAccounts,
+  onOpenPlan,
+  canEditDocuments = false,
+  planRefreshToken,
+  panelOpen = true,
   onOpenGalleryArtifact,
   onRenameArtifact,
   onRenameArtifactFor,
@@ -154,6 +159,10 @@ export function ArtifactStage({
    * project in hand — absent, the tab is simply not rendered, which is the
    * same gate the branch expresses through `projectId`. */
   onOpenTargetAccounts?: () => void;
+  onOpenPlan?: () => void;
+  canEditDocuments?: boolean;
+  planRefreshToken?: number;
+  panelOpen?: boolean;
   /** The Target accounts tab's "Add to chat" (founder request 2026-09-11):
    * prepares the selected accounts against the open chat and lands them in
    * its composer. Absent when no chat is in hand (the artifact route, fixture
@@ -260,6 +269,7 @@ export function ArtifactStage({
         onCloseArtifact={onCloseArtifact}
         onOpenGallery={onOpenGallery}
         onOpenTargetAccounts={projectId ? onOpenTargetAccounts : undefined}
+        onOpenPlan={projectId ? onOpenPlan : undefined}
         onRenameArtifact={onRenameArtifactFor}
         onToggleMaximized={onToggleMaximized}
         onTogglePanel={onTogglePanel}
@@ -269,6 +279,11 @@ export function ArtifactStage({
       {projectId ? (
         <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
           <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
+        </div>
+      ) : null}
+      {projectId && onOpenPlan ? (
+        <div className={styles.workspaceSurface} hidden={surface !== "plan"}>
+          <ProjectDocumentSurface active={panelOpen && surface === "plan"} canWrite={canEditDocuments} key={projectId} projectId={projectId} refreshToken={planRefreshToken} />
         </div>
       ) : null}
       {showingArtifact ? (
@@ -346,7 +361,7 @@ export function ArtifactStage({
       ) : null}
       <div
         className={styles.workspaceSurface}
-        hidden={showingArtifact || surface === "target-accounts"}
+        hidden={showingArtifact || surface === "target-accounts" || surface === "plan"}
       >
         <ProjectGallery
           artifacts={artifacts}

@@ -27,6 +27,15 @@ test("surface=gallery opens the rail on the gallery", () => {
   assert.equal(state.editing, false);
 });
 
+test("Plan round-trips without artifact editing vocabulary", () => {
+  assert.deepEqual(chatSurfaceUrlState({ surface: "plan", edit: "1" }), {
+    surface: "plan", panelOpen: true, editing: false, inspectorSelection: "canvas",
+  });
+  assert.deepEqual(chatSurfacePaneParams(paneState({ surface: "plan", panelOpen: true, editing: true, inspectorSelection: "text" })), {
+    surface: "plan", edit: undefined, selection: undefined,
+  });
+});
+
 test("surface=target-accounts opens the rail on the target-accounts surface", () => {
   const state = chatSurfaceUrlState({ edit: "1", surface: "target-accounts" });
   assert.equal(state.panelOpen, true);

@@ -225,10 +225,10 @@ Layout (from the screenshot, tokens only): `.surface` grid `auto minmax(0,1fr)`;
 
 `chat-surface.tsx`: pass `onOpenPlan={shell.openPlan}`, `planRefreshToken={planPrime}`, `planDocumentId={openDocumentId}` (Task 8 sets the latter for gallery-opened documents; `null` here).
 
-- [ ] **Step 1: Failing tests** — `chat-surface-params.test.ts`: `?surface=plan` hydrates `surface: "plan"`, `panelOpen: true`; pane params serialize back to `surface: "plan"` with no artifact vocabulary. A new `features/projects/hooks/use-project-document-editor.test.ts` is not possible (hooks need React); instead test the pure reducer pieces if you extract them (`draftAfterChange(drafts, path, base, body)` returns the drafts map with the entry removed when `body === base.body`) — put that pure function in `model/project-document-draft.ts` with a test.
-- [ ] **Step 2–3: implement.** Run `npm test`, `npm run lint`, `npm run build`.
+- [x] **Step 1: Failing tests** — `chat-surface-params.test.ts`: `?surface=plan` hydrates `surface: "plan"`, `panelOpen: true`; pane params serialize back to `surface: "plan"` with no artifact vocabulary. A new `features/projects/hooks/use-project-document-editor.test.ts` is not possible (hooks need React); instead test the pure reducer pieces if you extract them (`draftAfterChange(drafts, path, base, body)` returns the drafts map with the entry removed when `body === base.body`) — put that pure function in `model/project-document-draft.ts` with a test.
+- [x] **Step 2–3: implement.** Run `npm test`, `npm run lint`, `npm run build`.
 - [ ] **Step 4: Browser check** (on the active Semarang frontend): open a project chat, `?surface=plan` shows the empty state; the tab is keyboard-reachable (Arrow keys move between Gallery / Target accounts / Plan).
-- [ ] **Step 5: Commit** — `git commit -m "feat(chat-shell): the Plan surface — tab, pane, URL state, and the project document editor on shared markdown pieces"`.
+- [x] **Step 5: Commit** — `git commit -m "feat(chat-shell): the Plan surface — tab, pane, URL state, and the project document editor on shared markdown pieces"`.
 
 ---
 
@@ -253,11 +253,27 @@ export function planWriteToOpen({ transcript, knownPlanPartIds }): string | null
 
 The effect in `chat-surface.tsx` copies the discovery effect (lines 341–370) with its own `knownPlanPartIds` ref, calling `shell.openPlan()` and `setPlanPrime(c => c + 1)`; both invariants hold (wait on `chat.loading`; bank every plan part already in the transcript on first load so an old plan does not re-open the tab). Where `ChatPartActions` is built (in `use-project-chat-controller.ts` or `chat-surface.tsx` — find the object literal that supplies `gateFor`), add `onOpenPlan: shell.openPlan`.
 
-- [ ] **Step 1: Failing tests** — `plan-write-signal.test.ts` (copy `discovery-launch-signal.test.ts`'s cases, keyed on a `plan` part with `planRef.objectType === "project_document"`; plus: a part with another object type is ignored; a part present on first load is banked, not opened); the contract test asserts `/planWriteToOpen\(\{[\s\S]*?openPlan\(\);\s*setPlanPrime\(/` in `chat-surface.tsx` and that `chat-message-part.tsx` matches `/planRef\.objectType === "project_document"/`; the label test (`write_project_document: "Write the project plan"` stays for transcript history).
-- [ ] **Step 2–3: implement; run `npm test`, lint, build.**
-- [ ] **Step 4: Commit** — `git commit -m "feat(chat-shell): the Plan tab opens itself when the agent writes the plan, and the plan card opens it on click"`.
+- [x] **Step 1: Failing tests** — `plan-write-signal.test.ts` (copy `discovery-launch-signal.test.ts`'s cases, keyed on a `plan` part with `planRef.objectType === "project_document"`; plus: a part with another object type is ignored; a part present on first load is banked, not opened); the contract test asserts `/planWriteToOpen\(\{[\s\S]*?openPlan\(\);\s*setPlanPrime\(/` in `chat-surface.tsx` and that `chat-message-part.tsx` matches `/planRef\.objectType === "project_document"/`; the label test (`write_project_document: "Write the project plan"` stays for transcript history).
+- [x] **Step 2–3: implement; run `npm test`, lint, build.**
+- [x] **Step 4: Commit** — `git commit -m "feat(chat-shell): the Plan tab opens itself when the agent writes the plan, and the plan card opens it on click"`.
 
 ---
+
+**Implementation checkpoint — 2026-09-14:** the founder approved live integration after the
+preview. Tasks 6–7 are implemented together; the shared editor session was extracted from
+Knowledge rather than duplicating its draft/revision logic. The surface currently selects the
+canonical Plan only; `documentId`/Gallery selection lands with Task 8. Server-owned
+`project.write` controls editing. Older paginated history is ignored as well as initial history.
+The pre-existing historical tool label remains unchanged.
+
+Verification: 2,262 frontend tests pass (Node's `--import tsx` runner avoids the sandbox-blocked
+CLI IPC socket), token build, lint (two pre-existing warnings), and Next production build pass.
+Semarang alone was migrated from `d639a2de8bd1` to `98775241f1e5`; only its platform API was
+restarted, on 8070. Browser empty/read/clean-edit and tab draft retention passed; two browser
+saves minted v2/v3 in the disposable project. The store refused a stale save after a separate
+v4 write. The browser session then expired. The remaining real-browser reload/conflict,
+keyboard/narrow layout, and live plan-part/card walkthrough are still pending sign-in. The
+checkbox for the full browser walk is intentionally left open. Task 8 is not included.
 
 ### Task 8: Project documents in the gallery
 

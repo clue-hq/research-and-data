@@ -2322,7 +2322,21 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
   that a newer **document** exists and advises keeping/copying the draft before loading it;
   401/403 explain missing view/edit permission. Both `{ error: … }` and FastAPI `{ detail: … }`
   refusal envelopes are understood for saves. These functions do not own or clear editor drafts.
-- **Still pending in the active Lane 2 plan:** the shared MDXEditor migration, Plan pane and editor
-  hook, draft/conflict recovery UI, plan-card click/auto-open, Gallery document cards and
-  `?surface=plan`. Task 4 verifies transport and version handling; it does not claim a live editor
-  save/refresh acceptance walk. The unused dummy `ProjectPlan` component/schema were removed.
+- **Plan pane implemented (Lane 2 Tasks 6–7, 2026-09-14):** `?surface=plan` opens the
+  third project rail tab with the approved empty state or the current `project/plan.md`.
+  It carries no artifact edit/selection parameters. Browser reads use validated same-origin
+  queries with abortable requests, no fixture fallback and explicit failure states.
+- Plan and Knowledge share `useVersionedMarkdownEditor` and its pure session transitions.
+  Drafts are keyed by workspace/project/path; tab switches keep the mounted editor. Opening is
+  clean; Save adopts the returned immutable ID/version; Discard resets to the newest loaded
+  document. Dirty drafts retain their original base across external refreshes. A failed or
+  conflicting save retains the draft and offers a latest-version check. Source parse errors,
+  missing `project.write` permission and blank project bodies disable saving.
+- Project-document plan-card titles open Plan. Newly received plan parts with
+  `planRef.objectType === "project_document"` open and refresh it once. Initial history and older
+  paginated messages are banked without opening it. This never depends on a tool name.
+- Live Semarang verification: empty/read states, clean Edit, tab-switch draft retention and two
+  browser saves, with new IDs/versions verified in Postgres/artifact storage. A separate store
+  write refused a stale save. Browser reload/conflict/keyboard/narrow-layout checks remain
+  pending after session expiry; those are not claimed complete.
+- **Remaining:** project ICP/persona Gallery document cards and selection (Task 8).

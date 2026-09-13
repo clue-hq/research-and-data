@@ -269,3 +269,15 @@ test("opening an artifact, activating a tab, or opening the gallery reopens a cl
   });
   assert.equal(viaGallery.panelOpen, true);
 });
+
+test("Plan opens from an artifact without losing its tabs and can reopen after panel closure", () => {
+  const plan = editorShellReducer(stateWith({ editing: true, panelOpen: false }), { type: "open-plan" });
+  assert.equal(plan.surface, "plan");
+  assert.equal(plan.editing, false);
+  assert.equal(plan.panelOpen, true);
+  assert.deepEqual(plan.openArtifacts, artifacts);
+  const closed = editorShellReducer(plan, { type: "toggle-panel" });
+  assert.equal(closed.panelOpen, false);
+  assert.equal(editorShellReducer(closed, { type: "open-plan" }).surface, "plan");
+  assert.equal(editorShellReducer(plan, { type: "open-gallery" }).surface, "gallery");
+});
