@@ -43,26 +43,32 @@ class RecordingArtifactSink:
         )
 
 
+DEFAULT_READABLE_PREFIXES: tuple[str, ...] = (
+    ".deepagent",
+    "inputs",
+    "context",
+    "work",
+    "delegations",
+    "outputs",
+)
+DEFAULT_WRITABLE_PREFIXES: tuple[str, ...] = ("work", "delegations", "outputs")
+
+
 def policy(
     *,
     max_total_bytes: int = 4096,
     max_file_bytes: int = 2048,
     max_file_count: int = 20,
+    readable: tuple[str, ...] | None = None,
+    writable: tuple[str, ...] | None = None,
 ) -> WorkspacePolicy:
     return WorkspacePolicy(
         max_total_bytes=max_total_bytes,
         max_file_bytes=max_file_bytes,
         max_file_count=max_file_count,
         allowed_extensions=(".json", ".md", ".txt", ".yaml"),
-        readable_prefixes=(
-            ".deepagent",
-            "inputs",
-            "context",
-            "work",
-            "delegations",
-            "outputs",
-        ),
-        writable_prefixes=("work", "delegations", "outputs"),
+        readable_prefixes=DEFAULT_READABLE_PREFIXES if readable is None else readable,
+        writable_prefixes=DEFAULT_WRITABLE_PREFIXES if writable is None else writable,
         retention_class="agent-ephemeral-v1",
     )
 

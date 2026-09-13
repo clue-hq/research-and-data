@@ -14,6 +14,7 @@ import fcntl
 import fnmatch
 import hashlib
 import os
+import re
 import stat
 import threading
 from collections.abc import Iterator, Sequence
@@ -41,6 +42,7 @@ from clue_agents.contracts import ArtifactRef, WorkspacePolicy, normalize_virtua
 from clue_agents.ports import AgentArtifactSink, WorkspaceEntry
 from clue_agents.workspace_policy import (
     PreparedWorkspaceRoot,
+    WorkspaceConfigurationError,
     WorkspaceConflict,
     WorkspaceError,
     WorkspaceQuotaExceeded,
@@ -53,7 +55,9 @@ __all__ = [
     "AgentWorkspaceFactory",
     "AgentWorkspaceLease",
     "AnchoredAgentWorkspaceBackend",
+    "MountMode",
     "WorkspaceIdentity",
+    "WorkspaceMount",
     "WorkspaceUsageSnapshot",
 ]
 
@@ -69,6 +73,10 @@ _DIR_FLAGS: Final = (
 )
 _READ_FLAGS: Final = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 _LAYOUT: Final = (".deepagent", "inputs", "context", "work", "delegations", "outputs")
+# A mount claims one reserved first path segment. It is deliberately narrower than a
+# workspace segment: lowercase, no dot, no separator, so it can never collide with a
+# layout folder, a temporary-write residue, or a relative path component.
+_MOUNT_SEGMENT: Final = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 _MATERIALIZED_PREFIXES: Final = (".deepagent", "inputs", "context")
 _MEDIA_TYPES: Final = {
     ".json": "application/json",
@@ -123,6 +131,22 @@ def _validate_regular_file(metadata: os.stat_result) -> None:
         raise WorkspaceSecurityError("workspace files must not be executable")
     if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
         raise WorkspaceSecurityError("workspace file has an unexpected owner")
+
+
+MountMode = Literal["read_only", "read_write"]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceMount:
+    """One extra anchored root served under a reserved first path segment.
+
+    ``directory_fd`` is an already-open, audited private directory descriptor. The backend owns
+    it once the mount is accepted: :meth:`AnchoredAgentWorkspaceBackend.close` closes it.
+    """
+
+    name: str
+    directory_fd: int
+    mode: MountMode
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,11 +241,21 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         identity: WorkspaceIdentity,
         policy: WorkspacePolicy,
         artifact_sink: AgentArtifactSink,
+        mounts: Sequence[WorkspaceMount] = (),
     ) -> None:
         if policy.virtual_mode is not True:
             raise WorkspaceSecurityError("agent workspace requires virtual_mode=True")
         self._root_fd = execution_fd
         _validate_private_directory(self._root_fd)
+        by_name: dict[str, WorkspaceMount] = {}
+        for mount in mounts:
+            if not _MOUNT_SEGMENT.fullmatch(mount.name) or mount.name in _LAYOUT:
+                raise WorkspaceConfigurationError("mount name is reserved or malformed")
+            if mount.name in by_name:
+                raise WorkspaceConfigurationError("duplicate mount name")
+            _validate_private_directory(mount.directory_fd)
+            by_name[mount.name] = mount
+        self._mounts: dict[str, WorkspaceMount] = by_name
         self._identity = identity
         self._policy = policy
         self._artifact_sink = artifact_sink
@@ -241,9 +275,16 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
 
     def close(self) -> None:
         with self._thread_lock:
-            if not self._closed:
-                os.close(self._root_fd)
-                self._closed = True
+            if self._closed:
+                return
+            # Flip first: a re-entrant or racing close must never double-close a descriptor
+            # number that the kernel may already have handed back out.
+            self._closed = True
+            for directory_fd in dict.fromkeys(
+                [self._root_fd, *(mount.directory_fd for mount in self._mounts.values())]
+            ):
+                with suppress(OSError):
+                    os.close(directory_fd)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -270,6 +311,27 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         except ValueError as exc:
             raise WorkspaceSecurityError(str(exc)) from exc
 
+    def _mount_for(self, logical: str) -> WorkspaceMount | None:
+        return self._mounts.get(logical.partition("/")[0])
+
+    def _resolve(
+        self,
+        logical: str,
+        *,
+        allow_mount_root: bool = False,
+    ) -> tuple[int, str, WorkspaceMount | None]:
+        """Return (root fd, path relative to that root, the mount or None for the thread root)."""
+
+        head, _, rest = logical.partition("/")
+        mount = self._mounts.get(head)
+        if mount is None:
+            return self._root_fd, logical, None
+        if not rest:
+            if allow_mount_root:
+                return mount.directory_fd, "", mount
+            raise WorkspaceSecurityError("a mount root is a directory, not a file")
+        return mount.directory_fd, rest, mount
+
     def _validate_path(self, path: str, *, write: bool, materialize: bool = False) -> str:
         try:
             logical = normalize_virtual_path(path)
@@ -279,6 +341,12 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         if not _is_under(logical, readable):
             raise WorkspaceSecurityError("path is outside the readable workspace authority")
         if write:
+            mount = self._mount_for(logical)
+            if mount is not None:
+                if materialize:
+                    raise WorkspaceSecurityError("a mount cannot hold materialized resources")
+                if mount.mode == "read_only":
+                    raise WorkspaceSecurityError("path is inside a read-only mount")
             prefixes = _MATERIALIZED_PREFIXES if materialize else self._policy.writable_prefixes
             if not _is_under(logical, prefixes):
                 raise WorkspaceSecurityError("path is outside the writable workspace authority")
@@ -291,8 +359,9 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
 
     @contextmanager
     def _parent_fd(self, logical: str, *, create: bool) -> Iterator[tuple[int, str]]:
-        parts = logical.split("/")
-        current = os.dup(self._root_fd)
+        root_fd, relative, _mount = self._resolve(logical)
+        parts = relative.split("/")
+        current = os.dup(root_fd)
         try:
             _validate_private_directory(current)
             for component in parts[:-1]:
@@ -332,10 +401,13 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         return file_fd, metadata
 
     def _walk_files(self, *, prefix: str = "") -> list[tuple[str, int, int]]:
-        start_fd = os.dup(self._root_fd)
+        root_fd, relative, mount = (
+            self._resolve(prefix, allow_mount_root=True) if prefix else (self._root_fd, "", None)
+        )
+        start_fd = os.dup(root_fd)
         try:
-            if prefix:
-                for component in prefix.split("/"):
+            if relative:
+                for component in relative.split("/"):
                     next_fd = os.open(component, _DIR_FLAGS, dir_fd=start_fd)
                     os.close(start_fd)
                     start_fd = next_fd
@@ -361,8 +433,11 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                         _validate_regular_file(metadata)
                         files.append((logical, metadata.st_size, metadata.st_mode))
 
-            walk(start_fd, prefix)
-            return files
+            walk(start_fd, relative)
+            if mount is None:
+                return files
+            # A mount's paths are model-visible only under its reserved virtual segment.
+            return [(f"{mount.name}/{path}", size, mode) for path, size, mode in files]
         except FileNotFoundError:
             return []
         except WorkspaceError:
@@ -371,6 +446,19 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             raise WorkspaceSecurityError("workspace tree contains an unsafe entry") from exc
         finally:
             os.close(start_fd)
+
+    def _quota_files(self) -> list[tuple[str, int, int]]:
+        """Every file the one policy quota governs: the thread root plus writable mounts.
+
+        A read-only mount is readable but never charged — nothing this workspace does can
+        change its size, so counting it would spend the agent's budget on someone else's bytes.
+        """
+
+        files = self._walk_files()
+        for mount in self._mounts.values():
+            if mount.mode == "read_write":
+                files.extend(self._walk_files(prefix=mount.name))
+        return files
 
     def _quota_before_write(
         self,
@@ -381,7 +469,7 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
     ) -> None:
         if byte_count > self._policy.max_file_bytes:
             raise WorkspaceQuotaExceeded("file exceeds the per-file workspace quota")
-        files = self._walk_files()
+        files = self._quota_files()
         self._validate_current_quota(files)
         file_count = len(files) + (1 if adds_file else 0)
         total_bytes = sum(size for _, size, _ in files) - replacing_size + byte_count
@@ -624,6 +712,10 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             logical_prefix = self._validate_path(prefix.rstrip("/"), write=False)
         with self._filesystem_lock(exclusive=False):
             files = self._walk_files(prefix=logical_prefix)
+            if not logical_prefix:
+                # Every mount is readable, so the root listing spans them all.
+                for mount in self._mounts.values():
+                    files.extend(self._walk_files(prefix=mount.name))
             return tuple(self._entry(path) for path, _, _ in files)
 
     def stat_entry_sync(self, path: str) -> WorkspaceEntry:
@@ -642,7 +734,7 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
 
     def usage_snapshot(self) -> WorkspaceUsageSnapshot:
         with self._filesystem_lock(exclusive=False):
-            files = self._walk_files()
+            files = self._quota_files()
             self._validate_current_quota(files)
             output_sizes = tuple(
                 size for path, size, _mode in files if _is_under(path, ("outputs",))
@@ -689,7 +781,7 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             if self._outputs_snapshotted:
                 return self._snapshot_refs
             with self._filesystem_lock(exclusive=True):
-                self._validate_current_quota(self._walk_files())
+                self._validate_current_quota(self._quota_files())
                 files = self._walk_files(prefix="outputs")
                 payloads: list[tuple[str, bytes, str]] = []
                 for logical, _, _ in files:
@@ -736,6 +828,9 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             return f"conflict: {exc}"
         return f"permission_denied: {exc}"
 
+    def _mount_directory_entries(self) -> list[FileInfo]:
+        return [{"path": name, "is_dir": True, "size": 0} for name in sorted(self._mounts)]
+
     def ls(self, path: str) -> LsResult:
         try:
             logical = self._framework_path(path, allow_root=True)
@@ -743,6 +838,8 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             result: list[FileInfo] = [
                 {"path": item.path, "is_dir": False, "size": item.byte_count} for item in entries
             ]
+            if not logical:
+                result = [*self._mount_directory_entries(), *result]
             return LsResult(entries=result)
         except WorkspaceError as exc:
             return LsResult(error=self._error(exc))
@@ -790,6 +887,12 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             logical = self._framework_path(path or "", allow_root=True)
             entries = self.list_entries_sync(logical)
             matches: list[FileInfo] = []
+            if not logical:
+                matches.extend(
+                    entry
+                    for entry in self._mount_directory_entries()
+                    if fnmatch.fnmatch(entry["path"], pattern)
+                )
             for item in entries:
                 relative = item.path.removeprefix(f"{logical}/") if logical else item.path
                 if fnmatch.fnmatch(relative, pattern):
@@ -809,6 +912,9 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             return GrepResult(error=listed.error)
         matches: list[GrepMatch] = []
         for entry in listed.matches or []:
+            if entry.get("is_dir"):
+                # A mount root matches a bare glob but has no bytes to search.
+                continue
             content = self.read_text_sync(entry["path"])
             for line_number, line in enumerate(content.splitlines(), start=1):
                 if pattern in line:

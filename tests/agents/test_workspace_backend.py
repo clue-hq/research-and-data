@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID
 
@@ -15,7 +16,10 @@ from clue_agents import (
     AgentWorkspaceFactory,
     AnchoredAgentWorkspaceBackend,
     ArtifactRef,
+    MountMode,
+    WorkspaceConfigurationError,
     WorkspaceConflict,
+    WorkspaceMount,
     WorkspaceQuotaExceeded,
     WorkspaceRootPolicy,
     WorkspaceSecurityError,
@@ -483,3 +487,184 @@ async def _snapshot_twice(
         backend.snapshot_outputs(),
     )
     return first, second
+
+
+# --- mount table -------------------------------------------------------------------------
+
+
+_MOUNT_READABLE = (
+    ".deepagent",
+    "inputs",
+    "context",
+    "work",
+    "delegations",
+    "outputs",
+    "library",
+)
+_MOUNT_WRITABLE = ("work", "delegations", "outputs", "library")
+
+
+@contextmanager
+def _mounted_backend(
+    tmp_path: Path,
+    *,
+    mode: MountMode = "read_only",
+) -> Iterator[tuple[AnchoredAgentWorkspaceBackend, Path]]:
+    """A backend over a real execution root plus one anchored ``library`` mount."""
+
+    active = policy(readable=_MOUNT_READABLE, writable=_MOUNT_WRITABLE)
+    harness = make_workspace(tmp_path, active_policy=active)
+    # The mounted backend owns the same execution root through its own descriptor.
+    harness.lease.backend.close()
+    mount_dir = tmp_path / "mount"
+    mount_dir.mkdir(mode=0o700)
+    (mount_dir / "plan.md").write_text("# Plan\n")
+    os.chmod(mount_dir / "plan.md", 0o400)
+    mount_fd = os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    root_fd = os.open(harness.execution_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    backend: AnchoredAgentWorkspaceBackend | None = None
+    try:
+        backend = AnchoredAgentWorkspaceBackend(
+            execution_fd=root_fd,
+            identity=harness.lease.identity,
+            policy=active,
+            artifact_sink=RecordingArtifactSink(),
+            mounts=(WorkspaceMount(name="library", directory_fd=mount_fd, mode=mode),),
+        )
+        yield backend, mount_dir
+    finally:
+        if backend is None:
+            os.close(root_fd)
+            os.close(mount_fd)
+        else:
+            backend.close()
+        harness.factory.close()
+
+
+def test_a_read_only_mount_is_readable_by_its_virtual_name_and_never_writable(
+    tmp_path: Path,
+) -> None:
+    with _mounted_backend(tmp_path) as (backend, mount_dir):
+        assert backend.read_text_sync("library/plan.md") == "# Plan\n"
+        assert backend.stat_entry_sync("library/plan.md").read_only is True
+
+        with pytest.raises(WorkspaceSecurityError) as raised:
+            backend.write_text_sync("library/new.md", "nope")
+        assert "read-only mount" in str(raised.value)
+        assert not (mount_dir / "new.md").exists()
+
+        write_error = backend.write("library/new.md", "nope").error or ""
+        assert write_error.startswith("permission_denied")
+        edit_error = backend.edit("library/plan.md", "# Plan", "# Other").error or ""
+        assert edit_error.startswith("permission_denied")
+
+        # A mount root is a directory, never a file.
+        with pytest.raises(WorkspaceSecurityError):
+            backend.read_text_sync("library")
+
+        # The thread root is unaffected.
+        assert backend.write_text_sync("work/note.md", "mine").path == "work/note.md"
+
+
+def test_root_listing_shows_mounts_as_directories(tmp_path: Path) -> None:
+    with _mounted_backend(tmp_path) as (backend, _mount_dir):
+        backend.write_text_sync("work/note.md", "mine")
+        entries = backend.ls("/").entries or []
+        assert {"path": "library", "is_dir": True, "size": 0} in entries
+        assert {"path": "library/plan.md", "is_dir": False, "size": 7} in entries
+        assert {"path": "work/note.md", "is_dir": False, "size": 4} in entries
+        assert [item.path for item in backend.list_entries_sync("library")] == ["library/plan.md"]
+        matches = backend.glob("*.md", "library").matches or []
+        assert {"path": "library/plan.md", "is_dir": False, "size": 7} in matches
+        root_matches = backend.glob("**").matches or []
+        assert {"path": "library", "is_dir": True, "size": 0} in root_matches
+        # A bare glob sweeps the mount root in, but grep has no bytes to read there.
+        grepped = backend.grep("Plan")
+        assert grepped.error is None
+        assert grepped.matches == [{"path": "library/plan.md", "line": 1, "text": "# Plan"}]
+
+
+def test_a_mount_cannot_be_escaped_or_shadowed(tmp_path: Path) -> None:
+    # The shadowing half of this guarantee — a mount may not claim a layout name — is
+    # proven by test_a_mount_name_may_not_shadow_the_layout_or_be_malformed below.
+    with _mounted_backend(tmp_path) as (backend, mount_dir):
+        with pytest.raises(WorkspaceSecurityError):
+            backend.read_text_sync("library/../inputs/seed.md")
+        with pytest.raises(WorkspaceSecurityError):
+            backend.materialize_bytes("library/x.md", b"trusted")
+        assert not (mount_dir / "x.md").exists()
+
+        os.symlink("/etc/passwd", mount_dir / "escape.md")
+        with pytest.raises(WorkspaceSecurityError):
+            backend.read_text_sync("library/escape.md")
+        with pytest.raises(WorkspaceSecurityError):
+            backend.list_entries_sync("library")
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("outputs",),
+        (".deepagent",),
+        ("inputs",),
+        ("Library",),
+        ("-bad",),
+        ("x" * 33,),
+        ("",),
+        ("library", "library"),
+    ],
+)
+def test_a_mount_name_may_not_shadow_the_layout_or_be_malformed(
+    tmp_path: Path,
+    names: tuple[str, ...],
+) -> None:
+    active = policy(readable=_MOUNT_READABLE, writable=_MOUNT_WRITABLE)
+    harness = make_workspace(tmp_path, active_policy=active)
+    harness.lease.backend.close()
+    mount_dir = tmp_path / "mount"
+    mount_dir.mkdir(mode=0o700)
+    fds = [
+        os.open(harness.execution_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW),
+        *(os.open(mount_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) for _ in names),
+    ]
+    try:
+        with pytest.raises(WorkspaceConfigurationError):
+            AnchoredAgentWorkspaceBackend(
+                execution_fd=fds[0],
+                identity=harness.lease.identity,
+                policy=active,
+                artifact_sink=RecordingArtifactSink(),
+                mounts=tuple(
+                    WorkspaceMount(name=name, directory_fd=fd, mode="read_only")
+                    for name, fd in zip(names, fds[1:], strict=True)
+                ),
+            )
+    finally:
+        for fd in fds:
+            os.close(fd)
+        harness.factory.close()
+
+
+def test_a_read_write_mount_takes_writes_under_the_thread_quota(tmp_path: Path) -> None:
+    with _mounted_backend(tmp_path, mode="read_write") as (backend, mount_dir):
+        # The mount already holds one file; the single policy quota counts it.
+        assert backend.usage_snapshot().file_count == 1
+        for index in range(18):
+            backend.write_text_sync(f"work/note-{index}.md", "x")
+        entry = backend.write_text_sync("library/added.md", "fresh")
+        assert entry.path == "library/added.md"
+        assert (mount_dir / "added.md").read_text() == "fresh"
+        # The bytes land in the mount, never in a same-named folder under the thread root.
+        assert sorted(os.listdir(mount_dir)) == ["added.md", "plan.md"]
+        assert stat.S_IMODE((mount_dir / "added.md").stat().st_mode) == 0o600
+
+        edited = backend.edit_text_sync("library/added.md", old="fresh", new="edited")
+        assert edited.path == "library/added.md"
+        assert (mount_dir / "added.md").read_text() == "edited"
+
+        snapshot = backend.usage_snapshot()
+        assert snapshot.file_count == 20
+        with pytest.raises(WorkspaceQuotaExceeded):
+            backend.write_text_sync("work/overflow.md", "x")
+        with pytest.raises(WorkspaceQuotaExceeded):
+            backend.write_text_sync("library/overflow.md", "x")

@@ -162,7 +162,9 @@ from clue_agents.workspace import (
     AgentWorkspaceFactory,
     AgentWorkspaceLease,
     AnchoredAgentWorkspaceBackend,
+    MountMode,
     WorkspaceIdentity,
+    WorkspaceMount,
     WorkspaceUsageSnapshot,
 )
 from clue_agents.workspace_policy import (
@@ -274,6 +276,7 @@ __all__ = [
     "LayerBudget",
     "MemoryLayerSource",
     "ModelPolicy",
+    "MountMode",
     "ProjectContextArtifact",
     "PreparedWorkspaceRoot",
     "ProfileCatalog",
@@ -309,6 +312,7 @@ __all__ = [
     "WorkspaceEntry",
     "WorkspaceError",
     "WorkspaceIdentity",
+    "WorkspaceMount",
     "WorkspaceUsageSnapshot",
     "WorkspacePolicy",
     "WorkspaceQuotaExceeded",
