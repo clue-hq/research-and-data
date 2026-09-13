@@ -88,7 +88,7 @@ role: head_of_abm
 prompt:
   name: head-of-abm
   version: v9
-  sha256: ea353e7b1ebbf140fae0feb9de60347b8cb014f1edd03e6a2d11e08e90d8e64c
+  sha256: 4972d35cc33874b3d3b81c253c33fdc9ba236d8b3fe18090a557db7cdffed2d0
 skills:
   - name: stage0-interview
     version: v29

@@ -131,7 +131,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # name those mounted paths instead of the per-turn seeds under `inputs/`; the prompt and
         # the skill body are both in the manifest, so the digest moves again. Digest measured off
         # this tree.
-        AgentRole.HEAD_OF_ABM: ("d82f37697a9d46ac81134a573ecd66d5e00a3db7610b89d0cf18520006a44f4f"),
+        AgentRole.HEAD_OF_ABM: ("92cf991ea1cea88e2694fecb099b93b7c3601436816a37b7b1387115abca23ce"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
