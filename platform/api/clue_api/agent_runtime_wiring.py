@@ -67,7 +67,7 @@ from clue_api.product_knowledge_privacy import stream_product_tool_receipt
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_obs import get_logger
-from clue_toolbelt import ToolRegistry
+from clue_toolbelt import ToolEffectClass, ToolRegistry
 
 __all__ = [
     "AgentFinalizationAuthority",
@@ -799,6 +799,16 @@ class GovernedAgentToolFactory:
                         f"{failure.error_type}: {failure.message}" for failure in failures
                     ),
                 )
+                # W10 (2026-09-13): an effect-free read that refuses by precondition — the
+                # overview is not written, no claims under that prefix, no discovery run — has
+                # answered the question it was asked. It is not a misread argument contract, so
+                # it does not spend the repair budget; a parallel fan-out of five such reads
+                # killed a live turn.
+                honest_read = (
+                    descriptor.effect_class is ToolEffectClass.READ
+                    and bool(failures)
+                    and all(failure.error_type == "PreconditionFailed" for failure in failures)
+                )
                 return self._tool_failure(
                     error="operation_failed",
                     address=pin.address,
@@ -809,6 +819,7 @@ class GovernedAgentToolFactory:
                     )
                     or ("the governed operation did not complete",),
                     raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                    budgeted=not honest_read,
                 )
             recovered = await self._execution.recover(
                 execution_id=self._request.constitution.execution_id
@@ -891,6 +902,7 @@ class GovernedAgentToolFactory:
         error_type: str,
         reasons: tuple[str, ...],
         raise_when_exhausted: BaseException,
+        budgeted: bool = True,
     ) -> str:
         """Hand one refused governed invocation back to the model, within a per-turn budget.
 
@@ -903,10 +915,15 @@ class GovernedAgentToolFactory:
         behaviour: the turn fails closed with its stable error code and still commits nothing.
         A repeated refusal is not a misread argument contract, and each further attempt is a paid
         model call.
+
+        W10: a refusal that is *not* ``budgeted`` is still operator-visible but costs the turn
+        nothing — a precondition refusal from an effect-free read has answered the question it was
+        asked, so it can neither exhaust the budget nor raise.
         """
 
-        self._tool_failures += 1
-        exhausted = self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        if budgeted:
+            self._tool_failures += 1
+        exhausted = budgeted and self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
         log.warning(
             "agent.tool_repair",
             address=address,
@@ -916,6 +933,7 @@ class GovernedAgentToolFactory:
             reasons=list(reasons),
             attempt=self._tool_failures,
             exhausted=exhausted,
+            budgeted=budgeted,
         )
         if exhausted:
             raise raise_when_exhausted
