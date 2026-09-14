@@ -27,6 +27,7 @@ from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_tracing import (
+    install_production_langfuse,
     install_production_sentry,
     install_production_tracing,
 )
@@ -89,6 +90,9 @@ def build_application(
         resolved, resolved_secrets, service_name="clue-projections-api"
     )
     install_production_sentry(resolved, resolved_secrets, service_name="clue-projections-api")
+    install_production_langfuse(
+        resolved, resolved_secrets, runtime=tracing, service_name="clue-projections-api"
+    )
     storage = build_storage_backend(resolved)
     research_views: ProductionResearchViewRuntime | None = (
         build_production_research_view_runtime(storage=storage) if _c7_enabled(resolved) else None

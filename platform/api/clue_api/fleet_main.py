@@ -144,6 +144,7 @@ from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_bind
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
 from clue_api.production_tracing import (
+    install_production_langfuse,
     install_production_sentry,
     install_production_tracing,
     production_tracing_lifespan,
@@ -822,6 +823,9 @@ async def _serve() -> None:
     # every task span belongs to one provider. Both are no-ops without an endpoint / a DSN.
     tracing = install_production_tracing(settings, secrets, service_name="clue-worker-fleet")
     install_production_sentry(settings, secrets, service_name="clue-worker-fleet")
+    install_production_langfuse(
+        settings, secrets, runtime=tracing, service_name="clue-worker-fleet"
+    )
     storage = build_storage_backend(settings)
     async with (
         production_tracing_lifespan(tracing),
