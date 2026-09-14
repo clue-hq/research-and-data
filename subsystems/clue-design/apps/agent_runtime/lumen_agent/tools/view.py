@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Optional
 
 from py_lumen_obs import get_logger, log_span
+from pydantic import StrictInt
 
+from ..image_crop import ImageCropError, decoded_source_raster, validate_frame_index
 from ..paths import to_virtual
 from .asset_preview import rasterize_vector_preview
 from .substrate import LumenDesignTools, blob_path_for_digest
@@ -431,7 +433,58 @@ def _image_observation_label(
     return label
 
 
-def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
+def _original_gif_hint(tools: LumenDesignTools, asset_id: str, record: dict) -> str:
+    """Original availability is independent of which frame a thumbnail depicts."""
+    if (record.get("media") or {}).get("mime_type") != "image/gif":
+        return ""
+    try:
+        _record, raw, mime, digest = tools._original_raster_source(asset_id)
+        with decoded_source_raster(raw, mime_type=mime, frame_index=0) as (source, count):
+            width, height = source.size
+    except ImageCropError:
+        return (
+            "; verified original GIF frames unavailable; "
+            "this still does not establish all source content."
+        )
+    return (
+        f" Original GIF available: {count} frames, decoded canvas {width}x{height}, "
+        f"source SHA-256 {digest}. Inspect a specific source frame with "
+        f'view(target="asset:{asset_id}", frame_index=<integer 0..{count - 1}>). '
+        "A blank still does not establish that the whole source is blank."
+    )
+
+
+def _selected_frame_content(
+    tools: LumenDesignTools, target: str, asset_id: str, frame_index: int,
+) -> list[dict]:
+    """A read-only still from the same verified bytes and decoder used by crop."""
+    try:
+        _record, raw, mime, digest = tools._original_raster_source(asset_id)
+        with decoded_source_raster(raw, mime_type=mime, frame_index=frame_index) as (source, count):
+            width, height = source.size
+            output = io.BytesIO()
+            source.save(output, format="PNG")
+        content = [
+            _text_block(
+                f"view: asset {asset_id}; selected frame index {frame_index} of {count} frames; "
+                f"decoded composited canvas {width}x{height}; source SHA-256 {digest}. "
+                "Still observation only; animation not reviewed. Crop coordinates use these "
+                "decoded source pixels, not the possibly resized observation."
+            ),
+            _image_bytes_block(output.getvalue()),
+        ]
+        status = f"frame_index={frame_index}; blocks={len(content)}"
+    except ImageCropError as error:
+        code = error.code.replace("asset.crop_", "view.frame_")
+        content = [_text_block(f"{code}: {error}")]
+        status = code
+    tools.record("agent", "view_called", input_summary=target, output_summary=status)
+    return content
+
+
+def _view_content(
+    tools: LumenDesignTools, target: str, frame_index: int | None = None,
+) -> list[dict]:
     """Build the ToolMessage content (a LIST of blocks) for `view(target)`.
 
     - "preview" -> latest rendered PNG as [text, image], plus a candidate-scene
@@ -441,6 +494,18 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
       text-only listing available ids when unknown/missing.
     Every call records a `view_called` trace event.
     """
+    if frame_index is not None:
+        try:
+            validate_frame_index(frame_index)
+            if not target.startswith(("asset:", "reference:")):
+                raise ImageCropError(
+                    "view.frame_unsupported_target",
+                    "frame_index requires an asset or turn reference target.",
+                )
+        except ImageCropError as error:
+            code = error.code.replace("asset.crop_", "view.frame_")
+            tools.record("agent", "view_called", input_summary=target, output_summary=code)
+            return [_text_block(f"{code}: {error}")]
     if target == "preview":
         png = _latest_preview_png(tools)
         if png is None:
@@ -494,6 +559,8 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
 
     if target.startswith("asset:"):
         asset_id = target[len("asset:"):]
+        if frame_index is not None:
+            return _selected_frame_content(tools, target, asset_id, frame_index)
         # Preserve the kit/library lookup order, then fall back to the current
         # scene for assets generated after the by-value manifests were frozen.
         # The same resolver keeps every source bound to this run's asset store.
@@ -542,7 +609,7 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             _text_block(_image_observation_label(
                 path, f"view: source preview for asset {asset_id} ({to_virtual(path, tools.config)})",
                 source_mime=(record.get("media") or {}).get("mime_type"),
-            )),
+            ) + _original_gif_hint(tools, asset_id, record)),
             _image_block(path),
         ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
@@ -568,6 +635,8 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             tools.record("agent", "view_called", input_summary=target, output_summary="reference_unknown")
             return content
         index, asset_id, entry = match
+        if frame_index is not None:
+            return _selected_frame_content(tools, target, asset_id, frame_index)
         digest = entry.get("preview_digest")
         path = None
         if digest:
@@ -577,6 +646,7 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
                 _text_block(
                     f"view: reference {index} ({asset_id}) preview bytes are missing. "
                     f"Available references: {_reference_target_labels(tools)}"
+                    + _original_gif_hint(tools, asset_id, entry.get("record") or {})
                 )
             ]
             tools.record("agent", "view_called", input_summary=target, output_summary="reference_missing_file")
@@ -586,7 +656,7 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             _text_block(_image_observation_label(
                 path, f"view: reference {index} — {label} ({to_virtual(path, tools.config)})",
                 source_mime=((entry.get("record") or {}).get("media") or {}).get("mime_type"),
-            )),
+            ) + _original_gif_hint(tools, asset_id, entry.get("record") or {})),
             _image_block(path),
         ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
@@ -613,13 +683,17 @@ def make_view_tool(tools: LumenDesignTools):
     from langchain_core.tools import tool
 
     @tool
-    def view(target: str) -> list:
+    def view(target: str, frame_index: StrictInt | None = None) -> list:
         """Look at real pixels. target="preview" returns the latest rendered PNG;
         target="asset:<asset_id>" returns that asset's source preview thumbnail —
         a brand-kit asset, a workspace library asset, or an asset registered in
         the current scene (including newly generated imagery). Returns image
-        content so you can judge by looking,
-        not by guessing from metadata."""
+        content so you can judge by looking, not by guessing from metadata.
+        Optional frame_index is an explicit nonnegative integer for a GIF original
+        in this run's authorized asset context, including reference:<n> aliases.
+        It inspects one composited source frame; animation is not reviewed. The
+        original digest and decoded pixel dimensions accompany the still. Omit
+        it to retain the default preview; it is unsupported for target="preview"."""
         # Containment (sweep A2): NOTHING inside view() — a provider-rejectable
         # image, an unreadable file, a corrupt/undecodable thumbnail — may
         # propagate as an unhandled exception and kill the turn unfinalized. On
@@ -631,8 +705,8 @@ def make_view_tool(tools: LumenDesignTools):
                     # Keep freshness, file selection and both pixel observations
                     # in the same transaction as scene edits and preview exports.
                     with tools._scene_mutation_lock:
-                        return _view_content(tools, target)
-                return _view_content(tools, target)
+                        return _view_content(tools, target, frame_index=frame_index)
+                return _view_content(tools, target, frame_index=frame_index)
         except Exception as exc:  # noqa: BLE001 - deliberate turn-safety boundary
             try:
                 tools.record(

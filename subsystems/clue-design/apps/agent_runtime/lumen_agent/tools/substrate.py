@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
 from py_lumen_obs import bind_run_id, get_logger, log_span
+from pydantic import StrictInt
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
@@ -2241,24 +2242,21 @@ class LumenDesignTools:
                     break
         return record if isinstance(record, dict) and record.get("id") == asset_id else None
 
-    def crop_image(self, asset_id: str, crop_rect: Any, label: Optional[str] = None) -> str:
-        """Register a lossless source rectangle as a separate, unplaced image."""
-        refusal = self._refuse_without_page("crop_image")
-        if refusal is not None:
-            return refusal
+    def _original_raster_source(self, asset_id: str) -> tuple[JsonObject, bytes, str, str]:
+        """Read verified original bytes by authorized ID; never substitute a preview.
+
+        Viewing needs no modification license. The caller that derives a new asset
+        owns that permission and ancestry check before invoking the crop decoder.
+        """
         record = self._crop_source_record(asset_id)
         if (
             not isinstance(record, dict)
             or record.get("id") != asset_id
             or record.get("status") != "ready"
         ):
-            return self._tool_error(
-                "asset.crop_unavailable", "Crop source is not a ready asset in this run's context."
+            raise ImageCropError(
+                "asset.crop_unavailable", "Source is not a ready asset in this run's context."
             )
-        try:
-            require_supported_crop_origin(record, self._crop_source_record)
-        except ImageCropError as error:
-            return self._tool_error(error.code, str(error))
         media = record.get("media") or {}
         digest = (media.get("digest") or {}).get("value")
         mime = media.get("mime_type")
@@ -2269,30 +2267,46 @@ class LumenDesignTools:
             or not isinstance(digest, str)
             or not re.fullmatch(r"[0-9a-f]{64}", digest)
         ):
-            return self._tool_error(
+            raise ImageCropError(
                 "asset.crop_invalid_source",
-                "Crop requires an original raster with a valid SHA-256 digest.",
-            )
-        license = record.get("license")
-        # Mirror AssetRecord::allows_modification: absent license permits; a
-        # present license with a missing flag defaults to false in the engine.
-        if license is not None and license.get("allow_modification") is not True:
-            return self._tool_error(
-                "asset.crop_license", "The source license does not permit modification."
+                "Requires an original raster with a valid SHA-256 digest.",
             )
         try:
             source_path = blob_path_for_digest(self.config.effective_asset_store_root, digest)
             source_bytes = source_path.read_bytes()
-        except OSError:
-            return self._tool_error("asset.crop_missing", "Original source bytes are not materialized.")
+        except OSError as error:
+            raise ImageCropError(
+                "asset.crop_missing", "Original source bytes are not materialized."
+            ) from error
         if hashlib.sha256(source_bytes).hexdigest() != digest:
-            return self._tool_error(
+            raise ImageCropError(
                 "asset.crop_corrupt", "Source bytes do not match their frozen digest."
             )
+        return record, source_bytes, mime, digest
+
+    def crop_image(
+        self, asset_id: str, crop_rect: Any, label: str | None = None,
+        frame_index: StrictInt | None = None,
+    ) -> str:
+        """Register a lossless source rectangle as a separate, unplaced image."""
+        refusal = self._refuse_without_page("crop_image")
+        if refusal is not None:
+            return refusal
         try:
+            record = self._crop_source_record(asset_id)
+            if record is not None:
+                require_supported_crop_origin(record, self._crop_source_record)
+            record, source_bytes, mime, _digest = self._original_raster_source(asset_id)
+            license = record.get("license")
+            # Mirror AssetRecord::allows_modification: absent license permits; a
+            # present license with a missing flag defaults to false in the engine.
+            if license is not None and license.get("allow_modification") is not True:
+                raise ImageCropError(
+                    "asset.crop_license", "The source license does not permit modification."
+                )
             cropped = crop_source_pixels(
                 source_bytes, source_asset_id=asset_id, mime_type=mime, rect=crop_rect,
-                source_generated=has_generated_image_origin(record),
+                source_generated=has_generated_image_origin(record), frame_index=frame_index,
             )
         except ImageCropError as error:
             return self._tool_error(error.code, str(error))
@@ -2786,6 +2800,7 @@ class LumenDesignTools:
         # Preserve raw element types through tool validation; crop_source_pixels
         # refuses bools/floats instead of Pydantic coercing them to integers.
         crop_rect: list[Any] | None = None,
+        frame_index: StrictInt | None = None,
     ) -> str:
         """Generate or place a design asset. Pick `action`:
 
@@ -2819,8 +2834,12 @@ class LumenDesignTools:
           is four integers [left, top, right, bottom] in ORIGINAL source pixels,
           half-open; right/bottom excluded. Use original dimensions, not preview
           dimensions. Bounds must be nonempty and inside the source. Nonidentity
-          EXIF orientation and animated/unsupported images are refused. Preserves
-          decoded pixels/alpha and original asset; returns a separate image asset
+          EXIF orientation and unsupported images are refused. Animated cropping
+          requires an explicit nonnegative integer `frame_index` (GIF only); use
+          view(target="asset:<id>", frame_index=...) to inspect that original
+          frame first. Coordinates are its decoded composited full-frame pixels,
+          not a thumbnail or smaller GIF patch. Omitting the index refuses animation.
+          Preserves decoded pixels/alpha and original asset; returns a separate image asset
           and crop_receipt with source digest/rect. Inspect, then explicitly place
           it in an independent image node. Cannot recover occluded or absent UI,
           nor remove backgrounds baked inside the selected rectangle.
@@ -2847,6 +2866,11 @@ class LumenDesignTools:
           attached kit — without one this action errors.
 
         Every action mutates the scene only through the canonical core operation path."""
+        if frame_index is not None and action != "crop_image":
+            return self._tool_error(
+                "asset.frame_unsupported_action",
+                "frame_index is only supported by action='crop_image'.",
+            )
         if action == "generate_image":
             if not prompt:
                 return self._tool_error(
@@ -2892,7 +2916,7 @@ class LumenDesignTools:
         if action == "crop_image":
             if not asset_id:
                 return self._tool_error("asset.bad_request", "action='crop_image' requires `asset_id`.")
-            return self.crop_image(asset_id, crop_rect, label)
+            return self.crop_image(asset_id, crop_rect, label, frame_index=frame_index)
         if action == "generate_qr":
             if not data:
                 return self._tool_error(

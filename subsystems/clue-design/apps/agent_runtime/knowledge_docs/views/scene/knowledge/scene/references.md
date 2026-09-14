@@ -9,6 +9,28 @@ the style from labels or an ad-DNA summary alone. Record visual invariants in
 `assumptions` or evidence references. Compare focal scale, spacing, hierarchy,
 logo clearspace/contrast, text-image relationships and material behavior.
 
+When a source is animated, a blank first still or unknown thumbnail does not
+establish that the source has no useful content. If its verified GIF original is
+available, `view` reports the frame count; choose an explicit index with
+`view(target="asset:<asset_id>", frame_index=<nonnegative_integer>)` (or the
+existing `reference:<n>` attachment target). This shows one composited frame and
+labels its original digest and decoded canvas dimensions. It does not review the
+animation. Inspect whichever frames help your decision; no sampling count or
+best-frame rule is prescribed. You decide whether the imagery serves the ad.
+
+To reuse an inspected GIF frame, call `asset(action="crop_image", asset_id=...,
+frame_index=<same_index>, crop_rect=[left,top,right,bottom])`. Coordinates are
+half-open original decoded canvas pixels, not preview pixels or a local GIF
+patch. Use `[0,0,width,height]` for the full frame. The tool creates an independent
+PNG through normal asset registration, with original/frame/crop/output custody;
+the source remains unchanged. It requires modification permission and refuses
+placeholder ancestry. Omitting the index still refuses animated cropping, and
+other animated formats are unsupported. Inspect the returned asset and place it
+explicitly. Viewing a frame does not change what a later generation call uses;
+to condition on that still, explicitly select its extracted asset ID. Keep
+extracted generated imagery identified by its generated ancestry rather than
+presenting it as authentic advertiser evidence.
+
 Assign an honest role: `source` supplies
 content, `treatment` supplies visible material/light/texture/color behavior,
 `composition` supplies spatial relationships. `logo` and `product` identify
