@@ -16,6 +16,7 @@ from clue_agents import (
     DeepAgentTurnRuntime,
     WorkspaceSeedFile,
 )
+from clue_agents.ports import SpillSink
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
@@ -72,6 +73,7 @@ def build_head_of_abm_stage0_execution(
     max_parallelism: int = 4,
     captured_turns: CapturedTurnBinder | None = None,
     surface: str | None = None,
+    spill_sink: SpillSink | None = None,
     crash_hook: AgentExecutionCrashHook = _no_crash,
     conn_factory: ConnFactory = transaction,
 ) -> C5AgentExecutionAdapter:
@@ -129,6 +131,10 @@ def build_head_of_abm_stage0_execution(
             or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
             request=request,
         ),
+        # A result too large for its receipt spills into this turn's own thread workspace, so
+        # only a caller holding the workspace lease can supply the sink; without one an oversized
+        # result keeps the old behaviour and is refused at the bound.
+        spill_sink=spill_sink,
         crash_hook=crash_hook,
         conn_factory=conn_factory,
     )

@@ -406,6 +406,9 @@ class ConversationTurnEngine:
                 budget_limit_millicents=budget_limit_millicents,
                 captured_turns=self._captured_turns,
                 surface=self.surface,
+                # The thread's own workspace is where a governed result too large for its receipt
+                # lands: `reads/<operation>.json`, readable by the model, written by nobody else.
+                spill_sink=lease.backend,
                 conn_factory=self._conn_factory,
             )
             outcome = await self._runtime.run(

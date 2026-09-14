@@ -1252,8 +1252,8 @@ def test_a_versioned_write_carries_the_read_version_and_re_reads_the_refreshed_l
         assert writer.calls[-1][2] is None
 
         assert [
-            (outcome.path, outcome.version, outcome.replayed) for outcome in
-            backend.written_documents
+            (outcome.path, outcome.version, outcome.replayed)
+            for outcome in backend.written_documents
         ] == [("plan.md", 3, False), ("plan.md", 4, False), ("audience/icp.md", 1, False)]
         assert backend.written_documents[0].document_id == _DOCUMENT_ID
 
@@ -1313,8 +1313,9 @@ def test_a_refused_versioned_write_reaches_the_model_as_a_readable_conflict(
 def test_a_versioned_mount_is_read_only_to_everything_but_its_writer(tmp_path: Path) -> None:
     with _versioned_project(tmp_path) as (lease, writer):
         backend = lease.backend
-        # Trusted pre-model bytes never land in a mount, versioned or not.
-        with pytest.raises(WorkspaceSecurityError, match="materialized resources"):
+        # Trusted platform bytes — materialized resources, a spilled read — never land in a
+        # mount, versioned or not.
+        with pytest.raises(WorkspaceSecurityError, match="cannot hold a trusted platform write"):
             backend.materialize_bytes("project/pinned.md", b"trusted")
         # The mount is not the thread's to spend: its bytes are the document store's.
         assert backend.usage_snapshot().file_count == 0
@@ -1380,6 +1381,7 @@ def test_a_versioned_mount_carries_its_writer_and_reopen_or_is_refused(tmp_path:
                 os.close(mount_fd)
     finally:
         harness.factory.close()
+
 
 # --- anchored library parents -------------------------------------------------------------
 
@@ -1515,3 +1517,96 @@ def test_any_other_sibling_directory_mode_is_still_refused(tmp_path: Path, mode:
             os.chmod(odd, 0o700)
     finally:
         factory.close()
+
+
+_SPILL_OPERATION = "00000000-0000-0000-0000-0000000006aa"
+
+
+def test_a_spilled_read_lands_in_reads_where_the_model_can_open_it(tmp_path: Path) -> None:
+    """The whole point of the spill: bytes the model could not be handed, it can now open.
+
+    ``reads/`` is readable authority and nobody's writable authority, so the same call has to
+    succeed for the runtime and stay impossible for the model — both halves are asserted here.
+    """
+
+    harness = make_workspace(tmp_path)
+    backend = harness.lease.backend
+    try:
+        payload = json.dumps({"claims": ["a" * 40 for _ in range(20)]}).encode()
+        path = backend.write_spill(_SPILL_OPERATION, payload)
+
+        assert path == f"reads/{_SPILL_OPERATION}.json"
+        assert backend.read_text_sync(path) == payload.decode()
+        assert (harness.thread_path / path).read_bytes() == payload
+        assert [entry.path for entry in backend.list_entries_sync("reads")] == [path]
+        with pytest.raises(WorkspaceSecurityError):
+            backend.write_text_sync(path, "the model's own hand")
+    finally:
+        harness.close()
+
+
+def test_a_respilled_operation_replaces_its_own_file_rather_than_colliding(tmp_path: Path) -> None:
+    """A replayed or resumed turn re-runs the same operation; that must not be a hard failure."""
+
+    harness = make_workspace(tmp_path)
+    backend = harness.lease.backend
+    try:
+        backend.write_spill(_SPILL_OPERATION, b'{"claims":["first"]}')
+        path = backend.write_spill(_SPILL_OPERATION, b'{"claims":["second","third"]}')
+
+        assert backend.read_text_sync(path) == '{"claims":["second","third"]}'
+        assert len(backend.list_entries_sync("reads")) == 1
+    finally:
+        harness.close()
+
+
+def test_a_spill_is_charged_to_the_thread_quota_like_any_other_file(tmp_path: Path) -> None:
+    """A spill is not free storage. It spends the same budget the agent's own writes spend."""
+
+    harness = make_workspace(
+        tmp_path,
+        active_policy=policy(max_total_bytes=64, max_file_bytes=64, max_file_count=5),
+    )
+    backend = harness.lease.backend
+    try:
+        backend.write_spill(_SPILL_OPERATION, b"x" * 40)
+        assert backend.usage_snapshot().total_bytes == 40
+        with pytest.raises(WorkspaceQuotaExceeded):
+            backend.write_spill("00000000-0000-0000-0000-0000000006ab", b"y" * 40)
+    finally:
+        harness.close()
+
+
+@pytest.mark.parametrize(
+    "operation_id",
+    ["../escape", "reads/nested", "a/b", ".hidden", "Op-1", "", "x" * 129],
+)
+def test_a_spill_name_that_is_not_one_safe_segment_is_refused(
+    tmp_path: Path,
+    operation_id: str,
+) -> None:
+    """The file name is the only caller-supplied part of a spill path, so it is the whole attack
+    surface: no traversal, no nesting, no dotfile, no second extension."""
+
+    harness = make_workspace(tmp_path)
+    try:
+        with pytest.raises(WorkspaceSecurityError):
+            harness.lease.backend.write_spill(operation_id, b"{}")
+        assert harness.lease.backend.list_entries_sync("reads") == ()
+    finally:
+        harness.close()
+
+
+def test_a_spill_is_refused_where_the_policy_cannot_even_read_it(tmp_path: Path) -> None:
+    """A trusted write bypasses the *writable* prefixes and nothing else. Writing a file the
+    profile could never open would be storage the model cannot use and quota it still pays."""
+
+    harness = make_workspace(
+        tmp_path,
+        active_policy=policy(readable=("scratch", "work", "outputs")),
+    )
+    try:
+        with pytest.raises(WorkspaceSecurityError):
+            harness.lease.backend.write_spill(_SPILL_OPERATION, b"{}")
+    finally:
+        harness.close()

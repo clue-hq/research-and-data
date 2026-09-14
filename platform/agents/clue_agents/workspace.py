@@ -104,6 +104,13 @@ _LAYOUT: Final = (".deepagent", "inputs", "context", "scratch", "reads", "work",
 # layout folder, a temporary-write residue, or a relative path component.
 _MOUNT_SEGMENT: Final = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 _MATERIALIZED_PREFIXES: Final = (".deepagent", "inputs", "context")
+#: The one folder a spilled read may land in. ``reads/`` is readable by the model and writable by
+#: nobody but the runtime, which is exactly the shape an oversized tool result needs.
+_SPILL_PREFIXES: Final = ("reads",)
+#: A spill file is named for its operation and nothing else: one flat, lowercase, dot-free and
+#: separator-free segment (a UUID is the shape in production), so the caller's id can never become
+#: a path, a traversal, a second extension, or a hidden file.
+_SPILL_SEGMENT: Final = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 _MEDIA_TYPES: Final = {
     ".json": "application/json",
     ".md": "text/markdown",
@@ -503,7 +510,22 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
             raise WorkspaceSecurityError("a mount root is a directory, not a file")
         return mount.directory_fd, rest, mount
 
-    def _validate_path(self, path: str, *, write: bool, materialize: bool = False) -> str:
+    def _validate_path(
+        self,
+        path: str,
+        *,
+        write: bool,
+        trusted: Sequence[str] | None = None,
+    ) -> str:
+        """Turn a caller's path into a logical one the policy actually permits.
+
+        ``trusted`` names the prefixes a *platform* write may use in place of the policy's
+        ``writable_prefixes``.  It is how the runtime puts bytes somewhere the model may read but
+        never write — materialized resources before the turn, a spilled read during it — without
+        widening by one byte the authority the model itself holds.  Everything else still binds:
+        the folder must be readable, the extension allowed, and no mount may take such a write.
+        """
+
         try:
             logical = normalize_virtual_path(path)
         except ValueError as exc:
@@ -514,17 +536,17 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         if write:
             mount = self._mount_for(logical)
             if mount is not None:
-                if materialize:
-                    raise WorkspaceSecurityError("a mount cannot hold materialized resources")
+                if trusted is not None:
+                    raise WorkspaceSecurityError("a mount cannot hold a trusted platform write")
                 if mount.mode == "read_only":
                     raise WorkspaceSecurityError("path is inside a read-only mount")
                 # A versioned mount is writable, but by its writer, never by this process; the
                 # prefix still has to be one the policy grants, so the authority check below
                 # stays in force for it exactly as for a read_write mount.
-            prefixes = _MATERIALIZED_PREFIXES if materialize else self._policy.writable_prefixes
+            prefixes = self._policy.writable_prefixes if trusted is None else trusted
             if not _is_under(logical, prefixes):
                 raise WorkspaceSecurityError("path is outside the writable workspace authority")
-            if not materialize and self._outputs_snapshotted and _is_under(logical, ("outputs",)):
+            if trusted is None and self._outputs_snapshotted and _is_under(logical, ("outputs",)):
                 raise WorkspaceConflict("snapshotted outputs are immutable")
             suffix = PurePosixPath(logical).suffix.lower()
             if suffix not in self._policy.allowed_extensions:
@@ -902,10 +924,41 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 os.close(current.directory_fd)
         return self._entry(logical)
 
+    def write_spill(self, operation_id: str, data: bytes) -> str:
+        """Park one oversized governed result in ``reads/`` and return the path to read it at.
+
+        This is the escape hatch for a result that will not fit in its receipt.  It is a trusted
+        write — ``reads/`` is in the model's readable prefixes and in nobody's writable ones — so
+        it goes around ``writable_prefixes`` the way a materialized resource does, and around
+        nothing else: the quota still counts these bytes, the install is still the atomic
+        create-then-link, and a mount still cannot be the target.
+
+        Re-running the same operation (a replay, a resumed turn) rewrites its own file rather than
+        colliding with it.  The path it returns is the one the model passes to ``read_file``.
+        """
+
+        if not _SPILL_SEGMENT.fullmatch(operation_id):
+            raise WorkspaceSecurityError("a spill is named by a single safe operation segment")
+        logical = self._validate_path(
+            f"{_SPILL_PREFIXES[0]}/{operation_id}.json",
+            write=True,
+            trusted=_SPILL_PREFIXES,
+        )
+        try:
+            return self._create_file(logical, data, read_only=False).path
+        except WorkspaceConflict:
+            # The same operation spilled before. Its bytes are this operation's bytes either way,
+            # so the honest answer is to replace them, not to fail a read that has already run.
+            with self._filesystem_lock(exclusive=True):
+                file_fd, metadata = self._open_file(logical)
+                os.close(file_fd)
+                self._replace_file_unlocked(logical, data, old_size=metadata.st_size)
+            return logical
+
     def materialize_bytes(self, path: str, data: bytes) -> WorkspaceEntry:
         """Trusted pre-model write into a read-only resource/context/input prefix."""
 
-        logical = self._validate_path(path, write=True, materialize=True)
+        logical = self._validate_path(path, write=True, trusted=_MATERIALIZED_PREFIXES)
         try:
             data.decode("utf-8")
         except UnicodeDecodeError as exc:
@@ -1739,9 +1792,7 @@ class AgentWorkspaceFactory:
                             mode="versioned",
                             writer=request.project_writer,
                             versions=_mounted_versions(directory_fd, mount_name="project"),
-                            reopen=self._project_library_reopen(
-                                workspace_segment, project_segment
-                            ),
+                            reopen=self._project_library_reopen(workspace_segment, project_segment),
                         )
                     )
         except BaseException:

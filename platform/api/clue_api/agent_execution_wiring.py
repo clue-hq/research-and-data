@@ -49,7 +49,8 @@ from clue_agents.contracts import (
     PlanDelegationStep,
     PlanToolStep,
 )
-from clue_agents.ports import ExecutionProgress, OperationFailure
+from clue_agents.execution import SPILL_THRESHOLD_BYTES, spill_stub
+from clue_agents.ports import ExecutionProgress, OperationFailure, SpillSink
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
@@ -1255,6 +1256,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         pin_provider: StepPinProvider | None = None,
         delegation: DbAgentDelegationRuntime | None = None,
         captured_turn: CapturedTurnSource | None = None,
+        spill_sink: SpillSink | None = None,
         crash_hook: AgentExecutionCrashHook = _DEFAULT_CRASH_HOOK,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -1278,6 +1280,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         self._pin_provider = pin_provider
         self._delegation = delegation
         self._captured_turn = captured_turn
+        # Where an oversized tool result goes instead of into its receipt. A composition root that
+        # holds the turn's workspace lease passes the lease's backend; one that does not passes
+        # nothing, and an oversized result keeps today's behaviour — refused at the receipt bound.
+        self._spill_sink = spill_sink
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
         self._validated: dict[UUID, ValidatedPlan] = {}
@@ -1878,8 +1884,35 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             status=AgentExecutionStatus.COMPLETED,
             replayed=canonical_result.replayed,
             artifact_refs=(result_ref,),
-            reference_values=cast(dict[str, JsonValue], canonical_result.references),
+            reference_values=self._receipt_reference_values(operation, canonical_result),
         )
+
+    def _receipt_reference_values(
+        self,
+        operation: ValidatedOperation,
+        canonical_result: ToolResult,
+    ) -> dict[str, JsonValue]:
+        """This result's references, or a pointer to them when they are too big to carry.
+
+        The receipt's bound is a *refusal*, and it lands after the tool has already run and spent:
+        on 2026-09-13 a 72-claim account read became "the agent cannot read this account" that
+        way. So nothing is allowed to reach it. Past the spill threshold the same canonical bytes
+        are written into the thread's ``reads/`` folder and the receipt carries a stub naming the
+        file, which the model opens with ``read_file``.
+
+        The result the receipt no longer quotes is not lost: it was persisted as ``result_ref``
+        and journaled a few lines above, before this runs, so replay and the inspector still see
+        the whole payload. Only the inline copy shrinks.
+        """
+
+        references = cast(dict[str, JsonValue], canonical_result.references)
+        if self._spill_sink is None:
+            return references
+        spilled = _canonical_bytes(references)
+        if len(spilled) <= SPILL_THRESHOLD_BYTES:
+            return references
+        path = self._spill_sink.write_spill(str(operation.operation_id), spilled)
+        return spill_stub(address=operation.address, path=path, references=references)
 
     async def _execute_delegation(
         self,

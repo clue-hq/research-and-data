@@ -52,6 +52,7 @@ __all__ = [
     "ExecutionProgress",
     "HistoryMessageRef",
     "OperationFailure",
+    "SpillSink",
     "WorkspaceEntry",
 ]
 
@@ -164,6 +165,24 @@ class AgentArtifactReader(Protocol):
     """Read an exact live workspace artifact or fail closed if it is missing/erased."""
 
     async def read(self, ref: ArtifactRef) -> bytes: ...
+
+
+@runtime_checkable
+class SpillSink(Protocol):
+    """Somewhere for a governed result that will not fit inside its own receipt to land.
+
+    A receipt is bounded on purpose, and a read whose references overflow that bound used to be
+    discarded *after* the read had already run — the model asked for an account and was told the
+    platform could not show it one.  A sink turns that into a file: the runtime hands over the
+    result's canonical bytes, the sink stores them somewhere the model is allowed to read, and
+    the receipt carries the returned path instead of the payload.
+
+    The thread's own workspace is the implementation (``reads/<operation_id>.json``); the write
+    is the runtime's, never the model's, so the sink is deliberately *not* part of
+    :class:`AgentWorkspaceBackend`'s model-visible surface.
+    """
+
+    def write_spill(self, operation_id: str, data: bytes) -> str: ...
 
 
 @runtime_checkable
