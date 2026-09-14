@@ -125,3 +125,24 @@ def test_langfuse_on_appends_the_handler_and_names_the_trace() -> None:
     assert attrs["user.id"] == "ws-1"
     assert attrs["langfuse.trace.metadata.project_id"] == "project-1"
     assert attrs["langfuse.trace.tags"] == ("head_of_abm",)
+
+
+def test_a_stopped_turn_records_a_work_guard_guardrail() -> None:
+    import asyncio
+
+    async def stop() -> None:
+        raise asyncio.CancelledError("chat turn stopped before admitting more work")
+
+    with langfuse_installed() as (exporter, _provider):
+        guard = TurnWorkGuard(stop)
+        try:
+            run_async(guard.on_chat_model_start())
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("the guard must re-raise")
+        spans = finished_spans(exporter)
+    attrs = dict(spans[0].attributes or {})
+    assert spans[0].name == "turn.work_guard"
+    assert attrs["langfuse.observation.type"] == "guardrail"
+    assert "CancelledError" in attrs["langfuse.observation.status_message"]

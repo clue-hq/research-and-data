@@ -71,7 +71,7 @@ from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
-from clue_obs.langfuse import LangfuseRunRegistry, propagate_trace
+from clue_obs.langfuse import LangfuseRunRegistry, guardrail, propagate_trace
 from clue_toolbelt import ToolEffectClass, ToolRegistry
 
 #: What a document the turn *wrote* is called in the finalization's ``domain_refs``. One type for
@@ -727,10 +727,18 @@ class TurnWorkGuard(AsyncCallbackHandler):
         self.check = check
 
     async def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
-        await self.check()
+        await self._admit()
 
     async def on_llm_end(self, *args: Any, **kwargs: Any) -> None:
-        await self.check()
+        await self._admit()
+
+    async def _admit(self) -> None:
+        try:
+            await self.check()
+        except BaseException as exc:
+            # Lane 3 slice 3: a refused admission is a guardrail in the tree, then the same raise.
+            guardrail("turn.work_guard", reason=f"{type(exc).__name__}: {exc}"[:200])
+            raise
 
 
 class GovernedAgentToolFactory:
