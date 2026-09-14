@@ -55,18 +55,29 @@ three workspaces) and migrated `639d081ad799 → d36bc7d32c9a` on those real row
   `job_id = run_id` (discovery's pattern, `discovery_driver.py:1221-1225`); the reconciler builds its
   own caller per run and needs the same; the evidence tool runs inside a chat turn with no connection
   in hand and needs a drain seam. On the real rows every `prj_onb_*` project reads 0/0/0 today.
-- **Doubled `answering_model` on streamed head-of-ABM receipts** ("x-ai/grok-4.6x-ai/grok-4.6", 356
-  rows since 2026-09-11; onboarding_synthesis receipts are clean). Root cause:
-  `clue_gateway/agent_model.py:746` stamps `clue_answering_model` on EVERY streamed chunk and
-  LangChain's chunk aggregation concatenates equal string values in `response_metadata`, so the
-  merged generation the runtime's `on_llm_end` reads carries the name twice; the gateway's own
-  `record_model_call` reads a single chunk and is clean. Fix in slice 2 (stamp once / read from one
-  chunk). The cost read groups by the stored string as-is.
-- **`chat/completions` ledger rows carry no model or usage extras** — the 107 `structure-*` rows
-  (`arv2/structuring_client.py:1197`) and the 7 `media.mine_quotes` rows (`gemini_media_client.py`)
-  stamp only `cost_source` (+ subject fields), unlike the research agent's `round-*` rows, so the
-  per-model breakdown shows them as `unknown` / 0 tokens. Fix belongs to those writers' CallSpec
-  extras (slice 1b).
+- **Doubled `answering_model` on streamed head-of-ABM receipts — FIXED 2026-09-15 (e9b6262a4).**
+  ("x-ai/grok-4.6x-ai/grok-4.6", 356 rows; onboarding_synthesis receipts clean.) NOT a lane 1
+  defect: the doubling exists in every lane DB from 2026-08-27, the day head-of-ABM moved from
+  `openai/gpt-5.6-terra` to `x-ai/grok-4.6` (clue_nashville/clue_colombo have it; the lane DB only
+  dates from 09-11). Two mechanisms, one cause — LangChain's chunk merge (`merge_dicts`,
+  langchain-core 1.5.1) concatenates equal string metadata: (1) OpenRouter repeats
+  `finish_reason`/`model` on its usage chunk, so langchain-openai sets `model_name` on two chunks
+  and the runtime's `on_llm_end` (which read `model_name`) saw it twice — the persisted LLMResult
+  artifact also shows `finish_reason: "tool_callstool_calls"`; (2) the gateway stamped
+  `clue_answering_model` on EVERY chunk (41 copies on one real turn), unread on this path. Fix: the
+  gateway stamps the usage chunk only (`_carries_usage`; streams always ask `stream_usage=True`),
+  and the turn runtime reads `ANSWERING_MODEL_KEY` before `model_name`, as the research agent's
+  rounds already did. Tests: `tests/gateway/test_agent_model.py::test_the_merged_stream_carries_the_answering_model_exactly_once`,
+  `tests/api/test_agent_runtime_wiring_answering_model.py`. **The 356 stored rows stay doubled**:
+  `agent_model_call` is append-only by trigger and that invariant was not bypassed; the cost read
+  still groups by the stored string, so pre-fix history shows under the doubled label.
+- **`chat/completions` ledger rows carry no model or usage extras — FIXED 2026-09-15 (e9b6262a4).**
+  The 107 `structure-*` and 7 `media.mine_quotes` result rows stamped only `cost_source`. Fixed at
+  the one seam all five OpenRouter writers share: `openrouter_cost_reader` now returns `model`,
+  `prompt_tokens`, `completion_tokens`, `cached_prompt_tokens` in `CostReading.extras` (the wrapper
+  merges them into the result row), under the `round-*` keys the per-model breakdown reads. The
+  114 stored rows were backfilled on `clue_san-salvador` from their saved response bodies
+  (`response_artifact_key`), so the breakdown reads them as `openai/gpt-5-mini` with tokens now.
 - `tests/api/conftest.py::FLAG_ENV_VARS` neutralises only bool settings, so this checkout's
   `CLUE_CHAT_REASONING_TRACE_MODE=raw` fails `test_production_app_construction_requires_authenticated_principal_service`
   locally (passes with the variable unset; CI has no .env). Unowned.
@@ -104,3 +115,12 @@ Expected: the newest rows carry a non-NULL `cost_usd`, `cost_source='metered'`, 
 the thread-filtered CLI shows the same turn spend; the endpoint total equals the CLI total. If
 `cost_source` reads `unpriced`, the gateway had no rate for the configured model — record it, it is
 not a slice-1 defect.
+
+## 2026-09-15 — the two findings above fixed; lane DB migrated
+
+- `clue_san-salvador` upgraded 639d081ad799 → d36bc7d32c9a (both new columns nullable, applied under
+  the running pre-merge stack; the merged code's receipt insert needs them at the next restart).
+- Verified: gateway + arv2 suites green except the pre-existing `test_import_guard` failure
+  (`arv2/icp_authoring.py` importing `clue_api.project_library_refresh`, from 48edda9e8 — lane 2's
+  project library, unowned here); the four receipt DB suites and `tests/projections -k cost` green.
+- Not done: no repair of the 356 doubled receipts (append-only trigger, see above); no live paid turn.
