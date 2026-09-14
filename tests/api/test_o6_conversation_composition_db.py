@@ -1288,6 +1288,16 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
                 )
                 assert result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
 
+                # 0. the mount the runner asked for: versioned, with a writer whose database work
+                # — the write AND the artifact reads its refresh does — all runs on one loop's
+                # connections (ruling P3-14). Handing it the serving process's reader is what put
+                # a main-loop asyncpg connection on the bridge loop and stalled a live turn.
+                writer = stack.workspaces.mounts[0].project_writer
+                assert writer is not None
+                assert writer.conn_factory is stack.conn_factory
+                assert writer.artifacts is not stack.components.artifacts
+                assert writer.artifacts._conn_factory is stack.conn_factory
+
                 # 1. the row — the project's own plan, version 1, ready, born of this turn.
                 document = (
                     (

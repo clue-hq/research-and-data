@@ -48,6 +48,7 @@ from clue_agents import (
     VersionedWriteRefused,
 )
 from clue_agents.bridge import AsyncBridge, process_bridge
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.icp_authoring import (
     IcpAuthoringRefused,
     IcpAuthoringRequest,
@@ -70,7 +71,7 @@ from clue_api.project_library import ensure_project_library
 from clue_db import ConnFactory, create_engine, database_url
 from clue_storage import StorageBackend
 
-__all__ = ["ProjectRootWriter", "bridge_transaction"]
+__all__ = ["ProjectRootWriter", "bridge_bound_artifact_reader", "bridge_transaction"]
 
 #: The two authored-document families, keyed off the folder and the file-name prefix the whole lane
 #: already reads by (``icp_authoring._path_for`` and ``project_documents.persona_path``). The key is
@@ -142,6 +143,33 @@ def _dispose_bridge_engine() -> None:
 
 
 atexit.register(_dispose_bridge_engine)
+
+
+def bridge_bound_artifact_reader(
+    storage: StorageBackend,
+    conn_factory: ConnFactory = bridge_transaction,
+) -> AgentArtifactReader:
+    """An artifact reader whose database work runs on the same connections the writer's does.
+
+    Ruling P3-14: *every* database access a bridge coroutine makes goes through the bridge's own
+    connection factory. The writer itself obeys that through ``conn_factory``, but it is not the
+    only thing here that touches the database — :meth:`ProjectRootWriter.refresh` compiles the
+    library, and compiling reads the artifact index back through an
+    :class:`~clue_agents.ports.AgentArtifactReader`. The serving process's reader defaults to
+    :func:`clue_db.transaction`, whose engine belongs to the *worker's* loop, so handing it to the
+    writer put a main-loop asyncpg connection on the bridge loop — which died exactly as an
+    asyncpg connection dies when it is used from the wrong loop: ``Task … attached to a different
+    loop``, raised while the connection was being torn down, after the document row had already
+    landed. The model was then told its write had succeeded but could not be re-read, and the turn
+    stalled.
+
+    So the reader the writer gets is built here, from the writer's own factory, and the caller
+    keeps its ordinary reader for everything that runs on its own loop. The default argument is the
+    honest one: a reader built without a factory is for the bridge, because that is the only reason
+    this function exists.
+    """
+
+    return DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
 
 
 def _front_matter(text: str) -> tuple[dict[str, Any], str]:

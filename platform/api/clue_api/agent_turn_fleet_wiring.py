@@ -130,7 +130,11 @@ from clue_api.project_library import (
     materialize_pinned_project_library,
     pinned_library_digest,
 )
-from clue_api.project_root_writer import ProjectRootWriter, bridge_transaction
+from clue_api.project_root_writer import (
+    ProjectRootWriter,
+    bridge_bound_artifact_reader,
+    bridge_transaction,
+)
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -724,7 +728,10 @@ class ProjectConversationTurnRunner:
             project_writer = ProjectRootWriter(
                 bridge=process_bridge(),
                 storage=storage,
-                artifacts=self._engine.artifacts,
+                # NOT ``self._engine.artifacts`` (ruling P3-14): that reader's connections are
+                # this worker's, and ``refresh()`` reads the artifact index from the bridge loop.
+                # One reader per loop, each built from that loop's own factory.
+                artifacts=bridge_bound_artifact_reader(storage, self._project_writer_conn_factory),
                 workspaces=self._engine.components.workspaces,
                 workspace_id=workspace_id,
                 brand_id=scope.brand_id,
