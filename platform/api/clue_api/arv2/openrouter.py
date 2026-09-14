@@ -138,9 +138,26 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     if cost is None:
         cost = _decimal(usage.get("cost"))
     request_id = body.get("id")
+    # The model that answered and the token counts ride along as extras, under the same keys the
+    # research agent writes on its ``round-*`` rows, so the per-model cost breakdown reads every
+    # chat/completions row the same way. Only what the body actually said is written.
+    extras: dict[str, object] = {}
+    model = body.get("model")
+    if isinstance(model, str) and model:
+        extras["model"] = model
+    prompt_details = usage.get("prompt_tokens_details")
+    prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
+    for key, value in (
+        ("prompt_tokens", usage.get("prompt_tokens")),
+        ("completion_tokens", usage.get("completion_tokens")),
+        ("cached_prompt_tokens", prompt_details.get("cached_tokens")),
+    ):
+        if isinstance(value, int) and not isinstance(value, bool):
+            extras[key] = value
     return CostReading(
         cost_usd=cost,
         provider_request_id=request_id if isinstance(request_id, str) else None,
+        extras=extras,
     )
 
 

@@ -68,7 +68,7 @@ from clue_api.product_context_authority import (
 from clue_api.product_knowledge_privacy import stream_product_tool_receipt
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
-from clue_gateway.metadata import cost_cents_from_metadata
+from clue_gateway.metadata import ANSWERING_MODEL_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
 from clue_toolbelt import ToolEffectClass, ToolRegistry
 
@@ -205,8 +205,13 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         )
         response_metadata = getattr(message, "response_metadata", None) or {}
         llm_output = response.llm_output or {}
+        # The gateway's own stamp says who answered. LangChain's chunk merge concatenates a
+        # provider's repeated ``model`` field on a streamed turn (OpenRouter repeats it on the
+        # usage chunk, so ``model_name`` read ``x-ai/grok-4.6x-ai/grok-4.6``); the stamp is
+        # written once, on one chunk, and is the platform's record of the served model.
         answering_model = str(
-            llm_output.get("model_name")
+            response_metadata.get(ANSWERING_MODEL_KEY)
+            or llm_output.get("model_name")
             or response_metadata.get("model_name")
             or response_metadata.get("model")
             or self._requested_model

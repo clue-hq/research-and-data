@@ -702,7 +702,8 @@ class GovernedAgentChatModel(BaseChatModel):
                         **kwargs,
                     ):
                         yielded = True
-                        _stamp_answering_model(chunk.message, fallback=model_id)
+                        if _carries_usage(chunk.message):
+                            _stamp_answering_model(chunk.message, fallback=model_id)
                         yield chunk
                     return
                 except Exception as exc:
@@ -743,7 +744,8 @@ class GovernedAgentChatModel(BaseChatModel):
                         **kwargs,
                     ):
                         yielded = True
-                        _stamp_answering_model(chunk.message, fallback=model_id)
+                        if _carries_usage(chunk.message):
+                            _stamp_answering_model(chunk.message, fallback=model_id)
                         yield chunk
                     return
                 except Exception as exc:
@@ -1194,6 +1196,18 @@ def _normalize_tool_choice(
     if tool_choice in tool_names:
         return {"type": "function", "function": {"name": tool_choice}}
     raise ValueError(f"tool_choice names no bound function: {tool_choice!r}")
+
+
+def _carries_usage(message: BaseMessage) -> bool:
+    """The one streamed chunk the gateway attributes: the provider's usage chunk.
+
+    LangChain merges a stream's chunks by concatenating equal string metadata, so a label written
+    on every chunk reads back once per chunk on the merged message the turn runtime records from
+    (``x-ai/grok-4.6`` came back 41 times over on a real turn). Streams always ask for usage
+    (``stream_usage=True``), so the usage chunk is the single place the served model is written;
+    the wrapper's cost annotation reads it from that same chunk.
+    """
+    return isinstance(message, AIMessageChunk) and message.usage_metadata is not None
 
 
 def _stamp_answering_model(message: BaseMessage, *, fallback: str) -> None:
