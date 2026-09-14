@@ -230,11 +230,16 @@ def _observation_type(operation: str) -> ObservationType:
 
 
 def _observation_input(spec: CallSpec, *, over_ceiling: bool) -> dict[str, object]:
-    """What a provider call *was*, for the viewer: never the query string, headers or body (R3)."""
+    """What a provider call *was*, for the viewer: never the query string, headers or body (R3).
+
+    The host is ``hostname``, not ``netloc``: a URL that embeds credentials (``user:pw@host``)
+    must not export them, and the port is not worth that risk. ``netloc`` is the fallback for the
+    URL shapes ``hostname`` cannot parse.
+    """
     parts = urlsplit(spec.request.url)
     return {
         "method": spec.request.method,
-        "host": parts.netloc,
+        "host": parts.hostname or parts.netloc,
         "path": parts.path,
         "label": spec.label,
         "estimate": {
@@ -388,7 +393,7 @@ class ProviderCaller:
                         attempts=attempts,
                         latency_ms=latency_ms,
                         error_code="transport_error",
-                        extras={"last_error": str(exc)},
+                        extras={"last_error": str(exc), **_langfuse_extras(current)},
                     )
                     current.update(
                         level="ERROR",

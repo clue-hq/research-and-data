@@ -12,7 +12,7 @@ import pytest
 
 from clue_api.arv2.calls import Ceilings, CostReading, SpendEstimate
 from clue_api.arv2.errors import ProviderHalted, ProviderTransportError
-from clue_api.arv2.transport import HttpResponse, TransportFailure
+from clue_api.arv2.transport import HttpRequest, HttpResponse, TransportFailure
 from tests._langfuse import finished_spans, langfuse_installed
 from tests.arv2.test_calls import _caller, _spec
 
@@ -65,6 +65,22 @@ def test_a_chat_completion_is_a_generation_with_cost_usage_and_the_row_id() -> N
     assert "langfuse_trace_id" not in estimate.extras
 
 
+def test_the_input_names_the_host_without_any_credentials_in_the_url() -> None:
+    with langfuse_installed() as (exporter, _provider):
+        caller, _t, _r, _l, _c = _caller([_OK])
+        caller.call(
+            _spec(
+                request=HttpRequest(
+                    method="POST", url="https://user:pw@provider.test/v1/thing", body=b"{}"
+                )
+            )
+        )
+        spans = finished_spans(exporter)
+    raw = _attrs(next(s for s in spans if s.name == "prov.v1/thing"))["langfuse.observation.input"]
+    assert json.loads(raw)["host"] == "provider.test"
+    assert "user" not in raw and "pw" not in raw
+
+
 def test_a_free_public_fetch_is_a_tool_observation() -> None:
     with langfuse_installed() as (exporter, _provider):
         caller, _t, _r, _l, _c = _caller([_OK])
@@ -98,13 +114,16 @@ def test_a_halt_is_an_error_and_the_next_call_is_a_latch_guardrail() -> None:
 
 def test_transport_exhaustion_is_an_error_observation() -> None:
     with langfuse_installed() as (exporter, _provider):
-        caller, _t, _r, _l, _c = _caller([TransportFailure("boom")] * 4)
+        caller, _t, _r, ledger, _c = _caller([TransportFailure("boom")] * 4)
         with pytest.raises(ProviderTransportError):
             caller.call(_spec(max_attempts=2))
         spans = finished_spans(exporter)
-    attrs = _attrs(next(s for s in spans if s.name == "prov.v1/thing"))
+    span = next(s for s in spans if s.name == "prov.v1/thing")
+    attrs = _attrs(span)
     assert attrs["langfuse.observation.level"] == "ERROR"
     assert attrs["langfuse.observation.status_message"] == "transport_error"
+    result = [row for row in ledger.rows if row.phase == "result"][0]
+    assert result.extras["langfuse_trace_id"] == format(span.context.trace_id, "032x")
 
 
 def test_an_over_ceiling_estimate_records_a_ceiling_guardrail() -> None:
