@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import pytest
@@ -16,15 +18,21 @@ from clue_api.onboarding_evidence_tools import (
     ExaSearchEvidenceTool,
 )
 from clue_core import operation_id_from_key
-from clue_db import transaction
 from clue_toolbelt import ToolContext, ToolEffectClass
+from tests.arv2.test_provider_ledger_db import FakeArtifacts
+
+
+@asynccontextmanager
+async def _no_db() -> AsyncIterator[None]:
+    """The drain executes no SQL when nothing was buffered; the offline fakes buffer nothing."""
+    yield None
 
 
 def _ctx() -> ToolContext:
     return ToolContext(
         workspace_id="ws-evidence",
         actor="agent",
-        conn_factory=transaction,
+        conn_factory=_no_db,  # type: ignore[arg-type]
         operation_id=operation_id_from_key("o4-evidence", "test"),
     )
 
@@ -67,7 +75,7 @@ class FakeExa:
 
 
 def test_descriptor_is_spend_typed_recipe_safe_and_pinned() -> None:
-    tool = ExaSearchEvidenceTool(enabled=True, client_factory=None)
+    tool = ExaSearchEvidenceTool(enabled=True, client_factory=None, artifacts=None)
     d = tool.descriptor
     assert d.name == EXA_SEARCH_EVIDENCE_TOOL_NAME and d.version == "1"
     assert d.effect_class is ToolEffectClass.SPEND
@@ -77,17 +85,23 @@ def test_descriptor_is_spend_typed_recipe_safe_and_pinned() -> None:
 
 
 @pytest.mark.parametrize(
-    ("enabled", "factory", "code"),
+    ("enabled", "factory", "artifacts", "code"),
     [
-        (False, lambda label: FakeExa(_deep([], [])), "persona_evidence_disabled"),
-        (True, None, "exa_not_configured"),
+        (
+            False,
+            lambda label, raw, ledger: FakeExa(_deep([], [])),
+            FakeArtifacts(),
+            "persona_evidence_disabled",
+        ),
+        (True, None, FakeArtifacts(), "exa_not_configured"),
+        (True, lambda label, raw, ledger: FakeExa(_deep([], [])), None, "artifacts_not_configured"),
     ],
 )
 def test_it_refuses_before_spend_when_off_or_unconfigured(
-    enabled: bool, factory: object, code: str
+    enabled: bool, factory: object, artifacts: object, code: str
 ) -> None:
     async def scenario() -> None:
-        tool = ExaSearchEvidenceTool(enabled=enabled, client_factory=factory)
+        tool = ExaSearchEvidenceTool(enabled=enabled, client_factory=factory, artifacts=artifacts)  # type: ignore[arg-type]
         failures = await tool.preconditions(
             ExaSearchEvidenceInput(query="pain of practice managers"), _ctx()
         )
@@ -126,7 +140,9 @@ def test_it_sends_the_fixed_template_and_maps_grounding_onto_passages() -> None:
                 ],
             )
         )
-        tool = ExaSearchEvidenceTool(enabled=True, client_factory=lambda label: fake)
+        tool = ExaSearchEvidenceTool(
+            enabled=True, client_factory=lambda label, raw, ledger: fake, artifacts=FakeArtifacts()
+        )
         ctx = _ctx()
         inputs = ExaSearchEvidenceInput(
             query="how practice managers describe referral fax pain",
@@ -161,7 +177,9 @@ def test_an_empty_or_unparseable_answer_is_an_empty_list_never_an_error() -> Non
     async def scenario() -> None:
         fake = FakeExa(_deep(None, None))
         fake.result = ExaDeepResult(**{**fake.result.__dict__, "output_object": None})
-        tool = ExaSearchEvidenceTool(enabled=True, client_factory=lambda label: fake)
+        tool = ExaSearchEvidenceTool(
+            enabled=True, client_factory=lambda label, raw, ledger: fake, artifacts=FakeArtifacts()
+        )
         result = await tool.invoke(ExaSearchEvidenceInput(query="q"), _ctx())
         assert ExaSearchEvidenceOutput.model_validate(result.references).passages == []
 
