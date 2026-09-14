@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from lumen_api.export_policy import partition_export_diagnostics
 from py_lumen_obs import get_logger, log_span
 
 from ..paths import to_virtual
@@ -13,6 +14,36 @@ from .substrate import LumenDesignTools, checkpoint_acceptance, combined_preview
 from .view import _latest_preview_png
 
 logger = get_logger("lumen_agent.tools.render")
+
+
+def _candidate_freshness(tools: LumenDesignTools) -> dict:
+    """Snapshot existing acceptance evidence; never renew or relax a receipt."""
+    with tools._scene_mutation_lock:
+        scene_stamp = tools._scene_stamp()
+        current_preview = tools._current_preview_receipt()
+        diagnostics = tools._latest_preflight_diagnostics
+        blocking, advisory = partition_export_diagnostics(diagnostics or [])
+        critique = tools._latest_visual_critique
+        review_error = (
+            tools._reference_fidelity_error(critique) or tools._acceptance_error(critique)
+            if critique is not None
+            else "No visual critique is registered for this run."
+        )
+        return {
+            "preflight_current": (
+                tools._preflight_scene_stamp == scene_stamp
+                and diagnostics is not None
+                and not blocking
+                and not (tools.latest_preflight_has_errors and not advisory)
+            ),
+            "preview_current": (
+                current_preview is not None and current_preview == tools._preview_receipt
+            ),
+            # Current means an accepted registered review satisfies the same
+            # direction, preflight and pixel contract as finalization.
+            "registered_review_current": review_error is None,
+            "review_error": review_error,
+        }
 
 
 def _current_round_dir(tools: LumenDesignTools, current_round: int) -> Path | None:
@@ -207,6 +238,9 @@ def _render_preview_text(
     )
     if checkpoint and acceptance.accepted and png_path is not None:
         tools.checkpoint_scene("render_preview")
+
+    if getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate":
+        lines.append("freshness: " + json.dumps(_candidate_freshness(tools)))
 
     # The round-boundary headroom report. Last line, because it is what the
     # orchestrator acts on after it has read everything else. Best-effort by

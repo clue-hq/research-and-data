@@ -1186,13 +1186,19 @@ with the validated record. Later semantic revisions require revision_reason.
 path and only this round's change/delta. Delegate task(subagent_type='lumen-dsl-author',
 description=...) with the validated record INLINE, the selected playbook and the
 round path. Include previous critique/report for repairs. Subagents have no memory.
-5. Read author_report.md and critique.json together. If preflight is absent or
-stale, call preflight_design() first. Then always call render_preview() to perform
-the trusted round checkpoint, and view('preview'). render_preview reuses the
+5. Read author_report.md and critique.json together. Reuse the author's clean
+preflight unless the scene changed afterwards; preflight itself can normalize
+tokens and change pixels. Call render_preview() for the trusted round checkpoint
+and its authoritative freshness summary. If preflight_current is false, run
+preflight_design() then render_preview() before viewing or reviewing. Now
+view('preview'). render_preview reuses the
 author's current validated pixels when scene content, artifact bytes and clean
 preflight are unchanged; otherwise it renders fresh pixels. The finalization
 tool verifies their freshness. {review}
-After any mutation judge the new current pixels; never reuse an old acceptance.
+If registered_review_current is false, resolve review_error. After changed pixels
+or direction, re-view and save an actual updated critique.json in the active round
+to register that review, delegating review when needed. A new view alone does not
+renew a critique. Do not merely retry finalization or raise budgets.
 6. If defects remain, repair the smallest coherent composition and repeat. Append
 round verdict and one concrete remaining issue to rounds/index.md. Finalize
 accepted only with clean current preflight and current accepted critique. Omit
