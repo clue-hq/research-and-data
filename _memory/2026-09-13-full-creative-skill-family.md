@@ -165,3 +165,77 @@ Source commits 7a046435, 48b53e5c, cbaa5fa1 and ff120f56 are local only; no push
 Evidence lives in ignored full-family-20260913; frozen source was not rewritten.
 Tracked plan now states eighteen-family scope and honest terminal results.
 Unrelated September 8 memory files were preserved.
+
+## Reference-to-direction continuation
+
+Corrected Google diagnosis using frozen direction, DSL, kit and ledger: author
+selected surface.page; page and card both resolve #EEEEEE. Retokenization changed
+the token alias without changing pixels. Muted display ink was already conceded
+in the direction and then explicitly accepted. Do not describe it as a white-to-
+gray replay mutation or missing source delivery.
+
+The pinned Google kit has 42 colors but the compact card exposed 10. Supplied
+palette.neutral.950 resolves to usable dark ink in the real helper. Candidate
+scaffolding now exposes all supplied color definitions in on-demand
+brand_colors.json, with mode/alias/description/provenance preserved. Compact card
+and guidance point to it; kit and website behavior are unchanged. Tests initially
+failed for missing catalog and later for omitted token descriptions, then passed.
+
+Candidate acceptance now binds a typed direction review to the validated
+canonical direction digest. It requires per-preserve/review_needs coverage,
+refuses unresolved deviations, and stales after a semantic direction change.
+Explicit revisions carry a reason in the existing trace. Generic accepted score2
+reviews no longer suffice. Notes remain model judgments, not automated visual
+truth. Legacy/website critique schema stays unchanged. Independent local reviews
+passed; latest whole-suite check and stack reload are pending this entry.
+
+The next public examples are AWS Cloud and AI Day Türkiye and the Google/Glance
+customer story. Their genuine originals are eligible library ranks 10/12 and 9,
+but outside the newest-four automatic references. The next source-catalog change
+addresses discovery without changing harvest/ranking or inserting asset IDs into
+ordinary user prompts. Do not claim a semantic asset search or completed labeling.
+
+Automatic approval review rejected the proposed model microtest's transfer of
+internal skill guidance/configuration-derived content to OpenRouter without
+specific permission. No calls or responses occurred and no alternate route was
+tried. Further provider-backed tests need that explicit permission; the earlier
+Conduit uploaded-reference transfer approval is also unanswered. Complete local
+checks before asking for the concrete next tests. Never present these code-only
+checks as improved rendered creatives or achievement of the four-minute target.
+
+Read-only queue check: all 68 fleet tasks done, design runs terminal, zero live
+leases. First status query used an invalid enum literal; retried by grouping the
+actual statuses. No database writes. Four workers and APIs were up before reload.
+
+## Discovery/review checkpoint verified and loaded
+
+Committed the source catalog, complete supplied color definitions, candidate
+direction-review contract, guidance and regressions as `87cd88a3`. Independent
+catalog review passed 39 focused tests plus three adversarial routing/no-read
+probes. Final full runtime suite with the actual helper: 1,930 pass markers,
+one intentionally skipped live-provider test, exit0. Double-quiet pytest
+suppressed its textual summary; counts are from the complete progress-only log
+`full-family-20260913/diagnostics/discovery-direction-runtime-suite.log`.
+
+Fresh read-only check at 04:01:31 UTC showed all68 Fleet tasks done and all31
+design runs terminal. An initial query used nonexistent design_run; corrected
+to design_agent_run. No database writes. Restarted only recorded scoped stack
+processes. Startup's first health snapshot caught the two platform APIs still
+loading; subsequent status confirms frontend, all APIs and4/4 Fleet workers UP.
+Persistent stack session is now39465; leave it running. The four brand frontend
+processes were preserved. Browser reload confirms Clue3021 saved artifact,
+AWS3022 saved artifact, Google3023 saved artifact and Conduit3024 asset grid.
+All four tabs marked deliverable. Existing AWS missing-Arial fallback warning
+remains visible; no new kit or font change. These reloads are not fresh generation.
+
+Exclusive next-test source/config freeze is
+`full-family-20260913/discovery-review-source-freeze.json`, source hash
+9ea9dcfc9a739039a579f491e6483a05ff52ab9a2602f5f157ceabf58d52ab63.
+Earlier manifests and failed outputs are preserved. The human plan contains
+the implemented checkpoint, pending AWS/Google cases and provider approval limit.
+No provider calls or new rendered outputs in this continuation. The full goal,
+all-family visual validation, Conduit sample and240-second target remain open.
+Next external action needs explicit OpenRouter transfer consent for internal
+guidance and relevant brand/reference payloads, including Conduit uploads if
+that scope is approved. No alternative route around either rejection. Preserve
+the three unrelated September8 memory changes; no push or production change.

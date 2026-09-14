@@ -615,7 +615,7 @@ restarting the idle local workers:
 
 | Post-repair case | Saved result | Observed limits |
 | --- | --- | --- |
-| Google Gemini introduction | type-led-positioning; v51, 51 operations replayed; 599.902 seconds from confirmation to durable completion. Native support edit/save/reload/restore verified through v52/v53; browser PNG/SVG export succeeded. Canonical PNG exactly matches the accepted preview. | Sparse composition, small support/CTA. The author chose kit surface.card #EEEEEE and text.primary #5F6368 despite near-white backgrounds and darker headline treatment in inspected public originals. This is a direction/authoring choice, not save corruption. |
+| Google Gemini introduction | type-led-positioning; v51, 51 operations replayed; 599.902 seconds from confirmation to durable completion. Native support edit/save/reload/restore verified through v52/v53; browser PNG/SVG export succeeded. Canonical PNG exactly matches the accepted preview. | Sparse composition, small support/CTA. The direction and author chose surface.page #EEEEEE and text.primary #5F6368 despite lighter fields and darker display ink in the originals. Retokenization later selected the equal-value surface.card alias; it did not change pixels. The source/kit compromise happened before authoring and was explicitly accepted by review. |
 | Clue introduction | type-led-positioning; v78, eight native nodes, 862.954 seconds from confirmation to durable commit. Five full/proxy observations; authentic independent logo, no generated imagery or CTA. Browser display and canonical PNG/SVG exports verified; PNG exactly matches acceptance. | Proxy revealed faint eyebrow text and motivated revision, but the final agent critique still accepted a faint small eyebrow. Native editing was already tested on the first Clue sample and was not repeated on this second sample. |
 
 These follow-ups establish successful saving after the replay repair and actual
@@ -642,3 +642,44 @@ less repeated discovery/reporting with the same sources and model settings.
 Retain visual review and durable acceptance; report the four-minute target as
 failed until a real finished creative meets it. The separate brand-agent worktree
 owns richer asset interpretation, acquisition coverage and source-readiness repair.
+
+## Discovery and direction-review checkpoint
+
+Local commit `87cd88a3` addresses three observed harness gaps:
+
+- The compact brand card exposed only 10 of Google's 42 supplied colors. The
+  candidate now exposes the complete pinned color definitions through on-demand
+  `brand_colors.json`, preserving aliases, modes, descriptions and provenance.
+  This does not change the kit or override its logo constraints.
+- Relevant AWS event and Google customer-story originals were outside the four
+  automatically selected references. Candidate `state.json` now points to
+  `source_assets.json`, listing currently available reference, kit and library
+  sources, view targets and existing metadata. Missing descriptions and unknown
+  origins remain explicit. This does not widen the source cap, perform semantic
+  search, create labels or establish advertiser ownership.
+- Candidate acceptance now requires a review of every preserved property and
+  review requirement against the current validated direction. Semantic revisions
+  need an explicit reason and fresh review. Unresolved deviations cannot receive
+  accepted status merely from a passing score. The observations remain model
+  judgments; the schema cannot certify visual quality.
+
+Independent reviews passed. The complete runtime suite with the real helper
+passed **1,930 tests, with one live-provider test intentionally skipped**.
+Website/legacy behavior, engine, model settings and brand kits are unchanged.
+The source/config manifest is frozen separately from earlier run evidence.
+
+Next ordinary-request cases are an AWS Cloud and AI Day Türkiye invitation and
+the Google Cloud/Glance customer story. Their prompts prescribe neither source
+IDs nor skills, copy or composition. Observe catalog reads, actual viewed
+sources, chosen playbooks, first delivery, native editability and elapsed time.
+Conduit also needs its first current-family sample once its transfer scope is
+approved. No new rendered output validates this latest checkpoint yet.
+
+Automatic approval review rejected the planned guidance microtest's transfer
+of internal skill instructions/configuration-derived content to OpenRouter
+without specific consent. No provider calls occurred in that test; no alternate
+submission was used. Provider-backed testing now awaits explicit consent for
+the actual internal guidance and brand/reference payloads. The earlier Conduit
+uploaded-reference approval remains pending. These blocks do not invalidate
+the local checks, but they prevent claiming improved creative quality or the
+four-minute target from this checkpoint.
