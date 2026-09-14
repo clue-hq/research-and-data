@@ -22,7 +22,7 @@ blocker. Skip a role only if the ICP omits it.
 
 You have no web tool here, so there is no evidence pass to run. Sections 3, 6 and 10 are written
 from the ICP, the product files under `brand/knowledge/product/` and
-`brand/knowledge/proof/customer-reviews.md`, and marked inference where they are.
+`brand/knowledge/proof/customer-reviews.md`, and each such claim is marked as inference.
 
 For each role, write:
 1. Role and snapshot (3–4 sentences). Who holds this role at an account that passes the hard

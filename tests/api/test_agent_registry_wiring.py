@@ -142,7 +142,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # document skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`, none of
         # which grants a tool) and the re-minted `manual-*@v2` chapters, so the digest moves for
         # both reasons at once. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("414e1e742a051554b47573ef9a357c19df9d5faa94bcde21182a2553f42418d9"),
+        AgentRole.HEAD_OF_ABM: ("244fb56aa5590eca328db644340274c22f2f77993575ec5d02f018d8643b52a3"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

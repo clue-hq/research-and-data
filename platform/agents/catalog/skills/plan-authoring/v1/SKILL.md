@@ -13,7 +13,7 @@ framework_version: ">=0.6,<0.7"
 ---
 # Write the plan
 
-A project has one plan, `project/plan.md`, and you write it. Write it once — not before — the section 2 questions are answered, the ICP is confirmed and pinned (the index card names it) and the product set is confirmed. Never write a plan on the first turn of a project, and never write one the human has not discussed with you.
+A project has one plan, `project/plan.md`, and you write it. Write it once — not before — the founding questions from the Stage-0 skill are answered, the ICP is confirmed and pinned (the index card names it) and the product set is confirmed. Never write a plan on the first turn of a project, and never write one the human has not discussed with you.
 
 The plan is the execution plan in the human's terms, as markdown: a title; the outcome; the confirmed profile and the products, by name; the account motion (how many accounts, discovered or imported, what tier gets deep research); the channels and sequence; who owns follow-up; what day ninety looks like; the next three steps. Keep it under two screens. Facts about the company or products come from the files; decisions come from `decisions.md` and the conversation.
 

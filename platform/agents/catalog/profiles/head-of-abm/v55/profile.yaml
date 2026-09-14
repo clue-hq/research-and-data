@@ -141,10 +141,10 @@ skills:
     sha256: fce83304c598d35e17d68c9c5a77b4117ca94628b37aeca159decc8607d4bd76
   - name: persona-authoring
     version: v1
-    sha256: 7085cab9da6652e76621bd46e252677e3ba7c3fe192e8d0d8c42f27ea9ce53d4
+    sha256: b6001326bfdd2568c7b1e65bd876518350c140ee3638d28da2349c5a241ca1bc
   - name: plan-authoring
     version: v1
-    sha256: b722bcf1261161c0d1c63306e5525ff8b6932a76b1623fd7903811c5bc98f666
+    sha256: 72a5a2a3f1670766b91fcbc6e377d5c10e580cda98d86c1a017ce36706d61d67
   # The operating manual: fifteen chapters, pinned in reading order so the capability map lists
   # them that way. `manual-index` is the map of the library; the rest are its chapters. Four of
   # them (`tools`, `fields`, `errors`, `limits`) are rendered from this exact profile version by
