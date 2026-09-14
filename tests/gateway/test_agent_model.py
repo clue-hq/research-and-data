@@ -407,6 +407,52 @@ def test_governed_agent_stream_preserves_usage_cost_and_answering_model() -> Non
     assert spans[0].attributes["completion_tokens"] == 3
 
 
+class TwoModelChunksStreamingModel(StreamingChatModel):
+    """A stream whose finish chunk AND usage chunk both carry ``model_name`` — what OpenRouter's
+    stream looks like through langchain-openai — the source of the doubled answering model."""
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del messages, stop, run_manager, kwargs
+        yield ChatGenerationChunk(message=AIMessageChunk(content="streamed "))
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="answer",
+                response_metadata={"model_name": "served/x", "finish_reason": "stop"},
+            )
+        )
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                response_metadata={"model_name": "served/x"},
+                usage_metadata={"input_tokens": 5, "output_tokens": 3, "total_tokens": 8},
+                chunk_position="last",
+            )
+        )
+
+
+def test_a_stream_whose_chunks_repeat_the_model_name_merges_to_one_answering_model() -> None:
+    model = GovernedAgentChatModel(
+        models=(TwoModelChunksStreamingModel(),),
+        model_ids=("served/x",),
+        requested_model="requested/model",
+        gateway_config=GatewayConfig(),
+    )
+    chunks = list(model.stream("Stream the answer."))
+    merged = chunks[0]
+    for chunk in chunks[1:]:
+        merged = merged + chunk
+    assert merged.response_metadata["model_name"] == "served/x"
+    assert merged.response_metadata["clue_answering_model"] == "served/x"
+    assert merged.response_metadata["clue_requested_model"] == "requested/model"
+    assert "".join(str(chunk.content) for chunk in chunks) == "streamed answer"
+
+
 def test_agent_model_policy_cannot_exceed_gateway_timeout_or_retries() -> None:
     provider = OpenRouterAgentModelProvider(
         GatewayConfig(timeout_s=10, max_retries=1),
