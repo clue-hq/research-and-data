@@ -56,6 +56,20 @@ def _get_tracer() -> Tracer:
     return _tracer
 
 
+def use_provider(provider: TracerProvider) -> TracerProvider:
+    """Make an externally built provider the one behind :func:`traced_step` (the process-root
+    install, lane 3 slice 2), so our spans and the instrumentors' spans are one trace."""
+    global _provider, _tracer
+    _provider = provider
+    _tracer = provider.get_tracer(_INSTRUMENTATION)
+    return provider
+
+
+def get_tracer() -> Tracer:
+    """The tracer behind :func:`traced_step`, for callers that need a parent ``context``."""
+    return _get_tracer()
+
+
 @contextmanager
 def traced_step(name: str, **attrs: object) -> Iterator[Span]:
     """Run a pipeline step inside a named span with the standard (redacted) attributes."""
