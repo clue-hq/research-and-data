@@ -140,7 +140,9 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_pat
         message.tool_call_id: message
         for message in result["messages"] if isinstance(message, ToolMessage)
     }
-    read_body = "\n".join(line.split("\t", 1)[1] for line in outputs["read"].content.splitlines())
+    assert outputs["read"].additional_kwargs["guidance_read"]["whole_resource"] is True
+    _, numbered_source = outputs["read"].content.split("\n\n", 1)
+    read_body = "\n".join(line.split("\t", 1)[1] for line in numbered_source.splitlines())
     assert read_body.strip() == original.strip()
     assert outputs["absent"].status == "error"
     assert "not a valid tool" in outputs["absent"].content

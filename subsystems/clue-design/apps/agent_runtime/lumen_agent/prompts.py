@@ -1090,6 +1090,14 @@ def build_author_prompt(
     return "\n\n".join(sections)
 
 
+_SCENE_GUIDANCE_READING = (
+    "When selecting a skill or knowledge guide to apply, follow read_file's "
+    "continuation offsets through the end of that resource. The default window "
+    "is 100 lines. Targeted re-reads may use excerpts; an end marker "
+    "on a tail excerpt does not include earlier lines. Load only relevant resources."
+)
+
+
 def build_reviewer_prompt(
     workspace: str, has_references: bool = False, *, scene_skill_bundle: str = "legacy"
 ) -> str:
@@ -1110,6 +1118,7 @@ then return the same structured result. Include direction_review against the
 latest validated direction digest and indexed requirements, as described in
 knowledge/scene/review.md. You cannot edit or accept the scene.
 Use virtual workspace paths at {workspace}, /knowledge_docs and /.deepagent/skills.""",
+            _SCENE_GUIDANCE_READING,
             BATCHING_RULE,
         ]
         if has_references:
@@ -1218,6 +1227,7 @@ Use workspace-rooted virtual paths under {workspace}, /knowledge_docs and
 /.deepagent/skills. Tools: inspect, view, render_preview, preflight_design,
 validate_creative_direction, record_gap, finalize_run, task and filesystem.
 The director has no scene mutation tools; the author uses the compiler.""",
+        _SCENE_GUIDANCE_READING,
         SHARED_SURFACE_CONTRACT, BATCHING_RULE,
         "SkillsMiddleware supplies current skill names, descriptions and read paths "
         "on each model call. The derived /knowledge_docs/knowledge/scene/catalog.md "
@@ -1336,6 +1346,7 @@ or re-read a relevant body whenever details are needed; do not load the entire
 catalog. SkillsMiddleware supplies names, descriptions and paths, and the
 derived /knowledge_docs/knowledge/scene/catalog.md lists registered playbooks.
 Use virtual paths under {workspace}, /knowledge_docs and /.deepagent/skills.""",
+        _SCENE_GUIDANCE_READING,
         SHARED_SURFACE_CONTRACT, BATCHING_RULE, _AUTHOR_SELF_AUDIT_CONTRACT,
     ]
     if has_ad_assets:
@@ -1388,6 +1399,7 @@ and author_report.md in the active round. The report names changes, asset IDs,
 assumptions and remaining defects. A compile or successful image call is not
 visual acceptance. You cannot finalize. Use virtual paths under {workspace},
 /knowledge_docs and /.deepagent/skills.""",
+        _SCENE_GUIDANCE_READING,
         SHARED_SURFACE_CONTRACT, BATCHING_RULE,
     ]
     if fast_loop:

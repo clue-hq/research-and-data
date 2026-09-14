@@ -1854,3 +1854,37 @@ limitations. Next, repair selected-resource pagination visibility, then compare
 the same four ordinary requests after all four browser sessions are usable.
 Evidence: ignored `renderer-parity-20260914/assessment.json`, JUnit outputs,
 export receipts, preserved logs and inline browser observations.
+
+### Task 24: Expose incomplete reads of selected guidance
+
+The last four-brand run used a 136-line review guide. Clue requested both
+windows; AWS and Conduit requested only the first 80 lines, and Google requested
+the first 100. The installed SDK returned successful excerpts without total
+line counts or continuation notices. These ranges establish what was requested,
+not what the model understood; incomplete reading is not the sole quality issue.
+
+Candidate scene file reads now retain the SDK's exact numbered excerpt and add
+an unnumbered notice with the source range, total lines and next offset. Tail
+excerpts explicitly distinguish reaching the end from reading the whole file.
+Truncated, empty or changed sources receive conservative notices. Selected
+guidance remains on demand; ordinary files, permissions, legacy scenes and
+website behavior retain their existing contracts. The same middleware covers
+candidate solo and delegated roles. One shared prompt instruction asks the agent
+to follow continuation offsets for resources it chooses to apply.
+
+Independent verification: 214 focused SDK, graph, catalog, family, solo, workspace
+isolation and website tests passed. The scripted graph tests prove response
+delivery, not autonomous continuation or creative improvement. Async graph tests
+omit the existing incompatible budget callback (`run_inline` is absent); no
+production budget behavior changed. Metadata uses a second contained read and
+excerpt comparison, not an atomic snapshot. Authored guidance stays frozen during
+live comparisons.
+
+No new creatives were generated in this checkpoint. Counts remain 30 registered
+skills, 18 families, 8 live-exercised families and zero fully qualified families.
+The next comparison must run the same ordinary requests across all four brands
+after normal Google workspace reauthentication. Source catalogs and prior
+artifacts remain unchanged; two previous generated layers have been identified
+for recoverable exclusion but not archived yet. Evidence: ignored
+`guidance-pagination-20260914/`, including baseline read ranges, implementation
+notes and `parent-verification.log`.

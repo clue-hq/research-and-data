@@ -313,10 +313,13 @@ def _create_scene_solo_graph(*, model, backend, tools, system_prompt, skills, ch
     from langchain.agents.middleware import TodoListMiddleware
     from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
+    from .guidance_reads import SceneGuidanceReadMiddleware
+
     middleware = [
         TodoListMiddleware(),
         SkillsMiddleware(backend=backend, sources=skills),
         FilesystemMiddleware(backend=backend, _permissions=_filesystem_permissions()),
+        SceneGuidanceReadMiddleware(backend),
         create_summarization_middleware(model, backend),
         PatchToolCallsMiddleware(),
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
@@ -445,6 +448,11 @@ def create_design_deepagent(
         reference_turn=bool(runtime_config.reference_assets),
         critique_observer=tools.observe_written_critique,
     )
+    guidance_middleware = []
+    if scene_candidate:
+        from .guidance_reads import SceneGuidanceReadMiddleware
+
+        guidance_middleware = [SceneGuidanceReadMiddleware(backend)]
 
     from .llm import assert_all_role_models_support_image_input, assert_model_supports_image_input
 
@@ -605,6 +613,7 @@ def create_design_deepagent(
             "model": author_model,
             "tools": author_tools,
             "skills": workspace_skills,
+            **({"middleware": guidance_middleware} if scene_candidate else {}),
         },
         {
             "name": "lumen-visual-reviewer",
@@ -620,6 +629,7 @@ def create_design_deepagent(
             "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": workspace_skills,
+            **({"middleware": guidance_middleware} if scene_candidate else {}),
             # D11 (docs/deepagent-architecture.md "Post-R6 decisions"): the
             # reviewer's structured output goes through the TOOL strategy, not
             # the provider/native one. Trigger: P1r7 died twice on
@@ -740,6 +750,7 @@ def create_design_deepagent(
             scene_skill_bundle=runtime_config.scene_skill_bundle,
         ),
         subagents=subagents,
+        **({"middleware": guidance_middleware} if scene_candidate else {}),
         name="lumen-design-deepagent",
         checkpointer=checkpointer,
         **(

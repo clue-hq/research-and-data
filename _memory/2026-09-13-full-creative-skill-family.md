@@ -895,3 +895,34 @@ running; fourbrowser17–20 retained. Evidence renderer-parity-20260914/assessme
 Next selectedresourceconsumption audit delegated read-only while closingrenderer.
 One guessed substrate_fs_backend.py path absent; actual class location toinspect.
 Pillow getdata deprecation during pixel count harmless. No production/push.
+
+Task24 in progress: renderer checkpoint66e984b6 local. RealSDK selected guidance
+pagination repair delegated (candidate scenes only, sync/async; keep original
+requested slices and permissions). Exact Task22 frozen review SHA90b40766…,
+136lines: Clue requested1–100+101–136; AWS1–80, Google1–100, Conduit1–80.
+Saved baseline-read-coverage.json in ignored guidance-pagination-20260914;
+requested ranges do not prove comprehension. Prior model-call durations sum
+421.621/520.258/412.857/428.519s, so tool/pagination fix alone cannot promise240s.
+Read-only DB preflight baseline records unchanged, all130fleetjobs done; only
+last arm's AWS+Google newlayers eligible for recoverable exclusion. Wrapper
+prepare.py and observer prepared only; no --apply, no new creative submissions.
+Google normal sign-in remains pending; all4 simultaneous nextarm waitsforusable
+sessions. Frozen hash manifest is a list (first dict-assumption failed before
+inference/write; corrected exact path+SHA). DBsandboxPermissionError resolved
+with authorized read-only escalation. Coverage audit recommends next2fourbrand
+batches using available genuine UI/guide/customerquote/story assets, respecting
+missing launch evidence; full goal active.
+
+Task 24 closing checkpoint (2026-09-14): candidate-only selected-guidance read
+middleware adds source ranges and continuation notices while preserving the
+SDK excerpt, permissions and lazy discovery. Integrated in solo and delegated
+scene roles; legacy and website unchanged. Independent parent matrix: 214 passed
+in 23.42s; evidence guidance-pagination-20260914/parent-verification.log. Scripted
+graphs prove delivery, not autonomous continuation/comprehension. Async graph
+tests omit the pre-existing incompatible budget callback; production callback
+unchanged. Metadata is a second contained read with excerpt equality, not atomic.
+No new provider generation, browser/DB mutation, catalog change or family
+promotion. User progress response must distinguish 8/18 (44.4%) live coverage
+from quality: latest 2/4 model acceptances, 4/4 edit/export, 0/4 under four minutes,
+0/18 fully qualified. No defensible single overall completion percentage.
+Google normal reauthentication remains pending for the next simultaneous arm.
