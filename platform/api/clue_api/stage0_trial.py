@@ -402,14 +402,17 @@ def stage0_trial_context_policy() -> ContextAssemblyPolicy:
     """Conservative seven-layer budget with room for a long kickoff interview.
 
     L1 tracks the production conversation's 40,000 for the same reason: this trial resolves the
-    same ``HEAD_OF_ABM`` profile, so it carries the same required system prompt — prompt body plus
-    generated capability map — and the fifteen-chapter operating manual put that prompt within
-    300 bytes of the old 24,000 ceiling. A required L1 candidate that does not fit is a hard
-    assembly failure, so the trial would break on exactly the profile production runs.
+    same ``HEAD_OF_ABM`` profile, so it carries the same system prompt — prompt body plus generated
+    capability map — and the fifteen-chapter operating manual put that prompt within 300 bytes of
+    the old 24,000, which was then a ceiling that failed the turn. Since v3 (founder ruling
+    2026-09-14) no layer budget withholds context or fails an assembly; these numbers are what the
+    trial expects each layer to cost, and an overrun is logged rather than enforced. The trial and
+    production still carry the *same* numbers so a trial keeps telling the truth about the profile
+    production runs.
     """
 
     return ContextAssemblyPolicy(
-        version="stage0-trial-context-v2",
+        version="stage0-trial-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)

@@ -54,20 +54,11 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: Moved 4096 -> 4608 at `head-of-abm@v55`: the disclosed library grew from sixteen resources to
 #: nineteen when the three document skills joined it, and three lines of address, summary and path
 #: cost about 330 bytes no summary length can win back (the three are the shortest on the block).
-#: This is a cost heuristic, not the gate — the gate is
-#: ``test_the_resolved_system_prompt_fits_the_production_identity_budget`` below, which still has
-#: room to spare. Adding a resource is what is supposed to move this number; a summary that sprawls
-#: is what it is here to catch.
+#: This is a cost heuristic and, since layer budgets stopped gating anything (founder ruling
+#: 2026-09-14), the only *size* ceiling left in this file — the prompt test below now reports
+#: rather than refuses. Adding a resource is what is supposed to move this number; a summary that
+#: sprawls is what it is here to catch.
 SKILLS_BLOCK_MAX_BYTES = 4608
-
-#: The share of the production L1 budget the resolved system prompt may occupy.
-#:
-#: L1 holds exactly one candidate and it is ``required``: the resolved system prompt (prompt body
-#: plus generated capability map). A required candidate that does not fit its layer budget is a
-#: hard assembly failure — the turn raises rather than dropping it — so a prompt that outgrows L1
-#: takes down every production turn on that profile. Holding it to 80% keeps a chapter's worth of
-#: headroom, and keeps that discovery offline.
-PROMPT_BUDGET_SHARE = 0.8
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.
 AUTHORITY_MARKS = ("(enforced)", "(asked of you)")
@@ -313,23 +304,32 @@ def test_the_capability_map_discloses_every_manual_chapter(resolved_head_of_abm:
     )
 
 
-def test_the_resolved_system_prompt_fits_the_production_identity_budget(
+def test_the_resolved_system_prompt_size_is_reported_against_the_identity_budget(
     resolved_head_of_abm: object,
 ) -> None:
-    """The whole disclosed prompt — body plus capability map — must fit L1 with room to spare.
+    """Measure the whole disclosed prompt — body plus capability map — and say what it costs.
 
-    The number is read from the production policy, never retyped here: this test's job is to fail
-    when the *prompt* grows, not to hold a second copy of the budget that can drift from it.
+    This used to be the gate: the prompt had to fit 80% of L1, because a required candidate that
+    did not fit failed the turn at assembly. It no longer can (founder ruling 2026-09-14 — layer
+    budgets are tracked, never enforced), so holding a share of L1 here would be inventing a limit
+    the platform does not have. What remains worth knowing is the number itself and how it compares
+    to what the policy expects a profile to cost, printed on every run, plus the two facts that
+    would mean something is genuinely wrong: an empty prompt, or one large enough to be a drafting
+    accident rather than a manual.
+
+    The L1 budget is read from the production policy, never retyped here.
     """
 
     prompt_bytes = len(resolved_head_of_abm.system_prompt.encode())  # type: ignore[attr-defined]
     budget = project_conversation_context_policy().budget_for(ContextLayer.L1_IDENTITY)
-    ceiling = int(budget * PROMPT_BUDGET_SHARE)
-    assert prompt_bytes <= ceiling, (
+    print(
+        f"{PROFILE_NAME}@{manual.PROFILE_VERSION} resolved system prompt: {prompt_bytes} bytes, "
+        f"{prompt_bytes / budget:.0%} of the {budget}-byte production L1 identity budget"
+    )
+    assert 0 < prompt_bytes < 200_000, (
         f"the resolved {PROFILE_NAME}@{manual.PROFILE_VERSION} system prompt is {prompt_bytes} "
-        f"bytes, over the {ceiling} allowed ({PROMPT_BUDGET_SHARE:.0%} of the {budget}-byte "
-        f"production L1 identity budget). L1's one candidate is required, so a prompt that "
-        f"exceeds the budget outright fails every production turn at context assembly"
+        f"bytes ({prompt_bytes / budget:.0%} of the {budget}-byte production L1 identity budget); "
+        f"a prompt this size is a drafting accident, not a manual"
     )
 
 
