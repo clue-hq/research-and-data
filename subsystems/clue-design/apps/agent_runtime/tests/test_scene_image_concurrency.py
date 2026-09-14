@@ -155,7 +155,7 @@ def test_registration_reads_latest_scene_after_contending_with_inflight_helper(
     tools = make_tools(
         tmp_path, monkeypatch, lambda **kwargs: provider_result(kwargs["prompt"]), PausedCore
     )
-    tools._image_registration_lock = ObservedLock()
+    tools._scene_mutation_lock = ObservedLock()
     with ThreadPoolExecutor(max_workers=2) as pool:
         first = pool.submit(generate, tools, "A")
         try:

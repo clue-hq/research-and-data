@@ -234,6 +234,22 @@ def _tool_span(method):
     return wrapper
 
 
+def _scene_mutation(method):
+    """Keep a local scene read, helper response, and ledger/receipt commit indivisible.
+
+    The helper returns a whole scene by value. Locking only the subprocess or
+    the response assignment still permits a stale response to erase another
+    tool's edits. Provider work must stay outside these bounded transactions.
+    Reentrancy lets compile/preflight register assets within the same mutation.
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._scene_mutation_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class _CoreHelperProxy:
     """Single-seam ``log_span`` wrapper around the core-helper client (deliverable 5).
 
@@ -305,10 +321,10 @@ class LumenDesignTools:
         # append + event_sink push) so trace lines never interleave and in-process
         # event order stays deterministic.
         self._record_lock = threading.Lock()
-        # Image providers may run in parallel; serialize only registration's
-        # read/apply/replace and ledger append so results cannot replace a stale
-        # Scene snapshot from another completed generation.
-        self._image_registration_lock = threading.Lock()
+        # ToolNode may batch any author tools, not only image registrations.
+        # Every scene mutation shares this per-run transaction lock; paid
+        # generation/editing and remote logo fetching remain parallel outside it.
+        self._scene_mutation_lock = threading.RLock()
         self.run_id = new_run_id()
         self.iteration = 0
         # Fast-loop v1 §7: per-run summary counters, started at the earliest
@@ -376,6 +392,7 @@ class LumenDesignTools:
             # W1.3: pixel dimensions for the image/logo rows — they live on the
             # by-value asset records, never on the kit's own asset entries.
             asset_manifest=config.brand_kit_assets,
+            scene_dsl=config.scene_skill_bundle == "candidate",
         )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
@@ -580,6 +597,7 @@ class LumenDesignTools:
         )
 
     @_tool_span
+    @_scene_mutation
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
         # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
@@ -733,6 +751,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def apply_operations(self, operations_json: str) -> str:
         """Apply checked core operations. The input must be a JSON operation list."""
         try:
@@ -783,6 +802,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def apply_structured_edit(self, edit_json: str) -> str:
         """Apply a typed targeted edit through the Rust edit builder.
 
@@ -881,6 +901,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def generate_qr(
         self,
         data: str,
@@ -1085,7 +1106,7 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         try:
-            with self._image_registration_lock:
+            with self._scene_mutation_lock:
                 assets = self.scene.get("assets") or {}
                 existing = assets.get(record.get("id"))
                 if existing is not None and existing != record:
@@ -1229,6 +1250,7 @@ class LumenDesignTools:
             return None
         return copy.deepcopy(entry["record"])
 
+    @_scene_mutation
     def _register_referenced_brand_assets(self, origin: str) -> None:
         """K2 root fix: a DSL author naturally writes `image asset(<id>)` with
         an asset_id straight from the brand card — a form the compiler accepts
@@ -1310,6 +1332,7 @@ class LumenDesignTools:
                 },
             )
 
+    @_scene_mutation
     def use_brand_asset(
         self,
         asset_id: str,
@@ -1518,13 +1541,10 @@ class LumenDesignTools:
             # asset table, two operation schemas.
             operations = [{"kind": "upsert_asset", "asset": record}]
             try:
-                apply_response = self.core.apply_operations(self.scene, operations)
+                self._apply_scene_operations("fetch_logo", operations)
             except CoreError as error:
                 failures.append({"cell": prepared.cell, "error": error.message})
                 continue
-            self._replace_scene_from_core_response(
-                apply_response, "fetch_logo", operations
-            )
             placed.append({
                 "cell": prepared.cell,
                 "source": prepared.source,
@@ -1552,13 +1572,10 @@ class LumenDesignTools:
             record = (ingest.get("asset") or {}).get("record") or {}
             operations = [{"kind": "upsert_asset", "asset": record}]
             try:
-                apply_response = self.core.apply_operations(self.scene, operations)
+                self._apply_scene_operations("fetch_logo", operations)
             except CoreError as error:
                 failed_alternatives.append({"cell": prepared.cell, "error": error.message})
                 continue
-            self._replace_scene_from_core_response(
-                apply_response, "fetch_logo", operations
-            )
             alternatives.append({
                 "asset_id": record.get("id") or prepared.asset_id,
                 "source": prepared.source,
@@ -2043,6 +2060,7 @@ class LumenDesignTools:
             "place_asset_in_slot", "slot_id", slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
         )
 
+    @_scene_mutation
     def _place_asset(
         self,
         kind: str,
@@ -2132,6 +2150,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def _register_library_asset_for_placement(self, asset_id: str, kind: str) -> None:
         """Upsert a workspace-library record into the scene so a placement can bind.
 
@@ -2275,7 +2294,7 @@ class LumenDesignTools:
                 tags=[*(record.get("tags") or []), "crop"],
             )
             derived = ingested["asset"]["record"]
-            with self._image_registration_lock:
+            with self._scene_mutation_lock:
                 operations = [{"kind": "upsert_asset", "asset": derived}]
                 response = self.core.apply_operations(self.scene, operations)
                 self._replace_scene_from_core_response(response, "crop_image", operations)
@@ -2494,8 +2513,8 @@ class LumenDesignTools:
         # Register the edited asset through the canonical upsert path (guarded — a
         # scene without a page/artboard fails here, same as generate_image).
         try:
-            apply_response = self.core.apply_operations(
-                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            self._apply_scene_operations(
+                "edit_image", [{"kind": "upsert_asset", "asset": record}]
             )
         except CoreError as reg_error:
             payload = {
@@ -2518,9 +2537,6 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(
-            apply_response, "edit_image", [{"kind": "upsert_asset", "asset": record}]
-        )
 
         # Re-place the edited asset into the SAME node, preserving the current
         # placement (fit / focal point / alt) so the composition is untouched.
@@ -3085,6 +3101,7 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     @_tool_span
+    @_scene_mutation
     def preflight_design(self) -> str:
         """Run canonical brand/token/layout preflight using the effective Brand Kit
         (the kit passed by value in config — the document's attached kit — or the
@@ -3305,6 +3322,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def _run_autofix(
         self,
         raw_diagnostics: list[JsonObject],
@@ -3500,6 +3518,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def export_preview(self, export_format: Optional[str] = None) -> str:
         """Export and validate an SVG or PNG preview for visual critique.
 
@@ -3577,6 +3596,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def export_preview_bundle(
         self,
         critic_format: Optional[str] = None,
@@ -4713,6 +4733,7 @@ class LumenDesignTools:
             capped.append(item)
         return capped
 
+    @_scene_mutation
     def start_fresh_rewrite_scene(self, reason: str) -> None:
         """Reset the live authoring scene for a director-approved rewrite.
 
@@ -4888,6 +4909,7 @@ class LumenDesignTools:
         return "\n".join(lines)
 
     @_tool_span
+    @_scene_mutation
     def finalize_run(
         self,
         status: str,
@@ -5175,6 +5197,7 @@ class LumenDesignTools:
                 except Exception:
                     pass
 
+    @_scene_mutation
     def _prune_empty_pages(self) -> list[str]:
         """Remove pages that carry zero children from the working scene, via the
         core `remove_page` op so the deletion rides the operations ledger (and
@@ -5284,12 +5307,21 @@ class LumenDesignTools:
             return "The registered critique does not review the current scene and preview bytes."
         return None
 
+    @_scene_mutation
+    def _apply_scene_operations(self, source: str, operations: list[JsonObject]) -> JsonObject:
+        """Register results after remote work without holding its transaction open."""
+        response = self.core.apply_operations(self.scene, operations)
+        self._replace_scene_from_core_response(response, source, operations)
+        return response
+
     def _replace_scene_from_core_response(
         self,
         response: JsonObject,
         source: str,
         operations: Optional[list[JsonObject]] = None,
     ) -> None:
+        # The caller must hold _scene_mutation_lock from BEFORE reading the
+        # scene passed to the helper through this replacement and ledger write.
         scene = response.get("scene")
         if not isinstance(scene, dict):
             raise CoreError("helper.scene_missing", f"{source} did not return a scene")
@@ -5321,6 +5353,7 @@ class LumenDesignTools:
             {"entries": self.operations_ledger},
         )
 
+    @_scene_mutation
     def checkpoint_scene(self, reason: str) -> None:
         """P0.4 — hand this round's work to the checkpoint sink so it becomes
         durable NOW instead of only at finalize.

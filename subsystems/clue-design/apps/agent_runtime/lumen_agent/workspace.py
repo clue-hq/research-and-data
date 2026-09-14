@@ -88,6 +88,11 @@ def _render_references_md(tools: LumenDesignTools) -> str:
     pixels are seen via view("reference:<n>"), and the DIRECTOR (not this scaffold)
     writes reference-brief.md by perceiving them."""
     entries = _reference_entries(tools)
+    origin_sentence = (
+        f"This turn has {len(entries)} reference image(s) available to the design agent."
+        if tools.config.scene_skill_bundle == "candidate"
+        else f"The user attached {len(entries)} reference image(s) to THIS turn."
+    )
     direction_instruction = (
         "- Record the observed reference properties and source roles in the shared "
         "`creative-direction.json` before authoring. This table only lists the inputs."
@@ -99,7 +104,7 @@ def _render_references_md(tools: LumenDesignTools) -> str:
     lines: list[str] = [
         f"# References — run {tools.run_id}",
         "",
-        f"The user attached {len(entries)} reference image(s) to THIS turn. The rows "
+        f"{origin_sentence} The rows "
         "below are metadata only — an index, never the pixels.",
         "",
         "- To SEE a reference, call `view(\"reference:<n>\")` (1-based, matching the "
