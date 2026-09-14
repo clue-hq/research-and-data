@@ -64,3 +64,26 @@ def test_the_cost_reader_falls_back_to_cost_and_then_to_nothing() -> None:
         Decimal("0.5")
     )
     assert openrouter_cost_reader(HttpResponse(200, {}, b"not json")).cost_usd is None
+
+
+def test_the_cost_reader_stamps_the_model_and_the_token_counts() -> None:
+    """Slice 1b: every OpenRouter row carries what the research agent's rows already carry, so
+    the cost read's per-model view covers the structuring, media and reconcile calls too."""
+    body = (
+        b'{"id":"gen-2","model":"x-ai/grok-4.6","usage":{"cost":0.01,"prompt_tokens":900,'
+        b'"completion_tokens":200,"prompt_tokens_details":{"cached_tokens":300}}}'
+    )
+    reading = openrouter_cost_reader(HttpResponse(200, {}, body))
+    assert reading.cost_usd == Decimal("0.01")
+    assert reading.extras == {
+        "model": "x-ai/grok-4.6",
+        "prompt_tokens": 900,
+        "completion_tokens": 200,
+        "cached_prompt_tokens": 300,
+    }
+
+
+def test_a_body_without_usage_or_model_counts_zero_and_names_no_model() -> None:
+    reading = openrouter_cost_reader(HttpResponse(200, {}, b'{"id":"gen-3"}'))
+    assert reading.extras == {"prompt_tokens": 0, "completion_tokens": 0, "cached_prompt_tokens": 0}
+    assert openrouter_cost_reader(HttpResponse(200, {}, b"not json")).extras == {}

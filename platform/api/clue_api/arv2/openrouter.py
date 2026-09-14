@@ -113,6 +113,13 @@ def _decimal(value: object) -> Decimal | None:
     return None
 
 
+def _count(value: object) -> int:
+    """A provider-reported token count as an int, 0 when absent or not a number."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return 0
+    return int(value)
+
+
 def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     """Read OpenRouter's own metering off a chat/embeddings response (Appendix A law 1).
 
@@ -123,6 +130,10 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     Takes the :class:`~clue_api.arv2.transport.HttpResponse` the wrapper received; a body that is
     not JSON yields an empty reading rather than raising, because the wrapper treats an unreadable
     cost as "the provider did not tell us", never as zero.
+
+    The model and the token counts (``prompt_tokens``, ``completion_tokens``,
+    ``prompt_tokens_details.cached_tokens``) ride ``extras`` under the same keys the research
+    agent's rows use.
     """
     try:
         body = json.loads(response.body)
@@ -138,9 +149,23 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     if cost is None:
         cost = _decimal(usage.get("cost"))
     request_id = body.get("id")
+    # Slice 1b: the model and the token counts ride the reading's extras, so every row written
+    # through this reader (structuring, media, reconcile, display) carries what the research
+    # agent's rows already carry and the cost read's per-model view stays whole.
+    token_details = usage.get("prompt_tokens_details")
+    token_details = token_details if isinstance(token_details, dict) else {}
+    extras: dict[str, object] = {
+        "prompt_tokens": _count(usage.get("prompt_tokens")),
+        "completion_tokens": _count(usage.get("completion_tokens")),
+        "cached_prompt_tokens": _count(token_details.get("cached_tokens")),
+    }
+    model = body.get("model")
+    if isinstance(model, str) and model:
+        extras["model"] = model
     return CostReading(
         cost_usd=cost,
         provider_request_id=request_id if isinstance(request_id, str) else None,
+        extras=extras,
     )
 
 
