@@ -7,7 +7,7 @@
 # one sentence what the agent should do about it.
 #
 # Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
-#   - Every tool granted by `head-of-abm@v56` needs an entry. A missing entry fails the build by
+#   - Every tool granted by `head-of-abm@v57` needs an entry. A missing entry fails the build by
 #     name, so a newly granted tool cannot ship with unexplained refusals. An entry the profile no
 #     longer grants is kept rather than deleted — the tools chapter renders the grant, so an
 #     ungranted entry disappears from the manual on its own while its history stays readable here.

@@ -241,7 +241,7 @@ class ReadArtifactTool(Tool):
         "thread it was made on; section=content adds the document's page JSON as text, capped, "
         "with body_truncated saying whether there is more. Read this before describing an "
         "artifact or what it says. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_artifact"
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_artifact"
     )
     input_model: ClassVar[type[ToolInput]] = ReadArtifactInput
     output_model: ClassVar[type[ToolOutput]] = ReadArtifactOutput

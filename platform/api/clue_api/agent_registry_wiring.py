@@ -169,7 +169,16 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # three document skills move to v2. The manual re-mints at `manual-*@v3` because the grant it
     # describes moved. Prompt stays v10. The conversation recipe moves 27 → 28: the interaction
     # slot re-pins the two reads to `@2` and admits the two new addresses.
-    AgentRole.HEAD_OF_ABM: "v56",
+    # v57 (the turn caps move to the founder's numbers, 2026-09-14): v56's surface exactly, with
+    # `turn_timeout_s` 300 → 1800 and `max_model_rounds` 24 → 100. Live turn 7ffabc38, a plan
+    # draft, failed `agent_timeout` at the 300-second wall clock before it wrote anything — no
+    # stall and no loop, just four minutes of reading skills and reasoning (one 169-second
+    # stretch) cut mid-thought — and plan 3's persona turn spent four of the same five minutes the
+    # same way. A cap that fails a real document turn is the restriction the founder ruled out
+    # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
+    # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
+    # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
+    AgentRole.HEAD_OF_ABM: "v57",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

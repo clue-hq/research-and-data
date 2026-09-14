@@ -345,7 +345,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
     ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.

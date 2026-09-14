@@ -61,8 +61,10 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #:
 #: Unmoved at `head-of-abm@v56`: the disclosed library is still those nineteen resources, because
 #: the four reads that join the grant are TOOLS and a tool is not disclosed on this block. Only
-#: the Stage-0 skill's own summary grew — by the words "claims" and "artifacts" — so the block
-#: measures 4427 bytes against the 4608 already allowed.
+#: the Stage-0 skill's own summary grew — by the words "claims" and "artifacts".
+#: Unmoved again at `head-of-abm@v57`, which changes no resource at all: it raises the turn caps
+#: and re-mints the manual at `manual-*@v4`, and a chapter's version lives in its path, not in the
+#: summary this block measures. 4427 bytes against the 4608 already allowed.
 SKILLS_BLOCK_MAX_BYTES = 4608
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.

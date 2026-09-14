@@ -145,8 +145,13 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # version (`read_account_research@1`/`read_discovery_run@1` -> their paged `@2`s, a
         # different input digest), two are added (`read_claims@1`, `read_artifact@1`), and every
         # pinned skill body in the manifest is new — stage0-interview v33, the document skills at
-        # v2, the re-minted `manual-*@v3`. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("f9376210bfcc9689a0423475e5759137a4230a66a56ffeec86c68699c7c08e2d"),
+        # v2, the re-minted `manual-*@v3`. v57 moves it for neither reason: no tool and no grant
+        # change at all. It raises `turn_timeout_s` to 1800 and `max_model_rounds` to 100 — the
+        # founder's numbers, after a real plan-draft turn was cut mid-thought at the 300-second
+        # cap — and the manifest carries the limits and the `manual-*@v4` bodies its generated
+        # `limits` chapter renders them into, so the digest moves on those alone. Digest measured
+        # off this tree.
+        AgentRole.HEAD_OF_ABM: ("cfdcbfd12f1363af84e4095085812102e6e1f1bdd2e242a88a4740a4bdbd0a42"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -532,7 +537,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v56"
+    assert production.profile_ref.address == "profile:head-of-abm@v57"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v33"
     )
@@ -644,7 +649,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -822,7 +827,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
     ]
 
 
