@@ -102,6 +102,7 @@ fallback URL, head/body snippets (security review); no custom domain, no index t
 Connections / MCP server / Integrations — lifted as the dummy's inert Coming-soon previews.
 
 Slice order agreed: (1) Profile + Workspace + Members; (2) Research fields after the co-founder's
-redraw; Billing and Pages dummy. **Next step owed: the design spec
-`docs/superpowers/specs/2026-09-14-settings-integration-design.md` for founder review — not yet
-written (founder asked for discussion only; no code).**
+redraw; Billing and Pages dummy. **Design spec written 2026-09-15 for founder review:
+`docs/superpowers/specs/2026-09-15-settings-integration-design.md` (carries assumptions A1 overlay on
+Billing/Pages dummies, A2 real workspace name in the profile-menu caption). No code yet; the plan
+is drawn only after the founder approves the spec.**
