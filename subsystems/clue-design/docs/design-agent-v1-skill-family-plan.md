@@ -824,3 +824,72 @@ outputs, and resets only the backed-up perworkspace request cache. Fresh Home
 conversations can produce different handoff briefs, and multi-style ad selection
 may choose different automatic references. Compare admitted payloads; mismatched
 pairs are end-to-end screening, not isolated causal evidence about topology.
+
+### Four-brand comparison completed (local, 2026-09-13)
+
+Task12's implementation and Task13's eight-run screening are complete at
+`536f4d65`. Full runtime regression verification: 2,004 passed, one skipped.
+All four fresh controls were dispatched together, then all four fresh solo
+requests together. User briefs contained no asset IDs, skills, copy, layout or
+image prompts. Source hashes, kits, budgets and models stayed fixed: Grok4.6
+medium and GPT Image2. The only runtime switch was scene_solo false→true.
+The eighteen family bodies were unchanged.
+
+| Brand | Director/author control | Solo | Model calls, control→solo |
+| --- | --- | --- | --- |
+| Clue | 22:05, unaccepted warning draft | 6:00, accepted | 69→26 |
+| AWS | 16:36, unaccepted warning draft | 6:51, accepted | 63→25 |
+| Google Cloud | 30:18, budget stop/unaccepted draft | 12:09, accepted | 65→41 |
+| Conduit | 14:31, accepted after target exceeded | 7:03, accepted | 52→25 |
+
+Times measure design-run creation to terminal, excluding the Home handoff and
+manual UI QA. All eight missed240seconds. Runtime acceptance is not a human
+quality verdict. Total calls249→117 is encouraging screening evidence, not a
+repeatability or statistical claim. The selected families were type-led
+positioning (Clue/Conduit), event-webinar (AWS), and customer-spotlight (Google).
+Five families have selection evidence across the broader work; thirteen still
+need provider-backed coverage. Do not call all eighteen visually validated.
+
+Admission receipts show byte-identical user briefs and handed-off brief text
+for each pair, with exact matching source-catalog records (25/25/75/97).
+Per-run IDs necessarily differ; Conduit's project title additionally includes
+“hospitality”. Seven earlier experiment images were reversibly hidden before
+controls; thirteen new control assets were hidden before solo. Original asset
+records/digests/recency remained unchanged. Per-workspace generation caches were
+backed up and reset; provider/logo caches were not purged. Chosen references and
+image actions can differ as agent decisions. Every solo graph declared one
+orchestrator model and zero delegation calls. Every solo generated exactly one
+GPT Image2 component with actual reference-image receipts. Google changed from
+ten deterministic crops of an original ad to a generated photographic hero.
+Logos and marketing text remained separate layers.
+
+All eight artifacts passed native edit→save→reload, followed by exact restoration
+of their original scene JSON. All eight passed browser SVG export, and local
+API verification captured both SVG and1080×1080PNG bytes using the browser's
+non-persisting export profile. SVGs contain2–4 native text elements and independent
+image elements. API exports did not change document versions. Those QA results
+prove the editing/export mechanics, not reference quality or copy effectiveness.
+
+A significant evidence correction: Google's control repaired `$radius.pill`
+before its final scene was saved. An old critique still cited that repaired
+failure; the final geometry had not received a current review before timeout.
+The post-run saved draft exports successfully. Follow-up work must distinguish
+historical compile errors, current validity, current visual review and acceptance;
+outer run success and the word “proposed” cannot stand in for those facts.
+
+Visual review remains below the intended release bar: Clue's control support
+has inadequate bottom spacing; solo copy is more compact but generic and small
+at feed scale. AWS's weak hierarchy, missing Arial files and pixelated source
+wordmark remain. Google solo is clearer and more relevant, but its lengthy
+support and headline orphan need attention. Conduit broadly preserves the wash
+and typography language but has weak supporting copy and excessive empty space.
+No hand-authored quality repair was substituted for any first delivery.
+
+Ignored receipts and frozen originals live under
+`.design-runs/evaluation/skill-family-v1/solo-four-brands-20260913/`, including
+`paired-all-terminal-20260914T065137Z.json`, input/source checks and each arm's
+`qa-exports/receipt.json`. The four solo artifacts are open at3021–3024.
+The single-agent mode is still an explicitly selected local experiment; default
+scene/website topology and production remain unchanged. Next: repair review/status
+truthfulness at the existing seams, strengthen reference/typography/logo quality
+checks, then repeat ordinary-request evaluation before wider family coverage.

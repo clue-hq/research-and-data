@@ -360,3 +360,55 @@ Baseline local receipts under solo-four-brands-20260913. Home agent can rewrite
 briefs and multistyle auto-selection is nondeterministic; compare actual admitted
 inputs and call mismatches end-to-end screening, not identical-input causality.
 No provider generation yet; ready for current-source control-arm restart.
+
+## Four concurrent brands in both topology arms — actual closeout
+
+Source536f4d65 implements and tests scene solo; all18family bodies unchanged.
+Full runtime suite2004pass/1skip. All4fresh control and all4fresh solo requests
+ran via Home→Design with ordinary identical brief text and no user-attached IDs,
+skills, copy or layout. Corrected manifest timestamps use exact browser receipts.
+Admitted brief text and source catalogs byte-match; only normalized IDs and one
+Conduit title word differ. Source/config receipts differ only scene_solo. Catalog
+records25/25/75/97 (Clue/AWS/GCP/Conduit), original DB assets unchanged.13newcontrol
+assets reversibly archived before solo; caches preserved/reset; earlier7experimental
+outputs stay hidden. No original blobs/documents deleted. Generated outputs remain
+saved independently; future comparisons must quarantine their discovery/cache again.
+
+Control→solo times/calls: Clue22:05→6:00/69→26;AWS16:36→6:51/63→25;
+Google30:18→12:09/65→41;Conduit14:31→7:03/52→25. Controlaccepted onlyConduit;
+soloaccepted all4 with realreceipts, exactly1modelrole and0taskcalls. Total249→117.
+Allmiss240s, humanquality open. Threefamiliesselectedhere (type-led twice,event,
+customer-spotlight), not18-family validation. ActualGPTImage2references receipts
+saved; onegeneratedcomponent per solo. Googlecontrol10crops vs sologeneratedphoto.
+
+Correction: Google's original radius.pill error was repaired before canonical70.
+Stale critique still cited old004failure; latest007geometry unreviewed. Actual
+postrunexport passes. Review .superpowers/sdd/design-agent-v1-skill-family-plan/
+control-warning-persistence-review.md identifies stale diagnostics, assumed-clean
+warning persistence, acceptance_scope ignored in chat, and historical errors
+presented as current. No code edits during either arm; these follow-ups remain.
+
+All8native text edits persisted across browserreload, then exactoriginalsceneJSON
+restored. All8browser SVG badges successful; APIbyteverification saved SVG+PNG,
+correctprofile96dpi/persist_preflightfalse, all1080square,2–4nativetext and2–3image
+nodes. Canonicalversionsunchangedbyexport. Initialverificationparser incorrectly
+looked top-levelartifacts and used144dpi; receipts preserved and rerun correctly
+usingbody.export.artifacts and96dpi, assertingnonemptybytes. Do not cite initial
+parserreceipts as finalverification. Browsers may report export without file in
+Downloads; durable verifiedbytes now under eacharm/brand/qa-exports.
+
+CUAsetValue/typeText changed richProjectprompt visibleDOM without enablingLexical
+Send; realpasteeventenabledsubmission. Afterwardsall4tabs had ReactremoveChild
+errors; reloadrecovered normal routes, runscontinued. This may be automation-induced;
+do not claim ordinary typing proved this app defect. Use actualpaste for richchat
+composer; nativeinspector textarea setValue worked. AcontrolGooglereload transiently
+showedSignin, while correct scopededitorloaded; no authentication settings changed.
+
+Current localstack session97267; APIs8010/8020/8030,frontend3020,4Fleetprocesses,
+brandorigins3021–3024 sharedclue_sept7_dev. local.envscene_solo1 explicitlyselected
+experiment; source defaults0. Lastglobalidle90Fleetdone,37designsucceeded+5failed.
+Four solotabs13–16 deliverable, originals in9–12 preserved. No runtime/service
+restartneededforreviews. Sourcecommit536f4d65, no pushes. All evidence under
+solo-four-brands-20260913; paired report20260914T065137Z includes frozen metrics,
+acceptance, custody and384verifiedruntimefiles acrossarms. Goal remains active:
+latency,humanquality,13uncoveredfamilies and truthful warnings remain unfinished.
