@@ -91,7 +91,7 @@ in §8 as deferred, with the trigger that re-opens it.
 | OTel spans | `clue_obs.otel.tracing.traced_step` / `configure_tracing`; module-local `TracerProvider`; OTLP HTTP exporter is a dependency | Spans are created and **dropped**: `configure_tracing` has no production caller. |
 | LLM cost per call | `libs/clue-gateway/clue_gateway/tracing.py` — the factory's decorator records prompt, completion, cached tokens and `cost_cents` on every model call; `agent_model_call` receipts keyed by `turn_id` | Measured at the gateway on every call; the ARV2 research ledger records it. The conversation-turn receipt recorded 0 until slice 1 (Task 1–3) added cost_usd/cost_source. |
 | Paid provider usage | `platform/api/clue_api/arv2/calls.py` `ProviderCaller` → `provider_call_ledger` (`workspace_id, project_id, project_run_id, entity_research_job_id, provider, operation, label, phase, http_status, latency_ms, attempts, cost_usd, credits, media_seconds, over_ceiling, outcome, cost_source, raw ref`) | Done for every ARV2 call. Milestone item 5 for the pilot path. |
-| Onboarding / display / evidence spend | ProviderCaller with JsonlLedger (arv2/onboarding_driver.py, arv2/display/page.py, onboarding_evidence_tools.py) | On disk, not queryable — slice 1b routes them to provider_call_ledger. |
+| Onboarding / display / evidence spend | ProviderCaller over buffered sinks drained by the onboarding driver, the display page and the evidence tool (slice 1b) | On provider_call_ledger since 2026-09-14; the onboarding run id is the job stamp. |
 | Outbound HTTP | httpx everywhere (32 files under `libs`, `subsystems`, `platform`; no `requests`, no `aiohttp`) | One instrumentor covers all of it. |
 | Langfuse, Sentry, OTel instrumentors, OTLP endpoint config | — | Absent. No references anywhere in the tree or `.env.example`. |
 
@@ -246,9 +246,10 @@ No new table. One read, `clue_projections.cost.cost_report`, over the two ledger
 
 The two tables never hold the same call, so the total is their plain sum. Served as
 `GET /cost/report` on the projections router and as `make cost-report`. Every report carries a
-`not_covered` list naming the spend this read cannot see: the onboarding lane, the display
-prewrite and the persona-evidence tool (JSONL ledgers on disk — **slice 1b** routes them to the
-Postgres ledger), the design subsystem's providers (R12 hold), and pre-cost-column turn rows.
+`not_covered` list naming the spend this read cannot see: the design subsystem's providers (R12
+hold) and pre-cost-column turn rows. Slice 1b (2026-09-14) put the onboarding lane, the display
+prewrite and the persona-evidence tool on the Postgres ledger, and made every OpenRouter row carry
+its model and token counts.
 
 Agent-and-tool-level cost is **not** materialised in Postgres (R9). Langfuse holds that tree, and
 every ledger row and receipt carries the observation id (§5.3), so a ledger line opens to the agent
@@ -320,10 +321,11 @@ overlay pins them on.
 
 1. **Cost read** (§5.5). Spends nothing, needs no new service, answers the founder's question on
    day one. Projection endpoint + make target + tests over seeded ledger rows.
-1b. **JSONL ledgers onto Postgres.** The onboarding lane, the display prewrite and the
-   persona-evidence tool write through `ProviderCaller` to JSONL files; route them to
-   `provider_call_ledger` (mechanics in `_memory/2026-09-14-lane3-slice1-cost-read.md`). Runs
-   after slice 1, before the pilot's first customer onboarding is counted.
+1b. **JSONL ledgers onto Postgres — DONE 2026-09-14.** The onboarding lane, the display
+   prewrite and the persona-evidence tool drain their `ProviderCaller` sinks onto
+   `provider_call_ledger` (design:
+   `2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md`); OpenRouter rows carry model
+   and usage.
 2. **Roots** (§5.1, §5.2, §4 propagation). `clue_obs.otel.install`, `clue_obs.sentry.install`,
    traceparent on the turn and job rows, env parity. Small, early; lane 1's remaining plans rebase
    over it (`agent_runtime_wiring.py` and the roots are the only shared files).

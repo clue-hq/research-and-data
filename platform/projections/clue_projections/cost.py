@@ -17,9 +17,10 @@ The two tables never hold the same call, so ``total_usd = provider_usd + turn_mo
 per-model view; those research lines are a subset of ``providers`` and are not added to any total.
 A ``research_ledger`` line reuses ``role`` to carry the ledger ``operation``.
 
-What this read cannot see is named in ``not_covered`` on every report: the onboarding lane, the
-display prewrite and the persona-evidence tool ledger to JSONL files on disk; the design
-subsystem's own providers are held (design note R12); turn rows before the cost columns are blank.
+What this read cannot see is named in ``not_covered`` on every report: the design subsystem's
+own providers are held (design note R12); turn rows before the cost columns are blank. Every
+other paid call — ARV2 research, discovery, onboarding, the display prewrite, the persona-evidence
+tool — is on ``provider_call_ledger`` since slice 1b.
 
 Every query is workspace-scoped and read-only (the projections package writes nothing).
 """
@@ -52,12 +53,10 @@ _USD = Decimal("0.000001")
 _CREDITS = Decimal("0.001")
 
 #: The spend this read cannot see. Constant and printed on every report so a partial total is
-#: never mistaken for a whole one. Each entry names the ledger and the reason.
+#: never mistaken for a whole one. Each entry names the ledger and the reason. (Slice 1b routed
+#: the onboarding lane, the display prewrite and the persona-evidence tool onto
+#: provider_call_ledger, so they are no longer listed.)
 NOT_COVERED: tuple[str, ...] = (
-    "onboarding lane: ProviderCaller writes a JSONL ledger under arv2_raw_root/onboarding "
-    "(slice 1b routes it to provider_call_ledger)",
-    "display prewrite: JSONL ledger under arv2_raw_root/ledger.jsonl (slice 1b)",
-    "persona evidence tool: JSONL ledger under arv2_raw_root/evidence (slice 1b)",
     "design subsystem providers (text-to-image, ad-DNA model): no ledger rows yet (R12 hold)",
     "conversation-turn model calls recorded before agent_model_call.cost_usd existed: blank, "
     "counted as unpriced",

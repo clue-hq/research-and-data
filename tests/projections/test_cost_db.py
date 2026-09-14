@@ -395,8 +395,12 @@ def test_time_window_applies_to_both_ledgers() -> None:
     assert turn.calls == 2  # the legacy row two days earlier excluded
 
 
-def test_not_covered_names_every_ledger_this_read_cannot_see() -> None:
+def test_not_covered_names_only_the_ledgers_this_read_still_cannot_see() -> None:
+    """Slice 1b routed the onboarding, display and evidence ledgers onto Postgres; what is left
+    is the design subsystem (R12 hold) and the turn rows written before the cost columns."""
     _, report = _report()
     text_ = " ".join(report.not_covered)
-    for word in ("onboarding", "display", "evidence", "design", "before"):
-        assert word in text_
+    assert "design" in text_ and "before" in text_
+    for word in ("onboarding", "display", "evidence"):
+        assert word not in text_
+    assert len(report.not_covered) == 2

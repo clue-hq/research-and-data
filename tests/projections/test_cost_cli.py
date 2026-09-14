@@ -100,7 +100,7 @@ def test_render_report_prints_every_section_and_the_honesty_list() -> None:
     assert "x-ai/grok-4.6" in out and "unpriced 2" in out
     assert str(JOB) in out
     assert "p1" in out
-    assert "NOT COVERED" in out and "onboarding" in out
+    assert "NOT COVERED" in out and "design subsystem" in out
     assert "a note" in out
 
 
