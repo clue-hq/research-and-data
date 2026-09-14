@@ -37,7 +37,7 @@ This slice also fixes the doubled `answering_model` on streamed turns, found in 
   middleware and calls `agent.ainvoke(opening, config=RunnableConfig(recursion_limit=...))`; no
   callbacks are attached. `_ModelUsageRecorder` writes each model round onto the job's ledger.
 - **Direct chat-model calls outside a graph.** `agent_turn_fleet_wiring.py:1661` awaits a
-  gateway chat model's `ainvoke(prompt)` directly (a summary call); no callbacks are attached.
+  gateway chat model's `ainvoke(prompt)` directly (the design leg's exit judge); no callbacks are attached.
 - **The gateway decorator.** `clue_gateway.tracing.TracingGateway.complete/embed` wrap the inner
   gateway in the `llm.gateway_call` span and call `record_model_call`. `clue_gateway.factory`
   wraps every gateway it builds. Non-graph callers: `clue_api.claim_extraction` (structuring) and
@@ -179,8 +179,8 @@ Where it is attached:
   `_ModelUsageRecorder` (`langfuse_trace_id`, `langfuse_observation_id`) when the recorder holds
   a registry; the middleware's `request` carries the LangChain run id through its `runtime`
   config when available, else the extras carry the trace id only.
-- **The direct summary call** (`agent_turn_fleet_wiring.py:1661`): `ainvoke(prompt,
-  config={"callbacks": [handler]})` under `propagate_trace(trace_name="head-of-abm.summary",
+- **The exit judge** (`agent_turn_fleet_wiring.py:1661`, the design leg's): `ainvoke(prompt,
+  config={"callbacks": [handler]})` inside `observation("design-leg.exit_judge", as_type="evaluator")` under `propagate_trace(trace_name="design-leg.exit_judge",
   ...)`, so it is one generation in its own trace rather than an invisible call.
 
 The handler types the graph for us: the deep agent root is `agent`, LangGraph nodes are
@@ -306,7 +306,7 @@ layer position (`obs → config → core`).
 ## 5. Testing
 
 Offline, with `Langfuse(span_exporter=InMemorySpanExporter(), tracing_enabled=True,
-tracer_provider=<test provider>)` (a helper `installed_for_test()` in `clue_obs.langfuse.testing`
+tracer_provider=<test provider>)` (the helper `langfuse_installed()` in `tests/_langfuse.py`
 that installs against an in-memory exporter and returns it):
 
 - `tests/test_obs_langfuse.py`: not installed → `observation` yields the null handle,
