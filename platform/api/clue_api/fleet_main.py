@@ -87,6 +87,7 @@ from clue_api.arv2.onboarding_driver import (
 )
 from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
 from clue_api.arv2.read_tools import DbArv2ReadService
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -654,7 +655,7 @@ def _build_onboarding_handler(
     if not settings.onboarding_v2_enabled:
         return None
     try:
-        exa = build_onboarding_exa_client_factory(settings, secrets)
+        exa = build_onboarding_exa_client_factory(secrets)
     except ValueError:
         log.warning(
             "onboarding.handler_not_composed",
@@ -678,14 +679,15 @@ def _build_onboarding_handler(
 
 def _build_catalog_reconciler_factory(
     settings: Settings, secrets: Secrets
-) -> Callable[[UUID], CatalogReconciler] | None:
+) -> Callable[[RawSink, LedgerSink], CatalogReconciler] | None:
     """The catalog identity ladder's model stage, behind the reconcile flag.
 
     (``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``, model ``CLUE_ONBOARDING_RECONCILE_MODEL``.)
 
     A **factory of one reconciler per run**, not a reconciler: the call spends through R1's
-    ``ProviderCaller``, whose raw records and ledger belong under that run's own folder
-    (``arv2_raw_root/onboarding/<run_id>/catalog-reconcile/``), so the run id has to reach it.
+    ``ProviderCaller`` built over the catalog step's own buffered sinks, so its one call lands on
+    ``provider_call_ledger`` with the run's stamp (slice 1b) — the driver hands the factory the
+    sinks.
 
     Missing credential ≠ missing handler here (unlike the Exa key one level up): without the model
     stage the ladder still runs its deterministic rungs, which is exactly what it did before the
@@ -715,11 +717,9 @@ def _build_catalog_reconciler_factory(
         return None
     base_url = GatewayConfig().base_url
 
-    def factory(run_id: UUID) -> CatalogReconciler:
+    def factory(raw: RawSink, ledger: LedgerSink) -> CatalogReconciler:
         return OpenRouterCatalogReconciler(
-            caller_factory=lambda: build_onboarding_provider_caller(
-                settings, run_id=run_id, step_label="catalog-reconcile"
-            ),
+            caller_factory=lambda: build_onboarding_provider_caller(raw=raw, ledger=ledger),
             api_key=key,
             model=settings.onboarding_reconcile_model,
             base_url=base_url,
