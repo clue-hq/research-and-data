@@ -2002,3 +2002,38 @@ registry snapshots, first-terminal traces, browser persistence/export receipts,
 copy-procedure diagnostic remains paused: automatic approval review rejected its
 specific external payload/destination; the user requested an explanation, not
 authorization. Zero diagnostic calls have run. No production changes or push.
+
+## Task 28: preserve typography through color-token replay (2026-09-14)
+
+The Task27 export discrepancy was a runtime-to-persistence defect. A paint-only
+retokenization operation detached the text role when applied to resolved solid
+paints, but retained it when replayed against already-tokenized authored paints.
+Later canonical resolution therefore gave AWS and Google different support-copy
+leading in their saved exports. The core's behavior for an actual authored color
+edit is intentional; the automatic paint-rebind builder was missing binding intent.
+
+The builder now carries the existing text kind and its explicit token bindings
+when rebinding paint on role-styled text. It does not change brand-role precedence,
+website guidance, engine sources, models or the authored copy. Two real-helper
+regressions first failed with the missing role and now pass, including scalar
+overrides, repeated preflight and input immutability. The 284 related runtime,
+acceptance, export and website checks pass; an independent review found no defect.
+The focused 11-case replay file was rerun successfully at closeout. Scoped lint
+comparison finds no new violations; existing file-level violations remain.
+
+Offline replay used all four original operation ledgers, exact pinned brand kits
+and hash-verified fonts. It reproduced the original preview and saved export for
+every brand, including both discrepancies. Replacing only retokenization batches
+with the fixed builder produces equal runtime/persisted PNG pixels, text kinds
+and computed geometry for all four. SVGs match except their document-ID attribute.
+Clue and Conduit remain unchanged; corrected AWS/Google previews match their
+existing saved exports. Root reran this proof successfully. Evidence lives in
+ignored `coverage-next-families-20260914/export-parity-replay/` and
+`color-token-replay-20260914/`.
+
+This is deterministic rendering proof, not a new autonomous quality pass. Existing
+artifacts were not rewritten. Small text, copy grounding, raw inspector values,
+and generation latency remain open. Next, refresh idle local workers and run the
+second ordinary four-brand coverage batch with source catalogs frozen and prior
+experimental imagery recoverably excluded. Task26 remains paused pending explicit
+approval; no diagnostic calls are included in this checkpoint.

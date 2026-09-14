@@ -1028,3 +1028,18 @@ assert comparedUnicodeQAdot toescapedJSON; fixedensure_ascii=False thenallchecks
 passed. Initialscenecompare usedruntimefinal insteadpersistedterminal; all4
 persistedscenesexactlyrestored. Guessedinspector/testpathsabsent; actualfrontend
 image-inspector usesadapterhydration, standaloneTextSectionseparate. Goalactive.
+
+Task28 (2026-09-14): preceding explanation-only turn was no progress for the
+implementation. Freshly verified the active branch/diff and completed the
+paint-rebind replay fix. A fills-only retokenize operation detached style_token
+on resolved paints but not on authored token paints. Builder now explicitly
+carries existing text/token intent; core authored-color semantics unchanged.
+Two real-helper RED cases passed after the 13-line change; related284 checks
+passed, then fresh11 replay cases passed. Independent reviewer and root each
+replayed all4 original ledgers using exact pinned kits/hash-verified fonts:
+old outputs reproduce4/4; fixed runtime/persisted PNG/text/geometry equal4/4;
+SVG differs only document ID. Existing artifacts/DB unchanged. Scoped lint has
+no new errors, existing baseline violations remain. No Rust/wasm changes.
+Plan records boundary; small typography, copy, inspector and latency unresolved.
+Task26 external copy diagnostic remains paused with zero calls; explanation is
+not approval. Next idle-worker refresh and second four-brand coverage batch.

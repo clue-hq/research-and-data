@@ -318,6 +318,19 @@ def build_retokenize_operations(
                 # Preserve deliberate same-token reapplication there too.
                 patch["explicit_text_tokens"] = explicit_tokens
                 touched = True
+            elif new_fills is not None and kind.get("style_token") is not None:
+                # This is a paint rebind, not an authored text-color edit.
+                # A fills-only core operation would detach the role when
+                # applied to resolved solid paints, but keep it when replayed
+                # against already-tokenized authored paints. Carry the text
+                # and its existing binding intent explicitly on both paths.
+                patch["kind"] = _set(dict(kind))
+                patch["explicit_text_tokens"] = {
+                    "style": True,
+                    "font_size": kind.get("font_size_token") is not None,
+                    "line_height": kind.get("line_height_token") is not None,
+                    "letter_spacing": kind.get("letter_spacing_token") is not None,
+                }
 
         if touched:
             operations.append(

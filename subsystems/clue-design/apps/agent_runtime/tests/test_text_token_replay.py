@@ -1,11 +1,69 @@
 """A draft's retokenize operations must mean the same thing on ledger replay."""
 
+import copy
 from pathlib import Path
 
 import pytest
-
 from lumen_agent.retokenize import build_retokenize_operations
 from lumen_api.core import CoreClient
+
+
+@pytest.mark.parametrize("scalar_overrides", [False, True])
+def test_color_rebind_preserves_text_role_on_resolved_and_authored_replay(
+    scalar_overrides: bool,
+) -> None:
+    core = CoreClient(repo_root=Path(__file__).resolve().parents[3])
+    kit = core.platform_default_brand_kit()
+    kit["tokens"]["typography"]["type.body"]["value"]["default"].update(
+        font_family="Inter", font_size=24.0, font_weight=400, line_height=1.5,
+    )
+    seed = core.new_scene("doc_color_replay", "Color binding preserves typography")
+    compiled = core.compile_dsl_into_scene(seed, '''page square size(1080,1080,px)
+  artboard fr s(fill,fill)
+    support text "Supporting copy" s(240,hug) style($type.body) fill($surface.brand)
+''')
+    assert compiled["applied_operations"] == 3
+    authored = compiled["scene"]
+    resolved = core.preflight_scene(authored, kit)["scene"]
+    # The real compiler reauthors the role alongside a raw leading value. The
+    # role is deliberate; only the canonical resolver decides its final leading.
+    repair = core.compile_dsl_into_scene(
+        resolved, "#support lh(1.32) style($type.body)"
+    )
+    assert repair["applied_operations"] == 1
+    runtime = repair["scene"]
+    replayed = core.apply_operations(
+        authored, repair["dsl"]["compile_output"]["operations"]
+    )["scene"]
+    if scalar_overrides:
+        for scene in (runtime, replayed):
+            kind = scene["nodes"]["support"]["kind"]
+            kind.update(
+                font_size_token="type.size.xl",
+                line_height_token="test.leading",
+                letter_spacing_token="test.tracking",
+            )
+        for name, value in (("test.leading", 1.65), ("test.tracking", 2.0)):
+            kit["tokens"]["numbers"][name] = {"value": {"default": {
+                "kind": "number", "unit": "px", "value": value,
+            }}}
+
+    before = copy.deepcopy(runtime)
+    operations = build_retokenize_operations(runtime, kit)
+    assert runtime == before  # the builder cannot mutate its input
+    assert any(op["node_id"] == "support" for op in operations)
+    expected = core.preflight_scene(runtime, kit)["scene"]["nodes"]["support"]["kind"]
+    for starting_scene in (runtime, replayed):
+        rebound = core.apply_operations(starting_scene, operations)["scene"]
+        assert rebound["nodes"]["support"]["kind"].get("style_token") == "type.body"
+        first = core.preflight_scene(rebound, kit)["scene"]
+        assert first["nodes"]["support"]["kind"] == expected
+        # A second preflight encounters resolved solid paints again. Rebasing
+        # those paints must not detach typography or change the rendered shape.
+        again = core.apply_operations(first, build_retokenize_operations(first, kit))["scene"]
+        second = core.preflight_scene(again, kit)["scene"]
+        assert second["nodes"]["support"]["kind"] == expected
+        assert second["nodes"]["support"]["computed"] == first["nodes"]["support"]["computed"]
 
 
 @pytest.mark.parametrize(("step", "expected_size"), [("7xl", 80.0), ("xl", 24.0)])
