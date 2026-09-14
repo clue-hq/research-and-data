@@ -5,6 +5,8 @@ an asset exists. The runtime checks catalog membership and available asset IDs;
 the director must ground evidence in supplied or actually retrieved sources.
 """
 
+import hashlib
+import json
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -179,3 +181,47 @@ class CreativeDirection(DirectionModel):
             not proof or any(not self._has_attribution(item) for item in proof)
         ):
             raise ValueError("Selected playbook requires attribution linked to its proof")
+
+
+def canonical_direction_digest(direction: CreativeDirection) -> str:
+    """Bind semantic model content, preserving list order for indexed review rows."""
+    canonical = json.dumps(
+        direction.model_dump(mode="json", by_alias=True),
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def direction_review_requirements(direction: CreativeDirection) -> list[dict]:
+    return [
+        {"section": section, "index": index, "text": text}
+        for section in ("preserve", "review_needs")
+        for index, text in enumerate(getattr(direction, section))
+    ]
+
+
+class DirectionReviewCheck(DirectionModel):
+    section: Literal["preserve", "review_needs"]
+    index: int = Field(strict=True)
+    status: Literal["met", "deviation", "unverified"]
+    notes: NonEmpty
+
+    @model_validator(mode="after")
+    def nonnegative_index(self) -> Self:
+        if self.index < 0:
+            raise ValueError("direction review index must be nonnegative")
+        return self
+
+
+class DirectionReview(DirectionModel):
+    """Declared observations, never a certification of visual accuracy."""
+
+    direction_digest: NonEmpty
+    checks: list[DirectionReviewCheck] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def unique_checks(self) -> Self:
+        keys = [(check.section, check.index) for check in self.checks]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate direction review check")
+        return self

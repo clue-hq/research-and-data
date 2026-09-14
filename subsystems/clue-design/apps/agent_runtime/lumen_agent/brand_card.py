@@ -174,6 +174,18 @@ def build_brand_card(
         "images": _image_inventory(assets.get("images") or {}, manifest),
     }
     if scene_dsl:
+        card["color_catalog"] = {
+            "path": "brand_colors.json",
+            "count": len(colors),
+            "note": (
+                "The compact roles are a shortlist, not the entire palette. "
+                "Read this file in the run workspace when their values do not "
+                "fit the inspected reference; it contains the pinned kit's "
+                "other color tokens, aliases and modes. Choose by actual value "
+                "and purpose. Preflight resolves the active mode; token names "
+                "alone do not establish visual fidelity or logo compatibility."
+            ),
+        }
         card["type_sizes"] = _scene_type_sizes(
             (brand_kit.get("tokens") or {}).get("numbers") or {}
         )

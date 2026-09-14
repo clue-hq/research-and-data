@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 from py_lumen_obs import get_logger
 
+from .engine_mirror import record_pixel_dims
 from .frame import render_ad_dna_card_text, render_pregenerated_assets_text
+from .paths import to_virtual
+from .tools.asset_preview import PREVIEWABLE_MIME_TYPES, blob_path_for_digest
 from .tools.substrate import LumenDesignTools
 from .tools.view import _reference_entries
 
@@ -60,6 +64,139 @@ def initial_turn_state(tools: LumenDesignTools, prompt: str) -> dict:
         "current_round": 0,
         # RC: attachment-ordered reference ids (empty list when none rode this turn).
         "reference_asset_ids": [aid for (_i, aid, _e) in _reference_entries(tools)],
+        **(
+            {"source_assets_path": to_virtual(
+                workspace_root(tools) / "source_assets.json", tools.config,
+            )}
+            if tools.config.scene_skill_bundle == "candidate" else {}
+        ),
+    }
+
+
+def _source_provenance(record: dict) -> dict:
+    """Copy evidence pointers, never media custody locations or generation prompts."""
+    source = record.get("source") or {}
+    provenance = record.get("provenance") or {}
+    pointers = {
+        key: provenance.get(key)
+        for key in (
+            "source_label", "source", "provider", "creative_id", "ad_id",
+            "advertiser_name", "advertiser_page_id", "view_details_link", "source_url",
+        )
+    }
+    pointers["source_asset_id"] = source.get("source_asset_id") or source.get("asset_id")
+    pointers["source_url"] = source.get("source_url") or source.get("url") or pointers["source_url"]
+    result = {}
+    for key, value in pointers.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        if key in {"source_url", "view_details_link"}:
+            try:
+                url = urlsplit(value)
+                if (
+                    url.scheme not in {"http", "https"}
+                    or not url.hostname or url.username or url.password
+                ):
+                    continue
+            except ValueError:
+                continue
+        result[key] = value
+    return result
+
+
+def _source_assets_catalog(tools: LumenDesignTools) -> dict:
+    """Metadata for this run's already available sources, not a corpus search."""
+    references = {aid: (index, entry) for index, aid, entry in _reference_entries(tools)}
+    kit = tools.config.brand_kit_assets or {}
+    library = tools.config.asset_library or {}
+    assets = []
+    unavailable = {"not_ready_or_mismatched": 0, "preview_unavailable": 0}
+
+    def ready(entry, asset_id):
+        record = entry.get("record") if isinstance(entry, dict) else None
+        return (
+            isinstance(record, dict)
+            and record.get("id") == asset_id and record.get("status") == "ready"
+        )
+
+    for asset_id in sorted(set(references) | set(kit) | set(library)):
+        reference_index, reference = references.get(asset_id, (None, None))
+        library_entry = tools._library_asset_entry(asset_id)
+        # Match view's kit-before-library resolution, including a kit entry that
+        # shadows a library record. Never advertise the library's different pixels.
+        entry = kit.get(asset_id)
+        if not isinstance(entry, dict):
+            entry = library_entry
+        asset_ready = ready(entry, asset_id)
+        preview = tools._asset_preview_path(entry["record"]) if asset_ready else None
+        asset_available = preview is not None and Path(preview[0]).is_file()
+        reference_ready = ready(reference, asset_id)
+        reference_available = False
+        if reference_ready:
+            digest = reference.get("preview_digest")
+            mime = (
+                reference.get("mime_type")
+                or (reference["record"].get("media") or {}).get("mime_type")
+            )
+            reference_available = bool(
+                digest and mime in PREVIEWABLE_MIME_TYPES
+                and blob_path_for_digest(tools.config.effective_asset_store_root, digest).is_file()
+            )
+        if not asset_available and not reference_available:
+            reason = (
+                "preview_unavailable" if asset_ready or reference_ready
+                else "not_ready_or_mismatched"
+            )
+            unavailable[reason] += 1
+            continue
+        selected = entry if asset_available else reference
+        record = selected["record"]
+        dimensions = record_pixel_dims(record)
+        source_kind = (record.get("source") or {}).get("kind")
+        description = selected.get("description")
+        description = description if isinstance(description, str) and description.strip() else None
+        assets.append({
+            "asset_id": asset_id,
+            "available_via": (
+                (["reference"] if reference_available else [])
+                + (
+                    ["brand_kit"]
+                    if asset_available and ready(kit.get(asset_id), asset_id) else []
+                )
+                + (["library"] if asset_available and library_entry is not None else [])
+            ),
+            "reference_index": reference_index if reference_available else None,
+            "view_target": (
+                f"asset:{asset_id}" if asset_available else f"reference:{reference_index}"
+            ),
+            "label": record.get("label"),
+            "title": selected.get("title"),
+            "description": description,
+            "description_status": "supplied" if description is not None else "missing",
+            "role": selected.get("role"),
+            "source_kind": (
+                source_kind if isinstance(source_kind, str) and source_kind else "unknown"
+            ),
+            "mime_type": (record.get("media") or {}).get("mime_type") or selected.get("mime_type"),
+            "dimensions": {"width": dimensions[0], "height": dimensions[1]} if dimensions else None,
+            "provenance": _source_provenance(record),
+        })
+    return {
+        "schema_version": 1,
+        "metadata_only": True,
+        "scope": (
+            "Current-turn by-value references, kit and eligible library; "
+            "not the full harvested corpus."
+        ),
+        "observation": (
+            "Use each view_target to inspect pixels. Descriptions are advisory; "
+            "source_kind is the recorded value, not advertiser verification. "
+            "Generated sources are not promoted to references. "
+            "Availability checks existing previews; image decoding is deferred to view."
+        ),
+        "assets": assets,
+        "unavailable_count": sum(unavailable.values()),
+        "unavailable_counts": unavailable,
     }
 
 
@@ -147,6 +284,27 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
     )
+    if tools.config.scene_skill_bundle == "candidate" and tools.brand_card:
+        # A separate on-demand data file keeps the injected card compact without
+        # hiding supplied palette choices. Preserve aliases and mode variants;
+        # the engine remains the authority for their resolved active values.
+        kit = tools.config.brand_kit or {}
+        (workspace / "brand_colors.json").write_text(
+            json.dumps({
+                "kit": {"id": kit.get("id"), "version": kit.get("version")},
+                "modes": kit.get("modes") or {},
+                "colors": {
+                    name: {key: row[key] for key in ("role", "description", "value", "provenance") if key in row}
+                    for name, row in ((kit.get("tokens") or {}).get("colors") or {}).items()
+                    if isinstance(row, dict)
+                },
+            }, indent=2), encoding="utf-8",
+        )
+
+    if tools.config.scene_skill_bundle == "candidate":
+        (workspace / "source_assets.json").write_text(
+            json.dumps(_source_assets_catalog(tools), indent=2), encoding="utf-8",
+        )
 
     # The author receives these in its frame; the Director needs the same current-turn
     # discovery surface before choosing imagery. Reuse the renderers and the placement

@@ -33,7 +33,7 @@ from .cancellation import (
 from .checkpoint import invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
-from .models.schemas import VisualCritique
+from .models.schemas import SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .prompts import (
     build_author_prompt,
@@ -525,7 +525,7 @@ def create_design_deepagent(
             # instead of failing the run. deepagents 0.6.12 passes this object
             # straight through to `create_agent(..., response_format=...)`
             # (middleware/subagents.py: create_sub_agent).
-            "response_format": ToolStrategy(VisualCritique),
+            "response_format": ToolStrategy(SceneVisualCritique if scene_candidate else VisualCritique),
         },
     ]
 

@@ -41,6 +41,12 @@ PAGE_REQUIRED_CODE = "scene.page_required"
 from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..critique_fidelity import stamp_reference_fidelity
+from ..models.creative_direction import (
+    CREATIVE_DIRECTION_FILENAME,
+    CreativeDirection,
+    canonical_direction_digest,
+    direction_review_requirements,
+)
 from ..image_crop import (
     ImageCropError, crop_source_pixels, has_generated_image_origin, require_supported_crop_origin,
 )
@@ -76,6 +82,7 @@ from ..models.schemas import (
     PreviewArtifact,
     RepairClass,
     RepairRequest,
+    SceneVisualCritique,
     StopReason,
     ToolStatus,
     VisualCritique,
@@ -429,6 +436,10 @@ class LumenDesignTools:
         self._preview_receipt: JsonObject | None = None
         self._review_receipt: JsonObject | None = None
         self._latest_visual_critique: JsonObject | None = None
+        # A restarted substrate must validate its own direction. Production
+        # checkpoint takeover restarts the turn; graph history is not a receipt.
+        self._validated_direction: CreativeDirection | None = None
+        self._validated_direction_digest: str | None = None
         self._selected_reference_ids: set[str] = set()
         self._pending_pruned_pages: list[str] = []
         self._write_json(
@@ -3959,6 +3970,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def submit_visual_critique(self, critique_json: str) -> str:
         """Persist structured reviewer output and fail closed on malformed critique JSON."""
         iteration_dir = self._iteration_dir()
@@ -3967,7 +3979,13 @@ class LumenDesignTools:
         try:
             if self.config.reference_assets or self._selected_reference_ids:
                 critique_json = json.dumps(stamp_reference_fidelity(json.loads(critique_json)))
-            critique = VisualCritique.model_validate_json(critique_json)
+            critique_model = (
+                SceneVisualCritique if self.config.scene_skill_bundle == "candidate" else VisualCritique
+            )
+            critique = critique_model.model_validate_json(critique_json)
+            direction_error = self._direction_review_error(critique)
+            if direction_error:
+                raise ValueError(direction_error)
         except Exception as error:  # pydantic raises provider/version-specific errors.
             raw_payload = parse_json_object(critique_json)
             message = (
@@ -4022,16 +4040,17 @@ class LumenDesignTools:
             return
         self.submit_visual_critique(content)
 
-    def validate_creative_direction(self) -> str:
+    @_scene_mutation
+    def validate_creative_direction(self, revision_reason: str = "") -> str:
         """Validate this run's creative-direction.json against its delivered catalog.
 
         Checks the compact handoff and source availability, not visual quality
         or truth of model-authored evidence excerpts. Writes no scene geometry.
+        Candidate revisions after validation need a concise revision_reason;
+        unchanged canonical content preserves the digest and existing review.
         """
         from ..materialize import scene_view_manifest
         from ..models.creative_direction import (
-            CREATIVE_DIRECTION_FILENAME,
-            CreativeDirection,
             PlaybookEvidenceRequirements,
         )
 
@@ -4058,6 +4077,12 @@ class LumenDesignTools:
             unknown = sorted({item.asset_id for item in direction.source_roles} - set(available))
             if unknown:
                 raise ValueError(f"Sources are unavailable in this run: {', '.join(unknown)}")
+            candidate = self.config.scene_skill_bundle == "candidate"
+            digest = canonical_direction_digest(direction)
+            previous_digest = self._validated_direction_digest
+            changed = previous_digest is not None and previous_digest != digest
+            if candidate and changed and not revision_reason.strip():
+                raise ValueError("A changed validated direction requires a concise revision_reason.")
         except (OSError, ValueError) as error:
             self.record("coordinator", "creative_direction_invalid", output_summary=str(error))
             return self._tool_error("direction.invalid", str(error))
@@ -4067,8 +4092,51 @@ class LumenDesignTools:
             "source_ids": [item.asset_id for item in direction.source_roles],
             "evidence_verified": False,
         }
+        if candidate:
+            self._validated_direction = direction
+            self._validated_direction_digest = digest
+            payload.update(
+                direction_digest=digest,
+                previous_direction_digest=previous_digest,
+                revision_reason=revision_reason.strip(),
+                review_requirements=direction_review_requirements(direction),
+                visual_accuracy_verified=False,
+            )
         self.record("coordinator", "creative_direction_validated", payload=payload)
         return json.dumps(payload, indent=2)
+
+    def _direction_review_error(self, critique: VisualCritique) -> str | None:
+        """Candidate coverage/freshness only; notes remain model judgments."""
+        if self.config.scene_skill_bundle != "candidate":
+            return None
+        review = getattr(critique, "direction_review", None)
+        if review is None:
+            return "The candidate review needs direction_review coverage." if critique.accepted else None
+        if self._validated_direction is None or self._validated_direction_digest is None:
+            return "Validate this run's creative direction before reviewing it."
+        try:
+            current = CreativeDirection.model_validate_json(
+                (self.trace_dir / "workspace" / CREATIVE_DIRECTION_FILENAME).read_text()
+            )
+        except (OSError, ValueError):
+            return "The creative direction is missing or invalid; validate it before review."
+        if canonical_direction_digest(current) != self._validated_direction_digest:
+            return "The creative direction changed since validation; revise and validate it explicitly."
+        if review.direction_digest != self._validated_direction_digest:
+            return "The critique reviews an earlier direction; review the current validated direction."
+        required = {
+            (item["section"], item["index"])
+            for item in direction_review_requirements(self._validated_direction)
+        }
+        provided = {(check.section, check.index) for check in review.checks}
+        if provided - required:
+            return "The critique contains unknown direction review indices."
+        if critique.accepted:
+            if provided != required:
+                return "Accepted review must cover every preserve and review_needs item."
+            if any(check.status != "met" for check in review.checks):
+                return "Direction deviations or unverified requirements remain; repair or explicitly revise the direction."
+        return None
 
     def recommend_edit_surface(self, intent: str, context_json: str = "{}") -> str:
         """Recommend a conservative edit surface for an agent repair or creation step.
@@ -5282,7 +5350,10 @@ class LumenDesignTools:
     def _acceptance_error(self, critique: JsonObject) -> str | None:
         """Check evidence at the final write boundary, independent of agent prose."""
         try:
-            typed = VisualCritique.model_validate(critique)
+            critique_model = (
+                SceneVisualCritique if self.config.scene_skill_bundle == "candidate" else VisualCritique
+            )
+            typed = critique_model.model_validate(critique)
         except ValidationError:
             return "A complete typed visual critique is required for acceptance."
         if not typed.accepted or any(
@@ -5292,6 +5363,9 @@ class LumenDesignTools:
             return "The visual critique rejected this creative or contains blocking issues."
         if typed.model_dump(mode="json") != self._latest_visual_critique:
             return "The final critique differs from the registered visual review."
+        direction_error = self._direction_review_error(typed)
+        if direction_error:
+            return direction_error
         if self._preflight_scene_stamp != self._scene_stamp():
             return "The current scene has no fresh preflight."
         diagnostics = self._latest_preflight_diagnostics

@@ -25,3 +25,22 @@ native editability and valid export do not compensate for those failures.
 Follow the runtime critique schema, including typed reference fidelity when the
 turn requires it. Only finalize accepted when the current review and preflight
 support acceptance; otherwise report a draft or failure and the specific gap.
+
+The candidate critique also carries `direction_review`:
+
+```json
+{"direction_digest":"<returned by validate_creative_direction>","checks":[
+  {"section":"preserve","index":0,"status":"met","notes":"What the current pixels show"},
+  {"section":"review_needs","index":0,"status":"deviation","notes":"The retained treatment is still missing"}
+]}
+```
+
+Use the tool's indexed requirements; cover every `preserve` and `review_needs`
+item once. Status is `met`, `deviation` or `unverified`, with a concrete observed
+reason. Accepted requires all items met on the current direction and render.
+These are your judgments, not automated proof of taste. A score cannot waive an
+unresolved requirement, and a narrow repair does not remove whole-creative
+requirements. If a different direction is justified within the user's scope,
+revise it explicitly with a reason, validate it and review that result; retain
+material departures in the final report. A rejected critique may be incomplete
+while reporting the specific repairs needed.

@@ -134,3 +134,57 @@ def test_candidate_card_does_not_change_default_legacy_or_web_card(tmp_path, cor
     assert "bg-surface-brand" in default["color_roles"]["note"]
     scene_tools(tmp_path / "candidate", kit)
     assert kit == original
+
+
+def test_candidate_can_read_and_use_color_outside_compact_roles(tmp_path, core, kit):
+    """A muted body role must not hide a supplied dark display-ink choice."""
+    kit["tokens"]["colors"]["palette.neutral.950"]["value"]["default"] = {
+        "kind": "hex", "value": "#171B1F",
+    }
+    original = copy.deepcopy(kit)
+    tools = scene_tools(tmp_path, kit)
+    workspace = scaffold_workspace(tools, "Make an ad")
+    catalog_path = workspace / "brand_colors.json"
+    assert catalog_path.is_file(), "The compact card hides the kit's other usable colors"
+    card = json.loads((workspace / "brand_card.json").read_text())
+    assert card["color_catalog"]["path"] == "brand_colors.json"
+    catalog = json.loads(catalog_path.read_text())
+    assert catalog["kit"] == {"id": kit["id"], "version": kit["version"]}
+    assert catalog["colors"]["palette.neutral.950"]["value"]["default"] == {
+        "kind": "hex", "value": "#171B1F",
+    }
+    token = next(name for name, row in catalog["colors"].items()
+                 if row["value"]["default"] == {"kind": "hex", "value": "#171B1F"})
+    source = (
+        'page square size(1080,1080,px)\n'
+        '  artboard fr s(fill,fill) fill($surface.page)\n'
+        '    headline text "One clear idea" s(900,hug) style($type.display) '
+        f'fill(${token})\n'
+    )
+    scene = core.compile_dsl_into_scene(tools.scene, source)["scene"]
+    result = core.preflight_scene(scene, kit)
+    assert not result["preflight"]["has_errors"], result["diagnostics"]
+    assert result["scene"]["nodes"]["headline"]["fills"][0]["paint"]["color"]["value"] == "#171B1F"
+    assert kit == original
+
+
+def test_scene_color_catalog_preserves_modes_aliases_without_exporting_full_kit(tmp_path, kit):
+    kit["tokens"]["colors"]["text.source"] = {
+        "role": "text",
+        "description": "Display ink on light campaign backgrounds",
+        "provenance": {"source": "official_style_guide", "confidence": 1.0},
+        "value": {"default": {"kind": "alias", "token": "palette.neutral.950"},
+                  "modes": {"theme.dark": {"kind": "hex", "value": "#FAFAFA"}}},
+    }
+    tools = scene_tools(tmp_path / "candidate", kit)
+    workspace = scaffold_workspace(tools, "Make an ad")
+    catalog_path = workspace / "brand_colors.json"
+    assert catalog_path.is_file()
+    catalog = json.loads(catalog_path.read_text())
+    assert catalog["colors"]["text.source"] == kit["tokens"]["colors"]["text.source"]
+    assert catalog["modes"] == kit["modes"]
+    assert "assets" not in catalog and "typography" not in catalog
+    legacy = scene_tools(tmp_path / "legacy", kit, bundle="legacy")
+    legacy_workspace = scaffold_workspace(legacy, "Make an ad")
+    assert not (legacy_workspace / "brand_colors.json").exists()
+    assert "color_catalog" not in legacy.brand_card

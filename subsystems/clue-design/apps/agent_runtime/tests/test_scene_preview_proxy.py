@@ -102,8 +102,23 @@ def test_candidate_preview_preserves_full_pixels_and_exposes_unmagnified_scale(t
 
 
 def test_view_addition_does_not_change_scene_artifacts_or_acceptance_receipts(tmp_path, monkeypatch):
+    from test_scene_skill_family import direction
+
     tools = _runtime(tmp_path, monkeypatch, _png())
+    path = tools.trace_dir / "workspace/creative-direction.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(direction()))
+    validated = json.loads(tools.validate_creative_direction())
+    assert validated["status"] == "ok"
     critique = {"accepted": True, "summary": "Reviewed this rendered fixture", "issues": []}
+    critique["direction_review"] = {
+        "direction_digest": validated["direction_digest"],
+        "checks": [
+            {"section": item["section"], "index": item["index"], "status": "met",
+             "notes": "The rendered fixture satisfies this declared observation."}
+            for item in validated["review_requirements"]
+        ],
+    }
     assert json.loads(tools.submit_visual_critique(json.dumps(critique)))["status"] == "ok"
     assert tools._acceptance_error(critique) is None
     scene = copy.deepcopy(tools.scene)

@@ -67,7 +67,11 @@ def test_real_harness_author_can_discover_load_revise_and_revalidate(tmp_path, m
             call("validate_creative_direction", {}, "validate"),
             AIMessage(content="Read and validated the direction."),
             call("read_file", {"file_path": playbook_path}, "revision-read"),
-            call("validate_creative_direction", {}, "revalidate"),
+            call(
+                "validate_creative_direction",
+                {"revision_reason": "Update the supported message for this revision."},
+                "revalidate",
+            ),
             AIMessage(content="Re-read and validated the revision."),
         ]
     )
@@ -222,7 +226,9 @@ def test_catalog_is_derived_and_new_registration_needs_no_python_change(tmp_path
         }
     )
     path.write_text(json.dumps(payload))
-    assert json.loads(tools.validate_creative_direction())["status"] == "ok"
+    assert json.loads(tools.validate_creative_direction(
+        revision_reason="Add the supplied pilot statistic and its native attribution."
+    ))["status"] == "ok"
 
 
 def test_registered_families_cannot_bypass_evidence_source_or_native_checks(tmp_path, monkeypatch):

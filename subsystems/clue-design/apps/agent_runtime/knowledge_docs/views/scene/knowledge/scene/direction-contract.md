@@ -4,6 +4,10 @@ Write one compact JSON record to the run workspace's `creative-direction.json`.
 Use `validate_creative_direction()` before delegation/authoring. This is the
 shared handoff; do not repeat it in separate creative/imagery/reference briefs.
 Round `direction.md` can refer to it and contain only the repair delta.
+The tool returns the direction digest and indexed review requirements. Carry
+that result with the handoff. A semantic revision after validation uses
+`validate_creative_direction(revision_reason="what changed and why")`; the new
+direction needs fresh review. Reformatting the same JSON is not a revision.
 
 Required fields:
 
@@ -22,6 +26,11 @@ Required fields:
 - `source_roles`: list of `{asset_id, role}`. Role is source/treatment/composition/
   logo/product; asset IDs must be available in this run's sources.
 - `preserve`, `vary`: string lists of visible properties; no contradictory entry.
+  Resolve source/kit differences here before authoring. Compare the actual
+  supplied color values, including `brand_colors.json` when needed, with the
+  observed treatment. Name deliberate departures in `vary`/`assumptions` and
+  leave an unavailable required treatment as a gap. A near-white promise with a
+  visibly gray chosen fill is a conflict, even when its token is valid.
 - `layers`: list of `{id, kind, purpose, placement, ...}`. Kinds are native_text,
   native_geometry, authentic_image, generated_image. Native text binds `copy_id`;
   every copy block needs a native text layer. Authentic images require `asset_id`
