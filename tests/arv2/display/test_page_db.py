@@ -646,3 +646,35 @@ def test_the_spend_is_drained_through_the_injected_factory_not_the_page_connecti
             assert opened == [1]
 
     run_async(_run())
+
+
+def test_a_fully_stored_read_opens_no_spend_connection_at_all() -> None:
+    """Nothing buffered, nothing to drain: a page whose every section is already stored must not
+    reach for a spend connection it has no row to write on."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            opened: list[int] = []
+
+            @asynccontextmanager
+            async def spend_factory() -> AsyncIterator[AsyncConnection]:
+                opened.append(1)
+                yield conn
+
+            await _contact_page(conn, seeded, RoutingTransport(), spend_conn_factory=spend_factory)
+            assert opened == [1]
+
+            opened.clear()
+            again = await _contact_page(
+                conn,
+                seeded,
+                RoutingTransport(allowed=False),
+                spend_conn_factory=spend_factory,
+            )
+            assert again.generated == ()
+            assert again.regenerated == ()
+            assert again.cost_usd == Decimal(0)
+            assert opened == []
+
+    run_async(_run())

@@ -414,15 +414,17 @@ async def ensure_page(
         )
     finally:
         # One connection, one section at a time: a drain inside the gather would race on it.
-        async with spend_conn_factory() as spend_conn:
-            for raw, ledger in buffers:
-                await drain_provider_calls(
-                    spend_conn,
-                    raw=raw,
-                    ledger=ledger,
-                    artifacts=artifacts,
-                    stamp=LedgerStamp(workspace_id=workspace_id),
-                )
+        # A fully-stored read buffered nothing, so it opens no spend connection at all.
+        if buffers:
+            async with spend_conn_factory() as spend_conn:
+                for raw, ledger in buffers:
+                    await drain_provider_calls(
+                        spend_conn,
+                        raw=raw,
+                        ledger=ledger,
+                        artifacts=artifacts,
+                        stamp=LedgerStamp(workspace_id=workspace_id),
+                    )
 
     # A section the model failed to write twice is *not* stored. Persisting its empty draft would
     # turn a transient provider failure into a section that reads blank on every later visit until

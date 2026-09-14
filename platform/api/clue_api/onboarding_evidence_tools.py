@@ -128,8 +128,9 @@ class ExaSearchEvidenceTool(Tool):
         operation_id_required=True,
         external_boundary=ExternalReplayBoundary.AT_LEAST_ONCE,
         notes=(
-            "A retry may repeat one Exa deep-reasoning search; nothing durable converges because "
-            "nothing durable is written."
+            "A retry may repeat one Exa deep-reasoning search and land a second ledger row for "
+            "it — money spent twice is recorded twice; no domain row is written, so nothing "
+            "converges."
         ),
     )
     parameter_policy = JournalParameterPolicy(safe_display_fields=("query", "num_results"))

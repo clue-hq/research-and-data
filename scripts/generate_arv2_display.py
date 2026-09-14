@@ -109,11 +109,6 @@ def _args() -> argparse.Namespace:
         help="Run everything in one transaction, print the report, and roll it back. The model "
         "calls still happen and are still paid for.",
     )
-    parser.add_argument(
-        "--raw-root",
-        default=None,
-        help="Where raw bodies and the JSONL ledger are written (default: CLUE_ARV2_RAW_ROOT).",
-    )
     return parser.parse_args()
 
 
@@ -172,8 +167,6 @@ def _report(result: PageResult) -> dict[str, Any]:
 
 async def _run(args: argparse.Namespace) -> dict[str, Any]:
     settings = Settings()
-    if args.raw_root:
-        settings = settings.model_copy(update={"arv2_raw_root": args.raw_root})
     # Built before the database is touched: a missing key must fail before anything is written.
     runner_factory = default_runner_factory(settings, Secrets())
     pages = _pages(args)
