@@ -34,10 +34,11 @@ Two cross-cutting rulings apply to every editable field: **autosave on blur** wi
 confirmation card, and **the sidebar shows the signed-in person's display name**, never a
 placeholder.
 
-Two assumptions are carried until the founder says otherwise (they were asked, not yet answered):
+Original assumptions and subsequent founder rulings:
 
-- **A1.** The Billing and Pages dummies get the same "Coming soon" overlay the dummy already uses
-  for Connections, so fixture numbers ("300 / 500 credits") are never read as real.
+- **A1 — superseded by founder follow-up, 2026-09-15.** Billing shows the existing dummy frontend
+  without the "Coming soon" overlay. Its values and buttons remain placeholders. Pages is part of
+  V1, still awaiting development, and keeps the overlay temporarily until its functionality is ready.
 - **A2.** The static "Clue workspace" caption under the person's name in the profile menu becomes
   the real workspace name (a data binding into an existing slot).
 
@@ -306,8 +307,8 @@ dummies by ruling, not a fallback for a failed read.
 The catch-all route parses the section, entity and view with the dummy's `SettingsRouteSchema`,
 loads only the section's data on the server (profile, workspace or members), and renders the
 lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing and Pages render from the
-placeholder module, the first three under the dummy's existing overlay and the last two under the
-same overlay per assumption A1.
+placeholder module. Connections, MCP server, Integrations and Pages retain the overlay; Billing
+renders directly in the standard Settings body per the founder's A1 follow-up.
 
 ### 6.3 Autosave
 
@@ -366,8 +367,9 @@ than creating rows that no email will ever follow.
 ## 8. Static sections
 
 Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing and
-Pages are dummies by ruling; their data comes from the placeholder module and, under A1, they sit
-under the coming-soon overlay. Re-scope notes recorded for when they become real:
+Pages currently use data from the placeholder module. Billing exposes the dummy frontend directly;
+Pages retains the temporary overlay and remains in V1 scope. Re-scope notes recorded for when they
+become real:
 
 - **Billing.** Usage-only v1 over lane 3's cost read (`GET /cost/report`) once it merges: a plan
   record per workspace (name, included credits, expiry) set by the founders, credits derived from
@@ -599,7 +601,7 @@ must show its confirmation card, and every failure must show the envelope messag
 
 1. Migration and the email backfill path; profile read and PATCH; workspace read and rename.
 2. Frontend lift: feature, route, profile menu, confirmation card, autosave; Profile and Workspace
-   bound; static sections under the overlay; sidebar person from the profile read.
+   bound; static sections presented per §8; sidebar person from the profile read.
 3. Members read and the five management writes; Members screen bound, read-only for callers
    without the permission.
 4. Clerk invitation sending, the invite landing page, acceptance route, and the establish hook.

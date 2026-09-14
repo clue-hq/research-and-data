@@ -24,7 +24,6 @@ export function SettingsScreen({
     "connections",
     "mcp-server",
     "integrations",
-    "billing",
     "pages",
   ].includes(section);
   return (

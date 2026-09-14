@@ -68,9 +68,7 @@ export default async function SettingsPage({
         switch (section) {
           case "billing":
             content = (
-              <StaticSettingsOverlay>
-                <BillingSettings billing={staticSettingsSections.billing} />
-              </StaticSettingsOverlay>
+              <BillingSettings billing={staticSettingsSections.billing} />
             );
             break;
           case "pages":

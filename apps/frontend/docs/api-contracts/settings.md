@@ -12,9 +12,11 @@ repositories and Zod wire schemas. There is no fixture fallback for these sectio
 failures render the existing typed recovery screen with Settings copy. Transport remains in
 `features/settings/data`; client state and actions live in `hooks`; components render those models.
 
-Connections, MCP server, Integrations, Billing and Pages are presentation previews beneath inert,
-`aria-hidden` frosted overlays. Billing/Pages follow spec assumption A1. Data model is a disabled
-navigation item; its routes return 404 until the Research fields design is ready.
+Connections, MCP server, Integrations and Pages are presentation previews beneath inert,
+`aria-hidden` frosted overlays. Per the founder's 2026-09-15 follow-up, Billing shows its dummy
+frontend directly; its plan/credit values and buttons have no live billing integration. Pages is
+part of V1 and retains its temporary overlay until developed. Data model is a disabled navigation
+item; its routes return 404 until the Research fields design is ready.
 
 All Settings endpoints use `/frontend/v1/settings`, behind `CLUE_FRONTEND_READ_ENABLED`, the existing
 authenticated principal, workspace dependency and error envelope. Browser writes use the existing
