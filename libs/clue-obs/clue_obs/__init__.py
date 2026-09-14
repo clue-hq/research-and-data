@@ -38,6 +38,7 @@ from clue_obs.context import (
     unbind_context,
 )
 from clue_obs.redact import is_claim_value_key, is_secret_key, mask_blob, redact_value
+from clue_obs.sentry import capture, install_sentry, sentry_is_installed
 from clue_obs.spans import log_span
 from clue_obs.testing import LogCapture, capture_events
 
@@ -54,14 +55,17 @@ __all__ = [
     "bind_run_id",
     "bind_workspace",
     "bound_context",
+    "capture",
     "capture_events",
     "clear_context",
     "get_logger",
+    "install_sentry",
     "is_claim_value_key",
     "is_secret_key",
     "log_span",
     "mask_blob",
     "redact_value",
+    "sentry_is_installed",
     "setup",
     "unbind_context",
 ]
