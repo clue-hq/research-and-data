@@ -341,9 +341,13 @@ overlay pins them on.
    **3a — DONE 2026-09-15:** the client attached to the slice 2 provider (D1), the LangChain
    handler in the turn's callback tuple with the run registry and settled cost on every graph
    generation, receipt ids (D4, migration `b7193eb28363`), payload redaction, `make langfuse-check`,
-   the streamed `answering_model` fix. **3b — next:** the research agent and the exit judge, the
-   gateway decorator path, provider-caller observations, governed-tool and retriever
-   observations, guardrails and events.
+   the streamed `answering_model` fix. **3b — DONE 2026-09-15:** the research job as one agent
+   observation with priced rounds and generation ids on its ledger rows, the exit judge as an
+   evaluator, gateway generations/embeddings, provider-caller observations with settled money
+   and halt/ceiling guardrails, governed-tool/retriever observations with the disposition, the
+   work-guard guardrail. Live proof owed (founder-triggered, after the keys are set and the stack
+   restarted): one chat turn and one research job opened in Langfuse; the receipt's
+   `langfuse_trace_id` and a ledger row's `extras_json.langfuse_trace_id` open those traces.
 4. **Entity tagging on traces** (§6): the ARV2 job and read tools tag traces with entity ids.
    Small, ARV2-only. The Langfuse deletion step is handed to the erasure lane (R13).
 

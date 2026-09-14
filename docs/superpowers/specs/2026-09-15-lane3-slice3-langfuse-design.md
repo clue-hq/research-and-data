@@ -1,6 +1,6 @@
 # Lane 3 slice 3 — Langfuse: the agent-tree viewer over the slice 2 roots — design
 
-**Status:** approved in chat 2026-09-15 (decisions D1–D4 below). Parent: the telemetry and cost
+**Status:** approved in chat 2026-09-15 (decisions D1–D4 below); 3a and 3b executed 2026-09-15. Parent: the telemetry and cost
 design note (`2026-09-14-telemetry-and-cost-observability-design.md`, §5.3, §7, §9 slice 3, §10).
 Rulings R2 (Postgres is the cost authority), R3 (payload redaction), R4 (Langfuse cloud EU), R7
 (one OTel export target), R11 (legacy lane untouched), R12 (design subsystem held).
@@ -232,7 +232,7 @@ so the observation nests under whichever tool or step opened it.
 ### 3.6 Governed tools and retrievers
 
 `ToolInvoker.invoke` opens `observation(f"governed.{name}@{version}", as_type=<"retriever" when
-descriptor.effect_class is READ and the tool declares claim references, else "tool">,
+descriptor.effect_class is READ, else "tool"> (ruled 2026-09-15: no per-tool declaration),
 input={"operation_id", "actor", "workspace_id", "inputs": <validated inputs>},
 metadata={"effect_class", "version"})` around the journal path and updates it on every exit:
 
