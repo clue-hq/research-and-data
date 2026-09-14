@@ -49,7 +49,13 @@ from clue_api.arv2.sinks import LedgerRow
 from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_SOURCE_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
-from clue_obs.langfuse import LangfuseRunRegistry, event, guardrail, propagate_trace
+from clue_obs.langfuse import (
+    LangfuseRunRegistry,
+    event,
+    guardrail,
+    observation,
+    propagate_trace,
+)
 
 log = get_logger("clue_api.arv2.account_research_agent")
 
@@ -391,20 +397,32 @@ async def run_account_agent(
     scope = runtime.scope
     # One job is one named trace: every span the graph opens inside — the agent tree the handler
     # reports, the tools' provider observations — carries the job's session, user and metadata.
-    with propagate_trace(
-        trace_name="arv2.account_research",
-        session_id=str(scope.run_id),
-        user_id=scope.workspace_id,
-        metadata={
-            "project_id": scope.project_id,
-            "project_run_id": scope.project_run_id,
-            "job_id": scope.job_id,
-            "account_id": scope.account_id,
-            "contact_id": scope.contact_id,
-            "subject_kind": scope.subject_kind,
-            "attempt": attempt,
-        },
-        tags=("arv2", scope.subject_kind),
+    with (
+        propagate_trace(
+            trace_name="arv2.account_research",
+            session_id=str(scope.run_id),
+            user_id=scope.workspace_id,
+            metadata={
+                "project_id": scope.project_id,
+                "project_run_id": scope.project_run_id,
+                "job_id": scope.job_id,
+                "account_id": scope.account_id,
+                "contact_id": scope.contact_id,
+                "subject_kind": scope.subject_kind,
+                "attempt": attempt,
+            },
+            tags=("arv2", scope.subject_kind),
+        ),
+        observation(
+            "arv2.account_research",
+            as_type="agent",
+            input={
+                "account_id": str(scope.account_id),
+                "subject_kind": scope.subject_kind,
+                "attempt": attempt,
+            },
+            metadata={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
+        ) as current,
     ):
         outcome = await _drive_graph(
             agent,
@@ -414,7 +432,19 @@ async def run_account_agent(
             rounds=rounds,
             max_runtime_s=max_runtime_s,
         )
-    _report_ending(outcome)
+        # Inside the observation: the graph the handler reported, the tools' provider hops and
+        # this ending all sit beneath the one agent observation, under one trace id.
+        _report_ending(outcome)
+        current.update(
+            output={
+                "reason": outcome.reason,
+                "model_rounds": outcome.model_rounds,
+                "tool_calls": outcome.tool_calls,
+                "model_spend_usd": str(outcome.model_spend.usd),
+            },
+            level="ERROR" if outcome.reason == "model_error" else "DEFAULT",
+            status_message=outcome.error if outcome.reason == "model_error" else None,
+        )
     return outcome
 
 

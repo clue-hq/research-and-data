@@ -63,9 +63,24 @@ def test_a_finalized_job_is_a_named_trace_with_priced_rounds_and_an_ending_event
     for row in rows:
         assert row.extras["langfuse_trace_id"] == format(generations[0].context.trace_id, "032x")
         assert row.extras["langfuse_observation_id"] in exported
-    ending = _attrs(next(s for s in spans if s.name == "arv2.agent.ending"))
+    ending_span = next(s for s in spans if s.name == "arv2.agent.ending")
+    ending = _attrs(ending_span)
     assert ending["langfuse.observation.type"] == "event"
     assert json.loads(ending["langfuse.observation.output"])["reason"] == "finalized"
+    # The ending belongs to the job's own trace — it is that trace's last observation, not a
+    # stray root trace of its own.
+    assert format(ending_span.context.trace_id, "032x") == format(
+        generations[0].context.trace_id, "032x"
+    )
+    assert ending["langfuse.trace.name"] == "arv2.account_research"
+    # The job itself is one agent observation, and everything above sits beneath it.
+    job = next(
+        s
+        for s in spans
+        if s.name == "arv2.account_research"
+        and _attrs(s).get("langfuse.observation.type") == "agent"
+    )
+    assert format(job.context.trace_id, "032x") == format(generations[0].context.trace_id, "032x")
 
 
 def test_a_round_cap_is_a_guardrail() -> None:
@@ -83,6 +98,7 @@ def test_a_round_cap_is_a_guardrail() -> None:
     cap = _attrs(next(s for s in spans if s.name == "arv2.round_cap"))
     assert cap["langfuse.observation.type"] == "guardrail"
     assert cap["langfuse.observation.level"] == "WARNING"
+    assert cap["langfuse.trace.name"] == "arv2.account_research"
 
 
 def test_off_the_rows_carry_no_langfuse_keys() -> None:
