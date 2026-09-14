@@ -178,8 +178,12 @@ async def _seed(conn: AsyncConnection, storage: FsStorage) -> tuple[str, str, di
 
 
 def test_the_list_names_every_document_this_project_owns(tmp_path: Any) -> None:
-    """Titles are the tab's: the plan is "Plan", a persona set is named for its ICP, and an ICP is
-    named by its own front matter."""
+    """Every document is titled by its own text: front matter ``title``, else its first heading.
+
+    No kind is named by what the platform thinks it is (founder ruling 2026-09-14) — the agent
+    writes any document under ``project/``, so a title invented here would be the one place a
+    document is called something it never called itself.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -196,8 +200,9 @@ def test_the_list_names_every_document_this_project_owns(tmp_path: Any) -> None:
                     "icp-definition",
                     "GI-focused ambulatory surgery centers",
                 ),
-                ("audience/persona-gi-dac.md", "audience-persona", "Personas — gi-dac"),
-                (PLAN_PATH, "project-plan", "Plan"),
+                ("audience/persona-gi-dac.md", "audience-persona", "Personas"),
+                # The plan body says nothing about what it is, so the row calls it a document.
+                (PLAN_PATH, "document", "Q4 expansion plan"),
             ]
             plan = documents[-1]
             assert plan["id"] == ids["plan"]
@@ -224,9 +229,11 @@ def test_the_detail_serves_the_markdown_and_front_matter_the_editor_loads(tmp_pa
             assert response.status_code == 200, response.text
             document = response.json()["data"]
             assert document["id"] == ids["plan"]
-            assert document["title"] == "Plan"
+            assert document["title"] == "Q4 expansion plan"
             assert document["markdown"] == PLAN_BODY
-            assert document["front_matter"]["kind"] == "project-plan"
+            # Six stamped facts and not one more: the platform never adds a kind the document
+            # did not claim for itself.
+            assert "kind" not in document["front_matter"]
             assert document["front_matter"]["project_id"] == project_id
             # A process with no artifact storage says so rather than serving a document without
             # its bytes.
@@ -252,7 +259,8 @@ def test_the_put_appends_the_next_version_with_the_humans_edit_stamp(tmp_path: A
             assert saved.status_code == 200, saved.text
             document = saved.json()["data"]
             assert document["version"] == 2 and document["id"] != ids["plan"]
-            assert document["status"] == "ready" and document["title"] == "Plan"
+            # The human retyped the document, heading and all, so it is called what they typed.
+            assert document["status"] == "ready" and document["title"] == "Edited plan"
             assert document["markdown"] == "# Edited plan\n"
             assert document["front_matter"]["user_edit"] == {
                 "user_id": "local-development-user",
@@ -425,12 +433,13 @@ def test_the_detail_serves_a_superseded_version_so_its_editor_can_rebase(tmp_pat
     run_async(scenario())
 
 
-def test_the_list_reads_only_the_blobs_whose_titles_need_them(tmp_path: Any) -> None:
-    """M5. A plan and a persona set are titled by what they *are*, so listing them costs no blob
-    read; only the ICP-shaped document is opened for the title its own text carries.
+def test_the_list_titles_every_document_from_its_own_bytes(tmp_path: Any) -> None:
+    """One blob read per row, because no document's title is known without its own text.
 
-    The unreadable-blob case stays covered by the narrowed ``except``: a missing object is a
-    storage error, so the document is still listed by the name on its path.
+    The list used to skip the plan and the persona set — they were titled by what they *were* — and
+    open only the ICP-shaped one. Every document now names itself, so every one is read. A document
+    whose bytes have vanished is still listed, by the name on its path: a missing object is a reason
+    to show less, never a reason to fail the whole tab.
     """
 
     async def scenario() -> None:
@@ -445,19 +454,19 @@ def test_the_list_reads_only_the_blobs_whose_titles_need_them(tmp_path: Any) -> 
             documents = listed.json()["data"]["documents"]
             assert [row["title"] for row in documents] == [
                 "GI-focused ambulatory surgery centers",
-                "Personas — gi-dac",
-                "Plan",
+                "Personas",
+                "Q4 expansion plan",
             ]
-            assert len(storage.reads) == 1, storage.reads
+            assert len(storage.reads) == 3, storage.reads
 
             # The ICP's bytes vanish: the tab still lists every document, by path-derived name.
             await storage.delete(storage.reads[0])
             degraded = await _get(conn, storage, f"/projects/{project_id}/documents")
             assert degraded.status_code == 200, degraded.text
             assert [row["title"] for row in degraded.json()["data"]["documents"]] == [
-                "gi-dac",
-                "Personas — gi-dac",
-                "Plan",
+                "icp-gi-dac",
+                "Personas",
+                "Q4 expansion plan",
             ]
 
     run_async(scenario())

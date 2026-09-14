@@ -748,7 +748,15 @@ re-materialized after every accepted write so the agent reads back what it wrote
   operating manual at `manual-*@v2` (fifteen chapters re-minted because three tools left the
   profile). v54 / v31 / recipe v26 / manual v1 are byte-untouched, for replay.
 - **Kinds by folder (ruling P3-a, 2026-09-14 — the platform's existing path convention, amending
-  spec §4.1/§4.4's `personas/` folder):**
+  spec §4.1/§4.4's `personas/` folder). [SUPERSEDED the same day by the founder ruling on
+  free-flowing documents: the table below describes plan 3 and is kept for the receipts it
+  explains.** Any markdown path under `project/` that is not a compiled file is now a versioned
+  document; the kind and title are the document's own front matter (`document` when it claims
+  none); every document is born `ready`; plan, ICP and personas are **pins** the human agrees to in
+  one question — `role: plan` / `role: persona` in the front matter, and the ICP confirmation gate
+  for an ICP — never paths or kinds the code checks. The only refusals left are
+  `compiled_file_read_only` and `unsupported_document_type` (a path that is not markdown), plus
+  `body_empty` and `revision_conflict`.**]**
 
   | Path under `project/` | Kind | Born | Refusals the model sees |
   | --- | --- | --- | --- |

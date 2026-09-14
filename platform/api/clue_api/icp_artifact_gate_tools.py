@@ -76,11 +76,13 @@ __all__ = [
     "build_icp_artifact_gate_tools",
 ]
 
-#: The document statuses a human can be asked about. ``ready`` is servable *input* — a persona
-#: file, a catalog — not a proposal, so there is nothing to say yes to; ``confirmed`` is
-#: presentable because a brand's ICPs are shared and another project's confirmation is not this
-#: project's answer.
-_ANSWERABLE_STATUSES = ("proposed", "confirmed")
+#: The document statuses a human can be asked about — every servable one, since 2026-09-14. A
+#: document the agent writes under ``project/`` is born ``ready``, including the ICP it drafted,
+#: because the writer no longer decides that some paths are proposals and others are input: *this
+#: gate* is what makes a document this project's ICP (founder ruling 2026-09-14). ``confirmed`` is
+#: presentable too, because a brand's ICPs are shared and another project's confirmation is not
+#: this project's answer.
+_ANSWERABLE_STATUSES = ("ready", "proposed", "confirmed")
 
 
 class OpenIcpArtifactGateInput(ToolInput):
@@ -253,7 +255,8 @@ class OpenIcpArtifactGateTool(Tool):
             if subject.status not in _ANSWERABLE_STATUSES:
                 raise _GateRefused(
                     "icp_document_not_servable",
-                    f"the ICP document for {inputs.icp_key!r} is {subject.status}, not a proposal",
+                    f"the ICP document for {inputs.icp_key!r} is {subject.status}; "
+                    "only a servable version can be presented",
                 )
             if (
                 subject.status == "confirmed"

@@ -173,11 +173,16 @@ def _confirmed_for(front: Mapping[str, Any]) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+#: Every document this reader may see, newest per path, the project's own variant winning. The
+#: ``kind`` is deliberately **not** filtered (founder ruling 2026-09-14): an ICP is whichever
+#: document the human agreed to pin as one, written wherever the agent judged sensible and calling
+#: itself whatever it calls itself, so the key in its front matter is the only thing that can find
+#: it. :func:`current_icp_document` orders the candidates so the ICP-shaped ones are read first.
 _SERVABLE_ICP_ROWS = text(
     "SELECT DISTINCT ON (path) "
-    f"{_DOCUMENT_COLUMNS} "
+    f"{_DOCUMENT_COLUMNS}, kind "
     "FROM brand_knowledge_document "
-    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id AND kind = :kind "
+    "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
     "  AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
     "  AND (project_id IS NULL OR project_id = :project_id) "
     "ORDER BY path, (project_id IS NULL), version DESC"
@@ -191,7 +196,7 @@ async def _servable_icp_rows(
     brand_id: str,
     project_id: str | None,
 ) -> tuple[dict[str, Any], ...]:
-    """The current servable ICP documents this project may read — the max version of each path.
+    """The current servable documents this project may read — the max version of each path.
 
     Scope decides which row owns a path. A project sees the brand's documents *and* its own
     variants, and where both exist at one path the variant wins (``(project_id IS NULL)`` sorts
@@ -207,7 +212,6 @@ async def _servable_icp_rows(
             {
                 "workspace_id": workspace_id,
                 "brand_id": brand_id,
-                "kind": ICP_KIND,
                 "statuses": list(_SERVABLE_STATUSES),
                 "project_id": project_id,
             },
@@ -276,11 +280,16 @@ async def current_icp_document(
     icp_key: str,
     project_id: str | None = None,
 ) -> IcpDocumentSubject | None:
-    """The current ICP document for ``icp_key`` this project may read, through its own bytes.
+    """The ICP document for ``icp_key`` this project may read, through its own bytes.
 
-    The path is the identity onboarding writes (``audience/icp-<key>.md``), so it is tried first.
-    The fallback scan exists because the key is a front-matter fact and a document written under
-    some other path still carries it; a key that no servable document claims is honestly absent.
+    **The key is the identity, not the path and not the kind.** An ICP is a document a human agreed
+    to pin as one, drafted wherever the agent judged sensible (founder ruling 2026-09-14), so this
+    reads every servable document in the reader's scope — one query — and returns the first whose
+    own front matter claims the key. The candidates are ordered by how ICP-shaped they are, which
+    is a preference and never a filter: the path onboarding writes (``audience/icp-<key>.md``)
+    first, then anything that calls itself an ``icp-definition``, then the rest in path order. So
+    the ordinary case still costs exactly one blob read, while a draft at some other path under
+    some other name is found rather than reported absent.
 
     ``project_id`` is the reader's scope: with it, a project-local variant of a path wins over the
     brand's document; without it, only brand-level documents are visible at all.
@@ -290,7 +299,14 @@ async def current_icp_document(
         conn, workspace_id=workspace_id, brand_id=brand_id, project_id=project_id
     )
     path = _path_for(icp_key)
-    ordered = sorted(rows, key=lambda row: (str(row["path"]) != path, str(row["path"])))
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            str(row["path"]) != path,
+            str(row.get("kind")) != ICP_KIND,
+            str(row["path"]),
+        ),
+    )
     for row in ordered:
         subject = await _subject_from_row(conn, storage, workspace_id=workspace_id, row=row)
         if subject is not None and subject.icp_key == icp_key:

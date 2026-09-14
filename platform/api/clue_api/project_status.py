@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import AgentArtifactReader
 from clue_api.arv2.discovery_store import SHOWN_DISPOSITIONS, VERIFIED_PREDICATE
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
+from clue_api.arv2.project_documents import PLAN_PATH
 from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
     KnowledgeDocumentRef,
@@ -107,6 +108,12 @@ class ProjectDocumentFacts:
     version: int
     status: str
     updated_at: datetime
+    #: What the document says it is for — ``plan``, ``persona``, or whatever word the human agreed
+    #: to pin it under — read off the current version's own front matter. ``None`` when it claims
+    #: none, and ``None`` for every surface that lists documents without reading their bytes.
+    role: str | None = None
+    #: The document's own title, read off the same front matter. ``None`` for the same two reasons.
+    title: str | None = None
     #: A version of this same path that is newer than the one served here, when the surface being
     #: compiled serves only **one** version per path (the project library, W3). The per-turn seeds
     #: leave both ``None`` because they carry the other version as a real, version-qualified file
@@ -549,7 +556,16 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
         ids = ", ".join(f"`{pid}`" for pid in facts.product_set.product_ids)
         lines += [f"- Selection version {facts.product_set.selection_version}: {ids}"]
     lines += ["", "## Plan"]
-    plan = next((d for d in facts.documents if d.path == "project/plan.md"), None)
+    # The plan is a **pin, not a path** (founder ruling 2026-09-14): it is whichever document the
+    # human agreed to pin as the plan, which the document says by carrying ``role: plan``. The old
+    # path stays as the fallback — it is what the skills still suggest, and what every plan written
+    # before the roles existed is called — so a project that never pinned one still has a Plan
+    # section. The first in path order wins when two documents claim the role, because two plans is
+    # the human's business to resolve, not a reason to report none.
+    plan = next(
+        (d for d in facts.documents if d.role == "plan"),
+        next((d for d in facts.documents if d.path == PLAN_PATH), None),
+    )
     if plan is None:
         lines += ["Not written."]
     else:

@@ -42,6 +42,10 @@ class VersionedWriteOutcome:
     records that the write was recognized as one already taken (an idempotent retry of the same
     turn's operation) rather than a new version, so a resumed turn reports the truth instead of
     inventing a second version that never existed.
+
+    ``kind`` and ``title`` are the *document's* words for itself, not the platform's: the mount
+    reads them off the front matter the model wrote, so the card a human sees on the turn is named
+    by the document. ``title`` defaults to ``None`` for a writer that has none to give.
     """
 
     path: str
@@ -50,6 +54,7 @@ class VersionedWriteOutcome:
     kind: str
     status: str
     replayed: bool
+    title: str | None = None
 
 
 class VersionedWriteRefused(Exception):

@@ -183,6 +183,51 @@ def test_the_plan_line_and_the_documents_line_name_one_document_at_one_path() ->
     )
 
 
+def test_the_plan_is_the_document_pinned_as_the_plan_wherever_it_lives() -> None:
+    """The plan is a **role**, not a path (founder ruling 2026-09-14).
+
+    The agent writes documents anywhere under ``project/``, and the human's one answer — "pin this
+    as the plan" — is recorded as ``role: plan`` in the document's own front matter. The status file
+    reads that role, so a plan the agent kept somewhere else is still the project's plan here.
+    """
+
+    text = render_status_markdown(
+        _facts(
+            documents=(
+                ProjectDocumentFacts(
+                    path="notes/the-q4-motion.md",
+                    version=3,
+                    status="ready",
+                    updated_at=_T,
+                    role="plan",
+                    title="The Q4 motion",
+                ),
+                ProjectDocumentFacts(
+                    path="audience/icp-gi.md", version=1, status="ready", updated_at=_T
+                ),
+            )
+        )
+    )
+    assert (
+        "- Version 3, updated 2026-09-12T08:30:00+00:00 — `project/notes/the-q4-motion.md`" in text
+    )
+
+
+def test_with_no_pinned_role_the_plan_falls_back_to_the_path_the_skills_suggest() -> None:
+    """The old path is a default, not a rule: every plan written before roles existed is at it."""
+
+    text = render_status_markdown(
+        _facts(
+            documents=(
+                ProjectDocumentFacts(
+                    path="project/plan.md", version=2, status="ready", updated_at=_T
+                ),
+            )
+        )
+    )
+    assert "- Version 2, updated 2026-09-12T08:30:00+00:00 — `project/plan.md`" in text
+
+
 def test_a_surface_that_serves_one_version_per_path_says_the_newer_one_exists_in_words() -> None:
     """W3: the project library holds one file per path, so it cannot name a ``.vN`` sibling.
 

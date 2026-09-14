@@ -1,8 +1,11 @@
 """The project's own documents: ``/frontend/v1/projects/{project_id}/documents`` (list, one, PUT).
 
-One project's documents are the plan the Head of ABM writes and the audience documents the project
-authored for itself — never the brand's knowledge, which is the ``/brand-context`` surface's
-question. The three routes here are the HTTP face of :mod:`clue_api.arv2.project_documents`: the
+One project's documents are whatever this project wrote for itself — the plan, its audience
+documents, a brief the agent judged worth keeping — never the brand's knowledge, which is the
+``/brand-context`` surface's question. Every one of them is editable here: the project owns them,
+and the store no longer keeps a list of kinds a human is allowed to type over.
+
+The three routes here are the HTTP face of :mod:`clue_api.arv2.project_documents`: the
 store decides what exists, what may be edited and what a stale revision means, and this module
 turns its answers into the wire.
 
@@ -12,9 +15,10 @@ rather than refused, and a probe cannot tell "not yours" from "not there".
 
 The wire is snake_case in a ``{"data": …}`` envelope, like its ``discovery/current`` and
 ``research/progress`` neighbours on this router, rather than the camelCase ``WireModel`` the
-accounts contract uses. ``title`` is the one value composed here: a plan is "Plan", a persona
-document is named for its ICP, and everything else is titled by its own text (its front matter's
-``title``, else its first heading) — never invented.
+accounts contract uses. ``title`` is the one value composed here, and every document is titled by
+its own text: its front matter's ``title``, else its first heading, else the name on its path —
+never invented, and never the platform's word for what the document is (founder ruling
+2026-09-14).
 """
 
 from __future__ import annotations
@@ -32,8 +36,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # is private there only because the gate is its single caller until now.
 from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
 from clue_api.arv2.project_documents import (
-    PERSONA_KIND,
-    PLAN_KIND,
     ProjectDocumentRefused,
     ProjectDocumentRow,
     list_project_documents,
@@ -61,13 +63,6 @@ __all__ = [
     "ProjectDocumentV1",
     "register_project_document_routes",
 ]
-
-#: A project has exactly one plan, so its title is a constant rather than its heading — the tab it
-#: is drawn in is called Plan, and the document's own H1 is the campaign's name, not the file's.
-PLAN_TITLE = "Plan"
-#: The kinds whose title is known from the row alone — the project's one plan, and the persona set
-#: named for its ICP. Listing them costs no blob read at all.
-_TITLED_WITHOUT_THEIR_BYTES: tuple[str, ...] = (PLAN_KIND, PERSONA_KIND)
 
 #: The store's refusal vocabulary, mapped onto this surface's statuses and codes. A version race
 #: and a stale revision are the same answer to the human: someone else wrote first.
@@ -134,19 +129,15 @@ def _file_name(path: str) -> str:
 
 
 def _title(row: ProjectDocumentRow, *, front: Mapping[str, Any], body: str) -> str:
-    """What this document is called on screen.
+    """What this document is called on screen: its own words, and only its own words.
 
-    Two kinds are named by what they *are* — the project's one plan, and the persona set that
-    belongs to one ICP. Everything else is named by its own text, which is the rule the ICP gate
-    already serves, so a document cannot be titled one way there and another way here.
+    The rule the ICP gate already serves — front matter ``title``, else the first heading — with
+    the file's own name as the last resort. No kind is titled by what the platform thinks it is:
+    the agent may write any document under ``project/``, and a name invented for it here would be
+    the one place in the product where a document is called something it never called itself.
     """
 
-    if row.kind == PLAN_KIND:
-        return PLAN_TITLE
-    subject = row.icp_key or _file_name(row.path)
-    if row.kind == PERSONA_KIND:
-        return f"Personas — {subject}"
-    return _titled_by_its_own_text(front, body, icp_key=subject)
+    return _titled_by_its_own_text(front, body, icp_key=_file_name(row.path))
 
 
 def _wire(row: ProjectDocumentRow, *, front: Mapping[str, Any], body: str) -> ProjectDocumentV1:
@@ -206,17 +197,17 @@ async def _listed(
 ) -> list[ProjectDocumentV1]:
     """This project's documents, each read once for the title its own bytes carry.
 
-    Only the documents that *need* their bytes are read: a plan and a persona set are titled by
-    what they are, so the list costs one query and a blob read per ICP-shaped document rather than
-    per row. A document whose bytes cannot be read is still listed — by the name on its path —
-    because a missing blob is a reason to show less, never a reason to fail the whole tab.
+    One blob read per row, because every document is now titled by its own text and no row's title
+    can be known without it. A document whose bytes cannot be read is still listed — by the name on
+    its path — because a missing blob is a reason to show less, never a reason to fail the whole
+    tab.
     """
 
     wires: list[ProjectDocumentV1] = []
     for row in await list_project_documents(conn, workspace_id=workspace_id, project_id=project_id):
         front: Mapping[str, Any] = {}
         body = ""
-        if storage is not None and row.kind not in _TITLED_WITHOUT_THEIR_BYTES:
+        if storage is not None:
             try:
                 read = await read_project_document(
                     conn,

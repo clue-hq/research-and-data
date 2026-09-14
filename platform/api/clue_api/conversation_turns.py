@@ -52,15 +52,10 @@ from clue_api.agent_platform_wiring import (
     build_agent_context_assembler,
 )
 from clue_api.agent_runtime_wiring import (
-    PROJECT_DOCUMENT_OBJECT_TYPES,
+    PROJECT_DOCUMENT_OBJECT_TYPE,
     CompletionGuard,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.arv2.project_documents import (
-    ICP_DEFINITION_KIND,
-    PERSONA_KIND,
-    PLAN_KIND,
-)
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
@@ -166,16 +161,17 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # it, so a replayed turn still resolves all three.
 CONVERSATION_RECIPE_VERSION = 27
 
-#: What the human calls each project document the turn can write. The key is the object type the
-#: finalization carries, which ``PROJECT_DOCUMENT_OBJECT_TYPES`` derived from the document's kind,
-#: so the three names are read off the one mapping rather than re-typed here and left to drift.
-#: These are the names on the card: "the plan", "the ICP", "the personas" — never the row's kind,
-#: and never the object type with its underscores swapped for spaces.
-_DOCUMENT_PART_TITLES: Mapping[str, str] = MappingProxyType(
+#: What the human calls a document written *before* the free-flowing writer landed. A plan-3
+#: receipt carries no title on its refs — the field did not exist — and its three object types were
+#: the platform's word for what the document was. Replaying such a turn must still draw the card
+#: the human saw, so those three names survive here and nowhere else. A document written since
+#: carries its own title (:class:`~clue_agents.contracts.DomainObjectRef`), and nothing is looked
+#: up for it.
+_LEGACY_DOCUMENT_TITLES: Mapping[str, str] = MappingProxyType(
     {
-        PROJECT_DOCUMENT_OBJECT_TYPES[PLAN_KIND]: "Plan",
-        PROJECT_DOCUMENT_OBJECT_TYPES[ICP_DEFINITION_KIND]: "ICP",
-        PROJECT_DOCUMENT_OBJECT_TYPES[PERSONA_KIND]: "Personas",
+        PROJECT_DOCUMENT_OBJECT_TYPE: "Plan",
+        "project_icp_document": "ICP",
+        "project_persona_document": "Personas",
     }
 )
 
@@ -183,7 +179,7 @@ _DOCUMENT_PART_TITLES: Mapping[str, str] = MappingProxyType(
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
 _PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
-    {"research_directive", "agent_plan", "plan", *_DOCUMENT_PART_TITLES}
+    {"research_directive", "agent_plan", "plan", *_LEGACY_DOCUMENT_TITLES}
 )
 
 
@@ -513,12 +509,12 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
-                    # The project's documents are the members of this set with names of their own:
-                    # the human calls them "the plan", "the ICP", "the personas", not "the project
-                    # document", and each version is a file revision they can see in the editor, so
-                    # it reads as "v3" rather than a bare ordinal. Everything else in the set keeps
-                    # the old generic rendering.
-                    document_title = _DOCUMENT_PART_TITLES.get(ref.object_type)
+                    # A project document is titled by the document: the human reads "Q4 expansion
+                    # plan", the name it gave itself, and each version is a file revision they can
+                    # see in the editor, so it reads as "v3" rather than a bare ordinal. A plan-3
+                    # receipt has no title and falls back to the name that surface used; everything
+                    # else in the set keeps the old generic rendering.
+                    document_title = ref.title or _LEGACY_DOCUMENT_TITLES.get(ref.object_type)
                     await stream.emit_plan_part(
                         ref=ref,
                         title=(

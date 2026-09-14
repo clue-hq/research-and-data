@@ -7,12 +7,13 @@ whole sync→async→Postgres chain is what is proven, not a coroutine called di
 
 Four properties carry the seam:
 
-* **Kinds by folder.** ``plan.md`` is the plan, ``audience/icp-<key>.md`` is an ICP proposal in the
-  *project's* scope, ``audience/persona-<key>.md`` is a persona. A compiled file is read-only, and
-  a path with no writer behind it is refused with the list of paths that do.
+* **Any markdown path is a document** (founder ruling 2026-09-14). ``plan.md``, a persona for a key
+  this project never pinned, a brief under ``notes/`` — each lands as a version at its own path,
+  under the kind and title the *document* claims. Nothing is refused for its shape.
 * **The version the model read is the version it must declare.** A second write against a version
   the project has moved past comes back as ``revision_conflict`` naming the version at rest.
-* **A persona follows the project's pinned ICP (W8).** Any other key is refused by name.
+* **Two refusals, both about the file and never about its content.** A compiled file is read-only;
+  a path that is not markdown is not something the library can serve back.
 * **What was written is readable back.** After every accepted write the library is re-materialized:
   ``refresh()`` reports the version this write minted, and the bytes in the tree are byte-identical
   to the version's stored artifact.
@@ -361,6 +362,9 @@ def test_the_plan_is_a_version_chain_and_a_stale_write_is_refused(tmp_path: Path
     declares version 1 again, which is the shape of an agent working from a view it took before
     somebody else wrote: it is refused by the code the backend documents as "read it again", and
     the sentence names the version actually at rest.
+
+    The plan is no longer a kind: the document says nothing about what it is, so it is a
+    ``document``, and its title is the heading it gave itself.
     """
 
     with lane(tmp_path, "plan") as active:
@@ -371,16 +375,17 @@ def test_the_plan_is_a_version_chain_and_a_stale_write_is_refused(tmp_path: Path
         assert (first.path, first.version, first.kind, first.status, first.replayed) == (
             "plan.md",
             1,
-            "project-plan",
+            "document",
             "ready",
             False,
         )
+        assert first.title == "Q4 expansion plan"
         assert writer.refresh()["plan.md"] == 1
         assert (active.tree / "plan.md").read_bytes() == active.stored_bytes(first.document_id)
 
         second = writer.write(path="plan.md", content="# The second plan\n", expected_version=1)
 
-        assert (second.version, second.replayed) == (2, False)
+        assert (second.version, second.replayed, second.title) == (2, False, "The second plan")
         assert second.document_id != first.document_id
         assert writer.refresh()["plan.md"] == 2
         assert (active.tree / "plan.md").read_bytes() == active.stored_bytes(second.document_id)
@@ -395,54 +400,69 @@ def test_the_plan_is_a_version_chain_and_a_stale_write_is_refused(tmp_path: Path
         assert str(refused.value).startswith("revision_conflict: ")
 
 
-def test_the_plan_write_keeps_only_the_body_the_model_typed(tmp_path: Path) -> None:
-    """The model reads a file with front matter, so it writes one back; only the body goes through.
+def test_the_model_keeps_its_front_matter_and_the_platform_stamps_over_it(tmp_path: Path) -> None:
+    """The model reads a file with front matter, so it writes one back. All of it survives.
 
-    Everything above the fence is the platform's — the version, the scope, the turn — and the
-    version the model echoes back is the one it *read*, which is never the one this write mints.
-    Stripping it here is what keeps the round trip from stamping a stale number into the new bytes
-    or doubling the block on every edit.
+    Six keys are the platform's and are stamped last, so the version the model echoed back — always
+    the one it *read*, never the one this write mints — cannot land in the bytes. Everything else
+    the model wrote is kept exactly as it typed it, including the ``role`` a human agreed to pin
+    this document under and the word it uses for what the document is.
     """
 
-    with lane(tmp_path, "strip") as active:
-        stale_header = (
-            "---\nkind: project-plan\nversion: 7\nstatus: ready\nproject_id: nope\n---\n\n"
+    with lane(tmp_path, "stamp") as active:
+        header = (
+            "---\nkind: project-plan\nrole: plan\ntitle: The Q4 motion\n"
+            "version: 7\nstatus: superseded\nproject_id: nope\nowner: sasha\n---\n\n"
         )
 
         written = active.writer().write(
-            path="plan.md", content=stale_header + PLAN_BODY, expected_version=None
+            path="plan.md", content=header + PLAN_BODY, expected_version=None
         )
 
+        assert (written.kind, written.title) == ("project-plan", "The Q4 motion")
         raw = active.stored_bytes(written.document_id).decode()
         front, body = parse_front_matter(raw, preserve_body=True)
         assert body == PLAN_BODY
         assert raw.count("---\n") == 2
-        assert front["version"] == 1
+        assert (front["version"], front["status"]) == (1, "ready")
         assert front["project_id"] == active.project.project_id
         assert front["authored_by"] == {"turn_id": str(active.turn_id), "user_id": USER_ID}
+        # The model's own words, untouched: what it calls the document, what it is for, and a key
+        # the platform has never heard of.
+        assert (front["kind"], front["role"], front["title"]) == (
+            "project-plan",
+            "plan",
+            "The Q4 motion",
+        )
+        assert front["owner"] == "sasha"
 
 
 # =================================================================================================
-# personas
+# any path, any document
 # =================================================================================================
 
 
-def test_a_persona_is_written_for_the_pinned_icp_and_refused_for_any_other(
+def test_a_persona_for_a_key_this_project_never_pinned_is_a_document_like_any_other(
     tmp_path: Path,
 ) -> None:
-    """A persona is a reading of the ICP this project qualifies accounts against (W8).
+    """No pin check, no key check, no refusal (founder ruling 2026-09-14).
 
-    The accepted write keeps everything the model said — the ``personas`` list is the document —
-    and carries the platform's stamps over it, including the *version of the pin* it was written
-    against. A persona for any other key is refused by name, and the refusal says which key this
-    project actually pinned, so the agent can fix it without guessing.
+    Before, a persona document could only be written for the key this project had pinned, and any
+    other key was refused ``icp_not_pinned``. Whether a document *is* this project's personas is
+    now the human's answer to one question, recorded as a role in the document's own front matter —
+    so a persona the agent drafted for another profile is a document the project has, not an error.
+    Everything the model said is kept, and only the platform's six facts are stamped over it.
     """
 
-    path = f"audience/persona-{PINNED_KEY}.md"
+    path = "audience/persona-dac.md"
     with lane(tmp_path, "persona") as active:
         writer = active.writer()
 
-        written = writer.write(path=path, content=PERSONA, expected_version=None)
+        written = writer.write(
+            path=path,
+            content=PERSONA.replace(f"icp_key: {PINNED_KEY}", "icp_key: dac"),
+            expected_version=None,
+        )
 
         assert (written.path, written.version, written.kind, written.status) == (
             path,
@@ -450,39 +470,31 @@ def test_a_persona_is_written_for_the_pinned_icp_and_refused_for_any_other(
             "audience-persona",
             "ready",
         )
+        assert written.title == "Who decides"
         row = active.run(_row(active.conn, written.document_id))
         assert (row["project_id"], row["folder"], row["path"]) == (
             active.project.project_id,
             "audience",
             path,
         )
-        assert row["produced_by_turn_id"] == active.turn_id
         assert row["supersedes_document_id"] is None
         front, body = parse_front_matter(
             active.stored_bytes(written.document_id).decode(), preserve_body=True
         )
-        assert front["kind"] == "audience-persona"
-        assert (front["icp_key"], front["icp_version"]) == (PINNED_KEY, 1)
-        assert front["status"] == "ready"
+        assert (front["kind"], front["icp_key"], front["status"]) == (
+            "audience-persona",
+            "dac",
+            "ready",
+        )
         assert front["authored_by"] == {"turn_id": str(active.turn_id), "user_id": USER_ID}
         # The model's own content survives untouched; only the platform's keys are stamped over it.
         assert [entry["role"] for entry in front["personas"]] == ["champion", "economic_buyer"]
         assert body.startswith("# Who decides")
 
         assert writer.refresh()[path] == 1
-        assert (active.tree / "audience" / f"persona-{PINNED_KEY}.md").read_bytes() == (
+        assert (active.tree / "audience" / "persona-dac.md").read_bytes() == (
             active.stored_bytes(written.document_id)
         )
-
-        with pytest.raises(VersionedWriteRefused) as unpinned:
-            writer.write(
-                path="audience/persona-dac.md",
-                content=PERSONA.replace(f"icp_key: {PINNED_KEY}", "icp_key: dac"),
-                expected_version=None,
-            )
-
-        assert unpinned.value.code == "icp_not_pinned"
-        assert f"{PINNED_KEY!r}" in unpinned.value.message
 
         with pytest.raises(VersionedWriteRefused) as stale:
             writer.write(
@@ -495,19 +507,53 @@ def test_a_persona_is_written_for_the_pinned_icp_and_refused_for_any_other(
         )
 
 
-# =================================================================================================
-# ICPs
-# =================================================================================================
+def test_a_document_the_platform_has_no_name_for_lands_at_its_own_path(tmp_path: Path) -> None:
+    """The founder ruling, at its plainest: the agent writes what it judges useful.
+
+    ``notes/competitive-brief.md`` is a path no version of this writer had ever heard of. It lands
+    as version 1 under the kind and title the document claims for itself, it is readable back in
+    the tree, and writing it again against the version it minted is version 2 — the same version
+    chain every other document gets.
+    """
+
+    path = "notes/competitive-brief.md"
+    brief = (
+        "---\nkind: brief\ntitle: Who else is in this deal\n---\n\n"
+        "# Competitive brief\n\nTwo vendors show up in every GI conversation.\n"
+    )
+    with lane(tmp_path, "free") as active:
+        writer = active.writer()
+
+        first = writer.write(path=path, content=brief, expected_version=None)
+
+        assert (first.path, first.version, first.kind, first.status) == (path, 1, "brief", "ready")
+        assert first.title == "Who else is in this deal"
+        row = active.run(_row(active.conn, first.document_id))
+        assert (row["project_id"], row["folder"], row["path"], row["kind"]) == (
+            active.project.project_id,
+            "notes",
+            path,
+            "brief",
+        )
+        assert writer.refresh()[path] == 1
+        assert (active.tree / "notes" / "competitive-brief.md").read_bytes() == (
+            active.stored_bytes(first.document_id)
+        )
+
+        second = writer.write(
+            path=path, content=brief + "\nA third appeared.\n", expected_version=1
+        )
+
+        assert (second.version, second.replayed) == (2, False)
+        assert writer.refresh()[path] == 2
 
 
-def test_an_icp_is_authored_as_a_project_proposal_with_its_lineage(tmp_path: Path) -> None:
-    """An ICP write is an authoring act in the *project's* scope, not an edit of what it read.
+def test_an_icp_draft_is_a_document_and_the_gate_is_what_makes_it_the_icp(tmp_path: Path) -> None:
+    """An ICP write is no longer an authoring act with its own writer, its own status and a pin.
 
-    It lands ``proposed`` — a human confirms it at the gate, and nothing the model writes may
-    confirm itself — inside this project, so the brand's profile at the key it was derived from is
-    untouched. The lineage is read off the draft's own front matter and resolved to the brand
-    document it names, which is what makes "this is the project's narrower reading of ``gi``" a
-    link rather than a sentence.
+    It lands ``ready`` at the path the agent chose, saying in its own front matter that it is an
+    ``icp-definition`` and which key it is about. Nothing about it is confirmed, and nothing about
+    it is refused: the human's yes at the confirmation gate is the pin, and it is the only one.
     """
 
     path = f"audience/icp-{VARIANT_KEY}.md"
@@ -520,16 +566,15 @@ def test_an_icp_is_authored_as_a_project_proposal_with_its_lineage(tmp_path: Pat
             path,
             1,
             "icp-definition",
-            "proposed",
+            "ready",
             False,
         )
         row = active.run(_row(active.conn, written.document_id))
         assert (row["project_id"], row["status"], row["path"]) == (
             active.project.project_id,
-            "proposed",
+            "ready",
             path,
         )
-        assert row["derived_from_document_id"] == active.brand_icp_id
 
         versions = writer.refresh()
         assert versions[path] == 1
@@ -545,15 +590,15 @@ def test_an_icp_is_authored_as_a_project_proposal_with_its_lineage(tmp_path: Pat
 # =================================================================================================
 
 
-def test_a_compiled_file_is_read_only_and_an_unknown_path_says_what_is_writable(
+def test_a_compiled_file_is_read_only_and_a_non_markdown_path_is_not_a_document(
     tmp_path: Path,
 ) -> None:
-    """Two different refusals, because they are two different mistakes.
+    """The only two refusals left, and both are about the file rather than what it says.
 
     A compiled file is a *rendering* of rows the model cannot type over — telling it to re-read
-    would be a lie, so it is told the file is not writable at all. An unrecognized path is not a
-    document this project has a writer for, and the message lists the three that are, so the model
-    can put its file where it belongs instead of guessing.
+    would be a lie, so it is told the file is not writable at all. A path that is not markdown is
+    not something the project library can serve back, and the message says so. Every other path
+    under the mount is a document.
     """
 
     with lane(tmp_path, "refusals") as active:
@@ -567,11 +612,11 @@ def test_a_compiled_file_is_read_only_and_an_unknown_path_says_what_is_writable(
                 f"{path} is compiled from the project's rows; it cannot be written"
             )
 
-        for path in ("notes.md", "audience/persona.md", "audience/icp-GI.md", "audience/other.md"):
-            with pytest.raises(VersionedWriteRefused) as unknown:
+        for path in ("notes.txt", "audience/persona.yaml"):
+            with pytest.raises(VersionedWriteRefused) as unsupported:
                 writer.write(path=path, content="# mine now\n", expected_version=None)
-            assert unknown.value.code == "unknown_project_path"
-            assert "audience/persona-<key>.md" in unknown.value.message
+            assert unsupported.value.code == "unsupported_document_type"
+            assert "markdown" in unsupported.value.message
 
 
 # =================================================================================================

@@ -1,22 +1,23 @@
-"""The writer behind the project mount: a file write is a document version, chosen by its folder.
+"""The writer behind the project mount: a file write is a document version, whatever the path.
 
 The agent sees a plain tree at ``project/`` — ``plan.md``, ``audience/icp-gi-dac.md``,
-``audience/persona-gi-dac.md``, and the compiled files beside them — and writes to it with the
+``notes/competitive-brief.md``, and the compiled files beside them — and writes to it with the
 ordinary ``write_file``/``edit_file`` tools. Nothing about that tree is a file this process owns.
 Every writable path in it is the *rendering* of a versioned row, so a write has to become the act
-its owner already implements: authoring an ICP, writing a persona, writing the plan. This module
-is where a path becomes that act.
+its owner already implements: appending a version to the document at that path. This module is
+where a path becomes that act.
 
-**Kinds by folder.** The path is the only thing the backend hands over, so the path decides which
-writer runs. ``audience/icp-<key>.md`` is an ICP proposal, ``audience/persona-<key>.md`` is a
-persona, ``plan.md`` is the plan, and everything else is refused by name. The two refusals are
-different on purpose: a compiled file (``status.md``, ``decisions.md``, ``index.json``,
-``artifacts/``) is read-only because it is *derived* from rows the model cannot type over, while an
-unrecognized path is simply not a document this project has a writer for — and the message says
-which paths are.
+**Any markdown path is a document** (founder ruling 2026-09-14). There is no folder→kind map and no
+list of admitted paths: the agent writes what it judges worth writing down, the platform records and
+tracks it, and what the document *is* — its kind, its title, and whether the human agreed to pin it
+as the plan, the ICP or the personas — is the document's own front matter, not a shape this module
+checks. Two paths still refuse, and both are refusals about the *file*, never about its content: a
+compiled file (``status.md``, ``decisions.md``, ``index.json``, ``artifacts/``) is read-only because
+it is *derived* from rows the model cannot type over, and a path that is not markdown is not
+something the project library can serve back.
 
 **One transaction per write, on the bridge.** deepagents calls the backend synchronously and the
-document writers are async, so every coroutine here runs on :class:`~clue_agents.bridge.AsyncBridge`
+document writer is async, so every coroutine here runs on :class:`~clue_agents.bridge.AsyncBridge`
 and opens its own transaction against an engine built *on that loop* (ruling P3-1). The engine is a
 process singleton, exactly like the bridge: a per-call engine would mean a connection pool per tool
 call. It never uses :func:`clue_db.transaction`, whose engine belongs to the serving process's loop
@@ -32,7 +33,6 @@ onto for exactly that.
 from __future__ import annotations
 
 import atexit
-import re
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -49,23 +49,14 @@ from clue_agents import (
 )
 from clue_agents.bridge import AsyncBridge, process_bridge
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.arv2.icp_authoring import (
-    IcpAuthoringRefused,
-    IcpAuthoringRequest,
-    author_icp_document,
-)
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.project_documents import (
-    ICP_DEFINITION_KIND,
-    PERSONA_KIND,
-    PLAN_KIND,
+    DEFAULT_DOCUMENT_KIND,
     ProjectDocumentRefused,
-    ProjectPersonaWrite,
-    ProjectPlanWrite,
+    ProjectDocumentWrite,
     current_document_version,
-    persona_path,
-    write_project_persona,
-    write_project_plan,
+    row_path_of,
+    write_project_document,
 )
 from clue_api.project_library import ensure_project_library
 from clue_db import ConnFactory, create_engine, database_url
@@ -73,17 +64,14 @@ from clue_storage import StorageBackend
 
 __all__ = ["ProjectRootWriter", "bridge_bound_artifact_reader", "bridge_transaction"]
 
-#: The two authored-document families, keyed off the folder and the file-name prefix the whole lane
-#: already reads by (``icp_authoring._path_for`` and ``project_documents.persona_path``). The key is
-#: constrained to the ICP-key alphabet here too, so a path that could never *be* an ICP key is an
-#: unknown path rather than a refusal from deep inside the authoring writer.
-_ICP = re.compile(r"^audience/icp-([a-z0-9-]+)\.md$")
-_PERSONA = re.compile(r"^audience/persona-([a-z0-9-]+)\.md$")
 #: Files the library compiles from this project's rows. They are real files in the tree and the
 #: model may read them; none of them is a document, so none of them can be written back.
 _COMPILED = frozenset({"status.md", "decisions.md", "index.json"})
 #: The design artifacts, indexed by reference (W4). Their rows belong to the design subsystem.
 _ARTIFACTS_PREFIX = "artifacts/"
+#: What a document is written in. The library serves markdown with front matter and nothing else,
+#: so a write of anything else would be stored and then served back as something it is not.
+_DOCUMENT_SUFFIX = ".md"
 #: The mount's own name, stripped off the library index's paths to get the mount-relative ones the
 #: backend speaks. See :data:`clue_api.project_context_files.PROJECT_LIBRARY_PREFIX`.
 _MOUNT_PREFIX = "project/"
@@ -116,7 +104,7 @@ async def bridge_transaction() -> AsyncIterator[AsyncConnection]:
 
     The shape of :func:`clue_db.transaction`, against this module's engine rather than the serving
     process's. Every write here is one transaction: a refusal raises before any row is at rest (the
-    document writers guarantee that), so rolling back is the correct answer either way.
+    document writer guarantees that), so rolling back is the correct answer either way.
     """
 
     engine = await _bridge_engine()
@@ -181,14 +169,31 @@ def _front_matter(text: str) -> tuple[dict[str, Any], str]:
         return {}, text
 
 
-def _derived_from(front: Mapping[str, Any]) -> str | None:
-    """The ICP key this draft says it was derived from, under either spelling the skills use."""
+def _kind(front: Mapping[str, Any]) -> str:
+    """What this document calls itself, or plainly a document."""
 
-    for key in ("derived_from", "derived_from_icp_key"):
-        value = front.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
+    declared = front.get("kind")
+    return declared if isinstance(declared, str) and declared.strip() else DEFAULT_DOCUMENT_KIND
+
+
+def _title(front: Mapping[str, Any], body: str, *, path: str) -> str:
+    """What this document is called: its own ``title``, else its first heading, else its file name.
+
+    Never invented, and never the platform's word for it — the card the human sees on the turn says
+    what the document says it is. The same rule the ICP gate and the documents list already serve,
+    stated once more here because the outcome travels to the card before either of them is read.
+    """
+
+    declared = front.get("title")
+    if isinstance(declared, str) and declared.strip():
+        return declared.strip()
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip()
+            if heading:
+                return heading
+    return path.rsplit("/", 1)[-1].removesuffix(_DOCUMENT_SUFFIX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +202,7 @@ class ProjectRootWriter:
 
     Bound to one turn: the workspace, the brand, the project, the turn and the human on it are all
     ambient here, because the model addresses a *path* and nothing else. That is also what makes
-    the replay keys work — every writer below derives its document id from this turn.
+    the replay key work — the document id below is derived from this turn.
 
     ``conn_factory`` is the seam a test replaces: the default opens its own transaction on the
     bridge loop's engine, and a test injects one that yields its own connection so nothing commits.
@@ -230,145 +235,61 @@ class ProjectRootWriter:
                 "compiled_file_read_only",
                 f"{path} is compiled from the project's rows; it cannot be written",
             )
-        if match := _ICP.match(path):
-            return self.bridge.run(self._write_icp(match.group(1), content))
-        if match := _PERSONA.match(path):
-            return self.bridge.run(self._write_persona(match.group(1), content, expected_version))
-        if path == "plan.md":
-            return self.bridge.run(self._write_plan(content, expected_version))
-        raise VersionedWriteRefused(
-            "unknown_project_path",
-            "write an ICP at audience/icp-<key>.md, personas at audience/persona-<key>.md, "
-            "or the plan at plan.md",
-        )
+        if not path.endswith(_DOCUMENT_SUFFIX):
+            raise VersionedWriteRefused(
+                "unsupported_document_type",
+                f"{path} is not markdown; the project's documents are .md files",
+            )
+        return self.bridge.run(self._write(path, content, expected_version))
 
     def refresh(self) -> dict[str, int]:
         """Re-materialize the library and return its fresh ``path → version`` map."""
 
         return self.bridge.run(self._refresh())
 
-    # --- one document kind each ---------------------------------------------------------------
+    # --- one writer, any path -----------------------------------------------------------------
 
-    async def _write_icp(self, icp_key: str, content: str) -> VersionedWriteOutcome:
-        """Author one project-scoped ICP proposal.
+    async def _write(
+        self, path: str, content: str, expected_version: int | None
+    ) -> VersionedWriteOutcome:
+        """Append one version of the document at ``path``. The whole text goes through.
 
-        ``expected_version`` is deliberately unused: authoring an ICP is not an edit of the version
-        the model read, it is a *new* version under that key, and the writer's own scoped unique
-        index is the race it has to survive. The lineage the model claims (``derived_from``) is
-        read off its own front matter and resolved by the authoring writer, which refuses a key
-        that names nothing rather than storing a dangling parent.
+        The front matter is read twice on purpose: the writer stamps its own facts over the model's
+        and stores the result, while the outcome reported back to the turn carries what the
+        *document* says it is — its kind and its title — so the card the human sees is named by the
+        document rather than by the platform.
         """
 
-        front, _ = _front_matter(content)
+        front, body = _front_matter(content)
+        row_path = row_path_of(path)
         async with self.conn_factory() as conn:
             try:
-                authored = await author_icp_document(
+                written = await write_project_document(
                     conn,
                     self.storage,
-                    IcpAuthoringRequest(
+                    ProjectDocumentWrite(
                         workspace_id=self.workspace_id,
                         brand_id=self.brand_id,
                         project_id=self.project_id,
                         turn_id=self.turn_id,
                         user_id=self.user_id,
-                        icp_key=icp_key,
-                        document_text=content,
-                        scope="project",
-                        derived_from_icp_key=_derived_from(front),
-                    ),
-                )
-            except IcpAuthoringRefused as exc:
-                # Every authoring refusal is already something the model can act on in its next
-                # turn, so its code and its sentence travel to the model unchanged.
-                raise VersionedWriteRefused(exc.code, str(exc)) from exc
-        return VersionedWriteOutcome(
-            path=f"audience/icp-{icp_key}.md",
-            version=authored.version,
-            document_id=authored.document_id,
-            kind=ICP_DEFINITION_KIND,
-            # The row's own status, not a repeated "proposed": a replayed call may be reporting a
-            # version a human has since confirmed, and what is at rest is the honest answer.
-            status=authored.status,
-            replayed=authored.replayed,
-        )
-
-    async def _write_persona(
-        self, icp_key: str, content: str, expected_version: int | None
-    ) -> VersionedWriteOutcome:
-        """Write one persona for the project's pinned ICP. The whole text goes through."""
-
-        path = persona_path(icp_key)
-        async with self.conn_factory() as conn:
-            try:
-                written = await write_project_persona(
-                    conn,
-                    self.storage,
-                    ProjectPersonaWrite(
-                        workspace_id=self.workspace_id,
-                        brand_id=self.brand_id,
-                        project_id=self.project_id,
-                        turn_id=self.turn_id,
-                        user_id=self.user_id,
-                        icp_key=icp_key,
+                        path=row_path,
                         document_text=content,
                         expected_version=expected_version,
                     ),
                 )
             except ProjectDocumentRefused as exc:
                 raise await self._refuse(
-                    conn, exc, name=path, path=path, expected=expected_version
+                    conn, exc, name=path, path=row_path, expected=expected_version
                 ) from exc
         return VersionedWriteOutcome(
             path=path,
             version=written.version,
             document_id=written.document_id,
-            kind=PERSONA_KIND,
+            kind=_kind(front),
             status="ready",
             replayed=written.replayed,
-        )
-
-    async def _write_plan(
-        self, content: str, expected_version: int | None
-    ) -> VersionedWriteOutcome:
-        """Write the plan. Only the *body* goes through (ruling P3-5).
-
-        The plan's front matter is the platform's alone — the version, the scope, the turn — and
-        the model reads a file that has one, so it writes one back. Stripping it here is what keeps
-        a round-trip through ``edit_file`` from stamping a stale version into the bytes of the new
-        one, or from doubling the block on every write.
-        """
-
-        _, body = _front_matter(content)
-        async with self.conn_factory() as conn:
-            try:
-                written = await write_project_plan(
-                    conn,
-                    self.storage,
-                    ProjectPlanWrite(
-                        workspace_id=self.workspace_id,
-                        brand_id=self.brand_id,
-                        project_id=self.project_id,
-                        turn_id=self.turn_id,
-                        user_id=self.user_id,
-                        body=body,
-                        expected_version=expected_version,
-                    ),
-                )
-            except ProjectDocumentRefused as exc:
-                raise await self._refuse(
-                    conn,
-                    exc,
-                    name="plan.md",
-                    path="project/plan.md",
-                    expected=expected_version,
-                ) from exc
-        return VersionedWriteOutcome(
-            path="plan.md",
-            version=written.version,
-            document_id=written.document_id,
-            kind=PLAN_KIND,
-            status="ready",
-            replayed=written.replayed,
+            title=_title(front, body, path=path),
         )
 
     async def _refresh(self) -> dict[str, int]:
@@ -405,14 +326,13 @@ class ProjectRootWriter:
         path: str,
         expected: int | None,
     ) -> VersionedWriteRefused:
-        """Translate a document writer's refusal into the one the model is shown.
+        """Translate the document writer's refusal into the one the model is shown.
 
-        Only the two codes the *mount* has its own vocabulary for are renamed. A stale version
-        becomes ``revision_conflict`` — the token the backend documents as "you are behind, read it
-        again" — and its sentence names the version at rest, re-read here rather than parsed back
-        out of the writer's message. Everything else (an unpinned ICP, front matter about another
-        document) keeps its own code, because it is not a concurrency problem and telling the model
-        it is would send it into a useless re-read loop.
+        Only the codes the *mount* has its own vocabulary for are renamed. A stale version becomes
+        ``revision_conflict`` — the token the backend documents as "you are behind, read it again"
+        — and its sentence names the version at rest, re-read here rather than parsed back out of
+        the writer's message. Everything else keeps its own code, because it is not a concurrency
+        problem and telling the model it is would send it into a useless re-read loop.
         """
 
         if exc.code == "project_document_revision_conflict":

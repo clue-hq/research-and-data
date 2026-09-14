@@ -42,7 +42,7 @@ import hashlib
 import json
 import os
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
@@ -54,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import AgentArtifactReader, AgentWorkspaceFactory
 from clue_agents.library_tree import LibraryFile, LibraryTree
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
+from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.project_documents import lock_project
 from clue_api.brand_knowledge_context import (
     KnowledgeDocumentRef,
@@ -281,6 +282,27 @@ class _LibraryDocument:
     facts: ProjectDocumentFacts
 
 
+def _front_matter_of(body: bytes) -> Mapping[str, Any]:
+    """One document's front matter, or nothing at all.
+
+    A document whose header cannot be read is not an error here: the bytes are still served, and
+    the facts compiled beside them simply say less. Never a refusal — the tree is the model's whole
+    view of the project, and an odd header in one file must not empty it.
+    """
+
+    try:
+        front, _ = parse_front_matter(body.decode("utf-8"), preserve_body=True)
+    except (UnicodeDecodeError, ValueError):
+        return {}
+    return front
+
+
+def _string(value: Any) -> str | None:
+    """One front-matter value, when it is a non-empty string. Anything else says nothing."""
+
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
 def _library_path(row_path: str) -> str:
     """One document's path *inside* the tree: the mounted path with the mount's name removed.
 
@@ -345,6 +367,11 @@ async def _library_documents(
                 f"the project document {ref.path!r} no longer matches its stored digest"
             )
         newer = superseded.get(path)
+        # The document's own header, read from the bytes already in hand: what it calls itself, and
+        # the role a human agreed to pin it under (``role: plan``). ``status.md``'s Plan section
+        # reads that role rather than a path (founder ruling 2026-09-14), and this is the one place
+        # in the compile where the bytes are open.
+        front = _front_matter_of(body)
         documents.append(
             _LibraryDocument(
                 file=CompiledProjectFile(
@@ -357,11 +384,13 @@ async def _library_documents(
                 ),
                 facts=ProjectDocumentFacts(
                     # The **row** path, because ``status.md``'s renderer folds it into a workspace
-                    # path itself and finds the plan by its row path.
+                    # path itself and falls back to the plan's row path.
                     path=ref.path,
                     version=ref.version,
                     status=ref.status,
                     updated_at=ref.updated_at,
+                    role=_string(front.get("role")),
+                    title=_string(front.get("title")),
                     newer_version=(
                         None if newer is None or newer.version <= ref.version else newer.version
                     ),

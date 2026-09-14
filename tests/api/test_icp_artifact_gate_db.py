@@ -301,8 +301,14 @@ def test_an_unknown_icp_key_is_refused(tmp_path: Path) -> None:
     run_async(scenario())
 
 
-def test_a_document_that_is_not_a_proposal_cannot_be_confirmed(tmp_path: Path) -> None:
-    """``ready`` is servable input, not a proposal: there is nothing here to say yes to."""
+def test_a_ready_document_is_presentable_because_the_gate_is_what_pins_it(tmp_path: Path) -> None:
+    """A document the agent wrote is born ``ready``, and the gate is what makes it the ICP.
+
+    Before 2026-09-14 the writer decided that a file at ``audience/icp-<key>.md`` was a *proposal*
+    and everything else was input, so a ``ready`` document was refused here. The agent now writes
+    documents, not proposals: the human's yes at this gate is the pin, so every servable version of
+    the document they read can be put in front of them.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -313,14 +319,17 @@ def test_a_document_that_is_not_a_proposal_cannot_be_confirmed(tmp_path: Path) -
                 label="icpready",
                 status="ready",
             )
-            failures = await _tool(fixture).preconditions(
-                OpenIcpArtifactGateInput(
-                    icp_key="clinics",
-                    source_turn_ref=derive_turn_action_ref(fixture.seeded.turn_id),
-                ),
-                _ctx(fixture),
+            inputs = OpenIcpArtifactGateInput(
+                icp_key="clinics",
+                source_turn_ref=derive_turn_action_ref(fixture.seeded.turn_id),
             )
-            assert [failure.reason_code for failure in failures] == ["icp_document_not_servable"]
+
+            failures = await _tool(fixture).preconditions(inputs, _ctx(fixture))
+            result = await _tool(fixture).invoke(inputs, _ctx(fixture))
+
+            assert list(failures) == []
+            assert result.references["subject_revision"] == 1
+            assert result.references["created"] is True
 
     run_async(scenario())
 

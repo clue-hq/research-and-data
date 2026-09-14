@@ -1661,7 +1661,13 @@ lets the project win.**
 - **The ICP lookup orders project-local first.** `icp_confirmation.current_icp_document(...,
   project_id=)` selects `AND (project_id IS NULL OR project_id = :project_id)` and orders
   `path, (project_id IS NULL), version DESC` — a project-local row wins its path, and an unscoped
-  read (`project_id=None`) sees brand rows only. `confirm_icp_document` mints the next version *in
+  read (`project_id=None`) sees brand rows only. **[Widened 2026-09-14, founder ruling on
+  free-flowing documents]** the row set is no longer filtered to `kind = 'icp-definition'`: an ICP
+  is a document the human agreed to pin as one, written wherever the agent judged sensible, so the
+  key its front matter claims is the identity and the candidates are merely *ordered* by how
+  ICP-shaped they are (the canonical path first, then the ICP kind, then path order). The gate also
+  presents a `ready` document now, because every document the agent writes is born `ready` and the
+  gate itself is the pin. `confirm_icp_document` mints the next version *in
   the subject's own scope* (`IS NOT DISTINCT FROM`) and carries `project_id` +
   `derived_from_document_id` forward; `ProjectIcpPin` carries the scope too.
   `account_research_store.read_persona_documents` is scoped the same way (a project's own persona
@@ -1832,7 +1838,12 @@ root because turn binding lives outside `arv2/`; the store is `arv2/project_docu
 `stage0_recipe._presenting_turn_project_pin` — the presenting turn supplies the project and the
 human it credits, so the model cannot address another project's plan.
 
-The write is one immutable version per save. The document id is
+The write is one immutable version per save. **[Superseded 2026-09-14]** this tool is retired from
+the profile and its writer is now a thin call of the generic
+`project_documents.write_project_document`, which takes any path under `project/`, reads the kind
+and title off the document's own front matter, and stamps only `version`, `status`, `project_id`,
+`brand_id`, `authored_by` and `authored_at` over it. The tool keeps `plan_document_id` so a
+replayed call still lands on the row it already wrote. The document id is
 `uuid5("arv2-project-plan:{turn_id}:{expected_version or 0}")`, so a replay inside one turn returns
 the stored row **before** anything is rendered, addressed or stored. `expected_version` must equal
 the version the writer read (omitted when the file does not exist); anything else is refused rather

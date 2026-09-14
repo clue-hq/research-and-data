@@ -257,12 +257,19 @@ class ArtifactRef(FrozenContract):
 
 
 class DomainObjectRef(FrozenContract):
-    """Typed, scoped reference to domain state owned outside the agent runtime."""
+    """Typed, scoped reference to domain state owned outside the agent runtime.
+
+    ``title`` is what the referenced object calls itself, carried so a surface can name the card it
+    draws without reading the object back. Optional, and defaulted, because most refs are the
+    model's own citations of things it only read — and because a finalization recorded before this
+    field existed must still validate when it is replayed.
+    """
 
     workspace_id: StableId
     object_type: StableId
     object_id: StableId
     version: int | None = Field(default=None, ge=1)
+    title: str | None = Field(default=None, max_length=512)
 
 
 class AgentResourceRef(FrozenContract):

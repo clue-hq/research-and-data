@@ -1,9 +1,10 @@
-"""The project's own documents against the real tables: one plan, versioned, editable by both hands.
+"""The project's own documents against the real tables: versioned, and editable by both hands.
 
 Two writers share one version chain here, and the tests are mostly about what each of them may
-*not* do. The agent writes ``project/plan.md`` through :func:`write_project_plan`, and it must say
-which version it read — a plan written against a version the human has since edited is refused by
-name rather than silently overwriting their words. The human writes through
+*not* do. The agent writes any path under ``project/`` through :func:`write_project_document` (and,
+for the retired plan tool that is still replayable, through :func:`write_project_plan`), and it must
+say which version it read — a document written against a version the human has since edited is
+refused by name rather than silently overwriting their words. The human writes through
 :func:`save_project_document`, the project-scoped twin of the Knowledge PUT, and their edit can
 never carry another version's approval stamp forward: a ``confirmed`` project-local ICP they retype
 comes back as ``proposed``.
@@ -23,16 +24,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.project_documents import (
-    PLAN_KIND,
+    DEFAULT_DOCUMENT_KIND,
     PLAN_PATH,
     PLAN_WORKSPACE_PATH,
     ProjectDocumentRefused,
+    ProjectDocumentWrite,
     ProjectPlanWrite,
     current_plan_version,
     list_project_documents,
     plan_document_id,
     read_project_document,
     save_project_document,
+    write_project_document,
     write_project_plan,
 )
 from clue_storage import StorageBackend
@@ -147,8 +150,9 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
 ) -> None:
     """A project with no plan takes ``expected_version=None`` and gets version 1.
 
-    The front matter is the platform's, not the model's: the kind every reader dispatches on, the
-    scope the row is in, and who wrote it on which turn.
+    The front matter the *platform* owns is stamped over whatever the model wrote: the version, the
+    status, the scope the row is in, and who wrote it on which turn. A plan is no longer a kind —
+    this one says nothing about what it is, so it is a ``document``.
     """
 
     async def scenario() -> None:
@@ -174,7 +178,7 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
             assert (row["project_id"], row["folder"], row["kind"], row["status"]) == (
                 project_id,
                 "project",
-                PLAN_KIND,
+                DEFAULT_DOCUMENT_KIND,
                 "ready",
             )
             assert row["supersedes_document_id"] is None
@@ -191,7 +195,9 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
             )
             assert found is not None
             served, front, body = found
-            assert front["kind"] == PLAN_KIND
+            # The stamp is six facts and no more: a document that said nothing about its kind
+            # still says nothing, while the row carries the ``document`` the writer derived.
+            assert "kind" not in front
             assert front["status"] == "ready"
             assert front["project_id"] == project_id
             assert front["brand_id"] == brand_id
@@ -201,7 +207,67 @@ def test_the_first_plan_is_version_one_and_carries_the_platforms_front_matter(
             }
             assert isinstance(front["authored_at"], str) and front["authored_at"]
             assert body == BODY
-            assert (served.version, served.kind, served.icp_key) == (1, PLAN_KIND, None)
+            assert (served.version, served.kind, served.icp_key) == (
+                1,
+                DEFAULT_DOCUMENT_KIND,
+                None,
+            )
+
+    run_async(scenario())
+
+
+def test_a_document_at_any_path_keeps_its_own_words_and_takes_the_platforms_six(
+    tmp_path: Any,
+) -> None:
+    """The generic writer, at a path nothing in the platform has ever named.
+
+    ``notes/competitive-brief.md`` is stored under the folder its own path names, with the kind the
+    document claims, and the role a human agreed to pin it under survives verbatim. Six facts are
+    the platform's and are stamped over whatever the model wrote for them.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            text_ = (
+                "---\nkind: brief\nrole: plan\nversion: 9\nstatus: superseded\n"
+                "owner: sasha\n---\n\n# Who else is in this deal\n\nTwo vendors.\n"
+            )
+            request = ProjectDocumentWrite(
+                workspace_id=workspace_id,
+                brand_id=brand_id,
+                project_id=project_id,
+                turn_id=uuid4(),
+                user_id=USER_ID,
+                path="notes/competitive-brief.md",
+                document_text=text_,
+                expected_version=None,
+            )
+
+            written = await write_project_document(conn, storage, request)
+
+            assert (written.version, written.replayed) == (1, False)
+            assert written.workspace_path == "project/notes/competitive-brief.md"
+            row = await _row(conn, written.document_id)
+            assert (row["folder"], row["path"], row["kind"], row["status"]) == (
+                "notes",
+                "notes/competitive-brief.md",
+                "brief",
+                "ready",
+            )
+            found = await read_project_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                document_id=written.document_id,
+            )
+            assert found is not None
+            _served, front, body = found
+            assert (front["kind"], front["role"], front["owner"]) == ("brief", "plan", "sasha")
+            assert (front["version"], front["status"]) == (1, "ready")
+            assert body.startswith("# Who else is in this deal")
 
     run_async(scenario())
 
@@ -414,7 +480,11 @@ def test_the_human_save_mints_the_next_version_with_its_edit_provenance(tmp_path
                 user_id=USER_ID,
             )
 
-            assert (saved.version, saved.status, saved.kind) == (3, "ready", PLAN_KIND)
+            assert (saved.version, saved.status, saved.kind) == (
+                3,
+                "ready",
+                DEFAULT_DOCUMENT_KIND,
+            )
             assert (await _row(conn, second.document_id))["status"] == "superseded"
             found = await read_project_document(
                 conn,
@@ -783,12 +853,13 @@ def test_the_bytes_are_stored_only_after_the_row_that_cites_them(tmp_path: Any) 
     run_async(scenario())
 
 
-def test_a_project_folder_document_of_another_kind_is_not_human_editable(tmp_path: Any) -> None:
-    """M6. The human's surface is gated by *kind*, not by folder.
+def test_every_one_of_this_projects_documents_is_human_editable(tmp_path: Any) -> None:
+    """No kind gate on the human's surface (founder ruling 2026-09-14).
 
-    A later ``project/`` document is not human-editable by accident: admitting one is a decision,
-    taken by naming its kind. Under the folder gate this save succeeded and demoted a document
-    nobody had decided to hand the human.
+    The gate used to admit three kinds, so a project document of any other kind came back as "no
+    such editable document" — which was the right answer while the agent could only write three
+    shapes. It writes anything now, and a document this project owns is a document its human may
+    edit: the save mints version 2 of the very same path.
     """
 
     async def scenario() -> None:
@@ -807,22 +878,21 @@ def test_a_project_folder_document_of_another_kind_is_not_human_editable(tmp_pat
                 body="# Brief\n\nBody.\n",
             )
 
-            with pytest.raises(ProjectDocumentRefused) as excinfo:
-                await save_project_document(
-                    conn,
-                    storage,
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    document_id=brief,
-                    body="# Edited by the human\n",
-                    expected_revision=1,
-                    user_id=USER_ID,
-                )
+            saved = await save_project_document(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                document_id=brief,
+                body="# Edited by the human\n",
+                expected_revision=1,
+                user_id=USER_ID,
+            )
 
-            assert excinfo.value.code == "project_document_not_found"
+            assert (saved.version, saved.kind, saved.status) == (2, "design-brief", "ready")
             assert [
                 row["version"] for row in await _rows_at(conn, workspace_id, "project/brief.md")
-            ] == [1]
+            ] == [1, 2]
 
     run_async(scenario())
 

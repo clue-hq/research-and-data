@@ -94,8 +94,11 @@ def test_the_three_onboarding_tables_carry_their_state_contract() -> None:
             "superseded",
         ):
             assert status in doc["brand_knowledge_document_status"]
-        for folder in ("company", "product", "audience", "proof", "design"):
-            assert folder in doc["brand_knowledge_document_folder"]
+        # The folder and kind CHECKs this migration created were dropped on 2026-09-14 (revision
+        # 639d081ad799, free-flowing project documents); the constraint names are gone from
+        # pg_constraint, exactly as ``brand_knowledge_document_path_version`` is below.
+        assert "brand_knowledge_document_folder" not in doc
+        assert "brand_knowledge_document_kind" not in doc
         assert "[0-9a-f]{64}" in doc["brand_knowledge_document_body_when_served"]
         # The path/version identity was a brand-scoped UNIQUE constraint here at O1; the ICP
         # authoring migration re-scoped it per project, so the guarantee now lives in the

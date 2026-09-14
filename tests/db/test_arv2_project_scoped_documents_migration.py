@@ -132,8 +132,13 @@ def test_a_document_carries_its_project_scope_and_lineage() -> None:
     assert (
         "FOREIGN KEY (derived_from_document_id) REFERENCES brand_knowledge_document" in definitions
     )
-    assert "'project'" in constraints["brand_knowledge_document_folder"]
-    assert "'project-plan'" in constraints["brand_knowledge_document_kind"]
+    # Both taxonomies this migration widened were dropped outright on 2026-09-14 (revision
+    # 639d081ad799): a document's kind is its own word for itself and its folder is the first
+    # segment of the path the agent typed, so the closed lists could only refuse a document
+    # somebody wrote. The structural rule that replaced them is still here.
+    assert "brand_knowledge_document_folder" not in constraints
+    assert "brand_knowledge_document_kind" not in constraints
+    assert "path ~~ (folder" in constraints["brand_knowledge_document_path_in_folder"]
 
     # The brand-scoped UNIQUE is gone; the scope-aware unique index took its place.
     assert "brand_knowledge_document_path_version" not in constraints

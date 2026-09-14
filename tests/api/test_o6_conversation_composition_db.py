@@ -1192,7 +1192,12 @@ def test_two_turns_of_one_thread_share_one_persistent_workspace(tmp_path: Path) 
     run_async(scenario())
 
 
-PLAN_BODY = "# Plan\n\nWe research thirty accounts."
+#: What the model types into the tree. Front matter and all: it says what the document is, and the
+#: role the human agreed to pin it under, and the platform keeps every word of that.
+PLAN_BODY = (
+    "---\nkind: project-plan\nrole: plan\n---\n\n# Q4 expansion plan\n\n"
+    "We research thirty accounts."
+)
 
 
 def _plan_writing_responses() -> tuple[AIMessage, ...]:
@@ -1234,8 +1239,8 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
 
     The model calls the ordinary ``write_file`` on a path in the tree it was given. Nothing in
     that call is a file: the mount hands it to the turn's :class:`ProjectRootWriter`, which takes
-    it as version 1 of this project's plan, and the turn's finalization then carries a reference
-    to the row it wrote — which the model never declared, because the model only ever typed a
+    it as version 1 of the document at that path, and the turn's finalization then carries a
+    reference to the row it wrote — which the model never declared, because the model only typed a
     path. The card the human is shown is built from that reference, so what the chat says the turn
     did and what the database holds are the same fact, not two.
 
@@ -1315,6 +1320,8 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
                     .all()
                 )
                 assert len(document) == 1
+                # The kind is the document's own word for itself, off the front matter the model
+                # wrote — not something the path decided.
                 assert (
                     document[0]["path"],
                     document[0]["kind"],
@@ -1343,7 +1350,7 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
                     (row["object_type"], row["object_id"], row["object_version"]) for row in refs
                 ] == [("project_document", str(document[0]["document_id"]), 1)]
 
-                # 3. …and the human is shown a card that says so, under the document's own name.
+                # 3. …and the human is shown a card that says so, titled by the document itself.
                 events = await list_turn_events(
                     conn, workspace_id=workspace_id, turn_id=submission.turn_id
                 )
@@ -1353,7 +1360,7 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
                     if row.part_kind == PartKind.PLAN.value and "part" in row.payload
                 ]
                 assert len(plan_parts) == 1
-                assert plan_parts[0]["title"] == "Plan"
+                assert plan_parts[0]["title"] == "Q4 expansion plan"
                 assert plan_parts[0]["revision_label"] == "v1"
                 assert plan_parts[0]["plan_ref"]["object_id"] == str(document[0]["document_id"])
             finally:

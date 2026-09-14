@@ -84,6 +84,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # the Head of ABM now writes as a file under `project/`, and grants no tool;
         # stage0-interview v32 §5b, §5c and §6b are one-line pointers at them.
         "skill:icp-authoring@v1",
+        "skill:icp-authoring@v2",
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
@@ -102,6 +103,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-discovery@v2",
         "skill:manual-documents-decisions@v1",
         "skill:manual-documents-decisions@v2",
+        "skill:manual-documents-decisions@v3",
         "skill:manual-errors@v1",
         "skill:manual-errors@v2",
         "skill:manual-fields@v1",
@@ -125,7 +127,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-workspace@v1",
         "skill:manual-workspace@v2",
         "skill:persona-authoring@v1",
+        "skill:persona-authoring@v2",
         "skill:plan-authoring@v1",
+        "skill:plan-authoring@v2",
         "skill:research-task@v1",
         "skill:research-task@v2",
         "skill:research-task@v3",
@@ -171,6 +175,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # three document skills, §10 saying the documents are written under `project/`, and
         # the three retired tools gone from its front matter.
         "skill:stage0-interview@v32",
+        "skill:stage0-interview@v33",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
