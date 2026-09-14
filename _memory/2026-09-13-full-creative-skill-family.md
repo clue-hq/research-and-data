@@ -926,3 +926,52 @@ promotion. User progress response must distinguish 8/18 (44.4%) live coverage
 from quality: latest 2/4 model acceptances, 4/4 edit/export, 0/4 under four minutes,
 0/18 fully qualified. No defensible single overall completion percentage.
 Google normal reauthentication remains pending for the next simultaneous arm.
+
+Task 25 live comparison in progress: previous goal turn classified progress
+(283314a8 committed plus independent 214-test gate). Google normal SSO reported
+already signed in; Home loaded projects/composer with the existing session.
+No credentials entered or auth settings changed. All four home requests sent
+22:17:03.666–668Z; identical “Go ahead and create it.” handoffs sent together
+22:19:41.775Z. The 158.1-second gap includes platform handoff and operator wait,
+not pure model latency. Two previous generated layers recoverably archived;
+four generation caches backed up/reset; original ready catalogs matched.
+Recorded-PID restart loaded 283314a8; live stack session38199. Sandbox status
+incorrectly reported workers DOWN because kill-0 lacked permission; escalated
+status and worker.start logs prove all four alive. No restart from that report.
+Observer52369 captures actual runs in guidance-pagination-20260914. AWS/Google
+initially had Save-your-answer failures but completed design handoff. All4 design
+runs active; no source/prompt/model edits during the arm. Early AWS and Google
+reads include review-guide continuations that were absent in the previous arm.
+Read-only audit delegated; no comprehension or quality claim from read ranges.
+
+Task 25 status checkpoint: all four simultaneous runs now terminal and agent-
+accepted. Inner runtime seconds Clue190.756/AWS489.135/Google502.786/Conduit525.429;
+107 solo orchestrator calls, zero failed model calls. These exclude initial Home
+handoff/operator wait; only Clue inner generation is under240s, not proof of the
+full first-prompt-to-verified-creative target. No new family coverage: still8/18.
+Read-only audit verified all4 received complete136-line review resource vs1/4
+previously; 61 model-visible annotated responses. Conduit waited5m39s for tail;
+Google still did not finish typography resource. Delivery is not comprehension.
+Clue review falsely accepts before-work-ships wording despite admitted missing
+shipping-gate evidence; independent quality approval remains unearned.
+Browser Clue edit/save/reload/restore and PNG/SVG export complete. AWS saved QA
+marker verified after reload, restored exact original scene atv27, Editoff. No
+QA markers remain; Google/Conduit native QA and remaining3exports still pending.
+All4 tabs17–20 retained. No product changes or new generations in status reply.
+Next finish Task25 visual/QA/source-freeze assessment, then quality gaps and
+remaining10family coverage; fullgoalactive, no promotion/push/production.
+
+Task25 closing: preceding status turn classified progress (completed AWS browser
+persistence readback/exactscene restore). Finished Google/Conduit sameQA; all4
+restored16/27/25/36, SVGnative3/3/3/1text and2/2/2/3images; PNGhashes exactly
+matchfinalpreviews, exportversionsunchanged. All264sourcehashes/config unchanged.
+Previousregistryrows identical; addedAWS1generated/Google1generated/Conduit2crops.
+All138fleetdone;61designsucceeded5historicalfailed. Browser all4 inspected, correct
+Oracle red/Clue label; Google17pxsupport and blueoverlap still failquality; AWS
+Arialwarning; Conduit label/whiteplate gap. Assessment+planrecorded; no promotion.
+Advanced max locator initially used checkbox from AX but DOM is button; no
+action from mismatch, corrected via freshDOM. All4tabs17–20 retained/maximized.
+Task26 diagnostic delegated read-only/product-unmodified: three guidance arms,
+5reps across4authoringcontexts, max60calls/max3concurrent, fixedconfiguredmodel.
+Root will broaden ordinary four-brand family coverage on unchanged source while
+this runs. All current testmarkers restored; no production/push.

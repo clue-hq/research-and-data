@@ -1888,3 +1888,55 @@ artifacts remain unchanged; two previous generated layers have been identified
 for recoverable exclusion but not archived yet. Evidence: ignored
 `guidance-pagination-20260914/`, including baseline read ranges, implementation
 notes and `parent-verification.log`.
+
+
+## Task 25: selected-guidance live comparison (2026-09-14)
+
+The simultaneous Clue/AWS/Google Cloud/Conduit arm on `283314a8` is
+complete. All 264 frozen source hashes and runtime configuration remained
+unchanged. Original registry records are identical; the new records are one
+generated image each for AWS and Google, and two independently stored crops for
+Conduit. Evidence: `.design-runs/evaluation/skill-family-v1/`
+`guidance-pagination-20260914/assessment.json`.
+
+| Brand | Inner runtime | Agent acceptance | Browser text edit/save/reload | PNG/SVG export |
+| --- | ---: | --- | --- | --- |
+| Clue | 190.756 s | Accepted | Passed; original restored | Passed |
+| AWS | 489.135 s | Accepted | Passed; original restored | Passed |
+| Google Cloud | 502.786 s | Accepted | Passed; original restored | Passed |
+| Conduit | 525.429 s | Accepted | Passed; original restored | Passed |
+
+All four export PNGs equal their final server previews; exports did not change
+document versions. Restored versions are 16/27/25/36. SVGs retain 3/3/3/1 native
+text nodes and 2/2/2/3 independent images. Browser inspection confirms the fixed
+Clue label and red Oracle mark. Existing Arial fallback warning remains on AWS.
+These are editing/rendering checks, not independent creative approval.
+
+All four real graph histories ultimately received all 136 lines of the unchanged
+review guide (previously one of four). The audit found 61 annotated ToolMessages;
+returned tails include readability guidance. Conduit requested its tail 5m39s
+after the first segment; Google still did not finish the separate typography
+resource. Delivery is established, comprehension and complete catalog consumption
+are not. Provider HTTP request bodies were not captured.
+
+Quality still prevents promotion: Clue's accepted support copy adds a shipping
+relationship not established by its screenshot. Its own critique admits the
+limitation while calling the relation a reasonable restatement. Google's final
+blue motif still overlaps the headline/support field; its long 17px support is
+too small at feed scale. Conduit's authentic partner mark is improved, but the
+small Integration label and dark-wordmark plate remain compromises; an integration
+identity is less informative than the requested explanation of how it works.
+AWS has a legible main idea but small CTA/support and an awkward last headline
+line. No score or model acceptance overrides these findings.
+
+Only Clue's inner generation meets 240 seconds. End-to-end first-message delivery
+does not: the 158.1-second initial Home-to-design gap includes both platform
+handoff and operator wait. Warm logo/provider caches and one stochastic sample
+prevent attributing timing or quality differences solely to pagination.
+
+The count remains 30 registered skills, 18 families, 8 live-exercised families,
+and zero fully qualified families. Next, test a compact source-counterexample
+procedure in realistic authoring contexts before changing shared copy guidance.
+In parallel, run the next ordinary four-brand coverage cases on unchanged source;
+retain each actual selected family and first delivery, including repeated routing
+or failures. Do not rename a selected family merely to increase coverage.
