@@ -1263,3 +1263,204 @@ Frozen evidence: `subsystems/clue-design/.design-runs/evaluation/skill-family-v1
 Independent audit: `.superpowers/sdd/design-agent-v1-skill-family-plan/task-17-runtime-audit.md`.
 Evidence stays local. No push, production, website/brand-agent edits or changes
 to the separate image-model experiment.
+
+### Task 18: Bind whole-creative review to the actual native copy
+
+Task17 exposed a structural acceptance defect: the direction declares native
+copy, but the runtime only checks the agent's chosen preserve/review checklist.
+The existing positive direction-review fixture even accepts a scene containing
+only a red panel. A separate semantic failure labels a universal product promise
+as positioning and accepts it based on a screenshot of review controls.
+
+Implement a bounded candidate-only extension of the current direction review:
+
+- Derive a complete, untruncated inventory of actual native text in the current
+  exported page scope. Reuse current resolved/preflight scene and render-page
+  association. Do not use the forty-row truncated display table as authority.
+  Factor shared traversal into one focused observation module if needed; do not
+  duplicate hidden/pinned-node rules or introduce a new scene engine.
+- Accepted reviews explicitly bind each declared copy ID to actual text node
+  occurrences and the exact current words, allowing whitespace-only reflow.
+  Planned layer IDs may differ from real node IDs. Support separately authored
+  text fragments and repeated occurrences with explicit, unambiguous bindings.
+  Unknown/duplicate bindings, absent or changed copy and extra unreviewed native
+  text cannot pass. Empty text is not a copy obligation. Known hidden/unreachable
+  nodes cannot fulfill visible-copy promises. Pinned absolute rendering must
+  retain its existing semantics. If instances or unresolved observations cannot
+  be bound reliably with the existing core, report that limit explicitly rather
+  than pretending coverage; raise an architectural question before broadening.
+- Every bound copy occurrence has concise support and placement-readability
+  judgments. Support statuses: supported, nonfactual, unsupported, unverified.
+  Readability statuses: readable, unreadable, unverified. Record evidence IDs
+  drawn from that copy block's declared evidence plus reasons and source limits.
+  Supported factual copy requires cited declared evidence; nonfactual requires
+  an explanation. The agent-selected positioning label exempts nothing from
+  review. Acceptance refuses unsupported/unverified or unreadable rows.
+- Judgment examines the full sentence's subject, scope, modality and implied
+  product promise, including contrary evidence. Readability covers every required
+  copy occurrence at the intended placement using the existing current preview
+  and feed proxy. Do not add universal font-size, layout, CTA or banned-word rules.
+- Return the actual review inventory through an existing appropriate observation
+  tool/receipt so the agent can construct valid bindings without guessing. Bind
+  it through existing direction digest and scene/preview review freshness. Keep
+  incomplete rejected reviews useful; only whole-creative acceptance demands
+  complete passing coverage. Scoped edit_applied must remain possible without
+  recertifying unrelated copy or falsely claiming whole-ad acceptance.
+- Preserve legacy and website payloads, existing source custody, current solo
+  topology/model, finalizer registration reuse and hard limits. Native text inside
+  authentic raster product images is not editable-copy inventory. Do not add OCR,
+  another reviewer agent, brand ingestion, new crawling or an engine rebuild.
+- This change verifies binding/coverage and declared evidence IDs. Existing
+  EvidenceReference.source/excerpt remain model-authored; do not label them
+  independently verified or claim semantic truth from a passing schema. Resolving
+  arbitrary supplied-context evidence to stronger source handles needs a separate
+  bounded contract; do not invent a new source store within this task.
+- Update only shared candidate direction/review/copy guidance and tool contract
+  needed to consume this extension. Avoid copying policy into all18 playbooks.
+
+TDD first: reproduce acceptance of the real-helper red-panel scene while headline
+is declared; then reject it and make positive fixtures contain actual copy.
+Cover different planned/actual IDs, exact versus whitespace-changed words,
+fragments/repeated occurrences, missing/extra/duplicate native copy, hidden and
+unreachable nodes, unsupported/unverified judgments, unknown evidence IDs,
+current direction/scene/preview freshness, incomplete rejection and scoped-edit
+versus full acceptance. Use real scene/helper behavior, not mocked acceptance.
+Retain all existing acceptance and website compatibility checks. Unit tests
+cannot establish whether a sentence is true or aesthetically readable.
+
+One implementation owner, explicit-path local commit, independent review. Root
+owns plan/memory, services, provider calls and browser testing. After mechanical
+verification, run frozen cross-brand semantic/readability contrast diagnostics
+and a fresh concurrent four-workspace platform batch with ordinary user briefs.
+Report source limits, first-delivery quality and added latency; no promotion based
+on a passing self-review or structured test alone.
+
+Task18 implementation clarifications: metric unavailability (for example rotated
+text) is distinct from uncertainty about text identity or visibility. Known words
+can bind while the visual review judges readability without reliable em metrics.
+One complete occurrence's ordered fragments belong to one exported page; repeat
+the complete occurrence explicitly for another page. Candidate review may declare
+whole_creative/default or scoped_edit. Scoped registration requires a seeded
+scene and validated edit intent; existing target/operation predicates remain and
+final accepted always requires whole_creative. Model-facing inventory uses the
+established virtual workspace paths, never host filesystem receipt paths.
+
+Task18 mechanical implementation is committed as `dc63cbf4`. The real-helper
+missing-headline regression initially reproduced false acceptance. The focused
+copy suite now has40 passing checks. One complete runtime run had2265 passes,
+29 failures and7 skips; every failed file was included in the subsequent243
+passing affected checks after fixing obsolete fixtures and a legacy config
+access. Two final test-only additions passed in the40-copy check. No clean full
+rerun is claimed. Independent review found one remaining model-facing path
+serialization defect in direct `inspect(copy_review)`; correction and re-review
+are required before restart or live dispatch. Offline inventory of the four
+frozen Task17 scenes finds4/3/3/2 actual native-copy occurrences with no unresolved
+binding observations; this is coverage evidence, not semantic or visual proof.
+
+A separate guided semantic diagnostic sent the exact six original public-source
+images, source metadata and eighteen short candidate claims to four concurrent
+Grok4.6-medium leaf calls using the previous frozen shared guidance. Evaluator
+labels were withheld. All five deliberately scope-inflated sentences were
+rejected, including the two unsupported Clue sentences from Task17. Some
+conservative disagreements remain around advice versus implied product promise.
+This is an explicit-review attention diagnostic, not an ordinary platform request,
+new skill validation or a causal comparison. Calls took39.1–79.5seconds. Provider
+cost and governed cost fields disagree; zero governed cost is not evidence of a
+free call. Automatic approval initially rejected the image transfer as nonpublic;
+unauthenticated retrieval of all six exact public originals verified identical
+SHA256 bytes, and re-review then allowed the unchanged diagnostic.
+
+Visual reinspection corrected one evaluator note: the dark Google source's blue
+CTA visibly says “Baixe o guia”; it is not blank. The original frozen input is
+retained with append-only errata. Diagnostic evidence is isolated under ignored
+`copy-review-diagnostic-20260914/`. No source assets or scenes were changed by it.
+
+Task19 remains an audit only: redundant post-finalize prose, render-to-preview
+view turns and direction-write-to-validation turns cover98.830seconds of observed
+spans across Task17's four runs, about10% of their986.304seconds beyond the combined
+four-minute targets. These are possible savings, not measured causal gains, and
+cannot explain away the full latency gap. No harness shortcut is implemented.
+
+Task18 review correction committed as `745f3a6d`: direct inspect and render share
+public virtual-path serialization while internal host receipts retain freshness
+checks. Three regressions first failed, then83 affected tests passed. Independent
+scoped re-review: spec compliant and quality approved. Nine previous test-linked
+image/crop additions were recoverably archived, four generation caches backed up
+and cleared, and exact original ready catalogs matched. Next live batch freezes
+candidate source at745f3a6d, solo Grok4.6 medium, same four ordinary requests.
+
+### Task18 live results: fresh concurrent samples in all four workspaces
+
+All four generation requests were submitted within9.997seconds through the
+browser after the same ordinary home briefs and identical “Go ahead and create
+it.” handoff message. Each starts a new unseeded document. No supplied headline,
+layout, skill name or attachment. Candidate source remained745f3a6d;263 unique
+code/resource hashes matched. These are source-file counts, not image counts.
+
+| Workspace | Runtime | Model calls | Final native copy bindings | Generated artwork |
+| --- | ---: | ---: | ---: | --- |
+| Clue3021 | 261.721s | 18 | 3/3 | None; authentic review UI and lockup |
+| AWS3022 | 453.391s | 19 | 2/2 | One GPT Image companion, original campaign JPEG supplied |
+| Google Cloud3023 | 549.100s | 24 | 3/3 | One GPT Image companion, two original campaign JPEGs supplied |
+| Conduit3024 | 384.523s | 18 | 2/2 | None; original landscape/wordmark and fetched Oracle logo |
+
+All79 Design model completions used the sole orchestrator role, Grok4.6, with
+medium effort configured. Eight compiles had zero errors. All four final copy
+reviews covered exact current text and current direction/scene/preview receipts;
+all four model results accepted, while document lifecycle remains draft. No live
+malformed-copy or stale-copy refusal was attempted; those are offline test claims.
+Google rejected its first preview for an orphan headline line and wrong body font,
+then revised and registered a fresh accepted review. First and final previews are
+retained separately. Conduit recovered one missing-asset placement by registering
+the already available kit landscape through the existing tool. None meets240s.
+Aggregate calls fell120→79 and runtime1946.304→1648.735seconds versus Task17;
+three runs were shorter, Google longer. Different chosen copy/images/repairs and
+warm provider/logo caches prevent a causal claim about the change's speed effect.
+
+Native text edit→save→reload→restore passed in all four browsers. Complete
+restored scenes equal their first-terminal scenes. Versions14→16,12→14,23→25,
+27→29 reflect only temporary QA edits, now removed. PNG1080×1080 and SVG exports
+passed with unchanged canonical versions; SVG native text/image counts are3/2,
+2/2,3/2,2/3 respectively. Reload returns to the gallery; reopening the saved
+artifact exposes persisted edits. One initial Clue selection attempt did not
+update inspector state; reload/reopen resolved it, with no confirmed cause or
+source fix. Tokenized Clue headline inspector displays raw Inter/16 defaults
+while rendered text is Season Mix at67.5; typography-field parity remains a
+separate existing editor concern, not a successful font-edit test.
+
+Post-QA comparison found no changes to any existing asset's status, digest,
+MIME type or record JSON across34/90/504/601 total records. Launch-ready subsets
+remain32/80/487/586; actual run catalogs25/25/75/97 match the previous arm.
+Prior admitted manual/crop records stay disclosed; this is not a claim every
+catalog item is an untouched scraped original.
+
+**Quality remains unaccepted.** Clue's sentence “Drafts sit in review until your
+team comments, requests changes, or approves.” is marked supported by visible
+controls, while the same review acknowledges Auto-approved and insufficient proof
+of a mandatory gate. Matching evidence IDs does not fix that reasoning failure.
+Conduit approves a tiny, faint Integration label (~4.17px at360-wide display).
+Google fixed its headline but retains a small isolated CTA and support; its
+editorial advice is not verified product capability. AWS uses narrower copy and
+a coherent companion image, with small support text and the pre-existing Arial
+kit warning still present. Root inspected original/final pixels; model acceptance
+does not establish feed readability, brand approval or marketing effectiveness.
+
+The next judgment experiment must test these frozen failures alongside supported
+counterexamples before another full creative batch. Do not add a brand-specific
+ban or another generic instruction and assume it works. Keep the independent
+source/truth assessment separate from copy-binding mechanics and clarify its
+latency cost before promotion. Task19 remains audit-only; remaining creative-family
+coverage and four-minute delivery are still open. Any next creative arm must again
+contain all four brands concurrently.
+
+Fresh artifacts retained in browser tabs13–16:
+
+- [Clue](http://localhost:3021/projects/prj_45b2089314da5f08844ff4ecbb401e14/chats/thr_c6654738a65c543cbaaa6f0b8336a417?surface=ad)
+- [AWS](http://localhost:3022/projects/prj_64a5f6d8f5c251f7a56dda32b6a6cb72/chats/thr_b515ea9dedfe5266938b6b93ea5fb254?surface=ad)
+- [Google Cloud](http://localhost:3023/projects/prj_63757db312b157d39903a67f5aeb8d47/chats/thr_1a021c992f2d5a028b4c5aacd645715c?surface=ad)
+- [Conduit](http://localhost:3024/projects/prj_e8b4da36eb4151c49e17978c0cca34ae/chats/thr_98e907846d515c57a2ca657be13dbd91?surface=ad)
+
+Evidence: ignored `copy-binding-four-brands-20260914/`; independent audit
+`.superpowers/sdd/design-agent-v1-skill-family-plan/task-18-live-audit.md`.
+Local stack session83351 remains active. No production, push or separate worktree
+changes. The broader family goal stays open.

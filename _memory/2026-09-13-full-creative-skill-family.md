@@ -605,3 +605,79 @@ all4 fresh concurrent cases. Goal remains active. No push, production,
 brand-agent/website or external image-model-exp changes. Unrelated Sept8 notes
 remain unstaged. Plan patch initially failed context validation atomically;
 corrected matching context, no partial source mutation.
+# September14 Task18 in progress
+
+Task17 independent audit confirmed actual-native-copy is never matched to the
+validated direction. Existing positive test accepts only a red panel despite
+declared headline. Clue's current review also overlooks universal human-approval
+claims; source UI includes Auto-approved. Skills already distinguish UI controls
+from universal behavior, so adding another generic prohibition is insufficient.
+
+Root added Task18 to existing plan and dispatched one Astra xhigh implementer:
+candidate actual-copy binding plus per-occurrence support/readability judgments,
+existing freshness and scoped-edit semantics preserved. Source/excerpt truth
+remains unverified; no new evidence store or runtime agent. Independent audit and
+SDD rulings live in ignored task18 files. Another bounded read-only agent prepares
+four-brand source/copy contrasts; root's ignored runner uses original bytes and
+the existing configured solo model in four concurrent diagnostic leaf calls.
+These are explicitly guided semantic diagnostics, not ordinary creative runs.
+No code completion, live improvement or quality acceptance claimed yet.
+
+Task18 diagnostic completed: four simultaneous Grok4.6 medium leaf calls with
+frozen prior guidance and18source/copy cases. All five deliberate scope-inflation
+cases rejected, including both actual Clue lines; supported narrow claims remain.
+These guided calls are not full-agent creative outputs. 39.14/49.94/58.23/79.48s
+for Conduit/Clue/AWS/Google respectively. Gray cases differ conservatively; CTA
+invitations called nonfactual are acceptable, not failures against frozen labels.
+
+Initial sandbox calls failed DNS. Auto-review first rejected network transfer as
+nonpublic images. Root then fetched all six exact public originals without login
+from cluehq.ai/LinkedIn CDN and verified byte hashes. Re-review allowed the same
+diagnostic; no alternate upload workaround. Receipts remain under ignored
+copy-review-diagnostic-20260914. Public bytes and provider responses retained.
+Root visual correction: exact dark Google source0d9fa82ef179950d DOES visibly say
+Baixe o guia; previous audit note saying its blue CTA was blank was wrong. Frozen
+case reasons were withheld from model input, so this error did not contaminate
+the calls. Record correction; do not alter frozen prior inputs to hide the error.
+Provider raw cost totals0.130854 while governed cost_cents is0; this discrepancy
+is recorded, not a claim that calls were free. Current goal remains incomplete.
+
+Task18 mechanical commit dc63cbf4: actual-native-copy coverage, per-occurrence
+support/readability and whole-versus-scoped review. Initial full run2265passed,
+29failed7skipped; all failures fixed and243affected passed, final40copytests passed.
+No clean full rerun claimed. Independent reviewer found direct inspect(copy_review)
+host-path leak; implementation owner is correcting shared model serialization.
+Offline four frozen real scenes inventory4/3/3/2 occurrences, no unresolved binding.
+Task19 audit only: three redundant-turn spans sum98.830s,~10% of986.304s beyond
+combined240s targets. No latency implementation or predicted full speed solution.
+Next arm folder copy-binding-four-brands-20260914 prepared, dry-run exactly9
+prior-output-linked ready additions; no archive/cache reset or generation yet.
+Tabs13–16 now hold four staged ordinary home briefs, unsent pending fix/re-review.
+
+Task18 correction745f3a6d approved by independent scoped re-review,83 affected
+checks passed after3RED regressions. Nine prior-run linked additions archived
+recoverably, four generation caches backed up/reset; original ready catalogs match.
+Candidate source frozen745f3a6d,263sourcefiles,soloGrok4.6medium unchanged.
+Idle recorded stack stopped and restart launched as persistent session83351.
+Previous stack36845 obsolete. Four fresh platform requests next, no quality claim.
+
+Task18 four-brand live arm complete: source745f3a6d, all4 ordinary requests,
+generation submits within9.997s; source catalogs same, original records unchanged
+postQA34/90/504/601. Runtime261.721/453.391/549.100/384.523s, calls18/19/24/18;
+all79soloGrok4.6orchestrator,8compiles0errors, all4modelaccepted butdraft lifecycle.
+10/10 actual native copy occurrences bind current receipts. Google rejected and
+repaired first headline/font issue. Clue repeats unsupported mandatory-human-review
+claim while review admits Auto-approved counterevidence. Conduit Integration12.5px
+at1080 =>4.17pxat360 stillmarkedreadable. GooglefinaltinyCTA/body remains. No
+quality/four-minute promotion. AWS/Google oneGPTImagecall each with originalJPEG
+references; Clue/Conduit reuse originals, ConduitfetchedOraclelogo. NoGIFextraction.
+Browseredit/save/reload/restore all4 passed; whole scenes exactoriginal. v14→16,
+12→14,23→25,27→29. SVG/PNGexports passed1080square, noexportversionmutation,
+native text/images3/2,2/2,3/2,2/3. Alltemporarymarkersremoved. Reloadrequiresopening
+galleryartifact. InitialClueselectionnoeffect resolvedreload; causeunconfirmed.
+InspectorrawtypedefaultInter16 differsfromrenderedtokenSeasonMix67.5; notfontQApass.
+Tabs13–16 retained withnewprojects45b208/64a5f6/63757d/e8b4da, fullURLs inplan.
+Evidence copy-binding-four-brands-20260914; independenttask-18-live-audit.md.
+Next: frozen judgment counterexamples beforefullnewbatch; noautomaticbrandban or
+genericpromptpatch. Task19auditonly, remainingfamilies/timing/quality open.
+Stack83351active, no push/production/otherworktree changes. Goal remains active.
