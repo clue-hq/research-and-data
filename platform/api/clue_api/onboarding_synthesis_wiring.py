@@ -454,13 +454,18 @@ def onboarding_synthesis_context_policy() -> ContextAssemblyPolicy:
     L5 (focus) is large — 256 KiB under the utf8-byte counter — because the turn's core knowledge
     documents ride it as their own markdown. v1 budgeted 8 KiB there and expected the model to
     ``read_file`` its way to the same bytes; a company overview alone exceeds that, so the layer's
-    real job was impossible and every input arrived only as a path. An over-budget candidate is
-    *excluded*, silently, so the honest fix is a budget that fits the documents rather than a
-    smaller set of documents.
+    real job was impossible and every input arrived only as a path — an over-budget candidate was
+    then *excluded*, silently, and the honest fix was a budget that fits the documents rather than
+    a smaller set of documents.
+
+    Budgets are reported, never enforced (founder ruling 2026-09-14), which is why this is v3: an
+    over-budget layer is logged and carried whole, so these seven numbers now say what this surface
+    *expects* each layer to cost. The v2 numbers are kept unchanged — a surface whose documents
+    routinely blow its own expectation is worth seeing in the log, not worth re-guessing here.
     """
 
     return ContextAssemblyPolicy(
-        version="onboarding-synthesis-context-v2",
+        version="onboarding-synthesis-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)

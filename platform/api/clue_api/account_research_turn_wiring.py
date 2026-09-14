@@ -158,10 +158,15 @@ class _NoMemoryContext:
 
 
 def account_research_context_policy() -> ContextAssemblyPolicy:
-    """The exact conservative opening-context budget for account-research@v1."""
+    """The exact conservative opening-context budget for account-research@v1.
+
+    Budgets are reported, never enforced (founder ruling 2026-09-14), which is why this is v3:
+    ``max_tokens`` is what this surface expects a layer to cost, and an overrun is logged rather
+    than trimmed or failed. The numbers are unchanged from v2 — only what they mean is.
+    """
 
     return ContextAssemblyPolicy(
-        version="account-research-context-v2",
+        version="account-research-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
