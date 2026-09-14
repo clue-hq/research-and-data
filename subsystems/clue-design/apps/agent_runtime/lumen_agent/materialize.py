@@ -32,6 +32,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -49,6 +50,7 @@ _SKILLS_SUBDIR = "skills"
 _AGENT_DOC = "AGENT.md"
 _STAMP_NAME = ".sync-stamp"
 _LOCK_NAME = ".materialize.lock"
+_SCENE_PROJECTION_VERSION = "scene-catalog-v1"
 
 
 def _iter_source_files(root: Path):
@@ -63,6 +65,25 @@ def scene_view_manifest(root: Path | None = None) -> dict:
     manifest = json.loads((source / "views/scene/manifest.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1:
         raise RuntimeError("Unsupported scene knowledge view manifest")
+    for field in ("skills", "playbooks"):
+        names = manifest.get(field, [])
+        if not isinstance(names, list) or any(
+            not isinstance(name, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name)
+            for name in names
+        ) or len(names) != len(set(names)):
+            raise RuntimeError(f"Invalid scene {field} registration")
+    if not set(manifest.get("playbooks", [])) <= set(manifest.get("skills", [])):
+        raise RuntimeError("Scene playbooks must be registered skills")
+    from .models.creative_direction import PlaybookEvidenceRequirements
+
+    requirements = manifest.get("playbook_requirements", {})
+    if not isinstance(requirements, dict) or not set(requirements) <= set(manifest["playbooks"]):
+        raise RuntimeError("Scene evidence requirements must name registered playbooks")
+    try:
+        for requirement in requirements.values():
+            PlaybookEvidenceRequirements.model_validate(requirement)
+    except ValueError as error:
+        raise RuntimeError("Invalid scene playbook evidence requirements") from error
     return manifest
 
 
@@ -99,6 +120,7 @@ def _content_stamp(root: Path, knowledge_view: str = "legacy") -> str:
     """
     digest = hashlib.sha256()
     if knowledge_view != "legacy":
+        digest.update(_SCENE_PROJECTION_VERSION.encode("utf-8") + b"\0")
         digest.update(knowledge_view.encode("utf-8") + b"\0")
         digest.update((root / "views/scene/manifest.json").read_bytes() + b"\0")
     for rel, path in sorted(_view_files(root, knowledge_view).items()):
@@ -134,6 +156,40 @@ def _project_scene_sections(destination: Path, manifest: dict) -> None:
             replacement = (destination / replacement_path).read_text(encoding="utf-8")
             content = content[:start_at] + replacement.rstrip() + "\n\n" + content[end_at:]
         target.write_text(content, encoding="utf-8")
+
+
+def _write_scene_catalog(destination: Path, manifest: dict) -> None:
+    """Derive navigation from the same metadata DeepAgents actually discovers.
+
+    Only selected skill descriptions are included, never playbook bodies. Fail
+    before a model call if registration and the real skill scanner disagree.
+    """
+    from deepagents.backends.filesystem import FilesystemBackend
+    from deepagents.middleware.skills import _list_skills
+
+    discovered = {
+        skill["name"]: skill
+        for skill in _list_skills(
+            FilesystemBackend(root_dir=destination, virtual_mode=True), "/skills/"
+        )
+    }
+    if set(discovered) != set(manifest["skills"]):
+        raise RuntimeError("Scene registration differs from discoverable skill metadata")
+    lines = [
+        "# Scene playbook catalog",
+        "",
+        "Derived from registered skill descriptions; these are communicative choices,",
+        "not required layouts. Select by request, inspected sources and available evidence.",
+        "Read the relevant skill body and shared guides as needed at any stage, including",
+        "authoring, review and later revisions. Re-read after context loss or a changed need.",
+        "",
+    ]
+    for name in manifest["playbooks"]:
+        description = " ".join(discovered[name]["description"].split())
+        lines.append(f"- [{name}](/.deepagent/skills/{name}/SKILL.md): {description}")
+    path = destination / "knowledge/scene/catalog.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def materialize_agent_workspace(
@@ -200,6 +256,7 @@ def materialize_agent_workspace(
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dest)
                 _project_scene_sections(knowledge_dest, scene_view_manifest(source))
+                _write_scene_catalog(knowledge_dest, scene_view_manifest(source))
                 skills_src = knowledge_dest / _SKILLS_SUBDIR
                 agent_doc_src = knowledge_dest / _AGENT_DOC
             # Canonical skill copies under /.deepagent/skills (the SkillsMiddleware

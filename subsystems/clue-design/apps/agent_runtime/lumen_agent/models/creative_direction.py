@@ -37,6 +37,14 @@ class SourceRole(DirectionModel):
     role: Literal["source", "treatment", "composition", "logo", "product"]
 
 
+class PlaybookEvidenceRequirements(DirectionModel):
+    """Declarative evidence prerequisites, never layout or CTA requirements."""
+
+    source_role: Literal["source", "treatment", "composition", "logo", "product"] | None = None
+    claim_kinds: list[Literal["assertion", "quote", "statistic"]] = Field(default_factory=list)
+    attribution: bool = False
+
+
 class LayerPlacement(DirectionModel):
     """Fractions of the artboard, converted to layout points by the author."""
 
@@ -127,6 +135,8 @@ class CreativeDirection(DirectionModel):
                 raise ValueError("copy points to unknown evidence")
             if item.claim_kind != "positioning" and not item.evidence_refs:
                 raise ValueError("factual copy requires evidence references")
+            if item.claim_kind == "quote" and not self._has_attribution(item):
+                raise ValueError("quoted copy requires attribution linked to its evidence")
         copy_ids = {item.id for item in self.copy_blocks}
         if {layer.copy_id for layer in self.layers if layer.copy_id} != copy_ids:
             raise ValueError("every copy block must bind to a native text layer")
@@ -136,18 +146,36 @@ class CreativeDirection(DirectionModel):
                 raise ValueError("authentic image is absent from source_roles")
             if not set(layer.reference_asset_ids) <= sources:
                 raise ValueError("conditioning image is absent from source_roles")
-        if self.playbook == "authentic-product":
-            products = {s.asset_id for s in self.source_roles if s.role == "product"}
+        return self
+
+    def _has_attribution(self, item: CopyBlock) -> bool:
+        return any(
+            credit.role == "attribution"
+            and credit.id != item.id
+            and bool(set(credit.evidence_refs) & set(item.evidence_refs))
+            for credit in self.copy_blocks
+        )
+
+    def validate_evidence_requirements(self, requirements: PlaybookEvidenceRequirements) -> None:
+        """Keep family prerequisites data-driven without weakening proof custody.
+
+        A scoped repair retains relevant unchanged proof/source bindings in this
+        handoff; the round delta identifies mutations. Intent alone never exempts
+        a missing source or attribution.
+        """
+        if requirements.source_role:
+            sources = {s.asset_id for s in self.source_roles if s.role == requirements.source_role}
             if not any(
-                layer.kind == "authentic_image" and layer.asset_id in products
+                layer.kind == "authentic_image" and layer.asset_id in sources
                 for layer in self.layers
             ):
-                raise ValueError("authentic-product requires a supplied product image")
-        if self.playbook == "attributed-proof":
-            if not any(
-                c.claim_kind in {"quote", "statistic"} and c.evidence_refs for c in self.copy_blocks
-            ):
-                raise ValueError("attributed-proof requires sourced proof")
-            if not any(c.role == "attribution" and c.evidence_refs for c in self.copy_blocks):
-                raise ValueError("attributed-proof requires sourced attribution")
-        return self
+                raise ValueError(
+                    f"Selected playbook requires a supplied {requirements.source_role} image"
+                )
+        proof = [c for c in self.copy_blocks if c.claim_kind in requirements.claim_kinds]
+        if requirements.claim_kinds and not proof:
+            raise ValueError("Selected playbook requires sourced proof of a registered claim kind")
+        if requirements.attribution and (
+            not proof or any(not self._has_attribution(item) for item in proof)
+        ):
+            raise ValueError("Selected playbook requires attribution linked to its proof")

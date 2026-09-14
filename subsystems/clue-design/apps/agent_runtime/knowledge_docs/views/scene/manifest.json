@@ -16,13 +16,41 @@
     "repair-design",
     "brand-and-tokens",
     "effects",
-    "tools"
+    "tools",
+    "problem-solution",
+    "feature-deep-dive",
+    "product-in-use",
+    "launch-announcement",
+    "comparison-alternatives",
+    "case-study-narrative",
+    "objection-handling",
+    "offer-conversion",
+    "event-webinar",
+    "integration-ecosystem",
+    "educational-guide",
+    "visual-metaphor",
+    "customer-spotlight",
+    "editorial-pov"
   ],
   "playbooks": [
     "type-led-positioning",
     "authentic-product",
     "attributed-proof",
-    "workflow-contrast"
+    "workflow-contrast",
+    "problem-solution",
+    "feature-deep-dive",
+    "product-in-use",
+    "launch-announcement",
+    "comparison-alternatives",
+    "case-study-narrative",
+    "objection-handling",
+    "offer-conversion",
+    "event-webinar",
+    "integration-ecosystem",
+    "educational-guide",
+    "visual-metaphor",
+    "customer-spotlight",
+    "editorial-pov"
   ],
   "knowledge": [
     "knowledge/scene/direction-contract.md",
@@ -44,7 +72,8 @@
     "knowledge/export/print-geometry.md",
     "knowledge/export/preview-quality.md",
     "knowledge/loop/layout-cluster-repair.md",
-    "knowledge/scene/image-grammar.md"
+    "knowledge/scene/image-grammar.md",
+    "knowledge/scene/placement.md"
   ],
   "pinned_knowledge": [
     "knowledge/lumen-dsl/grammar.md",
@@ -60,5 +89,17 @@
         "replacement": "knowledge/scene/image-grammar.md"
       }
     ]
+  },
+  "playbook_requirements": {
+    "authentic-product": {
+      "source_role": "product"
+    },
+    "attributed-proof": {
+      "claim_kinds": [
+        "quote",
+        "statistic"
+      ],
+      "attribution": true
+    }
   }
 }

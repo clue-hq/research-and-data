@@ -3,7 +3,13 @@
 Judge the actual current rendered scene at full view and final placement size.
 Check idea/copy, evidence and attribution, hierarchy, readable contrast, brand
 identity, authentic product crop, independent editable layers and reference
-treatment. A missing CTA is not a defect when the objective needs none.
+treatment. Compare the reference's visual invariants against the actual rendered
+relationships, not merely matching palette or motif. Read the relevant playbook
+and shared resources again if a revision raises a new question; discovery remains
+available throughout review. A missing CTA is not a defect when the objective
+needs none; a present CTA must have the right next step, brand-supported form,
+measured label and readable local contrast. Check placement-specific overlays
+through `knowledge/scene/placement.md`, never a universal bottom exclusion band.
 
 Preflight validates mechanics, not taste or fidelity. Inspect the image itself;
 do not accept because a tool returned success or a previous round looked good.

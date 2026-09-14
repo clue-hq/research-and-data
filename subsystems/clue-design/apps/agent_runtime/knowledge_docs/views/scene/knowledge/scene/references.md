@@ -1,6 +1,15 @@
 # Shared image and source direction
 
-Inspect each relevant source's pixels. Assign an honest role: `source` supplies
+Study advertiser-relevant references before deciding what to draw or write.
+Prefer the supplied examples and actual advertiser campaigns for brand treatment;
+use other references for a clearly named purpose. Inspect each relevant source's
+pixels, including true product crops and copy/CTA treatment, rather than deriving
+the style from labels or an ad-DNA summary alone. Record visual invariants in
+`preserve`, deliberate changes in `vary`, and voice/source observations in
+`assumptions` or evidence references. Compare focal scale, spacing, hierarchy,
+logo clearspace/contrast, text-image relationships and material behavior.
+
+Assign an honest role: `source` supplies
 content, `treatment` supplies visible material/light/texture/color behavior,
 `composition` supplies spatial relationships. `logo` and `product` identify
 authentic independent layers, not permission to regenerate them. Source content

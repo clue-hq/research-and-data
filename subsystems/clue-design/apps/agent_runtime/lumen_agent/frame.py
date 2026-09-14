@@ -536,7 +536,11 @@ def render_pregenerated_assets_text(
 
 def build_frame_payload(tools: Any) -> str:
     """The whole §5.1 block, appended to the flag-on author system prompt."""
-    sections: list[str] = [_HEADER]
+    scene_candidate = getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate"
+    sections: list[str] = [
+        _HEADER.replace("the resolved type ramp", "authored type context")
+        if scene_candidate else _HEADER
+    ]
 
     card = tools.brand_card
     if card:
@@ -570,8 +574,18 @@ def build_frame_payload(tools: Any) -> str:
 
     page_id = next(iter((tools.scene or {}).get("pages") or {}), None)
     width, height = tools._page_dimensions(page_id)
-    ramp = resolve_type_ramp(card, width=width, height=height)
-    sections.append("## TYPE RAMP — resolved for this canvas\n\n" + _render_type_ramp(ramp))
+    if scene_candidate:
+        sections.append(
+            "## TYPE MEASUREMENT\n\n"
+            "The brand card above carries authored type families, weights and sizes. "
+            "Those sizes are source context, not canvas-derived legibility floors. "
+            "Choose hierarchy from the inspected reference and actual copy; measure "
+            "line breaks and visible readability at the intended placement size. "
+            "Use knowledge/scene/components.md and knowledge/scene/placement.md."
+        )
+    else:
+        ramp = resolve_type_ramp(card, width=width, height=height)
+        sections.append("## TYPE RAMP — resolved for this canvas\n\n" + _render_type_ramp(ramp))
 
     digest = build_scene_digest(tools)
     sections.append(

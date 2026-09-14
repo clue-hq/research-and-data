@@ -8,12 +8,15 @@ Round `direction.md` can refer to it and contain only the repair delta.
 Required fields:
 
 - `schema_version`: 1; `objective`, `audience`: concrete strings.
-- `playbook`: one ID from this view's playbook catalog; `intent`: `native`,
+- `playbook`: one registered ID from `knowledge/scene/catalog.md` or the discovered
+  skill metadata. The catalog derives from skill descriptions; new registrations
+  need no Python enum change. `intent`: `native`,
   `reuse`, `edit`, `close_companion`, `new_concept` or `palette_only`.
 - `copy`: list of `{id, role, text, claim_kind, evidence_refs}`. New creatives
   need copy; an `edit` intent may use an empty list for a logo/geometry-only change. Roles
   are headline/support/cta/attribution; claim kind is positioning/assertion/quote/
-  statistic. Assertion/quote/statistic needs evidence IDs. CTA is optional.
+  statistic. Assertion/quote/statistic needs evidence IDs. A quote also requires
+  an attribution copy block sharing its evidence ID. CTA is optional.
 - `evidence`: list of `{id, source, excerpt}`. Point to supplied or actually
   retrieved evidence. These are provenance references, not invented proof.
 - `source_roles`: list of `{asset_id, role}`. Role is source/treatment/composition/
@@ -31,7 +34,20 @@ Required fields:
 - `review_needs`: nonempty list of specific checks; `assumptions`: concise list.
 
 Keep real logo/product images independent; generated conditioning cannot certify
-their exactness. An authentic-product direction needs a real product image.
-An attributed-proof direction needs sourced quote/statistic and attribution.
-The validator checks structure, references and available assets. It cannot prove
+their exactness. Select evidence and product sources according to the chosen
+family and actual message. Registered evidence prerequisites are data in the
+scene manifest: authentic-product requires an independent supplied product image;
+attributed-proof requires sourced quote/statistic and attribution linked to that
+proof. These prerequisites apply to new work and edits. Retain the relevant
+unchanged proof/source bindings in this direction during a narrow repair; the
+round delta names which existing components to mutate. Including unchanged
+attribution in the handoff does not authorize a collateral change. Intent=edit
+alone never permits missing required evidence. Other unchanged components may be
+omitted when their evidence and bindings are not needed for the selected work.
+Visible proof still needs honest qualification and attribution; a family name
+cannot certify evidence. Revisit the relevant skills at any stage and amend
+this same record explicitly if the copy, intent, sources or layer plan changes.
+The author can call the same validator after a revision; do so before using the
+changed handoff. It checks structure, references, available assets and registered
+evidence prerequisites, not a family-specific layout or a required CTA. It cannot prove
 truth or visual quality. Review sources and the final composition.

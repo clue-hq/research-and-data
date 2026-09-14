@@ -4009,7 +4009,11 @@ class LumenDesignTools:
         or truth of model-authored evidence excerpts. Writes no scene geometry.
         """
         from ..materialize import scene_view_manifest
-        from ..models.creative_direction import CREATIVE_DIRECTION_FILENAME, CreativeDirection
+        from ..models.creative_direction import (
+            CREATIVE_DIRECTION_FILENAME,
+            CreativeDirection,
+            PlaybookEvidenceRequirements,
+        )
 
         path = self.trace_dir / "workspace" / CREATIVE_DIRECTION_FILENAME
         try:
@@ -4020,6 +4024,11 @@ class LumenDesignTools:
             )
             if direction.playbook not in manifest.get("playbooks", []):
                 raise ValueError("Playbook is not in the delivered scene catalog.")
+            direction.validate_evidence_requirements(
+                PlaybookEvidenceRequirements.model_validate(
+                    manifest.get("playbook_requirements", {}).get(direction.playbook, {})
+                )
+            )
             available = {
                 **(self.config.reference_assets or {}),
                 **(self.config.brand_kit_assets or {}),

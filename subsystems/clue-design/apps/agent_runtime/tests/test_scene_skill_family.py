@@ -354,7 +354,7 @@ def test_candidate_reference_scaffold_uses_the_shared_direction_record(tmp_path,
         "unknown-field",
         "blank-copy",
         "role-count",
-        "missing-product",
+        "unregistered-image-source",
         "unattributed-proof",
     ],
 )
@@ -384,9 +384,14 @@ def test_invalid_direction_records_refuse(mutation):
         payload["copy"][0]["text"] = "  "
     elif mutation == "role-count":
         payload["layers"][0].update(reference_asset_ids=["ref"], reference_roles=[])
-    elif mutation == "missing-product":
-        payload["playbook"] = "authentic-product"
+    elif mutation == "unregistered-image-source":
+        payload["layers"].append({
+            "id": "product", "kind": "authentic_image", "purpose": "Product detail",
+            "asset_id": "missing-product",
+            "placement": {"x": 0, "y": 0, "width": 0.2, "height": 0.2},
+        })
     else:
         payload["playbook"] = "attributed-proof"
+        payload["copy"][0].update(claim_kind="quote", evidence_refs=[])
     with pytest.raises(ValueError):
         cls.model_validate(payload)

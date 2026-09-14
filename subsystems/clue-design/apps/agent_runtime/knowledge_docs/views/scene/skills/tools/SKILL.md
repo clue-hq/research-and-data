@@ -8,10 +8,13 @@ description: Use when choosing an available tool for a scene design step or reco
 Use only tools actually registered for your role. The director inspects/views,
 delegates via task, validates the creative direction and finalizes; it does not
 compile. The author uses compile_dsl_block, asset, fetch_logo, inspect/view,
-validate_binding_set and preflight_design; in the fast loop it also renders.
+validate_binding_set, validate_creative_direction and preflight_design; in the
+fast loop it also renders. Validate revisions through the same shared handoff.
 The reviewer has inspect/view and filesystem tools only.
 
-Read files via their delivered virtual paths. Do not call an imagined knowledge
+All roles can discover and read the registered skill bodies and shared resources
+on demand, including during review or a later revision. Read files via their
+delivered virtual paths. Do not call an imagined knowledge
 loader, export API or image-edit command. Tool descriptions define argument
 schemas; `knowledge/lumen-dsl/*` defines DSL syntax. Asset/reference mechanics
 live in `knowledge/scene/components.md` and `knowledge/scene/references.md`.

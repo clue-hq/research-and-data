@@ -477,6 +477,8 @@ def create_design_deepagent(
     ]
     if author_render_preview is not None:
         author_tools.append(author_render_preview)
+    if scene_candidate:
+        author_tools.append(tools.validate_creative_direction)
 
     subagents = [
         {

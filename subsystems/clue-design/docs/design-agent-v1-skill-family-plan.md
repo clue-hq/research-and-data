@@ -523,3 +523,62 @@ Prepare other brands via normal local platform paths and run the benchmark only
 when readiness and isolation are real. Record timing, input receipts and first
 delivery separately from repairs. Fix observed failures at their responsible
 layer, keep failed outputs, and report remaining quality gaps honestly.
+
+## Full-family continuation — September 13, 2026
+
+The user has authorized the full candidate family now. The original four remain;
+fourteen additional playbooks extend communicative coverage. These are available
+capabilities, not eighteen compulsory templates or eighteen runtime agents.
+
+| Coverage | Candidate playbooks |
+| --- | --- |
+| Positioning and explanation | type-led-positioning, problem-solution, visual-metaphor, editorial-pov |
+| Product and workflow | authentic-product, feature-deep-dive, product-in-use, workflow-contrast, integration-ecosystem |
+| Proof and evaluation | attributed-proof, customer-spotlight, case-study-narrative, comparison-alternatives, objection-handling |
+| Campaign purpose | launch-announcement, offer-conversion, event-webinar, educational-guide |
+
+Each additional family has conditional composition approaches, copy/evidence
+decisions, source-preservation rules, native/raster layer responsibilities,
+missing-evidence behavior and counterexamples. Research and authored scenario
+comparisons support candidate instruction design; they do not certify performance
+or rendered quality. CTA presence, wording and treatment come from relevant
+inspected originals and the requested intent. Source ads are evidence to assess,
+not automatically good examples or evidence of campaign effectiveness.
+
+The scene catalog is derived from the actual registered skill metadata. Its
+descriptions remain available to the director and author on model calls; bodies
+can be loaded or re-read during composition, review and subsequent revisions.
+The author can validate a revised creative direction. Proof/product prerequisites
+are declared as catalog data, and source-linked quote attribution is enforced
+across families. These are evidence requirements, not layout rules. The candidate
+removes inherited canvas-derived type floors while retaining measured readability,
+authentic logo variants and native composition. Website/legacy guidance stays
+separate.
+
+Current source expansion added five unique public AWS originals and five Google
+Cloud originals through the existing custody seams. AWS includes two stills and
+three animated GIFs; Google includes five stills. All ten served bytes match
+their recorded source hashes and are unavailable under another workspace. This
+is a bounded reference expansion, not full ad ingestion or automatic labeling.
+The separate Brand Asset Intelligence worktree owns that larger context loop.
+
+Before live samples, freeze candidate source/config and fix the discovered image
+observation MIME error: original JPEG/GIF bytes were being labeled PNG. Preserve
+original custody, expose actual still-image MIME, and label any first-frame-only
+observation explicitly. A Conduit source audit also found uploaded references and
+a prior generated output; preserve the earlier specific provider-transfer approval
+boundary and exclude prior generated output from reference-quality claims.
+
+Next live verification uses one or two fresh ordinary requests per existing
+workspace on ports 3021–3024. Requests state purpose and format, without skill
+names, asset IDs, prescribed copy or layout instructions. Record what the agent
+actually reads, selected sources and family, model pins, original prompts, first
+delivery, repairs, native edit/save/reload/export evidence and elapsed time.
+Catalog/offline checks are implemented; visual acceptance, repeatability and the
+three-to-four-minute finished-creative target remain unproven until those runs.
+
+Candidate verification update: the final runtime suite passes **1867 tests with
+7 skipped**. Image observations now carry correct MIME and explicit still-frame
+semantics for animated references, with original bytes preserved. Three fresh-project
+ordinary requests are running; rendered quality, native editing and finished latency
+remain unvalidated until their first deliveries are inspected.

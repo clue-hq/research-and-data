@@ -1,6 +1,10 @@
 # Shared scene composition and native components
 
-Compose from the message and inspected brand sources. Establish one dominant
+Compose from the message and inspected advertiser-relevant references. Identify
+the visual invariants first: focal scale, type/image relationships, reading order,
+material behavior, characteristic spacing and authentic identity treatment.
+Translate those relationships to this content; no full-page skeleton is binding.
+Establish one dominant
 element, a clear second read and intentional space. Components are reusable
 mechanics, not fixed proportions, mandatory cards or required layout patterns.
 Recompose for the actual words, imagery and aspect ratio. Type-only is a valid
@@ -12,12 +16,28 @@ connectors and meaningful UI-independent diagrams. Use real independently
 placeable images for logos and authentic product screenshots/photos. Never
 redraw, recolor or typeset a substitute logo; a favicon does not replace a
 readable wordmark. Choose a supplied variant that fits its background. Missing
-variants are gaps; a white plate is not the absent reversed logo.
+variants are gaps; a white plate is not the absent reversed logo. Preserve the
+source logo's aspect and real clearspace guidance. Inspect visible ink against
+the local background, including transparent padding and texture; containing the
+file does not prove the visible mark is readable. Choose a contrasting authentic
+variant or repair the surrounding composition. Do not manufacture a new lockup.
 
 Use brand tokens and the kit's actual type families and weights. Let the real
 headline determine its measure and line breaks. Text height hugs content;
 width follows the composition. Don't shrink support to excuse overcrowding.
 At placement size the headline must be readable and support must still function.
+Kit role sizes are source values, not universal ad sizes. Measure the actual
+words at the intended output and preview size, then choose hierarchy and line
+breaks from the direction. There is no compulsory headline width, type ratio,
+margin fraction, card count or two-column split.
+
+If the direction calls for a CTA, build its observed form with native text and
+independent geometry when appropriate. Measure label width and height before
+adding content-driven padding and brand-supported corner treatment. A text CTA
+needs no invented button frame; a creative with no CTA needs no reserved CTA row.
+Quotes and metrics use independent native text with source-backed qualification
+and attribution where needed. Their treatment follows the inspected examples,
+not a compulsory card. Use native connectors only when the relationship is real.
 
 Page before spend: on a pageless document compile the explicit page size, real
 copy, existing assets and sized artwork reservation together. New image nodes

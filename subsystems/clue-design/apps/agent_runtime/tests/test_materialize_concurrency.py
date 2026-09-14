@@ -14,6 +14,13 @@ from unittest.mock import patch
 import pytest
 from lumen_agent import materialize
 
+_ACTORS = ("first", "second", "third")
+_EVENT_TIMEOUT_SECONDS = 10
+# The holder pauses while the controller starts and observes two contenders,
+# each with its own event timeout. Its release deadline must cover that whole
+# sequence plus one controller/cleanup allowance, not just one contender wait.
+_RELEASE_TIMEOUT_SECONDS = len(_ACTORS) * _EVENT_TIMEOUT_SECONDS
+
 
 def _source_tree(root):
     source = root / "source"
@@ -53,7 +60,7 @@ def _instrument(events, release, actor):
     def copytree(source, destination, *args, **kwargs):
         if Path(destination).name == "knowledge_docs":
             events.put((actor(), "copy"))
-            if not release.wait(10):
+            if not release.wait(_RELEASE_TIMEOUT_SECONDS):
                 raise TimeoutError("test controller did not release materialization")
         return real_copytree(source, destination, *args, **kwargs)
 
@@ -109,7 +116,7 @@ def test_concurrent_materializers_share_one_complete_refresh(tmp_path, workers, 
     started = []
 
     def exercise():
-        for name in ("first", "second", "third"):
+        for name in _ACTORS:
             if workers == "processes":
                 worker = context.Process(
                     target=_process_call, args=(source, workspace, events, release, name)
@@ -121,10 +128,10 @@ def test_concurrent_materializers_share_one_complete_refresh(tmp_path, workers, 
             worker.start()
             started.append(worker)
             expected = "copy" if name == "first" else "blocked"
-            assert events.get(timeout=10) == (name, expected)
+            assert events.get(timeout=_EVENT_TIMEOUT_SECONDS) == (name, expected)
         release.set()
-        assert {events.get(timeout=10) for _ in started} == {
-            (name, "done") for name in ("first", "second", "third")
+        assert {events.get(timeout=_EVENT_TIMEOUT_SECONDS) for _ in started} == {
+            (name, "done") for name in _ACTORS
         }
 
     try:
