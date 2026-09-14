@@ -182,9 +182,30 @@ Every read comes in pages. A page ends with `next_offset`; when it is not null, 
 
 ---
 
+### Task 7: Free-flowing project documents — any path under `project/` is a document
+
+**Founder ruling (2026-09-14):** the harness is not to be made deterministic with a type, class or branch per narrow case. Document creation is free-flowing: the agent may write any document it judges useful under `project/`; the platform records and tracks, it does not gatekeep by shape. Judgement calls ("is this the plan?") are handled by the skill telling the agent to ask the human, never by code.
+
+**What changes in plan 3's writer (`platform/api/clue_api/project_root_writer.py`):**
+- The folder→kind map, the `unknown_project_path` refusal and the persona pin check (`icp_not_pinned`) go. One generic path: **any `.md` under `project/` that is not a compiled file** lands as a versioned document at that path, in the project scope, through one writer (`write_project_document(conn, storage, ProjectDocumentWrite(workspace_id, brand_id, project_id, turn_id, user_id, path, document_text, expected_version))` — the plan writer generalized to a path; `write_project_plan` and `write_project_persona` become thin calls of it and stay for their existing callers/tests).
+- `kind` and `title` are the model's: read from its front matter (`kind`, `title`), defaulting to `document` and the first heading. The platform stamps only what it owns — `version`, `status: ready`, `project_id`, `brand_id`, `authored_by`, `authored_at` — over the model's front matter, keeping everything else the model wrote.
+- The ICP path keeps `author_icp_document` (the gate and every launch read its key and lineage; that is a mechanical consumer). Personas are ordinary documents; "personas follow the pinned ICP" moves to the skill text.
+- Only the compiled files refuse: `status.md`, `decisions.md`, `index.json`, `artifacts/**` (`compiled_file_read_only`). Revision conflicts keep their one message shape.
+- **The plan is a pin, not a path.** A document becomes *the* plan when the human says so: the skill tells the agent that when a document it is about to write reads like a project-level plan, it asks the human whether to pin it as the plan; on yes it writes `role: plan` in that document's front matter (a re-write of the same path is a new version). `status.md`, the Plan tab and the card title read the row whose current version carries `role: plan`; `plan.md` stays a fine default path, not a rule. `PLAN_PATH`-keyed readers (`current_plan_version`, `frontend_read` "plan" lookups, the design-leg plan card) resolve the pinned document first and fall back to `project/plan.md`.
+- Cards: `PROJECT_DOCUMENT_OBJECT_TYPES` collapses to one object type, `project_document`; the card title is the document's title (the outcome carries `title`, the finalize merge puts it on the ref's `title` field — add `title: str | None = None` to `DomainObjectRef` and to `PlanPart` wiring; the older `project_icp_document`/`project_persona_document` types stay in `_PLAN_OBJECT_TYPES` for replay of plan-3 receipts). The card reads "<title> v<n>".
+- Skills: `plan-authoring@v2` = "any document you write under `project/` is versioned and editable by the human; if what you are writing is the project's plan, ask before pinning it, then write `role: plan` in its front matter; do not add a domain_ref for it — the card comes from the row"; `persona-authoring@v2` says personas follow the pinned ICP key and to ask if the human wants another profile's; `icp-authoring` unchanged; stage0-interview v33 §6b/§5c point at them; `manual-documents-decisions@v3` "Writing under project/" rewritten to the free-flowing rule.
+
+**Files:** modify `project_root_writer.py`, `arv2/project_documents.py`, `agent_runtime_wiring.py` (`PROJECT_DOCUMENT_OBJECT_TYPES`, title on the merged ref), `conversation_turns.py` (`_DOCUMENT_PART_TITLES` → title from the ref), `clue_agents/contracts.py` (`DomainObjectRef.title`), `clue_agents/versioned_root.py` (`VersionedWriteOutcome.title`), `project_status.py`/`project_library.py` (plan = pinned role, fallback `plan.md`), `frontend_read/project_documents.py` (`_EDITABLE_KINDS` → every project-scoped document), the three skills, profile v56, manual v3 chapter text.
+**Tests:** `tests/api/test_project_root_writer_db.py` (a `project/notes/competitive-brief.md` write lands v1 with the model's `kind: brief` and title; a second write v2; `status.md` refused; a persona for a non-pinned key lands — no refusal); `tests/api/test_o6_conversation_composition_db.py` (the card for a free document is titled from the document); `tests/api/test_lane_d5_gate_read_and_rich_parts_db.py` (title from the ref; old object types still render); `tests/api/test_project_status*` (plan resolved by `role: plan`, fallback to `plan.md`).
+
+- [ ] **Steps:** failing tests → implement → run (lane DB for `_db.py`, offline for the rest) → commit — `feat(project-root): any document under project/ is a versioned document; the plan is a pinned role, not a path; cards titled from the document (founder ruling 2026-09-14)`.
+
+---
+
 ## Self-review
 
 - **Spec coverage:** W9 pagination (Task 1), `read_claims` (Task 2), W4 read side (Task 3), spill contract (Task 4), skill (Task 5), proof (Task 6). W10 shipped in the hotfix. ✔
 - **Founder ruling 2026-09-14 (no hard context budgets):** Task 0; the policy version bump is what keeps v2 receipts replay-exact. ✔
+- **Founder ruling 2026-09-14 (free-flowing documents):** Task 7 replaces plan 3's kinds-by-folder with one generic path writer, the plan as a pinned `role`, and cards titled from the document; ICP authoring keeps its gate consumer. ✔
 - **Placeholders:** the design DAL import and the router-test fixture are named by their call sites, not invented. ✔
 - **Type consistency:** `READ_REFERENCES_BUDGET_BYTES`/`receipt_bytes` from the hotfix; `SpillSink.write_spill` matches `AnchoredAgentWorkspaceBackend.write_spill`; `AccountClaimView` reused by `read_claims`. ✔
