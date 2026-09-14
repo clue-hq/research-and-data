@@ -955,3 +955,52 @@ def test_a_result_inside_the_budget_is_never_spilled() -> None:
 
     assert sink.writes == []
     assert receipt.reference_values == executor.references
+
+
+def test_the_receipt_the_model_reads_carries_the_stub_not_the_payload() -> None:
+    """The public path, end to end. ``execute`` drops the receipt it builds; the model is handed
+    the one ``recover`` rebuilds from the result artifact. If hydration restored the full
+    references the threshold would be a rule the model never actually sees, and the oversized
+    payload would reach its context anyway — the defect, moved rather than fixed."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+    assert progress[-1].status == "completed"
+
+    recovered = run_async(adapter.recover(execution_id=validated.execution_id))
+    receipts = recovered["operation_receipts"]
+    assert isinstance(receipts, tuple)
+    receipt = receipts[0]
+    assert isinstance(receipt, GovernedOperationReceipt)
+
+    operation_id = validated.operations[0].operation_id
+    assert receipt.reference_values == {
+        "spilled_to": f"reads/{operation_id}.json",
+        "count": 400,
+        "summary": executor.references["summary"][:300],
+        "tool": "read_project@1",
+    }
+    # Hydration re-spills the same operation to the same name — a rewrite, not a second file —
+    # and the bytes behind the pointer are still the whole result.
+    assert {name for name, _ in sink.writes} == {str(operation_id)}
+    assert json.loads(sink.writes[-1][1]) == executor.references
+
+
+def test_the_recovered_receipt_keeps_the_full_references_when_they_fit() -> None:
+    """The rebuilt receipt is only a stub when the result earned one."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink, claim_count=4)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+
+    recovered = run_async(adapter.recover(execution_id=validated.execution_id))
+    receipts = recovered["operation_receipts"]
+    assert isinstance(receipts, tuple)
+    receipt = receipts[0]
+    assert isinstance(receipt, GovernedOperationReceipt)
+
+    assert receipt.reference_values == executor.references
+    assert sink.writes == []

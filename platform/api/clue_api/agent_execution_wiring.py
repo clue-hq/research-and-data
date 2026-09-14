@@ -72,7 +72,7 @@ from clue_api.turn_binding import (
     CapturedTurnUnavailable,
     trusted_turn_fields,
 )
-from clue_core import ExecutionId
+from clue_core import ExecutionId, OperationId
 from clue_db import ConnFactory, database_url, transaction
 from clue_execution import (
     BarrierNode,
@@ -1884,15 +1884,21 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             status=AgentExecutionStatus.COMPLETED,
             replayed=canonical_result.replayed,
             artifact_refs=(result_ref,),
-            reference_values=self._receipt_reference_values(operation, canonical_result),
+            reference_values=self._receipt_reference_values(
+                address=operation.address,
+                operation_id=operation.operation_id,
+                references=cast(dict[str, JsonValue], canonical_result.references),
+            ),
         )
 
     def _receipt_reference_values(
         self,
-        operation: ValidatedOperation,
-        canonical_result: ToolResult,
+        *,
+        address: str,
+        operation_id: OperationId,
+        references: dict[str, JsonValue],
     ) -> dict[str, JsonValue]:
-        """This result's references, or a pointer to them when they are too big to carry.
+        """These references, or a pointer to them when they are too big to carry in a receipt.
 
         The receipt's bound is a *refusal*, and it lands after the tool has already run and spent:
         on 2026-09-13 a 72-claim account read became "the agent cannot read this account" that
@@ -1900,19 +1906,25 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         are written into the thread's ``reads/`` folder and the receipt carries a stub naming the
         file, which the model opens with ``read_file``.
 
-        The result the receipt no longer quotes is not lost: it was persisted as ``result_ref``
-        and journaled a few lines above, before this runs, so replay and the inspector still see
-        the whole payload. Only the inline copy shrinks.
+        Both ways a receipt is built call this and nothing else: the live one in ``_execute_tool``
+        and the rebuilt one in ``_hydrate_tool_reference_values``. They must not drift, because the
+        rebuilt receipt is the one the model is actually handed — ``execute`` drops the live
+        receipt, and ``GovernedAgentToolFactory`` reads the result of ``recover``. A threshold
+        applied in only one of the two is a threshold the model never sees.
+
+        The result the receipt no longer quotes is not lost: it is the ``result_ref`` artifact,
+        persisted and journaled before any of this. Only the inline copy shrinks.
         """
 
-        references = cast(dict[str, JsonValue], canonical_result.references)
         if self._spill_sink is None:
             return references
         spilled = _canonical_bytes(references)
         if len(spilled) <= SPILL_THRESHOLD_BYTES:
             return references
-        path = self._spill_sink.write_spill(str(operation.operation_id), spilled)
-        return spill_stub(address=operation.address, path=path, references=references)
+        # Idempotent by construction: the name is the operation's, and a re-spill of the same
+        # operation replaces its own file. Hydration re-running this is a rewrite, not a conflict.
+        path = self._spill_sink.write_spill(str(operation_id), spilled)
+        return spill_stub(address=address, path=path, references=references)
 
     async def _execute_delegation(
         self,
@@ -2109,6 +2121,11 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         ``reference_values`` by itself. The governed model nevertheless needs those IDs, flags,
         counts, and next-round cursors to continue. Read the exact verified ToolResult artifact and
         restore only its already-schema-validated ``references`` mapping.
+
+        This is the receipt the model actually reads — ``execute`` drops the live one — so the
+        restoration runs through the same ``_receipt_reference_values`` rule the live path uses. An
+        oversized result therefore comes back here as the spill stub too, not as the payload the
+        threshold exists to keep out of the model's context.
         """
 
         if receipt.kind != "tool":
@@ -2122,9 +2139,19 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         if f"{result.tool}@{result.version}" != receipt.address:
             raise ValueError("tool receipt artifact belongs to a different tool address")
         references = cast(dict[str, JsonValue], result.references)
-        if receipt.reference_values and receipt.reference_values != references:
+        projection = self._receipt_reference_values(
+            address=receipt.address,
+            operation_id=receipt.operation_id,
+            references=references,
+        )
+        # Compare like with like. A stored projection is honest if it is either form this adapter
+        # could legitimately have written: the references themselves, or the spill stub standing in
+        # for them. Insisting on the raw references alone would call a correctly spilled receipt a
+        # mismatch; insisting on the stub alone would do the same to one written before a sink
+        # existed. Anything that is neither did not come from this artifact.
+        if receipt.reference_values and receipt.reference_values not in (references, projection):
             raise ValueError("tool receipt reference projection differs from its artifact")
-        return receipt.model_copy(update={"reference_values": references})
+        return receipt.model_copy(update={"reference_values": projection})
 
 
 def _agent_issue(issue: GraphIssue) -> AgentPlanIssue:
