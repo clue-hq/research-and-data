@@ -27,7 +27,7 @@ import asyncio
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -46,7 +46,7 @@ from langchain_core.tools import StructuredTool
 from clue_api.arv2.account_research_refusals import refusal_json
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.sinks import LedgerRow
-from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_CENTS_KEY, COST_SOURCE_KEY
+from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_SOURCE_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
 
 log = get_logger("clue_api.arv2.account_research_agent")
@@ -238,19 +238,11 @@ def _answer(response: Any) -> AIMessage | None:
 def _cost_cents(metadata: Any) -> Decimal | None:
     """The gateway's stamped cost for one answer, or ``None`` when it could not price the model.
 
-    The gateway stamps the cents as a string so the ``Decimal`` survives a JSON round trip; an
-    ``unpriced`` answer carries a zero that means "no rate", and that must not become a measured
-    zero on the ledger.
+    Delegates to the shared reader so this ledger and the conversation-turn receipt parse the
+    stamp identically (an ``unpriced`` answer is a blank, never a measured zero).
     """
-    if str(metadata.get(COST_SOURCE_KEY) or "unpriced") == "unpriced":
-        return None
-    raw = metadata.get(COST_CENTS_KEY)
-    if raw is None:
-        return None
-    try:
-        return Decimal(str(raw))
-    except InvalidOperation:
-        return None
+    cents, _source = cost_cents_from_metadata(metadata)
+    return cents
 
 
 class _RoundShapeMiddleware(AgentMiddleware[Any, Any, Any]):
