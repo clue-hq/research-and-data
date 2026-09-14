@@ -22,6 +22,7 @@ import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
@@ -92,6 +93,7 @@ from clue_projections import (
     MANIFEST_OP_TOOLS,
     MAX_TURN_PAGE_SIZE,
     PROJECTIONS_SCHEMA_VERSION,
+    CostFilters,
     InvalidCursorError,
     account_progress,
     agent_progress,
@@ -99,6 +101,7 @@ from clue_projections import (
     agent_telemetry,
     agent_turn,
     agent_turns_for_project,
+    cost_report,
     field_proposals,
     ingestion_status,
     plan_replay,
@@ -316,6 +319,46 @@ def create_projections_router(
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
             "route": view.model_dump(mode="json"),
+        }
+
+    # -- cost (lane 3 slice 1): the two ledgers summed once each, workspace-scoped --
+
+    @router.get("/cost/report")
+    async def get_cost_report(
+        workspace_id: WorkspaceDep,
+        project_id: str | None = None,
+        project_run_id: str | None = None,
+        job_id: UUID | None = None,
+        thread_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> dict[str, Any]:
+        # The filters are built first so a naive ``since``/``until`` is refused (``CostFilters``
+        # takes ``AwareDatetime``) before the window comparison — comparing a naive to an aware
+        # datetime raises, and a half-aware window must be a 422 like any other bad input.
+        try:
+            filters = CostFilters(
+                project_id=project_id,
+                project_run_id=project_run_id,
+                job_id=job_id,
+                thread_id=thread_id,
+                since=since,
+                until=until,
+            )
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if (
+            filters.since is not None
+            and filters.until is not None
+            and filters.since >= filters.until
+        ):
+            raise HTTPException(status_code=422, detail="since must be before until")
+        report = await cost_report(
+            workspace_id=workspace_id, filters=filters, conn_factory=conn_factory
+        )
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "report": report.model_dump(mode="json"),
         }
 
     @router.get("/project_runs/{project_run_id}/overview")
