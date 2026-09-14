@@ -288,10 +288,11 @@ Every flag below lands in `.env.example` with its default the moment its code la
 
 ```
 # --- Telemetry (lane 3) ---
-LANGFUSE_HOST=https://cloud.langfuse.com      # EU region project (R4)
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
-CLUE_LANGFUSE_ENABLED=false                    # off → no handler, no export, no stamping
+CLUE_LANGFUSE_ENABLED=false                    # off → no client, no handler, no stamping
+CLUE_LANGFUSE_HOST=https://cloud.langfuse.com  # EU region project (R4)
+CLUE_LANGFUSE_PUBLIC_KEY=                      # secret
+CLUE_LANGFUSE_SECRET_KEY=                      # secret
+CLUE_LANGFUSE_ENVIRONMENT=lane-san-salvador
 CLUE_METRICS_EXPORTER=memory
 CLUE_METRICS_OTLP_ENDPOINT=
 CLUE_METRICS_EXPORT_INTERVAL_MS=10000
@@ -305,7 +306,7 @@ CLUE_SENTRY_ENVIRONMENT=lane-san-salvador
 CLUE_RELEASE=
 ```
 
-Slice 2 (2026-09-15) shipped the OTel and Sentry names above; the Langfuse names are slice 3's to settle.
+Slice 2 (2026-09-15) shipped the OTel and Sentry names; slice 3a (2026-09-15) settled the Langfuse names as CLUE_-prefixed (D3 in its design note): the client attaches to the slice 2 provider, so CLUE_OTEL_TRACES_ENDPOINT stays empty for Langfuse and remains the seam for any other collector.
 
 All three layers default **off**, so an unconfigured process behaves exactly as today. The pilot
 overlay pins them on.
@@ -336,9 +337,13 @@ overlay pins them on.
    `clue_obs.otel.install_tracing` + `clue_obs.sentry` at `projections_main` and `fleet_main`; run
    context bound at the roots; the trace rides the fleet payload (D1, no migration); env parity
    incl. the metrics gap.
-3. **Langfuse** (§5.3, R4 hosting). Compose stack + stack-script verb; callback in the runtime
-   tuple; gateway decorator path; provider-caller observations; payload redaction; ids stamped
-   back onto ledger rows and receipts.
+3. **Langfuse** (§5.3, R4 hosting; design: `2026-09-15-lane3-slice3-langfuse-design.md`).
+   **3a — DONE 2026-09-15:** the client attached to the slice 2 provider (D1), the LangChain
+   handler in the turn's callback tuple with the run registry and settled cost on every graph
+   generation, receipt ids (D4, migration `b7193eb28363`), payload redaction, `make langfuse-check`,
+   the streamed `answering_model` fix. **3b — next:** the research agent and the exit judge, the
+   gateway decorator path, provider-caller observations, governed-tool and retriever
+   observations, guardrails and events.
 4. **Entity tagging on traces** (§6): the ARV2 job and read tools tag traces with entity ids.
    Small, ARV2-only. The Langfuse deletion step is handed to the erasure lane (R13).
 
