@@ -1,9 +1,9 @@
-# Lanes 1 and 2 — plan of action (2026-09-13)
+# Lanes 1, 2 and 3 — plan of action (2026-09-13)
 
 **Founder decisions this index records:** three lanes run in parallel worktrees (workspace
-reorganisation; gallery and document surface; telemetry). This index covers lanes 1 and 2. Lane 3
-gets its own design doc first. One person drives all three, so "parallel" means separate
-worktrees sequenced by dependency, never by owner.
+reorganisation; gallery and document surface; telemetry). This index covers all three lanes;
+lane 3's design doc is named in its section (added 2026-09-14). One person drives all three, so
+"parallel" means separate worktrees sequenced by dependency, never by owner.
 
 ## Lane 1 — the agent's workspace (this worktree, `research-streaming`)
 
@@ -57,10 +57,24 @@ cross-surface checks. Rebase over Lane 1 as it merges; its plan 0 hotfix is need
 read-tools chat walk, not for the document-editor prototype. Neither lane changes the document
 routes or plan-part shape consumed here.
 
+## Lane 3 — telemetry and cost (worktree `lane3/*` off `research-streaming`)
+
+Design note: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability-design.md`.
+
+| # | Plan | What it builds | Depends on |
+| --- | --- | --- | --- |
+| 1 | `2026-09-14-lane3-slice1-cost-read.md` | `agent_model_call.cost_usd`/`cost_source` stamped from the gateway; `clue_projections.cost`; `GET /cost/report`; `make cost-report` | nothing |
+| 1b | (to write) | onboarding / display / evidence JSONL ledgers onto `provider_call_ledger` | 1 |
+| 2 | (to write) | OTel exporter + FastAPI/httpx instrumentors + Sentry at the roots; traceparent on turn and job rows | 1 (sequencing only) |
+| 3 | (to write) | Langfuse: callback in the runtime tuple, gateway path, provider-caller observations, redaction, ids stamped back | 2 |
+| 4 | (to write) | entity tags on traces | 3 |
+
+Held, high priority: the design subsystem (R12). Separate lane after 1–3: ARV2 erasure (R13).
+
 ## Where the lanes touch
 
 - **Lane 1 ↔ Lane 2:** only the document routes (`GET/GET/PUT /frontend/v1/projects/{id}/documents…`) and the `plan` part with `planRef.objectType === "project_document"`. Neither lane changes them. When Lane 1 plan 3 makes agent-written ICPs and personas land as rows, Lane 2's gallery cards show them with no further work.
-- **Lane 1 ↔ Lane 3 (telemetry):** both edit `agent_runtime_wiring.py` and the composition roots (`fleet_main`, `projections_main`, `head_of_abm_wiring`). Lane 3's first slice (OTel at the roots + one callback in the runtime's callback tuple) lands as a small early commit; Lane 1 plans 1–4 rebase over it.
+- **Lane 1 ↔ Lane 3 (telemetry):** both edit `agent_runtime_wiring.py` and the composition roots (`fleet_main`, `projections_main`, `head_of_abm_wiring`). Lane 3's first slice became the cost read; its only shared-file edits (the cost stamp on the turn receipt, in `agent_runtime_wiring.py` / `agent_turn_wiring.py`) landed as small commits, and lane 1 has since landed in full, so the later lane 3 slices (OTel at the roots, the Langfuse callback in the runtime tuple) rebase over lane 1, not the other way round.
 - **Lane 2 ↔ Lane 3:** none.
 
 ## Verification that closes each lane

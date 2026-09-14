@@ -89,8 +89,9 @@ in §8 as deferred, with the trigger that re-opens it.
 | Structured logs with run context | `libs/clue-obs` — `clue_obs.context.bind_*` binds request, workspace, project, run, account, actor, profile version | Done. Milestone item 6. |
 | Redaction | `libs/clue-obs/clue_obs/redact.py` — secret-shaped keys → `***`; claim-value keys → ids; blobs → placeholder; runs in every log mode | Done for logs. Reused for spans and Langfuse (secret rule only, per R3). |
 | OTel spans | `clue_obs.otel.tracing.traced_step` / `configure_tracing`; module-local `TracerProvider`; OTLP HTTP exporter is a dependency | Spans are created and **dropped**: `configure_tracing` has no production caller. |
-| LLM cost per call | `libs/clue-gateway/clue_gateway/tracing.py` — the factory's decorator records prompt, completion, cached tokens and `cost_cents` on every model call; `agent_model_call` receipts keyed by `turn_id` | Done. Milestone item 4. |
+| LLM cost per call | `libs/clue-gateway/clue_gateway/tracing.py` — the factory's decorator records prompt, completion, cached tokens and `cost_cents` on every model call; `agent_model_call` receipts keyed by `turn_id` | Measured at the gateway on every call; the ARV2 research ledger records it. The conversation-turn receipt recorded 0 until slice 1 (Task 1–3) added cost_usd/cost_source. |
 | Paid provider usage | `platform/api/clue_api/arv2/calls.py` `ProviderCaller` → `provider_call_ledger` (`workspace_id, project_id, project_run_id, entity_research_job_id, provider, operation, label, phase, http_status, latency_ms, attempts, cost_usd, credits, media_seconds, over_ceiling, outcome, cost_source, raw ref`) | Done for every ARV2 call. Milestone item 5 for the pilot path. |
+| Onboarding / display / evidence spend | ProviderCaller with JsonlLedger (arv2/onboarding_driver.py, arv2/display/page.py, onboarding_evidence_tools.py) | On disk, not queryable — slice 1b routes them to provider_call_ledger. |
 | Outbound HTTP | httpx everywhere (32 files under `libs`, `subsystems`, `platform`; no `requests`, no `aiohttp`) | One instrumentor covers all of it. |
 | Langfuse, Sentry, OTel instrumentors, OTLP endpoint config | — | Absent. No references anywhere in the tree or `.env.example`. |
 
@@ -232,17 +233,22 @@ be written against the *finalised* agent structure, not today's.
 
 ### 5.5 Cost attribution: the read
 
-No new table. One read, `clue_projections.cost`, over the two ledgers:
+No new table. One read, `clue_projections.cost.cost_report`, over the two ledgers:
 
-- provider spend from `provider_call_ledger`, grouped by any of workspace, project, project run,
-  job, provider, operation, phase, `cost_source`;
-- model spend from `agent_model_call` joined through the turn to its thread, project and
-  workspace, grouped by model and by the same keys;
-- one combined per-run and per-job figure with both halves.
+- provider spend from `provider_call_ledger` (`phase='result'` rows only), grouped by provider and
+  operation, with the four `cost_source` labels counted per line, plus per-job and per-project
+  lines. The ARV2 research agent's own model rounds are on this ledger as `openrouter` rows.
+- conversation-turn model spend from `agent_model_call` joined through the turn to its project and
+  thread, grouped by model and role. **Slice 1 discovered this table recorded every call at zero
+  cost** (`cost_millicredits=0`, deferred to the credits milestone) and added `cost_usd` +
+  `cost_source`, stamped from the cost the gateway already measures; rows older than that are
+  blank and counted `unpriced`.
 
-Served as a projection endpoint (read-only, workspace-scoped) and as a `make` target that prints
-the same tables for an operator. The four pilot questions ("this run", "this customer", "which
-provider", "which workflow") are each one call.
+The two tables never hold the same call, so the total is their plain sum. Served as
+`GET /cost/report` on the projections router and as `make cost-report`. Every report carries a
+`not_covered` list naming the spend this read cannot see: the onboarding lane, the display
+prewrite and the persona-evidence tool (JSONL ledgers on disk — **slice 1b** routes them to the
+Postgres ledger), the design subsystem's providers (R12 hold), and pre-cost-column turn rows.
 
 Agent-and-tool-level cost is **not** materialised in Postgres (R9). Langfuse holds that tree, and
 every ledger row and receipt carries the observation id (§5.3), so a ledger line opens to the agent
@@ -314,6 +320,10 @@ overlay pins them on.
 
 1. **Cost read** (§5.5). Spends nothing, needs no new service, answers the founder's question on
    day one. Projection endpoint + make target + tests over seeded ledger rows.
+1b. **JSONL ledgers onto Postgres.** The onboarding lane, the display prewrite and the
+   persona-evidence tool write through `ProviderCaller` to JSONL files; route them to
+   `provider_call_ledger` (mechanics in `_memory/2026-09-14-lane3-slice1-cost-read.md`). Runs
+   after slice 1, before the pilot's first customer onboarding is counted.
 2. **Roots** (§5.1, §5.2, §4 propagation). `clue_obs.otel.install`, `clue_obs.sentry.install`,
    traceparent on the turn and job rows, env parity. Small, early; lane 1's remaining plans rebase
    over it (`agent_runtime_wiring.py` and the roots are the only shared files).
