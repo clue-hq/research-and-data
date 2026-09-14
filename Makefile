@@ -6,7 +6,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
-	redis-up redis-down manual manual-check manual-link cost-report
+	redis-up redis-down manual manual-check manual-link cost-report langfuse-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -117,3 +117,7 @@ eval-design-exit: ## P3.6 design-leg exit-judgment golden-set DEMO (fail-safe en
 # --- cost (lane 3 slice 1) ---------------------------------------------------
 cost-report: ## Print a workspace's cost report from the two ledgers. Usage: make cost-report ARGS="--workspace acme [--project P] [--json]"
 	uv run python -m clue_projections.cost_cli $(ARGS)
+
+# --- Langfuse (lane 3 slice 3) ----------------------------------------------
+langfuse-check: ## Is Langfuse enabled and does the host accept the keys? Reads .env; sends no trace
+	uv run python -m clue_api.langfuse_check
