@@ -44,6 +44,16 @@ from clue_projections.agents import (
     agent_turns_for_project,
     agent_turns_for_thread,
 )
+from clue_projections.cost import (
+    NOT_COVERED,
+    CostFilters,
+    CostReport,
+    JobSpendLine,
+    ModelSpendLine,
+    ProjectSpendLine,
+    ProviderSpendLine,
+    cost_report,
+)
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
     AccountProgress,
@@ -282,6 +292,15 @@ __all__ = [
     "AccountDeepSteeringAccount",
     "AccountDeepSteeringCard",
     "AccountDeepSteeringLaunch",
+    # lane 3 slice 1 cost read
+    "NOT_COVERED",
+    "CostFilters",
+    "CostReport",
+    "JobSpendLine",
+    "ModelSpendLine",
+    "ProjectSpendLine",
+    "ProviderSpendLine",
+    "cost_report",
     # DTOs
     "RunOverview",
     "AccountProgress",
