@@ -547,6 +547,9 @@ class OnboardAdAssetsRequest(BaseModel):
     #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
     max_pages: int = 3
     max_creatives: int = 15
+    #: Recover source ads without spending on style analysis or generated backgrounds.
+    #: Persisted with the job so a worker re-drive honors the same requested scope.
+    harvest_only: bool = False
     date_filter: Optional[str] = None
     #: The card lineage to append to. Defaults to one card per brand kit.
     card_id: Optional[str] = None

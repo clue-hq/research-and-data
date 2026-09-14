@@ -167,6 +167,19 @@ curl -s http://127.0.0.1:<design port>/brand-ad-assets/brand_kit_ing_… -H 'X-W
 Exactly one of `company_domain` or `page_id` (a LinkedIn page id) is required. The job runs
 on the fleet workers; the lane answers `card: null, creatives: []` until it finishes.
 
+For source recovery or an ingestion check, add `"harvest_only": true` to the request.
+It saves original ad images and their provenance, then skips ad-DNA analysis and background
+generation. This still spends provider credits. The flag defaults to `false` and is persisted
+with the job so a worker re-drive keeps the same scope. A successful harvest-only job reports
+the overall onboarding outcome as `partial`: originals exist, but no new card or generated
+imagery was requested. Read the job's steps to distinguish this from a failed harvest.
+
+Before re-running an empty lane, inspect its ingestion job. Website ingestion succeeding
+does not mean an ad job was offered. Verify that a resolved LinkedIn page belongs to the
+exact advertiser (a regional page or similarly named company is not an equivalent identity).
+A provider timeout or HTTP 204/non-JSON error is a failed fetch, not evidence that the brand
+has no ads. Keep retries bounded with `max_pages` and `max_creatives`.
+
 ### 5c. Chat, design agent, editor
 
 - A project chat's message opens a design leg; the design deepagent (grok-4.6 over OpenRouter,

@@ -380,6 +380,7 @@ def _offer(
     brand_kit_id: str,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> str:
     offered = client.post(
         "/brand-ad-assets/onboard",
@@ -390,6 +391,7 @@ def _offer(
             "advertiser_name": "Ramp",
             "max_pages": max_pages,
             "max_creatives": max_creatives,
+            "harvest_only": harvest_only,
         },
     )
     assert offered.status_code == 200, offered.text
@@ -407,6 +409,7 @@ def _run_job(
     provider: Any = None,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> dict:
     """Offer one job through the route, then DRIVE it here, and return the terminal row.
 
@@ -424,7 +427,8 @@ def _run_job(
     from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
 
     job_id = _offer(
-        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages
+        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages,
+        harvest_only=harvest_only,
     )
     run_ad_assets_onboarding(
         str(tmp_path / "engine-cache" / client.headers["X-Workspace-Id"]),
@@ -439,6 +443,36 @@ def _run_job(
     job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     job["evidence"] = _evidence(client, job_id)
     return job
+
+
+def test_manual_harvest_keeps_originals_without_calling_creative_models(
+    tmp_path: Path, lane_on: None,
+) -> None:
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    class NoModelCalls:
+        active = True
+
+        def distil(self, previews):
+            raise AssertionError("harvest-only must not analyze or generate imagery")
+
+    def no_generation(*args, **kwargs):
+        raise AssertionError("harvest-only must not generate imagery")
+
+    job = _run_job(
+        client, tmp_path, brand_kit_id=brand_kit_id,
+        distiller=NoModelCalls(), generate=no_generation, harvest_only=True,
+    )
+    assert job["status"] == "succeeded", job
+    steps = job["evidence"]["steps"]
+    assert steps["record"]["count"] > 0
+    assert steps["distill"]["status"] == "skipped"
+    assert steps["pregenerate"]["status"] == "skipped"
+    assert "harvest-only" in steps["distill"]["reason"]
+    assert job["outcome"]["status"] == "partial"
+    assert job["outcome"]["card_written"] is False
+    assert job["outcome"]["assets_generated"] == 0
 
 
 def test_a_full_run_harvests_distils_and_pregenerates(
