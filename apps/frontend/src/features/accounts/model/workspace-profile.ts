@@ -1,12 +1,6 @@
-/**
- * The workspace person the account screens render as "you".
- *
- * This is exactly the shape the local prototype served as
- * `SettingsWorkspace["profile"]`. The platform has no settings feature, so the
- * accounts data layer derives it from the protected session instead; the
- * feature keeps consuming one profile shape either way.
- */
+/** Shared shell person shape. Live routes resolve it from Settings profile/workspace reads. */
 export type WorkspaceProfile = {
+  workspaceName?: string;
   id?: string;
   avatarUrl?: string;
   fullName: string;
@@ -14,6 +8,9 @@ export type WorkspaceProfile = {
   initials: string;
   avatarColor: string;
 };
+
+/** The design build supplies one fixed avatar colour. */
+export const WORKSPACE_AVATAR_COLOR = "#8343A5";
 
 /** First letters of up to two words, uppercased; never empty. */
 export function workspaceInitials(name: string): string {
@@ -23,7 +20,7 @@ export function workspaceInitials(name: string): string {
 }
 
 /**
- * Build the profile from a session user id.
+ * Legacy adapter retained for callers outside the authenticated Settings path.
  *
  * The session contract (`features/session/model/session.ts`) carries no display
  * name and no email: `user_id`, memberships, and the request principal are all

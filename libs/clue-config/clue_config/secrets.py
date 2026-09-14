@@ -82,6 +82,10 @@ class Secrets(BaseSettings):
     # (No explicit alias needed; that keeps the pydantic-mypy "dynamic alias" rule happy.)
     database_url: SecretStr | None = None
 
+    # Settings invitations and verified email backfill; JWT validation uses public JWKS.
+    # Env: CLUE_AUTH_CLERK_SECRET_KEY.
+    auth_clerk_secret_key: SecretStr | None = None
+
     # --- provider API keys (CLUE_<PROVIDER>_API_KEY) ---
     # One field per credentialed source manifest's auth_ref: ``extra="ignore"`` silently drops any
     # CLUE_* env var with no matching field, so a manifest auth_ref without a field here would never

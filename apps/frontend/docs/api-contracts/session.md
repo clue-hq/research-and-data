@@ -62,3 +62,13 @@ Production must declare `CLUE_AUTH_ENVIRONMENT=production` and use
 production trusted-header resolver or an absent principal service. Local-header tenancy remains a
 seeded local/test fixture only. Operational enablement and rollback are documented in
 `docs/runbooks/authenticated-principal-cutover.md`.
+
+### Settings invitation acceptance (2026-09-15)
+
+`/session/establish` now attempts authenticated invitation acceptance before calling the
+protected-session DAL, then selects the first workspace just joined. A verified provider session
+can accept an invitation before any Clue membership exists. Normal sign-ins also accept pending
+invitations addressed to the verified primary email. With no token and invitation delivery
+unconfigured, ordinary session establishment retains its previous behavior. See
+[Settings contract](settings.md#invitation-acceptance-and-session-establishment) for token,
+no-token, error, and profile-seeding behavior.

@@ -12,6 +12,7 @@ import styles from "./app-sidebar.module.css";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ProjectSidebarTree } from "./project-sidebar-tree";
 import { SidebarIcon } from "./sidebar-icon";
+import { SidebarProfileMenu } from "./sidebar-profile-menu";
 
 function NavigationGroup({
   activeHref,
@@ -107,19 +108,7 @@ export function AppSidebar({
           {!collapsed ? <ProjectSidebarTree controller={projectsController} /> : null}
         </div>
 
-        <button
-          aria-label="Open profile menu"
-          className={`flex h-[var(--clue-ds-product-dimension-sidebar-profile-height)] shrink-0 items-center border-t-[0.5px] border-[var(--clue-ds-color-border-subtle)] text-left ${collapsed ? "justify-center px-0" : "px-2"}`}
-          type="button"
-        >
-          <span className="flex size-6 items-center justify-center rounded-full border-[0.5px] border-[var(--clue-border-neutral)] text-[11px] leading-4">
-            A
-          </span>
-          <span className={`${styles.sidebarRegular} ml-2 truncate ${collapsed ? "sr-only" : ""}`}>
-            Aakash Shrivastava
-          </span>
-          {!collapsed ? <DesignIcon className="ml-auto" name="chevron-down" size={12} /> : null}
-        </button>
+        <SidebarProfileMenu collapsed={collapsed} />
       </aside>
 
       {projectsController.editProject ? (

@@ -1,0 +1,82 @@
+import Link from "next/link";
+import {
+  adminSettingsNavigation,
+  personalSettingsNavigation,
+  type SettingsNavigationItem,
+} from "../config/settings-navigation";
+import type { SettingsSection } from "../model/settings";
+import styles from "./settings.module.css";
+import { SettingsNavIcon } from "./settings-nav-icon";
+
+function NavigationItems({
+  activeSection,
+  items,
+}: {
+  activeSection: SettingsSection;
+  items: SettingsNavigationItem[];
+}) {
+  return items.map((item) => {
+    const active = item.section === activeSection;
+
+    if (item.section === "data-model")
+      return (
+        <span
+          aria-disabled="true"
+          className={styles.navigationItem}
+          key={item.href}
+          title="Research fields is awaiting the updated design"
+        >
+          <SettingsNavIcon name={item.icon} />
+          <span>{item.label}</span>
+        </span>
+      );
+
+    return (
+      <Link
+        aria-current={active ? "page" : undefined}
+        className={active ? styles.navigationItemActive : styles.navigationItem}
+        href={item.href}
+        key={item.href}
+        prefetch={false}
+      >
+        <SettingsNavIcon name={item.icon} />
+        <span>{item.label}</span>
+      </Link>
+    );
+  });
+}
+
+export function SettingsSidebar({
+  activeSection,
+}: {
+  activeSection: SettingsSection;
+}) {
+  return (
+    <aside className={styles.settingsSidebar}>
+      <nav
+        aria-label="Settings navigation"
+        className={styles.settingsNavigation}
+      >
+        <Link className={styles.backItem} href="/" prefetch={false}>
+          <SettingsNavIcon name="back" />
+          <span>Back to home</span>
+        </Link>
+
+        <div className={styles.navigationGroup}>
+          <NavigationItems
+            activeSection={activeSection}
+            items={personalSettingsNavigation}
+          />
+        </div>
+
+        <div className={styles.navigationGroup}>
+          <p className={styles.navigationCaption}>Admin</p>
+          <NavigationItems
+            activeSection={activeSection}
+            items={adminSettingsNavigation}
+          />
+        </div>
+      </nav>
+    </aside>
+  );
+}

@@ -38,13 +38,37 @@ export interface ClerkSignUpDriver {
   };
 }
 
+export interface ClerkTicketDriver {
+  readonly status: string | null;
+  ticket(params: {
+    ticket: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<ClerkCallResult>;
+  finalize(): Promise<ClerkCallResult>;
+}
+
+export async function acceptInvitationTicket(
+  signUp: ClerkTicketDriver,
+  params: { ticket: string; firstName: string; lastName: string },
+  timeoutMs = CLERK_CALL_TIMEOUT_MS,
+): Promise<OnboardingAuthResult> {
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
+  const attempted = await runClerkStep(() => signUp.ticket(params), timeoutMs);
+  if (!attempted.ok) return attempted.result;
+  return signUp.status === "complete"
+    ? finalize(signUp, "sign-up")
+    : INCOMPLETE_RESULT;
+}
+
 type ClerkStepResult =
   | { ok: true }
   | { ok: false; result: OnboardingAuthResult };
 
 const TIMEOUT_RESULT: OnboardingAuthResult = {
   status: "error",
-  message: "The authentication service didn't respond. Check your connection and try again.",
+  message:
+    "The authentication service didn't respond. Check your connection and try again.",
 };
 
 const UNEXPECTED_RESULT: OnboardingAuthResult = {
@@ -122,7 +146,9 @@ function signInVerificationPurpose(
 }
 
 function supportsEmailCode(signIn: ClerkSignInDriver): boolean {
-  return signIn.supportedSecondFactors.some((factor) => factor.strategy === "email_code");
+  return signIn.supportedSecondFactors.some(
+    (factor) => factor.strategy === "email_code",
+  );
 }
 
 async function finalize(
@@ -152,7 +178,10 @@ export async function startPasswordSignIn(
   const purpose = signInVerificationPurpose(signIn.status);
   if (purpose) {
     if (!supportsEmailCode(signIn)) return UNSUPPORTED_FACTOR_RESULT;
-    const sent = await runClerkStep(() => signIn.mfa.sendEmailCode(), timeoutMs);
+    const sent = await runClerkStep(
+      () => signIn.mfa.sendEmailCode(),
+      timeoutMs,
+    );
     if (!sent.ok) return sent.result;
     return { status: "needs-verification", purpose };
   }
@@ -194,7 +223,9 @@ export async function verifyPendingEmailCode(
       timeoutMs,
     );
     if (!verified.ok) return verified.result;
-    return signIn.status === "complete" ? finalize(signIn, "sign-in") : INCOMPLETE_RESULT;
+    return signIn.status === "complete"
+      ? finalize(signIn, "sign-in")
+      : INCOMPLETE_RESULT;
   }
   if (signIn.status === "complete") return finalize(signIn, "sign-in");
 
@@ -212,7 +243,9 @@ export async function verifyPendingEmailCode(
     timeoutMs,
   );
   if (!verified.ok) return verified.result;
-  return signUp.status === "complete" ? finalize(signUp, "sign-up") : INCOMPLETE_RESULT;
+  return signUp.status === "complete"
+    ? finalize(signUp, "sign-up")
+    : INCOMPLETE_RESULT;
 }
 
 export async function resendPendingEmailCode(
@@ -223,7 +256,10 @@ export async function resendPendingEmailCode(
   const signInPurpose = signInVerificationPurpose(signIn.status);
   if (signInPurpose) {
     if (!supportsEmailCode(signIn)) return UNSUPPORTED_FACTOR_RESULT;
-    const sent = await runClerkStep(() => signIn.mfa.sendEmailCode(), timeoutMs);
+    const sent = await runClerkStep(
+      () => signIn.mfa.sendEmailCode(),
+      timeoutMs,
+    );
     return sent.ok
       ? { status: "needs-verification", purpose: signInPurpose }
       : sent.result;

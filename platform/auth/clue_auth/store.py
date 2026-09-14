@@ -46,7 +46,7 @@ def new_invitation_id() -> str:
 
 
 _USER_COLUMNS = (
-    "user_id, display_name, first_name, last_name, job_role, "
+    "user_id, display_name, first_name, last_name, job_role, email, "
     "status, created_at, suspended_at, disabled_at"
 )
 _IDENTITY_COLUMNS = (
@@ -56,7 +56,8 @@ _MEMBERSHIP_COLUMNS = (
     "membership_id, workspace_id, user_id, role_key, status, created_at, activated_at, revoked_at"
 )
 _INVITATION_COLUMNS = (
-    "invitation_id, workspace_id, invited_address, role_key, status, expires_at, "
+    "invitation_id, provider_invitation_id, workspace_id, invited_address, "
+    "role_key, status, expires_at, "
     "invited_by_membership_id, accepted_by_user_id, created_at, accepted_at, revoked_at"
 )
 
@@ -100,6 +101,49 @@ async def get_platform_user(conn: AsyncConnection, user_id: str) -> PlatformUser
     return _model(PlatformUser, row) if row is not None else None
 
 
+async def update_platform_user_email(
+    conn: AsyncConnection, user_id: str, verified_email: str
+) -> PlatformUser:
+    """Persist a provider-verified address as profile data, never as an identity lookup."""
+    result = await conn.execute(
+        text(
+            "UPDATE platform_user SET email = :email WHERE user_id = :user_id "
+            f"AND status = 'active' RETURNING {_USER_COLUMNS}"
+        ),
+        {"user_id": user_id, "email": _clean(verified_email, label="email").casefold()},
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise LifecycleTransitionError("active platform user not found")
+    return _model(PlatformUser, row)
+
+
+async def lock_workspace_invitation(
+    conn: AsyncConnection, *, workspace_id: str, invitation_id: str
+) -> WorkspaceInvitation | None:
+    result = await conn.execute(
+        text(
+            f"SELECT {_INVITATION_COLUMNS} FROM workspace_invitation "
+            "WHERE workspace_id = :ws AND invitation_id = :id FOR UPDATE"
+        ),
+        {"ws": workspace_id, "id": invitation_id},
+    )
+    row = result.mappings().first()
+    return _model(WorkspaceInvitation, row) if row is not None else None
+
+
+async def set_provider_invitation_id(
+    conn: AsyncConnection, *, invitation_id: str, provider_invitation_id: str
+) -> None:
+    await conn.execute(
+        text(
+            "UPDATE workspace_invitation SET provider_invitation_id = :provider "
+            "WHERE invitation_id = :id AND status = 'pending'"
+        ),
+        {"provider": provider_invitation_id, "id": invitation_id},
+    )
+
+
 async def update_platform_user_display_name(
     conn: AsyncConnection, user_id: str, display_name: str | None
 ) -> PlatformUser:
@@ -136,11 +180,13 @@ async def update_platform_user_profile(
     last_name: str | None,
     job_role: str | None,
     display_name: str | None = None,
+    clear_fields: frozenset[Literal["first_name", "last_name", "display_name"]] = frozenset(),
 ) -> PlatformUser:
-    """Update the onboarding profile fields (uniform PATCH semantics).
+    """Update profile fields, preserving the onboarding PATCH contract by default.
 
     ``None`` (or whitespace-only) means "not supplied — preserve the stored value" for every
-    field; there is no clear-a-field path here (review ruling: one semantics, not three).
+    field. Settings can explicitly clear a supplied field through ``clear_fields``; callers
+    that omit it keep the onboarding semantics.
     ``display_name`` handling: an explicit value wins; otherwise the column is recomposed from
     the effective "first last" only when it is empty OR still equals the previous automatic
     composition — a display name a user chose by hand is never overwritten, while an
@@ -150,16 +196,21 @@ async def update_platform_user_profile(
     result = await conn.execute(
         text(
             f"UPDATE platform_user SET "
-            f"first_name = COALESCE(CAST(:first_name AS text), first_name), "
-            f"last_name = COALESCE(CAST(:last_name AS text), last_name), "
+            f"first_name = CASE WHEN :clear_first THEN NULL "
+            f"ELSE COALESCE(CAST(:first_name AS text), first_name) END, "
+            f"last_name = CASE WHEN :clear_last THEN NULL "
+            f"ELSE COALESCE(CAST(:last_name AS text), last_name) END, "
             f"job_role = COALESCE(CAST(:job_role AS text), job_role), "
             f"display_name = CASE "
+            f"  WHEN :clear_display THEN NULL "
             f"  WHEN CAST(:explicit_display AS text) IS NOT NULL "
             f"    THEN CAST(:explicit_display AS text) "
             f"  WHEN display_name IS NULL OR display_name = NULLIF(btrim("
             f"    COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), '') "
-            f"  THEN NULLIF(btrim(COALESCE(CAST(:first_name AS text), first_name, '') || ' ' || "
-            f"    COALESCE(CAST(:last_name AS text), last_name, '')), '') "
+            f"  THEN NULLIF(btrim(CASE WHEN :clear_first THEN '' ELSE "
+            f"    COALESCE(CAST(:first_name AS text), first_name, '') END || ' ' || "
+            f"    CASE WHEN :clear_last THEN '' ELSE "
+            f"    COALESCE(CAST(:last_name AS text), last_name, '') END), '') "
             f"  ELSE display_name END "
             f"WHERE user_id = :user_id RETURNING {_USER_COLUMNS}"
         ),
@@ -169,6 +220,9 @@ async def update_platform_user_profile(
             "last_name": _optional(last_name),
             "job_role": _optional(job_role),
             "explicit_display": _optional(display_name),
+            "clear_first": "first_name" in clear_fields,
+            "clear_last": "last_name" in clear_fields,
+            "clear_display": "display_name" in clear_fields,
         },
     )
     row = result.mappings().first()
@@ -887,7 +941,7 @@ async def erase_platform_user(
     user_result = await conn.execute(
         text(
             "UPDATE platform_user SET display_name = NULL, first_name = NULL, "
-            "last_name = NULL, job_role = NULL, status = 'disabled', "
+            "last_name = NULL, job_role = NULL, email = NULL, status = 'disabled', "
             "disabled_at = COALESCE(disabled_at, :now) WHERE user_id = :user_id RETURNING user_id"
         ),
         {"user_id": user_id, "now": at},
