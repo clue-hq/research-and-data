@@ -27,7 +27,9 @@ from clue_fleet.queue import (
     WorkQueue,
     WorkTaskRow,
 )
-from clue_obs import get_logger
+from clue_obs import bound_context, get_logger
+from clue_obs.otel import context_from_carrier, get_tracer, safe_attributes
+from clue_obs.sentry import capture
 
 log = get_logger("clue_fleet.work_worker")
 
@@ -61,6 +63,19 @@ class WorkResult:
 
     def result_ref(self) -> dict[str, JsonValue]:
         return {"outcome": self.outcome, **self.references}
+
+
+#: Payload keys copied into the bound run context for every task, when present and non-empty
+#: strings. Every kind's payload names its subject with these keys already; no handler changes.
+PAYLOAD_CONTEXT_KEYS: tuple[str, ...] = (
+    "workspace_id",
+    "project_id",
+    "run_id",
+    "job_id",
+    "turn_id",
+    "thread_id",
+    "account_id",
+)
 
 
 @runtime_checkable
@@ -222,10 +237,11 @@ class LeasedWorkWorker:
         except asyncio.CancelledError:
             log.info("worker.slot_cancelled", worker_id=self.worker_id, slot=slot)
             raise
-        except Exception:
+        except Exception as exc:
             # Loud here, fatal later: the sibling slots are untouched and keep draining, and
             # ``run`` turns the accumulated failures into the process exit code once they end.
             log.exception("worker.slot_crashed", worker_id=self.worker_id, slot=slot)
+            capture(exc)
             raise
         log.info("worker.slot_stop", worker_id=self.worker_id, slot=slot)
 
@@ -276,6 +292,37 @@ class LeasedWorkWorker:
                 return True
         return False
 
+    async def _handle_in_context(
+        self, handler: WorkHandler, context: WorkContext, task: WorkTaskRow
+    ) -> WorkResult:
+        """Run the handler inside the task's trace and run context (lane 3 slice 2).
+
+        The bound context (task, kind, attempt, worker, and the payload's subject ids) rides onto
+        every log line, every span (``RunContextSpanProcessor``) and every Sentry tag for the
+        whole handle; the ``fleet.task`` span is a child of the ``traceparent`` the enqueue stamped
+        into the payload, so the request that queued the work and the worker that runs it are one
+        trace. No carrier → a fresh trace, still stamped.
+        """
+        bound: dict[str, object] = {
+            "task_id": str(task.task_id),
+            "work_id": str(task.work_id),
+            "fleet_kind": task.kind.value,
+            "task_attempt": task.attempts,
+            "worker_id": self.worker_id,
+        }
+        for key in PAYLOAD_CONTEXT_KEYS:
+            value = task.payload.get(key)
+            if isinstance(value, str) and value:
+                bound[key] = value
+        parent = context_from_carrier(task.payload)
+        with (
+            bound_context(**bound),
+            get_tracer().start_as_current_span(
+                "fleet.task", context=parent, attributes=safe_attributes(bound)
+            ),
+        ):
+            return await handler.handle(context)
+
     async def _run_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
     ) -> None:
@@ -302,7 +349,7 @@ class LeasedWorkWorker:
             lease_lost=lease_lost,
             task_attempt=task.attempts,
         )
-        work = asyncio.create_task(handler.handle(context))
+        work = asyncio.create_task(self._handle_in_context(handler, context, task))
         heartbeat = asyncio.create_task(
             self._heartbeat(
                 task_id=task.task_id,
@@ -335,11 +382,12 @@ class LeasedWorkWorker:
                         work_id=str(task.work_id),
                         exc_info=error,
                     )
+                    capture(error)
                 work.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await work
                 result = WorkResult(outcome="lease_lost", references={}, requeue=True)
-        except Exception:
+        except Exception as exc:
             log.exception(
                 "worker.work_error",
                 worker_id=self.worker_id,
@@ -347,6 +395,7 @@ class LeasedWorkWorker:
                 work_id=str(task.work_id),
                 kind=task.kind.value,
             )
+            capture(exc)
             await self._queue.finish(
                 task_id=task.task_id,
                 worker_id=self.worker_id,
@@ -477,6 +526,7 @@ async def enqueue_work(
 
 
 __all__ = [
+    "PAYLOAD_CONTEXT_KEYS",
     "CapabilityGated",
     "LeasedWorkWorker",
     "WorkContext",
