@@ -387,15 +387,13 @@ source_modules = [
     "clue_api",
 ]
 forbidden_modules = ["langfuse"]
+# External imports are squashed to their top-level package by grimp
+# (``include_external_packages``), so the adapter's ``from langfuse.langchain import ...`` is
+# recorded — and must be exempted — as the edge to ``langfuse``.
 ignore_imports = [
     "clue_obs.langfuse -> langfuse",
-    "clue_api.langfuse_callbacks -> langfuse.langchain",
+    "clue_api.langfuse_callbacks -> langfuse",
 ]
-# The two sanctioned edges are declared here with the contract, but the modules that make them
-# land in later slice-3 tasks; until both exist, import-linter's default "error" on an unmatched
-# ignore would break the whole run. DELETE this line once ``clue_obs.langfuse`` and
-# ``clue_api.langfuse_callbacks`` both exist, so a stale exemption is caught again.
-unmatched_ignore_imports_alerting = "warn"
 
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
 [[tool.importlinter.contracts]]
