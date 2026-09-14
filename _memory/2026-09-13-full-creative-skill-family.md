@@ -806,3 +806,52 @@ initial python3.13 path assumed incorrectly, corrected inspected python3.12;
 nonexistent tests/test_knowledge_projection.py and start.sh reads made no edits.
 Live browser/export parity audit found two concrete renderer seams; final report
 pending, no renderer changes in this checkpoint. No DB tests/provider runs yet.
+Task22 parity audit (read-only independent reproduction): Conduit Oracle asset
+20e3a399… bytes match storage/cache/public HTTP. Its embedded .st0 CSS fill
+#C74634 renders red in browser HTMLImageElement but black in native Skia SVG DOM;
+fresh helper export reproduced10257 black interior pixels, thumbnail also black.
+Clue HUMAN REVIEW shaping is129.96px in native/browser using actual420-weight
+face, rejecting stale-font hypothesis. ProvidedTextMeasurer exact-key misses
+Taffy available-width976 because frontend emits only unconstrained and solved122
+records; heuristic122 persists and maxLines1 paints HUMAN. Injecting976 in the
+read-only in-memory probe yields130;122/130 do not. Seams: layout.rs1775,
+text_measure.rs256, skiaMeasurements.ts157, drawDescriptors.ts449. No renderer
+fix yet; engine/WASM gates and browser/native parity tests required separately.
+
+Task22 checkpoint f57d5658 committed locally. Git index write needed escalation;
+no other dirty files staged. Preparation archived only two prior test layers,
+backed up/reset4generation caches; original ready catalog matched preceding arm.
+Restart only scoped recorded PIDs after global idle; wrapper permission126 fixed
+by bash invocation. Startup8-second status platform APIs DOWN transient; later
+all services/4workers UP. Current persistent stack session73197. Fresh4home
+requests submitted concurrently20:39:42UTC (browser click-start timestamps).
+Existing deliverable tabs17–20 reused; prior saved artifacts remain in projects.
+
+Task22 closing checkpoint: all4 concurrent ordinary-request runs terminal on
+f57d5658, unchanged263sourcehashes. Clue427.261s accepted (29calls), AWS592.774s
+accepted(32), Google505.302s draft(31), Conduit435.073s draft(27);119soloGrok4.6
+orchestratorcalls,0providerfailures. Two model acceptances,0under240seconds;
+model acceptance is not independent creative approval. Google invalid readability
+`partial` review refused then corrected/registered ~6s later; failed composition
+remained draft. Conduit still wrong Oracle lockup, injected top logo, fake typed
+wordmark, tiny chip; Clue browser HUMAN clipping persists. AWS final spacing
+repaired versus initial clipped preview. Google font500401 cleared on browser
+reload, exactasset200inproxylog3777; noauthchanges; generalfontretrybugunfixed.
+
+Browser all4 native text marker edit/save/reload verified in UI; restored exact
+original scenes Cluev50/AWSv27/Googlev27/Conduitv33. PNG/SVGexport allpassed,
+PNGbytesmatchlastserverpreview, nativeSVGtext4/2/3/3, images2/2/2/3, exportversions
+unchanged. Previousregistryrecordsidentical;newgeneratedlayersAWS1/Google1only.
+All130fleetdone;design57succeeded5failed. Tabs17–20leftopenrestored/Editoff.
+Current ignored receipt root review-feedback-four-brands-20260914;assessment.json
+summarizescoverage,metrics,sourcehashes,registries,QA,exports. No new renderer or
+skill changes during this arm. Reading guessed logs/orchestrator.jsonl failed;
+correctruntime logfile logs/run.jsonl. No product changes resulted from that read.
+
+User asked skill count and goal completion. Actual scene candidate manifest30
+skills =18families+12support (source_freeze legacycatalog28 is not this count).
+8live selectedfamilies/18=44.4%coverage;10uncovered. Latest2/4modelaccepted50%,
+4/4editexport100%,0/4speed0%. No family has full repeatable quality/editability/
+latency promotion; do not claim44%overallcompletion or measure quality by tests.
+Next bounded work: actualWASM/native renderer fixes + selectedresourceconsumption,
+thenall4controlbeforecoverageexpansion. Goalremainsactive;no push/PR/prodchange.

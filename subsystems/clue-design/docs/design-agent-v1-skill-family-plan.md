@@ -1740,3 +1740,77 @@ returns only the requested lines, without total-line/continuation metadata.
 This arm leaves guidance unchanged to isolate review feedback. Complete selected
 resource consumption remains unresolved; do not claim the copy guidance was
 applied merely because its path appears in a tool call.
+
+Task22 independent read-only parity probes found two renderer defects. Oracle's
+exact stored/cached/served SVG uses a CSS-class fill; native Skia SVG DOM renders
+it black while the browser HTML-image path renders it red. Fresh helper export
+reproduced the black interior, so this is not a changed asset or screenshot color
+profile. Clue's HUMAN REVIEW shapes to129.96px with the correct font in both
+paths, but Taffy requests an available-width976 measurement that the frontend
+bridge does not supply. Its unconstrained/solved-width122 records miss the exact
+key, leaving heuristic width122 and clipping at maxLines1. Supplying the976
+measurement in memory yields130; supplying122/130 does not. Neither renderer
+has changed in this diagnostic arm. Fixes require actual WASM/CanvasKit/native
+regression coverage and the normal engine rebuild gates.
+
+After restart, one Google Sans500 browser request returned401 before the design
+API; other faces succeeded. The native helper loaded the exact available bytes.
+A failed browser face persists until the kit-loading effect remounts/version
+changes. Its blanket Inter warning is inaccurate when Google Sans400 remains
+available. Preserve server generation evidence but verify browser loading after
+remount before accepting typography parity. The original401 cause is unresolved;
+do not describe this as a proven persistent expired token or change authentication.
+
+### Task 22 live result and completion accounting
+
+The fresh four-brand arm ran on checkpoint `f57d5658`, with ordinary Home
+requests and the same “Go ahead and create it” handoff submitted concurrently
+from the browser. No reference attachment, prescribed copy, asset ID or skill
+name was supplied. The runtime remained solo Grok 4.6 with candidate guidance;
+the file-review diagnostic was the only product change in this arm.
+
+| Workspace | Runtime result | Generation time | Native edit/save/reload/restore; PNG/SVG export |
+| --- | --- | --- | --- |
+| Clue | Model-accepted | 427.261s | Passed; original restored at v50 |
+| AWS | Model-accepted | 592.774s | Passed; original restored at v27 |
+| Google Cloud | Unaccepted draft | 505.302s | Passed; original restored at v27 |
+| Conduit | Unaccepted draft | 435.073s | Passed; original restored at v33 |
+
+These are design-run times; initial handoff and subsequent manual QA are
+additional. All119 model calls belonged to the solo orchestrator, with zero
+provider-call failures. AWS and Google registered one newly generated layer
+each. All pre-existing asset registry records remained byte-for-byte unchanged
+as serialized. All263 frozen source hashes matched after QA. Each export PNG
+matched its final reviewed server preview exactly; SVG retained native text
+(Clue4, AWS2, Google3, Conduit3) and independent image elements. Exports did not
+advance document versions. This proves persistence/export mechanics, not browser
+pixel parity or creative quality.
+
+Google's review initially used an invalid readability status, `partial`, then
+registered a corrected review about six seconds later. It correctly retained
+the failing creative as a draft: the full-bleed recrop put crystals and a blue
+wedge behind the copy/logo, losing the reference's quiet type field. Conduit
+still has an unwanted injected logo, a typeset replacement wordmark, the wrong
+Oracle lockup variant and weak feed-size text. Clue's HUMAN REVIEW clipping
+persists in the browser despite the complete server preview. AWS's final
+two-line headline and authentic Ember typography are substantially more legible
+than its first clipped preview; its missing-Arial kit warning remains. Google's
+previous Google Sans500 HTTP401 cleared on reload (the same asset returned200),
+with no authentication changes. None of these observations promotes a family.
+
+**Current accounting:** the actual candidate manifest registers30 skills:
+18 creative families and12 supporting workflow skills. Eight families have live
+selection evidence: type-led-positioning, workflow-contrast, feature-deep-dive,
+event-webinar, integration-ecosystem, educational-guide, customer-spotlight and
+editorial-pov. That is44.4% family coverage, not44.4% goal completion. The latest
+batch has2/4 model acceptances,4/4 persistence/export passes and0/4 finished
+within240seconds. Zero families have satisfied the complete repeatable
+cross-brand quality, editability and latency promotion gate. There is no
+defensible single overall completion percentage yet.
+
+Next: repair the reproduced renderer parity defects and verify consumption of
+the complete selected review resource, then rerun the same four-brand control.
+Ten families still need live coverage; adding more families does not resolve the
+known defects. Evidence is preserved in the ignored evaluation folder
+`review-feedback-four-brands-20260914/assessment.json` and its frozen source,
+registry, first-terminal, browser-edit and export receipts.
