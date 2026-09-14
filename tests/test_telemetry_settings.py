@@ -24,8 +24,17 @@ TELEMETRY_SETTING_DEFAULTS: dict[str, object] = {
     "sentry_enabled": False,
     "sentry_environment": "lane-san-salvador",
     "release": None,
+    # lane 3 slice 3
+    "langfuse_enabled": False,
+    "langfuse_host": "https://cloud.langfuse.com",
+    "langfuse_environment": "lane-san-salvador",
 }
-TELEMETRY_SECRET_FIELDS = ("sentry_dsn", "otel_traces_headers")
+TELEMETRY_SECRET_FIELDS = (
+    "sentry_dsn",
+    "otel_traces_headers",
+    "langfuse_public_key",
+    "langfuse_secret_key",
+)
 
 
 def _env_name(field_name: str) -> str:
@@ -75,3 +84,10 @@ def test_an_empty_endpoint_string_means_unset(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("CLUE_OTEL_TRACES_ENDPOINT", "")
     monkeypatch.setenv("CLUE_SENTRY_ENABLED", "false")
     assert not Settings(_env_file=None).otel_traces_endpoint
+
+
+def test_langfuse_environment_is_a_langfuse_legal_name() -> None:
+    """Langfuse refuses environments outside ``^(?!langfuse)[a-z0-9-_]+$``; the shipped
+    default must be legal so enabling it never fails on the name."""
+    default = Settings.model_fields["langfuse_environment"].default
+    assert re.fullmatch(r"(?!langfuse)[a-z0-9-_]+", default), default

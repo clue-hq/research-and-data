@@ -358,6 +358,45 @@ ignore_imports = [
     "clue_api.agent_model_wiring -> clue_gateway",
 ]
 
+# Lane 3 slice 3 — the Langfuse SDK lives only behind ``clue_obs.langfuse`` (the client and every
+# platform-side helper) and ``clue_api.langfuse_callbacks`` (the LangChain adapter, which needs
+# ``langchain_core`` and so cannot live in the base library). Everything else reaches Langfuse
+# through those two modules' no-op-when-off helpers.
+[[tool.importlinter.contracts]]
+name = "the Langfuse SDK lives only behind clue_obs.langfuse and clue_api.langfuse_callbacks"
+type = "forbidden"
+source_modules = [
+    "clue_research",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage",
+    "clue_auth",
+    "clue_memory",
+    "clue_content",
+    "clue_design",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_execution",
+    "clue_fleet",
+    "clue_projections",
+    "clue_api",
+]
+forbidden_modules = ["langfuse"]
+ignore_imports = [
+    "clue_obs.langfuse -> langfuse",
+    "clue_api.langfuse_callbacks -> langfuse.langchain",
+]
+# The two sanctioned edges are declared here with the contract, but the modules that make them
+# land in later slice-3 tasks; until both exist, import-linter's default "error" on an unmatched
+# ignore would break the whole run. DELETE this line once ``clue_obs.langfuse`` and
+# ``clue_api.langfuse_callbacks`` both exist, so a stale exemption is caught again.
+unmatched_ignore_imports_alerting = "warn"
+
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
 [[tool.importlinter.contracts]]
 name = "libs never import the subsystem"
