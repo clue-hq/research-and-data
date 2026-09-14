@@ -992,7 +992,7 @@ def test_the_claims_query_declares_the_classification_and_the_manual_the_registr
     for word in ("field_prefix", "tier", "verification status", "since", "read_account_research"):
         assert word in tool.model_description
     assert tool.model_description.endswith(
-        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_claims"
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_claims"
     )
     # Its own contract, not a second face of the account read's.
     account = ReadAccountResearchTool(_FakeService())
