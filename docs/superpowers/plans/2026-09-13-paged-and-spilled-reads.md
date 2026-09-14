@@ -16,8 +16,31 @@
 - **Spill file contract:** `reads/<operation_id>.json`, UTF-8 JSON, the full canonical references; the receipt's `reference_values` becomes `{"spilled_to": "<path>", "count": <int>, "summary": "<≤300 chars>", "tool": "<address>"}`. The file counts toward the thread quota and persists in `reads/` until the folder's size cap trims the oldest. The model reads it with `read_file` (offset/limit in lines).
 - **Display gate:** `read_claims@1` holds back exactly what `read_account_research`'s claims do, and counts it.
 - **Pagination contract, all reads:** `offset: int = Field(default=0, ge=0)`, `limit: int = Field(default=<per tool>, ge=1, le=<max>)`; output `offset`, `next_offset: int | None`, `total: int` where a total is one query away, else `truncated: bool`.
-- **Versions:** skill `stage0-interview@v31`, profile `head-of-abm@v54`, recipe `recipe0-stage0-v28` (v27 plus `read_claims@1`, `read_artifact@1`), `CONVERSATION_RECIPE_VERSION = 28`; digests re-measured; recipe promoted on the lane DB.
+- **Versions (after plan 3 landed at v32/v55/27 on 2026-09-14):** skill `stage0-interview@v33`, profile `head-of-abm@v56`, recipe `recipe0-stage0-v28` (v27 plus `read_claims@1`, `read_artifact@1`), `CONVERSATION_RECIPE_VERSION = 28`; the operating manual re-mints at `manual-*@v3` because the grant moves (`MANUAL_VERSION = "v3"`, `PROFILE_VERSION = "v56"`, the `manual-tools`/`-errors`/`-limits` chapters re-rendered, hand-written chapters copied with `/v3/` links); context policies `project-conversation-context-v3` and `stage0-trial-context-v3` (Task 0); digests re-measured; recipe promoted by the workers' boot seeding.
+- **Context budgets are observability, never a gate (founder ruling 2026-09-14, Task 0):** no layer budget may raise or drop; the only ceiling is the provider's context window.
 - **Tests, commits:** as in the previous plans.
+
+---
+
+### Task 0: Context budgets become observability — no layer budget may fail or trim a turn
+
+**Founder ruling (2026-09-14, plan 3 debrief):** "We should not put any hard budget limit on the LLM for anything, like if the L1 budget exceeds the LLM would fail. We should just keep a track of what all things are there." Today `DeterministicAgentContextAssembler._retain` raises `ValueError("required <layer> context exceeds its hard layer budget")` when a *required* candidate does not fit (this killed the first v54 turn at ~273 bytes of headroom) and silently **excludes** optional candidates that do not fit (`exclusion_reason_code="layer_budget_exceeded"`, and for L6 the *oldest* messages are the ones dropped). Both become tracking only.
+
+**Files:**
+- Modify: `platform/agents/clue_agents/context.py` (`_retain`, `assemble`), `platform/api/clue_api/agent_turn_fleet_wiring.py` (`project_conversation_context_policy`: docstring + `version="project-conversation-context-v3"`), `platform/api/clue_api/stage0_trial.py` (`version="stage0-trial-context-v3"`)
+- Test: `tests/agents/test_context.py` (`test_context_budget_excludes_atomic_items_with_stable_reason` becomes `test_context_budget_records_an_over_budget_layer_and_keeps_every_item`), `tests/agents/test_context_l6_retention.py` (`test_a_long_thread_keeps_its_newest_messages_and_still_reads_in_order` becomes `test_a_long_thread_keeps_every_message_in_order_and_records_its_size`), `tests/agents/test_manual_drift.py` (`test_the_resolved_system_prompt_fits_the_production_identity_budget` becomes `test_the_resolved_system_prompt_size_is_reported_against_the_identity_budget`: it asserts the prompt's byte count is a positive number below the provider window and *prints* its share of L1; `PROMPT_BUDGET_SHARE` and the ceiling assertion go), `tests/agents/test_context_receipt*.py` if any pins `layer_budget_exceeded`
+- No migration: `agent_context_layer` already persists `token_budget` and `token_count` per layer, so "over budget" is `token_count > token_budget` on the receipt as it stands.
+
+**Interfaces:**
+- `_retain(layer, candidates, budget) -> dict[str, int]` returns a count for **every** candidate; it never raises and never skips. `budget` is kept as a parameter only to report against.
+- `assemble` keeps emitting `ContextLayerManifest.token_count` (now the whole layer) and `ContextReceiptRef(disposition="included", token_count=…)` for every candidate; `excluded_refs`/`exclusion_reason_codes` stay in the contracts (older receipts carry them) but budgeting never produces them.
+- One structured log per over-budget layer at assembly: `log.warning("agent_turn.context_layer_over_budget", execution_id=…, layer=layer.value, token_count=used, token_budget=budget, policy_version=…)`; nothing else changes shape.
+- The policy `version` strings move to `-v3` because the *meaning* of `max_tokens` changed (a reporting line, not a ceiling); a turn assembled under v2 replays against v2's own receipt.
+
+- [ ] **Step 1: Failing tests** — a layer whose candidates total 1,000 tokens under a 400 budget assembles all of them, in canonical order, with every ref `included` and the layer manifest `token_count == 1000`; a required L1 candidate over budget assembles (no `ValueError`); a 40-message L6 thread under a budget that fits 5 keeps all 40 in chronological order and records 40 included refs; the receipt's `budgets` still carry the policy numbers; one warning event per over-budget layer is emitted (capture with the structlog test helper the repo uses).
+- [ ] **Step 2: FAIL. Step 3: Implement** (delete the raise and the skip; add the log line; move the two policy versions; rewrite the two policy docstrings so they no longer promise a hard failure — the L1 paragraph in `project_conversation_context_policy` currently says "a required candidate that does not fit raises, it is never silently dropped"). **Step 4: PASS** — `uv run pytest tests/agents/test_context.py tests/agents/test_context_l6_retention.py tests/agents/test_manual_drift.py tests/agents -q -p no:cacheprovider --ignore-glob='*_live.py'`, plus the DB test that pins a production turn's receipt (`tests/api/test_o6_conversation_composition_db.py`) on the lane DB. **Step 5: Commit** — `feat(agent-context): layer budgets are tracked, never enforced — no turn fails or loses context at assembly (founder ruling 2026-09-14)`.
+
+**Open item for the founder (not decided by this task):** with no assembly ceiling, a thread that outgrows the provider's context window fails at the provider with the provider's error. Whether L6 gets a *window-sized* newest-first trim (a fact of the model, not a policy) or the turn is allowed to fail loudly is a separate decision; this task only records the size.
 
 ---
 
@@ -162,5 +185,6 @@ Every read comes in pages. A page ends with `next_offset`; when it is not null, 
 ## Self-review
 
 - **Spec coverage:** W9 pagination (Task 1), `read_claims` (Task 2), W4 read side (Task 3), spill contract (Task 4), skill (Task 5), proof (Task 6). W10 shipped in the hotfix. ✔
+- **Founder ruling 2026-09-14 (no hard context budgets):** Task 0; the policy version bump is what keeps v2 receipts replay-exact. ✔
 - **Placeholders:** the design DAL import and the router-test fixture are named by their call sites, not invented. ✔
 - **Type consistency:** `READ_REFERENCES_BUDGET_BYTES`/`receipt_bytes` from the hotfix; `SpillSink.write_spill` matches `AnchoredAgentWorkspaceBackend.write_spill`; `AccountClaimView` reused by `read_claims`. ✔
