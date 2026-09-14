@@ -84,8 +84,14 @@ _WITHHELD = {
     # nobody, but the trial's own `build_toolbelt` passes no `arv2_reads`, so installed they would
     # be advertised and then refuse `arv2_reads_not_composed` at call time — restriction by
     # refusal, which PC-C8 §2.4 rejects. Withheld, this surface's framing is true.
+    # `read_claims` joins them at `head-of-abm@v56` for the identical sentence — same uncomposed
+    # `arv2_reads` service — and `read_artifact` for the nearest thing to it: it needs no service,
+    # but a dev-harness turn carries no project, so installed it could only refuse
+    # `project_not_found`.
     "read_project_accounts",
     "read_account_research",
+    "read_claims",
+    "read_artifact",
     "read_discovery_run",
 }
 
@@ -334,17 +340,17 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
     trial_disclosures = [item.resource.address for item in trial.skill_disclosures()]
-    assert "skill:stage0-interview@v32" not in trial_disclosures
+    assert "skill:stage0-interview@v33" not in trial_disclosures
     assert trial_disclosures == [
-        "skill:icp-authoring@v1",
-        "skill:persona-authoring@v1",
-        "skill:plan-authoring@v1",
-        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
+        "skill:icp-authoring@v2",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
     ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v32" in base_disclosures
+    assert "skill:stage0-interview@v33" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -366,13 +372,16 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # document skills now, so there is nothing here for the trial to withhold.
         # The three reads are granted at `head-of-abm@v48` and taught by stage0-interview v25
         # §7b/§7c; the trial withholds them because it composes no read service, so installed they
-        # could only refuse.
+        # could only refuse. `read_claims` and `read_artifact` join the skill's required set at
+        # v33, granted at `head-of-abm@v56`, and the trial withholds them for the same sentence.
         "read_project_accounts",
         "read_account_research",
+        "read_claims",
+        "read_artifact",
         "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v32")
+    body = base.open_skill("skill:stage0-interview@v33")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

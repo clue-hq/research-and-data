@@ -149,7 +149,7 @@ test("writing the project plan reads as operator work, not a tool name", () => {
   assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
 });
 
-test("the three reads read as reviewing work, not tool names", () => {
+test("the five reads read as reviewing work, not tool names", () => {
   const accounts = toolPresentation(
     part("read_project_accounts", {
       project_id: GATE_ID,
@@ -182,7 +182,31 @@ test("the three reads read as reviewing work, not tool names", () => {
   );
   assert.equal(discovery.label, "Review the discovery run");
 
-  for (const presentation of [accounts, research, discovery]) {
+  const claims = toolPresentation(
+    part("read_claims", {
+      entity_id: GATE_ID,
+      entity_kind: "account",
+      claims: [],
+      total: 0,
+      next_offset: null,
+      prefixes: [],
+    }),
+  );
+  assert.equal(claims.label, "Query the claims");
+
+  const artifact = toolPresentation(
+    part("read_artifact", {
+      artifact_id: "doc_matrix",
+      kind: "web",
+      title: "Matrix",
+      status: "ready",
+      body_text: "",
+      body_truncated: false,
+    }),
+  );
+  assert.equal(artifact.label, "Open an artifact");
+
+  for (const presentation of [accounts, research, discovery, claims, artifact]) {
     assert.deepEqual(presentation.rows, []);
     assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
   }

@@ -1436,9 +1436,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # neither do the three ARV2 reads (147 -> 150).
     # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
     # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
-    # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
-    # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
-    # `@2`.
+    # the same address is exactly what a profile's digest pin exists to catch — so the paging
+    # arrived beside the frozen `@1`s. `head-of-abm@v56` pins the `@2`s, so the name-only alias
+    # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
     # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
     # next (153 -> 154).
     assert len(registry) == 154
@@ -1494,9 +1494,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # neither do the three ARV2 reads (147 -> 150).
     # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
     # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
-    # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
-    # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
-    # `@2`.
+    # the same address is exactly what a profile's digest pin exists to catch — so the paging
+    # arrived beside the frozen `@1`s. `head-of-abm@v56` pins the `@2`s, so the name-only alias
+    # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
     # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
     # next (153 -> 154).
     assert len(registry) == 154
@@ -1513,6 +1513,13 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Confirm stays @2.
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
+    # The alias never disagrees with the promoted profile's pin: `head-of-abm@v56` pins the paged
+    # `@2` of both reads, so an unversioned caller gets `@2` and the frozen `@1`s stay resolvable
+    # only by exact address.
+    assert registry.descriptor("read_account_research").version == "2"
+    assert registry.descriptor("read_account_research", "1").version == "1"
+    assert registry.descriptor("read_discovery_run").version == "2"
+    assert registry.descriptor("read_discovery_run", "1").version == "1"
 
 
 def test_default_composition_gives_start_recon_an_autonomous_progress_factory() -> None:

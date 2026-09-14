@@ -92,8 +92,20 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # the spine row the execution is bound to — which is what this audit requires of every
     # standing address.
     "read_project_accounts@1",
-    "read_account_research@1",
-    "read_discovery_run@1",
+    # Paged and spilled reads (recipe0-stage0@28): ``read_account_research`` and
+    # ``read_discovery_run`` are RE-PINNED to their paged ``@2`` — ``offset``/``limit`` in,
+    # ``next_offset`` back — which is what `head-of-abm@v56` grants. A requirement set resolves one
+    # version per ``(kind, key)``, so ``@1`` and ``@2`` in one slot is a ``conflicting_requirement``
+    # that refuses promotion; the ``@1``s therefore LEAVE, exactly as ``open_icp_confirmation_gate``
+    # @1 left at @22. They stay registered, and v27 stays the exact replay input for turns pinned
+    # to it. Two reads join in the same revision, granted for the first time at v56: the general
+    # claims query and the gallery read. All four are effect-free over rows that already exist and
+    # declare the same ``project`` pin as their siblings, which is what this audit requires of
+    # every standing address.
+    "read_account_research@2",
+    "read_claims@1",
+    "read_artifact@1",
+    "read_discovery_run@2",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

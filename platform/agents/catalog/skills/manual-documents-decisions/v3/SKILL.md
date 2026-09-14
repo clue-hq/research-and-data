@@ -3,7 +3,7 @@ schema_version: "1"
 kind: skill
 name: manual-documents-decisions
 version: v3
-summary: "Manual: knowledge documents and recorded decisions. Writing under project/, statuses, versions, roles and pins, the quote rule, and the route keys to record a decision under."
+summary: "Manual: knowledge documents and recorded decisions. Writing under project/, statuses, versions, roles and pins, the quote rule, and the decision route keys."
 roles:
   - head_of_abm
 readiness_requirements: []
@@ -42,7 +42,7 @@ for the surfaces that read them. A field one of those surfaces needs and cannot 
 then, by that surface, naming what is missing.
 
 Where the product ids actually are, and why the catalog document does not carry them, is
-`.deepagent/skills/manual-workspace/v2/SKILL.md`.
+`.deepagent/skills/manual-workspace/v3/SKILL.md`.
 
 **Only the gate mints `confirmed`.** A document you write is born `ready`; the human's yes at the
 confirmation gate mints the confirmed version, pins it to this project, and is the only thing that
@@ -123,7 +123,7 @@ it. A later change of the set is a new gate and a new version, never an edit.
 A run is `full` (the whole brand walk, started from the onboarding flow) or `personas` (one
 persona turn for one already pinned ICP, which is the one you can request). Statuses are
 `queued`, `running`, `completed`, `completed_with_gaps` and `failed`. Where to read the outcome
-is `.deepagent/skills/manual-siblings/v2/SKILL.md`.
+is `.deepagent/skills/manual-siblings/v3/SKILL.md`.
 
 ## Recorded decisions: how the human's words become durable
 

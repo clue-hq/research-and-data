@@ -1357,7 +1357,7 @@ class ReadProjectAccountsTool(Tool):
         "by name or domain to find one account; page with limit and offset when total is larger "
         "than the page you received. Read this before saying how many accounts there are, which "
         "are researched, or before proposing more discovery. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_project_accounts"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_project_accounts"
     )
     input_model: ClassVar[type[ToolInput]] = ReadProjectAccountsInput
     output_model: ClassVar[type[ToolOutput]] = ReadProjectAccountsOutput
@@ -1451,7 +1451,7 @@ class ReadAccountResearchTool(Tool):
         "'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and "
         "outreach-unsafe claims are held back and counted in 'excluded'. Read this before "
         "saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
@@ -1554,7 +1554,7 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
         "can come back shorter than limit and still name a next_offset. Sensitive, unverified "
         "tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this "
         "before saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV2Input
     parameter_policy = JournalParameterPolicy(
@@ -1611,7 +1611,7 @@ class ReadDiscoveryRunTool(Tool):
         "found, how many candidates the verifier judged against the ICP, how many were shown and "
         "approved, and the top candidates with their verdict. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunInput
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunOutput
@@ -1718,7 +1718,7 @@ class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
         "(default 25) and follow next_offset until it is null to see every candidate; "
         "candidate_total is the whole run on every page. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunV2Input
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV2Output
@@ -1888,9 +1888,13 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     refusal rather than an ``UnknownTool`` it cannot explain. Unlike its launching neighbours these
     four have no flag: they read rows that already exist and spend nothing to do it.
 
-    ``read_claims`` is the newest of them and is **granted to nobody yet**: it registers here, on
-    the same service and with the same refusal, so the authority audit and the write-surface
-    inventory see it from the moment it exists, and a reviewed profile version moves the grant.
+    ``read_claims`` is the newest of them, granted at `head-of-abm@v56` — the reviewed bump that
+    pins its contract, mints the manual chapter that teaches it and admits it to the interaction
+    slot. It registers here on the same service and with the same refusal as its three siblings.
+
+    Two of the four register WITHOUT their name-only alias: `head-of-abm@v56` pins the paged
+    ``@2`` of ``read_account_research`` and ``read_discovery_run``, so those defaults belong to
+    :func:`build_arv2_paged_read_tools`. The composition root decides that, not this function.
     """
 
     return (
@@ -1904,13 +1908,13 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
 def build_arv2_paged_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     """The two reads whose inputs learned to page, at their own addresses.
 
-    Separate from :func:`build_arv2_read_tools` because these two are **not** their names' default
-    alias yet: `head-of-abm@v55` pins the ``@1`` contracts, and a default that disagreed with the
-    promoted profile's pin would hand an unversioned caller the version nobody holds — the same
-    reasoning that kept ``open_icp_confirmation_gate@1`` the default until its profile moved. The
-    grant, the recipe address and the alias move together in one later, reviewed step; until then
-    these register frozen-and-ungranted beside their ``@1`` siblings, on the same composition
-    (one service, one refusal code).
+    Separate from :func:`build_arv2_read_tools` because the two versions of each name move as a
+    pair: `head-of-abm@v56` pins these ``@2`` contracts, so they hold the name-only alias and
+    their ``@1`` siblings give it up. A default that disagreed with the promoted profile's pin
+    would hand an unversioned caller the version nobody holds — the same reasoning that kept
+    ``open_icp_confirmation_gate@1`` the default until its profile moved, applied in the other
+    direction. The ``@1``s stay registered for replay of a turn pinned to recipe0-stage0@27 or
+    earlier; the composition is otherwise identical (one service, one refusal code).
     """
 
     return (

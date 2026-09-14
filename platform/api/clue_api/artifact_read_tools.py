@@ -295,9 +295,8 @@ def build_artifact_read_tools(*, conn_factory: ConnFactory = transaction) -> tup
 
     It has no capability of its own to be absent — no storage, no gateway, no flag: it reads the
     ``design_document`` and ``design_leg`` rows the rail already draws from, and reading them
-    spends nothing. It is granted to **nobody** yet: it registers here so the authority audit and
-    the tool inventory see it from the moment it exists, and a later reviewed profile version moves
-    the grant together with the manual chapter that teaches it.
+    spends nothing. It is granted at `head-of-abm@v56` — the reviewed bump that pins its contract,
+    mints the manual chapter that teaches it and admits it to the conversation's interaction slot.
     """
 
     return (ReadArtifactTool(conn_factory=conn_factory),)

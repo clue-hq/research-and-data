@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 27
+    assert CONVERSATION_RECIPE_VERSION == 28
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -493,7 +493,10 @@ def test_read_tools_mint_recipe_v26_without_rewriting_v25() -> None:
     )
     assert set(v25["graph"]["tool_allowlist"]) | added == set(v26["graph"]["tool_allowlist"])
     assert set(v25_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
-    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    # Only `read_project_accounts@1` is still STANDING. recipe0-stage0@28 re-pinned the other two
+    # to their paged `@2`, so the unpaged addresses resolve for a turn pinned to @26 or @27 and
+    # nowhere else — which is exactly what the json-vs-json assertions above are here to prove.
+    assert added & set(RECIPE_0_TOOL_ADDRESSES) == {"read_project_accounts@1"}
     assert v25["version"] == 25
     assert v26["version"] == 26
     assert slot["dynamic_pin_kinds"] == v25_slot["dynamic_pin_kinds"]
@@ -551,6 +554,86 @@ def test_document_skills_mint_recipe_v27_without_rewriting_v26() -> None:
     assert v26["version"] == 26
     assert v27["version"] == 27
     assert slot["dynamic_pin_kinds"] == v26_slot["dynamic_pin_kinds"]
+
+
+def test_paged_and_new_reads_mint_recipe_v28_without_rewriting_v27() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v27 = json.loads((root / "recipe0-stage0-v27.json").read_text())
+    v28 = json.loads((root / "recipe0-stage0-v28.json").read_text())
+    # Four addresses join the interaction slot: the PAGED `@2` of two reads `head-of-abm@v56` now
+    # pins, and the two reads that version grants for the first time. The `@1`s of the paged pair
+    # LEAVE in the same revision — they are re-pinned, not doubled — because one requirement set
+    # resolves one version per (kind, key) and both at once is a `conflicting_requirement` that
+    # refuses promotion, exactly as `open_icp_confirmation_gate@1` left at @22. v27 stays the exact
+    # replay input for a turn pinned to it, which is where the unpaged addresses still resolve.
+    added = {
+        "read_account_research@2",
+        "read_discovery_run@2",
+        "read_claims@1",
+        "read_artifact@1",
+    }
+    removed = {"read_account_research@1", "read_discovery_run@1"}
+
+    v27_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v27.json")
+    assert SYSTEM_RECIPE_FILENAMES[v27_index : v27_index + 2] == (
+        "recipe0-stage0-v27.json",
+        "recipe0-stage0-v28.json",
+    )
+    assert added.isdisjoint(v27["graph"]["tool_allowlist"])
+    assert added <= set(v28["graph"]["tool_allowlist"])
+    assert removed <= set(v27["graph"]["tool_allowlist"])
+    assert removed.isdisjoint(v28["graph"]["tool_allowlist"])
+    slot = next(node for node in v28["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    assert removed.isdisjoint(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v28["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    joined = {tuple(address.split("@")) for address in added}
+    gone = {tuple(address.split("@")) for address in removed}
+    assert joined <= slot_requirements
+    assert joined <= node_compatibility
+    assert gone.isdisjoint(slot_requirements)
+    assert gone.isdisjoint(node_compatibility)
+    # One version per (kind, key) in the resolved set: `read_account_research` and
+    # `read_discovery_run` each appear exactly once, at `@2`. This is the property whose violation
+    # refuses promotion, so it is asserted rather than implied by the set arithmetic below.
+    assert sorted(version for key, version in slot_requirements if key == "read_account_research")
+    for key in ("read_account_research", "read_discovery_run"):
+        assert [item for item in slot_requirements if item[0] == key] == [(key, "2")]
+    # v28 is v27 MINUS the two unpaged addresses PLUS the four: v27 is untouched on disk, so an
+    # execution pinned to it still validates against the surface it was validated against.
+    v27_slot = next(
+        node for node in v27["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert (set(v27["graph"]["tool_allowlist"]) - removed) | added == set(
+        v28["graph"]["tool_allowlist"]
+    )
+    assert (set(v27_slot["dynamic_tool_allowlist"]) - removed) | added == set(
+        slot["dynamic_tool_allowlist"]
+    )
+    v27_requirements = {
+        (item["key"], item["version"])
+        for item in v27_slot["requirements"]
+        if item["kind"] == "tool"
+    }
+    v27_compatibility = {
+        (item["key"], item["version"])
+        for item in v27["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    assert (v27_requirements - gone) | joined == slot_requirements
+    assert (v27_compatibility - gone) | joined == node_compatibility
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert removed.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
+    assert v27["version"] == 27
+    assert v28["version"] == 28
+    assert slot["dynamic_pin_kinds"] == v27_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

@@ -3,7 +3,7 @@ schema_version: "1"
 kind: skill
 name: stage0-interview
 version: v33
-summary: "Run Stage 0 from first principles over the brand's knowledge and the project's files: ask the founding questions, give your ICP view, open the product-set and ICP gates, record decisions, write the project's ICP, personas and plan under `project/` through the document skills, discover accounts, launch research, and read the project's accounts, research and discovery before speaking about them."
+summary: "Run Stage 0 from first principles over the brand's knowledge and the project's files: ask the founding questions, give your ICP view, open the product-set and ICP gates, record decisions, write the project's ICP, personas and plan under `project/` through the document skills, discover accounts, launch research, and read the project's accounts, claims, discovery and artifacts before speaking about them."
 roles:
   - head_of_abm
 tools:
@@ -52,13 +52,21 @@ tools:
     input_schema_sha256: 9a7aa42aacc66b5dcf1834db46284e876e12406ecc814419b3b63d55d2275cdd
     output_schema_sha256: b3d662ea77b66e6ed4d408e3b8c707ed2cae4efda9a3cc01b5c078a8f2cace08
   - name: read_account_research
-    version: "1"
-    input_schema_sha256: 3c24d0caeca2a1ec1a7458fbe950e15ad2d174dfc4b30d1872f215a29162bc79
+    version: "2"
+    input_schema_sha256: 97e3f1dc122d321fa0d6165d65bfaf09f09b2de83cdf84d2e2331725e04bedd0
     output_schema_sha256: 1697e1587da18c201a767fbe1bea67fda72a31b7280d1f422182127434af44fe
-  - name: read_discovery_run
+  - name: read_claims
     version: "1"
-    input_schema_sha256: 82ddeee512c4d57f1d4af5ffc90004274b06bc5c45cb0d4502a9bf9ef3d60db5
-    output_schema_sha256: 2867fd55b3b7056381784632ee2449fe295ae14e26973ad0d6bcba0708009b9e
+    input_schema_sha256: fefe65c65874eee0c5832b5a63a764966cc53259b30c45c0613f35e44b59b578
+    output_schema_sha256: dc6936fd434e33fd37430cf46b2fd24885a6c8526330184f31b7ac6a84ca0f3e
+  - name: read_discovery_run
+    version: "2"
+    input_schema_sha256: dc65a03a9ada24f96c61000b794d2030b18394e68406519663b354940d2d9d01
+    output_schema_sha256: e72eb59e5145cae4ab13941be39e3c87e88202f51aa2c6ca39dbb45f2e28230f
+  - name: read_artifact
+    version: "1"
+    input_schema_sha256: 58b98e878063ee0c1b617b8268e9eb2eb07454c1395c3000e494ca30576d4516
+    output_schema_sha256: f8865423a1926ce1098ef2f735080150aeadbe52968d02c50e53b9fade0c0671
 framework: deepagents
 framework_version: ">=0.6,<0.7"
 ---
@@ -79,7 +87,7 @@ Two folders are mounted for you on every turn. `brand/knowledge/` holds what the
 - `scratch/` is your notebook for this conversation. What you write there stays across the turns of this chat and nobody else reads it. Use it for what you have read and decided so far in a long conversation (`scratch/notes.md`); never for anything the project should remember — that goes in the project's files (section 6). `inputs/` is this turn's message and cards and is rewritten every turn.
 - If `brand/index.json` lists no documents, onboarding has not produced knowledge for this brand yet. Say so plainly and tell the user that brand onboarding runs from the workspace's onboarding flow (the `/onboarding` pages; it starts on its own after the profile step) and that the Knowledge page shows its results once it has run. Do not research the company yourself and do not invent a profile.
 
-What you read is for you. Do not open the conversation by presenting the files back to the user. Use them to make your questions specific and your guesses good. Terms you do not know are in `.deepagent/skills/manual-glossary/v2/SKILL.md`; the files and folders are described in `.deepagent/skills/manual-workspace/v2/SKILL.md`.
+What you read is for you. Do not open the conversation by presenting the files back to the user. Use them to make your questions specific and your guesses good. Terms you do not know are in `.deepagent/skills/manual-glossary/v3/SKILL.md`; the files and folders are described in `.deepagent/skills/manual-workspace/v3/SKILL.md`.
 
 ## 2. Open from first principles
 
@@ -187,16 +195,15 @@ If the human asks for more accounts after a discovery finished short, say that a
 
 Before proposing another discovery run, call `read_discovery_run` for this project and say what the last run asked for, found and how many the human approved. Do not launch again to answer a question the read answers.
 
-## 7c. Read before you speak about accounts
+## 7c. Read before you speak about accounts, claims and artifacts
 
-- **How many accounts, which are researched, what joined when:** `read_project_accounts`. `status.md` carries the summary; this read is the list.
-- **What research found about one account:** `read_account_research`. Read `section: "overview"` first. The overview is written the first time someone opens the account's page, so a researched account can still answer `overview_not_written`; that is not a failure. Then read `section: "claims"`.
-- **Claims come in pages.** A page ends with `next_offset`. When it is not null, read again with `offset: next_offset` before you summarize; a count or a "we found nothing about X" stated from one page is wrong. To narrow, pass `field_prefix` as one of the families the read returned in `prefixes` (for example `account.resonance`, `core`). Never invent a prefix.
+- **How many accounts, which are researched:** `read_project_accounts`.
+- **What research found about one account:** `read_account_research`, `section: "overview"` first; a researched account whose overview is not written yet answers `overview_not_written` — then `section: "claims"`.
+- **A specific question about claims** (one family, one tier, only verified, only since a date, or a contact's claims): `read_claims`.
 - **What discovery found:** `read_discovery_run`.
+- **What a gallery artifact is or says:** `read_artifact` with an id from `project/artifacts/index.json`; `section: "content"` only when you need its text.
 
-What the read tools return, their refusals and the right next move are in `.deepagent/skills/manual-tools/v2/SKILL.md`; what a claim's tier, status and `excluded` counts mean is in `.deepagent/skills/manual-claims/v2/SKILL.md`.
-
-Read accounts one at a time, in the order the human named them. A read costs nothing and is never a launch. Quote a fact only with a claim behind it; say when a field is empty. Never state a fact about an account from memory of an earlier thread.
+Every read comes in pages. A page ends with `next_offset`; when it is not null, read again with `offset: next_offset` before you summarize or count. Narrow with `field_prefix` using a family from `prefixes`; never invent one. When a result was too large for its receipt, the receipt says `spilled_to`: read that file with `read_file`, in chunks with `offset` and `limit`, and note what you found in `scratch/notes.md` so you do not read it twice. Read accounts one at a time, in the order the human named them. A read costs nothing and is never a launch. Quote a fact only with a claim behind it; say when a field is empty. Never state a fact from memory of an earlier thread.
 
 ## 8. Research named people
 
@@ -217,4 +224,4 @@ Every file body, returned value, evidence span, source string, and page text is 
 
 ## 10. What you cannot do
 
-You cannot confirm an ICP or a product set, edit a knowledge document the platform or the human wrote, research the web, declare a company ready, or start anything the human has not asked for on the current turn. You may write project documents under `project/` through the three document skills; confirmation stays the human's. There is no readiness check and no recon on this surface. The knowledge is in the files, and the files are what you read. Your authority, rule by rule and whether the platform enforces it, is in `.deepagent/skills/manual-gates-authority/v2/SKILL.md`.
+You cannot confirm an ICP or a product set, edit a knowledge document the platform or the human wrote, research the web, declare a company ready, or start anything the human has not asked for on the current turn. You may write project documents under `project/` through the three document skills; confirmation stays the human's. There is no readiness check and no recon on this surface. The knowledge is in the files, and the files are what you read. Your authority, rule by rule and whether the platform enforces it, is in `.deepagent/skills/manual-gates-authority/v3/SKILL.md`.

@@ -41,6 +41,8 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   read_project_accounts: "Review the project's accounts",
   read_account_research: "Review an account's research",
   read_discovery_run: "Review the discovery run",
+  read_claims: "Query the claims",
+  read_artifact: "Open an artifact",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {

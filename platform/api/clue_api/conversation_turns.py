@@ -159,7 +159,13 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # `icp-authoring@v1`, `persona-authoring@v1` and `plan-authoring@v1` and pointed at from
 # stage0-interview v32 §5b/§5c/§6b. v26 stays the exact replay input for turns already pinned to
 # it, so a replayed turn still resolves all three.
-CONVERSATION_RECIPE_VERSION = 27
+# Revision 28 (paged and spilled reads) re-pins two and adds two: ``read_account_research`` and
+# ``read_discovery_run`` move to their paged ``@2``, the contracts `head-of-abm@v56` grants, and
+# ``read_claims@1`` and ``read_artifact@1`` join, granted for the first time at that version. The
+# two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
+# key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
+# replay input for turns pinned to it.
+CONVERSATION_RECIPE_VERSION = 28
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

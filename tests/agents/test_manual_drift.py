@@ -58,6 +58,11 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: 2026-09-14), the only *size* ceiling left in this file — the prompt test below now reports
 #: rather than refuses. Adding a resource is what is supposed to move this number; a summary that
 #: sprawls is what it is here to catch.
+#:
+#: Unmoved at `head-of-abm@v56`: the disclosed library is still those nineteen resources, because
+#: the four reads that join the grant are TOOLS and a tool is not disclosed on this block. Only
+#: the Stage-0 skill's own summary grew — by the words "claims" and "artifacts" — so the block
+#: measures 4427 bytes against the 4608 already allowed.
 SKILLS_BLOCK_MAX_BYTES = 4608
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.
@@ -367,13 +372,14 @@ def test_every_refusal_code_is_noted_and_every_note_is_a_real_code(
     for pin in profile.tools:
         module = type(toolbelt.get(pin.name, pin.version)).__module__
         by_module.setdefault(module, []).append(pin.name)
-    # A tool registered UNGRANTED still owns its own refusal codes. `read_claims@1` sits in
-    # `read_tools.py` beside the three granted reads, and its service raises `entity_not_found` /
-    # `since_invalid` from a module-level function — where this scan attributes a code to the
-    # module rather than to a tool's class body. Its grant and the manual chapter that teaches it
-    # land together in one later reviewed step, so until then its codes are checked against its
-    # OWN `tool_notes.yaml` entry. Without this, the only way to make the file green would be to
-    # teach a granted read a refusal it cannot raise — which is precisely the drift this guards.
+    # A tool registered UNGRANTED still owns its own refusal codes, and is checked against its own
+    # `tool_notes.yaml` entry rather than against a granted neighbour's. The widening was added for
+    # `read_claims@1`, which sat in `read_tools.py` beside the three granted reads while its
+    # service raised `entity_not_found` / `since_invalid` from a module-level function — where this
+    # scan attributes a code to the MODULE rather than to a tool's class body. `head-of-abm@v56`
+    # grants it, so it is covered the ordinary way now; the rule stays because the next tool to
+    # register ungranted beside a granted sibling would otherwise be fixable only by teaching a
+    # granted read a refusal it cannot raise — precisely the drift this guards.
     for module_name, tool_names in by_module.items():
         tool_names.extend(
             sorted(

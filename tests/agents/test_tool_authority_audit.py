@@ -133,33 +133,35 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # The paged reads add no NAME and so no entry here (the count stays 132): the `limit` on
     # `read_account_research` and the `offset`/`limit` on `read_discovery_run` are new *addresses*
     # of names this map already carries, because a changed input schema at the same address would
-    # break the digest `head-of-abm@v55` pins. Authority is therefore decided by address for both
-    # names below — the `@1`s keep the grant the promoted profile pins, and the `@2`s register
-    # ungranted until a reviewed profile version moves it, exactly as `open_icp_confirmation_gate`
-    # does with the grant on the other version.
+    # break the digest the promoted profile pins. Authority is therefore decided by address for
+    # both names below, exactly as `open_icp_confirmation_gate` decides it — and at
+    # `head-of-abm@v56` the grant is on the `@2`s, because those are the contracts that profile
+    # pins. The `@1`s stay registered and held by nobody; recipe0-stage0@27 stays the exact
+    # replay input for a turn pinned to it, because @28 RE-PINS the key rather than admitting
+    # both versions at once.
     # The general claims query DOES add a name (132 -> 133): `read_claims@1` is one account's or
     # one contact's live claims asked by field family, source tier, verification status or date,
-    # behind the same display gate as `read_account_research`'s claims. It registers with the
-    # name-only alias — it is the only version of itself — and is held by NOBODY: the grant needs
-    # a profile version that pins its contract, which is a reviewed bump and not a dict edit.
-    # The gallery read adds the next name (133 -> 134): `read_artifact@1` is one design
-    # artifact of this project — the rail's own row, plus the page JSON when asked for. It too
-    # registers with the name-only alias and is held by NOBODY until a reviewed profile version
-    # pins its contract.
+    # behind the same display gate as `read_account_research`'s claims. The gallery read adds the
+    # next name (133 -> 134): `read_artifact@1` is one design artifact of this project — the
+    # rail's own row, plus the page JSON when asked for. Both registered ungranted and both are
+    # GRANTED at `head-of-abm@v56`, the reviewed bump that pins their contracts and mints the
+    # manual chapter that teaches them; stage0-interview v33 §7c is the procedure for all four.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 134
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_account_research@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_discovery_run@1") == (AgentRole.HEAD_OF_ABM,)
-    # Registered, audited, and held by nobody — the paged pair waits for its profile version.
-    assert c6_roles_for_tool("read_account_research@2") == ()
-    assert c6_roles_for_tool("read_discovery_run@2") == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == ()
-    assert c6_roles_for_tool("read_claims@1") == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == ()
-    assert c6_roles_for_tool("read_artifact@1") == ()
+    assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
+    # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.
+    # An execution planned against recipe0-stage0@27 or earlier still resolves them from its own
+    # immutable revision; @28 re-pins the key to `@2` rather than admitting both.
+    assert c6_roles_for_tool("read_account_research@1") == ()
+    assert c6_roles_for_tool("read_discovery_run@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_claims@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_artifact@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
     assert c6_roles_for_tool("write_project_document@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()

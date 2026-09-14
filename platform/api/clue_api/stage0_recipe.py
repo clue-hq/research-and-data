@@ -460,12 +460,19 @@ class Stage0StepPinProvider:
         # body and the third names no project at all (it is keyed on an account), and a body field
         # is model-authored, so the execution's own project — which is not — is the coordinate
         # their ``project`` pin resolves from.
+        # ``read_claims`` and ``read_artifact`` join them at recipe0-stage0@28 on the same terms:
+        # the claims query is keyed on an entity and the gallery read on an artifact id, so
+        # neither names a project it could be trusted about. This set is keyed by tool NAME, so
+        # the paged ``@2`` of the two reads resolves its ``project`` pin exactly as its ``@1``
+        # does, and an execution pinned to an older revision still plans the ``@1``.
         if step.tool_name in {
             "launch_arv2_account_research",
             "launch_arv2_discovery",
             "launch_arv2_person_research",
             "read_account_research",
+            "read_artifact",
             "read_arv2_account_research_run",
+            "read_claims",
             "read_discovery_run",
             "read_project_accounts",
         }:

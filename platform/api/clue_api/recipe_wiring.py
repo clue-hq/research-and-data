@@ -119,6 +119,15 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # v26 minus those three and nothing else; v26 stays the exact replay input for turns pinned
     # to it, which is what keeps an already-pinned execution able to resolve them.
     "recipe0-stage0-v27.json",
+    # Paged and spilled reads: `read_account_research` and `read_discovery_run` are RE-PINNED to
+    # their paged `@2`, the contracts `head-of-abm@v56` grants, and `read_claims@1` and
+    # `read_artifact@1` join, granted for the first time at the same version. The two `@1`s leave
+    # rather than stand beside their `@2`s, for the reason v22 already recorded above: a
+    # requirement set resolves one version per (kind, key), so @1 and @2 in one slot is a
+    # `conflicting_requirement` that refuses promotion. v28 is v27 minus those two addresses plus
+    # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
+    # already-pinned execution able to resolve the unpaged reads.
+    "recipe0-stage0-v28.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

@@ -154,7 +154,22 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # procedures; none of them grants a tool. The manual re-mints at `manual-*@v2` because the
     # grant it describes moved and a catalog version is immutable. Prompt stays v10. Three
     # addresses leave the interaction slot, so the conversation recipe moves 26 → 27.
-    AgentRole.HEAD_OF_ABM: "v55",
+    # v56 (paged and spilled reads, 2026-09-14): v55's surface with the read side finished. Two
+    # reads move to their PAGED contract — `read_account_research@2` and `read_discovery_run@2`
+    # take `offset`/`limit` and answer `next_offset`, so a wide account or a long discovery is
+    # walked to the end instead of guessed at from one page — and two reads are granted for the
+    # first time: `read_claims@1` (the general claims query over one account or contact, narrowed
+    # by family, tier, verification status or date, behind the account page's own display gate)
+    # and `read_artifact@1` (one artifact of this project's gallery by id, its summary or the
+    # words on its page). None of them spends, approves or launches. The `@1`s of the two paged
+    # reads stay registered, and recipe0-stage0@27 stays their replay input, so the name-only
+    # default alias moves to `@2` with the pin. Skill pin v32→v33 (§7c is the read map: which
+    # read answers which question, pages read to the end, `field_prefix` taken from `prefixes`, a
+    # `spilled_to` receipt read from its file in chunks and noted in `scratch/notes.md`); the
+    # three document skills move to v2. The manual re-mints at `manual-*@v3` because the grant it
+    # describes moved. Prompt stays v10. The conversation recipe moves 27 → 28: the interaction
+    # slot re-pins the two reads to `@2` and admits the two new addresses.
+    AgentRole.HEAD_OF_ABM: "v56",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -203,16 +218,17 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "read_account_research": (AgentRole.HEAD_OF_ABM,),
     "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
     # Their newest sibling: the general claims query (one account or contact, by field family,
-    # source tier, verification status or date, paged, behind the same display gate). Registered
-    # and audited, granted to NOBODY until a reviewed profile version pins its contract and the
-    # manual teaches it — `build_agent_profile_registry` refuses to compose when a role's
-    # authority and its profile's tool list disagree, so the grant is that bump, never a dict edit.
-    "read_claims": (),
+    # source tier, verification status or date, paged, behind the same display gate). Granted with
+    # `head-of-abm@v56` — the bump that pins its contract and mints the manual chapter that
+    # teaches it, because `build_agent_profile_registry` refuses to compose when a role's
+    # authority and its profile's tool list disagree, so a grant is that bump and never a dict
+    # edit. stage0-interview v33 §7c says which question it is the read for.
+    "read_claims": (AgentRole.HEAD_OF_ABM,),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
-    # changes nothing; it is granted to nobody until the reviewed profile version that pins its
-    # contract and the manual chapter that teaches it land together.
-    "read_artifact": (),
+    # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
+    # artifact stops being a memory of the turn that made it.
+    "read_artifact": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
@@ -555,8 +571,14 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 # refuse `arv2_reads_not_composed` at call time — restriction by refusal, which
                 # that section rejects. Withheld, the trial's framing sentence is true: this
                 # surface has no read surface over the project's rows.
+                # `read_claims` joins them at `head-of-abm@v56` for the identical sentence — it
+                # reads through the same uncomposed `arv2_reads` service — and `read_artifact`
+                # joins for the nearest thing to it: it needs no service, but a dev-harness turn
+                # carries no project, so installed it could only refuse `project_not_found`.
                 "read_project_accounts",
                 "read_account_research",
+                "read_claims",
+                "read_artifact",
                 "read_discovery_run",
             }
         ),
@@ -600,8 +622,9 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
             "they tell you, write the project's ICP, its personas and its plan as files under "
             "`project/`, open the product-set and ICP confirmation gates, and launch ARV2 "
             "discovery, account research and person research on this project when the human asks "
-            "for them. You read the project's accounts, research and discovery runs from the rows "
-            "before speaking about them. You do not fetch external sources yourself, delegate to a "
+            "for them. You read the project's accounts, their research and claims, its discovery "
+            "runs and its gallery artifacts from the rows before speaking about them. You do not "
+            "fetch external sources yourself, delegate to a "
             "specialist, or widen a set the human selected."
         ),
     ),
@@ -699,12 +722,14 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     if name == "open_icp_confirmation_gate":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     # The paged reads. `read_account_research@2` and `read_discovery_run@2` take `offset`/`limit`
-    # and answer with `next_offset`; their `@1`s keep the grant because `head-of-abm@v55` pins
-    # those exact contracts, and a role holding a version no profile pins is authority nobody
-    # asked for. The `@2`s register ungranted so the audit sees them from the moment they exist —
-    # the same shape `open_icp_confirmation_gate` has, with the grant on the other version.
+    # and answer with `next_offset`, and `head-of-abm@v56` pins those exact contracts, so the
+    # grant is theirs. The `@1`s stay REGISTERED, and recipe0-stage0@27 stays the exact replay
+    # input for a turn pinned to it — @28 RE-PINS the key rather than admitting both, because one
+    # requirement set resolves one version per (kind, key) — but a role holding a version no
+    # current profile pins is authority nobody asked for, so they are ungranted here.
+    # The same shape `open_icp_confirmation_gate` has, with the grant on the newer version.
     if name in {"read_account_research", "read_discovery_run"}:
-        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@1") else ()
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

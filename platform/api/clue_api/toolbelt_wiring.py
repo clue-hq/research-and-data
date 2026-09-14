@@ -2823,28 +2823,28 @@ def build_toolbelt(
     # ``project_account``, the display blocks, the claim store and the discovery run, all of which
     # exist wherever there is a database, and reading them spends nothing. Without a service they
     # refuse ``arv2_reads_not_composed`` before they touch a row.
-    # `read_claims` is the fourth and is granted to NOBODY yet (`C6_AGENT_TOOL_AUTHORITY` says
-    # `()`): it is the general claims query — by field family, tier, verification status or date,
-    # over an account or a contact — and it registers here on the same service so the authority
-    # audit and the write-surface inventory see it from the moment it exists. A later reviewed
-    # profile version moves the grant, and the manual chapter it points at is minted with it.
+    # `read_claims` is the fourth: it is the general claims query — by field family, tier,
+    # verification status or date, over an account or a contact — and it registers here on the
+    # same service. It is granted at `head-of-abm@v56`, the bump that pins its contract and mints
+    # the manual chapter that teaches it.
+    # Two of the four keep the name-only alias here and two give it up: `head-of-abm@v56` pins the
+    # PAGED `read_account_research@2` / `read_discovery_run@2`, so their `@1`s register without
+    # the default. The alias must never disagree with the promoted profile's pin — it would hand
+    # an unversioned caller the version nobody holds — which is why it moves in the same step as
+    # the grant and the recipe address.
+    _unaliased_reads = {"read_account_research", "read_discovery_run"}
     for tool in build_arv2_read_tools(arv2_reads):
-        registry.register(tool, make_default=True)
-    # The paged `@2` of two of them, beside their frozen `@1`s. `head-of-abm@v55` pins the `@1`
-    # contracts, so `@1` keeps the name-only alias: a default that disagreed with the promoted
-    # profile's pin would hand an unversioned caller the version nobody holds — the reasoning
-    # `open_icp_confirmation_gate` already established, in the other direction. Registered here
-    # (ungranted, and not yet in a standing recipe) so the authority audit and the write-surface
-    # inventory see them from the moment they exist; the grant, the recipe address and the alias
-    # move together in one later reviewed step.
+        registry.register(tool, make_default=tool.descriptor.name not in _unaliased_reads)
+    # The paged `@2` of those two, beside their frozen `@1`s, holding the alias their `@1`s gave
+    # up. `@1` stays registered so an execution pinned to recipe0-stage0@27 or earlier still
+    # resolves the address it planned; it is simply no longer the version an unversioned caller
+    # gets — the reasoning `open_icp_confirmation_gate` already established, in this direction.
     for tool in build_arv2_paged_read_tools(arv2_reads):
-        registry.register(tool, make_default=False)
+        registry.register(tool, make_default=True)
     # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
     # design documents and the legs that bind them to a project exist wherever there is a database,
-    # so the ambient ``conn_factory`` is its whole composition. Granted to NOBODY yet
-    # (`C6_AGENT_TOOL_AUTHORITY` says `()`) — it registers here so the authority audit and the tool
-    # inventory see it from the moment it exists, and a later reviewed profile version moves the
-    # grant together with the manual chapter that teaches it.
+    # so the ambient ``conn_factory`` is its whole composition. Granted at `head-of-abm@v56`,
+    # together with the manual chapter that teaches it and the recipe revision that admits it.
     for tool in build_artifact_read_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside

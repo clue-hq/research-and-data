@@ -1175,7 +1175,7 @@ class LaunchArv2AccountResearchTool(Tool):
         "explicitly approves this exact account set and ICP. A successful result means the jobs "
         "were enqueued or replayed; it never means research has completed, and it authorizes no "
         "contact research. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#launch_arv2_account_research"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#launch_arv2_account_research"
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput
@@ -1268,7 +1268,7 @@ class LaunchArv2PersonResearchTool(Tool):
         "replayed, never that research has completed. ``persona`` is the committee seat each "
         "named person is given if they do not already hold one — it is what puts them on the "
         "account's contact list — and defaults to ``user``. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#launch_arv2_person_research"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#launch_arv2_person_research"
     )
     input_model = LaunchArv2PersonResearchInput
     output_model = LaunchArv2PersonResearchOutput
@@ -1343,7 +1343,7 @@ class ReadArv2AccountResearchRunTool(Tool):
         "Read one ARV2 account-research run: what it was pinned to, its status, and the state of "
         "each account's job (including the failure code of anything that needs review). Effect-"
         "free; it never starts, resumes or changes research. "
-        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_arv2_account_research_run"
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_arv2_account_research_run"
     )
     input_model = ReadArv2AccountResearchRunInput
     output_model = ReadArv2AccountResearchRunOutput

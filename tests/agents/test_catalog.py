@@ -82,7 +82,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:content-exemplar@v1",
         # The three document skills. Each one carries the whole procedure for one document
         # the Head of ABM now writes as a file under `project/`, and grants no tool;
-        # stage0-interview v32 §5b, §5c and §6b are one-line pointers at them.
+        # stage0-interview v33 §5b, §5c and §6b are one-line pointers at them. They are here
+        # twice: the free-flowing `project/` writer moved the procedures, so each re-minted at v2
+        # while `head-of-abm@v55` keeps the v1 bytes it pins.
         "skill:icp-authoring@v1",
         "skill:icp-authoring@v2",
         "skill:icp-synthesis@v1",
@@ -92,40 +94,54 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # any other and the capability map discloses it with its path. Four of them (errors,
         # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
         # is their only writer; the other eleven are hand written and founder reviewed. Every
-        # chapter is here twice: `head-of-abm@v55` changed the grant the manual describes, and a
-        # catalog version is immutable, so the library re-minted at v2 while v54 keeps the v1 bytes
-        # it pins.
+        # chapter is here THREE times: each of `head-of-abm@v55` and `head-of-abm@v56` changed
+        # the grant the manual describes, and a catalog version is immutable, so the library
+        # re-minted at v2 and then at v3 while v54 keeps the v1 bytes and v55 the v2 bytes.
         "skill:manual-accounts-research@v1",
         "skill:manual-accounts-research@v2",
+        "skill:manual-accounts-research@v3",
         "skill:manual-claims@v1",
         "skill:manual-claims@v2",
+        "skill:manual-claims@v3",
         "skill:manual-discovery@v1",
         "skill:manual-discovery@v2",
+        "skill:manual-discovery@v3",
         "skill:manual-documents-decisions@v1",
         "skill:manual-documents-decisions@v2",
         "skill:manual-documents-decisions@v3",
         "skill:manual-errors@v1",
         "skill:manual-errors@v2",
+        "skill:manual-errors@v3",
         "skill:manual-fields@v1",
         "skill:manual-fields@v2",
+        "skill:manual-fields@v3",
         "skill:manual-gates-authority@v1",
         "skill:manual-gates-authority@v2",
+        "skill:manual-gates-authority@v3",
         "skill:manual-glossary@v1",
         "skill:manual-glossary@v2",
+        "skill:manual-glossary@v3",
         "skill:manual-humans-screens@v1",
         "skill:manual-humans-screens@v2",
+        "skill:manual-humans-screens@v3",
         "skill:manual-index@v1",
         "skill:manual-index@v2",
+        "skill:manual-index@v3",
         "skill:manual-limits@v1",
         "skill:manual-limits@v2",
+        "skill:manual-limits@v3",
         "skill:manual-siblings@v1",
         "skill:manual-siblings@v2",
+        "skill:manual-siblings@v3",
         "skill:manual-tools@v1",
         "skill:manual-tools@v2",
+        "skill:manual-tools@v3",
         "skill:manual-turn@v1",
         "skill:manual-turn@v2",
+        "skill:manual-turn@v3",
         "skill:manual-workspace@v1",
         "skill:manual-workspace@v2",
+        "skill:manual-workspace@v3",
         "skill:persona-authoring@v1",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v1",
@@ -175,6 +191,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # three document skills, §10 saying the documents are written under `project/`, and
         # the three retired tools gone from its front matter.
         "skill:stage0-interview@v32",
+        # Paged and spilled reads: v32 with §7c rewritten as the read map — which read answers
+        # which question, pages read to their `next_offset`, a `field_prefix` taken from
+        # `prefixes`, and a `spilled_to` receipt read from its own file in chunks — and the four
+        # read addresses `head-of-abm@v56` grants in its front matter.
         "skill:stage0-interview@v33",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
@@ -268,6 +288,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # ungranted, the three document skills pinned, stage0-interview v32 and the manual
         # at `manual-*@v2`.
         "profile:head-of-abm@v55",
+        # Paged and spilled reads: v55 with `read_account_research@2` / `read_discovery_run@2`
+        # replacing their `@1`s, `read_claims@1` and `read_artifact@1` granted, stage0-interview
+        # v33, the document skills at v2 and the manual at `manual-*@v3`.
+        "profile:head-of-abm@v56",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

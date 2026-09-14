@@ -141,8 +141,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # three documents they wrote are written as files. It pins stage0-interview v32, the three
         # document skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`, none of
         # which grants a tool) and the re-minted `manual-*@v2` chapters, so the digest moves for
-        # both reasons at once. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("244fb56aa5590eca328db644340274c22f2f77993575ec5d02f018d8643b52a3"),
+        # both reasons at once. v56 moves it for three reasons: two granted addresses change
+        # version (`read_account_research@1`/`read_discovery_run@1` -> their paged `@2`s, a
+        # different input digest), two are added (`read_claims@1`, `read_artifact@1`), and every
+        # pinned skill body in the manifest is new — stage0-interview v33, the document skills at
+        # v2, the re-minted `manual-*@v3`. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("0c2d02ea729cb5b6eb83b36524d6a5fbd478c82d46ad691aeaecf0f559ebc38b"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -439,6 +443,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `plan-authoring@v1`. They stay installed and disclosed as ROLE_UNAVAILABLE below, which is
     # the whole point of disclosing a capability the role lacks: the model is not left to invent a
     # workaround for a tool that vanished.
+    #
+    # Paged and spilled reads move two and add two. `read_account_research` and
+    # `read_discovery_run` are available at their PAGED `@2` — `head-of-abm@v56` pins those exact
+    # contracts, so the `@1`s drop to ROLE_UNAVAILABLE beside the retired document tools — and
+    # `read_claims@1` and `read_artifact@1` join, granted at the same version and taught by
+    # stage0-interview v33 §7c.
     assert available == {
         "draft_account_research_directive@5",
         "get_research_view@1",
@@ -452,9 +462,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "open_product_set_selection_gate@1",
         "propose_field@2",
         "propose_source@1",
-        "read_account_research@1",
+        "read_account_research@2",
+        "read_artifact@1",
         "read_arv2_account_research_run@1",
-        "read_discovery_run@1",
+        "read_claims@1",
+        "read_discovery_run@2",
         "read_project_accounts@1",
         "record_interview_answer@1",
         "submit_ingestion@1",
@@ -520,9 +532,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v55"
+    assert production.profile_ref.address == "profile:head-of-abm@v56"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v32"
+        "skill:stage0-interview@v33"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -566,7 +578,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v32")
+    body = production.open_skill("skill:stage0-interview@v33")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -626,13 +638,13 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v32",
+        "skill:stage0-interview@v33",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
-        "skill:icp-authoring@v1",
-        "skill:persona-authoring@v1",
-        "skill:plan-authoring@v1",
-        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
+        "skill:icp-authoring@v2",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -721,10 +733,17 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("author_icp", "open the `icp-authoring` skill"),
         ("personas_after_confirmation", "open the `persona-authoring` skill"),
         ("write_plan", "open the `plan-authoring` skill"),
-        ("document_skill_paths", "`.deepagent/skills/plan-authoring/v1/SKILL.md`"),
+        ("document_skill_paths", "`.deepagent/skills/plan-authoring/v2/SKILL.md`"),
         # The ARV2 reads: the one situation v25 creates. Speaking about an account is gated on
         # reading it, and a read is never a launch — both are governed behaviours, not inferences.
-        ("read_accounts_before_speaking", "Never state a fact about an account from memory"),
+        # v33 widens the same rule past accounts, because the grant did: a claim and a gallery
+        # artifact are read before they are described too, and every read is walked to the end of
+        # its pages before a count is stated.
+        ("read_accounts_before_speaking", "Never state a fact from memory of an earlier thread"),
+        ("read_claims_for_a_specific_question", "**A specific question about claims**"),
+        ("read_the_artifact_before_describing_it", "**What a gallery artifact is or says:**"),
+        ("read_every_page_before_counting", "read again with `offset: next_offset` before you"),
+        ("a_spilled_result_is_read_from_its_file", "the receipt says `spilled_to`"),
         ("read_discovery_before_relaunching", "call `read_discovery_run` for this project"),
         ("prose_is_not_a_receipt", 'Ordinary prose such as "looks good" confirms nothing.'),
         ("contradictory_correction", "**Corrections carry lineage.**"),
@@ -742,7 +761,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v32")
+    body = head.open_skill("skill:stage0-interview@v33")
 
     assert required_guidance in body
 
@@ -796,14 +815,14 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v32" not in remaining
+    assert "skill:stage0-interview@v33" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
-        "skill:icp-authoring@v1",
-        "skill:persona-authoring@v1",
-        "skill:plan-authoring@v1",
-        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
+        "skill:icp-authoring@v2",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        *(f"skill:manual-{name}@v3" for name in MANUAL_CHAPTERS),
     ]
 
 
