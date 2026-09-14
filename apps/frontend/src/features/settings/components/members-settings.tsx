@@ -106,7 +106,7 @@ export function MembersSettings({
                       <span className={styles.memberAvatar}>
                         {name.slice(0, 1)}
                       </span>
-                      {name}
+                      <span className={styles.memberName}>{name}</span>
                     </span>
                   </td>
                   <td>{member.email ?? "—"}</td>
