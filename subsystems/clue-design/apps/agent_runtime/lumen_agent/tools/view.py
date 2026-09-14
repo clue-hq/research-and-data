@@ -601,6 +601,7 @@ def _view_content(
                 _text_block(
                     f"view: asset {asset_id!r} preview file is missing. "
                     f"Available asset ids: {available}"
+                    + _original_gif_hint(tools, asset_id, record)
                 )
             ]
             tools.record("agent", "view_called", input_summary=target, output_summary="asset_missing_file")

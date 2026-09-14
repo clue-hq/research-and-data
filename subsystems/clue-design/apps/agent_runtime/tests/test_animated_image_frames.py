@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from langchain_core.tools import StructuredTool
@@ -390,3 +391,25 @@ def test_missing_reference_thumbnail_still_describes_verified_original_frames(an
     content = make_view_tool(tools).invoke({"target": "reference:1"})
     assert not any(block["type"] == "image" for block in content)
     assert "4 frames" in str(content) and "frame_index" in str(content), content
+
+
+def test_missing_asset_thumbnail_keeps_original_frame_discovery_and_explicit_recovery(
+    animated_context,
+):
+    tools, record, raw, store = animated_context
+    preview_path, _, _ = tools._asset_preview_path(record)
+    Path(preview_path).unlink()
+    before = copy.deepcopy(tools.scene)
+    public = make_view_tool(tools)
+    content = public.invoke({"target": "asset:source"})
+    assert not any(block["type"] == "image" for block in content)
+    text = " ".join(block["text"] for block in content if block["type"] == "text")
+    assert "preview file is missing" in text
+    assert "4 frames" in text and "frame_index" in text
+    assert hashlib.sha256(raw).hexdigest() in text
+    selected = public.invoke({"target": "asset:source", "frame_index": 2})
+    with _observed_image(selected) as image:
+        assert image.convert("RGBA").getpixel((int(image.width * 0.625), 0)) == GREEN
+    assert tools.scene == before and tools.operations_ledger == []
+    assert blob_path_for_digest(store, hashlib.sha256(raw).hexdigest()).read_bytes() == raw
+    assert not Path(preview_path).exists()
