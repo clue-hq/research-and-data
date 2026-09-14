@@ -17,8 +17,11 @@ Three properties are deliberate, and each one is a test:
   the model; the project id is an untrusted input, checked against that workspace before any row
   is read.
 
-All three reads sit behind one :class:`Arv2ReadService` seam: one protocol the toolbelt tools
-call, one :class:`DbArv2ReadService` that opens one transaction per call.
+All four reads sit behind one :class:`Arv2ReadService` seam: one protocol the toolbelt tools
+call, one :class:`DbArv2ReadService` that opens one transaction per call. The fourth,
+``read_claims``, is the general query underneath the account read's fixed one: the same claims and
+the same display gate, asked by field family, source tier, verification status or date, about an
+account or a contact.
 
 Two of them wear two faces. ``read_account_research`` and ``read_discovery_run`` are registered at
 ``@1`` *and* at a paged ``@2`` that takes ``offset``/``limit`` and answers with ``next_offset``, so
@@ -34,6 +37,7 @@ import json
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal, Protocol
 from uuid import UUID
 
@@ -83,6 +87,7 @@ __all__ = [
     "AccountResearch",
     "Arv2ReadRefused",
     "Arv2ReadService",
+    "ClaimsQueryPage",
     "DbArv2ReadService",
     "DiscoveryCandidateView",
     "DiscoveryRunView",
@@ -93,6 +98,9 @@ __all__ = [
     "ReadAccountResearchTool",
     "ReadAccountResearchV2Input",
     "ReadAccountResearchV2Tool",
+    "ReadClaimsInput",
+    "ReadClaimsOutput",
+    "ReadClaimsTool",
     "ReadDiscoveryRunInput",
     "ReadDiscoveryRunOutput",
     "ReadDiscoveryRunTool",
@@ -105,8 +113,12 @@ __all__ = [
     "build_arv2_paged_read_tools",
     "build_arv2_read_tools",
     "claim_prefixes",
+    "claims_page",
+    "gate_claims",
     "list_project_accounts",
+    "parse_since",
     "read_account_research",
+    "read_claims",
     "read_discovery_run",
     "receipt_bytes",
 ]
@@ -123,7 +135,8 @@ class Arv2ReadRefused(Arv2Error):
     :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
     ``account_not_found``, ``overview_not_written``, ``account_not_researched``,
     ``no_claims_under_prefix``, ``offset_past_end``, ``offset_not_paged``,
-    ``discovery_run_not_found``, ``no_discovery_run``.
+    ``discovery_run_not_found``, ``no_discovery_run``, ``entity_not_found``,
+    ``since_invalid``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -551,6 +564,91 @@ def _is_unverified_synthesis(claim: Claim) -> bool:
     return claim.source_tier == 4 and claim.verification_status is not VerificationStatus.VERIFIED
 
 
+def gate_claims(
+    claims: Iterable[Claim], *, settings: Settings
+) -> tuple[list[Claim], dict[str, int]]:
+    """The claims a read may serve, and what it held back, by reason.
+
+    This is :mod:`clue_api.arv2.display.gather`'s gate, predicate for predicate: a special-category
+    value never leaves the store, an unjudged tier-4 synthesis is held back under a verifying
+    posture, and an ``outreach_safe=false`` row is held back outright (a read has no restricted
+    section to put one in). Without it a tool could tell a founder, in chat, a fact the account
+    page deliberately refuses to print — and call it verified, because the tool said so.
+
+    Written once and called by every claims-serving read, so a second read cannot come to a
+    gentler answer than the first: ``read_claims`` holds back exactly what ``read_account_research``
+    holds back because it is this function that decides, not each caller's copy of it.
+
+    Exclusions are **counted, not hidden**: a subject whose every claim is held back comes back
+    with an empty list and a non-zero count, which says "there is something here and you may not
+    have it" rather than "there is nothing here".
+    """
+
+    excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
+    servable: list[Claim] = []
+    for claim in claims:
+        if _is_sensitive(claim):
+            excluded["sensitive"] += 1
+            continue
+        if settings.verification_enabled and _is_unverified_synthesis(claim):
+            excluded["unverified"] += 1
+            continue
+        if not claim.outreach_safe:
+            excluded["outreach_unsafe"] += 1
+            continue
+        servable.append(claim)
+    return servable, excluded
+
+
+def _claim_view(claim: Claim) -> AccountClaimView:
+    """One claim as a read serves it: the value, and what stands behind it, clipped."""
+
+    evidence, evidence_truncated = _clip(claim.evidence_span or "", EVIDENCE_CHARS)
+    return AccountClaimView(
+        claim_id=str(claim.id),
+        field_key=str(claim.field_key),
+        value=claim.value_json,
+        source_url=claim.source_url,
+        evidence=evidence,
+        evidence_truncated=evidence_truncated,
+        tier=int(claim.source_tier),
+        verification_status=str(claim.verification_status),
+        outreach_safe=bool(claim.outreach_safe),
+        collected_at=claim.collected_at.isoformat(),
+    )
+
+
+def claims_page(
+    kept: Sequence[Claim], *, offset: int, limit: int
+) -> tuple[tuple[AccountClaimView, ...], bool, int | None]:
+    """One page of already-gated claims, plus whether more is left and where it starts.
+
+    Bounded twice: by ``limit`` — what the caller asked for — and by
+    :data:`READ_REFERENCES_BUDGET_BYTES`, the receipt's own encoding, which is the binding one on
+    a real account. A page ends at whichever comes first, so it may come back shorter than
+    ``limit`` and still name a next offset. Whatever does not fit is not dropped: the next offset
+    says where to continue.
+
+    Shared by every paged claims read, so the two ceilings mean one thing across the surface.
+    """
+
+    if offset >= len(kept) and offset > 0:
+        # An offset past the end is the caller's mistake, not an empty subject: answering it with
+        # "no claims" would be a false statement about something that has some.
+        raise Arv2ReadRefused(
+            "offset_past_end",
+            f"this subject has {len(kept)} servable claims; offset {offset} is past the end",
+        )
+    views = [_claim_view(claim) for claim in kept[offset : offset + limit]]
+    fitted, cut = _take_within_budget(
+        [view.model_dump() for view in views], budget=READ_REFERENCES_BUDGET_BYTES
+    )
+    served = tuple(views[:fitted])
+    end = offset + len(served)
+    truncated = cut or end < len(kept)
+    return served, truncated, (end if truncated else None)
+
+
 async def _account_claims(
     conn: AsyncConnection,
     *,
@@ -565,23 +663,13 @@ async def _account_claims(
     page gates them**, bounded, plus whether more is left, what was held back, where the next
     page starts, and which claim families the account holds.
 
-    The gate is :mod:`clue_api.arv2.display.gather`'s, predicate for predicate: a special-category
-    value never leaves the store, an unjudged tier-4 synthesis is held back under a verifying
-    posture, and an ``outreach_safe=false`` row is held back outright (this read has no restricted
-    section to put one in). Without it the agent could tell a founder, in chat, a fact the account
-    page deliberately refuses to print — and call it verified, because the tool said so.
+    The gate is :func:`gate_claims`, the one every claims-serving read shares, and it runs over the
+    whole account *before* ``field_prefix`` narrows it — so ``excluded`` counts the account rather
+    than the matching subset, and the families reported are the account's, which is the point: a
+    read that guessed the wrong prefix is answered with the right ones instead of with a bare no.
 
-    Exclusions are **counted, not hidden**: an account whose every claim is held back comes back
-    with an empty list and a non-zero ``excluded``, which says "there is something here and you may
-    not have it" rather than "there is nothing here". The gate runs over the whole account
-    *before* ``field_prefix`` narrows it, so ``excluded`` counts the account rather than the
-    matching subset — and the families it reports are the account's, which is the point: a read
-    that guessed the wrong prefix is answered with the right ones instead of with a bare no.
-
-    The page is bounded twice: by ``limit`` — what the caller asked for, itself capped at
-    :data:`MAX_CLAIMS` — and by :data:`READ_REFERENCES_BUDGET_BYTES`, the receipt's own encoding,
-    which is the binding one on a real account. A page ends at whichever comes first. Whatever does
-    not fit is not dropped: the next offset says where to continue.
+    The page is :func:`claims_page`'s, bounded by ``limit`` (itself capped at :data:`MAX_CLAIMS`)
+    and by the receipt's byte budget, whichever binds first.
 
     The claims read spans every project of the workspace that researched this account: the store
     holds account truth, not a per-project lens.
@@ -602,19 +690,7 @@ async def _account_claims(
     #
     # The gate runs first and ``field_prefix`` narrows second, so the families below are the
     # account's *servable* ones — never a family made entirely of claims the caller may not have.
-    excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
-    gated: list[Claim] = []
-    for claim in claims:
-        if _is_sensitive(claim):
-            excluded["sensitive"] += 1
-            continue
-        if settings.verification_enabled and _is_unverified_synthesis(claim):
-            excluded["unverified"] += 1
-            continue
-        if not claim.outreach_safe:
-            excluded["outreach_unsafe"] += 1
-            continue
-        gated.append(claim)
+    gated, excluded = gate_claims(claims, settings=settings)
 
     prefixes = claim_prefixes(gated)
     kept = [
@@ -634,38 +710,8 @@ async def _account_claims(
             f"this account has claims, but none under {field_prefix!r}; its families are: {listed}",
         )
 
-    if offset >= len(kept) and offset > 0:
-        # An offset past the end is the caller's mistake, not an empty account: answering it with
-        # "no claims" would be a false statement about an account that has some.
-        raise Arv2ReadRefused(
-            "offset_past_end",
-            f"this account has {len(kept)} servable claims; offset {offset} is past the end",
-        )
-    window = kept[offset : offset + limit]
-    views: list[AccountClaimView] = []
-    for claim in window:
-        evidence, evidence_truncated = _clip(claim.evidence_span or "", EVIDENCE_CHARS)
-        views.append(
-            AccountClaimView(
-                claim_id=str(claim.id),
-                field_key=str(claim.field_key),
-                value=claim.value_json,
-                source_url=claim.source_url,
-                evidence=evidence,
-                evidence_truncated=evidence_truncated,
-                tier=int(claim.source_tier),
-                verification_status=str(claim.verification_status),
-                outreach_safe=bool(claim.outreach_safe),
-                collected_at=claim.collected_at.isoformat(),
-            )
-        )
-    fitted, cut = _take_within_budget(
-        [view.model_dump() for view in views], budget=READ_REFERENCES_BUDGET_BYTES
-    )
-    served = tuple(views[:fitted])
-    end = offset + len(served)
-    truncated = cut or end < len(kept)
-    return served, truncated, excluded, (end if truncated else None), prefixes
+    served, truncated, next_offset = claims_page(kept, offset=offset, limit=limit)
+    return served, truncated, excluded, next_offset, prefixes
 
 
 async def read_account_research(
@@ -955,6 +1001,159 @@ async def read_discovery_run(
 
 
 # =================================================================================================
+# read 4: the claims about one account or contact
+# =================================================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimsQueryPage:
+    """One page of the claims a query matched, and what the whole subject holds."""
+
+    entity_id: str
+    #: ``account`` or ``contact`` — resolved from the rows, never asserted by the caller.
+    entity_type: str
+    claims: tuple[AccountClaimView, ...]
+    #: What the display gate held back, by reason, over the WHOLE subject — never the page and
+    #: never the filtered subset, for the same reason ``read_account_research`` counts that way.
+    excluded: dict[str, int]
+    #: The subject's servable claim families with their counts, so a query that matched nothing
+    #: is answered with the families that exist rather than with a bare no.
+    prefixes: dict[str, int]
+    offset: int
+    next_offset: int | None
+    truncated: bool
+
+
+#: The subject of a claims query, as this workspace may see it. Accounts and contacts share one
+#: uuid space and one ``claim.entity_id`` column, so one statement answers "is this ours, and what
+#: kind of thing is it?" — and ``merged_into IS NULL`` refuses a merge loser by name rather than
+#: serving the survivor's claims under an id that is no longer anybody.
+_ENTITY_IN_WORKSPACE = text(
+    """
+    SELECT 'account' AS entity_type FROM account_entity
+     WHERE id = :id AND workspace_id = :ws AND merged_into IS NULL
+    UNION ALL
+    SELECT 'contact' AS entity_type FROM contact_entity
+     WHERE id = :id AND workspace_id = :ws AND merged_into IS NULL
+    LIMIT 1
+    """
+)
+
+
+async def _entity_in_workspace(
+    conn: AsyncConnection, *, workspace_id: str, entity_id: str
+) -> tuple[UUID, str]:
+    """The subject's id and kind, or the refusal that says it is not ours to read."""
+
+    try:
+        entity_uuid = UUID(entity_id)
+    except ValueError:
+        # A malformed id reads exactly like an absent one, as it does for the account read: both
+        # mean "there is no such subject here", and the model does not learn the id format from
+        # an error message.
+        raise Arv2ReadRefused(
+            "entity_not_found", f"no account or contact {entity_id} in this workspace"
+        ) from None
+    row = (
+        (await conn.execute(_ENTITY_IN_WORKSPACE, {"id": entity_uuid, "ws": workspace_id}))
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise Arv2ReadRefused(
+            "entity_not_found", f"no account or contact {entity_id} in this workspace"
+        )
+    return entity_uuid, str(row["entity_type"])
+
+
+def parse_since(value: str) -> datetime:
+    """``value`` as the instant a claim must have been collected at or after.
+
+    An ISO-8601 date or datetime. A bare date means midnight UTC, and a naive datetime is read as
+    UTC — claims are stored with an offset, and comparing an offset-aware column against a naive
+    instant raises rather than filtering. A string that is neither is refused by name: silently
+    ignoring an unparseable ``since`` would answer a narrowed question with the unnarrowed list
+    and call it the answer.
+    """
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise Arv2ReadRefused(
+            "since_invalid",
+            f"since must be an ISO-8601 date or datetime (e.g. '2026-09-01'); got {value!r}",
+        ) from None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+async def read_claims(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    entity_id: str,
+    settings: Settings,
+    field_prefix: str | None = None,
+    tier: int | None = None,
+    verification_status: str | None = None,
+    since: str | None = None,
+    offset: int = 0,
+    limit: int = MAX_CLAIMS,
+) -> ClaimsQueryPage:
+    """The live claims about one account or contact, filtered, gated and paged.
+
+    The general query beside the account read's fixed one: "what do we actually know about this
+    person, from a trusted source, since the campaign started?" is four filters over one claim
+    list, and without them the model reads a hundred claims to quote three. The filters compose —
+    each one narrows what the one before it left — and every one of them narrows what the gate
+    already allowed, never what it held back.
+
+    A query that matches nothing is an **empty page with its counts and families**, not a refusal:
+    "no tier-1 claim about this person since June" is a true, useful sentence, and the families
+    come back with it so the next call is a correction rather than another guess. Only three
+    things are refusals: a subject this workspace cannot see (``entity_not_found``), a ``since``
+    that is not a date (``since_invalid``), and an offset past the end (``offset_past_end``).
+
+    The claims span every project of the workspace that researched this subject: the store holds
+    entity truth, not a per-project lens.
+    """
+
+    entity_uuid, entity_type = await _entity_in_workspace(
+        conn, workspace_id=workspace_id, entity_id=entity_id
+    )
+    collected_since = None if since is None else parse_since(since)
+    # Scoped by the claim store's own tenant filter, never by a hand-written workspace predicate:
+    # the scope object is the one place that knows public-footprint claims are shared and private
+    # ones are not. The order is the store's — ``(field_key, collected_at DESC, id)`` — so one
+    # field's newest value comes first, which is the grouping the agent reads.
+    claims = await claims_for_entities(
+        conn,
+        [EntityId(entity_uuid)],
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    gated, excluded = gate_claims(claims, settings=settings)
+    prefixes = claim_prefixes(gated)
+    kept = [
+        claim
+        for claim in gated
+        if (field_prefix is None or claim.field_key.startswith(field_prefix))
+        and (tier is None or int(claim.source_tier) == tier)
+        and (verification_status is None or str(claim.verification_status) == verification_status)
+        and (collected_since is None or claim.collected_at >= collected_since)
+    ]
+    served, truncated, next_offset = claims_page(kept, offset=offset, limit=limit)
+    return ClaimsQueryPage(
+        entity_id=str(entity_uuid),
+        entity_type=entity_type,
+        claims=served,
+        excluded=excluded,
+        prefixes=prefixes,
+        offset=offset,
+        next_offset=next_offset,
+        truncated=truncated,
+    )
+
+
+# =================================================================================================
 # the service seam + its production implementation
 # =================================================================================================
 
@@ -998,6 +1197,19 @@ class Arv2ReadService(Protocol):
         offset: int,
         limit: int,
     ) -> DiscoveryRunView: ...
+
+    async def read_claims(
+        self,
+        *,
+        workspace_id: str,
+        entity_id: str,
+        field_prefix: str | None,
+        tier: int | None,
+        verification_status: str | None,
+        since: str | None,
+        offset: int,
+        limit: int,
+    ) -> ClaimsQueryPage: ...
 
 
 class DbArv2ReadService:
@@ -1070,6 +1282,32 @@ class DbArv2ReadService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 run_id=run_id,
+                offset=offset,
+                limit=limit,
+            )
+
+    async def read_claims(
+        self,
+        *,
+        workspace_id: str,
+        entity_id: str,
+        field_prefix: str | None,
+        tier: int | None,
+        verification_status: str | None,
+        since: str | None,
+        offset: int,
+        limit: int,
+    ) -> ClaimsQueryPage:
+        async with self._conn_factory() as conn:
+            return await read_claims(
+                conn,
+                workspace_id=workspace_id,
+                entity_id=entity_id,
+                field_prefix=field_prefix,
+                tier=tier,
+                verification_status=verification_status,
+                since=since,
+                settings=self._settings,
                 offset=offset,
                 limit=limit,
             )
@@ -1526,6 +1764,121 @@ def _discovery_fields(run: DiscoveryRunView) -> dict[str, Any]:
     }
 
 
+class ReadClaimsInput(ToolInput):
+    #: An account OR a contact: the store keys claims on one entity id, and so does this read.
+    entity_id: str
+    #: ``account.resonance`` narrows to one family — the families the subject actually has come
+    #: back in ``prefixes`` on every answer, including an empty one.
+    field_prefix: str | None = Field(default=None, max_length=80)
+    #: The source tier: 1 deterministic API, 2 official source, 3 reputable third party, 4 LLM
+    #: synthesis. Asking for 1–2 is how a turn quotes only what a deterministic source says.
+    tier: int | None = Field(default=None, ge=1, le=4)
+    verification_status: Literal["unverified", "verified", "rejected"] | None = None
+    #: An ISO-8601 date or datetime; claims collected at or after it. "What have we learned since
+    #: the campaign started?" is this field.
+    since: str | None = None
+    #: Continue from ``next_offset`` of the previous page. ``0`` starts over.
+    offset: int = Field(default=0, ge=0)
+    #: How many claims this page may hold. The receipt's byte budget is the other ceiling and
+    #: usually the binding one, so a page may come back shorter than this and say so.
+    limit: int = Field(default=40, ge=1, le=MAX_CLAIMS)
+
+
+class ReadClaimsOutput(ToolOutput):
+    entity_id: str
+    #: ``account`` or ``contact``, resolved from the rows — the read says what it read.
+    entity_type: str
+    #: The matching claims, gated exactly as the account pages gate them. (``AccountClaimView``
+    #: is the shape; the name is historical — a contact's claim is served in the same shape.)
+    claims: tuple[AccountClaimView, ...]
+    #: What the gate held back over the whole subject, by reason: ``sensitive``, ``unverified``,
+    #: ``outreach_unsafe``. A non-zero count means "there is more here, and it is not servable".
+    excluded: dict[str, int]
+    #: The subject's servable claim families with their counts — the whole subject's, never this
+    #: page's and never the filtered subset's, so a query that matched nothing still says what is
+    #: there.
+    prefixes: dict[str, int]
+    #: Where this page started in the matching claims.
+    offset: int
+    #: Where the next page starts, or ``None`` when this page ends the list.
+    next_offset: int | None
+    #: More matched than this page holds: continue with ``offset = next_offset``.
+    truncated: bool
+
+
+class ReadClaimsTool(Tool):
+    """Query the live claims about one account or contact."""
+
+    name = "read_claims"
+    version = "1"
+    model_description = (
+        "Query the live claims about one account or contact: by field family (field_prefix), "
+        "source tier, verification status, or collected since a date; paged; the same display "
+        "gate as the account pages. Use read_account_research for the written overview. "
+        "Effect-free. Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_claims"
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadClaimsInput
+    output_model: ClassVar[type[ToolOutput]] = ReadClaimsOutput
+    effect_class = ToolEffectClass.READ
+    replay = ReplaySafety(
+        policy=ReplayPolicy.EFFECT_FREE,
+        durable_identity="the subject's live claims",
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=(
+            "entity_id",
+            "field_prefix",
+            "tier",
+            "verification_status",
+            "since",
+            "offset",
+            "limit",
+        )
+    )
+    #: ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    #: pin (standing rule item 5).
+    pin_requirements = ("project",)
+
+    def __init__(self, service: Arv2ReadService | None) -> None:
+        self._service = service
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> Sequence[PreconditionFailure]:
+        del inputs, ctx
+        return _not_composed() if self._service is None else ()
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadClaimsInput)
+        assert self._service is not None
+        try:
+            page = await self._service.read_claims(
+                # The tenant is AMBIENT authority, never model-authored.
+                workspace_id=ctx.workspace_id,
+                entity_id=inputs.entity_id,
+                field_prefix=inputs.field_prefix,
+                tier=inputs.tier,
+                verification_status=inputs.verification_status,
+                since=inputs.since,
+                offset=inputs.offset,
+                limit=inputs.limit,
+            )
+        except Arv2ReadRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        output = ReadClaimsOutput(
+            entity_id=page.entity_id,
+            entity_type=page.entity_type,
+            claims=page.claims,
+            excluded=page.excluded,
+            prefixes=page.prefixes,
+            offset=page.offset,
+            next_offset=page.next_offset,
+            truncated=page.truncated,
+        )
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
 def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     """The lane's read surface. Registered always; composed wherever there is a database.
 
@@ -1533,13 +1886,18 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
     platform's tool surface stays complete (the authority audit sees every tool), and an agent that
     reaches for a read on a deployment without the lane gets the named ``arv2_reads_not_composed``
     refusal rather than an ``UnknownTool`` it cannot explain. Unlike its launching neighbours these
-    three have no flag: they read rows that already exist and spend nothing to do it.
+    four have no flag: they read rows that already exist and spend nothing to do it.
+
+    ``read_claims`` is the newest of them and is **granted to nobody yet**: it registers here, on
+    the same service and with the same refusal, so the authority audit and the write-surface
+    inventory see it from the moment it exists, and a reviewed profile version moves the grant.
     """
 
     return (
         ReadProjectAccountsTool(service),
         ReadAccountResearchTool(service),
         ReadDiscoveryRunTool(service),
+        ReadClaimsTool(service),
     )
 
 

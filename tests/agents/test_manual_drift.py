@@ -367,6 +367,23 @@ def test_every_refusal_code_is_noted_and_every_note_is_a_real_code(
     for pin in profile.tools:
         module = type(toolbelt.get(pin.name, pin.version)).__module__
         by_module.setdefault(module, []).append(pin.name)
+    # A tool registered UNGRANTED still owns its own refusal codes. `read_claims@1` sits in
+    # `read_tools.py` beside the three granted reads, and its service raises `entity_not_found` /
+    # `since_invalid` from a module-level function — where this scan attributes a code to the
+    # module rather than to a tool's class body. Its grant and the manual chapter that teaches it
+    # land together in one later reviewed step, so until then its codes are checked against its
+    # OWN `tool_notes.yaml` entry. Without this, the only way to make the file green would be to
+    # teach a granted read a refusal it cannot raise — which is precisely the drift this guards.
+    for module_name, tool_names in by_module.items():
+        tool_names.extend(
+            sorted(
+                name
+                for name in toolbelt.names()
+                if name not in granted
+                and name in notes
+                and type(toolbelt.get(name)).__module__ == module_name
+            )
+        )
 
     unnoted: list[str] = []
     unfound: list[str] = []

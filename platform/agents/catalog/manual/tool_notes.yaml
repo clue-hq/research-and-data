@@ -267,6 +267,19 @@ read_arv2_account_research_run:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and do not describe the run as finished or failed.
     arv2_account_research_run_not_found: Use the run id the launch returned; a run of another workspace is refused the same way one that never existed is.
 
+read_claims:
+  afterwards: >-
+    Nothing changes. You hold the claims about one account or contact that matched your filters,
+    plus every family the subject actually has, so a query that matched nothing is answered with
+    what is there rather than with a bare no.
+  skill_section: not taught by a skill yet; the grant and the chapter that teaches it land together.
+  see_also: [claims, accounts-research]
+  refusals:
+    arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
+    entity_not_found: Take the account id from read_project_accounts, or a contact id from a claim you already read; a merged entity is refused under its old id, so use the survivor.
+    since_invalid: Write since as a plain ISO date such as '2026-09-01', or drop it and read without it.
+    offset_past_end: You have already read to the end. Stop paging and answer from what you have.
+
 read_discovery_run:
   afterwards: >-
     Nothing changes. You hold what the last discovery asked for, found, verified and had

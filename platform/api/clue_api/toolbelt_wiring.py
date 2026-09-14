@@ -2818,10 +2818,15 @@ def build_toolbelt(
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
         registry.register(tool, make_default=True)
     # The other side of the lane: what the project's rows already say. Registered everywhere like
-    # its launching neighbours, but composed with no flag of its own — these three read
+    # its launching neighbours, but composed with no flag of its own — these four read
     # ``project_account``, the display blocks, the claim store and the discovery run, all of which
     # exist wherever there is a database, and reading them spends nothing. Without a service they
     # refuse ``arv2_reads_not_composed`` before they touch a row.
+    # `read_claims` is the fourth and is granted to NOBODY yet (`C6_AGENT_TOOL_AUTHORITY` says
+    # `()`): it is the general claims query — by field family, tier, verification status or date,
+    # over an account or a contact — and it registers here on the same service so the authority
+    # audit and the write-surface inventory see it from the moment it exists. A later reviewed
+    # profile version moves the grant, and the manual chapter it points at is minted with it.
     for tool in build_arv2_read_tools(arv2_reads):
         registry.register(tool, make_default=True)
     # The paged `@2` of two of them, beside their frozen `@1`s. `head-of-abm@v55` pins the `@1`

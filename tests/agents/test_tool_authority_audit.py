@@ -137,7 +137,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # names below — the `@1`s keep the grant the promoted profile pins, and the `@2`s register
     # ungranted until a reviewed profile version moves it, exactly as `open_icp_confirmation_gate`
     # does with the grant on the other version.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 132
+    # The general claims query DOES add a name (132 -> 133): `read_claims@1` is one account's or
+    # one contact's live claims asked by field family, source tier, verification status or date,
+    # behind the same display gate as `read_account_research`'s claims. It registers with the
+    # name-only alias — it is the only version of itself — and is held by NOBODY: the grant needs
+    # a profile version that pins its contract, which is a reviewed bump and not a dict edit.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 133
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
@@ -147,6 +152,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Registered, audited, and held by nobody — the paged pair waits for its profile version.
     assert c6_roles_for_tool("read_account_research@2") == ()
     assert c6_roles_for_tool("read_discovery_run@2") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == ()
+    assert c6_roles_for_tool("read_claims@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
     assert c6_roles_for_tool("write_project_document@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()

@@ -22,6 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.claim_writer import TIER_FOR_METHOD
 from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
     BODY_CHARS,
@@ -30,14 +31,26 @@ from clue_api.arv2.read_tools import (
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
+    read_claims,
     read_discovery_run,
     receipt_bytes,
 )
 from clue_api.frontend_read.v1_shared import arv2_research_status_for
 from clue_config import Settings
-from clue_core import EntityId, EntityType, ExtractionMethod, UseClass, new_project_run_id
+from clue_core import (
+    Claim,
+    EntityId,
+    EntityType,
+    ExtractionMethod,
+    ResearchMode,
+    ReuseScope,
+    UseClass,
+    new_project_run_id,
+    new_run_id,
+)
+from clue_research.claimstore import insert_claim
 from clue_research.durable import ensure_project_run
-from clue_research.identity import insert_account_entity
+from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.membership import ensure_project_account
 from clue_spine import Project
 
@@ -1273,6 +1286,544 @@ def test_an_unwritten_overview_and_an_unresearched_account_refuse_rather_than_re
             # half must not say otherwise because one prefix came back empty.
             assert narrowed.value.code == "no_claims_under_prefix"
             assert "account.resonance" in str(narrowed.value)
+
+    run_async(scenario())
+
+
+# -- read 4: the claims about one account or contact -----------------------------------------------
+
+
+async def _seed_contact(
+    conn: AsyncConnection, account_id: EntityId, *, name: str, linkedin: str
+) -> EntityId:
+    """One contact under an account, which is where the store keys a person's claims."""
+
+    return await insert_contact_entity(
+        conn, account_entity_id=account_id, full_name=name, linkedin_url=linkedin
+    )
+
+
+async def _seed_contact_claim(
+    conn: AsyncConnection,
+    claims: dict[str, str],
+    project: Project,
+    contact_id: EntityId,
+    *,
+    label: str,
+    field_key: str,
+    value: Any,
+    **overrides: Any,
+) -> UUID:
+    await write_claim(
+        conn,
+        claims,
+        label=label,
+        workspace_id=project.workspace_id,
+        entity_id=contact_id,
+        entity_type=EntityType.CONTACT,
+        field_key=field_key,
+        value_json=value,
+        **overrides,
+    )
+    return UUID(claims[label])
+
+
+async def _dated_claim(
+    conn: AsyncConnection,
+    claims: dict[str, str],
+    project: Project,
+    account_id: EntityId,
+    *,
+    label: str,
+    field_key: str,
+    value: Any,
+    collected_at: datetime,
+    extraction_method: ExtractionMethod = ExtractionMethod.SCRAPE,
+) -> UUID:
+    """One claim stamped with the day it was collected.
+
+    ``since`` filters on ``collected_at``, which the store stamps at insert and the claim table
+    then refuses to change (it is append-only: only ``superseded_by``, ``verification_status`` and
+    ``corroborations`` may be updated). A date test therefore cannot back-date a seeded row — the
+    instant has to be chosen when the claim is built, which is the one thing
+    ``LenientClaimWriter`` does not take. This is the only place these tests write a claim
+    themselves, and it writes what that writer writes: tier stamped from the method, tenant-private
+    scope, this workspace.
+    """
+
+    claim = Claim(
+        entity_id=account_id,
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json=value,
+        source_url="https://alpha.example/newsroom",
+        source_tier=TIER_FOR_METHOD[extraction_method],
+        extraction_method=extraction_method,
+        evidence_span="the sentence this value was read from",
+        confidence=0.5,
+        run_id=new_run_id(),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        reuse_scope=ReuseScope.TENANT_PRIVATE,
+        workspace_id=project.workspace_id,
+        collected_at=collected_at,
+    )
+    claim_id = await insert_claim(conn, claim, validate_field=False)
+    claims[label] = str(claim_id)
+    return UUID(str(claim_id))
+
+
+def test_the_claims_query_filters_by_family_tier_status_and_date() -> None:
+    """Four filters over one claim list, and they compose.
+
+    Without them a turn that wants three facts reads a hundred claims to find them, and pays for
+    every one of them on every later turn of the thread. Each filter is asserted alone and then
+    together, because a filter that is quietly dropped answers a narrowed question with the
+    unnarrowed list — which reads to the model as "this is all there is".
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            august = datetime(2026, 8, 1, tzinfo=UTC)
+            september = datetime(2026, 9, 10, tzinfo=UTC)
+            # Tier is stamped from the extraction method, never chosen: api -> 1, scrape -> 2,
+            # llm_synthesis -> 4. Asking for a tier is therefore asking "who says so?".
+            await _dated_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="legal_name",
+                field_key="core.legal_name",
+                value="Alpha Health Inc.",
+                extraction_method=ExtractionMethod.API,
+                collected_at=august,
+            )
+            await _dated_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="requisitions",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+                collected_at=august,
+            )
+            await _dated_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="culture",
+                field_key="account.resonance.buying_culture",
+                value="Committee-led, slow to sign",
+                collected_at=september,
+            )
+            await _dated_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="moves",
+                field_key="account.strategic_moves",
+                value="Opened a New York office in June 2026",
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                collected_at=september,
+            )
+            # The judged tier-4 claim is a fact; an unjudged one would be held back by the gate,
+            # which is the account page's rule and is tested in its own case below.
+            await conn.execute(
+                text("UPDATE claim SET verification_status = 'verified' WHERE id = ANY(:ids)"),
+                {"ids": [UUID(claims["culture"]), UUID(claims["moves"])]},
+            )
+
+            async def query(**filters: Any) -> tuple[str, ...]:
+                page = await read_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(account),
+                    settings=VERIFYING,
+                    **filters,
+                )
+                return tuple(claim.claim_id for claim in page.claims)
+
+            # Unfiltered: everything servable, in the store's own (field_key, newest) order.
+            assert set(await query()) == set(claims.values())
+            # One family.
+            assert await query(field_prefix="account.resonance") == (claims["culture"],)
+            # One tier: "what does a deterministic source say?" is tier 1, and it is one claim.
+            assert await query(tier=1) == (claims["legal_name"],)
+            assert set(await query(tier=2)) == {claims["requisitions"], claims["culture"]}
+            # One status.
+            assert set(await query(verification_status="verified")) == {
+                claims["culture"],
+                claims["moves"],
+            }
+            assert set(await query(verification_status="unverified")) == {
+                claims["legal_name"],
+                claims["requisitions"],
+            }
+            # One date. A bare ISO date means midnight UTC, which is what a human means by it.
+            assert set(await query(since="2026-09-01")) == {claims["culture"], claims["moves"]}
+            assert set(await query(since="2026-09-10T00:00:00+00:00")) == {
+                claims["culture"],
+                claims["moves"],
+            }
+            # And they compose: each one narrows what the one before it left.
+            assert await query(tier=2, since="2026-09-01") == (claims["culture"],)
+            assert await query(
+                field_prefix="account", verification_status="verified", since="2026-09-01"
+            ) == (claims["culture"], claims["moves"])
+
+    run_async(scenario())
+
+
+def test_a_query_that_matches_nothing_is_an_empty_page_with_its_families_not_a_refusal() -> None:
+    """ "No tier-1 claim about them since June" is a true sentence; "this account is unresearched"
+    is a different, false one. The families come back with the empty page so the next call is a
+    correction rather than another guess."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="requisitions",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            # One held-back claim, so the counts are not zero on the empty answer either.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="unsafe",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+
+            page = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=VERIFYING,
+                field_prefix="account.resonance",
+            )
+
+            assert page.claims == ()
+            assert (page.truncated, page.next_offset, page.offset) == (False, None, 0)
+            # What is there, and what is held back — both said out loud on an empty answer.
+            assert page.prefixes == {"account.open_requisitions": 1}
+            assert page.excluded == {"sensitive": 0, "unverified": 0, "outreach_unsafe": 1}
+
+            # An account with no claims at all is the same shape, not a refusal: this read is the
+            # general query, and "nothing yet" is an answer it is allowed to give.
+            empty_account = await _seed_account(conn, project, "Beta Clinic")
+            empty = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(empty_account),
+                settings=VERIFYING,
+            )
+            assert (empty.claims, empty.prefixes, empty.next_offset) == ((), {}, None)
+            assert empty.entity_type == "account"
+
+    run_async(scenario())
+
+
+def test_the_claims_query_pages_the_matches_and_refuses_an_offset_past_the_end() -> None:
+    """The page is the shared one: ``limit`` and the receipt's byte budget, whichever binds."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            for index in range(12):
+                await _seed_claim(
+                    conn,
+                    claims,
+                    project,
+                    account,
+                    label=f"claim_{index:02d}",
+                    field_key=f"account.open_requisitions.role_{index:03d}",
+                    value={"title": f"Role {index}"},
+                    evidence_span="Hiring now",
+                )
+
+            walked: list[str] = []
+            sizes: list[int] = []
+            offsets: list[int | None] = []
+            offset: int | None = 0
+            while offset is not None:
+                page = await read_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(account),
+                    settings=VERIFYING,
+                    offset=offset,
+                    limit=5,
+                )
+                assert page.offset == offset
+                walked.extend(claim.claim_id for claim in page.claims)
+                sizes.append(len(page.claims))
+                offsets.append(page.next_offset)
+                assert receipt_bytes([claim.model_dump() for claim in page.claims]) <= (
+                    READ_REFERENCES_BUDGET_BYTES
+                )
+                offset = page.next_offset
+
+            assert sizes == [5, 5, 2]
+            assert offsets == [5, 10, None]
+            # The pages partition the twelve: no gap, no repeat.
+            assert len(walked) == 12 and len(set(walked)) == 12
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(account),
+                    settings=VERIFYING,
+                    offset=90,
+                )
+            assert refused.value.code == "offset_past_end"
+
+    run_async(scenario())
+
+
+def test_the_claims_query_reads_a_contact_and_says_it_read_one() -> None:
+    """The store keys claims on an entity id, so the general query is not account-only: "what do
+    we know about this person?" is the question the account read cannot ask."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            contact = await _seed_contact(
+                conn,
+                account,
+                name="Nick Fisher",
+                linkedin="https://www.linkedin.com/in/nicholastfisher",
+            )
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="requisitions",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="title",
+                field_key="contact.current_title",
+                value="VP of Marketing",
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="hobby",
+                field_key="contact.facet.hobby",
+                value=["Runs a cocktail channel"],
+                evidence_span="I run the Cocktail Chemistry channel",
+            )
+
+            page = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(contact),
+                settings=VERIFYING,
+            )
+
+            # The read says which kind of subject it read, rather than leaving the model to infer
+            # it from the field keys.
+            assert page.entity_type == "contact"
+            assert page.entity_id == str(contact)
+            # The person's claims, and only the person's: the account's are the account's.
+            assert {claim.claim_id for claim in page.claims} == {claims["title"], claims["hobby"]}
+            assert page.prefixes == {"contact.current_title": 1, "contact.facet": 1}
+            # And the account it hangs off is still read under its own id.
+            account_page = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=VERIFYING,
+            )
+            assert account_page.entity_type == "account"
+            assert [claim.claim_id for claim in account_page.claims] == [claims["requisitions"]]
+
+    run_async(scenario())
+
+
+def test_the_claims_query_holds_back_exactly_what_the_account_read_holds_back() -> None:
+    """One gate, one answer. A second read that came to a gentler conclusion than the first would
+    let chat state, with a claim id attached, a fact the account page deliberately refuses to
+    print — so the two reads are asserted against each other, claim for claim and count for count,
+    under both verification postures."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="plain",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            # (a) special-category: never leaves the store, for any read.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="sensitive",
+                field_key="account.resonance.buying_culture",
+                value="A fact about the founder's health",
+                use_class=UseClass.SENSITIVE,
+            )
+            # (b) tier-4 synthesis nobody judged: the least-trusted class in the platform.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="unjudged",
+                field_key="account.strategic_moves",
+                value="Probably opening a second site",
+                extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+                evidence_span="hiring for a second site",
+            )
+            # (c) outreach-unsafe: neither read has a restricted section to put one in.
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="unsafe",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+
+            for settings in (VERIFYING, PERMISSIVE):
+                queried = await read_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(account),
+                    settings=settings,
+                )
+                researched = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="claims",
+                    settings=settings,
+                )
+                assert [claim.claim_id for claim in queried.claims] == [
+                    claim.claim_id for claim in researched.claims
+                ]
+                assert queried.excluded == researched.excluded
+                assert queried.prefixes == researched.prefixes
+
+            # And the counts are the real ones, not zeros: the sensitive and unsafe claims are
+            # held back in both postures, the unjudged synthesis only where verification is on.
+            verifying = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=VERIFYING,
+            )
+            assert [claim.claim_id for claim in verifying.claims] == [claims["plain"]]
+            assert verifying.excluded == {"sensitive": 1, "unverified": 1, "outreach_unsafe": 1}
+            # The gate runs over the WHOLE subject, before any filter: a narrowed query still
+            # reports what the subject holds back, never what this page's filter left out.
+            narrowed = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=VERIFYING,
+                tier=1,
+            )
+            assert narrowed.claims == ()
+            assert narrowed.excluded == verifying.excluded
+            assert narrowed.prefixes == verifying.prefixes
+
+    run_async(scenario())
+
+
+def test_a_subject_this_workspace_cannot_see_and_a_bad_since_refuse_by_name() -> None:
+    """Another tenant's account, a merge loser, an unknown id and a malformed one all read the
+    same: absent. And an unparseable ``since`` is refused rather than ignored — answering a
+    narrowed question with the unnarrowed list is the failure this code exists to prevent."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            foreign = await seed_project(conn, "ws_arv2_read_tools_other", name="Foreign")
+            elsewhere = await _seed_account(conn, foreign, "Alpha Health")
+            elsewhere_contact = await _seed_contact(
+                conn,
+                elsewhere,
+                name="Aaron Elsewhere",
+                linkedin="https://www.linkedin.com/in/aaronelsewhere",
+            )
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            survivor = await _seed_account(conn, project, "Beta Clinic")
+            loser = await _seed_account(conn, project, "Beta Clinic Group")
+            await conn.execute(
+                text(
+                    "UPDATE account_entity SET merged_into = :survivor, status = 'merged' "
+                    "WHERE id = :loser"
+                ),
+                {"survivor": survivor, "loser": loser},
+            )
+
+            for entity_id in (
+                str(elsewhere),
+                str(elsewhere_contact),
+                str(loser),
+                str(uuid4()),
+                "not-a-uuid",
+            ):
+                with pytest.raises(Arv2ReadRefused) as refused:
+                    await read_claims(
+                        conn,
+                        workspace_id=WORKSPACE,
+                        entity_id=entity_id,
+                        settings=VERIFYING,
+                    )
+                assert refused.value.code == "entity_not_found"
+
+            for since in ("last tuesday", "2026-13-01", ""):
+                with pytest.raises(Arv2ReadRefused) as bad_date:
+                    await read_claims(
+                        conn,
+                        workspace_id=project.workspace_id,
+                        entity_id=str(survivor),
+                        settings=VERIFYING,
+                        since=since,
+                    )
+                assert bad_date.value.code == "since_invalid"
 
     run_async(scenario())
 

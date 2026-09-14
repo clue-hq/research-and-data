@@ -202,6 +202,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
     "read_account_research": (AgentRole.HEAD_OF_ABM,),
     "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
+    # Their newest sibling: the general claims query (one account or contact, by field family,
+    # source tier, verification status or date, paged, behind the same display gate). Registered
+    # and audited, granted to NOBODY until a reviewed profile version pins its contract and the
+    # manual teaches it — `build_agent_profile_registry` refuses to compose when a role's
+    # authority and its profile's tool list disagree, so the grant is that bump, never a dict edit.
+    "read_claims": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

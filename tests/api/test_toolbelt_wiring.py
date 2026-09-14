@@ -267,6 +267,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "read_project_accounts": ("precondition", ("arv2_reads_not_composed",)),
     "read_account_research": ("precondition", ("arv2_reads_not_composed",)),
     "read_discovery_run": ("precondition", ("arv2_reads_not_composed",)),
+    # Its ungranted fourth sibling refuses on the same uncomposed service, before it resolves the
+    # entity id it was handed.
+    "read_claims": ("precondition", ("arv2_reads_not_composed",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -654,6 +657,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "read_project_accounts": {"project_id": "prj_matrix"},
         "read_account_research": {"account_entity_id": _UUID()},
         "read_discovery_run": {"project_id": "prj_matrix"},
+        "read_claims": {"entity_id": _UUID()},
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -1393,8 +1397,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
     # `request_persona_synthesis@1` the same way (127 -> 128).
     # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
-    # three ARV2 reads register on the same terms (129 -> 132).
-    assert len(registry.names()) == 132
+    # three ARV2 reads register on the same terms (129 -> 132). The general claims query
+    # `read_claims@1` joins them the same way (132 -> 133): a new NAME, holding the name-only
+    # alias because it is the only version of itself, and granted to nobody until a reviewed
+    # profile version pins it.
+    assert len(registry.names()) == 133
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1427,7 +1434,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
     # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
     # `@2`.
-    assert len(registry) == 152
+    # `read_claims@1` is a new name at one address (152 -> 153).
+    assert len(registry) == 153
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1458,8 +1466,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
     # `request_persona_synthesis@1` the same way (127 -> 128).
     # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
-    # three ARV2 reads register on the same terms (129 -> 132).
-    assert len(registry.names()) == 132
+    # three ARV2 reads register on the same terms (129 -> 132). The general claims query
+    # `read_claims@1` joins them the same way (132 -> 133): a new NAME, holding the name-only
+    # alias because it is the only version of itself, and granted to nobody until a reviewed
+    # profile version pins it.
+    assert len(registry.names()) == 133
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1479,7 +1490,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
     # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
     # `@2`.
-    assert len(registry) == 152
+    # `read_claims@1` is a new name at one address (152 -> 153).
+    assert len(registry) == 153
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

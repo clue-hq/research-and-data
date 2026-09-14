@@ -21,6 +21,7 @@ from clue_api.arv2.read_tools import (
     AccountOverviewSection,
     AccountResearch,
     Arv2ReadRefused,
+    ClaimsQueryPage,
     DiscoveryCandidateView,
     DiscoveryRunView,
     ProjectAccountsPage,
@@ -30,6 +31,9 @@ from clue_api.arv2.read_tools import (
     ReadAccountResearchTool,
     ReadAccountResearchV2Input,
     ReadAccountResearchV2Tool,
+    ReadClaimsInput,
+    ReadClaimsOutput,
+    ReadClaimsTool,
     ReadDiscoveryRunInput,
     ReadDiscoveryRunOutput,
     ReadDiscoveryRunTool,
@@ -106,6 +110,12 @@ class _FakeService:
     research_reads: list[tuple[str, str, str, str | None, int, int]] = field(default_factory=list)
     #: ``(workspace, project, run, offset, limit)``, for the same reason.
     discovery_reads: list[tuple[str, str, str | None, int, int]] = field(default_factory=list)
+    claims: ClaimsQueryPage | None = None
+    #: ``(workspace, entity, prefix, tier, status, since, offset, limit)`` — the filters are the
+    #: whole point of this read, so the fake records every one of them.
+    claims_reads: list[
+        tuple[str, str, str | None, int | None, str | None, str | None, int, int]
+    ] = field(default_factory=list)
 
     async def list_project_accounts(
         self,
@@ -154,6 +164,35 @@ class _FakeService:
             raise self.refusal
         assert self.discovery is not None
         return self.discovery
+
+    async def read_claims(
+        self,
+        *,
+        workspace_id: str,
+        entity_id: str,
+        field_prefix: str | None,
+        tier: int | None,
+        verification_status: str | None,
+        since: str | None,
+        offset: int,
+        limit: int,
+    ) -> ClaimsQueryPage:
+        self.claims_reads.append(
+            (
+                workspace_id,
+                entity_id,
+                field_prefix,
+                tier,
+                verification_status,
+                since,
+                offset,
+                limit,
+            )
+        )
+        if self.refusal is not None:
+            raise self.refusal
+        assert self.claims is not None
+        return self.claims
 
 
 def test_an_uncomposed_read_surface_refuses_before_it_touches_anything() -> None:
@@ -775,14 +814,202 @@ def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_
     assert tool.descriptor.recipe_safe
 
 
+# -- read 4: the claims about one account or contact ----------------------------------------------
+
+CONTACT_ID = "66666666-6666-5666-8666-666666666666"
+
+
+def _claims_page(entity_type: str = "account") -> ClaimsQueryPage:
+    return ClaimsQueryPage(
+        entity_id=ACCOUNT_ID if entity_type == "account" else CONTACT_ID,
+        entity_type=entity_type,
+        claims=(
+            AccountClaimView(
+                claim_id=CLAIM_ID,
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+                source_url="https://alpha.example/careers",
+                evidence="ABM Manager, Marketing",
+                evidence_truncated=False,
+                tier=2,
+                verification_status="verified",
+                outreach_safe=True,
+                collected_at="2026-09-12T12:00:00+00:00",
+            ),
+        ),
+        excluded={"sensitive": 1, "unverified": 0, "outreach_unsafe": 2},
+        prefixes={"account.open_requisitions": 4, "core": 1},
+        offset=40,
+        next_offset=41,
+        truncated=True,
+    )
+
+
+def test_the_claims_query_asks_about_the_ambient_workspace_and_carries_every_filter() -> None:
+    """The filters ARE this read: one that quietly dropped ``tier`` would answer a narrowed
+    question with the unnarrowed list, and the model would quote a tier-4 guess as tier-1 fact."""
+
+    async def scenario() -> None:
+        service = _FakeService(claims=_claims_page())
+        tool = ReadClaimsTool(service)
+
+        result = await tool.invoke(
+            ReadClaimsInput(
+                entity_id=ACCOUNT_ID,
+                field_prefix="account.resonance",
+                tier=2,
+                verification_status="verified",
+                since="2026-09-01",
+                offset=40,
+                limit=5,
+            ),
+            _context(),
+        )
+
+        # The tenant is AMBIENT, never a model-authored input; every filter is the model's, and
+        # all of them reach the service unaltered.
+        assert service.claims_reads == [
+            (WORKSPACE, ACCOUNT_ID, "account.resonance", 2, "verified", "2026-09-01", 40, 5)
+        ]
+        assert result.references["entity_id"] == ACCOUNT_ID
+        # The read says what it read: an account and a contact are answered in one shape, and the
+        # shape names which one it was.
+        assert result.references["entity_type"] == "account"
+        assert result.references["claims"] == (
+            {
+                "claim_id": CLAIM_ID,
+                "field_key": "account.open_requisitions",
+                "value": [{"title": "ABM Manager"}],
+                "source_url": "https://alpha.example/careers",
+                "evidence": "ABM Manager, Marketing",
+                "evidence_truncated": False,
+                "tier": 2,
+                "verification_status": "verified",
+                "outreach_safe": True,
+                "collected_at": "2026-09-12T12:00:00+00:00",
+            },
+        )
+        # Held back, counted, and said out loud — the same three reasons the account page counts.
+        assert result.references["excluded"] == {
+            "sensitive": 1,
+            "unverified": 0,
+            "outreach_unsafe": 2,
+        }
+        # The families the subject actually has, so a wrong prefix costs one call, not a series.
+        assert result.references["prefixes"] == {"account.open_requisitions": 4, "core": 1}
+        assert (result.references["offset"], result.references["next_offset"]) == (40, 41)
+        assert result.references["truncated"] is True
+        # And the runner's own re-validation accepts what the tool serialized.
+        canonical = validate_tool_output_references(ReadClaimsOutput, result.references)
+        assert canonical["entity_type"] == "account"
+
+    run_async(scenario())
+
+
+def test_the_claims_query_reads_a_contact_under_the_same_contract() -> None:
+    """One read, two kinds of subject: the store keys claims on an entity id, not on a table."""
+
+    async def scenario() -> None:
+        service = _FakeService(claims=_claims_page("contact"))
+        tool = ReadClaimsTool(service)
+
+        result = await tool.invoke(ReadClaimsInput(entity_id=CONTACT_ID), _context())
+
+        assert service.claims_reads == [(WORKSPACE, CONTACT_ID, None, None, None, None, 0, 40)]
+        assert result.references["entity_type"] == "contact"
+        assert result.references["entity_id"] == CONTACT_ID
+
+    run_async(scenario())
+
+
+def test_the_claims_query_s_inputs_are_bounded_by_the_schema() -> None:
+    defaults = ReadClaimsInput(entity_id=ACCOUNT_ID)
+    assert (defaults.field_prefix, defaults.tier, defaults.verification_status) == (
+        None,
+        None,
+        None,
+    )
+    assert (defaults.since, defaults.offset, defaults.limit) == (None, 0, 40)
+    # The page: at least one claim, never more than the substrate's own ceiling.
+    ReadClaimsInput(entity_id=ACCOUNT_ID, limit=MAX_CLAIMS)
+    with pytest.raises(ValueError):
+        ReadClaimsInput(entity_id=ACCOUNT_ID, limit=MAX_CLAIMS + 1)
+    with pytest.raises(ValueError):
+        ReadClaimsInput(entity_id=ACCOUNT_ID, limit=0)
+    with pytest.raises(ValueError):
+        ReadClaimsInput(entity_id=ACCOUNT_ID, offset=-1)
+    # The tiers are the platform's four, and nothing else: a "tier 5" ask is a misunderstanding
+    # the schema refuses rather than an empty answer the model reads as "nothing there".
+    for tier in (1, 2, 3, 4):
+        assert ReadClaimsInput(entity_id=ACCOUNT_ID, tier=tier).tier == tier
+    for bad in (0, 5):
+        with pytest.raises(ValueError):
+            ReadClaimsInput(entity_id=ACCOUNT_ID, tier=bad)
+    # The status vocabulary is the column's own.
+    for status in ("unverified", "verified", "rejected"):
+        assert ReadClaimsInput(entity_id=ACCOUNT_ID, verification_status=status)
+    with pytest.raises(ValueError):
+        ReadClaimsInput(entity_id=ACCOUNT_ID, verification_status="probably")
+    ReadClaimsInput(entity_id=ACCOUNT_ID, field_prefix="z" * 80)
+    with pytest.raises(ValueError):
+        ReadClaimsInput(entity_id=ACCOUNT_ID, field_prefix="z" * 81)
+    with pytest.raises(ValueError):
+        # The account read's word for a subject is not this one's, and the contract says so
+        # rather than reading an id it was never given.
+        ReadClaimsInput.model_validate({"account_entity_id": ACCOUNT_ID})
+
+
+@pytest.mark.parametrize("code", ["entity_not_found", "since_invalid", "offset_past_end"])
+def test_the_claims_query_refuses_by_name_rather_than_answering_empty(code: str) -> None:
+    """Three things are refusals and everything else is an honest empty page: a subject this
+    workspace cannot see, a ``since`` that is not a date, and an offset past the end. Each would
+    otherwise read as "we know nothing about them", which is a false statement, not a null one."""
+
+    async def scenario() -> None:
+        service = _FakeService(refusal=Arv2ReadRefused(code, f"{code} happened"))
+        tool = ReadClaimsTool(service)
+
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(ReadClaimsInput(entity_id=ACCOUNT_ID), _context())
+
+        assert refused.value.reason_codes == (code,)
+
+    run_async(scenario())
+
+
+def test_the_claims_query_declares_the_classification_and_the_manual_the_registry_admits() -> None:
+    tool = ReadClaimsTool(_FakeService())
+
+    assert (tool.name, tool.version) == ("read_claims", "1")
+    assert tool.effect_class is ToolEffectClass.READ
+    assert tool.replay.policy is ReplayPolicy.EFFECT_FREE
+    # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
+    # pin (standing rule item 5); the recipe-safety audit refuses a standing address with no pin.
+    assert tool.pin_requirements == ("project",)
+    assert tool.descriptor.recipe_safe
+    # The description teaches the four filters, sends the written overview to its own read, and
+    # points at the chapter that will teach it (minted with the grant, at v3).
+    for word in ("field_prefix", "tier", "verification status", "since", "read_account_research"):
+        assert word in tool.model_description
+    assert tool.model_description.endswith(
+        "Manual: .deepagent/skills/manual-tools/v3/SKILL.md#read_claims"
+    )
+    # Its own contract, not a second face of the account read's.
+    account = ReadAccountResearchTool(_FakeService())
+    assert tool.descriptor.input_schema_sha256 != account.descriptor.input_schema_sha256
+    assert tool.descriptor.output_schema_sha256 != account.descriptor.output_schema_sha256
+
+
 # -- the registered surface ------------------------------------------------------------------------
 
 
-def test_the_builder_yields_the_three_reads_and_an_uncomposed_one_refuses_by_name() -> None:
+def test_the_builder_yields_the_four_reads_and_an_uncomposed_one_refuses_by_name() -> None:
     """Registered on every deployment, composed where the lane is — the ARV2 registration posture.
 
-    Uncomposed the three still register, so an agent that reaches for a read gets the named
+    Uncomposed the four still register, so an agent that reaches for a read gets the named
     ``arv2_reads_not_composed`` refusal rather than an ``UnknownTool`` it cannot explain.
+    ``read_claims`` is the fourth: one service, one refusal code, no flag of its own — and no
+    grant yet, which is a profile decision rather than a composition one.
     """
 
     async def scenario() -> None:
@@ -792,18 +1019,25 @@ def test_the_builder_yields_the_three_reads_and_an_uncomposed_one_refuses_by_nam
             "read_project_accounts",
             "read_account_research",
             "read_discovery_run",
+            "read_claims",
         ]
         inputs: dict[str, ToolInput] = {
             "read_project_accounts": ReadProjectAccountsInput(project_id=PROJECT),
             "read_account_research": ReadAccountResearchInput(account_entity_id=ACCOUNT_ID),
             "read_discovery_run": ReadDiscoveryRunInput(project_id=PROJECT),
+            "read_claims": ReadClaimsInput(entity_id=ACCOUNT_ID),
         }
         for tool in tools:
             failures = await tool.preconditions(inputs[tool.name], _context())
             assert [failure.reason_code for failure in failures] == ["arv2_reads_not_composed"]
 
-        # Composed, the same three are ready to read.
-        service = _FakeService(page=_page(), research=_research(), discovery=_discovery())
+        # Composed, the same four are ready to read.
+        service = _FakeService(
+            page=_page(),
+            research=_research(),
+            discovery=_discovery(),
+            claims=_claims_page(),
+        )
         for tool in build_arv2_read_tools(service):
             assert await tool.preconditions(inputs[tool.name], _context()) == ()
 
