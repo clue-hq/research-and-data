@@ -1641,3 +1641,78 @@ for local experimental live validation; it verified20 request pairs,60 image
 payloads and all40 raw results. No other resource was changed. The ignored
 `source-scope-four-brands-20260914` folder prepares the next normal four-workspace
 comparison; this checkpoint does not claim its generation or quality result.
+
+Task21 live comparison completed on 2026-09-14. Four fresh ordinary browser
+requests used the same briefs as Task18, followed by “Go ahead and create it.”
+No prescribed copy, skill names, asset IDs or attached reference images were
+supplied. Design requests were submitted within2.856s across Clue3021, AWS3022,
+Google Cloud3023 and Conduit3024. Same solo Grok4.6 medium configuration; all263
+frozen source hashes stayed unchanged through generation and QA. Two prior
+generated images were recoverably archived before dispatch; original catalogs,
+saved ads and blobs remain intact. Warm provider/logo caches and stochastic
+decisions prevent attributing a timing difference to the changed resource.
+
+| Brand | Selected family | First preview | Generation finished | Model result |
+|---|---|---:|---:|---|
+| Clue3021 | feature-deep-dive |337.355s|757.617s|accepted|
+| AWS3022 | educational-guide |339.004s|405.588s|accepted|
+| Google Cloud3023 | editorial-pov |365.868s|427.267s|accepted|
+| Conduit3024 | integration-ecosystem |278.271s|482.562s|draft with warnings|
+
+These are inner generation timings. Initial home request through outer terminal
+took915.170/568.451/588.662/648.631s respectively, including the handoff and
+second-message barrier. All four miss240s. The126 actual LLM calls were all
+orchestrator calls, none failed;16 compiles total. No human creative-quality
+pass or new family coverage is claimed.
+
+All four native text edits persisted through browser reload. Restoring the
+original text restored the exact complete canonical scene (Clue59→61,
+AWS16→18, Google20→22, Conduit46→48). Non-persisting PNG and SVG exports passed
+for all four without changing versions; each PNG matches its final reviewed
+server PNG. SVG retains4/4/2/3 native text nodes and two independent image
+elements per brand. Original registry rows34/91/505/601 retained identical
+status/digest/MIME/full record JSON. Only AWS and Google each added one image.
+The fresh ads remain open in browser tabs17–20, one workspace per port.
+
+Findings that block promotion:
+
+- **Partial resource loading:** all four called the review resource, but Google
+  and Conduit requested only its first80 lines; the changed copy-support section
+  starts at85. AWS requested100 lines, omitting the later status/limits and
+  readability instructions. Clue subsequently requested80–200. Resource
+  availability/projection is not evidence of complete consumption. The focused
+  calibration supplied the complete resource; this live batch did not.
+- **Factual review still weak:** Clue initially marked “before work leaves the
+  product” supported from visible review controls. It removed that clause while
+  repairing a text orphan, not because its factual review rejected the condition.
+  The final imperative headline still uses “every”; do not infer a product-wide
+  gate from the screenshot. AWS's guide topic remains supplied catalog wording,
+  not verified guide-body content.
+- **Review registration/recovery:** Conduit's final critique file validates as
+  SceneVisualCritique with reference_fidelity2, but both accepted finalizations
+  saw0; it correctly ended as an unaccepted draft. The model noted the file had
+  not registered. Clue also had a typed-review refusal and spent additional calls
+  repairing the review before acceptance. Inspect file-write/edit observation
+  and current-round binding before changing scores or adding another reviewer.
+- **Brand identity and renderer parity:** Conduit uses corporate Oracle instead
+  of the Oracle Hospitality lockup and typesets “conduit” rather than using its
+  authentic reversed wordmark. The live browser shows the Oracle mark red while
+  the canonical server preview/export is black. Cause not yet established;
+  successful export does not establish browser/server visual parity. The browser
+  also displays Clue's eyebrow differently from the complete server export.
+- **Feed readability:** small supporting copy/CTA and Conduit's pale Integration
+  chip remain weak. The reviews still excuse small text by full-size visibility
+  or matching the source. No universal font threshold is justified by this test.
+- **Product UX:** reload returns each thread to Gallery, requiring the saved ad
+  to be reopened; drafts were not lost. Clue and Google's preliminary “Save your
+  answer” calls failed while the design handoff still succeeded. AWS's Arial kit
+  warning obscures part of the canvas; the warning alone does not prove that its
+  actual Ember headline used a fallback.
+
+Next bounded work: make complete selected review instructions discoverable and
+test their actual consumption; reproduce current-review registration on edit;
+trace browser/server logo and text parity. Preserve the four-brand barrier in
+each new live arm. Do not spend another family-coverage batch while calling
+these known failures a pass. Evidence: ignored
+`source-scope-four-brands-20260914/assessment.json`, frozen initial handoffs,
+first-preview/first-terminal receipts, native edit snapshots and qa-exports.

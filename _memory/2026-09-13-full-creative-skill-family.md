@@ -748,3 +748,43 @@ to provide missing stored terminal evidence for review. Reviewer audited20pairs,
 no findings; diffcheck clean. Receipt projection-test-output.txt. New ignored
 source-scope-four-brands-20260914/{prepare.py,observe.py} prepared only; next same
 four ordinary app requests pending. No production/remote changes; goal active.
+
+Task21 live all-four comparison completed. Source checkpointd4c564d7;263 source
+hashes unchanged through QA. Fresh browser design submissions within2.856s,
+same Task18 ordinary brief per brand/no attached reference or authored copy.
+Clue3021 feature-deep-dive757.617s accepted; AWS3022 educational-guide405.588s
+accepted; Google3023 editorial-pov427.267s accepted; Conduit3024 integration-
+ecosystem482.562s draft with warnings. All miss240s. Full home request elapsed
+915.170/568.451/588.662/648.631s.126 Grok4.6medium orchestrator calls,0 failed,
+16 compiles. Observer79816 terminal/all4 captured. No live generation left.
+
+Each ad passed browser text edit/save/reload/restore; complete original scenes
+restored at61/18/22/48.8 exports OK, native text4/4/2/3 and2 image elements each;
+PNG bytes equal final reviewed server PNGs. QA exports72486/62125 terminal.
+Post-QA75876 terminal; original34/91/505/601 registry records unchanged; only
+one new generated AWS image and one Google image. Existing ad/blob data intact.
+Browser17–20 retained deliverables, correct isolated ports, maximized at50%.
+
+Key failure: review.md new copy section begins85; Google/Conduit read_file
+limit80 only, AWS100 only; Clue later reads80–200. Focused full-resource
+calibration therefore does not prove actual on-demand consumption. Clue's bad
+before-work-leaves clause removed as typography repair, initially self-marked
+supported. Conduit file validates SceneVisualCritique/fidelity2 but finalize
+twice sees0; inspect edit/write registration and round binding next, not score
+relaxation. Clue review recovery also added many calls. Browser Conduit Oracle
+red versus server PNG black; identity uses corporate rather than Hospitality
+lockup and native body-font conduit. Readability and browser/server parity open.
+Reload returns Gallery for all4 (saved artifacts persist); reopen required.
+Clue/Google preliminary Save-your-answer failures; handoff succeeded. AWS font
+warning still overlays canvas. All model acceptances remain non-human quality
+judgments. No18-family/production-readiness claim; goal remains active.
+
+Preparation mistakes retained: exclusive candidate-registry snapshot attempted
+after prepare wrote it → FileExistsError/no overwrite; waited prepare77885 then
+source-only83186 success. Initial receipt assertion used brand vs internal
+workspace_name → AssertionError before writes; corrected to workspace_id plus
+brand_name. No repeated archive/provider generation. Browser reload edit action
+timed out because ad tab returned Gallery; inspected/reopened then edit passed.
+One read-only rg path used nonexistent src/scene* glob (zsh no matches); corrected
+to actual lumen_agent path. Evidence ignored source-scope-four-brands-20260914
+assessment.json/receipts. Scope remains local, no pushes or production changes.
