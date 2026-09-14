@@ -627,11 +627,13 @@ class DbAgentTurnJournal:
                     "(id, turn_id, execution_id, workspace_id, sequence, requested_model, "
                     " answering_model, status, input_tokens, cache_read_input_tokens, "
                     " cache_creation_input_tokens, output_tokens, cost_millicredits, "
-                    " cost_usd, cost_source, latency_ms, "
+                    " cost_usd, cost_source, langfuse_trace_id, langfuse_observation_id, "
+                    " latency_ms, "
                     " error_code, role, started_at, completed_at) "
                     "VALUES (:id, :turn, :execution, :workspace, :sequence, :requested, "
                     " :answering, :status, :input_tokens, :cache_read, :cache_creation, "
                     " :output_tokens, :cost, :cost_usd, :cost_source, "
+                    " :langfuse_trace, :langfuse_observation, "
                     " :latency, :error, :role, :started, :completed) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
@@ -651,6 +653,8 @@ class DbAgentTurnJournal:
                     "cost": receipt.cost_millicredits,
                     "cost_usd": receipt.cost_usd,
                     "cost_source": receipt.cost_source,
+                    "langfuse_trace": receipt.langfuse_trace_id,
+                    "langfuse_observation": receipt.langfuse_observation_id,
                     "latency": receipt.latency_ms,
                     "error": receipt.error_code,
                     "role": receipt.role.value if receipt.role is not None else None,
@@ -665,6 +669,7 @@ class DbAgentTurnJournal:
                         "answering_model, status, input_tokens, cache_read_input_tokens, "
                         "cache_creation_input_tokens, output_tokens, cost_millicredits, "
                         "cost_usd, cost_source, "
+                        "langfuse_trace_id, langfuse_observation_id, "
                         "latency_ms, error_code, role, started_at, completed_at "
                         "FROM agent_model_call WHERE id=:id"
                     ),
@@ -690,6 +695,9 @@ class DbAgentTurnJournal:
                     # an equally cost-free receipt matches.
                     None if row["cost_usd"] is None else Decimal(row["cost_usd"]),
                     row["cost_source"],
+                    # Lane 3 slice 3: the Langfuse ids are part of the immutable receipt too.
+                    row["langfuse_trace_id"],
+                    row["langfuse_observation_id"],
                     float(row["latency_ms"]),
                     row["error_code"],
                     row["role"],
@@ -711,6 +719,8 @@ class DbAgentTurnJournal:
                     receipt.cost_millicredits,
                     receipt.cost_usd,
                     receipt.cost_source,
+                    receipt.langfuse_trace_id,
+                    receipt.langfuse_observation_id,
                     receipt.latency_ms,
                     receipt.error_code,
                     receipt.role.value if receipt.role is not None else None,

@@ -87,6 +87,8 @@ def _receipt(
     sequence: int,
     cost_usd: Decimal | None,
     cost_source: str | None,
+    langfuse_trace_id: str | None = None,
+    langfuse_observation_id: str | None = None,
 ) -> AgentModelCallReceipt:
     return AgentModelCallReceipt(
         model_call_id=uuid5(NAMESPACE_URL, f"cost:{seeds['ws']}:call:{sequence}"),
@@ -102,6 +104,8 @@ def _receipt(
         cost_millicredits=0,
         cost_usd=cost_usd,
         cost_source=cost_source,  # type: ignore[arg-type]
+        langfuse_trace_id=langfuse_trace_id,
+        langfuse_observation_id=langfuse_observation_id,
         latency_ms=12.5,
         role=AgentRole.HEAD_OF_ABM,
         started_at=NOW,
@@ -109,20 +113,22 @@ def _receipt(
     )
 
 
-async def _row(conn: AsyncConnection, seeds: dict[str, Any], sequence: int) -> tuple[Any, Any]:
+async def _row(
+    conn: AsyncConnection, seeds: dict[str, Any], sequence: int
+) -> tuple[Any, Any, Any, Any]:
     got = await conn.execute(
         text(
-            "SELECT cost_usd, cost_source FROM agent_model_call "
-            "WHERE turn_id = :turn AND sequence = :sequence"
+            "SELECT cost_usd, cost_source, langfuse_trace_id, langfuse_observation_id "
+            "FROM agent_model_call WHERE turn_id = :turn AND sequence = :sequence"
         ),
         {"turn": seeds["turn_id"], "sequence": sequence},
     )
     row = got.one()
-    return row[0], row[1]
+    return row[0], row[1], row[2], row[3]
 
 
 def test_priced_unpriced_and_legacy_receipts_round_trip() -> None:
-    async def scenario() -> list[tuple[Any, Any]]:
+    async def scenario() -> list[tuple[Any, Any, Any, Any]]:
         async with rollback_conn(seed_pack=False) as conn:
             seeds = await _seed_turn(conn)
             journal = DbAgentTurnJournal(conn_factory=conn_session_factory(conn))
@@ -140,9 +146,9 @@ def test_priced_unpriced_and_legacy_receipts_round_trip() -> None:
             return [await _row(conn, seeds, s) for s in (1, 2, 3)]
 
     assert run_async(scenario()) == [
-        (Decimal("0.012345"), "metered"),
-        (None, "unpriced"),
-        (None, None),
+        (Decimal("0.012345"), "metered", None, None),
+        (None, "unpriced", None, None),
+        (None, None, None, None),
     ]
 
 
@@ -162,3 +168,32 @@ def test_replay_with_a_different_cost_is_refused() -> None:
             return "no error"
 
     assert "different immutable receipt" in run_async(scenario())
+
+
+def test_langfuse_ids_round_trip_and_are_part_of_the_immutable_receipt() -> None:
+    async def scenario() -> tuple[tuple[Any, ...], str]:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeds = await _seed_turn(conn)
+            journal = DbAgentTurnJournal(conn_factory=conn_session_factory(conn))
+            receipt = _receipt(
+                seeds,
+                sequence=1,
+                cost_usd=Decimal("0.01"),
+                cost_source="metered",
+                langfuse_trace_id="a" * 32,
+                langfuse_observation_id="b" * 16,
+            )
+            await journal.record_model_call(receipt=receipt)
+            await journal.record_model_call(receipt=receipt)  # identical replay: accepted
+            drifted = receipt.model_copy(update={"langfuse_observation_id": "c" * 16})
+            try:
+                await journal.record_model_call(receipt=drifted)
+            except ValueError as exc:
+                refused = str(exc)
+            else:
+                refused = ""
+            return await _row(conn, seeds, 1), refused
+
+    row, refused = run_async(scenario())
+    assert row[2:] == ("a" * 32, "b" * 16)
+    assert "different immutable receipt" in refused

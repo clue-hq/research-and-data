@@ -105,6 +105,11 @@ class AgentModelCallReceipt(TurnValue):
     # policy), never derived from it. None = unpriced or recorded before the column existed.
     cost_usd: Decimal | None = Field(default=None, ge=0)
     cost_source: ModelCostSource | None = None
+    # Lane 3 slice 3: the Langfuse generation this call became (D4) — stamped by the durable
+    # recorder from the run registry the LangChain handler fills at model-call start. None when
+    # Langfuse is off, and on every receipt replayed from a pre-migration row.
+    langfuse_trace_id: str | None = None
+    langfuse_observation_id: str | None = None
     latency_ms: float = Field(ge=0)
     error_code: str | None = None
     # P3.2: the agent-role attribution of THIS call — from the governed model's per-call
