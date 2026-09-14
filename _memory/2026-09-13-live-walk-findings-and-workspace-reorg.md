@@ -273,3 +273,91 @@ frozen fallback description; the C8 trial keeps the fifteen chapters while withh
 skill; 255 B of disclosure headroom under the 4 KB heuristic and `tool_notes.yaml`'s "taught by" version
 is hand-maintained; a turn assembled under policy v1 and re-driven after the bump would raise on its
 context receipt id; chapter lengths exceed the 2–6 KB aim (gates 10.5 KB, glossary 16 KB).
+
+## Plan 3 landed (2026-09-14) — the versioned project root, `7a4bd36cb` (base `0c4be79b8`)
+
+Six commits (SDD, Opus implementers, controller-reviewed, tasks in order 1→6): `da7e4e7c3`
+`clue_agents/bridge.py` — `AsyncBridge`, a process-local loop so a *sync* deepagents backend can await
+(sync `run`, timeout → `BridgeTimeout`, re-entry → RuntimeError); `93451dabf` the versioned mount
+(`MountMode "versioned"`, `MountRequest.project_writer: VersionedRootWriter | None`,
+`clue_agents/versioned_root.py` with `VersionedWriteOutcome`/`VersionedWriteRefused`, backend
+`written_documents`; `edit_text_sync` reads the library bytes and writes through the writer,
+`materialize_bytes` refused); `1158039bb` `clue_api/project_root_writer.py` + `write_project_persona`
+in `arv2/project_documents.py` (one transaction per write on the bridge loop's own engine — never
+`clue_db.transaction`, whose engine belongs to the serving loop); `391f6adcb` the wiring — one
+`ProjectRootWriter` per turn, finalize merges the turn's written documents into `domain_refs`, object
+types `project_document` / `project_icp_document` / `project_persona_document` → cards
+"Plan" / "ICP" / "Personas"; `9db12cef6`+`7a4bd36cb` the grant — skills `icp-authoring@v1`,
+`persona-authoring@v1`, `plan-authoring@v1`, `stage0-interview@v32`, `head-of-abm@v55`,
+`recipe0-stage0-v27.json` with `CONVERSATION_RECIPE_VERSION = 27`, and the operating manual re-minted
+at v2 across all fifteen chapters (`MANUAL_VERSION = "v2"`, `PROFILE_VERSION = "v55"`;
+`SKILLS_BLOCK_MAX_BYTES` 4096 → 4608). Recipe 27 is promoted on the lane DB (workers' boot seeding).
+
+**Version ladder:** profile `head-of-abm@v55` / skill `stage0-interview@v32` / `recipe0-stage0-v27.json`
+(`CONVERSATION_RECIPE_VERSION = 27`) / manual `manual-*@v2` ×15; prompt stays v10. v54 / v31 / recipe 26
+/ manual v1 are byte-untouched for replay. `project` joins the profile's `writable_prefixes`.
+
+**The mount.** `project/` opens as `mode="versioned"`: read-through from the compiled project library,
+write-through to `ProjectRootWriter`, with `versions` loaded from the tree's `index.json`
+(`ProjectLibraryIndexCard.files[].version`, path minus `project/`; `version: null` = compiled). The
+expected version is the mounted file's version, never a model argument. After an accepted write the
+library is re-materialized and the mount's `reopen` always opens the **shared** library (never a pinned
+replay tree), so the agent reads back what it wrote.
+
+**Kinds by folder** (ruling P3-a — the platform's existing paths, amending spec §4.1/§4.4's `personas/`):
+`audience/icp-<key>.md` → ICP proposal, born `proposed`, refusals are the ICP writer's own
+(`icp_key_invalid`, `icp_front_matter_invalid`, `icp_key_taken_by_brand`, `icp_key_taken_by_project`,
+`derived_from_not_found`, `icp_document_version_race`); `audience/persona-<key>.md` → persona, born
+`ready`, **pinned ICP key only** (`icp_not_pinned`, `persona_front_matter_invalid`); `plan.md` → plan,
+born `ready` (`revision_conflict: plan.md is at version N, you read version M — read it again`,
+`body_empty`); `status.md` / `decisions.md` / `index.json` / `artifacts/**` → `compiled_file_read_only`;
+anything else → `unknown_project_path` (the message names the three writable paths). The backend
+surfaces a refusal as the write tool's `conflict: <code>: <message>`.
+
+**Retired in words, not in code** (standing rule): `author_icp_document@1`, `write_project_document@1`,
+`request_persona_synthesis@1` and the personas-only `onboarding_run.kind` entry point are ungranted at
+v55 and absent from recipe 27, still registered and intact for replay of receipts pinned to recipe ≤ 26.
+Docs: the module docstring of `platform/api/clue_api/persona_request_tools.py`, two retirement notes in
+`platform/api/clue_api/arv2/README.md`, and `docs/specs/ARV2-ONBOARDING-PLAN.md` § "Addendum 2026-09-14".
+
+**Rulings (controller, from the SDD ledger):**
+- **P3-1** `bridge_transaction()` does *not* live in `clue_agents/bridge.py` — agents may not import
+  `clue_db`; the transaction factory over the bridge's own engine lives in `clue_api/project_root_writer.py`.
+- **P3-2** Task 2 adds `MountMode "versioned"` and `MountRequest.project_writer`; the factory opens
+  `project` as versioned when a writer is given, loading versions from the tree's `index.json`.
+- **P3-3** The versioned mount's `reopen` always opens the shared library, never the pinned replay tree —
+  after a write the honest view is the refreshed library.
+- **P3-4** `ProjectPersonaWrite` carries `brand_id` and the whole `document_text`; the writer parses and
+  re-stamps front matter like `author_icp_document`, refusing `persona_front_matter_invalid` / `icp_not_pinned`.
+- **P3-5** For `plan.md` the root writer strips a leading YAML front-matter block and passes only the body —
+  the platform owns the plan's front matter.
+- **P3-6** The finalize merge uses kind-bearing object types (`project_document`, `project_icp_document`,
+  `project_persona_document`), titled "Plan" / "ICP" / "Personas"; the frontend never reads `object_type`.
+- **P3-7** Versions are skill v32 / profile v55 / recipe 27; the prompt stays v10.
+- **P3-8** The operating manual re-mints at v2 ×15 (a catalog version is immutable and v54's pins must keep
+  resolving); eleven hand-written chapters lose the retired tools' sentences, four are re-rendered.
+- **P3-9** The three addresses leave `RECIPE_0_TOOL_ADDRESSES` and recipe v27; the v24/v25 history tests
+  become "retired at v27" assertions; a new test asserts v27 = v26 minus exactly the three.
+- **P3-10** Test discipline as plans 1–2b: offline suites without `.env`; DB suites only on the lane DB with
+  `--ignore-glob='*_live.py' -p no:cacheprovider`; never `*_live.py`; no `make check`.
+- **P3-11** The recipe is promoted by the workers' boot seeding (`seed_system_recipes`), no hand SQL.
+- **P3-12** `SKILLS_BLOCK_MAX_BYTES` 4096 → 4608 accepted — the heuristic predates three extra skill lines;
+  the binding gate is the 80% L1 budget (7,337 B spare).
+- **P3-13** The trial surface discloses the three document skills while mounting no writable `project/` —
+  accepted as the same over-description the manual already carries there; noted in the test docstring.
+- **P3-a** (from the plan) Persona documents live at `audience/persona-<key>.md`, the platform's existing
+  path, amending spec §4.1/§4.4's `personas/` folder.
+
+**Live proof — owed to the controller** (to run on the restarted stack): a new thread → "write the
+personas" produces a `write_file` at `project/audience/persona-<key>.md` and a `ready` row; "write the
+plan" produces `plan.md` v1 and the Plan card; edit the plan through the human PUT (v2); "add a step" in
+a *new* thread produces v3 that keeps the human's edit.
+
+**Deferred (ledger minors):** a `BridgeTimeout` is an unknown outcome (the writers' replay keys make a
+retry idempotent); a refresh/reopen failure *after* a landed write surfaces as `conflict:` (the write is
+durable, "read again" is honest); `MountRequest.__eq__` includes the writer instance; a persona/plan write
+whose `turn_id` is not an `agent_turn` row raises a raw FK IntegrityError rather than a typed refusal;
+`refresh()` rebuilds the whole library per accepted write; a written kind absent from
+`PROJECT_DOCUMENT_OBJECT_TYPES` is durable but cardless (logged loudly); `tests/execution/test_recipes.py`
+carries a pre-existing v16–v21 gap and lane-DB row collisions, and the design-profile model-id failure is
+the pre-existing env-dependent one.

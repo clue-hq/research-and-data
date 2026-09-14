@@ -1690,6 +1690,22 @@ lets the project win.**
 
 ### The two tools
 
+> **Retired from the profile 2026-09-14 (plan 3).** `head-of-abm@v55` grants neither
+> `author_icp_document@1` nor `request_persona_synthesis@1`, and `recipe0-stage0-v27.json` admits
+> neither address. The Head of ABM now *writes* both documents with the ordinary `write_file` at
+> `project/audience/icp-<key>.md` and `project/audience/persona-<key>.md`, through the
+> `icp-authoring` / `persona-authoring` skills: `project/` is mounted as a **versioned root**
+> (`platform/agents/clue_agents/versioned_root.py` — the `VersionedRootWriter` seam and its
+> `VersionedWriteOutcome` / `VersionedWriteRefused`), and every write there runs
+> `platform/api/clue_api/project_root_writer.py`, which picks the writer by folder and calls the
+> very stores described below — `arv2/icp_authoring.py` for an ICP (still born `proposed`, the
+> human's gate still decides) and `arv2/project_documents.py::write_project_persona` for a persona
+> (`ready`, for the project's **pinned** ICP key only). The personas-only `onboarding_run.kind` is
+> therefore retired as a *production entry point*: no current profile opens one. Both tools stay
+> registered and both code paths stay intact, for replay of receipts pinned to recipe ≤ 26; outside
+> replay they are uncomposed. Everything below describes them as they were at v46 / v23 / v24 and
+> remains true for those revisions.
+
 **`author_icp_document@1`** (`clue_api/icp_authoring_tools.py` over
 `arv2/icp_authoring.py`) — WRITE, `DOMAIN_IDEMPOTENT`, free. The model supplies `icp_key`, the whole
 `document`, `scope` (`brand` | `project`) and an optional `derived_from_icp_key`; the project, brand,
@@ -1795,6 +1811,19 @@ lists in `status.md` under *Project documents*.
 
 ### The tool
 
+> **Retired from the profile 2026-09-14 (plan 3).** `head-of-abm@v55` does not grant
+> `write_project_document@1` and `recipe0-stage0-v27.json` does not admit its address. The plan is
+> now written with the ordinary `write_file` at `project/plan.md` through the `plan-authoring`
+> skill: the `project/` mount is a **versioned root**
+> (`platform/agents/clue_agents/versioned_root.py`) and the write runs
+> `platform/api/clue_api/project_root_writer.py`, which strips any front matter the model typed and
+> calls **this same store** (`arv2/project_documents.py::write_project_plan`) — same immutable
+> version per save, same revision check, same lock order, and the human PUT still meets the agent
+> at that check. The tool stays registered for replay of receipts pinned to recipe ≤ 26 and is
+> otherwise uncomposed; the description below is exactly its v47 / v24 / v25 behaviour. The refusals
+> the *model* now sees are the mount's wording, not these codes — see the kinds-by-folder table in
+> `docs/specs/ARV2-ONBOARDING-PLAN.md` § "Addendum 2026-09-14".
+
 `write_project_document@1` (`platform/api/clue_api/project_document_tools.py`, at the `clue_api`
 root because turn binding lives outside `arv2/`; the store is `arv2/project_documents.py`). WRITE,
 `DOMAIN_IDEMPOTENT` ("presenting turn + document + expected version"), free, **no flag**. Input:
@@ -1836,7 +1865,11 @@ unknown code defaults to the 409 rather than escaping as a 500. Ruling I: this P
 `conversation_turns._PLAN_OBJECT_TYPES` includes `project_document`: a finalize carrying
 `{object_type: "project_document", object_id, version}` in `domain_refs` projects exactly one `PLAN`
 part titled **"Plan"** with `revision_label = f"v{version}"`. Skill §6b tells the agent to include
-that ref. **Founder ruling R12 (2026-09-12)** defers the Plan tab, the editor, the card's
+that ref. **Amended 2026-09-14 (plan 3, ruling P3-6):** the turn's finalize no longer depends on the
+agent remembering the ref — the runtime merges the documents the turn actually wrote into
+`domain_refs` itself, carrying the kind in the object type (`project_document` = the plan,
+unchanged, plus `project_icp_document` and `project_persona_document`, all three in
+`_PLAN_OBJECT_TYPES` and titled "Plan" / "ICP" / "Personas"). **Founder ruling R12 (2026-09-12)** defers the Plan tab, the editor, the card's
 click-through, the auto-open and the gallery document cards to
 `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` — so today the card renders and opens
 nothing, and the three routes have no frontend consumer.

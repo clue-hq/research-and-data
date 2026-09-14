@@ -725,6 +725,61 @@ Standing rule re-run, 7/7; env posture unchanged, no new flag. Engineering detai
 `platform/api/clue_api/arv2/README.md` § "The three reads"; close-out:
 `_memory/2026-09-13-head-of-abm-read-tools.md` (live walk owed).
 
+### Addendum 2026-09-14 — the versioned project root (profile v55, skill v32, recipe v27)
+
+The three document tools above are **ungranted at `head-of-abm@v55`**, and their addresses are not
+admitted by `recipe0-stage0-v27.json` (`CONVERSATION_RECIPE_VERSION = 27`, promoted by the workers'
+boot seeding). The Head of ABM now writes the project's documents with the file tools it already
+has: `project/` is mounted as a **versioned root**, so `write_file` / `edit_file` under that prefix
+go through `platform/api/clue_api/project_root_writer.py` to the very same stores
+(`arv2/icp_authoring.py`, `arv2/project_documents.py`) — one immutable version per save, the same
+revision check the human PUT meets, the row stamped with the writing turn. The expected version is
+the `version:` in the file the turn was mounted against, never a model argument, and the library is
+re-materialized after every accepted write so the agent reads back what it wrote. Plan:
+`docs/superpowers/plans/2026-09-13-versioned-project-root-and-document-skills.md`; spec
+`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` W6/W7/W8 §4.4/§4.6/§4.7.
+
+- **The document skills replace §5b / §5c / §6b of the Stage-0 skill** (§4.6) — the procedure moves
+  out of those sections, which stay in `stage0-interview@v32` as one-line pointers. `icp-authoring@v1`,
+  `persona-authoring@v1` and `plan-authoring@v1` are granted beside `stage0-interview@v32`: each
+  states what a good document contains, the path to save it to, and the gate after it (an ICP is
+  born `proposed` and the human's confirmation gate still decides; a persona and a plan have no
+  approval stamp). `head-of-abm@v55` adds `project` to the writable prefixes and re-pins the
+  operating manual at `manual-*@v2` (fifteen chapters re-minted because three tools left the
+  profile). v54 / v31 / recipe v26 / manual v1 are byte-untouched, for replay.
+- **Kinds by folder (ruling P3-a, 2026-09-14 — the platform's existing path convention, amending
+  spec §4.1/§4.4's `personas/` folder):**
+
+  | Path under `project/` | Kind | Born | Refusals the model sees |
+  | --- | --- | --- | --- |
+  | `audience/icp-<key>.md` | `icp-definition` | `proposed` | the ICP writer's own: `icp_key_invalid`, `icp_front_matter_invalid`, `icp_key_taken_by_brand`, `icp_key_taken_by_project`, `derived_from_not_found`, `icp_document_version_race` |
+  | `audience/persona-<key>.md` | `persona` | `ready` | `icp_not_pinned` (no pin, or not this key — personas follow the project's **pinned** ICP), `persona_front_matter_invalid`, `revision_conflict` |
+  | `plan.md` | `project-plan` | `ready` | `revision_conflict: plan.md is at version 3, you read version 2 — read it again`, `body_empty` |
+  | `status.md`, `decisions.md`, `index.json`, `artifacts/**` | compiled | — | `compiled_file_read_only` |
+  | anything else | — | — | `unknown_project_path` (the message names the three writable paths) |
+
+  The backend surfaces a refusal as the write tool's `conflict: <code>: <message>` — the code is
+  there so the model can tell a stale read from a bad path without parsing prose.
+- **The plan card reads rows, not receipts** (ruling P3-6). The turn's finalize merges the documents
+  the turn wrote into `domain_refs` with kind-bearing object types — `project_document` (the plan),
+  `project_icp_document`, `project_persona_document` — projected as PLAN parts titled "Plan" / "ICP"
+  / "Personas" at `v<n>`.
+- **Retired, never deleted** (§4.7, standing rule): `author_icp_document@1`,
+  `write_project_document@1`, `request_persona_synthesis@1` and the personas-only
+  `onboarding_run.kind` entry point stay registered and intact so a receipt pinned to recipe ≤ 26
+  replays against its own immutable revision; outside replay they are uncomposed, because no current
+  profile grants them.
+- **Standing rule re-run at this stage**, 7/7: v55 pins no readiness / Stage-0 / Client-KB /
+  Product-KB tool (it *drops* three and adds three skills); the product-set gate source is untouched
+  and no card compiler runs for a document write; the pin is the turn's own project pin, with no
+  Client-KB pin and no new `AgentTurnScopePinConflict` path; a written document is a version row
+  plus a re-materialized library file; `launch_arv2_account_research` / `launch_arv2_discovery`
+  gained no precondition; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0
+  broken; **env posture unchanged, no new flag**. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` (the retirement notes on the three tools); close-out:
+  `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 3 landed (2026-09-14)"
+  (live proof owed).
+
 ---
 
 ## 9. Phases, exit gates, ownership, timeline

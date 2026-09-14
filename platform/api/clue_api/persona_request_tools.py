@@ -21,6 +21,16 @@ Rows first, offer second (the O3 rule): the run row is committed before the flee
 a task that reaches a worker must always find its run. The reverse failure — a row nobody will
 drive — is contained here the way ``POST /onboarding`` contains it: a failed offer fails the run
 and the caller is told to try again, rather than being handed a run id that is already dead.
+
+**Retired from the profile (2026-09-14, plan 3).** ``head-of-abm@v55`` no longer grants this tool,
+and ``recipe0-stage0-v27.json`` no longer admits its address: personas are now *written* by the Head
+of ABM with the ordinary ``write_file`` at ``project/audience/persona-<key>.md``, through the
+``persona-authoring`` skill and the versioned project root (:mod:`clue_api.project_root_writer`
+over :func:`clue_api.arv2.project_documents.write_project_persona`).
+Asking a fleet run to synthesize a document the agent can simply write was the indirection this
+retires. Nothing here is deleted: the tool stays registered so a receipt pinned to recipe ≤ 26 can
+still be replayed against its own immutable revision. Outside replay it is uncomposed — no current
+profile grants it, so no new turn can call it.
 """
 
 from __future__ import annotations

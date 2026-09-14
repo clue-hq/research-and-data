@@ -70,7 +70,9 @@ restated below where they bind this design.
   prefix as a *versioned root*: a write there goes through the same document writer the human PUT
   uses, lands a new version row and blob, re-materializes the file, and returns the tool's normal
   result. The path's folder decides the document kind and its validation: `audience/` is an ICP
-  (key rules, front matter, lineage), `personas/` is a persona document, `plan.md` is the plan.
+  (key rules, front matter, lineage), `audience/persona-<key>.md` is a persona document
+  (ruling P3-a, 2026-09-14: the platform's existing path, not a `personas/` folder), `plan.md`
+  is the plan.
   The expected version is the `version:` in the file the turn was mounted against, never a model
   argument; a stale write, a taken ICP key or a compiled file come back as the write tool's error
   string. One skill per document kind says what a good one contains and where to save it.
@@ -113,7 +115,8 @@ restated below where they bind this design.
       status.md                         # compiled (plan 1 of the 2026-09-12 set, unchanged)
       decisions.md                      # compiled
       audience/icp-<key>.md             # the pinned ICP only (W3)
-      audience/persona-<key>.md         # current version only (ruling P3-a: existing path)
+      audience/persona-<key>.md         # current version only (ruling P3-a, 2026-09-14: the
+                                        #   platform's existing path)
       plan.md                           # current version only
       artifacts/index.json              # W4: references, never content
       index.json                        # ProjectLibraryIndexCard@1
@@ -179,14 +182,19 @@ materialized file. `write_file(path, content)` and `edit_file(path, old, new)` u
    the blob, then re-materialize the library file and its index entry. The version row is stamped
    with the writing turn's id.
 4. Return deepagents' `WriteResult`/`EditResult`. A refusal is the result's error string, worded
-   for the model: `revision conflict: plan.md is at version 3, you read version 2 — read it again`;
-   `icp key 'gi-dac' is taken by a brand document — choose another key or derive from it`;
-   `status.md is compiled — it cannot be written`.
+   for the model as `conflict: <code>: <message>` so a stale read can be told from a bad path
+   without parsing prose (landed wording, 2026-09-14):
+   `conflict: revision_conflict: plan.md is at version 3, you read version 2 — read it again`;
+   `conflict: icp_key_taken_by_brand: …`;
+   `conflict: compiled_file_read_only: status.md is compiled from the project's rows; it cannot be
+   written`; `conflict: unknown_project_path: write an ICP at audience/icp-<key>.md, personas at
+   audience/persona-<key>.md, or the plan at plan.md`; `conflict: icp_not_pinned: this project has
+   no pinned ICP; personas follow the project's pinned ICP`.
 
 | Folder | Kind | Validation kept from | Result |
 | --- | --- | --- | --- |
 | `audience/icp-<key>.md` | `icp-definition` | plan 2: key rules, front matter, `derived_from`, `icp_key_taken_*` | `proposed` version; the agent then opens the gate (W7) |
-| `personas/<icp-key>.md` | `persona` | plan 2 persona document rules | `ready` |
+| `audience/persona-<key>.md` (ruling P3-a, 2026-09-14: the platform's existing path) | `persona` | plan 2 persona document rules, for the project's **pinned** ICP key only (`icp_not_pinned`, `persona_front_matter_invalid`) | `ready` |
 | `plan.md` | `project-plan` | plan 3: replay key, revision conflict, `version:` in front matter | `ready` |
 | `decisions.md`, `status.md`, `artifacts/`, `index.json` | compiled | — | refused |
 
