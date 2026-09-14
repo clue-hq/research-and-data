@@ -6,7 +6,10 @@ Branch `lane3/slice1-cost-read` (off `research-streaming` at `5010db4f6`; picked
 note + rulings), `27d02433c` (T1 migration `d36bc7d32c9a`), `ff1c65491` (T2 shared stamp reader),
 `80239d174` (T3 receipt records cost), `82875e5b9` (T4 `clue_projections.cost`), `738a5c4fd` (T5
 `GET /cost/report`), `97d136a3c` (T6 `cost_cli` + `make cost-report`), `52353d260` (T8 docs) and
-this note's own commit. Local only, nothing pushed. The SDD ledger (git-ignored, removed at close-out) held every ruling; they are repeated below.
+this note's own commit. Pushed 2026-09-14 as `origin/lane3/slice1-cost-read`; PR #55 onto
+`research-streaming` (https://github.com/clue-hq/research-and-data/pull/55). Until the local
+`research-streaming` (139 commits ahead of origin) is pushed, that PR's diff also shows lane 1 and
+lane 2's changes; it collapses to the nine lane 3 commits once the base is pushed. The SDD ledger (git-ignored, removed at close-out) held every ruling; they are repeated below.
 
 ## What landed
 - `agent_model_call.cost_usd numeric(12,6)` + `cost_source text` (CHECK metered/estimate/unpriced;
