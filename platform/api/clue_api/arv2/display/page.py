@@ -33,7 +33,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -67,12 +66,20 @@ from clue_api.arv2.display.gather import (
 from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
 from clue_api.arv2.display.runner import LunaSectionRunner, SectionDraft
 from clue_api.arv2.errors import Arv2Error
-from clue_api.arv2.sinks import FileRawSink, JsonlLedger
+from clue_api.arv2.provider_ledger import (
+    ArtifactSink,
+    BufferedLedger,
+    BufferedRawSink,
+    LedgerStamp,
+    drain_provider_calls,
+)
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2.transport import HttpxTransport
 from clue_config import GatewayConfig, Secrets, Settings
+from clue_db import ConnFactory
 
 #: A page is written by calling this: one runner per section, so one caller and one ledger each.
-RunnerFactory = Callable[[], LunaSectionRunner]
+RunnerFactory = Callable[[RawSink, LedgerSink], LunaSectionRunner]
 
 #: What the activity feed says when a page is written, by page (decision 12).
 PAGE_WRITTEN_TEXT: dict[str, str] = {
@@ -97,7 +104,7 @@ class PageSubjectMismatch(Arv2Error):
 
 
 def default_runner_factory(settings: Settings, secrets: Secrets) -> RunnerFactory:
-    """The factory a real page uses: live HTTP, file raw sink, JSONL ledger, one caller per call.
+    """The factory a real page uses: live HTTP, one caller per section over the section's sinks.
 
     The key is read **now**, not when a section is written, so a command with no key configured
     fails before it opens a database connection rather than half-way through a page.
@@ -105,17 +112,13 @@ def default_runner_factory(settings: Settings, secrets: Secrets) -> RunnerFactor
     key = secrets.openrouter_api_key
     if key is None or not key.get_secret_value().strip():
         raise Arv2Error("CLUE_OPENROUTER_API_KEY is unset")
-    root = Path(settings.arv2_raw_root)
     base_url = GatewayConfig().base_url
     model = settings.arv2_display_model
     timeout_s = settings.arv2_display_timeout_s
 
-    def build() -> LunaSectionRunner:
+    def build(raw: RawSink, ledger: LedgerSink) -> LunaSectionRunner:
         caller = ProviderCaller(
-            transport=HttpxTransport(),
-            raw_sink=FileRawSink(root / "raw"),
-            ledger=JsonlLedger(root / "ledger.jsonl"),
-            now=lambda: datetime.now(UTC),
+            transport=HttpxTransport(), raw_sink=raw, ledger=ledger, now=lambda: datetime.now(UTC)
         )
         return LunaSectionRunner(
             caller, api_key=key, base_url=base_url, model=model, timeout_s=timeout_s
@@ -221,6 +224,8 @@ async def _write_section(
     people: Sequence[SubjectRef],
     settings: Settings,
     runner_factory: RunnerFactory,
+    raw: BufferedRawSink,
+    ledger: BufferedLedger,
     semaphore: asyncio.Semaphore,
 ) -> _Written:
     """Write one section: the call, the floor, one rewrite if the floor was violated.
@@ -233,7 +238,7 @@ async def _write_section(
     ``write_section`` is synchronous and network-bound, so it runs on a worker thread; the
     semaphore is what bounds how many sections are in flight at once.
     """
-    runner = runner_factory()
+    runner = runner_factory(raw, ledger)
     async with semaphore:
         draft = await asyncio.to_thread(
             runner.write_section,
@@ -294,6 +299,8 @@ async def ensure_page(
     page: Page,
     settings: Settings,
     runner_factory: RunnerFactory,
+    artifacts: ArtifactSink,
+    spend_conn_factory: ConnFactory,
     force: bool = False,
     regenerate_stale: bool = False,
 ) -> PageResult:
@@ -306,6 +313,11 @@ async def ensure_page(
 
     All writes happen on ``conn`` inside the caller's transaction: a page is one atomic
     replacement of its own sections, or it is none of them.
+
+    The sections' provider spend does NOT ride ``conn``: their rows and raw bodies are drained
+    after the sections return, sequentially, under ``spend_conn_factory`` (D2, slice 1b) — so a
+    caller that rolls the page back (``--dry-run``) still records the money it spent. A page
+    belongs to an account, not a project or a run, so the rows are workspace spend.
     """
     if PAGE_SUBJECT_KIND[page] != subject_kind:
         raise PageSubjectMismatch(f"the {page} page is about a {PAGE_SUBJECT_KIND[page]}")
@@ -378,24 +390,39 @@ async def ensure_page(
     to_write = [item for item in inputs if not item.empty]
 
     semaphore = asyncio.Semaphore(max(1, settings.arv2_display_max_parallel))
-    written: list[_Written] = list(
-        await asyncio.gather(
-            *(
-                _write_section(
-                    page=page,
-                    subject=subject,
-                    client=client,
-                    recipes=recipes,
-                    section=item,
-                    people=people,
-                    settings=settings,
-                    runner_factory=runner_factory,
-                    semaphore=semaphore,
+    buffers = [(BufferedRawSink(), BufferedLedger()) for _ in to_write]
+    try:
+        written: list[_Written] = list(
+            await asyncio.gather(
+                *(
+                    _write_section(
+                        page=page,
+                        subject=subject,
+                        client=client,
+                        recipes=recipes,
+                        section=item,
+                        people=people,
+                        settings=settings,
+                        runner_factory=runner_factory,
+                        raw=raw,
+                        ledger=ledger,
+                        semaphore=semaphore,
+                    )
+                    for item, (raw, ledger) in zip(to_write, buffers, strict=True)
                 )
-                for item in to_write
             )
         )
-    )
+    finally:
+        # One connection, one section at a time: a drain inside the gather would race on it.
+        async with spend_conn_factory() as spend_conn:
+            for raw, ledger in buffers:
+                await drain_provider_calls(
+                    spend_conn,
+                    raw=raw,
+                    ledger=ledger,
+                    artifacts=artifacts,
+                    stamp=LedgerStamp(workspace_id=workspace_id),
+                )
 
     # A section the model failed to write twice is *not* stored. Persisting its empty draft would
     # turn a transient provider failure into a section that reads blank on every later visit until

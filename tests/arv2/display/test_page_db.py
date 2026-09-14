@@ -15,7 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections.abc import Collection, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -38,17 +39,20 @@ from clue_api.arv2.display.recipes import recipes_for
 from clue_api.arv2.display.render import DisplayClaim
 from clue_api.arv2.display.runner import LunaSectionRunner
 from clue_api.arv2.errors import Arv2Error
-from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
+from clue_api.arv2.provider_ledger import BufferedLedger, BufferedRawSink
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2.transport import HttpRequest, HttpResponse
 from clue_config import Secrets, Settings
 from clue_core import EntityType, ExtractionMethod
 from tests.arv2.display._seed import Seeded, seed_display_fixture, write_claim
+from tests.arv2.test_provider_ledger_db import FakeArtifacts
 from tests.claimstore.conftest import (  # noqa: F401
     migrated_db,
     require_claimstore_db,
     rollback_conn,
 )
 from tests.db.conftest import run_async
+from tests.profiling.conftest import conn_session_factory
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
@@ -150,15 +154,13 @@ class RoutingTransport:
 
 
 def _factory(transport: RoutingTransport) -> Any:
-    """One runner per section, each with its own caller — the production factory's shape."""
+    """One runner per section, each with its own caller over the section's sinks — the
+    production factory's shape."""
 
-    def build() -> LunaSectionRunner:
+    def build(raw: RawSink, ledger: LedgerSink) -> LunaSectionRunner:
         return LunaSectionRunner(
             ProviderCaller(
-                transport=transport,
-                raw_sink=MemoryRawSink(),
-                ledger=MemoryLedger(),
-                now=lambda: datetime.now(UTC),
+                transport=transport, raw_sink=raw, ledger=ledger, now=lambda: datetime.now(UTC)
             ),
             api_key=SecretStr("test-key"),
             base_url="https://openrouter.ai/api/v1",
@@ -175,6 +177,8 @@ def _factory(transport: RoutingTransport) -> Any:
 async def _contact_page(
     conn: AsyncConnection, seeded: Seeded, transport: RoutingTransport, **kwargs: Any
 ) -> PageResult:
+    kwargs.setdefault("artifacts", FakeArtifacts())
+    kwargs.setdefault("spend_conn_factory", conn_session_factory(conn))
     return await ensure_page(
         conn,
         workspace_id=seeded.workspace_id,
@@ -395,6 +399,8 @@ def test_an_account_page_skips_the_sections_the_research_never_filled() -> None:
                 page="insights",
                 settings=SETTINGS,
                 runner_factory=_factory(transport),
+                artifacts=FakeArtifacts(),
+                spend_conn_factory=conn_session_factory(conn),
             )
 
             assert result.skipped_empty == EMPTY_INSIGHTS_SECTIONS
@@ -432,7 +438,7 @@ def test_the_default_runner_factory_refuses_to_build_without_a_key(
         default_runner_factory(SETTINGS, missing)
 
     present = Secrets(_env_file=None, openrouter_api_key=SecretStr("k"))
-    runner = default_runner_factory(SETTINGS, present)()
+    runner = default_runner_factory(SETTINGS, present)(BufferedRawSink(), BufferedLedger())
     assert isinstance(runner, LunaSectionRunner)
 
 
@@ -566,6 +572,8 @@ def test_a_section_that_cites_an_unsafe_claim_is_rewritten_once_without_it() -> 
             people=[FLOOR_SUBJECT],
             settings=SETTINGS,
             runner_factory=_factory(transport),
+            raw=BufferedRawSink(),
+            ledger=BufferedLedger(),
             semaphore=asyncio.Semaphore(1),
         )
         assert written.draft.checks["floor_regenerated"] is True
@@ -576,3 +584,65 @@ def test_a_section_that_cites_an_unsafe_claim_is_rewritten_once_without_it() -> 
         assert "c2" in second.split(_MARKER)[1]
 
     asyncio.run(_run())
+
+
+def test_the_page_lands_its_provider_spend_on_the_ledger_with_the_workspace_stamp() -> None:
+    """Slice 1b: one result row per section call, workspace-stamped, no project / run / job,
+    each citing the artifact its raw body became; the page's cost is the rows' sum."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            transport = RoutingTransport()
+            artifacts = FakeArtifacts()
+            result = await _contact_page(conn, seeded, transport, artifacts=artifacts)
+            rows = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT provider, operation, project_id, project_run_id, "
+                            " entity_research_job_id, cost_usd, response_artifact_key, extras_json "
+                            "FROM provider_call_ledger "
+                            "WHERE workspace_id = :ws AND phase = 'result' ORDER BY recorded_at"
+                        ),
+                        {"ws": seeded.workspace_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert len(rows) == len(transport.sections)
+            assert {(r["provider"], r["operation"]) for r in rows} == {
+                ("openrouter", "chat/completions")
+            }
+            assert all(
+                r["project_id"] is None
+                and r["project_run_id"] is None
+                and r["entity_research_job_id"] is None
+                for r in rows
+            )
+            assert sum((r["cost_usd"] for r in rows), Decimal(0)) == result.cost_usd
+            assert all(r["response_artifact_key"] for r in rows)
+            assert len(artifacts.bodies) == len(rows)
+
+    run_async(_run())
+
+
+def test_the_spend_is_drained_through_the_injected_factory_not_the_page_connection() -> None:
+    """D2: the script hands ``transaction`` as the spend factory so a rolled-back --dry-run page
+    still records its money; the page never drains on its own connection."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            opened: list[int] = []
+
+            @asynccontextmanager
+            async def spend_factory() -> AsyncIterator[AsyncConnection]:
+                opened.append(1)
+                yield conn
+
+            await _contact_page(conn, seeded, RoutingTransport(), spend_conn_factory=spend_factory)
+            assert opened == [1]
+
+    run_async(_run())
