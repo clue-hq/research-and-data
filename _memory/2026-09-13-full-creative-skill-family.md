@@ -430,8 +430,17 @@ could traverse private symlinks before result filtering. Reviewer caught/fixed a
 web relative-custom-component alias mutation; unscoped web behavior preserved.
 120 isolation tests and independent scratch probes pass. Historical requests denied.
 
-All4 earlier solos skipped components.md before missing-asset compile failures.
-Solo initial gather now includes that existing guide. Candidate preview adds
+Correction: no explicit components.md read does not mean omitted guidance.
+The scene manifest already pins its canonical body, and the solo factory passes
+the composed frame into its system prompt. Frozen 00efde8c config has no pin
+override; materialized guide matches source (5624 chars, untruncated). Its delivery
+is reconstructed from source/config/materialization; first-call logs contain no
+serialized prompt body. The redundant initial-read instruction added in 00efde8c
+is removed; applying the loaded guide remains in the construction step. The real
+solo graph test now verifies canonical guide text exactly once in the first model
+message and selected family body absent until read. Initial RED reproduced the
+redundant read request; focused prompt/solo runtime/scene-family suite: 42 passed.
+Candidate preview adds
 resolved native-text em sizes at actual proxy scale, with unavailable states for
 unbound evidence; no fixed threshold. 129 focused tests/independent27 pass. Source
 images/proxy bytes/acceptance unchanged. Runtime suite exercised2155 cases:
@@ -446,8 +455,44 @@ Declared direct wcmatch>=11,<12 alreadylocked11. uv lock offline couldn't rebuil
 missing cache; amended only existing runtime dependency edges, uv lock --check
 --offline passes179packages with no resolution/version/install changes.
 
-Next4 coverage baseline prepared under ignored coverage-four-brands-20260914:
+Four-brand coverage baseline was prepared under ignored coverage-four-brands-20260914:
 4previous experimental raster layers reversibly archived, caches backed up/reset,
 original docs/blobs preserved. Globalidle90Fleetdone37designsuccess5failed before
-prepare. No provider call for new round yet. New source not loaded until scoped
-restart; current source frozen for checkpoint. No engine changes/WASM rebuild.
+prepare. After the scoped restart, all 4 provider runs completed on frozen 00efde8c.
+Audit sources under .design-runs/evaluation/skill-family-v1/coverage-four-brands-20260914:
+clue-aws-audit.json, google-cloud/audit.json, conduit/audit.json, google-conduit-audit.md.
+
+| Case / family | Runtime outcome | Runtime wall seconds | Model calls |
+| --- | --- | --- | --- |
+| Clue / feature-deep-dive | accepted, current design receipt | 310.570 | 22 |
+| AWS / educational-guide | accepted, current design receipt | 354.534 | 22 |
+| Google Cloud / editorial-pov | accepted, current design receipt | 486.256 | 24 |
+| Conduit / integration-ecosystem | completed_with_warnings, target_exceeded, rejected current review | 526.869 | 33 |
+
+All 4 outer executions succeeded; only 3 received design acceptance. Every runtime
+wall duration exceeds 240s; none exhausted the hard budget. These durations exclude
+Home handoff and manual QA, so they are not finished-creative measurements. New
+selection evidence adds 3 families (8 observed, 10 still without rendered coverage),
+not quality promotion. All 4 reproduced assetless-image compile errors despite
+inlined mechanics. No new loading path or prompt-digest instrumentation added.
+
+Quality remains open: Clue's every-draft claim is stronger than frozen source
+evidence; Clue/AWS support stays small at feed scale and AWS accepts Arial→Inter.
+Google's CTA remains small relative to its original. Conduit's missing Integration
+label is covered by a later-painted full-bleed background; review correctly rejects
+it but incorrectly blames contrast. No manual first-delivery repair. Native browser
+QA now passed all4: change text via Playwright fill+Tab, scoped readonly DB receipt,
+reload/reopen, verify changed textarea, restore original via editor. Exact scene
+JSON restored; versions18→19→20 /15→16→17 /22→23→24 /55→56→57. Initial Clue
+AXsetValue attempt did not persist; real fill+blur did. Do not call that an ordinary
+editor defect without reproducing it. All4 PNG+SVG exports verified1080square,
+native text+independent images, no export version mutation; receipts under each
+brand qa-native-*.json and qa-exports. Editing/export proves mechanics, not quality.
+All4 new browser tabs13–16 kept deliverable, Edit off; current stack session89189
+running on8010/8020/8030/3020 plusbrand3021–3024,4Fleetprocesses. Design starts span
+13.152sec; click-to-terminal318/362/~493/~539sec, allmiss240sec. User-visible ad URLs
+are in candidate-cases.json. Goal remains active; no acceptance or humanquality
+promotion of all18families. Post-run prompt correction focused42tests pass,
+including actual model input once-only inlined guide. No new live test for cleanup.
+Prompt cleanup and documentation changed only after the provider runs terminated;
+no new provider/DB/browser/service/env action or engine/WASM change by this follow-up.

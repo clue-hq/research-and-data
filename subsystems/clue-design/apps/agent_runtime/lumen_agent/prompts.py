@@ -1266,9 +1266,8 @@ def build_scene_solo_prompt(
 direction, original copy, source selection, construction and visual review. Use
 the tools available to you and the scene skills throughout this work.
 
-1. Gather {workspace}/brief.md, brand_card.json, state.json,
-/knowledge_docs/skills/scene-brief-copy/SKILL.md and
-/knowledge_docs/knowledge/scene/components.md together. A short user request
+1. Gather {workspace}/brief.md, brand_card.json, state.json and
+/knowledge_docs/skills/scene-brief-copy/SKILL.md. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the
 user provide a headline, asset IDs or a detailed image-generation prompt.

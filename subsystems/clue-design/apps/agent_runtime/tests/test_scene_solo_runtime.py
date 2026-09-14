@@ -149,9 +149,15 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_pat
     assert "denied" in outputs["denied"].content.lower()
     assert "denied" in outputs["edit-denied"].content.lower()
     assert len(built) == 1
-    first_system = str(built[0][2].seen[0][0].content)
+    first_system = built[0][2].seen[0][0].text
     assert "event-webinar" in first_system
     assert original.split("---", 2)[2].strip() not in first_system
+    component_path = "/knowledge_docs/knowledge/scene/components.md"
+    component_body = (tools.config.workspace_root / component_path.lstrip("/")).read_text()
+    assert first_system.count(component_body) == 1
+    initial_gather = first_system.split("1. Gather ", 1)[1].split("2. Inspect ", 1)[0]
+    assert component_path not in initial_gather
+    assert "Apply the loaded component guide" in first_system
     saved = checkpoint.get_tuple(invocation)
     assert saved is not None
     assert saved.checkpoint["channel_values"]["turn_request"] == "Make an event ad"

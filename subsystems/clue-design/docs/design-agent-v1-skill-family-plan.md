@@ -4,19 +4,19 @@ Status: implementation in local validation, 2026-09-14. **Eighteen candidate
 playbooks** are implemented and enabled on localhost through on-demand discovery.
 The original four-playbook scope below records the earlier plan; the full-family
 continuation at the end is the current scope. Reference custody, acceptance,
-timing and crop safeguards are implemented. Eight fresh ordinary-request outputs
-cover all four brands in director/author and single-agent configurations. The
-broader skill-family benchmark remains incomplete and the four-minute target
+timing and crop safeguards are implemented. The eight-run topology comparison and
+latest four-case coverage round cover all four brands in director/author and
+single-agent configurations. The broader skill-family benchmark remains incomplete and the four-minute target
 has not passed. Branch: `codex/design-agent-v1`.
 
 The earlier approved provider round below delivered three new square drafts through
 ordinary Home requests and the normal Design handoff, without supplied asset IDs,
 skill names, prescribed headlines or layouts. There are now saved current-family
-samples across all four local brand workspaces. Five families have live selection
-evidence; thirteen remain candidates without rendered coverage in this test.
+samples across all four local brand workspaces. Eight families have live selection
+evidence; ten remain candidates without rendered coverage in this test.
 Model acceptance, usable editing and human creative quality remain separate gates.
 
-| Latest ordinary request | Actual family and imagery | Delivery and remaining issue |
+| Earlier ordinary request | Actual family and imagery | Delivery and remaining issue |
 | --- | --- | --- |
 | AWS Cloud and AI Day Türkiye invitation | event-webinar; new artwork conditioned on three genuine event originals; independent logo and five text layers | Saved draft, about 11 minutes. Acceptance correctly refused after another preflight changed headline pixels. Small date/venue copy and loose spacing remain. |
 | Google Cloud / Glance customer story | customer-spotlight; new photograph conditioned on a Gemini ad; independently fetched Glance logo and supplied Google Cloud logo | Saved and model-accepted, about 19 minutes. It inspected the Glance comic but deliberately selected another campaign's photo treatment. Small support/CTA and conventional composition remain. |
@@ -46,13 +46,19 @@ contract. The exact historical sibling requests now return no data. Current
 preflight/preview/review evidence is separated from historical feedback, and chat
 distinguishes an accepted design, scoped edit and unaccepted saved draft.
 
-The solo agent now gathers the existing component guide at the start: all four
-previous runs skipped it and later attempted image nodes without asset IDs.
+The earlier missing-guide diagnosis was incorrect: zero explicit component-guide
+reads did not mean missing context. The scene manifest already pins its canonical
+body, and the factory inlines that body into the solo system prompt. Frozen source,
+configuration and materialized bytes support that reconstruction; these live logs
+did not capture complete model input messages. The redundant initial-read request
+added in `00efde8c` is now removed, while applying the loaded guide remains required.
+An offline test of the real solo graph confirms the first model message contains
+the entire guide exactly once and keeps family bodies available on demand.
 The existing placement preview also reports resolved native text em sizes at its
 actual 360px content scale. These are observations for the agent, not prescribed
-font sizes or a new visual-quality acceptance gate. The next four-brand round
-tests these changes with ordinary requests for Clue's human review, an AWS AI
-guide, Google Cloud's enterprise AI positioning, and Conduit's OPERA integration.
+font sizes or a new visual-quality acceptance gate. The completed four-brand round
+below exercised these changes with ordinary requests for Clue's human review, an
+AWS AI guide, Google Cloud's enterprise AI positioning, and Conduit's OPERA integration.
 No additional family is promoted merely because these mechanics pass tests.
 
 ## Earlier four-playbook implementation evidence and remaining gate
@@ -919,3 +925,67 @@ The single-agent mode is still an explicitly selected local experiment; default
 scene/website topology and production remain unchanged. Next: repair review/status
 truthfulness at the existing seams, strengthen reference/typography/logo quality
 checks, then repeat ordinary-request evaluation before wider family coverage.
+
+## Four-brand coverage round after corrections (2026-09-14)
+
+All four provider runs on frozen `00efde8c` are terminal. Each used one solo
+orchestrator and no delegation. The evidence is frozen under
+`.design-runs/evaluation/skill-family-v1/coverage-four-brands-20260914/`:
+`clue-aws-audit.json`, `google-cloud/audit.json`, `conduit/audit.json` and
+`google-conduit-audit.md`. These observations precede the redundant-read cleanup;
+that cleanup has only offline verification so far.
+
+| Brand / selected family | Runtime outcome | Runtime wall time | Model calls |
+| --- | --- | --- | --- |
+| Clue / feature-deep-dive | Accepted with current design receipt | 310.570 s | 22 |
+| AWS / educational-guide | Accepted with current design receipt | 354.534 s | 22 |
+| Google Cloud / editorial-pov | Accepted with current design receipt | 486.256 s | 24 |
+| Conduit / integration-ecosystem | Saved unaccepted draft; completed_with_warnings, target_exceeded | 526.869 s | 33 |
+
+Times are the runtime's recorded wall durations, excluding Home handoff and
+manual QA; they are not finished-creative measurements. All four exceeded the
+240-second target, and no hard budget was exhausted. Outer execution succeeded
+for all four; that status does not make the Conduit draft accepted. Feature-deep-dive,
+editorial-pov and integration-ecosystem add selection evidence, bringing the
+observed family count to eight; ten remain without rendered coverage. This is
+neither a matched causal benchmark nor promotion of the selected families.
+
+All four made an assetless image declaration despite the already-inlined guide.
+The guide body matches frozen source and is below its truncation cap. No missing
+pin was observed. These errors do not establish missing context or justify
+another guide-loading mechanism. The full initial
+request digest was not recorded; future delivery receipts remain a proposed
+observability improvement, not implemented behavior.
+
+Model acceptance still exceeds the observed quality evidence: Clue strengthens
+an observed review UI into an unsupported universal every-draft claim in this
+frozen evidence set; Clue/AWS accept small support at feed scale, and AWS accepts
+an Arial-to-Inter fallback. Google's repaired CTA remains small relative to its
+source. Conduit correctly rejects its missing Integration label, but attributes
+it to contrast: the actual child order paints the full-bleed background over the
+label, so darker text alone would not repair it. No manual repair replaced any
+first delivery. All four then passed a real native-text edit, saved database
+readback, browser reload, and visible edited-value verification. Original scene
+JSON was restored exactly through the editor: document versions Clue 18→19→20,
+AWS 15→16→17, Google 22→23→24, Conduit 55→56→57. The initial Clue accessibility
+setValue attempt did not persist; Playwright textarea fill and blur did persist
+in all four. That distinguishes an automation/input-path limitation from an
+unproven editor defect. PNG and SVG exports were verified for all four at
+1080×1080, with native SVG text and independent image layers, and no version
+mutation from export. These are mechanics checks; human quality remains open.
+
+All four generation requests were submitted within 13.152 seconds and ran
+concurrently, using ordinary brief text and agent-selected references. The
+click-to-terminal measurements were 317.853s / 362.200s / approximately 493s /
+approximately 539s for Clue / AWS / Google / Conduit. These exclude deliberate
+Home-to-design handoff waiting and subsequent manual QA; even this narrower
+completion interval missed four minutes in all four cases.
+
+Receipts are saved beside the frozen first deliveries as `qa-native-edit-saved.json`,
+`qa-native-restored.json`, `qa-native-roundtrip.json` and `qa-exports/receipt.json`.
+All four new ads remain open in their matching localhost browser tabs (3021–3024).
+The post-run prompt cleanup passed 42 focused tests, including an actual first
+model-message assertion that the component guide is inlined once and selected
+family bodies remain progressively loaded. This cleanup has no new live-run
+quality result. Local stack session 89189 remains running; no production changes
+or pushes were made.
