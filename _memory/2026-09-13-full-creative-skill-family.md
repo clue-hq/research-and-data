@@ -79,3 +79,89 @@ Ignored frozen manifest and per-run evidence:
 Conduit remains pending the specific transfer approval or public-source-only scope;
 its ready library includes seven unmatched user uploads and one prior generated image.
 Do not silently use those as fresh benchmark references.
+
+## First ordinary-request evidence and candidate follow-up
+
+Initial candidate committed locally as `7a046435` (image observation) and `48b53e5c`
+(eighteen families). No push. Real traces confirm Google loaded type-led-positioning,
+Clue workflow-contrast and AWS educational-guide in both director and author.
+AWS chose no artwork CTA from inspected originals. Google chose a photo crop and
+Clue reused two source product/website images; neither requested new generation.
+AWS generated two independent GPT Image components from one verified public JPEG;
+provider receipts confirm its exact source digest and treatment role.
+
+Four-minute delivery target missed in all three. AWS first PNG ~565s after design
+follow-up, then a checkpoint before internal repair. Its generated wash and cube
+art were serialized (~96s and69s). Initial reference/direction work itself consumed
+several minutes. These timings are failures against the target, not accepted latency.
+
+Concrete defects surfaced under ordinary requests:
+- Shared brand_card teaches CSS class tokens (surface-page etc.) to scene DSL
+  authoring, whose real keys are dotted (surface.page). Google export correctly
+  refused unresolved tokens. Editor showed generic #f8f4ec surface fallback; this
+  was not cross-workspace brand leakage. Candidate scene-specific card fix underway.
+- Raw font_size beside style($type.role) can resolve back to kit defaults during
+  preflight; actual type.size.* tokens preserve explicit sizes. Google display
+  shrank62→32; AWS resource text22→14. Scene guidance needs precise surviving bindings.
+- Auto reference index claims “user attached” though manual IDs are empty. Candidate
+  neutral origin wording is being tested; selection provenance must remain truthful.
+- AWS approvedv3 contains genuine Ember300/400/700, but body=Arial has no local
+  binary. Draftv4 even drops the brand faces. Some type roles trace to cookie UI;
+  source-data repair belongs at the brand-context seam, not invented ad typography.
+
+Original first deliveries remain untouched by root; current repairs are the platform
+agent's own loop. Follow-up source changes will only load after those runs terminate.
+
+## Initial terminal runs and native QA
+
+AWS accepted/savedv33 in15m;51LLM calls. Clue accepted/savedv98 in22m57s;71calls. Both stop_reason target_exceeded, independent reviewer disabled. Their original PNG/receipt/source traces remain immutable under full-family-20260913. Root browser support-text edit/save/reload/restore succeeded (AWS33→34→35, Clue98→99→100); browser PNG/SVG success and local canonical exportbytes/dimensions verified. No manual quality repair to either original. AWS logo is large; Clue support/labels16px and small campaign strip remain quality failures.
+
+Google local preview rendered but durable run failed agent_turn.operations_replay_failed: duplicate hero_img; canonical remainsv0. Exact race reproduced with real helper: parallel reconcile inserts image while logo helper returns a stale scene, erases local node, later reconcile inserts a duplicate into ledger. Shared per-runtime mutation transaction fix under independent review; slow image-provider work remains outside lock. No manual DB scene injection.
+
+Candidate brand-card fix passed independent review plus126 targeted cases: dotted native DSL colors, actual kit size steps, truthful reference-origin wording;8 legacy/web card combinations byte-identical. No kit/model/engine changes. Full integrated runtime suite running before restart/fresh Google test. All existing generation jobs were terminal at02:11:49UTC.
+
+## Post-repair checkpoint and fresh ordinary coverage
+
+Locally committed `cbaa5fa1` scene tokens and bounded mutation/snapshot/checkpoint transactions, then `ff120f56` final-return acceptance freshness plus candidate feed-readability observation. Exact concurrency failures reproduced before repair; separate independent reviews passed. Full final runtime suite with the real helper enabled: **1905 passed, 1 intentionally skipped live-provider smoke**, exit0. No engine/model/brand-kit changes; website/legacy observations preserved.
+
+Preview now includes original full image and a labeled illustrative360px-width observation, using the same source bytes under the per-runtime preview transaction. Padding/border are outside the creative; no export/asset/receipt alteration or universal platform dimension claim. Runner downgrades accepted status when scene/preview/review changes after finalization, retaining current draft honestly.
+
+Restarted idle scoped local stack after fresh read-only DB check showed all64 Fleet tasks done and all29 design runs terminal. All APIs and four workers healthy. Fresh source freeze `d20d58677f67c4ee5455e4cd3a492fa4cc1a322ce524d7f75a9e95541ed7b3f7` and cases are in ignored full-family-20260913/post-repair*.json. Ordinary fresh Google project prj_b2e14397620e5486a0c104b5322f5fd1 and Clue project prj_76ed1108c767580883a4b42b3a321fab submitted through browser Home, followed only by “Go ahead and create it.” Both running; no quality/delivery claim yet. These change mechanics/observation, not a paired causal quality benchmark. Conduit specific transfer approval still pending; no alternate submission.
+
+## Closing verification: new samples saved, quality and latency still open
+
+Fresh Google succeeded at 03:06:34.621697 UTC, first canonical delivery v51 with
+51 operations; confirmation to durable completion: 599.902 seconds. Native
+browser support edit v52 survived reload/reopen; original restored at v53.
+Independent genuine SVG logo inspected unlocked. Browser PNG/SVG exports succeeded;
+canonical PNG equals accepted preview (b91e14b5...), with scene/version preserved.
+The duplicate-node replay failure did not recur in this run.
+
+Second Clue accepted then committed at 03:11:16.475070 UTC, v78 with eight native
+nodes; confirmation to durable commit: 862.954 seconds. Both director and author
+loaded type-led-positioning; thirteen distinct genuine asset previews, no ad
+reference index, no generation, no CTA. Five full/proxy observations influenced
+revision, but final acceptance still disclosed a faint 17px eyebrow; support is
+21px. Browser output observed. Canonical PNG/SVG preserve v78, and PNG matches
+acceptance (65fd27f2...). Native edit QA was not repeated on this second Clue
+sample; it was completed on the initial Clue sample.
+
+Current scope: eighteen callable candidate playbooks plus twelve shared skills.
+Scanner/materialized sources verified 30/30 skills and 18/18 playbooks. Only
+educational-guide, workflow-contrast and type-led have current live selection
+evidence; the other fifteen remain unvalidated through rendered tests. Four
+ordinary saved outputs across AWS/Clue/Google, plus the preserved Google failure.
+Conduit generation remains pending the earlier specific provider-transfer approval.
+Do not claim four-brand completion, all-family quality validation or a 240s pass.
+
+Remaining defects: authored Google kit gray overrode inspected near-white ad
+backgrounds/darker headlines; sparse composition and small copy; Clue's faint
+eyebrow; model calls dominate time. No model, provider, engine or brand-kit change
+in this checkpoint. Website boundary preserved.
+
+Local APIs and four Fleet processes were up at closing check. Brand tabs remain
+open on ports 3021–3024. Persistent stack session 74222 should remain running.
+Source commits 7a046435, 48b53e5c, cbaa5fa1 and ff120f56 are local only; no push.
+Evidence lives in ignored full-family-20260913; frozen source was not rewritten.
+Tracked plan now states eighteen-family scope and honest terminal results.
+Unrelated September 8 memory files were preserved.

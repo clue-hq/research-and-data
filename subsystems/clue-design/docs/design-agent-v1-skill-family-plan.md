@@ -1,12 +1,14 @@
 # Design Agent V1: a coherent skill family and a cross-brand test
 
-Status: implementation in local validation, 2026-09-13. The four-playbook scene
-family is implemented and enabled on localhost. Reference custody, acceptance,
-timing and crop safeguards are implemented. Live ordinary-request diagnostics
-have run; the paired cross-brand benchmark below is not complete and the
-four-minute finished-creative target has not passed. Branch: `codex/design-agent-v1`.
+Status: implementation in local validation, 2026-09-13. **Eighteen candidate
+playbooks** are implemented and enabled on localhost through on-demand discovery.
+The original four-playbook scope below records the earlier plan; the full-family
+continuation at the end is the current scope. Reference custody, acceptance,
+timing and crop safeguards are implemented. Ordinary-request diagnostics have
+run, but the paired cross-brand benchmark is incomplete and the four-minute
+finished-creative target has not passed. Branch: `codex/design-agent-v1`.
 
-## Implementation evidence and remaining gate
+## Earlier four-playbook implementation evidence and remaining gate
 
 - A separate scene knowledge view now serves the family and removes conflicting
   fixed-layout policy from that view. Website knowledge remains compatible.
@@ -51,8 +53,9 @@ Operational results and exact verification are recorded in
 ## Decision
 
 Build the shared family together, then validate its parts and its complete
-behavior. Use six procedural responsibilities and four initial creative
-playbooks. Expand the playbook library only when these work across brands.
+behavior. Six procedural responsibilities support the original four playbooks
+and the fourteen additional candidates now authorized by the user. Candidate
+availability is separate from promotion: each still needs cross-brand evidence.
 Skill count is not a quality metric, and playbooks are not fixed page templates.
 
 Keep the current scene director/author roles during the first comparison. A
@@ -577,8 +580,65 @@ delivery, repairs, native edit/save/reload/export evidence and elapsed time.
 Catalog/offline checks are implemented; visual acceptance, repeatability and the
 three-to-four-minute finished-creative target remain unproven until those runs.
 
-Candidate verification update: the final runtime suite passes **1867 tests with
-7 skipped**. Image observations now carry correct MIME and explicit still-frame
-semantics for animated references, with original bytes preserved. Three fresh-project
-ordinary requests are running; rendered quality, native editing and finished latency
-remain unvalidated until their first deliveries are inspected.
+Initial candidate verification passed **1867 tests with 7 skipped**. Image
+observations carry correct MIME and explicit still-frame semantics for animated
+references, with original custody preserved. The three initial ordinary requests
+are now terminal; their evidence is retained separately from repairs.
+
+| Initial case | Observed family / image operation | Result |
+| --- | --- | --- |
+| AWS executive guide | educational-guide; two generated components conditioned on a verified AWS original | Saved and editable; native text save/reload/restore and PNG/SVG exports verified; about 15 minutes; oversized logo remains a composition concern. |
+| Google Gemini Enterprise | type-led-positioning; authentic public ad photo crop | Local preview only; durable replay failed on duplicate hero_img and document stayed at version 0. Not a delivered creative. |
+| Clue account research to campaigns | workflow-contrast; authentic site/product images and deterministic crops | Saved and editable; native text save/reload/restore and PNG/SVG exports verified; about 23 minutes; small text and undersized product detail remain quality failures. |
+| Conduit | Not submitted in this continuation | Specific provider-transfer approval is pending for uploaded references/context; no alternate-channel retry. |
+
+Actual traces show selected playbooks read by both director and author; skills
+remain available during revision. AWS selected no artwork CTA; Clue selected one.
+This is ordinary-request coverage evidence, not a matched baseline/candidate
+benchmark or proof that all eighteen families meet the quality bar. Clue has
+public website assets but no harvested ad references in this corpus.
+
+Follow-up reliability fixes are committed locally as `cbaa5fa1`: native dotted
+brand tokens and actual kit size steps, truthful reference-origin wording, and
+per-run scene/ledger/render/final-file/checkpoint transactions. Exact Google
+replay and four snapshot races were reproduced before fixes. Integrated runtime
+verification for that checkpoint passed 1,878 tests with 7 skipped; fresh corrected
+platform runs remain the next gate. No engine, model or brand-kit changes were
+made. The next local commit, `ff120f56`, checks accepted-scene freshness again at
+runner return and adds an illustrative 360px-wide readability observation beside
+the unchanged full preview. Preview selection, freshness and both pixel reads
+share the existing per-run transaction. Source bytes, exports and acceptance
+receipts remain unchanged. Final combined runtime verification with the actual
+helper passed **1,905 tests; one live-provider smoke was intentionally skipped**.
+Independent reviews passed. Fresh ordinary Google and Clue cases completed after
+restarting the idle local workers:
+
+| Post-repair case | Saved result | Observed limits |
+| --- | --- | --- |
+| Google Gemini introduction | type-led-positioning; v51, 51 operations replayed; 599.902 seconds from confirmation to durable completion. Native support edit/save/reload/restore verified through v52/v53; browser PNG/SVG export succeeded. Canonical PNG exactly matches the accepted preview. | Sparse composition, small support/CTA. The author chose kit surface.card #EEEEEE and text.primary #5F6368 despite near-white backgrounds and darker headline treatment in inspected public originals. This is a direction/authoring choice, not save corruption. |
+| Clue introduction | type-led-positioning; v78, eight native nodes, 862.954 seconds from confirmation to durable commit. Five full/proxy observations; authentic independent logo, no generated imagery or CTA. Browser display and canonical PNG/SVG exports verified; PNG exactly matches acceptance. | Proxy revealed faint eyebrow text and motivated revision, but the final agent critique still accepted a faint small eyebrow. Native editing was already tested on the first Clue sample and was not repeated on this second sample. |
+
+These follow-ups establish successful saving after the replay repair and actual
+use of the readability observation. They do not establish a causal quality win:
+Google changed composition, Clue changed its brief, and the runtime observation
+changed. Both still miss 240 seconds. All eighteen families are callable; only
+three have live selection evidence in this continuation. The remaining fifteen
+need rendered cross-brand evaluation before promotion. Conduit generation remains
+pending its specific provider-transfer approval; its assets were preserved.
+
+The next quality gate must preserve a source-derived visual direction through
+authoring and final review, including source-versus-kit color/typography choices,
+readability at the intended display scale and whether the composition earns its
+space. A valid machine critique is insufficient when visible defects remain.
+Keep deterministic mechanisms for custody, measurements, editability and durable
+saving; retain flexible composition and CTA decisions. Brand acquisition,
+descriptive labeling and interpretation remain in the separate brand-agent worktree.
+
+The latency audit attributes 80–99% of measured runtime to model-call spans;
+initial direction consumes 203–219 seconds before authoring. Optimizing local
+rendering or merely adding more skills will not achieve 240 seconds. After the
+mechanical-fix baseline, test context reuse, batched independent inspection and
+less repeated discovery/reporting with the same sources and model settings.
+Retain visual review and durable acceptance; report the four-minute target as
+failed until a real finished creative meets it. The separate brand-agent worktree
+owns richer asset interpretation, acquisition coverage and source-readiness repair.
