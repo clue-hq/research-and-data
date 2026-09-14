@@ -836,7 +836,10 @@ class Arv2AccountResearchWorkHandler:
     async def _persona(self, conn: AsyncConnection, run: RunRow) -> str:
         """The newest persona document written for this run's ICP, or an honest empty block."""
         documents = await self._store.read_persona_documents(
-            conn, workspace_id=run.workspace_id, brand_id=run.brand_id
+            conn,
+            workspace_id=run.workspace_id,
+            brand_id=run.brand_id,
+            project_id=run.project_id,
         )
         for document in documents:
             key = document.artifact_key

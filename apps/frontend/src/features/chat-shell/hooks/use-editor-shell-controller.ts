@@ -19,7 +19,7 @@ import type {
 // rail (the branch's own `ChatShellSurface` gained it the same way): it is not
 // an artifact, carries no editing, and — like the gallery — never opens the
 // editor dock.
-export type EditorShellSurface = "artifact" | "gallery" | "target-accounts";
+export type EditorShellSurface = "artifact" | "gallery" | "target-accounts" | "plan";
 
 export interface EditorShellInitialState {
   artifactId?: string;
@@ -48,6 +48,7 @@ export interface EditorShellState {
 export type EditorShellAction =
   | { type: "activate-artifact"; artifactId: string }
   | { type: "open-artifact"; artifact: ChatShellOpenArtifact }
+  | { type: "open-plan" }
   | { type: "open-gallery" }
   | { type: "open-target-accounts" }
   | { type: "close-artifact"; artifactId: string }
@@ -101,6 +102,8 @@ export function editorShellReducer(
         panelOpen: true,
         surface: "artifact",
       };
+    case "open-plan":
+      return { ...state, editing: false, panelOpen: true, surface: "plan" };
     case "open-gallery":
       return { ...state, editing: false, panelOpen: true, surface: "gallery" };
     case "open-target-accounts":
@@ -180,6 +183,7 @@ export interface EditorShellController {
   inspectorSelection: ChatShellInspectorSelection;
   openArtifact: (artifact: ChatShellOpenArtifact) => void;
   openArtifacts: ChatShellOpenArtifact[];
+  openPlan: () => void;
   openGallery: () => void;
   openTargetAccounts: () => void;
   panelOpen: boolean;
@@ -215,6 +219,7 @@ export function useEditorShellController(
   const closeArtifact = useCallback((artifactId: string) => {
     dispatch({ artifactId, type: "close-artifact" });
   }, []);
+  const openPlan = useCallback(() => { dispatch({ type: "open-plan" }); }, []);
   const openGallery = useCallback(() => {
     dispatch({ type: "open-gallery" });
   }, []);
@@ -266,6 +271,7 @@ export function useEditorShellController(
       inspectorSelection: state.inspectorSelection,
       openArtifact,
       openArtifacts: state.openArtifacts,
+      openPlan,
       openGallery,
       openTargetAccounts,
       panelOpen: state.panelOpen,
@@ -283,6 +289,7 @@ export function useEditorShellController(
       closeArtifact,
       initial.projectId,
       openArtifact,
+      openPlan,
       openGallery,
       openTargetAccounts,
       selectInspectorElement,

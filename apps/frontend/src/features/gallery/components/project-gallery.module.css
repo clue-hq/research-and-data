@@ -797,3 +797,17 @@
     animation: none;
   }
 }
+
+/* Project knowledge uses the same frame geometry with semantic document styling. */
+.documentPreview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 100%; padding: 12px; text-align: center; color: var(--clue-ds-color-content-subtle); font-size: var(--clue-ds-typography-caption-font-size); line-height: var(--clue-ds-typography-caption-line-height); }
+.documentPreview > svg { flex-shrink: 0; }
+.artifactCard[data-document] { border-radius: var(--clue-ds-product-component-button-md-radius); }
+.artifactCard[data-document] .artifactPreview { border: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle); background: var(--clue-ds-color-bg-subtle); border-radius: var(--clue-ds-product-component-button-md-radius); }
+.artifactType[data-type="documents"] { background: var(--clue-ds-color-bg-neutral-hover); color: var(--clue-ds-color-content-subtle); }
+.artifactCard[data-document] .artifactCopy strong { font-size: var(--clue-ds-typography-text-sm-medium-font-size); font-weight: var(--clue-ds-typography-text-sm-medium-font-weight); line-height: var(--clue-ds-typography-text-sm-medium-line-height); }
+.artifactCard[data-document] .artifactCopy small { font-size: var(--clue-ds-typography-caption-font-size); line-height: var(--clue-ds-typography-caption-line-height); }
+.listThumbnail .documentPreview { padding: 4px; }
+.listThumbnail .documentPreview > span { display: none; }
+.documentNotice { padding: 8px 12px; color: var(--clue-ds-color-content-utility-critical); font-size: var(--clue-ds-typography-text-sm-font-size); overflow-wrap: anywhere; }
+.documentNotice button { font: inherit; color: inherit; text-decoration: underline; }
+.gallerySurface { grid-template-rows: 36px auto minmax(0, 1fr); }

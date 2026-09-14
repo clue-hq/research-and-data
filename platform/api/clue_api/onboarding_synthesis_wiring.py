@@ -90,9 +90,9 @@ from clue_api.agent_runtime_wiring import (
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.brand_knowledge_context import (
-    INPUT_PREFIX,
     SERVABLE_STATUSES,
     current_knowledge_documents,
+    current_project_knowledge_refs,
 )
 from clue_api.stage0_recipe import RecipeStep, StepPinProvider
 from clue_config import Secrets, Settings
@@ -147,6 +147,12 @@ TURN_NAMESPACE = UUID("6c2f9d0e-4b3a-5f1e-9a77-0e2b4c8d1f55")
 #: The $5 record-only ceiling the C5 plan policy enforces for one synthesis turn.
 BUDGET_LIMIT_MILLICENTS = 500_000
 SYNTHESIS_CARD_MEDIA_TYPE = "application/vnd.clue.onboarding-synthesis-card+json"
+#: Where THIS surface puts the knowledge documents its turns read. It seeds its own read-only
+#: copies per turn and mounts no library, and its profile (``onboarding-synthesis@v3``), prompt
+#: and skill all name this path — so it is deliberately not on the library/mount path the
+#: conversation turn moved to, and it owns the constant rather than sharing
+#: ``brand_knowledge_context.INPUT_PREFIX``, which now names the mount.
+INPUT_PREFIX = "inputs/brand/knowledge/"
 
 _RECIPE_KEY = "onboarding-synthesis-unit"
 _RECIPE_VERSION = 1
@@ -263,6 +269,9 @@ class RegisteredIcp:
     icp_key: str
     version: int
     path: str
+    #: The ICP's scope: ``None`` for the brand's own ICP, a project id for a project-local variant.
+    #: A persona written for that ICP is written in the same scope (Task 4 threads it through).
+    project_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -445,13 +454,18 @@ def onboarding_synthesis_context_policy() -> ContextAssemblyPolicy:
     L5 (focus) is large — 256 KiB under the utf8-byte counter — because the turn's core knowledge
     documents ride it as their own markdown. v1 budgeted 8 KiB there and expected the model to
     ``read_file`` its way to the same bytes; a company overview alone exceeds that, so the layer's
-    real job was impossible and every input arrived only as a path. An over-budget candidate is
-    *excluded*, silently, so the honest fix is a budget that fits the documents rather than a
-    smaller set of documents.
+    real job was impossible and every input arrived only as a path — an over-budget candidate was
+    then *excluded*, silently, and the honest fix was a budget that fits the documents rather than
+    a smaller set of documents.
+
+    Budgets are reported, never enforced (founder ruling 2026-09-14), which is why this is v3: an
+    over-budget layer is logged and carried whole, so these seven numbers now say what this surface
+    *expects* each layer to cost. The v2 numbers are kept unchanged — a surface whose documents
+    routinely blow its own expectation is worth seeing in the log, not worth re-guessing here.
     """
 
     return ContextAssemblyPolicy(
-        version="onboarding-synthesis-context-v2",
+        version="onboarding-synthesis-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
@@ -500,14 +514,36 @@ async def _current_input_documents(
     *,
     workspace_id: str,
     brand_id: str,
+    project_id: str | None = None,
 ) -> tuple[dict[str, Any], ...]:
-    """The brand's current servable knowledge documents, as this surface's mutable input rows.
+    """The current servable knowledge documents a turn may read, as mutable input rows.
 
     One reader of ``brand_knowledge_document`` (``current_knowledge_documents``), two shapes: the
     O6 conversation turn pins the typed refs, while this surface still carries each row through a
     dict it later stamps with the document's own ``body``.
+
+    ``project_id`` is the scope of the ICP the turn is *about*, and it is set only for a persona
+    turn whose ICP is a project-local variant. The brand-level reader cannot see such a document
+    by construction, so without this union the turn would fail ``icp_document_missing`` on the
+    very file it was asked to write about. The project's rows win on a shared path: a project that
+    authored its own version of a document reads its own version.
     """
 
+    documents = {
+        document.path: document
+        for document in await current_knowledge_documents(
+            conn, workspace_id=workspace_id, brand_id=brand_id
+        )
+    }
+    if project_id is not None:
+        documents.update(
+            {
+                document.path: document
+                for document in await current_project_knowledge_refs(
+                    conn, workspace_id=workspace_id, project_id=project_id
+                )
+            }
+        )
     return tuple(
         {
             "document_id": document.document_id,
@@ -517,9 +553,7 @@ async def _current_input_documents(
             "artifact_key": document.artifact_key,
             "artifact_sha256": document.artifact_sha256,
         }
-        for document in await current_knowledge_documents(
-            conn, workspace_id=workspace_id, brand_id=brand_id
-        )
+        for document in documents.values()
     )
 
 
@@ -827,6 +861,9 @@ class OnboardingSynthesisLauncher:
                 conn,
                 workspace_id=workspace_id,
                 brand_id=brand_id,
+                # A persona turn for a project-local ICP also reads that project's own documents:
+                # its ICP lives there, not in the brand's set.
+                project_id=None if icp is None else icp.project_id,
             )
             # The onboarding run is O3's row. This surface only *reads* it, and only for two
             # honest values: the domain the card names, and the run's own request time (so a
@@ -914,132 +951,141 @@ class OnboardingSynthesisLauncher:
         lease = self._components.workspaces.acquire(
             workspace_id=workspace_id,
             project_id=project_id,
+            thread_id=thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
+        try:
+            # 5. the four trusted artifacts --------------------------------------------------------
+            card_ref = await self._artifact(
+                workspace_id,
+                SYNTHESIS_CARD_MEDIA_TYPE,
+                {
+                    "schema_version": "2",
+                    "brand_id": brand_id,
+                    "company_domain": company_domain,
+                    "task": task,
+                    "icp": (
+                        None
+                        if icp is None
+                        else {
+                            "key": icp.icp_key,
+                            "document_id": str(icp.document_id),
+                            "version": icp.version,
+                        }
+                    ),
+                    "inputs": [
+                        {
+                            "path": str(row["path"]),
+                            "kind": str(row["kind"]),
+                            "version": int(row["version"]),
+                        }
+                        for row in selected.seeds
+                    ],
+                    # Two honest lists rather than one: what the model is already holding,
+                    # and what it can open. Both are `inputs/` paths, because that is the
+                    # path it must cite.
+                    "context_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.focus],
+                    "seeded_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
+                    "persona_vocabulary": list(_PERSONA_VOCABULARY),
+                },
+                project_id,
+            )
+            budget_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-budget-envelope+json",
+                {"schema_version": "1", "limit_millicents": BUDGET_LIMIT_MILLICENTS},
+                project_id,
+            )
+            manifest_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-resource-manifest+json",
+                resolved.resource_manifest.model_dump(mode="json"),
+                project_id,
+            )
+            user_message_ref = await self._artifact(
+                workspace_id,
+                "application/vnd.clue.agent-turn-input+json",
+                {
+                    "schema_version": "1",
+                    "objective": _objective(task=task, icp=icp, focus=selected.focus),
+                    "onboarding_run_id": str(run_id),
+                    "onboarding_step_id": str(step_id),
+                    "input_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
+                },
+                project_id,
+            )
 
-        # 5. the four trusted artifacts ----------------------------------------------------------
-        card_ref = await self._artifact(
-            workspace_id,
-            SYNTHESIS_CARD_MEDIA_TYPE,
-            {
-                "schema_version": "2",
-                "brand_id": brand_id,
-                "company_domain": company_domain,
-                "task": task,
-                "icp": (
-                    None
-                    if icp is None
-                    else {
-                        "key": icp.icp_key,
-                        "document_id": str(icp.document_id),
-                        "version": icp.version,
-                    }
-                ),
-                "inputs": [
-                    {
-                        "path": str(row["path"]),
-                        "kind": str(row["kind"]),
-                        "version": int(row["version"]),
-                    }
-                    for row in selected.seeds
-                ],
-                # Two honest lists rather than one: what the model is already holding, and what it
-                # can open. Both are `inputs/` paths, because that is the path it must cite.
-                "context_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.focus],
-                "seeded_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
-                "persona_vocabulary": list(_PERSONA_VOCABULARY),
-            },
-            project_id,
-        )
-        budget_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-budget-envelope+json",
-            {"schema_version": "1", "limit_millicents": BUDGET_LIMIT_MILLICENTS},
-            project_id,
-        )
-        manifest_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-resource-manifest+json",
-            resolved.resource_manifest.model_dump(mode="json"),
-            project_id,
-        )
-        user_message_ref = await self._artifact(
-            workspace_id,
-            "application/vnd.clue.agent-turn-input+json",
-            {
-                "schema_version": "1",
-                "objective": _objective(task=task, icp=icp, focus=selected.focus),
-                "onboarding_run_id": str(run_id),
-                "onboarding_step_id": str(step_id),
-                "input_paths": [INPUT_PREFIX + str(row["path"]) for row in selected.seeds],
-            },
-            project_id,
-        )
-
-        # 6. the turn request --------------------------------------------------------------------
-        turn_id = uuid5(TURN_NAMESPACE, identity_key)
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=thread_id,
-            constitution=AgentConstitution(
-                workspace_id=workspace_id,
-                project_id=project_id,
-                execution_id=execution_id,
-                actor_id="system",
-                role=AgentRole.ONBOARDING_SYNTHESIS,
-                brand_id=brand_id,
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-            ),
-            user_message_artifact_ref=user_message_ref,
-            # L5: the documents the task cannot be done without, as their own markdown. The exact
-            # version is pinned, so a document that moved under us fails loudly instead of
-            # serving the model a different text than the one this card names.
-            focus_refs=tuple(
-                DomainObjectRef(
+            # 6. the turn request ------------------------------------------------------------------
+            turn_id = uuid5(TURN_NAMESPACE, identity_key)
+            request = AgentTurnRequest(
+                turn_id=turn_id,
+                thread_id=thread_id,
+                constitution=AgentConstitution(
                     workspace_id=workspace_id,
-                    object_type="brand_knowledge_document",
-                    object_id=str(row["document_id"]),
-                    version=int(row["version"]),
+                    project_id=project_id,
+                    execution_id=execution_id,
+                    actor_id="system",
+                    role=AgentRole.ONBOARDING_SYNTHESIS,
+                    brand_id=brand_id,
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                ),
+                user_message_artifact_ref=user_message_ref,
+                # L5: the documents the task cannot be done without, as their own markdown.
+                # The exact version is pinned, so a document that moved under us fails loudly
+                # instead of serving the model a different text than the one this card names.
+                focus_refs=tuple(
+                    DomainObjectRef(
+                        workspace_id=workspace_id,
+                        object_type="brand_knowledge_document",
+                        object_id=str(row["document_id"]),
+                        version=int(row["version"]),
+                    )
+                    for row in selected.focus
+                ),
+                requested_at=requested_at,
+            )
+            await self._components.turns.create(request=request, profile=resolved.profile)
+
+            # 7. replay short-circuit --------------------------------------------------------------
+            outcome = await self._components.turns.load_committed_outcome(
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+            )
+            if outcome is None:
+                outcome = await self._run_turn(
+                    request=request,
+                    resolved=resolved,
+                    lease=lease,
+                    input_seeds=input_seeds,
                 )
-                for row in selected.focus
-            ),
-            requested_at=requested_at,
-        )
-        await self._components.turns.create(request=request, profile=resolved.profile)
 
-        # 7. replay short-circuit ----------------------------------------------------------------
-        outcome = await self._components.turns.load_committed_outcome(
-            turn_id=turn_id,
-            workspace_id=workspace_id,
-        )
-        if outcome is None:
-            outcome = await self._run_turn(
-                request=request,
-                resolved=resolved,
-                lease=lease,
-                input_seeds=input_seeds,
-            )
+            # 8. close the durable recipe ----------------------------------------------------------
+            await self._complete_recipe_if_needed(outcome)
 
-        # 8. close the durable recipe ------------------------------------------------------------
-        await self._complete_recipe_if_needed(outcome)
-
-        cost_usd = await self._cost_usd(execution_id=execution_id, workspace_id=workspace_id)
-        if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:
+            cost_usd = await self._cost_usd(execution_id=execution_id, workspace_id=workspace_id)
+            if (
+                outcome.status is not AgentExecutionStatus.COMPLETED
+                or outcome.finalization_ref is None
+            ):
+                return _TaskOutcome(
+                    "failed",
+                    outcome.failure_code or "turn_not_completed",
+                    f"the synthesis turn ended {outcome.status.value}",
+                    cost_usd,
+                    None,
+                    None,
+                )
             return _TaskOutcome(
-                "failed",
-                outcome.failure_code or "turn_not_completed",
-                f"the synthesis turn ended {outcome.status.value}",
-                cost_usd,
-                None,
-                None,
+                "completed", None, None, cost_usd, turn_id, outcome.finalization_ref
             )
-        return _TaskOutcome("completed", None, None, cost_usd, turn_id, outcome.finalization_ref)
+        finally:
+            lease.release()
 
     # --- the turn ------------------------------------------------------------------------------
 
@@ -1270,6 +1316,11 @@ class OnboardingSynthesisLauncher:
                 continue
             prefix, status = naming
             path = f"audience/{prefix}-{icp_key}.md"
+            # An ICP turn writes the brand's ICPs; a persona turn writes in the scope of the ICP it
+            # was asked about, so a project-local ICP's personas are that project's too. The whole
+            # version chain below — the next version, the row it supersedes, the rows it retires —
+            # is read and written inside that one scope.
+            project_id = None if icp is None else icp.project_id
             document_id = uuid5(
                 NAMESPACE_URL,
                 f"onboarding-synthesis-doc:{turn_id}:{path}",
@@ -1289,11 +1340,13 @@ class OnboardingSynthesisLauncher:
                                 "     FROM brand_knowledge_document"
                                 "    WHERE workspace_id = :workspace_id"
                                 "      AND brand_id = :brand_id AND path = :path"
+                                "      AND project_id IS NOT DISTINCT FROM :project_id"
                                 "  ) AS next_version,"
                                 "  (SELECT document_id"
                                 "     FROM brand_knowledge_document"
                                 "    WHERE workspace_id = :workspace_id"
                                 "      AND brand_id = :brand_id AND path = :path"
+                                "      AND project_id IS NOT DISTINCT FROM :project_id"
                                 "      AND status = ANY(:statuses)"
                                 "    ORDER BY version DESC LIMIT 1"
                                 "  ) AS supersedes_document_id"
@@ -1302,6 +1355,7 @@ class OnboardingSynthesisLauncher:
                                 "workspace_id": workspace_id,
                                 "brand_id": brand_id,
                                 "path": path,
+                                "project_id": project_id,
                                 "statuses": list(SERVABLE_STATUSES),
                             },
                         )
@@ -1314,11 +1368,12 @@ class OnboardingSynthesisLauncher:
                 await conn.execute(
                     text(
                         "INSERT INTO brand_knowledge_document ("
-                        "  document_id, workspace_id, brand_id, folder, path, kind, version, "
-                        "  status, artifact_key, artifact_sha256, produced_by_turn_id, "
+                        "  document_id, workspace_id, brand_id, project_id, folder, path, kind, "
+                        "  version, status, artifact_key, artifact_sha256, produced_by_turn_id, "
                         "  supersedes_document_id"
                         ") VALUES ("
-                        "  :document_id, :workspace_id, :brand_id, 'audience', :path, :kind, "
+                        "  :document_id, :workspace_id, :brand_id, :project_id, 'audience', "
+                        "  :path, :kind, "
                         "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, "
                         "  :supersedes"
                         ") ON CONFLICT (document_id) DO NOTHING"
@@ -1327,6 +1382,7 @@ class OnboardingSynthesisLauncher:
                         "document_id": document_id,
                         "workspace_id": workspace_id,
                         "brand_id": brand_id,
+                        "project_id": project_id,
                         "path": path,
                         "kind": kind,
                         "version": version,
@@ -1350,12 +1406,14 @@ class OnboardingSynthesisLauncher:
                         "  updated_at = now() "
                         "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                         "  AND path = :path AND document_id <> :document_id "
-                        "  AND status = ANY(:statuses)"
+                        "  AND status = ANY(:statuses) "
+                        "  AND project_id IS NOT DISTINCT FROM :project_id"
                     ),
                     {
                         "workspace_id": workspace_id,
                         "brand_id": brand_id,
                         "path": path,
+                        "project_id": project_id,
                         "document_id": document_id,
                         "statuses": list(RETIRABLE_STATUSES),
                     },

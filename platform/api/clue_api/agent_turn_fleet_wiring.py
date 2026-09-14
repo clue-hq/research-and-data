@@ -33,9 +33,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import timedelta
 from typing import TypeVar
 from uuid import UUID
 
@@ -55,8 +57,10 @@ from clue_agents import (
     ContextLayer,
     DomainObjectRef,
     LayerBudget,
+    MountRequest,
     ProjectContextArtifact,
 )
+from clue_agents.bridge import process_bridge
 from clue_api.account_deep_steering_context import prepare_account_deep_steering_context
 from clue_api.agent_execution_wiring import FreshWakeChildRunner
 from clue_api.agent_gate import gate_answer_for_turn
@@ -72,6 +76,7 @@ from clue_api.agent_turn_submission import (
     AgentTurnSubmissionRow,
     dispatch_next_thread_turn,
     get_submission,
+    lock_thread_queue,
     message_artifact_ref,
     submission_context_refs,
 )
@@ -82,11 +87,12 @@ from clue_api.brand_knowledge_context import (
     PinnedDocument,
     compile_brand_knowledge_index_card,
     confirmed_icp_for_project,
-    knowledge_seed_files,
     load_or_create_knowledge_pin,
     read_pinned_documents,
 )
+from clue_api.brand_library import ensure_brand_library
 from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.interrupted_turn import commit_interrupted_turn, recover_interrupted_answer
 from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_events import prune_turn_events
 from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
@@ -109,6 +115,26 @@ from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
 )
 from clue_api.frontend_read import latest_project_run_context
+from clue_api.project_context_files import (
+    PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
+    CompiledProjectFile,
+    load_or_create_project_files_pin,
+    read_pinned_project_files,
+)
+from clue_api.project_library import (
+    LIBRARY_INDEX_PATH,
+    ProjectLibrarySnapshot,
+    compile_project_library,
+    ensure_project_library,
+    installed_project_library_digest,
+    materialize_pinned_project_library,
+    pinned_library_digest,
+)
+from clue_api.project_root_writer import (
+    ProjectRootWriter,
+    bridge_bound_artifact_reader,
+    bridge_transaction,
+)
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -211,16 +237,27 @@ def project_conversation_context_policy() -> ContextAssemblyPolicy:
 
     Identical to the trial's shape and for the same reason: L6 (thread history) is the layer a real
     conversation grows into, so it gets the large share, and L3's card is bounded by construction.
+
+    L1 is 40,000 bytes under the ``utf8-bytes-v1`` counter. It holds exactly one candidate — the
+    resolved system prompt, which is the profile's prompt body plus the generated capability map
+    (:class:`clue_agents.context.IdentityLayerSource`) — so the number is a direct statement of how
+    large a disclosed profile is expected to grow. The v1 number of 24,000 was set when the Head of
+    ABM disclosed a handful of skills; the fifteen-chapter operating manual took the resolved
+    prompt to ~23.7 KB and the turn died at assembly with 273 bytes to spare, because the budget
+    was then a gate. It is not one any more (v3, founder ruling 2026-09-14): every layer is
+    assembled whole and an overrun is logged, so these seven numbers say what we *expect* a layer
+    to cost and nothing more. ``tests/agents/test_manual_drift.py`` reports the prompt's size
+    against this one so growth is seen offline rather than guessed at.
     """
 
     return ContextAssemblyPolicy(
-        version="project-conversation-context-v1",
+        version="project-conversation-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
+                (40_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
                 strict=True,
             )
         ),
@@ -308,18 +345,15 @@ class _ProjectContextBundle:
     """The conditional half of one atomically constituted production L3 bundle.
 
     Since ARV2 onboarding O6 (ruling D5) the conditional half is the brand-knowledge index over
-    this turn's pinned documents, plus whatever account-deep steering the focus refs earn. A brand
-    with no servable knowledge document yet is the one valid empty bundle; the v2 conversation
-    envelope is still compiled only *after* this bundle succeeds, so it can never advertise an
-    artifact that failed to compile or persist.
+    this turn's pinned documents and the project-files index over its pinned project files, plus
+    whatever account-deep steering the focus refs earn. A turn composed without a blob backend
+    (diagnostic fixtures) is the one valid empty bundle; the v2 conversation envelope is still
+    compiled only *after* this bundle succeeds, so it can never advertise an artifact that failed
+    to compile or persist.
     """
 
     artifacts: tuple[ProjectContextArtifact, ...] = ()
     observations: tuple[_ContextCardObservation, ...] = ()
-
-    @property
-    def available(self) -> bool:
-        return bool(self.artifacts)
 
     def artifact(self, name: str) -> ProjectContextArtifact | None:
         return next((item for item in self.artifacts if item.name == name), None)
@@ -343,6 +377,7 @@ class ProjectConversationTurnRunner:
         design_legs: DesignLegTurnRunner | None = None,
         storage: StorageBackend | None = None,
         conn_factory: ConnFactory = transaction,
+        project_writer_conn_factory: ConnFactory = bridge_transaction,
         streaming: bool = True,
         stream_policy: TurnStreamPolicy | None = None,
         stop_poll_interval_s: float = 0.25,
@@ -358,6 +393,12 @@ class ProjectConversationTurnRunner:
         # so once per turn — it never falls back to "current" documents nobody pinned.
         self._storage = storage
         self._conn_factory = conn_factory
+        # The project mount's writer opens its *own* transaction, on the bridge loop, because the
+        # deepagents backend calls it synchronously from a worker thread and a connection belongs
+        # to the loop that made it. It is therefore a second factory, never ``conn_factory``: that
+        # one's engine is this process's, and crossing the two loops is the exact hazard the
+        # bridge exists to avoid. A test replaces it with a factory yielding its own connection.
+        self._project_writer_conn_factory = project_writer_conn_factory
         # D3 streaming is on for the production conversation and switchable off in one place, so a
         # deployment that must fall back to non-streaming turns changes a flag, not a code path.
         self._streaming = streaming
@@ -414,6 +455,11 @@ class ProjectConversationTurnRunner:
                     workspace_id=workspace_id,
                     turn_id=turn_id,
                 )
+        async with self._conn_factory() as conn:
+            pending_stop = await stop_requested(conn, workspace_id=workspace_id, turn_id=turn_id)
+        if pending_stop:
+            # Recovery must reconcile Stop before opening a new attempt or calling any model.
+            await self._finish_stop(submission=submission, turn_id=turn_id, stream=None)
         # FI Lane D D3: open this attempt's stream *before* anything runs. The outbox itself decides
         # the attempt ordinal, so a re-claimed task after a crash opens a distinct attempt and
         # resets whatever the dead one left open — never splicing two generations (§3.3(6)).
@@ -538,6 +584,9 @@ class ProjectConversationTurnRunner:
         product_set: ProjectProductSet | None = None
         icp_pin: ProjectIcpPin | None = None
         knowledge_pin_created = False
+        # What this turn's workspace mounts beside its thread root. A turn that composes no
+        # knowledge has no library version to name, so it mounts nothing.
+        mounts = MountRequest()
         if self._storage is None:
             log.info(
                 "agent_turn.knowledge_not_composed",
@@ -572,10 +621,138 @@ class ProjectConversationTurnRunner:
                 documents,
                 pinned_document_id=None if icp_pin is None else icp_pin.document_id,
             )
-        input_seeds = knowledge_seed_files(
-            documents,
-            pinned_document_id=None if icp_pin is None else icp_pin.document_id,
-        )
+            # The same pinned bytes, written once per knowledge version beside the threads and
+            # mounted read-only at ``brand/`` for every thread of every project of this brand.
+            # It is materialized here, not seeded per turn: a present tree is never rewritten.
+            brand_version = await ensure_brand_library(
+                self._engine.components.workspaces,
+                pin=knowledge_pin,
+                documents=documents,
+            )
+            mounts = MountRequest(brand=(scope.brand_id, brand_version))
+        # The project's own state (spec §4.1): status.md, decisions.md, the artifact index and
+        # every document this project authored, compiled once beside the threads and mounted
+        # read-only at ``project/``. The project moves while a turn runs — a discovery run
+        # finishes, a decision is recorded, another thread's write refreshes the tree — so the
+        # generation this turn composes against is recorded in its insert-once pin, and a later
+        # attempt reads the pinned set rather than whatever is installed by then.
+        project_library_index: bytes | None = None
+        #: Set when this turn built a tree of its own; removed in the ``finally`` below.
+        pinned_tree_name: str | None = None
+        if self._storage is not None:
+            # Bound once here so the compiler below closes over a backend, not over an attribute
+            # whose declared type still admits ``None``.
+            storage = self._storage
+            compiled: ProjectLibrarySnapshot | None = None
+            async with self._conn_factory() as conn:
+
+                async def compile_library() -> Sequence[CompiledProjectFile]:
+                    # Called at most once per turn, and only on the attempt that wins the pin.
+                    # The whole generation is compiled here — the pin records the library's own
+                    # files, ``index.json`` included — and the same snapshot installs the tree
+                    # below, so one turn pays for one compile.
+                    nonlocal compiled
+                    compiled = await compile_project_library(
+                        conn,
+                        storage,
+                        self._engine.artifacts,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                    )
+                    return compiled.files
+
+                project_pin, project_pin_created = await load_or_create_project_files_pin(
+                    conn,
+                    self._engine.artifacts,
+                    workspace_id=workspace_id,
+                    turn_id=turn_id,
+                    project_id=scope.project_id,
+                    compile=compile_library,
+                )
+                project_files = await read_pinned_project_files(
+                    conn, self._storage, pin=project_pin
+                )
+                if project_pin_created and compiled is not None:
+                    # This attempt compiled the generation it pinned: install that exact snapshot,
+                    # skipping a second identical compile inside ``ensure``.
+                    library = await ensure_project_library(
+                        conn,
+                        storage,
+                        self._engine.artifacts,
+                        self._engine.components.workspaces,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        snapshot=compiled,
+                    )
+                    library_digest: str | None = library.digest
+                else:
+                    library_digest = None
+            project_library_index = next(
+                (file.body for file in project_files if file.ref.path == LIBRARY_INDEX_PATH),
+                None,
+            )
+            if not project_pin_created:
+                # A later attempt of this turn. The live library is shared and is refreshed
+                # whenever the project moves, so it may no longer be the tree this turn pinned;
+                # when it is not, the pinned generation is rebuilt as a tree of this turn's own
+                # and mounted instead, so the model re-reads the files its receipt names.
+                library_digest = pinned_library_digest(project_files)
+                installed = await installed_project_library_digest(
+                    self._engine.components.workspaces,
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                )
+                if library_digest is not None and library_digest != installed:
+                    pinned_tree_name = f"pinned-{turn_id.hex[:12]}"
+                    await materialize_pinned_project_library(
+                        self._engine.components.workspaces,
+                        workspace_id=workspace_id,
+                        project_id=scope.project_id,
+                        name=pinned_tree_name,
+                        files=project_files,
+                        digest=library_digest,
+                    )
+                elif library_digest is None:
+                    # A pin with no manifest — written before the library existed. There is
+                    # nothing to replay from, so the live tree is the honest answer.
+                    library_digest = installed
+            # The mount is opened *versioned*: the model reads the project's tree as plain files
+            # and a write under it is taken by this writer as a new version of the document that
+            # path names. Exactly one writer is built per turn attempt and passed as one instance
+            # — ``MountRequest`` compares by value, and a second, equal-but-distinct writer would
+            # make two otherwise identical requests unequal.
+            #
+            # A replay attempt keeps its pinned tree *and* the writer (ruling P3-3): the pinned
+            # generation is what the model re-reads, and the first accepted write reopens the
+            # mount on the project's shared library, which is where the version it just minted
+            # actually lives.
+            project_writer = ProjectRootWriter(
+                bridge=process_bridge(),
+                storage=storage,
+                # NOT ``self._engine.artifacts`` (ruling P3-14): that reader's connections are
+                # this worker's, and ``refresh()`` reads the artifact index from the bridge loop.
+                # One reader per loop, each built from that loop's own factory.
+                artifacts=bridge_bound_artifact_reader(storage, self._project_writer_conn_factory),
+                workspaces=self._engine.components.workspaces,
+                workspace_id=workspace_id,
+                brand_id=scope.brand_id,
+                project_id=scope.project_id,
+                turn_id=turn_id,
+                user_id=submission.submitted_by_user_id,
+                conn_factory=self._project_writer_conn_factory,
+            )
+            mounts = replace(mounts, project_library=True, project_writer=project_writer)
+            if pinned_tree_name is not None:
+                mounts = replace(mounts, project_library_name=pinned_tree_name)
+            log.info(
+                "agent_turn.project_library_ready",
+                turn_id=str(turn_id),
+                project_id=scope.project_id,
+                library_sha256=library_digest,
+                file_count=len(project_files),
+                pin_created=project_pin_created,
+                replayed_from_pin=pinned_tree_name is not None,
+            )
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -622,143 +799,164 @@ class ProjectConversationTurnRunner:
         lease = self._engine.components.workspaces.acquire(
             workspace_id=workspace_id,
             project_id=scope.project_id,
+            thread_id=submission.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
+            mounts=mounts,
         )
-        focus_ref = DomainObjectRef(
-            workspace_id=workspace_id,
-            object_type="project",
-            object_id=scope.project_id,
-            version=None,
-        )
-        context_bundle = await self._compose_project_context(
-            submission=submission,
-            scope=scope,
-            documents=documents,
-            confirmed_icp=confirmed_icp,
-            product_set=product_set,
-            focus_refs=submission_focus_refs,
-        )
-        card_ref = await self._artifact(
-            submission,
-            scope,
-            PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
-            project_conversation_card_payload(
+        try:
+            focus_ref = DomainObjectRef(
                 workspace_id=workspace_id,
-                project_id=scope.project_id,
-                project_name=scope.name,
-                project_status=scope.status,
-                brand_id=scope.brand_id,
-                product_id=scope.product_id,
+                object_type="project",
+                object_id=scope.project_id,
+                version=None,
+            )
+            context_bundle = await self._compose_project_context(
+                submission=submission,
+                scope=scope,
+                documents=documents,
+                confirmed_icp=confirmed_icp,
+                product_set=product_set,
+                project_library_index=project_library_index,
+                focus_refs=submission_focus_refs,
+            )
+            card_ref = await self._artifact(
+                submission,
+                scope,
+                PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
+                project_conversation_card_payload(
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                    project_name=scope.name,
+                    project_status=scope.status,
+                    brand_id=scope.brand_id,
+                    product_id=scope.product_id,
+                    thread_id=submission.thread_id,
+                    # Ruling D5: neither card is compiled onto this surface any more. The envelope
+                    # says so honestly rather than advertising an artifact L3 does not carry.
+                    client_knowledge_available=False,
+                    stage0_project_state_available=False,
+                ),
+            )
+            budget_ref = await self._artifact(
+                submission,
+                scope,
+                "application/vnd.clue.agent-budget-envelope+json",
+                {
+                    "schema_version": "1",
+                    "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                    "external_research_budget_cents": "0",
+                    "scope": "conversation and Stage-0 domain writes only",
+                },
+            )
+            manifest_ref = await self._artifact(
+                submission,
+                scope,
+                "application/vnd.clue.agent-resource-manifest+json",
+                resolved.resource_manifest.model_dump(mode="json"),
+            )
+            request = AgentTurnRequest(
+                turn_id=turn_id,
                 thread_id=submission.thread_id,
-                # Ruling D5: neither card is compiled onto this surface any more. The envelope
-                # says so honestly rather than advertising an artifact L3 does not carry.
-                client_knowledge_available=False,
-                stage0_project_state_available=False,
-            ),
-        )
-        budget_ref = await self._artifact(
-            submission,
-            scope,
-            "application/vnd.clue.agent-budget-envelope+json",
-            {
-                "schema_version": "1",
-                "limit_millicents": PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                "external_research_budget_cents": "0",
-                "scope": "conversation and Stage-0 domain writes only",
-            },
-        )
-        manifest_ref = await self._artifact(
-            submission,
-            scope,
-            "application/vnd.clue.agent-resource-manifest+json",
-            resolved.resource_manifest.model_dump(mode="json"),
-        )
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=submission.thread_id,
-            constitution=AgentConstitution(
+                constitution=AgentConstitution(
+                    workspace_id=workspace_id,
+                    project_id=scope.project_id,
+                    execution_id=execution_id,
+                    # The one identity rule of this module: the acting human, from the durable row.
+                    actor_id=submission.submitted_by_user_id,
+                    role=AgentRole.HEAD_OF_ABM,
+                    brand_id=scope.brand_id,
+                    product_id=scope.product_id,
+                    client_entity_id=(
+                        None if scope.client_entity_id is None else str(scope.client_entity_id)
+                    ),
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                    focus_refs=(focus_ref,),
+                    project_context_artifacts=context_bundle.artifacts,
+                ),
+                user_message_artifact_ref=user_message_ref,
+                focus_refs=submission_focus_refs,
+                requested_at=submission.requested_at,
+            )
+            brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
+            log.info(
+                "agent_turn.context_composed",
+                turn_id=str(turn_id),
                 workspace_id=workspace_id,
                 project_id=scope.project_id,
-                execution_id=execution_id,
-                # The one identity rule of this module: the acting human, from the durable row.
-                actor_id=submission.submitted_by_user_id,
-                role=AgentRole.HEAD_OF_ABM,
                 brand_id=scope.brand_id,
                 product_id=scope.product_id,
                 client_entity_id=(
                     None if scope.client_entity_id is None else str(scope.client_entity_id)
                 ),
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-                focus_refs=(focus_ref,),
-                project_context_artifacts=context_bundle.artifacts,
-            ),
-            user_message_artifact_ref=user_message_ref,
-            focus_refs=submission_focus_refs,
-            requested_at=submission.requested_at,
-        )
-        brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
-        log.info(
-            "agent_turn.context_composed",
-            turn_id=str(turn_id),
-            workspace_id=workspace_id,
-            project_id=scope.project_id,
-            brand_id=scope.brand_id,
-            product_id=scope.product_id,
-            client_entity_id=(
-                None if scope.client_entity_id is None else str(scope.client_entity_id)
-            ),
-            client_kb_version=scope.client_kb_version,
-            product_kb_version=scope.product_kb_version,
-            project_card_sha256=card_ref.sha256,
-            brand_knowledge_documents=len(documents),
-            brand_knowledge_index_sha256=(
-                None if brand_knowledge_index is None else brand_knowledge_index.artifact_ref.sha256
-            ),
-            knowledge_pin_created=knowledge_pin_created,
-            client_knowledge_available=False,
-            stage0_project_state_available=False,
-        )
-        observations = {item.card_kind: item for item in context_bundle.observations}
-        self._observe_context_card(
-            submission=submission,
-            scope=scope,
-            observation=_ContextCardObservation(
-                card_kind="project_conversation",
-                schema_version="2",
-                content_sha256=card_ref.sha256,
-                omitted_count=0,
-            ),
-        )
-        self._observe_context_card(
-            submission=submission,
-            scope=scope,
-            observation=observations.get("brand_knowledge_index"),
-            card_kind="brand_knowledge_index",
-            schema_version="1",
-        )
-        result = await self._execute_watched(
-            run=lambda: self._engine.execute(
-                request=request,
-                lease=lease,
-                budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
-                submitted_by_user_id=submission.submitted_by_user_id,
-                submitted_via_membership_id=submission.submitted_via_membership_id,
+                client_kb_version=scope.client_kb_version,
+                product_kb_version=scope.product_kb_version,
+                project_card_sha256=card_ref.sha256,
+                brand_knowledge_documents=len(documents),
+                brand_knowledge_index_sha256=(
+                    None
+                    if brand_knowledge_index is None
+                    else brand_knowledge_index.artifact_ref.sha256
+                ),
+                knowledge_pin_created=knowledge_pin_created,
+                client_knowledge_available=False,
+                stage0_project_state_available=False,
+            )
+            observations = {item.card_kind: item for item in context_bundle.observations}
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=_ContextCardObservation(
+                    card_kind="project_conversation",
+                    schema_version="2",
+                    content_sha256=card_ref.sha256,
+                    omitted_count=0,
+                ),
+            )
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get("brand_knowledge_index"),
+                card_kind="brand_knowledge_index",
+                schema_version="1",
+            )
+            self._observe_context_card(
+                submission=submission,
+                scope=scope,
+                observation=observations.get("project_library_index"),
+                card_kind="project_library_index",
+                schema_version="1",
+            )
+            result = await self._execute_watched(
+                run=lambda: self._engine.execute(
+                    request=request,
+                    lease=lease,
+                    budget_limit_millicents=PROJECT_CONVERSATION_BUDGET_LIMIT_MILLICENTS,
+                    submitted_by_user_id=submission.submitted_by_user_id,
+                    submitted_via_membership_id=submission.submitted_via_membership_id,
+                    stream=stream,
+                ),
+                submission=submission,
+                turn_id=request.turn_id,
                 stream=stream,
-                input_seeds=input_seeds,
-            ),
-            submission=submission,
-            turn_id=request.turn_id,
-            stream=stream,
-        )
-        if result.outcome.status is AgentExecutionStatus.COMPLETED:
-            await self._complete_recipe(execution_id)
-        return result
+            )
+            if result.outcome.status is AgentExecutionStatus.COMPLETED:
+                await self._complete_recipe(execution_id)
+            return result
+        finally:
+            lease.release()
+            if pinned_tree_name is not None:
+                # What this turn wrote, this turn removes: the replay tree exists only for the
+                # length of the attempt that needed it, and the project's shared library — which
+                # ``remove_project_tree`` refuses to touch — is untouched either way.
+                self._engine.components.workspaces.remove_project_tree(
+                    workspace_id, scope.project_id, pinned_tree_name
+                )
 
     async def _compose_project_context(
         self,
@@ -768,15 +966,22 @@ class ProjectConversationTurnRunner:
         documents: tuple[PinnedDocument, ...] = (),
         confirmed_icp: ConfirmedIcpRef | None = None,
         product_set: ProjectProductSet | None = None,
+        project_library_index: bytes | None = None,
         focus_refs: tuple[DomainObjectRef, ...] = (),
     ) -> _ProjectContextBundle:
         """Compile and persist the bounded index of this turn's pinned brand knowledge.
 
         Ruling D5: the Head of ABM does not open on four compiled cards any more — it opens on an
         *index* of the brand's own knowledge documents and reads the files it needs by path from
-        ``inputs/brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
+        ``brand/knowledge/``. ``documents`` are the exact bytes the turn's knowledge pin
         froze, so this method compiles nothing from mutable "current" state; a brand with no
         servable document yet composes honestly nothing.
+
+        The project's own state is indexed the same way, from the same kind of pin — but its card
+        is not compiled here at all: it is the *library's own manifest*, as this turn's pin froze
+        it (``project_library_index``). The tree ships its manifest, the pin records it, and the
+        opening context serves those exact bytes, so the card, the receipt and the files the model
+        opens at ``project/`` cannot describe three different generations.
         """
 
         artifacts: list[ProjectContextArtifact] = []
@@ -817,6 +1022,38 @@ class ProjectConversationTurnRunner:
                     schema_version=card.schema_version,
                     content_sha256=index_ref.sha256,
                     omitted_count=card.omitted_count,
+                )
+            )
+
+        if project_library_index is not None:
+            project_ref = await self._artifact(
+                submission,
+                scope,
+                PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
+                json.loads(project_library_index),
+            )
+            if project_ref.sha256 != hashlib.sha256(project_library_index).hexdigest():
+                raise RuntimeError(
+                    "persisted project-library index differs from the pinned manifest"
+                )
+            artifacts.append(
+                ProjectContextArtifact(
+                    name="project_library_index",
+                    artifact_ref=project_ref,
+                    domain_ref=DomainObjectRef(
+                        workspace_id=submission.workspace_id,
+                        object_type="project_library_index",
+                        object_id=scope.project_id,
+                        version=None,
+                    ),
+                )
+            )
+            observations.append(
+                _ContextCardObservation(
+                    card_kind="project_library_index",
+                    schema_version="1",
+                    content_sha256=project_ref.sha256,
+                    omitted_count=0,
                 )
             )
 
@@ -933,41 +1170,94 @@ class ProjectConversationTurnRunner:
                     "required turn context is no longer available; start a new thread"
                 ) from error
 
-        if stream is None or self._stop_poll_interval_s <= 0:
-            return await _execute_with_artifact_boundary()
-
         turn = asyncio.create_task(_execute_with_artifact_boundary())
         watcher = asyncio.create_task(
             self._await_stop(
                 workspace_id=submission.workspace_id,
                 turn_id=turn_id,
-                generation_attempt_id=stream.generation_attempt_id,
+                generation_attempt_id=None if stream is None else stream.generation_attempt_id,
             )
         )
-        done, _pending = await asyncio.wait({turn, watcher}, return_when=asyncio.FIRST_COMPLETED)
-        if turn in done:
+        try:
+            done, _pending = await asyncio.wait(
+                {turn, watcher}, return_when=asyncio.FIRST_COMPLETED
+            )
+            async with self._conn_factory() as conn:
+                stopped = await stop_requested(
+                    conn, workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            if turn in done and not stopped:
+                watcher.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await watcher
+                return turn.result()
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
-            return turn.result()
-        turn.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await turn
-        # The cancelled task passed through the generic runtime unwinder, which cannot know
-        # whether cancellation meant a user Stop or a process/lease failure. This runner owns that
-        # distinction, so its later terminal journal event deliberately supersedes the generic
-        # abandoned marker with the durable truth.
-        await self._engine.components.turns.mark_cancelled(
-            turn_id=turn_id,
-            workspace_id=submission.workspace_id,
-        )
-        await stream.turn_cancelled()
-        log.info(
-            "agent_turn.stopped",
-            turn_id=str(turn_id),
-            workspace_id=submission.workspace_id,
-            generation_attempt_id=str(stream.generation_attempt_id),
-        )
+            if self._design_legs is not None:
+                await self._design_legs.request_stop_for_turn(
+                    workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            turn.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await turn
+            await self._finish_stop(submission=submission, turn_id=turn_id, stream=stream)
+            raise AssertionError("stop reconciliation must terminate this turn")
+        finally:
+            for task in (watcher, turn):
+                if not task.done():
+                    task.cancel()
+            for task in (watcher, turn):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
+    async def _finish_stop(
+        self, *, submission: AgentTurnSubmissionRow, turn_id: UUID, stream: TurnStreamEmitter | None
+    ) -> None:
+        if self._design_legs is not None:
+            await self._design_legs.request_stop_for_turn(
+                workspace_id=submission.workspace_id, turn_id=turn_id
+            )
+            await self._design_legs.await_stopped_turn(
+                workspace_id=submission.workspace_id, turn_id=turn_id
+            )
+        async with self._conn_factory() as conn:
+            acknowledged = bool(
+                await conn.scalar(
+                    text(
+                        "SELECT 1 FROM agent_turn_stop_ack a JOIN "
+                        "agent_turn_control_request c USING (control_id) "
+                        "WHERE c.workspace_id=:workspace AND c.turn_id=:turn AND c.kind='stop'"
+                    ),
+                    {"workspace": submission.workspace_id, "turn": turn_id},
+                )
+            )
+            prefix = (
+                stream.interrupted_answer()
+                if stream is not None
+                else await recover_interrupted_answer(
+                    conn, workspace_id=submission.workspace_id, turn_id=turn_id
+                )
+            )
+        if not acknowledged:
+            body_ref = None
+            if prefix:
+                body_ref = await self._engine.artifacts.persist_body(
+                    workspace_id=submission.workspace_id,
+                    data=prefix.encode("utf-8"),
+                    media_type="text/plain",
+                    project_bindings=((submission.project_id, "project_conversation_context"),),
+                )
+            async with self._conn_factory() as conn:
+                await commit_interrupted_turn(
+                    conn,
+                    workspace_id=submission.workspace_id,
+                    thread_id=submission.thread_id,
+                    turn_id=turn_id,
+                    body_ref=body_ref,
+                )
+        if stream is not None:
+            await stream.turn_cancelled()
         raise TurnStopped("this generation attempt was stopped by its submitter")
 
     async def _await_stop(
@@ -975,12 +1265,12 @@ class ProjectConversationTurnRunner:
         *,
         workspace_id: str,
         turn_id: UUID,
-        generation_attempt_id: UUID,
+        generation_attempt_id: UUID | None,
     ) -> None:
         """Poll the durable control table until this attempt is asked to stop."""
 
         while True:
-            await asyncio.sleep(self._stop_poll_interval_s)
+            await asyncio.sleep(max(0.05, self._stop_poll_interval_s))
             async with self._conn_factory() as conn:
                 if await stop_requested(
                     conn,
@@ -1154,6 +1444,24 @@ class AgentTurnWorkHandler:
         workspace_id = str(context.payload["workspace_id"])
         thread_id = str(context.payload["thread_id"])
         references: dict[str, JsonValue] = {"turn_id": str(turn_id)}
+        async with self._conn_factory() as conn:
+            await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
+            held_by = await conn.scalar(
+                text(
+                    "SELECT c.turn_id FROM agent_thread t JOIN agent_turn_control_request c "
+                    "ON c.control_id=t.queue_hold_control_id WHERE "
+                    "t.workspace_id=:workspace AND t.id=:thread"
+                ),
+                {"workspace": workspace_id, "thread": thread_id},
+            )
+        if held_by is not None and held_by != turn_id:
+            # Covers tasks offered just before Stop acquired the dispatch lock.
+            return WorkResult(
+                outcome="queue_held",
+                references=references,
+                requeue=True,
+                requeue_after=timedelta(seconds=1),
+            )
         try:
             result = await self._runner.run(turn_id=turn_id, workspace_id=workspace_id)
         except TurnStopped:
@@ -1164,6 +1472,18 @@ class AgentTurnWorkHandler:
             status = FleetTaskStatus.DONE
             references["status"] = "cancelled"
         except Exception as error:  # noqa: BLE001 — recorded as a failed task, never swallowed
+            async with self._conn_factory() as conn:
+                pending_stop = await stop_requested(
+                    conn, workspace_id=workspace_id, turn_id=turn_id
+                )
+            if pending_stop:
+                log.exception("agent_turn.stop_reconciliation_failed", turn_id=str(turn_id))
+                return WorkResult(
+                    outcome="stop_pending",
+                    references=references,
+                    requeue=True,
+                    requeue_after=timedelta(seconds=1),
+                )
             log.exception(
                 "agent_turn.failed",
                 turn_id=str(turn_id),
@@ -1380,6 +1700,7 @@ def build_agent_turn_work_handler(
     design_exit_judge: DesignLegExitJudge | None = None,
     design_leg_finisher: DesignLegFinisher | None = None,
     conn_factory: ConnFactory = transaction,
+    project_writer_conn_factory: ConnFactory = bridge_transaction,
     streaming: bool = True,
     stream_policy: TurnStreamPolicy | None = None,
     stop_poll_interval_s: float = 0.25,
@@ -1398,6 +1719,10 @@ def build_agent_turn_work_handler(
 
     ``storage`` (ARV2 onboarding O6) is the blob backend this worker reads the brand's pinned
     knowledge documents from. Without it a turn composes no knowledge and says so once.
+
+    ``project_writer_conn_factory`` is the transaction the versioned ``project/`` mount's writes
+    open. It defaults to the bridge loop's own engine because those writes happen off this
+    worker's loop, and it is separate from ``conn_factory`` for exactly that reason.
     """
 
     engine = build_conversation_turn_engine(
@@ -1433,6 +1758,7 @@ def build_agent_turn_work_handler(
             design_legs=design_legs_runner,
             storage=storage,
             conn_factory=conn_factory,
+            project_writer_conn_factory=project_writer_conn_factory,
             streaming=streaming,
             stream_policy=stream_policy,
             stop_poll_interval_s=stop_poll_interval_s,

@@ -23,6 +23,7 @@ __all__ = [
     "DocumentRow",
     "RunStatus",
     "StepStatus",
+    "create_persona_run",
     "create_run",
     "fail_document",
     "fail_run",
@@ -31,8 +32,10 @@ __all__ = [
     "list_documents",
     "mark_run_running",
     "open_document",
+    "open_persona_run",
     "publish_document",
     "read_current_run",
+    "read_run_status",
     "start_step",
 ]
 
@@ -105,6 +108,91 @@ async def create_run(
     )
 
 
+async def create_persona_run(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    workspace_id: str,
+    brand_id: str,
+    project_id: str,
+    persona_icp_document_id: UUID,
+    company_domain: str,
+    requested_by_user_id: str,
+) -> None:
+    """Insert the ``queued`` **personas** run: one persona turn for one ICP document.
+
+    The narrow sibling of :func:`create_run`. It researches nothing and syncs no catalog — it is
+    the row behind "write the personas for the profile this project just confirmed" — so it names
+    the project that asked and the document it writes about. ``onboarding_run_persona_shape``
+    welds those two halves: a personas run without its ICP document, or a full run with one, is
+    not a row the database will take.
+
+    ``company_domain`` is copied from the brand's completed onboarding walk rather than re-derived:
+    the synthesis card names the company, and the only honest source for that here is the walk that
+    already established it.
+
+    Re-inserting the same id is a no-op, exactly as :func:`create_run`'s is: a replayed request
+    finds its own run instead of opening a second one for the same document.
+    """
+    await conn.execute(
+        text(
+            "INSERT INTO onboarding_run (run_id, workspace_id, brand_id, kind, project_id, "
+            " persona_icp_document_id, company_domain, requested_by_user_id) "
+            "VALUES (:run_id, :workspace_id, :brand_id, 'personas', :project_id, :document_id, "
+            " :domain, :user_id) "
+            "ON CONFLICT (run_id) DO NOTHING"
+        ),
+        {
+            "run_id": run_id,
+            "workspace_id": workspace_id,
+            "brand_id": brand_id,
+            "project_id": project_id,
+            "document_id": persona_icp_document_id,
+            "domain": company_domain.strip(),
+            "user_id": requested_by_user_id,
+        },
+    )
+
+
+async def open_persona_run(conn: AsyncConnection, *, persona_icp_document_id: UUID) -> UUID | None:
+    """The open personas run for one ICP document, or ``None``.
+
+    Keyed on the document rather than on the workspace or the project, because that is what the
+    run is *about*: two projects pinning the same brand ICP are asking for the same personas at the
+    same path, and two turns racing there would version over each other. A document id is globally
+    unique, so no tenancy predicate is needed to make this read precise.
+
+    The partial index ``onboarding_run_persona_open`` is exactly this query's shape.
+    """
+    return (
+        await conn.execute(
+            text(
+                "SELECT run_id FROM onboarding_run WHERE kind = 'personas' "
+                "AND persona_icp_document_id = :document_id "
+                "AND status IN ('queued', 'running') LIMIT 1"
+            ),
+            {"document_id": persona_icp_document_id},
+        )
+    ).scalar_one_or_none()
+
+
+async def read_run_status(conn: AsyncConnection, *, run_id: UUID) -> str | None:
+    """The status of one run by id, or ``None`` when no such run exists.
+
+    The companion to :func:`open_persona_run`, which by design only matches an *open* run. A caller
+    whose run id is derived (a personas request derives one per turn) needs to tell "this turn has
+    not opened its run yet" from "this turn's run has already settled" — and without this read the
+    two are the same ``None``, so a same-turn retry after a completed run would re-offer a terminal
+    row and report the failure as if the queue were broken.
+    """
+    return (
+        await conn.execute(
+            text("SELECT status FROM onboarding_run WHERE run_id = :run_id"),
+            {"run_id": run_id},
+        )
+    ).scalar_one_or_none()
+
+
 async def mark_run_running(conn: AsyncConnection, *, run_id: UUID) -> None:
     """``queued`` → ``running``. Guarded on ``queued`` so a re-delivered task cannot revive a run
     that already reached a terminal status (which would then violate the biconditional CHECK)."""
@@ -165,13 +253,18 @@ async def open_document(
 
     Both FKs in the step ↔ document cycle are NOT DEFERRABLE, so the write order is fixed:
     the step already exists, the document names it, and only then does the step name the document.
+
+    The onboarding walk writes the **brand's** knowledge, so the version chain it continues is the
+    brand-level one: a project's own variant at the same path has its own history and must not
+    push the brand's next version along.
     """
     version = int(
         (
             await conn.execute(
                 text(
                     "SELECT COALESCE(MAX(version), 0) + 1 FROM brand_knowledge_document "
-                    "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path"
+                    "WHERE workspace_id = :ws AND brand_id = :brand AND path = :path "
+                    "  AND project_id IS NULL"
                 ),
                 {"ws": workspace_id, "brand": brand_id, "path": path},
             )
@@ -215,13 +308,17 @@ async def publish_document(
     served fact — the driver writes an ``empty`` catalog document with its rendered "nothing found"
     body, which ``brand_knowledge_document_body_when_served`` permits (that CHECK binds only the
     served statuses).
+
+    Brand-level only, on both reads: this publishes what the brand walk opened, and it retires the
+    brand's previous version of that path. A project-scoped document id has no row here and raises
+    rather than being published through a walk that never opened it.
     """
     row = (
         (
             await conn.execute(
                 text(
                     "SELECT workspace_id, brand_id, path, version FROM brand_knowledge_document "
-                    "WHERE document_id = :id"
+                    "WHERE document_id = :id AND project_id IS NULL"
                 ),
                 {"id": document_id},
             )
@@ -235,7 +332,8 @@ async def publish_document(
                 text(
                     "SELECT document_id FROM brand_knowledge_document WHERE workspace_id = :ws "
                     "AND brand_id = :brand AND path = :path AND version < :version "
-                    "AND status IN :served ORDER BY version DESC LIMIT 1"
+                    "AND status IN :served AND project_id IS NULL "
+                    "ORDER BY version DESC LIMIT 1"
                 ).bindparams(bindparam("served", expanding=True)),
                 {
                     "ws": row["workspace_id"],
@@ -377,11 +475,17 @@ async def fail_run(conn: AsyncConnection, *, run_id: UUID) -> None:
 
 
 async def read_current_run(conn: AsyncConnection, *, workspace_id: str) -> RunStatus | None:
-    """The workspace's newest run by ``requested_at``, with its steps. ``None`` when it has none.
+    """The workspace's newest **full** run by ``requested_at``, with its steps. ``None`` when it
+    has none.
 
     ``cost_usd`` is summed from the steps rather than read off the run, so it is the **live** burn
     while the run is still open — the run's own column is only written at close-out. The two agree
     once :func:`finish_run` has run, because it writes that same sum.
+
+    ``kind = 'full'`` because this is what the setting-up screen watches: the whole-brand walk and
+    its documents. A ``personas`` run is one project's narrow turn for one ICP, with none of the
+    steps that screen renders, and letting it become "the workspace's current run" would replace a
+    completed onboarding with a progress bar for work the screen cannot describe.
     """
     run = (
         (
@@ -389,7 +493,7 @@ async def read_current_run(conn: AsyncConnection, *, workspace_id: str) -> RunSt
                 text(
                     "SELECT run_id, status, (SELECT COALESCE(SUM(step.cost_usd), 0) "
                     " FROM onboarding_step step WHERE step.run_id = run.run_id) AS cost_usd "
-                    "FROM onboarding_run run WHERE workspace_id = :ws "
+                    "FROM onboarding_run run WHERE workspace_id = :ws AND kind = 'full' "
                     "ORDER BY requested_at DESC LIMIT 1"
                 ),
                 {"ws": workspace_id},
@@ -440,12 +544,13 @@ async def list_documents(
     """The brand's knowledge documents — the current version of each path, or every version.
 
     O5's read endpoint and O4's materialization both take the default (current) view; the history
-    is only for callers that need to see what a path used to be.
+    is only for callers that need to see what a path used to be. Brand-level rows only, in both
+    views: a project's own documents are that project's, and are read through the project reader.
     """
     current_only = (
         " AND version = (SELECT MAX(d2.version) FROM brand_knowledge_document d2 "
         " WHERE d2.workspace_id = d.workspace_id AND d2.brand_id = d.brand_id "
-        " AND d2.path = d.path)"
+        " AND d2.path = d.path AND d2.project_id IS NULL)"
     )
     where = "" if all_versions else current_only
     rows = (
@@ -454,7 +559,7 @@ async def list_documents(
                 text(
                     "SELECT document_id, folder, path, kind, version, status, artifact_key, "
                     " artifact_sha256 FROM brand_knowledge_document d "
-                    f"WHERE workspace_id = :ws AND brand_id = :brand{where} "
+                    f"WHERE workspace_id = :ws AND brand_id = :brand AND project_id IS NULL{where} "
                     "ORDER BY folder, path, version"
                 ),
                 {"ws": workspace_id, "brand": brand_id},

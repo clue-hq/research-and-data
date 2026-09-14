@@ -3,7 +3,7 @@
 The Target accounts tab polls this while a run is live (spec 2026-09-12 §3): it is the only thing
 the frontend reads to know a run is in flight, how far Exa has got, and when to stop polling.
 ARV2's own tables are the only source (ruling 2026-09-09). ``found`` is the run's strict + relaxed
-count as the driver last recorded it; ``verified`` counts candidates with a disposition;
+count as the driver last recorded it; ``verified`` counts candidates the verifier judged;
 ``shown`` counts the pass/partial/unclear ones — the rows the tab is about to list.
 
 The two wire models live here rather than in ``contract_v1``: that module's ``V1Model`` base is
@@ -20,7 +20,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
-from clue_api.arv2.discovery_store import DiscoveryStatus
+from clue_api.arv2.discovery_store import VERIFIED_PREDICATE, DiscoveryStatus
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.v1_shared import iso_utc
 from clue_db import ConnFactory
@@ -53,12 +53,15 @@ class DiscoveryRunStatusResponseV1(BaseModel):
     data: DiscoveryRunStatusV1 | None
 
 
+# ``verified`` counts the candidates the verifier actually JUDGED, which is what the predicate
+# imported from the lane says — the tab, ``status.md`` and the agent's own read share that one
+# definition, so the number on the screen is the number in the sentence.
 _LATEST_RUN = text(
-    """
+    f"""
     SELECT r.run_id, r.status, r.asked, r.found_strict, r.found_relaxed, r.started_at,
            r.finished_at,
            (SELECT count(*) FROM arv2_discovery_candidate c
-             WHERE c.run_id = r.run_id AND c.disposition <> 'pending') AS verified,
+             WHERE c.run_id = r.run_id AND {VERIFIED_PREDICATE}) AS verified,
            (SELECT count(*) FROM arv2_discovery_candidate c
              WHERE c.run_id = r.run_id
                AND c.disposition IN ('pass', 'partial', 'unclear')) AS shown

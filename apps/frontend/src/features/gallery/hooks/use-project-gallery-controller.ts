@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import {
-  countActiveGalleryFilters,
+  countActiveGalleryFilters, documentGalleryCards, galleryTypeOptions,
   DEFAULT_GALLERY_FILTERS,
   filterGalleryArtifacts,
   groupGalleryArtifacts,
@@ -17,7 +18,9 @@ import {
   type GallerySort,
 } from "../model/project-gallery";
 
-export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
+const NO_DOCUMENTS: ProjectDocument[] = [];
+
+export function useProjectGalleryController(artifacts: ProjectArtifact[], documents = NO_DOCUMENTS) {
   const [layout, setLayout] = useState<GalleryLayout>("grid");
   const [groupBy, setGroupBy] = useState<GalleryGroupBy>("none");
   const [sort, setSort] = useState<GallerySort>("last-viewed");
@@ -26,8 +29,8 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
   const [openMenu, setOpenMenu] = useState<GalleryMenu>(null);
 
   const normalizedArtifacts = useMemo(
-    () => artifacts.map(normalizeGalleryArtifact),
-    [artifacts],
+    () => [...artifacts.map(normalizeGalleryArtifact), ...documentGalleryCards(documents)],
+    [artifacts, documents],
   );
   const accounts = useMemo(() => {
     // Unattributed artifacts contribute no filter option — only real accounts
@@ -72,6 +75,7 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
 
   return {
     accounts,
+    typeOptions: galleryTypeOptions(normalizedArtifacts),
     activeFilterCount: countActiveGalleryFilters(filters),
     filters,
     groupBy,

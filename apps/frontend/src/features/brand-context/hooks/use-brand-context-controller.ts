@@ -35,9 +35,13 @@ const assetSortOptions: ReadonlyArray<{ label: string; value: BrandAssetSortKey 
 export function useBrandContextController({
   initial,
   workspace,
+  scopeKey,
+  canWriteKnowledge,
 }: {
   initial: BrandContextInitialState;
   workspace: BrandContextWorkspace;
+  scopeKey: string;
+  canWriteKnowledge: boolean;
 }) {
   const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,7 +141,7 @@ export function useBrandContextController({
   const selectedDocument =
     allDocuments.find((document) => document.path === selectedDocumentPath)
     ?? allDocuments[0];
-  const knowledgeEditor = useKnowledgeEditor(selectedDocument);
+  const knowledgeEditor = useKnowledgeEditor(selectedDocument, { scopeKey, canWrite: canWriteKnowledge });
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;

@@ -426,7 +426,22 @@ class Stage0StepPinProvider:
         # presenting turn), so the pin is resolved through the turn ref the engine injected. A
         # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
         # tool's own preconditions are what refuse it, with a reason a model can act on.
-        if step.tool_name in {"open_design_leg", "open_product_set_selection_gate"}:
+        # ARV2 context and authoring: the ICP-authoring pair derives its project the same way and
+        # for the same reason — each carries only the trusted `source_turn_ref`, never a
+        # model-authored project, so the presenting turn is the coordinate the pin resolves from.
+        # The project plan derives its project the same way and for the same reason: the tool
+        # carries only the trusted `source_turn_ref` and never a model-authored project.
+        # `author_icp_document`, `request_persona_synthesis` and `write_project_document` are
+        # ungranted from `head-of-abm@v55` and out of the slot at recipe0-stage0@27, but they stay
+        # named here: an execution pinned to an earlier revision still plans them, and it still
+        # needs this pin resolved to replay.
+        if step.tool_name in {
+            "author_icp_document",
+            "open_design_leg",
+            "open_product_set_selection_gate",
+            "request_persona_synthesis",
+            "write_project_document",
+        }:
             requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
         # The artifact-shaped ICP gate (``@2``) derives its project the same way. ``@1`` keeps the
         # Stage-0 scope path above, so the version is part of the condition.
@@ -441,11 +456,25 @@ class Stage0StepPinProvider:
         # siblings. An execution with no project pins explicitly absent and each tool's own
         # preconditions refuse it, rather than the plan failing to validate.
         # ARV2 Track R, R4 adds the discovery launch on exactly the person launch's terms.
+        # The three ARV2 reads join them for the same reason: two name a `project_id` in their
+        # body and the third names no project at all (it is keyed on an account), and a body field
+        # is model-authored, so the execution's own project — which is not — is the coordinate
+        # their ``project`` pin resolves from.
+        # ``read_claims`` and ``read_artifact`` join them at recipe0-stage0@28 on the same terms:
+        # the claims query is keyed on an entity and the gallery read on an artifact id, so
+        # neither names a project it could be trusted about. This set is keyed by tool NAME, so
+        # the paged ``@2`` of the two reads resolves its ``project`` pin exactly as its ``@1``
+        # does, and an execution pinned to an older revision still plans the ``@1``.
         if step.tool_name in {
             "launch_arv2_account_research",
             "launch_arv2_discovery",
             "launch_arv2_person_research",
+            "read_account_research",
+            "read_artifact",
             "read_arv2_account_research_run",
+            "read_claims",
+            "read_discovery_run",
+            "read_project_accounts",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

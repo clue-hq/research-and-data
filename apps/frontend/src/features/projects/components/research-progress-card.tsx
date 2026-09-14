@@ -22,7 +22,7 @@ export function ResearchProgressCard({
   return (
     <section aria-label="Account research progress" className={styles.card}>
       <header className={styles.header}>
-        <ProjectIcon className={styles.glyph} name="telescope" size={24} />
+        <ProjectIcon className={styles.glyph} name="telescope" size={16} />
         <div className={styles.titles}>
           <h2 className={styles.title}>Account research</h2>
           <p className={styles.subtitle}>{headline}</p>

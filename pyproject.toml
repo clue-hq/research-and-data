@@ -55,6 +55,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "subsystems/research/clue_research/evals/**" = ["T20"]
 "subsystems/research/clue_research/verification/eval_cli.py" = ["T20"]
 "subsystems/design/clue_design/evals/__main__.py" = ["T20"]
+# The operating-manual builder: `make manual` / `make manual-check` tell an operator which
+# chapters were written or which are stale, on stdout, the way every other build target does.
+"platform/agents/clue_agents/manual/build.py" = ["T20"]
+"platform/agents/clue_agents/manual/fields_snapshot.py" = ["T20"]
+"platform/api/clue_api/manual_build.py" = ["T20"]
 "scripts/**" = ["T20"]
 "tests/**" = ["T20"]
 

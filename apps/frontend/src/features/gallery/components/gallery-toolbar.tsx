@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type {
-  GalleryCollateralType,
   GallerySizeCategory,
 } from "@/features/projects/model/project-workspace";
 import { ProjectIcon } from "@/features/projects/components/project-icon";
@@ -39,7 +38,6 @@ const DATE_OPTIONS: Array<{ label: string; value: GalleryDateRange }> = [
   { label: "Last 30 days", value: "last-30-days" },
 ];
 
-const COLLATERAL_TYPES = Object.keys(COLLATERAL_TYPE_LABELS) as GalleryCollateralType[];
 const SIZE_CATEGORIES = Object.keys(SIZE_CATEGORY_LABELS) as GallerySizeCategory[];
 
 function MenuOption({
@@ -268,7 +266,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
               </section>
               <section>
                 <h3>Collateral type</h3>
-                {COLLATERAL_TYPES.map((type) => (
+                {controller.typeOptions.map((type) => (
                   <FilterCheck
                     checked={controller.filters.collateralTypes.includes(type)}
                     key={type}

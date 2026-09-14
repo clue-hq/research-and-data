@@ -743,14 +743,19 @@ async def find_contact_by_linkedin(
 
 
 async def read_persona_documents(
-    conn: AsyncConnection, *, workspace_id: str, brand_id: str
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str, project_id: str
 ) -> tuple[DocumentRow, ...]:
-    """The brand's served ``audience-persona`` documents, newest first.
+    """The served ``audience-persona`` documents this project may read, newest first.
 
     It returns *candidates* rather than the one document a run wants, because a persona document
     names its ICP in its front matter, not in a column — the caller reads the bodies and keeps the
     one whose ``icp_key`` matches the run's pin. Filtering here would mean guessing the ICP from
     the path, which is exactly the kind of guess this lane refuses to make.
+
+    Scope is not a guess, though, and it is enforced: the brand's personas plus this project's own,
+    project-local ones first. Another project's personas are never candidates — a persona written
+    for one project's rewritten ICP would otherwise be matched by key into a run that never asked
+    for it.
     """
     rows = (
         (
@@ -761,11 +766,13 @@ async def read_persona_documents(
                     "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                     " AND kind = 'audience-persona' AND status = ANY(:served) "
                     " AND artifact_key IS NOT NULL "
-                    "ORDER BY version DESC, created_at DESC"
+                    " AND (project_id IS NULL OR project_id = :project_id) "
+                    "ORDER BY (project_id IS NULL), version DESC, created_at DESC"
                 ),
                 {
                     "workspace_id": workspace_id,
                     "brand_id": brand_id,
+                    "project_id": project_id,
                     "served": list(SERVED_DOCUMENT_STATUSES),
                 },
             )

@@ -1,0 +1,22 @@
+.file-card-demo { max-width: 760px; margin: auto; padding: 24px; }
+.file-card-demo .demo-controls { margin-bottom: 24px; }
+.file-card-chat { padding: 32px; background: var(--clue-ds-color-bg-neutral); border: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle); border-radius: var(--clue-ds-product-component-button-md-radius); font-size: var(--clue-ds-typography-text-default-font-size); line-height: var(--clue-ds-typography-text-default-line-height); }
+.file-card-chat p { margin: 12px 0 20px; }
+.file-card-chat .file-card-user { width: fit-content; max-width: 90%; margin: 0 0 32px auto; padding: 10px 12px; border: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle); border-radius: var(--clue-ds-product-component-button-md-radius); }
+.file-card-link { width: min(100%, 360px); display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--clue-ds-color-bg-neutral); color: var(--clue-ds-color-content-neutral); border: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-subtle); border-radius: var(--clue-ds-product-component-button-md-radius); text-align: left; }
+.file-card-link:hover { background: var(--clue-ds-color-bg-neutral-hover); }
+.file-card-glyph { display: flex; color: var(--clue-ds-color-content-subtle); flex-shrink: 0; }
+.file-card-labels { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.file-card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--clue-ds-typography-text-sm-medium-font-size); line-height: var(--clue-ds-typography-text-sm-medium-line-height); font-weight: var(--clue-ds-typography-text-sm-medium-font-weight); }
+.file-card-meta,.file-card-caption { color: var(--clue-ds-color-content-subtle); font-size: var(--clue-ds-typography-text-xs-font-size); line-height: var(--clue-ds-typography-text-xs-line-height); }
+.file-card-link > svg { flex-shrink: 0; color: var(--clue-ds-color-content-subtle); }
+.file-card-old { padding: 0 16px 18px; border: 1px solid var(--clue-ds-color-border-subtle); border-radius: 12px; box-shadow: 0 1px 3px #0002; }
+.file-card-old > div { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.file-card-old button { display: flex; align-items: center; gap: 8px; padding: 4px 0; border: 0; background: transparent; font: inherit; }
+.file-card-old span { color: var(--clue-ds-color-content-subtle); }
+.file-card-old hr { border: 0; border-top: 1px solid var(--clue-ds-color-border-subtle); margin-top: 16px; }
+.file-card-document { margin-top: 32px; padding: 24px; border: 1px solid var(--clue-ds-color-border-subtle); }
+.file-card-document header { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: var(--clue-ds-typography-text-sm-font-size); }
+.file-card-document button { display: flex; padding: 6px; border: 0; background: transparent; }
+.file-card-document h2 { font-size: var(--clue-ds-typography-text-default-medium-font-size); }
+@media (max-width: 500px) { .file-card-demo { padding: 16px; } .file-card-chat { padding: 20px; } }

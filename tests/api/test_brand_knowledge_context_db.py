@@ -7,7 +7,7 @@ durable rows, never from an in-memory convenience:
 * **A turn's document set is pinned once.** Publishing a newer version mid-turn cannot change what
   a retry of that turn sees — the pin is insert-once and every later attempt reads the winner.
 * **Bytes are verified against the pinned digest.** A document whose stored digest has moved is a
-  loud refusal, not a silently different file seeded under ``inputs/brand/knowledge/``.
+  loud refusal, not a silently different file served under ``brand/knowledge/``.
 
 The index card is compiled, not stored, so its two tests are pure: they build the pinned documents
 by hand and assert the bounded shape the model actually receives.
@@ -28,6 +28,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
 from clue_api.brand_knowledge_context import (
     INPUT_PREFIX,
+    SEED_PREFIX,
     BrandKnowledgeIndexCard,
     KnowledgeDocumentRef,
     KnowledgePinConflict,
@@ -35,10 +36,12 @@ from clue_api.brand_knowledge_context import (
     compile_brand_knowledge_index_card,
     confirmed_icp_for_project,
     current_knowledge_documents,
+    current_project_knowledge_refs,
     get_knowledge_pin,
     knowledge_seed_files,
     load_or_create_knowledge_pin,
     read_pinned_documents,
+    workspace_paths,
 )
 from clue_api.thread_store import create_thread
 from clue_core import OnboardingInputKind
@@ -100,11 +103,16 @@ async def _seed_document(
     status: str,
     body: str,
     artifact_sha256: str | None = None,
+    project_id: str | None = None,
+    derived_from_document_id: UUID | None = None,
 ) -> UUID:
     """Insert one knowledge document row over really-stored bytes.
 
     ``artifact_sha256`` overrides the digest the *row* claims (the table only checks its shape),
     which is how the "stored digest moved" case is reproduced without corrupting a blob.
+
+    ``project_id`` scopes the row to one project (ICP authoring, Task 1's columns): the brand-level
+    readers must not see it, and it materializes under the project's own prefix.
     """
 
     ref = await artifacts.persist_body(
@@ -116,8 +124,10 @@ async def _seed_document(
     await conn.execute(
         text(
             "INSERT INTO brand_knowledge_document (document_id, workspace_id, brand_id, folder, "
-            "path, kind, version, status, artifact_key, artifact_sha256) "
-            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha)"
+            "path, kind, version, status, artifact_key, artifact_sha256, project_id, "
+            "derived_from_document_id) "
+            "VALUES (:id, :ws, :brand, :folder, :path, :kind, :version, :status, :key, :sha, "
+            ":project, :derived)"
         ),
         {
             "id": document_id,
@@ -130,6 +140,8 @@ async def _seed_document(
             "status": status,
             "key": ref.artifact_key,
             "sha": artifact_sha256 or ref.sha256,
+            "project": project_id,
+            "derived": derived_from_document_id,
         },
     )
     return document_id
@@ -246,6 +258,103 @@ def test_current_knowledge_documents_serve_the_max_servable_version_of_each_path
                 ("product/catalog.md", 1),
             ]
             assert all(doc.artifact_key for doc in documents)
+
+    run_async(scenario())
+
+
+def test_project_documents_are_invisible_to_brand_readers_and_seed_under_inputs_project() -> None:
+    """A project-scoped row belongs to one project: the brand's readers must not see it at all.
+
+    It is still real knowledge — it is read by the project-scoped reader, and it materializes under
+    the *project's* prefix rather than the brand's, so the two can never collide on one workspace
+    path. The brand seeds skip it: plan 1's project files pin is what puts it on disk.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            workspace_id = f"o6-scope-{uuid4().hex[:6]}"
+            project = await seed_project(conn, workspace_id, name="O6 scope")
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            brand_body = _icp(key="gi", status="proposed", project_id=None, selection_version=None)
+            project_body = _icp(
+                key="gi-dac", status="proposed", project_id=None, selection_version=None
+            )
+            brand_doc = await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi.md",
+                kind="icp-definition",
+                version=1,
+                status="proposed",
+                body=brand_body,
+            )
+            project_doc = await _seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-gi-dac.md",
+                kind="icp-definition",
+                version=1,
+                status="proposed",
+                body=project_body,
+                project_id=project.project_id,
+                derived_from_document_id=brand_doc,
+            )
+
+            refs = await current_knowledge_documents(
+                conn, workspace_id=workspace_id, brand_id=project.brand_id
+            )
+            assert [ref.document_id for ref in refs] == [brand_doc]
+            assert refs[0].project_id is None
+
+            project_refs = await current_project_knowledge_refs(
+                conn, workspace_id=workspace_id, project_id=project.project_id
+            )
+            assert [(ref.document_id, ref.project_id) for ref in project_refs] == [
+                (project_doc, project.project_id)
+            ]
+
+            pinned = (
+                PinnedDocument(
+                    ref=refs[0], body=brand_body.encode(), front_matter={}, body_text=""
+                ),
+                PinnedDocument(
+                    ref=project_refs[0],
+                    body=project_body.encode(),
+                    front_matter={},
+                    body_text="",
+                ),
+            )
+            paths = workspace_paths(pinned)
+            assert paths[brand_doc] == "brand/knowledge/audience/icp-gi.md"
+            assert paths[project_doc] == "project/audience/icp-gi-dac.md"
+            # The seed surface applies the same rule under its own prefix.
+            assert [seed.path for seed in knowledge_seed_files(pinned)] == [
+                "inputs/brand/knowledge/audience/icp-gi.md"
+            ]
+
+            # …and the brand's index card lists only what the brand seeds (review M4). The
+            # project's own card carries the variant, off the project's own rows; listing it in
+            # both spends the brand card's budget twice on one file, and — once the pinned and
+            # current versions of one path differ — puts two disagreeing descriptions of that file
+            # in one turn's opening context.
+            card = compile_brand_knowledge_index_card(
+                brand_id=project.brand_id,
+                documents=pinned,
+                confirmed_icp=confirmed_icp_for_project(pinned, pinned_document_id=project_doc),
+                product_set=None,
+            )
+            assert [entry.document_id for entry in card.documents] == [str(brand_doc)]
+            # The pin is unchanged: naming the project's pinned document is still this card's job,
+            # whatever that document's scope.
+            assert card.confirmed_icp is not None
+            assert card.confirmed_icp.document_id == project_doc
 
     run_async(scenario())
 
@@ -448,10 +557,10 @@ def test_pinned_documents_seed_read_only_files_under_the_knowledge_prefix() -> N
 
             seeds = knowledge_seed_files(documents)
             assert [seed.path for seed in seeds] == [
-                f"{INPUT_PREFIX}audience/icp-gi.md",
-                f"{INPUT_PREFIX}company/overview.md",
+                f"{SEED_PREFIX}audience/icp-gi.md",
+                f"{SEED_PREFIX}company/overview.md",
             ]
-            assert all(seed.path.startswith(INPUT_PREFIX) for seed in seeds)
+            assert all(seed.path.startswith(SEED_PREFIX) for seed in seeds)
             assert all(seed.media_type == "text/markdown" for seed in seeds)
             assert {seed.sha256 for seed in seeds} == {doc.ref.artifact_sha256 for doc in documents}
 
@@ -869,12 +978,12 @@ def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirm
             # Every seed is a distinct real file, and the pinned version owns the natural name.
             assert len({seed.path for seed in seeds}) == len(seeds)
             assert sorted(seed.path for seed in seeds) == [
-                f"{INPUT_PREFIX}audience/icp-gi.md",
-                f"{INPUT_PREFIX}audience/icp-gi.v3.md",
-                f"{INPUT_PREFIX}company/overview.md",
+                f"{SEED_PREFIX}audience/icp-gi.md",
+                f"{SEED_PREFIX}audience/icp-gi.v3.md",
+                f"{SEED_PREFIX}company/overview.md",
             ]
             pinned_seed = next(
-                seed for seed in seeds if seed.path == f"{INPUT_PREFIX}audience/icp-gi.md"
+                seed for seed in seeds if seed.path == f"{SEED_PREFIX}audience/icp-gi.md"
             )
             assert pinned_seed.sha256 == pin.artifact_sha256
 
@@ -901,8 +1010,11 @@ def test_a_newer_proposal_on_the_pinned_path_is_offered_but_never_called_confirm
             assert listed[str(pinned_document_id)].workspace_path == (
                 f"{INPUT_PREFIX}audience/icp-gi.md"
             )
-            assert {entry.workspace_path for entry in card.documents} == {
-                seed.path for seed in seeds
-            }
+            # One naming rule, two surfaces: the card names the mount and the seeds name the
+            # seed folder, so the property — the index lists exactly the files the rule produces,
+            # version-qualified name included — is asserted on the names below the prefixes.
+            assert {
+                entry.workspace_path.removeprefix(INPUT_PREFIX) for entry in card.documents
+            } == {seed.path.removeprefix(SEED_PREFIX) for seed in seeds}
 
     run_async(scenario())

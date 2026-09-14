@@ -56,6 +56,18 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 # schema; it is refusing the contract, and the turn must die rather than loop.
 _MAX_FINALIZE_REPAIRS = 2
 
+
+def superstep_ceiling(max_rounds: int) -> int:
+    """LangGraph's ``recursion_limit`` for a round budget: two supersteps a round, plus headroom.
+
+    One model round is a model superstep plus a tool superstep; the four extra cover the graph's
+    own entry/exit nodes. This is the ceiling that actually bounds a chat turn, because every
+    governed tool call the model makes is its own one-step plan.
+    """
+
+    return max_rounds * 2 + 4
+
+
 # The status contract itself is stated once, on the finalize tool's own description, which the
 # model is holding when it reads this. Restating it here would be a second copy free to drift.
 _FINALIZE_CONTRACT_HELP = (
@@ -277,7 +289,7 @@ class DeepAgentTurnRuntime:
         self._models = models
         self._execution = execution
         self._max_runtime_s = max_runtime_s
-        self._recursion_limit = max_rounds * 2 + 4
+        self._recursion_limit = superstep_ceiling(max_rounds)
 
     async def run(
         self,

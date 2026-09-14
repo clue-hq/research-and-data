@@ -44,6 +44,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:content-drafter@v2",
         "prompt:design@v1",
         "prompt:head-of-abm@v1",
+        # The operating manual: v9 without the specialist-delegation paragraph this surface
+        # withholds, and with Stage 0 pointing at the `manual-*` chapters. Lexical, not numeric.
+        "prompt:head-of-abm@v10",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
         "prompt:head-of-abm@v4",
@@ -51,6 +54,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "prompt:head-of-abm@v6",
         "prompt:head-of-abm@v7",
         "prompt:head-of-abm@v8",
+        # The workspace libraries: v8 with one sentence moved from the per-turn brand seeds to the
+        # mounted `brand/knowledge/`.
+        "prompt:head-of-abm@v9",
         "prompt:onboarding-synthesis@v1",
         "prompt:onboarding-synthesis@v2",
         "prompt:research-specialist@v1",
@@ -74,9 +80,88 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:audience-persona@v1",
         "skill:audience-persona@v2",
         "skill:content-exemplar@v1",
+        # The three document skills. Each one carries the whole procedure for one document
+        # the Head of ABM now writes as a file under `project/`, and grants no tool;
+        # stage0-interview v33 §5b, §5c and §6b are one-line pointers at them. They are here
+        # twice: the free-flowing `project/` writer moved the procedures, so each re-minted at v2
+        # while `head-of-abm@v55` keeps the v1 bytes it pins.
+        "skill:icp-authoring@v1",
+        "skill:icp-authoring@v2",
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
+        # The operating manual's chapters. Each is an ordinary skill so the profile pins it like
+        # any other and the capability map discloses it with its path. Four of them (errors,
+        # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
+        # is their only writer; the other eleven are hand written and founder reviewed. Every
+        # chapter is here FOUR times: `head-of-abm@v55` and `@v56` each changed the grant the
+        # manual describes, and `@v57` changed the two limits its generated `limits` chapter
+        # renders. A catalog version is immutable, so the library re-minted at v2, v3 and v4
+        # while v54 keeps the v1 bytes, v55 the v2 bytes and v56 the v3 bytes.
+        "skill:manual-accounts-research@v1",
+        "skill:manual-accounts-research@v2",
+        "skill:manual-accounts-research@v3",
+        "skill:manual-accounts-research@v4",
+        "skill:manual-claims@v1",
+        "skill:manual-claims@v2",
+        "skill:manual-claims@v3",
+        "skill:manual-claims@v4",
+        "skill:manual-discovery@v1",
+        "skill:manual-discovery@v2",
+        "skill:manual-discovery@v3",
+        "skill:manual-discovery@v4",
+        "skill:manual-documents-decisions@v1",
+        "skill:manual-documents-decisions@v2",
+        "skill:manual-documents-decisions@v3",
+        "skill:manual-documents-decisions@v4",
+        "skill:manual-errors@v1",
+        "skill:manual-errors@v2",
+        "skill:manual-errors@v3",
+        "skill:manual-errors@v4",
+        "skill:manual-fields@v1",
+        "skill:manual-fields@v2",
+        "skill:manual-fields@v3",
+        "skill:manual-fields@v4",
+        "skill:manual-gates-authority@v1",
+        "skill:manual-gates-authority@v2",
+        "skill:manual-gates-authority@v3",
+        "skill:manual-gates-authority@v4",
+        "skill:manual-glossary@v1",
+        "skill:manual-glossary@v2",
+        "skill:manual-glossary@v3",
+        "skill:manual-glossary@v4",
+        "skill:manual-humans-screens@v1",
+        "skill:manual-humans-screens@v2",
+        "skill:manual-humans-screens@v3",
+        "skill:manual-humans-screens@v4",
+        "skill:manual-index@v1",
+        "skill:manual-index@v2",
+        "skill:manual-index@v3",
+        "skill:manual-index@v4",
+        "skill:manual-limits@v1",
+        "skill:manual-limits@v2",
+        "skill:manual-limits@v3",
+        "skill:manual-limits@v4",
+        "skill:manual-siblings@v1",
+        "skill:manual-siblings@v2",
+        "skill:manual-siblings@v3",
+        "skill:manual-siblings@v4",
+        "skill:manual-tools@v1",
+        "skill:manual-tools@v2",
+        "skill:manual-tools@v3",
+        "skill:manual-tools@v4",
+        "skill:manual-turn@v1",
+        "skill:manual-turn@v2",
+        "skill:manual-turn@v3",
+        "skill:manual-turn@v4",
+        "skill:manual-workspace@v1",
+        "skill:manual-workspace@v2",
+        "skill:manual-workspace@v3",
+        "skill:manual-workspace@v4",
+        "skill:persona-authoring@v1",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v1",
+        "skill:plan-authoring@v2",
         "skill:research-task@v1",
         "skill:research-task@v2",
         "skill:research-task@v3",
@@ -96,7 +181,37 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:stage0-interview@v20",
         "skill:stage0-interview@v21",
         "skill:stage0-interview@v22",
+        "skill:stage0-interview@v23",
+        "skill:stage0-interview@v24",
+        "skill:stage0-interview@v25",
+        # The read tools' contract repairs: v25 with the three reads' output digests (and
+        # `read_project_accounts`' input digest) re-measured off the typed descriptors.
+        "skill:stage0-interview@v26",
+        # The read tools' hotfix: v26 with `read_account_research`'s paged/prefixed contract and
+        # `read_discovery_run`'s repaired input re-measured, and the §7c/§1 text they need.
+        "skill:stage0-interview@v27",
+        # The thread workspace: v27 with the §1 bullet that names `scratch/` as the notebook that
+        # persists across the turns of one chat.
+        "skill:stage0-interview@v28",
+        # The workspace libraries: v28 with §1 rewritten around the two read-only mounts —
+        # `brand/knowledge/` and the project library at `project/` — instead of the per-turn seeds.
+        "skill:stage0-interview@v29",
         "skill:stage0-interview@v3",
+        # The brand index path: v29 with §1 naming the brand library's manifest where it is
+        # actually mounted — `brand/index.json`, the tree root, beside `knowledge/`.
+        "skill:stage0-interview@v30",
+        # The operating manual: v30 with §1, §6, §7c and §10 naming the chapter that answers the
+        # question the step raises, and §6 no longer claiming an unrouted finalization is refused.
+        "skill:stage0-interview@v31",
+        # The versioned project root: v31 with §5b, §5c and §6b reduced to pointers at the
+        # three document skills, §10 saying the documents are written under `project/`, and
+        # the three retired tools gone from its front matter.
+        "skill:stage0-interview@v32",
+        # Paged and spilled reads: v32 with §7c rewritten as the read map — which read answers
+        # which question, pages read to their `next_offset`, a `field_prefix` taken from
+        # `prefixes`, and a `spilled_to` receipt read from its own file in chunks — and the four
+        # read addresses `head-of-abm@v56` grants in its front matter.
+        "skill:stage0-interview@v33",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -160,7 +275,43 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v44",
         # ARV2 Track R, R4: v44 plus `launch_arv2_discovery@1` and stage0-interview v22.
         "profile:head-of-abm@v45",
+        # ARV2 context and authoring: v45 plus `author_icp_document@1` and
+        # `request_persona_synthesis@1`, and stage0-interview v23.
+        "profile:head-of-abm@v46",
+        # The project plan: v46 plus `write_project_document@1`, and stage0-interview v24.
+        "profile:head-of-abm@v47",
+        # The ARV2 reads: v47 plus `read_project_accounts@1`, `read_account_research@1` and
+        # `read_discovery_run@1`, and stage0-interview v25.
+        "profile:head-of-abm@v48",
+        # The read tools' contract repairs: v48 with the three reads re-pinned and
+        # stage0-interview v26.
+        "profile:head-of-abm@v49",
         "profile:head-of-abm@v5",
+        # The read tools' hotfix: v49 with the three reads re-pinned and stage0-interview v27.
+        "profile:head-of-abm@v50",
+        # The thread workspace: v50 with `scratch/`/`reads/` granted, `work/` dropped, the quota
+        # raised for a notebook that persists, and stage0-interview v28.
+        "profile:head-of-abm@v51",
+        # The workspace libraries: v51 plus the `brand/` and `project/` read-only mounts, with
+        # stage0-interview v29 and prompt head-of-abm v9.
+        "profile:head-of-abm@v52",
+        # The brand index path: v52 with stage0-interview v30.
+        "profile:head-of-abm@v53",
+        # The operating manual: v53 plus the fifteen `manual-*@v1` chapter pins, with
+        # stage0-interview v31 and prompt head-of-abm v10.
+        "profile:head-of-abm@v54",
+        # The versioned project root: v54 with `project` writable, the three document tools
+        # ungranted, the three document skills pinned, stage0-interview v32 and the manual
+        # at `manual-*@v2`.
+        "profile:head-of-abm@v55",
+        # Paged and spilled reads: v55 with `read_account_research@2` / `read_discovery_run@2`
+        # replacing their `@1`s, `read_claims@1` and `read_artifact@1` granted, stage0-interview
+        # v33, the document skills at v2 and the manual at `manual-*@v3`.
+        "profile:head-of-abm@v56",
+        # The turn caps move to the founder's numbers: v56's exact surface with `turn_timeout_s`
+        # 1800 and `max_model_rounds` 100, and the manual at `manual-*@v4` because its generated
+        # `limits` chapter renders both.
+        "profile:head-of-abm@v57",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

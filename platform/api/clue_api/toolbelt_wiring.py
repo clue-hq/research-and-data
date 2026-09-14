@@ -66,10 +66,17 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.artifact_read_tools import build_artifact_read_tools
 from clue_api.arv2.account_research_launch import Arv2LaunchService, build_arv2_launch_tools
 from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryService,
     build_arv2_discovery_tools,
+)
+from clue_api.arv2.icp_authoring import IcpAuthoringService
+from clue_api.arv2.read_tools import (
+    Arv2ReadService,
+    build_arv2_paged_read_tools,
+    build_arv2_read_tools,
 )
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
@@ -105,14 +112,20 @@ from clue_api.exa_targeted_enrichment import (
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.fleet_wiring import enqueue_run_drive
 from clue_api.icp_artifact_gate_tools import build_icp_artifact_gate_tools
+from clue_api.icp_authoring_tools import build_icp_authoring_tools
 from clue_api.independent_contact_research import IndependentContactResearchRunner
 from clue_api.ingestion_tools import RetryIngestionTool, SubmitIngestionTool
 from clue_api.locks import lazy_account_lock_factory
 from clue_api.onboarding_evidence_tools import build_onboarding_evidence_tools
+from clue_api.persona_request_tools import PersonaRequestService, build_persona_request_tools
 from clue_api.phase_wiring import build_discovery_handler, build_scoring_handler
 from clue_api.product_knowledge_tools import build_product_knowledge_tools
 from clue_api.product_set_selection_gate_tools import (
     build_product_set_selection_gate_tools,
+)
+from clue_api.project_document_tools import (
+    ProjectDocumentService,
+    build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.project_tools import RenameProjectTool
@@ -2649,6 +2662,10 @@ def build_toolbelt(
     entity_research_launches: EntityResearchLaunchServices | None = None,
     arv2_account_launch: Arv2LaunchService | None = None,
     arv2_discovery_launch: Arv2DiscoveryService | None = None,
+    arv2_reads: Arv2ReadService | None = None,
+    icp_authoring: IcpAuthoringService | None = None,
+    persona_requests: PersonaRequestService | None = None,
+    project_documents: ProjectDocumentService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
@@ -2800,6 +2817,56 @@ def build_toolbelt(
     # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
+        registry.register(tool, make_default=True)
+    # The other side of the lane: what the project's rows already say. Registered everywhere like
+    # its launching neighbours, but composed with no flag of its own — these four read
+    # ``project_account``, the display blocks, the claim store and the discovery run, all of which
+    # exist wherever there is a database, and reading them spends nothing. Without a service they
+    # refuse ``arv2_reads_not_composed`` before they touch a row.
+    # `read_claims` is the fourth: it is the general claims query — by field family, tier,
+    # verification status or date, over an account or a contact — and it registers here on the
+    # same service. It is granted at `head-of-abm@v56`, the bump that pins its contract and mints
+    # the manual chapter that teaches it.
+    # Two of the four keep the name-only alias here and two give it up: `head-of-abm@v56` pins the
+    # PAGED `read_account_research@2` / `read_discovery_run@2`, so their `@1`s register without
+    # the default. The alias must never disagree with the promoted profile's pin — it would hand
+    # an unversioned caller the version nobody holds — which is why it moves in the same step as
+    # the grant and the recipe address.
+    _unaliased_reads = {"read_account_research", "read_discovery_run"}
+    for tool in build_arv2_read_tools(arv2_reads):
+        registry.register(tool, make_default=tool.descriptor.name not in _unaliased_reads)
+    # The paged `@2` of those two, beside their frozen `@1`s, holding the alias their `@1`s gave
+    # up. `@1` stays registered so an execution pinned to recipe0-stage0@27 or earlier still
+    # resolves the address it planned; it is simply no longer the version an unversioned caller
+    # gets — the reasoning `open_icp_confirmation_gate` already established, in this direction.
+    for tool in build_arv2_paged_read_tools(arv2_reads):
+        registry.register(tool, make_default=True)
+    # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
+    # design documents and the legs that bind them to a project exist wherever there is a database,
+    # so the ambient ``conn_factory`` is its whole composition. Granted at `head-of-abm@v56`,
+    # together with the manual chapter that teaches it and the recipe revision that admits it.
+    for tool in build_artifact_read_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
+    # the gate that confirms one. Registered on every deployment for the same reason as its
+    # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and
+    # the projections app root), with no flag of its own — writing a proposal spends nothing and
+    # confirms nothing. Without a service it refuses ``icp_authoring_not_composed`` before it reads
+    # a row.
+    for tool in build_icp_authoring_tools(icp_authoring, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The other half of the same flow: authoring writes the profile, this asks for the personas of
+    # the version the project pinned. Registered everywhere, composed where the onboarding fleet
+    # lane is; without a service it refuses ``persona_synthesis_not_composed`` before it reads a
+    # row.
+    for tool in build_persona_request_tools(persona_requests, conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
+    # The project's own plan: what the agent and the human settled, written down where both can
+    # read and edit it. Registered on every deployment on the same terms as its neighbours above;
+    # composed wherever the knowledge documents' storage is, with no flag of its own — writing the
+    # plan spends nothing and confirms nothing. Without a service it refuses
+    # ``project_documents_not_composed`` before it reads a row.
+    for tool in build_project_document_tools(project_documents, conn_factory=conn_factory):
         registry.register(tool, make_default=True)
     registry.register(
         quarantine_entity_research_tool(

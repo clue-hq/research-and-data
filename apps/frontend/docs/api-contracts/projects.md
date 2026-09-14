@@ -1257,6 +1257,439 @@ A repeated Stop returns the same durable request with
 `409 TURN_NOT_RUNNING`. Stop does not undo committed tool effects or suspend a
 detached research run.
 
+<a id="chat-polish-delivery-plan"></a>
+
+### 6A. Chat polish delivery plan: Stop, queue, progress and reasoning — 2026-09-12
+
+**Status: implemented in Semarang on 2026-09-12 after founder approval.** CP1–CP6
+are built; targeted CP7 acceptance is recorded below. This amendment supersedes
+R5's automatic queue advancement after Stop. Normal completion still advances
+the queue. Research-card polishing and broader textbox redesign remain separate.
+
+#### Agreed experience and scope
+
+- One composer action switches between Send and Stop. During cancellation it
+  remains a disabled Stop icon. After cancellation finishes, the ordinary Send
+  icon returns, enabled only when a valid draft exists.
+- No visible `Stopping…` or `Stopped` receipt, toast, or transcript placeholder
+  for normal cancellation. Remove the old standalone Stop/Working strip. Keep
+  machine-readable cancellation state and accessible button semantics.
+- A running turn with a nonempty draft offers Send; acceptance queues the new
+  message. A running turn with an empty draft offers Stop.
+- The action uses the Gallery tab's **4px radius** and existing Clue colors,
+  focus, hover, pressed, and disabled treatments. Keep its dimensions stable
+  when the icon changes. The shared Home composer receives the same geometry;
+  a Home page without an active thread does not acquire a Stop action.
+- Chat Stop cancels the current chat generation and design work owned by that
+  turn. **Already-launched account/contact research and its fleet continue.**
+  This also applies when the stopped turn launched that research.
+- Queued messages remain saved and wait for an explicit Resume after Stop.
+  Show a compact count and Resume control immediately above the composer.
+- Retain accepted user messages/context, committed tool results, saved design
+  versions, and the partial user-facing assistant reply. Do not turn interrupted
+  work into a successful finalization.
+- This slice does not implement a research Stop control, redesign the research
+  status card, or change the Home/chat editor layout beyond the queue bar and
+  action. The provider-reasoning adapter repair is included as CP1 below, with
+  technical detail owned by [AI Elements and reasoning](../architecture/ai-elements-and-reasoning.md#provider-reasoning-delivery-repair).
+  Durable partial answers do not imply durable provider-reasoning traces.
+
+#### Button state contract
+
+`hasDraft` uses the composer’s canonical content: meaningful text, selected
+account/contact context, or a ready attachment. Whitespace and editor sentinel
+characters alone are empty; an attachment upload still in progress does not
+bypass the existing submit-validity guard. Reuse that guard rather than create
+another definition of a sendable message.
+
+| Turn/control condition | Draft | Action | Behavior |
+| --- | --- | --- | --- |
+| No running turn | Empty | Send, disabled | Resting state |
+| No running turn | Valid | Send, enabled | Submit through the existing repository |
+| Turn running | Empty | Stop, enabled | Stop the captured running turn |
+| Turn running | Valid | Send, enabled | Accept and queue a new message |
+| A send request is awaiting acceptance | Any | Current action disabled | Prevent duplicate submission; clear only accepted draft bytes |
+| Stop clicked; request or cancellation pending | Any | Stop, disabled | No second Stop or Send; keep draft editable and preserve new typing |
+| Cancellation acknowledged; no newer running turn | Empty | Send, disabled | Return to the resting state |
+| Cancellation acknowledged; no newer running turn | Valid | Send, enabled | Preserve text typed during cancellation |
+| Queue held after cancellation | Valid | Send, enabled | Append to the waiting queue; only Resume releases the hold |
+| Stop rejected or definitely not accepted | Any | Recompute from canonical state | Retain draft; use the existing error surface only for an actual error |
+
+Cancellation-pending takes precedence over a subsequently edited draft. Do not
+flip to Send merely because text appears while the backend is still stopping.
+An empty Enter press must not stop a turn accidentally: Stop is an explicit
+button activation (including keyboard activation of the focused button).
+Enter/Shift+Enter/IME behavior for composing messages remains unchanged.
+
+Use accessible names `Send message` and `Stop response`, with disabled/busy
+semantics on the control. No new visible lifecycle copy is required. A lost
+network connection is not proof of cancellation or completion.
+
+#### Implementation changes
+
+| Area | Previous behavior | Implemented change |
+| --- | --- | --- |
+| Stop API | Existing authorized, idempotent `POST …/turns/:turnId/stop`; `202` records intent | Reuse it; keep receipt distinct from completion |
+| Turn control read | The immutable control row exists, but the turn DTO does not expose pending Stop | Add optional `stop_request` metadata to the turn projection/read and Zod adapter |
+| Controller | `stopActiveTurn()` posts, then reloads; no pending guard | Capture the target identity, disable immediately, reconcile until actual terminal state |
+| Composer | Send only; standalone Stop lives below the transcript | One typed action view; remove duplicate strip and normal Stopped placeholders |
+| Chat worker | Polls control at 0.25s, cancels the task, marks cancelled | Coordinate durable partial preservation and associated design termination before acknowledgement |
+| Design execution | Inline driver may abandon its async wrapper while synchronous design continues | Signal the exact design run; retain ownership until it terminates or is safely fenced |
+| Design control | Existing `cancel_requested_at`, DAL/API, and per-role model-boundary probe | Reuse this seam; cover dispatch, post-call/tool/write boundaries and recovery |
+| Partial answer | Buffered/emitted text survives only in the bounded event outbox | Commit an immutable history artifact/message before terminal acknowledgement |
+| Account research | Detached ARV2 jobs continue; worker interruption can suspend/requeue them | Leave their lifecycle untouched by chat Stop |
+
+#### Backend contract and ownership
+
+Keep the public turn states `queued | running | completed | awaiting_input |
+failed | cancelled`. Do not introduce a public `stopping` state merely to style
+a button. Additive turn-read member:
+
+```json
+{
+  "stop_request": {
+    "control_id": "existing-control-id",
+    "requested_at": "2026-09-12T00:00:00Z",
+    "pending": true
+  }
+}
+```
+
+It is `null` when absent and is read from `agent_turn_control_request`, never
+manufactured by the browser. `pending` is true until the immutable Stop acknowledgement exists. The projection
+keeps an accepted Stop running until that acknowledgement; acknowledgement makes
+it cancelled even if the worker crashes before publishing the terminal SSE frame. Do not include requester identity
+or provider internals in this UI projection. The existing POST receipt remains
+`202`; an already-requested Stop remains idempotent; queued/terminal targets
+remain `409 TURN_NOT_RUNNING` unless replaying an existing receipt.
+
+The frontend repository validates Stop, Resume and turn-list responses with Zod. The controller keeps an optimistic pending target until
+the receipt/read catches up, reconciles through existing SSE plus bounded reads
+while cancellation is pending, and rehydrates on reconnect, focus, and reload.
+Terminal stream state continues to outrank stale `running` reads. A response for
+an old thread/turn cannot disable or reset another thread's action.
+
+The API records intent; the worker coordinates execution. Observe Stop for every
+stoppable turn independently of whether a stream emitter or browser SSE reader
+is attached; the existing `_execute_watched` early return when `stream is None`
+must not become a route through which an accepted Stop is ignored. Inject a narrow
+design-cancellation port at the API/worker composition seam, backed by
+`subsystems/design/clue_design/runs.py`. Do not import `lumen_agent` or
+`lumen_api` internals into frontend code or the chat router. Both design's
+existing HTTP cancellation endpoint and chat cancellation use the same DAL
+operation; do not add a second provider-facing cancellation implementation or
+a loopback HTTP call from a worker to its own server.
+
+#### Cancellation ordering and races
+
+1. **Capture and record intent.** The browser fixes the target workspace,
+   project, thread, and running turn when clicked. The server checks current
+   authority and state under the existing thread/turn serialization boundary
+   and writes/replays the control request plus the thread queue hold atomically.
+   Capture the active attempt when
+   available; a later unrelated attempt or turn must not inherit stale UI state.
+2. **Prevent new work from that turn.** Once intent is observed, stop admitting
+   new model calls, tool dispatches, and design dispatches for that turn. Work
+   already committed remains. An account-research launch committed before this
+   boundary continues; no *new* launch is admitted afterwards.
+3. **Signal associated design before abandoning its driver.** Resolve the
+   durable turn-to-run relationship. The existing design-leg run ID is derived
+   by `design_leg_run_id(turn_id)` and its envelope carries the turn identity;
+   validate workspace and ownership, not merely a matching project/document.
+   Stamp the existing design cancellation field before cancelling the wrapper.
+   Never cancel every run in a project or terminate a shared fleet process.
+4. **Close the dispatch race.** A Stop just before run creation must not be
+   missed because no run row existed yet. Serialize control acceptance and
+   design registration using the same owning-turn lock/check; check the control
+   again before executing the registered run. Recovery consults the durable
+   intent before any redrive. Reuse the derived identity instead of creating a
+   new generic job registry for this single relationship.
+5. **Unwind the execution.** Ordinary async chat generation cancels promptly.
+   For design, keep the lease/heartbeat while awaiting cooperative termination;
+   cancelling `asyncio.to_thread` does not kill its synchronous body. Propagate
+   the run-scoped signal to orchestrator, author, reviewer, and their admitted
+   work. Check it after an in-flight model call returns and before dispatching
+   tools, applying another round, or committing final output. Once cancellation
+   is observed, the local run-scoped signal is sticky; a cached negative probe
+   must not reopen admission. Existing durable write fences remain the final
+   authority against stale execution. A write fence alone is not proof that a
+   synchronous body has stopped making provider calls.
+6. **Persist the interrupted reply and terminal outcome.** Freeze the accepted
+   answer prefix, save its artifact and history reference, and commit the
+   cancelled journal outcome using the single-winner transaction described
+   below. Only then publish `turn.cancelled` and release the current chat task;
+   queued turns remain held until Resume. UI acknowledgement requires the linked design run to
+   have ceased execution or be authoritatively fenced from further work/writes.
+7. **Recover rather than claim success.** A crash after intent but before
+   completion resumes cancellation/partial-save reconciliation, not the stopped
+   model. A failed design-control call does not silently count as success. A
+   reconciliation deadline must lead to an explicit failure/recovery outcome,
+   never an optimistic `cancelled` event while writable design work continues.
+
+**Completion race:** normal finalization and interruption must use one durable
+serialization/CAS boundary. If finalization has already committed, preserve it;
+late Stop must not overwrite it with a partial reply. If Stop wins, block later
+successful finalization and commit interruption once. A model task merely
+returning at the same instant is not, by itself, finalization authority. Bind
+late callbacks and writes to the original attempt/fence.
+
+**Latency:** the existing 0.25s poll is detection latency, not a promise of total
+termination time. Design currently stops at a model-call boundary, so an
+in-flight call may finish first. Development must inspect request-scoped
+transport cancellation support and cancel/close that request when supported,
+without closing a shared client. Do not promise cancellation of provider-side
+compute that the provider cannot acknowledge. The release requirement is
+prompt local interruption, no further admitted calls/writes after acknowledgement,
+and an honest disabled control until cleanup finishes. Measure actual click →
+intent → worker observation → child terminal → chat terminal intervals.
+
+#### Durable partial answers and preserved context
+
+- Persist only the user-facing assistant answer prefix from the existing
+  finalize-argument text path. Exclude tool arguments, ordinary provider chatter,
+  and reasoning parts. Keep its exact bytes; an unfinished Markdown fence must
+  remain an unfinished fence and render safely.
+- Flush the emitter's in-memory pending answer bytes before freezing the prefix.
+  Use the existing attempt/part IDs and ordered delta indices to reconcile the
+  emitted outbox prefix with pending text, without duplicated chunks. A worker
+  recovery can use the outbox up to a recorded cutoff; retain those events while
+  interruption reconciliation is outstanding. Do not claim durability for
+  unreceived provider tokens or unflushed memory lost in a process crash.
+- Reuse the artifact store, `agent_thread_message`, and history artifact-ref
+  tracking. Use the same deterministic assistant identity as the normal
+  finalization path so reload/retry cannot create two replies for one turn.
+  An empty prefix creates no fabricated assistant text.
+- Write artifact bytes first, then commit the history pointer, artifact
+  ownership reference, and cancelled journal outcome together under a shared
+  transaction/turn lock. Existing history helpers open their own transactions;
+  factor a transaction-aware DAL seam rather than chaining independent commits
+  and assuming they are atomic. If a crash leaves an unreferenced blob, replay
+  attaches the same content address idempotently. If storage fails, do not
+  acknowledge a preserved partial answer; retain/retry the durable stop intent.
+- An interruption is not an `AgentFinalizeEnvelope` claiming success. Persist
+  its terminal outcome separately using the existing cancelled journal path,
+  and reconcile crash windows and races with `agent_finalization_commit`.
+- The canonical message read plus terminal turn state identifies the answer as
+  interrupted. Extend the typed message/history projection only where necessary;
+  derive interruption from the owning turn instead of adding competing status
+   sources. The frontend keeps the partial body with no visible Stopped badge.
+   Put this provenance into the existing context-assembly contract and tests,
+   including both ordinary conversation and design-leg history readers.
+  Context assembly receives that body with explicit interrupted provenance, so
+  the next model does not mistake it for a finished recommendation. Preserve the
+  original bytes; do not append synthetic wording to the saved user-facing body.
+- Accepted user context references and committed tool outputs remain in their
+  existing durable stores. Research jobs and their new results can continue to
+  update the account/research views independently of chat cancellation.
+- Scene design keeps already-accepted authoring rounds/document versions.
+  Website mode currently persists at the end: keep the existing committed
+  website intact and reject unfinished candidate output. Do not introduce web
+  checkpointing or apply an unvalidated page as part of this Stop slice.
+- Reuse existing retention, artifact erasure, tombstone, and authorized hydration
+  rules. A hard refresh after SSE pruning must load the partial reply from
+  durable history; cold load must not depend on replaying temporary events.
+
+#### Waiting queue and Resume — founder-selected direction
+
+Stop A leaves accepted B/C saved in FIFO order, with no automatic execution.
+This requires a backend queue hold; hiding a frontend callback cannot implement it.
+
+**Minimal presentation:** one compact row directly above the composer, aligned
+with its edges: `2 queued messages` on the left, `Resume` on the right. Use the
+same Clue text/button styling and 4px radius. Do not add reordering, editing,
+deleting queued messages, a new queue drawer, or lifecycle banners in this slice.
+Existing queued transcript entries stay visible. Normal running queues can show
+their count; Resume is shown only for a held queue. During cancellation Resume
+is disabled. After cancellation it is enabled; while its request is pending it
+is disabled again. No Stopping/Stopped copy is introduced.
+
+**Implemented backend contract:**
+
+- Persist one queue-control record per workspace/thread, keyed by the existing
+  Stop control ID, with the hold timestamp. It is shared dispatcher state, not
+  localStorage or a new enum value for every queued turn. B/C remain `queued`.
+- Accept Stop and set its hold in the same thread-lock transaction. Check this
+  record at `dispatch_next_thread_turn` before any enqueue. Worker completion,
+  submission, dispatch-on-attach, sweeper and recovery all use that guard. Already
+  offered but unstarted agent-turn work must also recheck the hold before model
+  execution, closing the enqueue/claim race. Do not acknowledge Stop if another
+  queued turn can slip through behind it.
+- Add typed `meta.queue_control = { paused, hold_control_id, paused_at }` to the
+  existing turn-list read. Derive queue counts/order from its queued submissions.
+  Optional defaults keep old payloads readable. After reload, rehydrate both the
+  held queue and disabled/enabled Resume state from server truth.
+- Add `POST /projects/:projectId/threads/:threadId/queue/resume`, through the same
+  authenticated BFF/repository seam. Body carries the observed `hold_control_id`,
+  never an arbitrary next-turn ID. Require thread-write authority, same workspace
+  and project scope, and no still-pending cancellation.
+- Under the thread lock, clear exactly that hold and dispatch the oldest eligible
+  queued turn using the existing dispatcher. Return a typed `202` receipt with
+  the resulting queue-control snapshot and dispatched turn ID, if any; acceptance
+  is not model completion. Resume creates no new user message and consumes no
+  draft. Retrying the same Resume must not dispatch twice or clear a later Stop's
+  hold. A changed hold or pending cancellation returns a typed conflict and causes
+  rehydration. Preserve a replayable control identity/audit receipt for this.
+- Sending while held appends a valid new message at the end; it does not resume
+  the queue implicitly. The user must choose Resume to continue B, then C, then
+  newly accepted messages. A failed submission does not erase the draft.
+- If no queued submissions remain when cancellation is acknowledged, clear that
+  empty hold under the thread lock and omit the queue bar. A later new Send starts
+  normally. Serialize that check with submissions so a just-accepted message
+  cannot be stranded invisibly or bypass a nonempty hold.
+- A hold applies to chat turns in this thread only. Research progress and unrelated
+  threads/design jobs are unaffected. Normal completion without Stop still advances
+  the queue automatically.
+
+**Completion race refinement:** if finalization wins before Stop is accepted,
+do not create a hold from the rejected stale Stop. If the Stop/hold transaction
+wins first, normal finalization must observe that intent and take the interruption
+path even if its model task returns before the polling watcher wakes. Saved
+domain work remains, and B/C remain held. Do not decide the winner from task
+scheduling order or stale frontend state.
+
+#### Development slices and concrete ownership
+
+The approved slices below retain their finish conditions; the verification record
+distinguishes deterministic coverage from live observations.
+
+| Slice | Deliverable and primary files | Finish condition |
+| --- | --- | --- |
+| CP0 — Freeze contract | This §6A, reasoning delivery plan, matching §3.5 amendment in `docs/specs/FI-lane-D-production-chat-and-launch.md` | Review the selected button/queue rules, cancellation scope, partial-history truth and additive API payloads; no invented public lifecycle states |
+| CP1 — Restore real reasoning delivery | Gateway provider adapter and tests, `chat/turn_stream.py`, existing reasoning disclosure; see linked technical plan | A real supported-provider trace survives adapter → event stream → browser; no ordinary text/tool leakage, duplication or horizontal overflow |
+| CP2 — Interruption persistence | `agent_turn_wiring.py`, `chat/turn_stream.py`, `chat/message_bodies.py`, `conversation_capture.py`, `platform/agents/clue_agents/ports.py`, relevant projections | Exact partial body and interrupted context survive cold load/outbox pruning; finalization race and retry are idempotent |
+| CP3 — Chat/design cancellation | `chat/turn_controls.py`, `chat/stream.py`, `agent_turn_fleet_wiring.py`, `design_leg_wiring.py`, `design_fleet.py`; design DAL and `lumen_agent/cancellation.py`/harness boundaries as needed | Exact owned design run stops without detached continuation/redrive; partial-save and design acknowledgement precede terminal chat event; research continues |
+| CP4 — Durable queue hold/resume | `agent_turn_submission.py`, control routes/DAL, turn projections and a reversible migration; `data/chat-turns.repository.ts` | Stop holds FIFO submissions across every dispatcher/recovery entry; scoped idempotent Resume releases exactly the observed hold |
+| CP5 — Read/controller contract | `platform/projections/clue_projections/threads.py`, chat schemas/routes; frontend `model/chat-turn.ts`, `data/chat-turns.repository.ts`, `hooks/use-project-chat-controller.ts` | Pending state survives refresh; typed receipt handling, terminal precedence, duplicate clicks, wrong-thread replies and uncertain network outcomes covered |
+| CP6 — Composer presentation | A pure action selector/controller in `features/projects/model` or `hooks`; `project-composer.tsx`, `conversation-content.tsx`, `chat-transcript.tsx`, `project-flow.module.css`, a small queue-bar view and composition callers | Button-only lifecycle and queue count/Resume match the matrix; old Stop strip and Stopped placeholder removed; no layout jump or draft loss |
+| CP7 — Integrated acceptance | Existing chat/design suites plus focused regressions and a Semarang browser/API/DB walk | Cancellation, partial-history, research isolation, queue and accessibility evidence below passes; deployed processes use this checkout |
+
+Keep transport/state decisions in repositories/controllers, not JSX. Extend the
+existing store/control protocols rather than writing parallel cancellation
+systems. Schema changes are justified by a concrete invariant (for example a
+selected durable queue hold); if needed, use a random Alembic revision, one head,
+and an up/down/up smoke test on an isolated throwaway database. Prefer no new
+runtime flags; any required flag must land with `.env.example` parity.
+
+#### Implementation and verification record — 2026-09-12
+
+- `d639a2de8bd1` adds an immutable `agent_turn_stop_ack`, the thread's
+  `queue_hold_control_id`, and idempotent `agent_thread_queue_resume` receipts.
+  Existing cancelled controls are backfilled. The migration has one head and
+  passed isolated up/down/up before being applied to `clue_semarang`.
+- Stop, finalization, design registration, queue admission and interruption
+  persistence share the relevant thread/turn locks. Queue acceptance timestamps
+  are assigned monotonically under the thread lock, so a transaction opened
+  earlier cannot overtake messages already accepted. Claims recheck queue holds.
+- `chat/interrupted_turn.py` reuses artifact storage, immutable history and
+  ownership references. It persists only the last accepted finalize-answer prefix.
+  Recovery retains pending Stop events, never restarts the stopped model, and
+  can hydrate history after event pruning. Interrupted provenance and its body
+  share one context-budget decision; the saved user-facing bytes stay unchanged.
+- The new Resume endpoint returns `hold_control_id`, `replayed`,
+  `dispatched_turn_id` and `queue_control`. Stop returns the existing 202 intent
+  receipt. Turn reads add `stop_request.pending` and `meta.queue_control`.
+- Design uses its existing cancellation DAL. The exact turn-derived run is
+  signalled before driver cancellation; its heartbeat/lease remains until the
+  synchronous body exits. Model-start/end checks force a fresh probe, streaming
+  token checks observe the sticky signal, and the design toolbelt blocks further
+  writes. This is cooperative cancellation: an in-flight synchronous provider
+  request may return or time out before acknowledgement. Shared clients/workers
+  and detached research jobs are never killed by chat Stop.
+- Focused backend tests cover real adapter wire data through the emitter,
+  interrupted history/replay/outbox pruning, both Stop/finalization orderings,
+  queue hold/Resume/FIFO and stale Resume, claim-before-start, inline design lease
+  ownership and design cancellation boundaries. The frontend project suites
+  pass 202 tests, including button states, reasoning wrapping and repository
+  contracts. Design-system build, lint and production build pass; lint retains
+  two pre-existing unused-variable warnings in design-engine files. Import-linter
+  reports 26 contracts kept. Mypy still reports four pre-existing errors in
+  unchanged `design/ad_assets.py`, `arv2/account_research_claims.py` and
+  `arv2/account_research_driver.py`.
+- Live Semarang acceptance used a dedicated verification chat. Grok emitted
+  13 reasoning deltas in the first turn; the disclosure showed real text and
+  respected manual collapse. Trace width and scroll width were both 669px.
+  Long inline-code/Markdown responses stayed within the 1086px page after reload.
+  A second turn was stopped while reasoning: intent-to-ack was 0.353s, with no
+  fabricated assistant reply or successful finalization. Its queued successor
+  remained held across hard reload and completed only after Resume. All five
+  verification turns finished; no test generation remains running.
+- Evidence limits: the live Stop happened before answer text; exact partial-answer
+  preservation is verified deterministically against Postgres/artifact hydration,
+  including pruning. Design scene/website cancellation was exercised with local
+  runtime tests, not a new paid live design generation. No new live account
+  research was launched for this acceptance; isolation is enforced by the scoped
+  cancellation paths, and existing Semarang research work was left untouched.
+  These observations do not claim provider-side compute cancellation or durable
+  customer-visible reasoning. Semarang runs frontend 3040, API 8070, design 8071,
+  database `clue_semarang`, and dedicated Redis 56379; sibling services were untouched.
+
+The following matrix remains the regression checklist for future changes:
+
+#### Acceptance matrix and verification
+
+1. **Button/keyboard:** cover every matrix row, whitespace-only draft, context-
+   only draft, ready/in-progress attachments, IME composition, Enter on empty,
+   keyboard Stop, rapid double click, typing during Stop, successful/failed
+   Send, and matching 4px geometry without width changes.
+2. **Authority and races:** repeated Stop returns one control; other workspace,
+   project, thread, or queued target cannot be cancelled. Stop racing completion
+   produces exactly one authoritative outcome and assistant body. Two tabs and
+   delayed HTTP/SSE messages cannot restore an obsolete Stop button.
+3. **Durability:** cancel before first text, during a long reply, and between
+   tools; compare live prefix with saved body/digest. Hard reload, new session,
+   worker restart, and expired/pruned SSE must retain the same accepted messages,
+   partial answer, tool results and interrupted-context meaning. Exercise crashes
+   after blob write, before/after DB commit and before terminal event publication.
+4. **Design:** stop before registration, between registration/start, during a
+   model call, between a model result and tool/write, during author/reviewer work,
+   and just as normal completion commits. Repeat for scene and website paths.
+   Prove no additional calls/writes occur after acknowledgement, saved scene
+   versions remain, website base is unchanged when unfinished, and lease expiry
+   or worker takeover cannot restart cancelled generation. Include any admitted
+   nested design work discovered by the execution-path inventory.
+5. **Research isolation:** run account research alongside the stopped chat/design
+   turn, including a run launched by that turn. Observe continued job progress
+   and durable results; assert no cancellation/suspension/requeue caused by Stop.
+   Other chats, design runs, projects, and workspace processes remain untouched.
+6. **Queue:** A running with B/C queued; Stop holds B/C across reload/restart and
+   every dispatcher/claim entry. Resume during cancellation is rejected; repeated
+   Resume starts B exactly once, then C in order. Sending D while held leaves
+   B/C/D waiting. Test stale Resume against a newer hold, rejected Stop after
+   completion, accepted Stop racing completion, and empty-hold cleanup racing
+   submission. No queued message is lost, duplicated or silently cancelled.
+7. **Rendering:** partial Markdown, unfinished backticks/fences, long URLs and
+   unbroken strings remain within narrow chat panels. No new horizontal scrollbar
+   or restoration of duplicate reasoning/activity receipts. Genuine errors remain
+   actionable; normal cancellation adds no lifecycle text.
+8. **Reasoning:** real provider-backed evidence covers streaming, multiple rounds,
+   manual collapse, final answer and Stop. Keep the existing plain-text trace and
+   long-content safeguards. Verify trace delivery separately from partial-answer
+   persistence and do not promise unavailable private/encrypted provider content.
+
+Start with `tests/api/test_lane_d3_turn_stream_db.py`,
+`tests/api/test_lane_d2_turn_submission_db.py`,
+`tests/projections/test_thread_shell_db.py`,
+`tests/api/test_p34_design_leg_engine_db.py`,
+`tests/design/test_design_fleet_turns_db.py`, and
+`tests/design/test_design_fleet_reaper_db.py`, plus the design runtime/API
+cancellation tests. Use deterministic provider stubs for race/crash coverage,
+then a bounded real provider-backed turn for final delivery/cancellation proof.
+Do not treat a visual fixture as that proof.
+
+Frontend gate: focused controller/model/stream regressions, then
+`npm run design-system:build`, `npm run lint`, and `npm run build`, followed by
+browser checks. Backend gate: focused affected suites, Ruff/type/seam checks and
+required repository checks; attribute unrelated existing failures explicitly.
+Use Semarang-only app paths and runtime ownership checks. DB tests use their own
+Semarang test database; manual acceptance uses `clue_semarang`. Never drain,
+restart, migrate, or stop a sibling workspace's services. Record IDs, statuses,
+counts and timings without copying private conversation/trace content into docs.
+
+**Release criterion:** the work is complete only when the real button controls
+the exact running chat/design work, durable reads preserve accepted progress,
+independent research demonstrably continues, and the UI shows only the agreed
+control states. A successful POST or a changed icon alone is not acceptance.
+
 ### 7. SSE control frames and terminal lifecycle
 
 Every SSE frame carries an `event:` name and one JSON `data:` object. The
@@ -1817,3 +2250,119 @@ attention[{account_name, reason}] } | null`. Backend: the account driver stamps
 only when every job is terminal; Completed lingers 60 s). Frontend polls every 5 s while a card
 is served and rotates the status line every 4 s (`model/research-progress-line.ts`). No chevron,
 no dismiss, no per-account detail (founder rulings 2026-09-12).
+
+### Project documents — the plan and the project's own knowledge (2026-09-12)
+
+Spec `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
+project owns documents of its own — the plan the Head of ABM writes (`write_project_document@1` →
+`project/plan.md`), and any ICP or persona document authored local to the project. They are served
+by three routes on the workspace-scoped `/frontend/v1` router
+(`platform/api/clue_api/frontend_read/project_documents.py`), registered after the research-progress
+route. Wire is **snake_case** in a `{ "data": … }` envelope — the `discovery/current` and
+`research/progress` neighbours' shape, not the camelCase `WireModel` the accounts contract uses.
+Timestamps are `Z`-suffixed ISO. In the authenticated application, the shared backend client
+proves the provider session, resolves Clue membership and stamps `X-Clue-Workspace-Id`.
+The router's legacy `X-Workspace-Id` dependency is overridden by authenticated composition;
+the frontend never supplies a static workspace or trusts a browser-supplied workspace header.
+
+| route | answer |
+| --- | --- |
+| `GET /frontend/v1/projects/:projectId/documents` | `{ data: { documents: Doc[] } }` |
+| `GET /frontend/v1/projects/:projectId/documents/:documentId` | `{ data: DocDetail }` |
+| `PUT /frontend/v1/projects/:projectId/documents/:documentId` | `{ data: DocDetail }` |
+
+```
+Doc        = { id, path, kind, title, version, status, updated_at, icp_key }   // icp_key: string | null
+DocDetail  = Doc & { markdown, front_matter }
+PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
+```
+
+- **Scope is the store's, not a check re-applied at the route.** Every read and write is
+  `(workspace, project)`-keyed, so another project's — or another tenant's — document is *absent*,
+  never refused differently; a probe cannot tell "not yours" from "not there".
+- **`title` is the one composed value**: `kind = "project-plan"` → `"Plan"`;
+  `kind = "audience-persona"` → `` `Personas — ${icp_key}` ``; everything else is titled by its own
+  text (front-matter `title`, else its first heading) through the same rule the ICP gate uses. A
+  document whose blob cannot be read is still listed, named by its file path.
+- **The PUT is the Knowledge editor's contract.** `expected_revision` is the version the human typed
+  over; a successful save mints the **next immutable version** (`status: "ready"` for a plan) with
+  `user_edit` provenance in `front_matter` (`source_document_id`, `source_version`, the saver) and
+  retires the predecessor. An identical body is a no-op returning the same row. Auth: an
+  authenticated principal with `project.write`, else `local-development-user` when the router allows
+  local mutations, else `401 UNAUTHORIZED`.
+- **Errors** (`{ detail: { code, message } }`): `404 PROJECT_DOCUMENT_NOT_FOUND` (absent, or not this
+  project's), `409 DOCUMENT_REVISION_CONFLICT` (stale `expected_revision`, or a concurrent version
+  race — someone else wrote first; re-read and re-apply), `422 DOCUMENT_BODY_EMPTY`,
+  `503 KNOWLEDGE_STORAGE_UNAVAILABLE` (detail GET and PUT, when the process has no blob storage).
+- **CORS on this router is `["GET", "OPTIONS"]`**, so the PUT is same-origin/BFF-only — exactly like
+  the brand-knowledge PUT. The Plan tab reaches it through the BFF, not the browser.
+- **The chat side:** a finalize carrying `{ object_type: "project_document", object_id, version }`
+  in `domain_refs` projects one `PLAN` part titled `"Plan"` with `revision_label` `v{version}`, and
+  the tool reads as **"Write the project plan"** in the transcript.
+- **Frontend connection implemented (Lane 2 Task 4, 2026-09-13):**
+  `features/projects/model/project-documents.ts` validates lists/details and maps `updated_at`,
+  `icp_key` and `front_matter` to camelCase. Kinds are the three frozen project-document kinds;
+  status and nullable ICP keys are retained without guesses. The plan is selected by exact path
+  `project/plan.md`. Edited labels use the viewer's local timezone and an explicit clock.
+- Server reads use `listProjectDocuments` / `getProjectDocument` in
+  `data/project-documents.repository.ts`, through the shared authenticated `fetchRead` client.
+  There is no fixture fallback, and failed reads never become empty document lists.
+- Browser routes are `GET /api/projects/:projectId/documents` and
+  `GET|PUT /api/projects/:projectId/documents/:documentId`. All responses are `no-store`.
+  PUT accepts **only** `{ body, expectedRevision }`, enforces the shared allowed-origin policy,
+  and forwards `{ body, expected_revision }` with session-derived credentials. Invalid JSON is
+  400; invalid/nonpositive revision, blank/oversized body or extra fields are 422. Backend
+  statuses/bodies (including 401/403/404/409) pass through, with request IDs retained.
+- `saveProjectDocument` lives in **`data/project-document-actions.ts`**, keeping browser imports
+  free of the server-only read/authentication graph, as the Knowledge actions already do.
+  It sends the original Markdown unchanged, never sends front matter, and returns the full saved
+  detail, including the **new ID/version** (or unchanged ones for a no-op). Callers must use that
+  returned base for the next save. Saves are not retried or merged automatically.
+- Repository/action errors retain `ClueApiError.status`, `code` and `requestId`. A 409 explains
+  that a newer **document** exists and advises keeping/copying the draft before loading it;
+  401/403 explain missing view/edit permission. Both `{ error: … }` and FastAPI `{ detail: … }`
+  refusal envelopes are understood for saves. These functions do not own or clear editor drafts.
+- **Plan pane implemented (Lane 2 Tasks 6–7, 2026-09-14):** `?surface=plan` opens the
+  third project rail tab with the approved empty state or the current `project/plan.md`.
+  It carries no artifact edit/selection parameters. Browser reads use validated same-origin
+  queries with abortable requests, no fixture fallback and explicit failure states.
+- Plan and Knowledge share `useVersionedMarkdownEditor` and its pure session transitions.
+  Drafts are keyed by workspace/project/path; tab switches keep the mounted editor. Opening is
+  clean; Save adopts the returned immutable ID/version; Discard resets to the newest loaded
+  document. Dirty drafts retain their original base across external refreshes. A failed or
+  conflicting save retains the draft and offers a latest-version check. Source parse errors,
+  missing `project.write` permission and blank project bodies disable saving.
+- Project-document plan-card titles open Plan. Newly received plan parts with
+  `planRef.objectType === "project_document"` open and refresh it once. The chat controller
+  seeds `ProjectPlanWriteTracker` with each turn's initial `lastEventId` from the server.
+  Backlog parts at or before that cursor are rendered without opening Plan, even when they arrive
+  after `loading` becomes false. Later parts announce a write once per document part ID. Cursors
+  survive reconnects without advancing on subsequent reads, so missed live writes still count.
+  Newly submitted turns start at zero. The shell consumes `planWriteRevision`; it does not infer
+  freshness from transcript rendering, client timestamps, or a tool name.
+- Live Semarang verification: empty/read states, clean Edit, tab-switch draft retention and two
+  browser saves, with new IDs/versions verified in Postgres/artifact storage. After sign-in was
+  restored, full reload preserved saved content; a stale browser save kept its draft; checking
+  for updates preserved it; Discard adopted the newer version and the next save succeeded.
+  Arrow/Home/End tab navigation passed. Preview and Edit at 720 px and 390 px contained long
+  inline/code-block text without widening the page. Controlled, held backend streams verified
+  Plan-card clicks, new-write auto-open, duplicate delivery, and cold backlog replay. No provider
+  or fleet execution was used. The fixture is archived with its append-only audit records retained.
+- **Named file tabs and Gallery documents (Task 8, founder amendment 2026-09-14):**
+  the fixed Plan tab above is superseded. Gallery and Target accounts remain navigation;
+  document tabs exist only after an explicit Gallery/card click, direct document link, or
+  fresh agent write. All three Markdown kinds appear as Documents cards, alongside designs.
+  The file tab/header uses the backend title, never a fabricated design artifact. Existing
+  backend Plan/persona title rules remain unchanged; this slice does not introduce rename.
+- A shared browser list hook supplies Gallery and the mounted document surfaces. A card
+  opens its stable path using `?surface=plan&document=<path>`. A transcript reference resolves
+  its immutable ID through the repository to a path, then loads the current listed version.
+  Old `?surface=plan` links still select `project/plan.md`. No artifact identity param is added.
+- Each opened Markdown file retains its own mounted editor session, even after closing its
+  tab, until leaving the chat. Switching, closing and reopening preserve drafts and native
+  undo. Closing the active last file returns to Gallery; closed files remain Gallery cards.
+- Fresh persisted document references open the referenced file, not always the canonical plan.
+  Cursor baselines and duplicate guards remain. Design feed IDs/update timestamps are baselined
+  at mount; only new or changed files from the active chat auto-open, once per update.
+- Scope stays with the existing three-kind Markdown API and design documents. Arbitrary file
+  formats, dynamic backend kinds and document rename require a separate contract amendment.

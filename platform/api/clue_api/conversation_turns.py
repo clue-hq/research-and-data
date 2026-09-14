@@ -21,7 +21,9 @@ local session file; production reads durable project state), so each surface bui
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -49,7 +51,10 @@ from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
     build_agent_context_assembler,
 )
-from clue_api.agent_runtime_wiring import CompletionGuard
+from clue_api.agent_runtime_wiring import (
+    PROJECT_DOCUMENT_OBJECT_TYPE,
+    CompletionGuard,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.design_leg_wiring import load_head_of_abm_history
@@ -124,12 +129,64 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # stage0-interview v22 §7b teaches. The slot pins exact addresses, so a granted tool the
 # promoted revision does not admit is refused by plan validation; v22 stays the exact replay
 # input for turns already pinned to it.
-CONVERSATION_RECIPE_VERSION = 23
+# Revision 24 (ARV2 context and authoring) is revision 23 plus two exact addresses:
+# ``author_icp_document@1`` and ``request_persona_synthesis@1``, the ICP-authoring pair
+# `head-of-abm@v46` grants and stage0-interview v23 §5b/§5c teach. v23 stays the exact replay
+# input for turns already pinned to it.
+# Revision 25 (the project plan) is revision 24 plus one exact address:
+# ``write_project_document@1``, the plan tool `head-of-abm@v47` grants and stage0-interview v24
+# §6b teaches. v24 stays the exact replay input for turns already pinned to it.
+# Revision 26 (the ARV2 reads) is revision 25 plus three exact addresses:
+# ``read_project_accounts@1``, ``read_account_research@1`` and ``read_discovery_run@1``, the
+# effect-free reads `head-of-abm@v48` grants and stage0-interview v25 §7b/§7c teach. v25 stays the
+# exact replay input for turns already pinned to it. The reads' fix waves minted
+# `head-of-abm@v49` / stage0-interview v26 and then `head-of-abm@v50` / stage0-interview v27, but
+# NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved — only the three tools'
+# schema digests, which the profile and the skill pin and this file does not. The thread-workspace
+# wave (`head-of-abm@v51` / stage0-interview v28) mints no revision either, for the same reason:
+# it moves the profile's workspace block and the skill's §1 text, not a tool address. Nor does the
+# workspace-libraries wave (`head-of-abm@v52` / stage0-interview v29 / prompt head-of-abm v9): it
+# grants the `brand/` and `project/` read-only mounts and renames the paths the skill and the
+# prompt tell the model to read, and again no tool address moves. Nor does the brand-index-path
+# fix (`head-of-abm@v53` / stage0-interview v30): it corrects one path the skill names.
+# Nor does the operating manual (`head-of-abm@v54` / stage0-interview v31 / prompt head-of-abm
+# v10): it pins fifteen `manual-*@v1` chapters, each granting no tool, and edits prompt and skill
+# prose. No tool address is added, dropped or moved.
+# Revision 27 (the versioned project root) is the first revision that REMOVES addresses:
+# ``author_icp_document@1``, ``request_persona_synthesis@1`` and ``write_project_document@1``
+# leave the interaction slot, because `head-of-abm@v55` no longer grants them — the three
+# documents they wrote are written as files under the versioned ``project/`` mount, taught by
+# `icp-authoring@v1`, `persona-authoring@v1` and `plan-authoring@v1` and pointed at from
+# stage0-interview v32 §5b/§5c/§6b. v26 stays the exact replay input for turns already pinned to
+# it, so a replayed turn still resolves all three.
+# Revision 28 (paged and spilled reads) re-pins two and adds two: ``read_account_research`` and
+# ``read_discovery_run`` move to their paged ``@2``, the contracts `head-of-abm@v56` grants, and
+# ``read_claims@1`` and ``read_artifact@1`` join, granted for the first time at that version. The
+# two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
+# key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
+# replay input for turns pinned to it.
+CONVERSATION_RECIPE_VERSION = 28
+
+#: What the human calls a document written *before* the free-flowing writer landed. A plan-3
+#: receipt carries no title on its refs — the field did not exist — and its three object types were
+#: the platform's word for what the document was. Replaying such a turn must still draw the card
+#: the human saw, so those three names survive here and nowhere else. A document written since
+#: carries its own title (:class:`~clue_agents.contracts.DomainObjectRef`), and nothing is looked
+#: up for it.
+_LEGACY_DOCUMENT_TITLES: Mapping[str, str] = MappingProxyType(
+    {
+        PROJECT_DOCUMENT_OBJECT_TYPE: "Plan",
+        "project_icp_document": "ICP",
+        "project_persona_document": "Personas",
+    }
+)
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
-_PLAN_OBJECT_TYPES: frozenset[str] = frozenset({"research_directive", "agent_plan", "plan"})
+_PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
+    {"research_directive", "agent_plan", "plan", *_LEGACY_DOCUMENT_TITLES}
+)
 
 
 class DelegationWithheld:
@@ -351,6 +408,9 @@ class ConversationTurnEngine:
                 budget_limit_millicents=budget_limit_millicents,
                 captured_turns=self._captured_turns,
                 surface=self.surface,
+                # The thread's own workspace is where a governed result too large for its receipt
+                # lands: `reads/<operation>.json`, readable by the model, written by nobody else.
+                spill_sink=lease.backend,
                 conn_factory=self._conn_factory,
             )
             outcome = await self._runtime.run(
@@ -455,10 +515,24 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
+                    # A project document is titled by the document: the human reads "Q4 expansion
+                    # plan", the name it gave itself, and each version is a file revision they can
+                    # see in the editor, so it reads as "v3" rather than a bare ordinal. A plan-3
+                    # receipt has no title and falls back to the name that surface used; everything
+                    # else in the set keeps the old generic rendering.
+                    document_title = ref.title or _LEGACY_DOCUMENT_TITLES.get(ref.object_type)
                     await stream.emit_plan_part(
                         ref=ref,
-                        title=ref.object_type.replace("_", " "),
-                        revision_label=None if ref.version is None else str(ref.version),
+                        title=(
+                            document_title
+                            if document_title is not None
+                            else ref.object_type.replace("_", " ")
+                        ),
+                        revision_label=(
+                            f"v{ref.version}"
+                            if document_title is not None and ref.version is not None
+                            else (None if ref.version is None else str(ref.version))
+                        ),
                     )
         await stream.emit_launched_task_parts()
         if replayed:

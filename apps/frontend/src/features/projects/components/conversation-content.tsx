@@ -33,11 +33,13 @@ import styles from "./project-flow.module.css";
 export function ConversationContent({
   chat,
   contextHandoffError,
+  onOpenPlan,
   projectId,
   workspace,
 }: {
   chat: ProjectChatController;
   contextHandoffError: string | null;
+  onOpenPlan?: (documentId: string) => void;
   projectId: string;
   workspace: ProjectWorkspace;
 }) {
@@ -67,6 +69,7 @@ export function ConversationContent({
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
+      onOpenPlan,
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
@@ -78,7 +81,7 @@ export function ConversationContent({
         void chat.recoverGate(card);
       },
     }),
-    [chat],
+    [chat, onOpenPlan],
   );
 
   return (
@@ -115,20 +118,6 @@ export function ConversationContent({
       </div>
       <ChatTurnInspector inspector={turnInspector} />
 
-      {chat.threadBusy ? (
-        <div className={styles.planApprovalActions}>
-          <span role="status">
-            {chat.runningTurn
-              ? "Working — new messages will queue behind this turn."
-              : "Queued — waiting for the current turn to start."}
-          </span>
-          {chat.runningTurn ? (
-            <button onClick={() => void chat.stopActiveTurn()} type="button">
-              Stop
-            </button>
-          ) : null}
-        </div>
-      ) : null}
     </>
   );
 }

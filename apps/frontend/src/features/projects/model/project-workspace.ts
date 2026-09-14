@@ -139,15 +139,6 @@ export const ProjectQuestionnaireSchema = z.object({
   title: z.string().min(1),
 });
 
-export const ProjectPlanSchema = z.object({
-  audience: z.string().min(1),
-  sections: z.array(z.object({
-    lines: z.array(z.string().min(1)).min(1),
-    title: z.string().min(1),
-  })).min(1),
-  title: z.string().min(1),
-});
-
 export const ProjectHomeSchema = z.object({
   brands: z.array(ProjectBrandSchema),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
@@ -413,7 +404,6 @@ export type GalleryCollateralType = z.infer<typeof GalleryCollateralTypeSchema>;
 export type GallerySizeCategory = z.infer<typeof GallerySizeCategorySchema>;
 export type ProjectArtifactSize = z.infer<typeof ProjectArtifactSizeSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
-export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
 export type ProjectBootstrapRequest = z.infer<

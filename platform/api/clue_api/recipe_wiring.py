@@ -92,6 +92,42 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # would refuse the tool `head-of-abm@v45` grants without its own revision. v23 is v22 plus
     # that address and nothing else; v22 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v23.json",
+    # ARV2 context and authoring: two addresses join the interaction slot —
+    # `author_icp_document@1`, the proposed ICP document the agent may write, and
+    # `request_persona_synthesis@1`, the personas for a confirmed one — because the slot pins
+    # EXACT addresses and would refuse the tools `head-of-abm@v46` grants without its own
+    # revision. v24 is v23 plus those two addresses and nothing else; v23 stays the exact
+    # replay input for turns pinned to it.
+    "recipe0-stage0-v24.json",
+    # The project plan: one address joins the interaction slot — `write_project_document@1`,
+    # the project's one plan written with a revision check — because the slot pins EXACT
+    # addresses and would refuse the tool `head-of-abm@v47` grants without its own revision.
+    # v25 is v24 plus that address and nothing else; v24 stays the exact replay input for turns
+    # pinned to it.
+    "recipe0-stage0-v25.json",
+    # The ARV2 reads: three addresses join the interaction slot — `read_project_accounts@1`,
+    # `read_account_research@1` and `read_discovery_run@1` — because the slot pins EXACT
+    # addresses and would refuse the tools `head-of-abm@v48` grants without its own revision.
+    # v26 is v25 plus those three addresses and nothing else; v25 stays the exact replay input
+    # for turns pinned to it.
+    "recipe0-stage0-v26.json",
+    # The versioned project root: three addresses LEAVE the interaction slot —
+    # `author_icp_document@1`, `request_persona_synthesis@1` and `write_project_document@1` —
+    # because `head-of-abm@v55` no longer grants them and the documents they wrote are written as
+    # files under `project/` instead. The slot is a ceiling, so leaving them admitted would cost
+    # nothing at validation, but it would keep saying the conversation may still call them. v27 is
+    # v26 minus those three and nothing else; v26 stays the exact replay input for turns pinned
+    # to it, which is what keeps an already-pinned execution able to resolve them.
+    "recipe0-stage0-v27.json",
+    # Paged and spilled reads: `read_account_research` and `read_discovery_run` are RE-PINNED to
+    # their paged `@2`, the contracts `head-of-abm@v56` grants, and `read_claims@1` and
+    # `read_artifact@1` join, granted for the first time at the same version. The two `@1`s leave
+    # rather than stand beside their `@2`s, for the reason v22 already recorded above: a
+    # requirement set resolves one version per (kind, key), so @1 and @2 in one slot is a
+    # `conflicting_requirement` that refuses promotion. v28 is v27 minus those two addresses plus
+    # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
+    # already-pinned execution able to resolve the unpaged reads.
+    "recipe0-stage0-v28.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

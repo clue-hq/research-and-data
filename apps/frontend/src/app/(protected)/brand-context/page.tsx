@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getProtectedSession } from "@/features/session/data/session-dal";
 import {
   authenticatedBackendContext,
   type AuthenticatedBackendContext,
@@ -82,10 +83,11 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
       return null;
     }
   };
-  const [view, onboarding, query] = await Promise.all([
+  const [view, onboarding, query, session] = await Promise.all([
     getBrandContextWorkspace(designFetch, clueFetch),
     readStatus(),
     searchParams,
+    getProtectedSession(),
   ]);
 
   const section = BrandContextSectionSchema.safeParse(query.section);
@@ -94,6 +96,9 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
 
   return (
     <BrandContextScreen
+      key={session?.principal.workspace_id ?? "fixture"}
+      scopeKey={session?.principal.workspace_id ?? "fixture"}
+      canWriteKnowledge={session?.principal.permissions.includes("project.write") ?? false}
       initial={{
         assetId: query.asset,
         assetView: assetView.success ? assetView.data : "grid",

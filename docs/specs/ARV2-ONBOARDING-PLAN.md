@@ -630,6 +630,247 @@ that actually landed. The **live** exit gate in §9 is still owed (founder-trigg
 
 ---
 
+### Addendum 2026-09-12 — the project folder beside the brand folder
+
+Every production turn also seeds `inputs/project/status.md` (compiled from the project's ARV2 rows:
+pin, product set, accounts, discovery, research) and `inputs/project/decisions.md` (the project's
+current-effective `project_state` statements with their quotes), pinned once per turn in
+`agent_turn_project_files` and indexed by a second L3 card `ProjectFilesIndexCard@1`. Spec:
+`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.1. Project-scoped
+documents (`inputs/project/audience/…`, `inputs/project/plan.md`) follow in the next slices.
+
+---
+
+### Addendum 2026-09-12 — ICP authoring (profile v46, skill v23, recipe v24)
+
+The next slices landed. A marketer who reads the onboarding walk's proposals and says *"none of
+these is who we sell to"* is no longer stuck: the Head of ABM can **write the profile down** in the
+conversation, and can ask for the **personas** of a profile the human has confirmed. Spec:
+`docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.2.
+
+- **Knowledge documents carry a scope and a lineage** (migration `b953bf11e2a9`).
+  `brand_knowledge_document` gains `project_id` (NULL = the brand's own knowledge; a value scopes the
+  row to one project, composite FK to `project` so it cannot cross tenants) and
+  `derived_from_document_id`; the path/version UNIQUE becomes the scope-aware unique index
+  `brand_knowledge_document_scope_path_version (workspace_id, brand_id, COALESCE(project_id, ''),
+  path, version)`, so a project's variant of `audience/icp.md` coexists with the brand's.
+  `onboarding_run` gains `kind ('full' | 'personas')`, `project_id` and `persona_icp_document_id`,
+  welded by `onboarding_run_persona_shape`.
+- **The reader rule, in one sentence:** a brand reader sees brand rows (`project_id IS NULL` — the
+  onboarding walk, the Knowledge tree and its PUT); a project reader unions both and lets the project
+  win (`current_project_knowledge_refs`; `current_icp_document(project_id=)` orders
+  `path, (project_id IS NULL), version DESC`). Confirmation mints the next version *in the subject's
+  own scope* and carries the scope and the lineage forward; the pin carries them too. A project
+  document materializes under `inputs/project/…` (never `inputs/brand/knowledge/…`), is compiled onto
+  the lease by `project_status.current_project_documents`, and is listed in `status.md` off the same
+  read.
+- **`author_icp_document@1`** (WRITE, free, no flag) writes a **`proposed`** document — authoring
+  proposes, the human's confirmation gate still decides — at `brand` or `project` scope, optionally
+  naming the brand profile it was derived from. Platform front matter is stripped and re-stamped; the
+  document id is turn-derived so a replay never re-renders. Refusals: `icp_key_invalid`,
+  `icp_front_matter_invalid`, `icp_key_taken_by_brand`, `icp_key_taken_by_project`,
+  `derived_from_not_found`, `icp_document_version_race`.
+- **`request_persona_synthesis@1`** (SPEND, behind `onboarding_v2_enabled`) opens a **personas-only
+  onboarding run** for the project's *pinned* ICP: `mark_run_running` → one `_persona_step` →
+  `finish_run`, in the ICP's own scope. Refusals: `icp_not_pinned_for_project`,
+  `persona_run_already_open`, `brand_not_onboarded`, `enqueue_failed`. `read_current_run` and the
+  `POST /onboarding` 409 both filter `kind = 'full'`, so a personas run neither shows on the
+  setting-up screen nor holds the workspace's one start slot.
+- **The grant:** `stage0-interview@v23` (new §5b "Author a profile" and §5c "Personas for a confirmed
+  profile"), `head-of-abm@v46`, `recipe0-stage0-v24.json`, `CONVERSATION_RECIPE_VERSION = 24`. Both
+  tools are withheld from the Stage-0 trial surface — this is a project-conversation capability.
+  v22 / v45 / recipe v23 are byte-untouched.
+- **Standing rule re-run at this stage** (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`),
+  all seven items answered; **env posture unchanged and no new flag**. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` § "ICP authoring and project-scoped documents"; close-out:
+  `_memory/2026-09-12-icp-authoring.md`.
+
+### Addendum 2026-09-12 — the project plan document (profile v47, skill v24, recipe v25)
+
+The plan itself is now written down. `write_project_document@1` (WRITE, free, no flag) stores the
+project's execution plan as `project/plan.md` — a `project-plan` knowledge document with `project_id`
+set, materialized as `inputs/project/plan.md` and listed in `status.md` — one immutable version per
+save, refused (`project_document_revision_conflict`) when the version the writer read is no longer
+current, so a human edit is never silently overwritten; skill `stage0-interview@v24` §6b says when to
+write it (after the section-2 questions, a confirmed pinned ICP and a confirmed product set, never on
+a first turn) and to re-read and keep the human's edits after a refusal. The human's own edit path is
+the project-documents surface on `/frontend/v1` (list, detail, and a `{body, expected_revision}` PUT
+that mints the next version with `user_edit` provenance; 404/409/422 refusals), contracted in
+`apps/frontend/docs/api-contracts/projects.md` § "Project documents". The grant is
+`head-of-abm@v47` / `recipe0-stage0-v25.json` / `CONVERSATION_RECIPE_VERSION = 25`, with the tool
+withheld from the Stage-0 trial surface; v46 / v23 / recipe v24 are byte-untouched. Founder ruling
+**R12** defers the Plan tab, the editor, the plan card's click-through and the gallery document cards
+to `docs/superpowers/plans/2026-09-12-plan-tab-frontend.md`. Standing rule re-run, 7/7; env posture
+unchanged, no new flag. Engineering detail: `platform/api/clue_api/arv2/README.md` § "Project plan
+document"; close-out: `_memory/2026-09-12-project-plan-document.md` (live walk owed).
+
+### Addendum 2026-09-13 — the three reads (profile v48, skill v25, recipe v26)
+
+The Head of ABM can now look at what it has done instead of remembering it: `read_project_accounts@1`
+(the project's accounts, each with its latest account job's research status and a `refreshing` flag),
+`read_account_research@1` (one account's written overview in the page's own order, or its claims with
+evidence) and `read_discovery_run@1` (the latest or a named run with its asked/found window, its
+verified/shown/approved tallies and its candidates) — all three effect-free, registered with **no
+flag**, scoped by the ambient `ctx.workspace_id` rather than anything the model supplies, and
+answering absence with a typed refusal (`project_not_found`, `account_not_found`,
+`overview_not_written`, `account_not_researched`, `no_discovery_run`, `discovery_run_not_found`,
+`arv2_reads_not_composed`) so the agent can never read silence as "nothing to report". Ruling **M**:
+a read follows no lineage — a merge loser is `account_not_found`, not a quiet redirect to its
+survivor, and any lineage a read ever learns to follow must re-check `workspace_id` on the row it
+lands on. Skill `stage0-interview@v25` §7c ("Read before you speak about accounts") is the prose that
+makes it habitual; the grant is `head-of-abm@v48` / `recipe0-stage0-v26.json` /
+`CONVERSATION_RECIPE_VERSION = 26`, pinned through `_execution_project_pin`, with v47 / v24 / recipe
+v25 byte-untouched and the trial surface unchanged (a read withholds nothing worth withholding).
+Standing rule re-run, 7/7; env posture unchanged, no new flag. Engineering detail:
+`platform/api/clue_api/arv2/README.md` § "The three reads"; close-out:
+`_memory/2026-09-13-head-of-abm-read-tools.md` (live walk owed).
+
+### Addendum 2026-09-14 — the versioned project root (profile v55, skill v32, recipe v27)
+
+The three document tools above are **ungranted at `head-of-abm@v55`**, and their addresses are not
+admitted by `recipe0-stage0-v27.json` (`CONVERSATION_RECIPE_VERSION = 27`, promoted by the workers'
+boot seeding). The Head of ABM now writes the project's documents with the file tools it already
+has: `project/` is mounted as a **versioned root**, so `write_file` / `edit_file` under that prefix
+go through `platform/api/clue_api/project_root_writer.py` to the very same stores
+(`arv2/icp_authoring.py`, `arv2/project_documents.py`) — one immutable version per save, the same
+revision check the human PUT meets, the row stamped with the writing turn. The expected version is
+the `version:` in the file the turn was mounted against, never a model argument, and the library is
+re-materialized after every accepted write so the agent reads back what it wrote. Plan:
+`docs/superpowers/plans/2026-09-13-versioned-project-root-and-document-skills.md`; spec
+`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` W6/W7/W8 §4.4/§4.6/§4.7.
+
+- **The document skills replace §5b / §5c / §6b of the Stage-0 skill** (§4.6) — the procedure moves
+  out of those sections, which stay in `stage0-interview@v32` as one-line pointers. `icp-authoring@v1`,
+  `persona-authoring@v1` and `plan-authoring@v1` are granted beside `stage0-interview@v32`: each
+  states what a good document contains, the path to save it to, and the gate after it (an ICP is
+  born `proposed` and the human's confirmation gate still decides; a persona and a plan have no
+  approval stamp). `head-of-abm@v55` adds `project` to the writable prefixes and re-pins the
+  operating manual at `manual-*@v2` (fifteen chapters re-minted because three tools left the
+  profile). v54 / v31 / recipe v26 / manual v1 are byte-untouched, for replay.
+- **Kinds by folder (ruling P3-a, 2026-09-14 — the platform's existing path convention, amending
+  spec §4.1/§4.4's `personas/` folder). [SUPERSEDED the same day by the founder ruling on
+  free-flowing documents: the table below describes plan 3 and is kept for the receipts it
+  explains.** Any markdown path under `project/` that is not a compiled file is now a versioned
+  document; the kind and title are the document's own front matter (`document` when it claims
+  none); every document is born `ready`; plan, ICP and personas are **pins** the human agrees to in
+  one question — `role: plan` / `role: persona` in the front matter, and the ICP confirmation gate
+  for an ICP — never paths or kinds the code checks. The only refusals left are
+  `compiled_file_read_only` and `unsupported_document_type` (a path that is not markdown), plus
+  `body_empty` and `revision_conflict`.**]**
+
+  | Path under `project/` | Kind | Born | Refusals the model sees |
+  | --- | --- | --- | --- |
+  | `audience/icp-<key>.md` | `icp-definition` | `proposed` | the ICP writer's own: `icp_key_invalid`, `icp_front_matter_invalid`, `icp_key_taken_by_brand`, `icp_key_taken_by_project`, `derived_from_not_found`, `icp_document_version_race` |
+  | `audience/persona-<key>.md` | `persona` | `ready` | `icp_not_pinned` (no pin, or not this key — personas follow the project's **pinned** ICP), `persona_front_matter_invalid`, `revision_conflict` |
+  | `plan.md` | `project-plan` | `ready` | `revision_conflict: plan.md is at version 3, you read version 2 — read it again`, `body_empty` |
+  | `status.md`, `decisions.md`, `index.json`, `artifacts/**` | compiled | — | `compiled_file_read_only` |
+  | anything else | — | — | `unknown_project_path` (the message names the three writable paths) |
+
+  The backend surfaces a refusal as the write tool's `conflict: <code>: <message>` — the code is
+  there so the model can tell a stale read from a bad path without parsing prose.
+- **The plan card reads rows, not receipts** (ruling P3-6). The turn's finalize merges the documents
+  the turn wrote into `domain_refs` with kind-bearing object types — `project_document` (the plan),
+  `project_icp_document`, `project_persona_document` — projected as PLAN parts titled "Plan" / "ICP"
+  / "Personas" at `v<n>`.
+- **Retired, never deleted** (§4.7, standing rule): `author_icp_document@1`,
+  `write_project_document@1`, `request_persona_synthesis@1` and the personas-only
+  `onboarding_run.kind` entry point stay registered and intact so a receipt pinned to recipe ≤ 26
+  replays against its own immutable revision; outside replay they are uncomposed, because no current
+  profile grants them.
+- **Standing rule re-run at this stage**, 7/7: v55 pins no readiness / Stage-0 / Client-KB /
+  Product-KB tool (it *drops* three and adds three skills); the product-set gate source is untouched
+  and no card compiler runs for a document write; the pin is the turn's own project pin, with no
+  Client-KB pin and no new `AgentTurnScopePinConflict` path; a written document is a version row
+  plus a re-materialized library file; `launch_arv2_account_research` / `launch_arv2_discovery`
+  gained no precondition; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0
+  broken; **env posture unchanged, no new flag**. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` (the retirement notes on the three tools); close-out:
+  `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 3 landed (2026-09-14)"
+  (live proof owed).
+
+### Addendum 2026-09-14 — catch-up: the workspace libraries and the operating manual (plans 2, 2b)
+
+Written late, because the two plans between the three reads and the versioned root never got an
+addendum here and the root above stands on both. **Plan 2 (profile v53, skill v30, prompt v9)** gave
+the Head of ABM two read-only libraries in its workspace instead of a context block to remember: the
+**brand library** is compiled once per knowledge version and mounted as `brand/`, and the **project
+library** is compiled from rows — `status.md`, `decisions.md`, one file per document version, and an
+`artifacts/index.json` — and mounted as `project/`. The turn pins the library manifest, so a replay
+opens the same bytes the original turn read, while writers and a DSAR erasure re-materialize the
+shared copy. **Plan 2b (profile v54, skill v31, prompt v10)** turned the Head of ABM's operating
+manual into fifteen catalog skills (`manual-*@v1`, four generated from the registry and drift-tested,
+eleven hand-written): the capability map discloses the chapters and the agent opens one with
+`read_file` when it needs the detail, which is why the L1 identity budget rose to 40,000 bytes. Both
+are proven live; close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` §§ "Plan 2
+proven" / "Plan 2b proven". Neither added a flag.
+
+### Addendum 2026-09-14 — paged and spilled reads, free-flowing documents (profile v56, skill v33, recipe 28, manual v3)
+
+The reads above could answer a small question and die on a big one: a 72-claim account read overflowed
+the governed receipt's 16 KiB bound *after* the tool had already run, and the agent was told it could
+not read the account at all. This addendum is the fix, plus the founder's two rulings of the same day.
+Plan: `docs/superpowers/plans/2026-09-13-paged-and-spilled-reads.md`; spec
+`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5);
+close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 4 landed (2026-09-14)"
+(live proof owed).
+
+- **Version ladder.** `head-of-abm@v56` pins `stage0-interview@v33`, the document skills at
+  `icp-authoring@v2` / `persona-authoring@v2` / `plan-authoring@v2` and the manual at `manual-*@v3`
+  ×15; `recipe0-stage0-v28.json` with `CONVERSATION_RECIPE_VERSION = 28`, promoted by the workers'
+  boot seeding. The prompt stays v10. v55 / v32 / recipe 27 / manual v2 are byte-untouched, for
+  replay.
+- **Four reads, all paged.** `read_discovery_run@2` and `read_account_research@2` replace
+  `candidate_limit` / the fixed 120-claim cut with `offset`/`limit` and answer `next_offset`; their
+  `@1`s stay frozen (a paging change is an input-schema change, and the profile's schema digest pin
+  exists to catch exactly that). `read_claims@1` is the general claims query — any account **or**
+  contact by `entity_id`, narrowed by `field_prefix`, `tier`, `verification_status` and `since`
+  (against `collected_at`), through the account pages' own display gate, so `excluded` still
+  separates `sensitive` / `unverified` / `outreach_unsafe`; refusals `entity_not_found`,
+  `since_invalid`, `offset_past_end`. `read_artifact@1` opens one gallery artifact by id —
+  membership through the rail's own leg join, `summary` (the card) or `content` (the page JSON as
+  text, cut at 12 KiB with `body_truncated`), and `artifact_not_found` for both a missing row and
+  another project's document. Both new tools are effect-free, ambient-scoped and flagless, like the
+  three before them. A slot resolves one version per `(kind, key)`, so recipe 28 **re-pins** the two
+  paged reads rather than admitting `@1` and `@2` side by side.
+- **Spilling, so a bound is never a refusal.** A governed result whose references exceed 12 KiB is
+  written as canonical bytes to `reads/<operation_id>.json` in the thread's workspace, and the
+  receipt carries a pointer — `spilled_to`, `count`, a `summary` sliver, the producing tool — which
+  the model opens with `read_file`. `reads/` is readable by the model and writable by nobody; the
+  write is trusted, quota-counted and idempotent per operation. Both places a receipt is built apply
+  the rule (the live one and the rebuilt, hydrated one the model is actually handed), and the full
+  result is still the journaled `result_ref` artifact. Where there is no thread lease — the research
+  and onboarding-synthesis surfaces — there is no sink and the old refusal stands.
+- **Free-flowing documents (founder ruling).** The harness is not made deterministic with a type or
+  branch per narrow case: any markdown under `project/` that is not a compiled file is a versioned
+  document at that path, its kind and title read from its own front matter, born `ready`, stamped by
+  the platform only with `version`, `status`, `project_id`, `brand_id`, `authored_by`,
+  `authored_at`. Migration `639d081ad799` (reversible) drops the `kind` and `folder` CHECK
+  vocabularies. The plan, the personas and the ICP are **pins the human agrees to in one question** —
+  `role: plan` / `role: persona` in front matter, and the existing confirmation gate for an ICP,
+  which now finds the document by the `icp_key` its front matter claims at any path. The only
+  refusals left are `compiled_file_read_only`, `unsupported_document_type`, `body_empty` and
+  `revision_conflict`; cards collapse to one `project_document` object type titled from the
+  document. (This supersedes the kinds-by-folder table above, which is kept for the receipts it
+  explains.)
+- **Budgets are observability (founder ruling).** No hard context budget may fail or trim a turn:
+  the deterministic assembler no longer raises on a required layer that does not fit and no longer
+  excludes an optional candidate, and L6 keeps every message in order. `agent_context_layer` already
+  persists `token_budget` and `token_count`, so "over budget" is a number on the receipt and one
+  warning in the log. The four context policies that share the assembler move to
+  `project-conversation-context-v3`, `stage0-trial-context-v3`, `onboarding-synthesis-context-v3`
+  and `account-research-context-v3`.
+- **Standing rule** (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`): v56 pins no
+  readiness / Stage-0 / Client-KB / Product-KB tool (it adds two reads and re-pins two); the
+  product-set gate source is untouched and no card compiler runs for a read or a document write; the
+  pin is the turn's own project pin, with no Client-KB pin and no new `AgentTurnScopePinConflict`
+  path; a read compiles nothing onto the lease and a spill is a workspace file, not lease state;
+  `launch_arv2_account_research` / `launch_arv2_discovery` gained no precondition; `lint-imports` was
+  re-run at Task 3, 26 kept / 0 broken; **env posture unchanged — no `.env.example` line moved and no
+  new flag**. The checklist is re-run in full at the live proof. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` § "The four reads".
+
+---
+
 ## 9. Phases, exit gates, ownership, timeline
 
 | # | Phase | Builds | Exit gate | Owner |

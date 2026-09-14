@@ -417,27 +417,37 @@ def test_frozen_contract_json_schema_digests() -> None:
     # the digests with the new member removed — every one then matches the pre-lane value. The DB
     # CHECKs widened in the same lane (migrations 000b9d8bb17b + dfb9fa040b13). The digests were
     # not updated when the role landed, so this is that commit's missed ritual, performed here.
+    # Contract revision "the versioned project root" (plan 4 Task 7, commit f2b3667f0):
+    # ``DomainObjectRef`` gains ``title`` — what the referenced object calls itself, so a surface
+    # can name the card it draws without reading the object back — and the class docstring that
+    # explains it. Pydantic puts a model's docstring in its schema ``description``, so BOTH edits
+    # move a digest, and every frozen type whose schema embeds ``DomainObjectRef`` moved: ten of
+    # the eleven, all but ``ValidatedPlan``. Proven by recomputing each digest with the field
+    # removed and the old one-line docstring restored — every one then matches the value frozen
+    # above it. The field is optional and defaulted, so a finalization recorded before it existed
+    # still validates on replay. The ritual is performed here, in the `head-of-abm@v56` mint,
+    # because Task 7 landed the delta without it.
     assert actual == {
-        "AgentProfile": "d778651b32c2ec312749e806850734a776608dedcb98155b5942d616ee15b016",
-        "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
+        "AgentProfile": "f96dadf75a3bdb1b27a77aaff4a4e2b07f73bc244c735d28cc8fa7eb507dda45",
+        "SkillBundle": "d9450a85d5db839b0c61affc04e94d5408079e18608404be8d4fb3703c3b5279",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("ed7141b49e02e6e91d6a9955997768715aeaa4c611dda1da2217b664d62b0786"),
-        "AgentTurnRequest": ("018f9a55b1bec3eb11d42c21cbbcab25addb723f658d668aedffcdfbdba4aa9f"),
-        "AgentPlan": "951c423442cbace49c48f24c7b95d17893095c0df1efc6f0079e01cfc2f596c1",
+        "AgentConstitution": ("1412542826971ca1513851d9ee63939548ea8c9282cb34b0bfd0b0a6e27526e6"),
+        "AgentTurnRequest": ("73dafed6373bd624f4c87fab8b9c26ea037aa173336b77836abe07f1788a6135"),
+        "AgentPlan": "883abc57af6fb248000b954b4e8cd7d09f0da32132558b79ad6cc308e63b662b",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("a30bfbd11a2179a5b21fdad78add4aa83a594c8b74a18ed0634396c383382ccb"),
-        "DelegationResult": ("956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c"),
+        "DelegationRequest": ("eb668a452768b5baf182291d73789928bc2f8723c416e314881ef7cae127d0c7"),
+        "DelegationResult": ("ad6660fa585a9c82fbacc157a2a07c55ca3073d35e89764b078709acb6a82ba6"),
         "SpecialistTaskEnvelope": (
-            "57396348bc7f3d8f7616c38bb8ea3203cd939879cf4a56af4f6b0a46be45b113"
+            "eb9313d3fe8525be55ae2e3be649b8140d64dffb2581328f46ff236a2baf133d"
         ),
         "ContextBundleManifest": (
-            "1d2f8ce14873a9413ac525d022a48de1fc72c9061bc28130ce0c12da3344a488"
+            "5322dbc2d6bdb055d6642d0b2db2cfc9d9ecc992bb20b38fad9fd1d176f6d32a"
         ),
         "AgentFinalizeEnvelope": (
-            "ee5a8ac990a3329fce7f1d6acd5160cfdb6eb243bcdcc4dc4f647a9188030dae"
+            "aa4bece6a27451114161e6da024c8361945ad79f115013b8f85c6cd022f0960b"
         ),
     }

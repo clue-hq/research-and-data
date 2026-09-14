@@ -3,9 +3,12 @@
 One ``onboarding_run`` task = one run: fast recon (overview ∥ lineup ∥ reviews), catalog sync, the
 synthesis turns (through a seam O4 supplies) — one ICP turn, then one persona turn per ICP it
 registered — and the background per-product fan-out, personas and products sharing the one
-``onboarding_max_parallel_runs`` cap. Every provider call is R1's synchronous ``ProviderCaller``
-run in ``asyncio.to_thread`` with ONE caller per step, so a blocking HTTP poll loop never owns the
-event loop.
+``onboarding_max_parallel_runs`` cap. A task of kind ``personas`` is the narrow sibling of that
+walk: one persona turn for one already-registered ICP document, and nothing else (see
+:meth:`OnboardingRunWorkHandler._personas_only`).
+
+Every provider call is R1's synchronous ``ProviderCaller`` run in ``asyncio.to_thread`` with ONE
+caller per step, so a blocking HTTP poll loop never owns the event loop.
 
 The failure law: a provider failure, timeout or empty answer is a **step outcome**, never an
 exception — the step lands ``failed``/``empty`` with its reason, its document is closed without a
@@ -240,7 +243,7 @@ class IcpRef:
     """One ICP profile the ICP turn registered — the driver's whole view of it.
 
     Deliberately the driver's own type rather than O4's ``RegisteredIcp``: the lane may not import
-    the synthesis wiring (it composes the agent substrate), so the composition root copies the four
+    the synthesis wiring (it composes the agent substrate), so the composition root copies the
     fields across the seam in both directions.
     """
 
@@ -248,6 +251,10 @@ class IcpRef:
     icp_key: str
     version: int
     path: str
+    #: The ICP's scope: ``None`` for the brand's own profile, a project id for a project-local
+    #: variant. The persona written for it is written in the same scope, so this rides the seam
+    #: (and, for a personas run, the fleet payload) rather than being re-derived downstream.
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -306,13 +313,21 @@ def build_onboarding_exa_client_factory(settings: Settings, secrets: Secrets) ->
 
 @dataclass(frozen=True)
 class _Scope:
-    """Everything one run is about, read once off the task payload."""
+    """Everything one run is about, read once off the task payload.
+
+    ``kind`` is which run this is. ``full`` is the whole-brand walk this module was built for;
+    ``personas`` is the narrow run that writes the personas of ONE already-existing ICP document
+    — no recon, no catalog, no ICP turn — and ``persona_icp`` is that document. The two are welded
+    the way the row's CHECK welds them: a personas payload without its ICP is invalid.
+    """
 
     run_id: UUID
     workspace_id: str
     brand_id: str
     company_domain: str
     company_name: str
+    kind: Literal["full", "personas"] = "full"
+    persona_icp: IcpRef | None = None
 
 
 @dataclass(frozen=True)
@@ -403,14 +418,35 @@ class OnboardingRunWorkHandler:
     @staticmethod
     def _scope(payload: Mapping[str, Any]) -> _Scope:
         try:
+            named_kind = str(payload.get("kind") or "full")
+            if named_kind not in ("full", "personas"):
+                raise ValueError(f"unknown onboarding run kind {named_kind!r}")
+            kind: Literal["full", "personas"] = "personas" if named_kind == "personas" else "full"
+            icp: IcpRef | None = None
+            if kind == "personas":
+                # Required, not optional: a personas run's whole subject is this document, and a
+                # task nobody can describe must be refused here — before a row is touched — rather
+                # than discovered halfway through by an ``assert``.
+                named = payload["icp"]
+                icp = IcpRef(
+                    document_id=UUID(str(named["document_id"])),
+                    icp_key=str(named["icp_key"]),
+                    version=int(named["version"]),
+                    path=str(named["path"]),
+                    project_id=(
+                        None if named.get("project_id") is None else str(named["project_id"])
+                    ),
+                )
             return _Scope(
                 run_id=UUID(str(payload["run_id"])),
                 workspace_id=str(payload["workspace_id"]),
                 brand_id=str(payload["brand_id"]),
                 company_domain=str(payload["company_domain"]),
                 company_name=str(payload.get("company_name") or payload["company_domain"]),
+                kind=kind,
+                persona_icp=icp,
             )
-        except (KeyError, ValueError) as error:
+        except (KeyError, TypeError, ValueError) as error:
             raise ValueError("invalid onboarding task payload") from error
 
     @asynccontextmanager
@@ -421,6 +457,8 @@ class OnboardingRunWorkHandler:
     # -- the run -----------------------------------------------------------------------------
 
     async def _run(self, scope: _Scope) -> str:
+        if scope.kind == "personas":
+            return await self._personas_only(scope)
         async with self._connection() as conn:
             await self._store.mark_run_running(conn, run_id=scope.run_id)
             if self._binder is not None:
@@ -466,6 +504,28 @@ class OnboardingRunWorkHandler:
             )
         finally:
             await asyncio.gather(*products)
+        async with self._connection() as conn:
+            return str(await self._store.finish_run(conn, run_id=scope.run_id))
+
+    async def _personas_only(self, scope: _Scope) -> str:
+        """A personas run: mark it running, take the one persona step, finish.
+
+        Everything the full walk does before this — binding the client entity, the fast recon, the
+        catalog sync, the ICP turn — is about *establishing* a brand's knowledge. This run is asked
+        for when that knowledge already exists and one confirmed profile now needs its buying
+        committee written down, so re-running any of it would re-research a brand nobody asked
+        about and re-version documents nobody asked to change.
+
+        The step itself is :meth:`_persona_step` unchanged, with its own containment: a persona
+        turn that fails, refuses or hangs lands its step ``failed`` and the run closes
+        ``completed_with_gaps`` rather than escaping.
+        """
+        async with self._connection() as conn:
+            await self._store.mark_run_running(conn, run_id=scope.run_id)
+        # Guaranteed by ``_scope``, which refuses a personas payload that names no ICP before any
+        # row is touched.
+        assert scope.persona_icp is not None
+        await self._persona_step(scope, scope.persona_icp)
         async with self._connection() as conn:
             return str(await self._store.finish_run(conn, run_id=scope.run_id))
 

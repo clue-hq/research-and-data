@@ -14,7 +14,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from clue_api.arv2.onboarding_driver import ONBOARDING_DEDUP_PREFIX, onboarding_work_id
+from clue_api.arv2.onboarding_driver import (
+    ONBOARDING_DEDUP_PREFIX,
+    IcpRef,
+    onboarding_work_id,
+)
 from clue_api.arv2.onboarding_store import create_run, fail_run, read_current_run
 from clue_api.auth_wiring import principal_from_request
 from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger, read_newest_ingestion_job
@@ -62,7 +66,11 @@ WorkspaceDep = Annotated[str, Depends(onboarding_workspace_resolver)]
 
 
 class OnboardingEnqueuer(Protocol):
-    """Offering a run to the fleet — the one thing the route asks of the work plane."""
+    """Offering a run to the fleet — the one thing the route asks of the work plane.
+
+    Only the whole-brand walk is the *route's* to offer; the personas run is offered by the tool
+    that requests it (:mod:`clue_api.persona_request_tools`), through the same enqueuer.
+    """
 
     async def enqueue(
         self,
@@ -106,6 +114,53 @@ class DbOnboardingEnqueuer:
                 "brand_id": brand_id,
                 "company_domain": company_domain,
                 "company_name": company_name,
+            },
+            reopen_terminal=False,
+        )
+
+    async def enqueue_personas(
+        self,
+        *,
+        run_id: UUID,
+        workspace_id: str,
+        brand_id: str,
+        project_id: str,
+        company_domain: str,
+        company_name: str,
+        icp: IcpRef,
+    ) -> bool:
+        """Offer the narrow personas run: the same task kind, priority and dedup shape.
+
+        One kind of fleet task drives both runs, because both are "the onboarding lane doing
+        something for this brand" and the handler that drives them is one handler — the payload's
+        ``kind`` is what tells it which. The ICP rides the payload whole (its id, key, version,
+        path and **scope**) because the run's subject is that exact document version, and a worker
+        must not re-resolve "the project's current ICP" and quietly write personas for a profile
+        the human never asked about.
+
+        ``project_id`` is carried for the record rather than for the driver: the run row already
+        names the asking project, and this makes the task itself readable without joining to it.
+        """
+        return await self._queue.enqueue(
+            kind=FleetTaskKind.ONBOARDING_RUN,
+            work_id=onboarding_work_id(run_id),
+            dedup_key=f"{ONBOARDING_DEDUP_PREFIX}{run_id}",
+            priority=ONBOARDING_TASK_PRIORITY,
+            payload={
+                "run_id": str(run_id),
+                "workspace_id": workspace_id,
+                "brand_id": brand_id,
+                "project_id": project_id,
+                "company_domain": company_domain,
+                "company_name": company_name,
+                "kind": "personas",
+                "icp": {
+                    "document_id": str(icp.document_id),
+                    "icp_key": icp.icp_key,
+                    "version": icp.version,
+                    "path": icp.path,
+                    "project_id": icp.project_id,
+                },
             },
             reopen_terminal=False,
         )
@@ -221,8 +276,11 @@ def create_onboarding_router(
                         "reason": "name one brand of this workspace",
                     },
                 )
-            # One onboarding run at a time per workspace: two concurrent runs would race on the
-            # same brand's document paths and double the spend for one company. The read and the
+            # One onboarding *walk* at a time per workspace: two concurrent walks would race on
+            # the same brand's document paths and double the spend for one company. A ``personas``
+            # run is not one — it is a project's single turn for one ICP document, racing nothing
+            # this walk writes — so it is not counted here; blocking on it would mean a human who
+            # asked for personas could not re-onboard until that turn finished. The read and the
             # insert are one atomic decision, so the check is taken under a transaction-scoped
             # advisory lock (the brand-kit trigger's idiom) — without it two simultaneous POSTs
             # each see no open run in their own snapshot and both start a run.
@@ -233,7 +291,7 @@ def create_onboarding_router(
                 await conn.execute(
                     text(
                         "SELECT run_id FROM onboarding_run WHERE workspace_id = :ws "
-                        "AND status IN ('queued', 'running') LIMIT 1"
+                        "AND kind = 'full' AND status IN ('queued', 'running') LIMIT 1"
                     ),
                     {"ws": workspace_id},
                 )

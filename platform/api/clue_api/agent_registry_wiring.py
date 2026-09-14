@@ -84,7 +84,101 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v45 (ARV2 Track R, R4, 2026-09-10): v44 plus ONE tool — `launch_arv2_discovery@1`, verified
     # account discovery for a project — and stage0-interview v22, whose §7b is the procedure for
     # it. Nothing is dropped and nothing is re-pinned; everything else is v44's.
-    AgentRole.HEAD_OF_ABM: "v45",
+    # v46 (ARV2 context and authoring, 2026-09-12): v45 plus `author_icp_document@1` and
+    # `request_persona_synthesis@1` — the agent may write a proposed ICP document (brand-level or
+    # a project-local variant) and ask the platform for its personas — and stage0-interview v23,
+    # whose §5b and §5c are the procedures and whose §1 names the project's own files. Neither
+    # tool confirms anything: the ICP gate is still the human's. Everything else is v45's.
+    # v47 (project plan, 2026-09-12): v46 plus ONE tool — `write_project_document@1`, the
+    # project's one plan written with a revision check — and stage0-interview v24, whose §6b says
+    # when the plan is written (after the section-2 answers, a confirmed ICP and a confirmed
+    # product set) and what it contains. The human edits the same file in the Plan tab, so a
+    # stale write is refused by name rather than overwriting their words. Everything else is v46's.
+    # v48 (read tools, 2026-09-13): v47 plus THREE effect-free reads over the project's own ARV2
+    # rows — `read_project_accounts@1` (the accounts in the project and each one's research
+    # status), `read_account_research@1` (one account's written overview, or its live claims) and
+    # `read_discovery_run@1` (the latest or a named discovery run with its candidates) — and
+    # stage0-interview v25, whose §7c says to read before speaking about accounts and whose §7b
+    # says to read the last discovery run before proposing another. None of them spends, approves
+    # or launches: they replace "what my own thread happened to start" with what the rows say.
+    # Everything else is v47's.
+    # v49 (read-tool contract repairs, 2026-09-13): v48's three reads with their contracts fixed,
+    # and stage0-interview v26. The rows they serve are typed in the output schema now, so a later
+    # change to a row shape moves the digest and this pin notices; `read_account_research`'s claims
+    # are gated exactly as the account page gates them (sensitive, unverified tier-4 and
+    # outreach-unsafe held back and counted) so chat cannot state a fact the app refuses to print;
+    # `read_project_accounts` gained `query`/`offset` so a named account past the first page is
+    # reachable; and `read_discovery_run`'s `verified` counts the candidates the verifier judged.
+    # No tool is added or dropped. Everything else is v48's.
+    # v50 (read-tool hotfix, 2026-09-13): v49's three reads with the hotfix contracts, and
+    # stage0-interview v27. `read_account_research` pages its claims (`offset`/`next_offset`) under
+    # a byte budget so a wide account fits the governed receipt, and names the account's own claim
+    # families in `prefixes` so a narrowing prefix is never invented; `read_discovery_run` accepts
+    # the schema's own `pass` on input so its result passes the runner's validation. §7c now says
+    # an overview renders on first page view (so `overview_not_written` is not a failure) and that
+    # claims are read to the end before a count is stated. No tool is added or dropped. Everything
+    # else is v49's.
+    # v51 (thread workspace, 2026-09-13): v50's surface with the workspace block moved to the
+    # thread layout — the turn now runs in one persistent directory per chat thread, so `scratch/`
+    # is the agent's notebook (readable and writable, and it survives the turn), `reads/` is
+    # readable, `work/` stays readable and writable — the Head of ABM's own skill never names it,
+    # but the registry intersects a child's workspace with its parent's, so dropping it would take
+    # every delegated specialist's scratch pad away — and the quota rises to 400 files / 20 MiB.
+    # stage0-interview v28 §1 names the notebook: what to keep in `scratch/` and what belongs in
+    # the project's own files instead. No tool is added or dropped. Everything else is v50's.
+    # v52 (the mounted libraries, 2026-09-13): v51's surface with the two read-only library
+    # mounts granted — `brand/` (the brand's knowledge, materialized once per pinned version) and
+    # `project/` (the project's settled state: `status.md`, `decisions.md`, its own documents and
+    # the artifact index, compiled once per project). Both are readable, neither is writable: a
+    # library is the platform's word about what is settled, and the agent changes it through a
+    # governed tool, never by writing a file. prompt head-of-abm v9 and stage0-interview v29 name
+    # those mounted paths instead of the per-turn seed paths under `inputs/`. No tool is added or
+    # dropped. Everything else is v51's.
+    # v53 (brand index path, 2026-09-14): v52's surface with the skill pin moved v29→v30 —
+    # §1 names the brand library's manifest at its real mounted path, `brand/index.json`.
+    # v54 (the operating manual, 2026-09-14): v53's surface with the manual disclosed. Fifteen
+    # `manual-*@v1` chapters join the skill pins, so the capability map names each one with a
+    # summary and an openable path and the agent can read the chapter instead of guessing. Every
+    # chapter grants no tool, so the governed surface is byte-for-byte v53's. Prompt pin v9→v10
+    # (the specialist-delegation paragraph is dropped, because this surface withholds delegation,
+    # and Stage 0 now points at the manual); skill pin v30→v31 (§1/§6/§7c/§10 name the chapter
+    # that answers the step's question, and §6 no longer claims an unrouted finalization is
+    # refused here).
+    # v55 (the versioned project root, 2026-09-14): v54's surface with the project's documents
+    # written as FILES. `project/` joins `writable_prefixes`, so a `write_file` at
+    # `audience/icp-<key>.md`, `audience/persona-<key>.md` or `plan.md` lands a new version of the
+    # document that path names; `author_icp_document@1`, `request_persona_synthesis@1` and
+    # `write_project_document@1` are ungranted for exactly that reason — two ways to write one
+    # document is one too many. Skill pin v31→v32 keeps §5b/§5c/§6b as pointers and three new
+    # skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`) carry the
+    # procedures; none of them grants a tool. The manual re-mints at `manual-*@v2` because the
+    # grant it describes moved and a catalog version is immutable. Prompt stays v10. Three
+    # addresses leave the interaction slot, so the conversation recipe moves 26 → 27.
+    # v56 (paged and spilled reads, 2026-09-14): v55's surface with the read side finished. Two
+    # reads move to their PAGED contract — `read_account_research@2` and `read_discovery_run@2`
+    # take `offset`/`limit` and answer `next_offset`, so a wide account or a long discovery is
+    # walked to the end instead of guessed at from one page — and two reads are granted for the
+    # first time: `read_claims@1` (the general claims query over one account or contact, narrowed
+    # by family, tier, verification status or date, behind the account page's own display gate)
+    # and `read_artifact@1` (one artifact of this project's gallery by id, its summary or the
+    # words on its page). None of them spends, approves or launches. The `@1`s of the two paged
+    # reads stay registered, and recipe0-stage0@27 stays their replay input, so the name-only
+    # default alias moves to `@2` with the pin. Skill pin v32→v33 (§7c is the read map: which
+    # read answers which question, pages read to the end, `field_prefix` taken from `prefixes`, a
+    # `spilled_to` receipt read from its file in chunks and noted in `scratch/notes.md`); the
+    # three document skills move to v2. The manual re-mints at `manual-*@v3` because the grant it
+    # describes moved. Prompt stays v10. The conversation recipe moves 27 → 28: the interaction
+    # slot re-pins the two reads to `@2` and admits the two new addresses.
+    # v57 (the turn caps move to the founder's numbers, 2026-09-14): v56's surface exactly, with
+    # `turn_timeout_s` 300 → 1800 and `max_model_rounds` 24 → 100. Live turn 7ffabc38, a plan
+    # draft, failed `agent_timeout` at the 300-second wall clock before it wrote anything — no
+    # stall and no loop, just four minutes of reading skills and reasoning (one 169-second
+    # stretch) cut mid-thought — and plan 3's persona turn spent four of the same five minutes the
+    # same way. A cap that fails a real document turn is the restriction the founder ruled out
+    # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
+    # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
+    # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
+    AgentRole.HEAD_OF_ABM: "v57",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -110,6 +204,40 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
     # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
     "archive_thread": (),
+    # The three document tools, retired from the role at `head-of-abm@v55`. Each one wrote a
+    # project document through a governed call — a proposed ICP, its personas, the plan. The
+    # versioned `project/` mount does the same work from an ordinary `write_file`, so the grant
+    # would only offer two ways to write one document and two vocabularies for its refusals. They
+    # stay REGISTERED and audited — an execution pinned to recipe0-stage0@26 or earlier replays
+    # against its own immutable revision — and the procedures moved to the `icp-authoring`,
+    # `persona-authoring` and `plan-authoring` skills that stage0-interview v32 §5b/§5c/§6b point
+    # at. Empty here means structurally absent from every current model surface, as everywhere
+    # else in this map.
+    "author_icp_document": (),
+    "request_persona_synthesis": (),
+    "write_project_document": (),
+    # The ARV2 reads: what this project's own rows already say — its accounts and their research
+    # status, one account's overview or claims, one discovery run and its candidates. Granted with
+    # `head-of-abm@v48` (contracts repaired at v49); stage0-interview v26 §7c is the procedure and
+    # its §7b says to read the last discovery run before proposing another. They spend nothing,
+    # approve nothing and launch nothing, so the only thing a call can do is make an answer true:
+    # a fact about an account now comes from a claim the read returned rather than from an earlier
+    # thread's memory.
+    "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
+    "read_account_research": (AgentRole.HEAD_OF_ABM,),
+    "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
+    # Their newest sibling: the general claims query (one account or contact, by field family,
+    # source tier, verification status or date, paged, behind the same display gate). Granted with
+    # `head-of-abm@v56` — the bump that pins its contract and mints the manual chapter that
+    # teaches it, because `build_agent_profile_registry` refuses to compose when a role's
+    # authority and its profile's tool list disagree, so a grant is that bump and never a dict
+    # edit. stage0-interview v33 §7c says which question it is the read for.
+    "read_claims": (AgentRole.HEAD_OF_ABM,),
+    # The same posture for the gallery read: one design artifact of this project — what it is,
+    # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
+    # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
+    # artifact stops being a memory of the turn that made it.
+    "read_artifact": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
@@ -440,6 +568,27 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",
+                # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
+                # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
+                # and a policy may only narrow tools the profile pins, so there is nothing left to
+                # withhold — ungranted everywhere is the stronger statement, exactly as it was for
+                # the old-lane tools at v44. (The writes they performed are now file writes under
+                # `project/`, which this surface's workspace policy governs, not its tool ceiling.)
+                # The three ARV2 reads spend nothing and address nobody, so they are withheld for
+                # the OTHER reason PC-C8 §2.4 gives: the trial's own `build_toolbelt` passes no
+                # `arv2_reads`, so installed they would be advertised in the capability map and
+                # refuse `arv2_reads_not_composed` at call time — restriction by refusal, which
+                # that section rejects. Withheld, the trial's framing sentence is true: this
+                # surface has no read surface over the project's rows.
+                # `read_claims` joins them at `head-of-abm@v56` for the identical sentence — it
+                # reads through the same uncomposed `arv2_reads` service — and `read_artifact`
+                # joins for the nearest thing to it: it needs no service, but a dev-harness turn
+                # carries no project, so installed it could only refuse `project_not_found`.
+                "read_project_accounts",
+                "read_account_research",
+                "read_claims",
+                "read_artifact",
+                "read_discovery_run",
             }
         ),
         withheld_delegation_roles=frozenset(
@@ -479,10 +628,13 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_reason_code="project_conversation_no_autonomous_research",
         framing=(
             "This surface is the project conversation: you converse with the client, record what "
-            "they tell you, and can draft research direction, present its confirmation gate, or "
-            "launch an exact Account set explicitly commanded and attached by the current human "
-            "turn when the pilot budget gate is disabled. You do not capture on their behalf, "
-            "fetch external sources, delegate to a specialist, or widen the human's selected set."
+            "they tell you, write the project's ICP, its personas and its plan as files under "
+            "`project/`, open the product-set and ICP confirmation gates, and launch ARV2 "
+            "discovery, account research and person research on this project when the human asks "
+            "for them. You read the project's accounts, their research and claims, its discovery "
+            "runs and its gallery artifacts from the rows before speaking about them. You do not "
+            "fetch external sources yourself, delegate to a "
+            "specialist, or widen a set the human selected."
         ),
     ),
     # ARV2 O4 (synthesis split): the ICP turn writes the client's profiles from the brand's
@@ -577,6 +729,15 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # subject — a draft ``icp_spec`` row — is not written on this lane at all, so the grant moves
     # to ``@2`` with the ``head-of-abm@v44`` pin. ``@1`` stays registered and frozen for replay.
     if name == "open_icp_confirmation_gate":
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    # The paged reads. `read_account_research@2` and `read_discovery_run@2` take `offset`/`limit`
+    # and answer with `next_offset`, and `head-of-abm@v56` pins those exact contracts, so the
+    # grant is theirs. The `@1`s stay REGISTERED, and recipe0-stage0@27 stays the exact replay
+    # input for a turn pinned to it — @28 RE-PINS the key rather than admitting both, because one
+    # requirement set resolves one version per (kind, key) — but a role holding a version no
+    # current profile pins is authority nobody asked for, so they are ungranted here.
+    # The same shape `open_icp_confirmation_gate` has, with the grant on the newer version.
+    if name in {"read_account_research", "read_discovery_run"}:
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()

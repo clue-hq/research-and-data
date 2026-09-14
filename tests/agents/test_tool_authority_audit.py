@@ -106,8 +106,68 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # procedure that says what must be confirmed first — a project whose ICP and product set are
     # confirmed — and what a successful result does and does not mean (the run is queued; no
     # account is found or approved by the call).
-    # Project rename is installed for the human UI, ungranted to all agents.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 126
+    # Project rename is installed for the human UI, ungranted to all agents (125 -> 126).
+    # ICP authoring registered `author_icp_document@1` (126 -> 127) and
+    # `request_persona_synthesis@1` (127 -> 128) ungranted, and this is the version that grants
+    # both: they are pinned by `head-of-abm@v46`, and stage0-interview v23 §5b/§5c are the
+    # procedures that say what may be written down (only what the brand's knowledge files and the
+    # human support) and what a call does NOT do — authoring mints a *proposed* document the human
+    # still confirms at the ICP gate, and the persona request queues a background turn rather than
+    # returning a document.
+    # The project plan registered `write_project_document@1` (128 -> 129) ungranted, and this is
+    # the version that grants it: it is pinned by `head-of-abm@v47`, and stage0-interview v24 §6b
+    # is the procedure that says when a plan may be written (after the section-2 answers, a
+    # confirmed and pinned ICP and a confirmed product set) and what a call does NOT do — it
+    # decides nothing new, and the human's own edits in the Plan tab win over a stale write.
+    # The three ARV2 reads registered (129 -> 132) ungranted, and this is the version that grants
+    # them: they are pinned by `head-of-abm@v48`, and stage0-interview v25 §7c is the procedure
+    # that says to read before speaking about accounts (§7b before proposing another discovery).
+    # A call does NOT spend, approve or launch — each one only returns what the project's own rows
+    # already say, which is what makes it safe to require before an answer.
+    # The versioned project root registers nothing (the count stays 132) and UNGRANTS three:
+    # `author_icp_document`, `request_persona_synthesis` and `write_project_document` are dropped
+    # from the role at `head-of-abm@v55`, because the documents they wrote are written as files
+    # under the `project/` mount now. They stay registered and audited — this file's
+    # complete-write-surface property is what keeps a retired tool visible — and an execution
+    # pinned to recipe0-stage0@26 or earlier still replays them against its own revision.
+    # The paged reads add no NAME and so no entry here (the count stays 132): the `limit` on
+    # `read_account_research` and the `offset`/`limit` on `read_discovery_run` are new *addresses*
+    # of names this map already carries, because a changed input schema at the same address would
+    # break the digest the promoted profile pins. Authority is therefore decided by address for
+    # both names below, exactly as `open_icp_confirmation_gate` decides it — and at
+    # `head-of-abm@v56` the grant is on the `@2`s, because those are the contracts that profile
+    # pins. The `@1`s stay registered and held by nobody; recipe0-stage0@27 stays the exact
+    # replay input for a turn pinned to it, because @28 RE-PINS the key rather than admitting
+    # both versions at once.
+    # The general claims query DOES add a name (132 -> 133): `read_claims@1` is one account's or
+    # one contact's live claims asked by field family, source tier, verification status or date,
+    # behind the same display gate as `read_account_research`'s claims. The gallery read adds the
+    # next name (133 -> 134): `read_artifact@1` is one design artifact of this project — the
+    # rail's own row, plus the page JSON when asked for. Both registered ungranted and both are
+    # GRANTED at `head-of-abm@v56`, the reviewed bump that pins their contracts and mints the
+    # manual chapter that teaches them; stage0-interview v33 §7c is the procedure for all four.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 134
+    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
+    # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.
+    # An execution planned against recipe0-stage0@27 or earlier still resolves them from its own
+    # immutable revision; @28 re-pins the key to `@2` rather than admitting both.
+    assert c6_roles_for_tool("read_account_research@1") == ()
+    assert c6_roles_for_tool("read_discovery_run@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_claims@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_artifact@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
+    assert c6_roles_for_tool("write_project_document@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()
+    assert c6_roles_for_tool("author_icp_document@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == ()
+    assert c6_roles_for_tool("request_persona_synthesis@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)

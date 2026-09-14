@@ -266,34 +266,30 @@
 
 .composerDock {
   display: flex;
-  flex: 0 0 174px;
-  align-items: flex-start;
+  flex: 0 0 auto;
+  align-items: flex-end;
   justify-content: center;
-  min-height: 0;
+  min-height: 174px;
   padding: 24px 16px;
   background: linear-gradient(to bottom, rgb(255 255 255 / 0%), var(--chat-shell-neutral) 18px);
 }
 
 .composerDockWithTargets {
-  flex-basis: 210px;
+  min-height: 210px;
 }
 
-/* The research progress card is ~186px on its own — taller than the dock's whole hand-budgeted
-   content box — so a fixed basis would push the composer past the bottom of `.chatPane`, which
-   clips it. With `auto` the dock sizes to its content and `.chatBody` (the only `flex: 1 1 auto`
-   child, and the one that scrolls) gives up the height instead. Declared AFTER the targets basis
-   so it wins when a card and the edit-target bar are on screen together. */
+/* Extra controls take space from the conversation above, keeping the composer bottom anchored. */
 .composerDockWithResearchCard {
   flex-basis: auto;
 }
 
 .shellPanelOpen .composerDock {
-  flex-basis: 174px;
+  flex-basis: auto;
   padding: 24px 16px;
 }
 
 .shellPanelOpen .composerDockWithTargets {
-  flex-basis: 210px;
+  min-height: 210px;
 }
 
 .shellPanelOpen .composerDockWithResearchCard {
@@ -433,7 +429,10 @@
   flex: 1 1 auto;
   min-width: 0;
   height: 34px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
 
 .galleryTabSegment {
@@ -3131,6 +3130,8 @@
   }
 
   .artifactTabs { padding-left: 52px; padding-right: 12px; }
+  .galleryTab { padding-inline: 6px; }
+  .galleryTabSegment { padding-right: 0; margin-right: 0; border-right: 0; }
   .artifactTabActions > button:first-child { display: none; }
 
   .shellPanelOpen .chatPane {
@@ -3201,3 +3202,25 @@
     animation: none;
   }
 }
+
+.queueControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 4px 10px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+}
+
+.queueControls button {
+  border: 1px solid var(--chat-shell-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.queueControls button:disabled { opacity: 0.45; cursor: default; }

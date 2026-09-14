@@ -995,6 +995,12 @@ class StartReconTool(_Stage0Tool):
 
 class RecordInterviewAnswerTool(_Stage0Tool):
     name = "record_interview_answer"
+    # The descriptor's own fallback sentence, stated here so the manual anchor can ride on it.
+    # What the tool actually does, route by route, is the chapter this points at.
+    model_description = (
+        "Invoke exact governed platform tool record_interview_answer@1. "
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#record_interview_answer"
+    )
     input_model = RecordInterviewAnswerInput
     output_model = InterviewAnswerOutput
     replay = ReplaySafety(

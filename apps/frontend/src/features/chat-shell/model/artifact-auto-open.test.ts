@@ -7,6 +7,16 @@ import {
 
 const ACTIVE = "thread-active";
 
+test("update-only timestamps rank an edited file above an older new file", () => {
+  assert.equal(artifactToAutoOpen({
+    activeThreadId: ACTIVE,
+    knownArtifactIds: new Set(["edited"]),
+    knownUpdates: new Map([["edited", "2026-09-14T09:00:00Z"]]),
+    artifacts: [card("new", { createdAt: "2026-09-14T10:00:00Z" }),
+      card("edited", { createdAt: undefined, updatedAt: "2026-09-14T11:00:00Z" })],
+  })?.id, "edited");
+});
+
 function card(
   id: string,
   overrides: Partial<AutoOpenFeedArtifact> = {},
@@ -196,4 +206,14 @@ test("an empty feed decides nothing", () => {
     }),
     null,
   );
+});
+
+test("a newly updated design file reopens once; replay and another thread never steal focus", () => {
+  const artifact = { id: "design", type: "website" as const, title: "Campaign page", originThreadId: "thread", createdAt: "2026-09-14T08:00:00Z", updatedAt: "2026-09-14T09:00:00Z" };
+  const knownUpdates = new Map([[artifact.id, "2026-09-14T08:00:00Z"]]);
+  const args = { activeThreadId: "thread", artifacts: [artifact], knownArtifactIds: new Set([artifact.id]), knownUpdates };
+  assert.equal(artifactToAutoOpen(args)?.id, artifact.id);
+  assert.equal(artifactToAutoOpen({ ...args, activeThreadId: "other" }), null);
+  knownUpdates.set(artifact.id, artifact.updatedAt);
+  assert.equal(artifactToAutoOpen(args), null);
 });

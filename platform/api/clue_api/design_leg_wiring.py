@@ -63,11 +63,13 @@ from clue_agents import (
     HistoryMessageRef,
     ProjectContextArtifact,
 )
+from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
@@ -303,7 +305,9 @@ async def load_design_leg_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -326,6 +330,7 @@ async def load_design_leg_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -357,7 +362,9 @@ async def load_head_of_abm_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -378,6 +385,7 @@ async def load_head_of_abm_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -1116,6 +1124,13 @@ class DesignLegTurnRunner:
         bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
         history: list[tuple[str, str]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history.append(
+                    (
+                        "system",
+                        INTERRUPTED_ASSISTANT_NOTICE,
+                    )
+                )
             history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
         message = (await self._artifacts.read(user_message_ref)).decode()
         try:
@@ -1229,6 +1244,27 @@ class DesignLegTurnRunner:
             replayed=False,
         )
 
+    async def request_stop_for_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """Cancel only this turn's derived design run through the shared design substrate."""
+        async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            run_id = design_leg_run_id(turn_id)
+            run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
+            if run is not None:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=workspace_id, run_id=run_id
+                )
+
+    async def await_stopped_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        async with self._conn_factory() as conn:
+            run = await design_runs.get_run(
+                conn, workspace_id=workspace_id, run_id=design_leg_run_id(turn_id)
+            )
+        if run is not None and run["status"] not in _TERMINAL_RUN_STATUSES:
+            # Join the live holder or recover a crashed holder. The durable cancel probe
+            # prevents the recovered harness from starting another provider call.
+            await self._lane.drive(envelope=DesignTurnEnvelope.model_validate(run["payload"]))
+
     # -- dispatch ------------------------------------------------------------------------------
 
     async def _dispatch(
@@ -1268,6 +1304,11 @@ class DesignLegTurnRunner:
         )
         if run is None:
             async with self._conn_factory() as conn:
+                await lock_turn_control(conn, workspace_id=workspace_id, turn_id=submission.turn_id)
+                if await stop_requested(
+                    conn, workspace_id=workspace_id, turn_id=submission.turn_id
+                ):
+                    raise TurnStopRequested("Stop accepted before design dispatch")
                 if leg["state"] == "open_awaiting_user":
                     await design_legs.mark_leg_running(
                         conn, workspace_id=workspace_id, leg_id=leg_id
@@ -1315,6 +1356,13 @@ class DesignLegTurnRunner:
         message_text = (await self._artifacts.read(user_message_ref)).decode()
         history_texts: list[dict[str, JsonValue]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history_texts.append(
+                    {
+                        "role": "system",
+                        "text": INTERRUPTED_ASSISTANT_NOTICE,
+                    }
+                )
             history_texts.append(
                 {
                     "role": item.role,

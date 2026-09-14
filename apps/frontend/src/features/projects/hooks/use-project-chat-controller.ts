@@ -37,6 +37,7 @@ import {
   type TranscriptState,
 } from "../model/chat-transcript";
 import { designRefreshForEvent } from "../model/design-leg";
+import { ProjectPlanWriteTracker } from "../model/plan-write-signal";
 import {
   deriveThreadStatus,
   threadLabel,
@@ -53,6 +54,7 @@ import {
 } from "./use-research-task-poller";
 import {
   applyTurnStateOverrides,
+  EMPTY_QUEUE_CONTROL,
   isTerminalTurnState,
   isTurnLive,
   MessageSubmissionGuard,
@@ -62,6 +64,7 @@ import {
   type ChatTurn,
   type TurnContextReference,
   type TurnState,
+  type QueueControl,
 } from "../model/chat-turn";
 
 /**
@@ -116,6 +119,9 @@ export interface ProjectChatController {
    * refresh, a canvas reload nonce) belongs to whoever renders them.
    */
   designRefresh: DesignRefreshCounters;
+  /** New project Plan writes observed after this thread visit's initial server cursors. */
+  planWriteRevision: number;
+  writtenProjectDocumentId?: string;
   /** True only when the current stream has observed an open design leg. */
   designLegOpen: boolean;
   submitting: boolean;
@@ -138,6 +144,10 @@ export interface ProjectChatController {
   ): Promise<void>;
   recoverGate(card: GateCardModel): Promise<void>;
   stopActiveTurn(): Promise<void>;
+  stopPending: boolean;
+  queueControl: QueueControl;
+  resumingQueue: boolean;
+  resumeQueuedTurns(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
   selectThread(threadId: string): void;
   createThread(title?: string): Promise<ChatThread | null>;
@@ -186,6 +196,12 @@ export function useProjectChatController({
   const olderCursorSeeded = useRef(false);
   const loadingOlder = useRef(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [queueControl, setQueueControl] = useState<QueueControl>(EMPTY_QUEUE_CONTROL);
+  const [localStopTarget, setLocalStopTarget] = useState<string | null>(null);
+  const stopRequestRef = useRef<{ turnId: string; settled: boolean } | null>(null);
+  const [resumingQueue, setResumingQueue] = useState(false);
+  const resumeRequestRef = useRef(false);
+  const conversationReadVersion = useRef(0);
   const [turnStateOverrides, setTurnStateOverrides] = useState<
     ReadonlyMap<string, TurnState>
   >(new Map());
@@ -199,6 +215,9 @@ export function useProjectChatController({
     ReadonlyMap<string, GateAuthorityFailure>
   >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
+  const [planWriteRevision, setPlanWriteRevision] = useState(0);
+  const [writtenProjectDocumentId, setWrittenProjectDocumentId] = useState<string>();
+  const [planWrites] = useState(() => new ProjectPlanWriteTracker());
   const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
     feedRevision: 0,
     canvasRevision: 0,
@@ -321,12 +340,14 @@ export function useProjectChatController({
 
   const loadConversation = useCallback(
     async (threadId: string) => {
+      const readVersion = ++conversationReadVersion.current;
       const [messagePage, turnPage] = await Promise.all([
         repositories.messages.list({ projectId, threadId, includeBodies: true }),
         repositories.turns.list({ projectId, threadId }),
         loadGates(threadId),
       ]);
-      if (!mounted.current) return;
+      if (!mounted.current || readVersion !== conversationReadVersion.current) return;
+      planWrites.seedHistory(turnPage.turns);
       // Merge, never replace: the read serves the newest page, and replacing
       // would throw away older pages the user has already scrolled in.
       setMessages((current) => mergeThreadMessages(current, messagePage.messages));
@@ -336,6 +357,15 @@ export function useProjectChatController({
       }
       turnsRef.current = turnPage.turns;
       setTurns(turnPage.turns);
+      setQueueControl(turnPage.queueControl);
+      const pending = stopRequestRef.current;
+      if (pending?.settled) {
+        const target = turnPage.turns.find((turn) => turn.turnId === pending.turnId);
+        if (target && (target.state === "cancelled" || !target.stopRequest?.pending)) {
+          stopRequestRef.current = null;
+          setLocalStopTarget(null);
+        }
+      }
       setTurnStateOverrides((current) =>
         reconcileTurnStateOverrides(current, turnPage.turns),
       );
@@ -352,7 +382,7 @@ export function useProjectChatController({
       );
       return turnPage.turns;
     },
-    [loadGates, projectId, repositories],
+    [loadGates, planWrites, projectId, repositories],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -437,6 +467,9 @@ export function useProjectChatController({
     (threadId: string, turnId: string) => {
       if (attachments.current.has(turnId) || attached.current.has(turnId)) return;
       attached.current.add(turnId);
+      // A newly submitted turn may attach before its first listing. Its entire stream
+      // belongs to this visit; existing turns already have their cold-load cursor.
+      planWrites.seedHistory([{ turnId, lastEventId: null }]);
       const handle = repositories.stream.attach({
         projectId,
         threadId,
@@ -449,6 +482,10 @@ export function useProjectChatController({
         onEvent(event) {
           if (!mounted.current) return;
           setStream((current) => applyChatStreamEvent(current, event));
+          if (planWrites.observe(event)) {
+            if (event.part?.kind === "plan") setWrittenProjectDocumentId(event.part.planRef.objectId ?? undefined);
+            setPlanWriteRevision((revision) => revision + 1);
+          }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
           // open canvas refresh exactly when a durable design-leg transition
           // says the document moved — the frame IS the signal, so there is no
@@ -557,6 +594,7 @@ export function useProjectChatController({
       invalidateProjectCatalog,
       loadConversation,
       loadThreads,
+      planWrites,
       projectId,
       repositories,
       report,
@@ -591,12 +629,12 @@ export function useProjectChatController({
         agentProfileId?: string | null;
       } = {},
     ) => {
-      const trimmed = text.trim();
+      const trimmed = text.replace(/[\u200B\uFEFF]/g, "").trim();
       const contextRefs = options.contextRefs ?? [];
-      const hasDesignReferences = contextRefs.some(
-        (reference) => reference.objectType === "design_asset",
-      );
-      if ((!trimmed && !hasDesignReferences) || !activeThreadId) {
+      if (stopRequestRef.current || turnsRef.current.some((turn) => turn.stopRequest?.pending && turn.state !== "cancelled")) {
+        return { status: "not_submitted" } as const;
+      }
+      if ((!trimmed && !contextRefs.length) || !activeThreadId) {
         return { status: "not_submitted" } as const;
       }
       const agentProfileId = options.agentProfileId ?? null;
@@ -738,27 +776,50 @@ export function useProjectChatController({
   );
 
   const queue = useMemo(() => selectTurnQueueState(effectiveTurns), [effectiveTurns]);
+  const stopPending = localStopTarget !== null || effectiveTurns.some(
+    (turn) => turn.stopRequest?.pending && turn.state !== "cancelled",
+  );
+
+  useEffect(() => {
+    if (!activeThreadId || (!stopPending && !queueControl.paused)) return;
+    const timer = window.setInterval(() => {
+      void loadConversation(activeThreadId).catch(report);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeThreadId, loadConversation, queueControl.paused, report, stopPending]);
 
   const stopActiveTurn = useCallback(async () => {
-    if (!activeThreadId || !queue.runningTurn) return;
+    if (!activeThreadId || !queue.runningTurn || stopRequestRef.current || stopPending) return;
+    const turnId = queue.runningTurn.turnId;
+    stopRequestRef.current = { turnId, settled: false };
+    setLocalStopTarget(turnId);
     try {
-      await repositories.turns.stop({
-        projectId,
-        threadId: activeThreadId,
-        turnId: queue.runningTurn.turnId,
-      });
+      await repositories.turns.stop({ projectId, threadId: activeThreadId, turnId });
+    } catch (failure) {
+      report(failure);
+    } finally {
+      if (stopRequestRef.current?.turnId === turnId) stopRequestRef.current.settled = true;
+      // A transport failure is not acknowledgement. A fresh canonical read resolves it.
+      await loadConversation(activeThreadId).catch(report);
+    }
+  }, [activeThreadId, loadConversation, projectId, queue.runningTurn, repositories, report, stopPending]);
+
+  const resumeQueuedTurns = useCallback(async () => {
+    const holdControlId = queueControl.holdControlId;
+    if (!activeThreadId || !holdControlId || stopPending || resumeRequestRef.current) return;
+    resumeRequestRef.current = true;
+    setResumingQueue(true);
+    try {
+      const receipt = await repositories.turns.resume({ projectId, threadId: activeThreadId, holdControlId });
+      if (receipt.dispatchedTurnId) attach(activeThreadId, receipt.dispatchedTurnId);
       await loadConversation(activeThreadId);
     } catch (failure) {
       report(failure);
+    } finally {
+      resumeRequestRef.current = false;
+      if (mounted.current) setResumingQueue(false);
     }
-  }, [
-    activeThreadId,
-    loadConversation,
-    projectId,
-    queue.runningTurn,
-    repositories,
-    report,
-  ]);
+  }, [activeThreadId, attach, loadConversation, projectId, queueControl.holdControlId, repositories, report, stopPending]);
 
   const retryTurn = useCallback(
     async (turnId: string) => {
@@ -931,6 +992,8 @@ export function useProjectChatController({
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
     designRefresh,
+    planWriteRevision,
+    writtenProjectDocumentId,
     designLegOpen: stream.designLeg.open,
     submitting,
     hasOlderMessages: olderCursor !== null,
@@ -941,6 +1004,10 @@ export function useProjectChatController({
     answerGate,
     recoverGate,
     stopActiveTurn,
+    stopPending,
+    queueControl,
+    resumingQueue,
+    resumeQueuedTurns,
     retryTurn,
     selectThread(threadId) {
       if (threadId === activeThreadId) return;

@@ -470,7 +470,8 @@ async def _documents(conn: Any, seeded: Any) -> list[dict[str, Any]]:
         await conn.execute(
             text(
                 "SELECT document_id, version, status, artifact_key, artifact_sha256, "
-                " supersedes_document_id, produced_by_turn_id "
+                " supersedes_document_id, produced_by_turn_id, project_id, "
+                " derived_from_document_id "
                 "FROM brand_knowledge_document WHERE workspace_id = :ws "
                 " AND path = 'audience/icp-clinics.md' ORDER BY version"
             ),
@@ -564,6 +565,83 @@ def test_approving_an_icp_document_mints_its_confirmed_version(tmp_path: Path) -
             assert pins[0]["artifact_sha256"] == minted["artifact_sha256"]
             assert pins[0]["product_selection_version"] == 1
             assert pins[0]["pinned_by_user_id"] == USER_ID
+
+    run_async(scenario())
+
+
+def test_approving_a_project_local_icp_keeps_its_scope_and_its_lineage(tmp_path: Path) -> None:
+    """A project's own ICP variant is confirmed in its own scope, beside the brand's document.
+
+    Three things are load-bearing and all three are read back from rows: the minted version carries
+    the variant's ``project_id`` and the ``derived_from_document_id`` back to the brand document it
+    was cut from; its version is the next one *in that scope* (2, not 4 — the brand's v3 at the same
+    path is a different document's history); and the brand row is neither retired nor versioned over
+    by a confirmation that was never about it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-o6-icp-loc", label="o6icploc")
+            project = await get_project(conn, seeded.project_id)
+            assert project is not None
+            seeded.brand_id = project.brand_id
+            artifacts = DurableAgentArtifactStore(
+                storage=seeded.storage,
+                conn_factory=conn_session_factory(conn),
+            )
+            brand_document_id, _brand_key, _brand_sha = await seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=seeded.workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-clinics.md",
+                kind="icp-definition",
+                version=3,
+                status="proposed",
+                body=icp_body(key="clinics", status="proposed", product_ids=[]),
+            )
+            document_id, artifact_key, artifact_sha256 = await seed_document(
+                conn,
+                artifacts=artifacts,
+                workspace_id=seeded.workspace_id,
+                brand_id=project.brand_id,
+                path="audience/icp-clinics.md",
+                kind="icp-definition",
+                version=1,
+                status="proposed",
+                body=icp_body(
+                    key="clinics",
+                    status="proposed",
+                    product_ids=[],
+                    title="Independent multi-site clinic groups",
+                ),
+                project_id=seeded.project_id,
+                derived_from_document_id=brand_document_id,
+            )
+            icp = _Icp(
+                document_id=document_id,
+                artifact_key=artifact_key,
+                artifact_sha256=artifact_sha256,
+                brand_id=project.brand_id,
+            )
+            gate = await _present_icp(conn, seeded, icp)
+            app = _app(conn, storage=seeded.storage)
+            async with _client(app) as client:
+                response = await _answer_icp(client, seeded, gate=gate, key="k-o6-icp-loc")
+            assert response.status_code == 202, response.text
+
+            rows = await _documents(conn, seeded)
+            assert [(row["version"], row["status"], row["project_id"]) for row in rows] == [
+                (1, "superseded", seeded.project_id),
+                (2, "confirmed", seeded.project_id),
+                (3, "proposed", None),
+            ]
+            minted = rows[1]
+            assert minted["supersedes_document_id"] == document_id
+            assert minted["derived_from_document_id"] == brand_document_id
+
+            pins = await _pins(conn, seeded)
+            assert [row["document_id"] for row in pins] == [minted["document_id"]]
 
     run_async(scenario())
 
