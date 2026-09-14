@@ -216,3 +216,32 @@ def test_a_foreign_call_id_is_derived_and_a_redrain_inserts_nothing_twice() -> N
         return counts
 
     assert run_async(scenario()) == [1, 1]
+
+
+def test_a_workspace_only_stamp_lands_null_project_run_and_job() -> None:
+    """Slice 1b: a display page or a chat-turn tool has no project, run or job to stamp — the
+    row is workspace spend, and the three columns say so with NULL rather than a placeholder."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        ledger = BufferedLedger()
+        ledger.record(_result_row(row_id="r-ws-only", call_id=str(uuid4()), raw_ref=None))
+        async with rollback_conn(seed_pack=False) as conn:
+            await drain_provider_calls(
+                conn,
+                raw=BufferedRawSink(),
+                ledger=ledger,
+                artifacts=FakeArtifacts(),
+                stamp=LedgerStamp(workspace_id="ws_only"),
+            )
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT workspace_id, project_id, project_run_id, entity_research_job_id "
+                        "FROM provider_call_ledger WHERE ledger_id = :id"
+                    ),
+                    {"id": uuid5(NAMESPACE_URL, "arv2-ledger:r-ws-only")},
+                )
+            ).one()
+        return tuple(row)
+
+    assert run_async(scenario()) == ("ws_only", None, None, None)
