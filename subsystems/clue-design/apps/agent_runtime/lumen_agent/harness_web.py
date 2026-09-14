@@ -25,7 +25,8 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
-from py_lumen_obs import configure, get_logger
+from py_lumen_obs import get_logger
+from py_lumen_obs.config import run_log
 
 from .cancellation import CANCELLED_EVENT, CANCELLED_STOP_REASON, TurnCancelled
 from .checkpoint import invoke_turn_graph
@@ -603,83 +604,83 @@ def run_deepagent_web_turn(
     )
 
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
-    configure(run_log_path=run_log_path, mode=None)
-    logger.debug("web_run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
+    with run_log(tools.run_id, run_log_path):
+        logger.debug("web_run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
 
-    tools.record(
-        "coordinator",
-        "web_turn_started",
-        input_summary=prompt[:500],
-        output_summary=f"workspace=/{tools.run_id}/workspace",
-    )
-
-    initial_state = {"messages": [{"role": "user", "content": prompt}]}
-    invoke_config = {
-        "recursion_limit": 200,
-        "configurable": {"thread_id": thread_id or tools.run_id},
-    }
-
-    exception_text: Optional[str] = None
-    try:
-        # A3: the boundary BEFORE the first model call, so a turn cancelled while it sat queued
-        # pays for nothing. No-op when no probe was supplied.
-        if cancel_requested is not None and cancel_requested():
-            raise TurnCancelled()
-        invoke_turn_graph(
-            agent,
-            initial_state,
-            invoke_config=invoke_config,
-            checkpointer=checkpointer,
-            thread_id=thread_id,
-        )
-    except TurnCancelled as error:
-        # A3 (defect R3-D). Caught above the generic handler purely so the finalize below says
-        # "a human stopped this" instead of the generic "orchestrator ended without finalize" —
-        # the honest-failure PATH is unchanged and deliberately reused, only its reason is
-        # truthful. There is no `completed_with_warnings` branch here and there should not be:
-        # website mode persists once at the end, so a cancelled turn applied nothing, and
-        # claiming partial success would be the fabrication this whole envelope guards against.
-        exception_text = str(error)
         tools.record(
             "coordinator",
-            CANCELLED_EVENT,
-            output_summary=exception_text[:500],
-            payload={"stop_reason": CANCELLED_STOP_REASON},
-            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
-        )
-    except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
-        exception_text = f"{type(error).__name__}: {error}"
-        tools.record(
-            "coordinator",
-            "web_turn_exception",
-            output_summary=exception_text[:500],
-            payload={"exception": exception_text},
+            "web_turn_started",
+            input_summary=prompt[:500],
+            output_summary=f"workspace=/{tools.run_id}/workspace",
         )
 
-    final_path = tools.trace_dir / "final.json"
-    if not final_path.exists():
-        # The orchestrator never finalized — HONEST failure, never fabricated.
-        tools.finalize_web_run(
-            "failed", exception_text or "orchestrator ended without finalize"
+        initial_state = {"messages": [{"role": "user", "content": prompt}]}
+        invoke_config = {
+            "recursion_limit": 200,
+            "configurable": {"thread_id": thread_id or tools.run_id},
+        }
+
+        exception_text: Optional[str] = None
+        try:
+            # A3: the boundary BEFORE the first model call, so a turn cancelled while it sat queued
+            # pays for nothing. No-op when no probe was supplied.
+            if cancel_requested is not None and cancel_requested():
+                raise TurnCancelled()
+            invoke_turn_graph(
+                agent,
+                initial_state,
+                invoke_config=invoke_config,
+                checkpointer=checkpointer,
+                thread_id=thread_id,
+            )
+        except TurnCancelled as error:
+            # A3 (defect R3-D). Caught above the generic handler purely so the finalize below says
+            # "a human stopped this" instead of the generic "orchestrator ended without finalize" —
+            # the honest-failure PATH is unchanged and deliberately reused, only its reason is
+            # truthful. There is no `completed_with_warnings` branch here and there should not be:
+            # website mode persists once at the end, so a cancelled turn applied nothing, and
+            # claiming partial success would be the fabrication this whole envelope guards against.
+            exception_text = str(error)
+            tools.record(
+                "coordinator",
+                CANCELLED_EVENT,
+                output_summary=exception_text[:500],
+                payload={"stop_reason": CANCELLED_STOP_REASON},
+                sink_extra={"stop_reason": CANCELLED_STOP_REASON},
+            )
+        except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
+            exception_text = f"{type(error).__name__}: {error}"
+            tools.record(
+                "coordinator",
+                "web_turn_exception",
+                output_summary=exception_text[:500],
+                payload={"exception": exception_text},
+            )
+
+        final_path = tools.trace_dir / "final.json"
+        if not final_path.exists():
+            # The orchestrator never finalized — HONEST failure, never fabricated.
+            tools.finalize_web_run(
+                "failed", exception_text or "orchestrator ended without finalize"
+            )
+        final = json.loads(final_path.read_text(encoding="utf-8"))
+        outcome = final.get("outcome", "failed")
+        summary = final.get("summary", "")
+
+        final_doc_path = tools.trace_dir / "final_web_doc.json"
+        web_doc = (
+            json.loads(final_doc_path.read_text(encoding="utf-8"))
+            if final_doc_path.exists()
+            else tools.web_doc
         )
-    final = json.loads(final_path.read_text(encoding="utf-8"))
-    outcome = final.get("outcome", "failed")
-    summary = final.get("summary", "")
 
-    final_doc_path = tools.trace_dir / "final_web_doc.json"
-    web_doc = (
-        json.loads(final_doc_path.read_text(encoding="utf-8"))
-        if final_doc_path.exists()
-        else tools.web_doc
-    )
-
-    status = "applied" if outcome in ("accepted", "completed_with_warnings") else "failed"
-    return {
-        "status": status,
-        "summary": summary,
-        "web_doc": web_doc,
-        "operations": list(tools.operations_ledger),
-        "grounding": tools.grounding_report(),
-        "preview_paths": list(tools.preview_paths),
-        "outcome": outcome,
-    }
+        status = "applied" if outcome in ("accepted", "completed_with_warnings") else "failed"
+        return {
+            "status": status,
+            "summary": summary,
+            "web_doc": web_doc,
+            "operations": list(tools.operations_ledger),
+            "grounding": tools.grounding_report(),
+            "preview_paths": list(tools.preview_paths),
+            "outcome": outcome,
+        }

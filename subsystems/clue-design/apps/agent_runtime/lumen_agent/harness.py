@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
-from py_lumen_obs import configure, get_logger
+from py_lumen_obs import get_logger
+from py_lumen_obs.config import run_log
 
 from .budget import BudgetExhausted, RunBudget, attach_budget_callback
 from .cancellation import (
@@ -775,172 +776,166 @@ def run_deepagent_turn(
         cancel_requested=cancel_requested,
     )
 
-    # Per-run trace substrate (deliverables 2+3): attach THIS run's full-detail
-    # JSONL file handler. This is the single seam serving BOTH entry paths —
-    # the CLI (which already set the console mode) and API-triggered runs — so
-    # neither double-configures. `mode=None` keeps console verbosity env/default
-    # driven (CLI defaults debug via its setdefault; the server stays info); the
-    # run file is always untruncated JSON regardless of mode. The run id (and so
-    # its log path) only exists after the substrate built its run dir above, and
-    # run_id was already bound onto the ambient context there — every event from
-    # here on carries it. Kept forever, workspace-local (ratified decision 3).
+    # Attach only this run's attributed events through finalization and metrics.
+    # The shared console keeps its env/default configuration; overlapping runs
+    # retain independent file handlers, which close on every exit path.
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
-    configure(run_log_path=run_log_path, mode=None)
-    logger.debug("run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
+    with run_log(tools.run_id, run_log_path):
+        logger.debug("run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
 
-    tools.record(
-        "coordinator",
-        "deepagent_turn_started",
-        input_summary=prompt[:500],
-        output_summary=f"workspace={workspace_root(tools)}",
-    )
-
-    initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
-    # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
-    # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
-    # when one is, the runtime id degrades to trace-dir naming only.
-    invoke_config = {
-        "recursion_limit": 200,
-        "configurable": {"thread_id": thread_id or tools.run_id},
-    }
-
-    exception_text: Optional[str] = None
-    budget_breach: Optional[BudgetExhausted] = None
-    cancellation: Optional[TurnCancelled] = None
-    try:
-        # A3: the boundary BEFORE the first model call. A run cancelled while it sat queued (or
-        # between a lease takeover and its redrive) must not pay for a single call to discover
-        # that; the callback seam can only refuse a call that is already being made, so the graph
-        # is never entered at all in that case. `cancel_requested` is None off the fleet path, so
-        # this is a no-op for every CLI / fixture / preview caller.
-        if cancel_requested is not None and cancel_requested():
-            raise TurnCancelled()
-        invoke_turn_graph(
-            agent,
-            initial_state,
-            invoke_config=invoke_config,
-            checkpointer=checkpointer,
-            thread_id=thread_id,
-        )
-    except TurnCancelled as error:
-        # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
-        # generic handler for the same reason BudgetExhausted is: the finalize below has to be
-        # able to say WHY the run ended, and "orchestrator_did_not_finalize" would be a lie
-        # about a run that did exactly what it was told.
-        cancellation = error
-        exception_text = f"{type(error).__name__}: {error}"
-        # `record` is BOTH the file trace and the run's live event stream (see
-        # `LumenDesignTools.record`), so this one call is what an SSE consumer sees the
-        # moment the cancel is honoured — well before the graceful finalize below lands the
-        # terminal `done` frame. `sink_extra` is the only channel that rides the push, which
-        # is why the stop reason is stated there and not only in the trace payload.
         tools.record(
             "coordinator",
-            CANCELLED_EVENT,
-            output_summary=str(error)[:500],
-            payload={"stop_reason": CANCELLED_STOP_REASON},
-            sink_extra={"stop_reason": CANCELLED_STOP_REASON},
-        )
-    except BudgetExhausted as error:
-        # Fast loop §5.6. NOT a failure — a deliberate, harness-enforced stop.
-        # It is caught before the generic handler so the finalize below can be
-        # honest about WHY the run ended and about what survives: every accepted
-        # round is already committed to the document (P0.4), so the cost of
-        # stopping here is the round in flight, not the run.
-        budget_breach = error
-        exception_text = f"{type(error).__name__}: {error}"
-        tools.record(
-            "coordinator",
-            "deepagent_turn_budget_exhausted",
-            output_summary=str(error)[:500],
-            payload=error.as_dict(),
-        )
-    except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
-        exception_text = f"{type(error).__name__}: {error}"
-        tools.record(
-            "coordinator",
-            "deepagent_turn_exception",
-            output_summary=exception_text[:500],
-            payload={"exception": exception_text},
+            "deepagent_turn_started",
+            input_summary=prompt[:500],
+            output_summary=f"workspace={workspace_root(tools)}",
         )
 
-    # Fast-loop v1 §7: ONE run_metrics summary on EVERY terminal outcome. The
-    # `finally` is the whole point — a run that died on a quota 403 mid-finalize
-    # (the 20m42s baseline) is precisely the run whose 43-minutes-went-where
-    # numbers matter most, and a metrics emission that only fired on the happy
-    # path would miss it. `emit_run_metrics` itself never raises.
-    payload: Optional[dict] = None
-    try:
-        final_path = tools.trace_dir / "final.json"
-        if final_path.exists():
-            # The API receives tools.scene, not the older final_scene.json.
-            # A later tool in the same graph batch can change that live draft
-            # after finalize returned. Recheck evidence at the handoff boundary
-            # without banning subsequent edits or discarding their operations.
-            with tools._scene_mutation_lock:
-                payload = json.loads(final_path.read_text(encoding="utf-8"))
-                if payload.get("status") == "accepted":
-                    reason = tools._acceptance_error(payload.get("critique") or {})
-                    if (
-                        reason is None
-                        and payload.get("acceptance_receipt") != tools._review_receipt
-                    ):
-                        reason = (
-                            "The finalized acceptance receipt differs from the current review."
-                        )
-                    if reason is not None:
-                        tools.record(
-                            "coordinator", "deepagent_turn_acceptance_stale",
-                            output_summary=reason,
-                            payload={
-                                "reason": reason,
-                                "acceptance_receipt": payload.get("acceptance_receipt"),
-                            },
-                        )
-                        payload = json.loads(
-                            tools.finalize_run(
-                                "completed_with_warnings",
-                                "acceptance_stale_at_return",
-                                "Final acceptance is stale; the current draft is "
-                                f"retained for review. {reason}",
-                                critique_json=json.dumps(payload.get("critique") or {}),
-                                baseline_advisory_json=json.dumps(
-                                    payload.get("baseline_advisory")
-                                ),
-                                accommodation_json=json.dumps(payload.get("accommodation")),
+        initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
+        # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
+        # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
+        # when one is, the runtime id degrades to trace-dir naming only.
+        invoke_config = {
+            "recursion_limit": 200,
+            "configurable": {"thread_id": thread_id or tools.run_id},
+        }
+
+        exception_text: Optional[str] = None
+        budget_breach: Optional[BudgetExhausted] = None
+        cancellation: Optional[TurnCancelled] = None
+        try:
+            # A3: the boundary BEFORE the first model call. A run cancelled while it sat queued (or
+            # between a lease takeover and its redrive) must not pay for a single call to discover
+            # that; the callback seam can only refuse a call that is already being made, so the graph
+            # is never entered at all in that case. `cancel_requested` is None off the fleet path, so
+            # this is a no-op for every CLI / fixture / preview caller.
+            if cancel_requested is not None and cancel_requested():
+                raise TurnCancelled()
+            invoke_turn_graph(
+                agent,
+                initial_state,
+                invoke_config=invoke_config,
+                checkpointer=checkpointer,
+                thread_id=thread_id,
+            )
+        except TurnCancelled as error:
+            # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
+            # generic handler for the same reason BudgetExhausted is: the finalize below has to be
+            # able to say WHY the run ended, and "orchestrator_did_not_finalize" would be a lie
+            # about a run that did exactly what it was told.
+            cancellation = error
+            exception_text = f"{type(error).__name__}: {error}"
+            # `record` is BOTH the file trace and the run's live event stream (see
+            # `LumenDesignTools.record`), so this one call is what an SSE consumer sees the
+            # moment the cancel is honoured — well before the graceful finalize below lands the
+            # terminal `done` frame. `sink_extra` is the only channel that rides the push, which
+            # is why the stop reason is stated there and not only in the trace payload.
+            tools.record(
+                "coordinator",
+                CANCELLED_EVENT,
+                output_summary=str(error)[:500],
+                payload={"stop_reason": CANCELLED_STOP_REASON},
+                sink_extra={"stop_reason": CANCELLED_STOP_REASON},
+            )
+        except BudgetExhausted as error:
+            # Fast loop §5.6. NOT a failure — a deliberate, harness-enforced stop.
+            # It is caught before the generic handler so the finalize below can be
+            # honest about WHY the run ended and about what survives: every accepted
+            # round is already committed to the document (P0.4), so the cost of
+            # stopping here is the round in flight, not the run.
+            budget_breach = error
+            exception_text = f"{type(error).__name__}: {error}"
+            tools.record(
+                "coordinator",
+                "deepagent_turn_budget_exhausted",
+                output_summary=str(error)[:500],
+                payload=error.as_dict(),
+            )
+        except Exception as error:  # noqa: BLE001 - honest failure, recorded verbatim
+            exception_text = f"{type(error).__name__}: {error}"
+            tools.record(
+                "coordinator",
+                "deepagent_turn_exception",
+                output_summary=exception_text[:500],
+                payload={"exception": exception_text},
+            )
+
+        # Fast-loop v1 §7: ONE run_metrics summary on EVERY terminal outcome. The
+        # `finally` is the whole point — a run that died on a quota 403 mid-finalize
+        # (the 20m42s baseline) is precisely the run whose 43-minutes-went-where
+        # numbers matter most, and a metrics emission that only fired on the happy
+        # path would miss it. `emit_run_metrics` itself never raises.
+        payload: Optional[dict] = None
+        try:
+            final_path = tools.trace_dir / "final.json"
+            if final_path.exists():
+                # The API receives tools.scene, not the older final_scene.json.
+                # A later tool in the same graph batch can change that live draft
+                # after finalize returned. Recheck evidence at the handoff boundary
+                # without banning subsequent edits or discarding their operations.
+                with tools._scene_mutation_lock:
+                    payload = json.loads(final_path.read_text(encoding="utf-8"))
+                    if payload.get("status") == "accepted":
+                        reason = tools._acceptance_error(payload.get("critique") or {})
+                        if (
+                            reason is None
+                            and payload.get("acceptance_receipt") != tools._review_receipt
+                        ):
+                            reason = (
+                                "The finalized acceptance receipt differs from the current review."
                             )
-                        )
+                        if reason is not None:
+                            tools.record(
+                                "coordinator", "deepagent_turn_acceptance_stale",
+                                output_summary=reason,
+                                payload={
+                                    "reason": reason,
+                                    "acceptance_receipt": payload.get("acceptance_receipt"),
+                                },
+                            )
+                            payload = json.loads(
+                                tools.finalize_run(
+                                    "completed_with_warnings",
+                                    "acceptance_stale_at_return",
+                                    "Final acceptance is stale; the current draft is "
+                                    f"retained for review. {reason}",
+                                    critique_json=json.dumps(payload.get("critique") or {}),
+                                    baseline_advisory_json=json.dumps(
+                                        payload.get("baseline_advisory")
+                                    ),
+                                    accommodation_json=json.dumps(payload.get("accommodation")),
+                                )
+                            )
+                    return payload, tools
+
+            # A3: before the budget, because a human's stop outranks a machine's — though the two
+            # are mutually exclusive in practice (the first raise out of the graph wins) and the
+            # `final.json` check above still outranks BOTH: a turn the orchestrator already
+            # finalized is finished, and a cancel that arrived after that is simply too late. It is
+            # honest to say so rather than to rewrite a real result as a cancellation.
+            if cancellation is not None:
+                payload = _finalize_on_cancelled(tools, cancellation)
                 return payload, tools
 
-        # A3: before the budget, because a human's stop outranks a machine's — though the two
-        # are mutually exclusive in practice (the first raise out of the graph wins) and the
-        # `final.json` check above still outranks BOTH: a turn the orchestrator already
-        # finalized is finished, and a cancel that arrived after that is simply too late. It is
-        # honest to say so rather than to rewrite a real result as a cancellation.
-        if cancellation is not None:
-            payload = _finalize_on_cancelled(tools, cancellation)
-            return payload, tools
+            if budget_breach is not None:
+                payload = _finalize_on_budget_exhausted(tools, budget_breach)
+                return payload, tools
 
-        if budget_breach is not None:
-            payload = _finalize_on_budget_exhausted(tools, budget_breach)
+            # The orchestrator never finalized — HONEST failure, never a fabricated success.
+            detail = exception_text or "agent ended without finalize"
+            raw = tools.finalize_run(
+                "failed",
+                "orchestrator_did_not_finalize",
+                detail,
+            )
+            payload = json.loads(raw)
             return payload, tools
-
-        # The orchestrator never finalized — HONEST failure, never a fabricated success.
-        detail = exception_text or "agent ended without finalize"
-        raw = tools.finalize_run(
-            "failed",
-            "orchestrator_did_not_finalize",
-            detail,
-        )
-        payload = json.loads(raw)
-        return payload, tools
-    finally:
-        final = payload or {}
-        emit_run_metrics(
-            tools,
-            outcome=final.get("outcome") or final.get("status") or "failed",
-            status=final.get("status") or "failed",
-            stop_reason=final.get("stop_reason")
-            or (exception_text or "no final payload"),
-            rounds_dir=workspace_root(tools) / "rounds",
-        )
+        finally:
+            final = payload or {}
+            emit_run_metrics(
+                tools,
+                outcome=final.get("outcome") or final.get("status") or "failed",
+                status=final.get("status") or "failed",
+                stop_reason=final.get("stop_reason")
+                or (exception_text or "no final payload"),
+                rounds_dir=workspace_root(tools) / "rounds",
+            )
