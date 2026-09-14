@@ -554,3 +554,54 @@ Task16 review found and fixed one missing-thumbnail asset discovery branch at
 8c6d8d2a; 28 affected tests pass, scoped independent re-review approves. Full
 runtime result above precedes this bounded hint addition; no unnecessary full
 repeat. Pre-restart queues still idle. Tasks14–16 are ready for live comparison.
+
+## Task17 closing checkpoint — all four fresh tests and native QA
+
+Completed on frozen e7977668. Local stack restarted through its existing scoped
+scripts; session36845 remains active. Four brand proxies3021–3024 retained.
+Fresh browser Home briefs, new projects/threads/docs for Clue, AWS, Google and
+Conduit; neutral design start messages span16.910sec. Every actual model call is
+solo orchestrator Grok4.6. Family choices remain feature-deep-dive,
+educational-guide, editorial-pov, integration-ecosystem. Own-brand source
+catalogs byte-match preceding baseline. All262 frozen source hashes unchanged
+through QA; no source/model/env tuning midrun. Warm caches remain a confound.
+
+Inner runtime479.864/502.589/488.105/475.746sec; model calls28/27/31/34.
+Clue/AWS/Conduit model-accepted, Google unaccepted warning draft/target_exceeded.
+All persisted lifecycle statuses draft. Every first preview also exceeded240sec.
+Construction errors improved6→0 with11 successful compiles; all4 finalize calls
+omit repeated critique JSON and consume registered reviews. Google rejection
+remains enforced. Clue/AWS repaired eyebrow role errors; Conduit malformedJSON.
+AWS explicitly viewed GIF frames0/40 but did not extract or forward a GIF frame.
+Image operations: Clue original UI+logo; AWS2generated companions with crop;
+Google1generated companion; Conduit original landscape+logo and OracleHospitality
+crop from its published ad. Receipts preserve custody and generated ancestry.
+
+Native editor QA passed all4: fill+Tab marker, save, reload/reopen, changed
+textarea confirmed, original restored through UI; exact whole-sceneJSON equality.
+VersionsClue21→22→23/AWS23→24→25/Google31→32→33/Conduit42→43→44.
+Clue read-only locator.evaluate timed out though fill/snapshot worked; a rapid
+layer click selected headline once, so root refreshed state and verified the
+support marker before restoration. No scene corruption or inferred editor bug.
+All4 SVG+PNG exports1080square with no version mutation. NativeSVGtexts/images:
+4/2,3/3,3/2,2/3. Final PNGs and browser canvases visually inspected. Selection
+highlights cleared; tabs13–16 retained deliverable with artifact panels expanded.
+Fresh links recorded in plan and candidate-cases.json; no old Clue substitution.
+
+Quality still open: Clue universally promises mandatory human approval using
+an illustrative UI that also says Auto-approved; self-review failed grounding.
+Google's blue wedge overlaps behind text; correctly unaccepted. Conduit kicker
+visible but faint/tiny. AWS Arial missing, documentedInterfallback and smalltype.
+Home interview tools failed before successful design handoff; this is not proof
+of authentic onboarding or HeadABM behavior. No manual creative repair counted.
+Model/image-tool spans account for nearly all runtime; no four-minute success.
+
+Ignored evidence repairs-four-brands-20260914/{candidate/*/first-terminal,
+qa-native-*.json,qa-exports} and post-run-source-check.json; independent SDD
+task-17-runtime-audit.md complete. Eight of18 selected/rendered observations,
+not validated families. Before remaining12coveragecases, investigate shared
+copy evidence/review scope and feed readability; every new arm must include
+all4 fresh concurrent cases. Goal remains active. No push, production,
+brand-agent/website or external image-model-exp changes. Unrelated Sept8 notes
+remain unstaged. Plan patch initially failed context validation atomically;
+corrected matching context, no partial source mutation.

@@ -1178,3 +1178,88 @@ at aaee28dc,48cc4888,5adc78a4 plus8c6d8d2a. Full runtime at5adc78a4:
 28 affected passing tests and scoped review approval. Three authentic AWS GIF
 originals passed offline selected-frame checks with unchanged custody. These
 results establish tool mechanics; Task17 must still establish live behavior.
+
+## Task17 results: fresh concurrent ads in all four workspaces
+
+Completed September14 at frozen revision `e7977668`. Each brand received a new
+project, thread, document and design run through the local browser. The four
+design submissions span 16.910 seconds. The preceding ordinary briefs were
+repeated unchanged, followed by `Go ahead and create it.` No headline, asset ID,
+skill name, layout prescription or reference attachment was supplied. Each agent
+discovered its catalog, loaded instructions and selected its own references.
+Every actual model call remained the solo Grok4.6 orchestrator; configured
+author/reviewer fields are not evidence of active separate agents.
+
+Ready source catalogs exactly matched each brand's preceding frozen catalog.
+Ten preceding test-linked additions were reversibly archived and four generation
+caches backed up/reset; originals and earlier artifacts remain. Warm logo/provider
+caches, stochastic choices and different call counts prevent a causal speedup
+claim. All 262 frozen source-file hashes remained unchanged through generation
+and QA. No source, model or environment tuning occurred inside this comparison.
+
+| Brand / localhost | Selected family | Design runtime | First delivery | Native QA |
+| --- | --- | ---: | --- | --- |
+| Clue /3021 | feature-deep-dive | 479.864s | Model accepted; unsupported universal approval claim | Pass |
+| AWS /3022 | educational-guide | 502.589s | Model accepted; small type and declared-font fallback | Pass |
+| Google Cloud /3023 | editorial-pov | 488.105s | Unaccepted warning draft; image competes with copy | Pass |
+| Conduit /3024 | integration-ecosystem | 475.746s | Model accepted; faint small Integration label | Pass |
+
+Runtime measures the inner design run, excluding Home handoff and later QA.
+First previews also missed 240 seconds: 315.005/360.016/368.768/325.400 seconds.
+Persisted documents remain drafts; model acceptance is a separate receipt, not
+human approval or publication. These four repeated families add no coverage;
+eight of18 have selected/rendered observations, not validated creative quality.
+
+Construction improved: 11 compiles with zero DSL diagnostics, compared with16
+compiles and six failures previously. All four finalizers consumed registered
+reviews without repeating critique JSON. Google's rejecting review remained
+unaccepted despite clean preflight. Clue/AWS repaired an invalid `eyebrow` copy
+role each; Conduit repaired malformed direction JSON. Failed attempts are retained.
+
+Actual imagery: Clue reused its authentic review UI PNG and wordmark SVG. AWS
+made two reference-conditioned image calls, then cropped the generated cubes;
+wash and cube art are generated, logo authentic. Google generated one companion
+from two original ads, tried two crops and used the full generated image finally.
+Conduit reused landscape/wordmark and cropped Oracle Hospitality from its
+published OPERA ad after two unsuccessful logo-fetch selections. Crop receipts
+retain source digests and generated ancestry. AWS inspected GIF frames0/40 but
+used a static guide reference for generation: extraction and later provider
+forwarding remain untested live.
+
+Root inspected all four final 1080×1080 PNGs and browser canvases. Mechanical QA
+changed native text through the editor, saved, reloaded/reopened, verified the
+changed textarea and restored the exact original complete scene JSON. Versions:
+Clue21→22→23, AWS23→24→25, Google31→32→33, Conduit42→43→44. PNG and SVG
+exports succeeded without version mutation; native SVG text/image counts are
+4/2,3/3,3/2,2/3. Temporary selection highlights were removed; four tabs remain
+open with artifact panels expanded. These passes do not constitute creative approval.
+
+Clue's cited illustration shows review controls and Auto-approved, but does not
+support “Nothing ships without a human pass” or every draft entering a queue.
+Self-review missed that scope inflation. Google's blue wedge crosses under
+headline/support, reducing readability as its review identified. Conduit's label
+is now visible but faint and small at feed scale. AWS reports missing declared
+Arial files and deterministic Inter fallback. Home interview-recording failures
+preceded successful design handoffs; normal authentication/onboarding and
+HeadABM were not validated by these local tests.
+
+Most recorded runtime is in model/image-tool spans: Clue471.005/0 seconds,
+AWS332.508/162.392, Google372.801/109.675, Conduit468.634/0. Image-tool time
+includes waiting and local custody work, not pure provider server time. The
+four-minute and quality goals remain open. Investigate shared copy-evidence and
+review enforcement plus feed-scale readability before the remaining coverage
+batches. Preserve dynamic wording, composition and CTA choice; avoid prescribed
+brand prompts or keyword bans. Every future arm needs a fresh concurrent batch
+including all four brands, never an old Clue result substituted for a new run.
+
+Fresh artifacts:
+
+- [Clue](http://localhost:3021/projects/prj_1ca96ce19f5452dea5396a8e3b7feb7c/chats/thr_531c21fa861a5f449dd3bb681941266e?surface=ad)
+- [AWS](http://localhost:3022/projects/prj_5d50af9e6907548aa87fbbf1af1984cb/chats/thr_af2c9f29054f5ed38cfd9b89dffd9ba2?surface=ad)
+- [Google Cloud](http://localhost:3023/projects/prj_0d0b4c2085d351ed8399b061cebb2b17/chats/thr_8e68f82c003258bfbe12a575082e7d06?surface=ad)
+- [Conduit](http://localhost:3024/projects/prj_1500d78ee08d5efcb9122379d337e006/chats/thr_9aab8421f4445a6f91ee3f2c9ebc978e?surface=ad)
+
+Frozen evidence: `subsystems/clue-design/.design-runs/evaluation/skill-family-v1/repairs-four-brands-20260914/`.
+Independent audit: `.superpowers/sdd/design-agent-v1-skill-family-plan/task-17-runtime-audit.md`.
+Evidence stays local. No push, production, website/brand-agent edits or changes
+to the separate image-model experiment.
