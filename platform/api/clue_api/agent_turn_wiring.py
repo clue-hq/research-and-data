@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid5
 
@@ -625,11 +626,13 @@ class DbAgentTurnJournal:
                     "INSERT INTO agent_model_call "
                     "(id, turn_id, execution_id, workspace_id, sequence, requested_model, "
                     " answering_model, status, input_tokens, cache_read_input_tokens, "
-                    " cache_creation_input_tokens, output_tokens, cost_millicredits, latency_ms, "
+                    " cache_creation_input_tokens, output_tokens, cost_millicredits, "
+                    " cost_usd, cost_source, latency_ms, "
                     " error_code, role, started_at, completed_at) "
                     "VALUES (:id, :turn, :execution, :workspace, :sequence, :requested, "
                     " :answering, :status, :input_tokens, :cache_read, :cache_creation, "
-                    " :output_tokens, :cost, :latency, :error, :role, :started, :completed) "
+                    " :output_tokens, :cost, :cost_usd, :cost_source, "
+                    " :latency, :error, :role, :started, :completed) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {
@@ -646,6 +649,8 @@ class DbAgentTurnJournal:
                     "cache_creation": receipt.cache_creation_input_tokens,
                     "output_tokens": receipt.output_tokens,
                     "cost": receipt.cost_millicredits,
+                    "cost_usd": receipt.cost_usd,
+                    "cost_source": receipt.cost_source,
                     "latency": receipt.latency_ms,
                     "error": receipt.error_code,
                     "role": receipt.role.value if receipt.role is not None else None,
@@ -659,6 +664,7 @@ class DbAgentTurnJournal:
                         "SELECT turn_id, execution_id, workspace_id, sequence, requested_model, "
                         "answering_model, status, input_tokens, cache_read_input_tokens, "
                         "cache_creation_input_tokens, output_tokens, cost_millicredits, "
+                        "cost_usd, cost_source, "
                         "latency_ms, error_code, role, started_at, completed_at "
                         "FROM agent_model_call WHERE id=:id"
                     ),
@@ -678,6 +684,12 @@ class DbAgentTurnJournal:
                     int(row["cache_creation_input_tokens"]),
                     int(row["output_tokens"]),
                     int(row["cost_millicredits"]),
+                    # Lane 3 slice 1: the measured cost is part of the immutable receipt, so a
+                    # replay that reports a different figure is refused like any other drift. A
+                    # row written before the columns existed reads NULL/NULL — absent, which only
+                    # an equally cost-free receipt matches.
+                    None if row["cost_usd"] is None else Decimal(row["cost_usd"]),
+                    row["cost_source"],
                     float(row["latency_ms"]),
                     row["error_code"],
                     row["role"],
@@ -697,6 +709,8 @@ class DbAgentTurnJournal:
                     receipt.cache_creation_input_tokens,
                     receipt.output_tokens,
                     receipt.cost_millicredits,
+                    receipt.cost_usd,
+                    receipt.cost_source,
                     receipt.latency_ms,
                     receipt.error_code,
                     receipt.role.value if receipt.role is not None else None,

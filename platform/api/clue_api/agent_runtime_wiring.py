@@ -9,6 +9,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from uuid import UUID, uuid5
@@ -47,7 +48,7 @@ from clue_agents.contracts import (
     ReasonCode,
     normalize_virtual_path,
 )
-from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
+from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus, ModelCostSource
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
@@ -67,6 +68,7 @@ from clue_api.product_context_authority import (
 from clue_api.product_knowledge_privacy import stream_product_tool_receipt
 from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
+from clue_gateway.metadata import cost_cents_from_metadata
 from clue_obs import get_logger
 from clue_toolbelt import ToolEffectClass, ToolRegistry
 
@@ -212,6 +214,12 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         role = resolve_model_call_role(
             response_metadata, constitution_role=self._request.constitution.role
         )
+        # Lane 3 slice 1: what this call cost, as the gateway measured it. The shared reader is
+        # the only parse of the stamp, so this ledger and the ARV2 research ledger can never
+        # disagree about what ``metered``/``estimate``/``unpriced`` mean. Cents arrive as a
+        # Decimal; USD is the unit every cost read reports in, at the column's six places.
+        cents, cost_source = cost_cents_from_metadata(response_metadata)
+        cost_usd = None if cents is None else (cents / Decimal(100)).quantize(Decimal("0.000001"))
         output_ref = await self._artifacts.persist_body(
             workspace_id=self._request.constitution.workspace_id,
             data=response.model_dump_json().encode(),
@@ -228,6 +236,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             output_tokens=int(usage.get("output_tokens", 0)),
             output_ref=output_ref,
             role=role,
+            cost_usd=cost_usd,
+            cost_source=cost_source,
         )
 
     async def on_llm_error(
@@ -264,6 +274,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         output_tokens: int = 0,
         error_code: str | None = None,
         output_ref: ArtifactRef | None = None,
+        cost_usd: Decimal | None = None,
+        cost_source: ModelCostSource | None = None,
     ) -> None:
         sequence, started_at, started_clock, input_ref = pending
         receipt = AgentModelCallReceipt(
@@ -279,14 +291,15 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cache_read_input_tokens=cache_read_input_tokens,
             cache_creation_input_tokens=cache_creation_input_tokens,
             output_tokens=output_tokens,
-            # DECIDED at P3.2 (PD-part3 delta 6, cost residual): stays 0, re-deferred —
-            # not an oversight. Real cost is measured ONCE, at the gateway
-            # (clue_cost_cents on response metadata + the llm.gateway_call span); a
-            # cents→millicredits conversion is the uncomposed millicredits milestone's
-            # policy to own (2026-08-07 audit backlog), and writing an invented rate here
-            # would create a second cost authority. When that policy lands, thread the
-            # converted figure here — never record cost in both places.
+            # cost_millicredits stays 0 by decision (P3.2, PD-part3 delta 6): converting cents
+            # to credits is the uncomposed credits milestone's policy, and inventing a rate here
+            # would create a second cost authority. The USD beside it is NOT a conversion — it is
+            # the gateway's own measurement (clue_cost_cents), read by the shared reader, so the
+            # conversation-turn ledger and the ARV2 research ledger record the same fact the same
+            # way (lane 3 slice 1).
             cost_millicredits=0,
+            cost_usd=cost_usd,
+            cost_source=cost_source,
             latency_ms=(time.monotonic() - started_clock) * 1000,
             error_code=error_code,
             role=role,
