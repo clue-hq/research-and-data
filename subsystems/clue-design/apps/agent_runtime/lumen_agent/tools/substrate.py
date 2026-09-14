@@ -2059,10 +2059,12 @@ class LumenDesignTools:
         alt: Optional[str] = None,
         preserve_transparency: Optional[bool] = None,
     ) -> str:
-        """Place an existing asset (generated or library) into an image node with a
-        fit mode (default cover, so the frame fills without stretching), a
-        normalized focal point (0..1, default centered) that controls the cover
-        crop, and alt text. Reversible — re-place or remove to change it."""
+        """Place a real asset into an existing image or reserved empty leaf frame.
+        Raster/logo placement converts an empty `fr` to an image in place,
+        preserving its ID and geometry. A container with children cannot be
+        consumed; missing node/asset IDs remain errors. Path-backed vectors stay
+        native vectors. Use fit (default cover), a normalized focal point (0..1,
+        default centered) for the cover crop, and alt text. Reversible."""
         return self._place_asset(
             "place_asset_in_node", "node_id", node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
         )
@@ -2828,13 +2830,19 @@ class LumenDesignTools:
         - `action="place"` — place an existing asset (`asset_id`: one you generated
           this run, or one from this workspace's asset library — a library asset is
           registered into the scene for you)
-          into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
-          `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
-          default centered), `alt` text, and optional `preserve_transparency`. Reversible.
+          into an existing image or intentionally reserved empty leaf `fr`
+          (`node_id`), or a bound image slot (`slot_id`). Raster/logo placement
+          converts the leaf to an image in place, preserving its ID and geometry;
+          path-backed vectors stay native. Containers with children cannot be
+          consumed; missing node/asset IDs remain errors. No assetless image
+          declaration is needed. Use `fit` (default cover), normalized focal point
+          (`focal_x`/`focal_y`, 0..1, default centered), `alt` text, and optional
+          `preserve_transparency`. Reversible.
         - `action="use_brand_asset"` — register one of the attached Brand Kit's assets
           (a logo variant or brand image; `asset_id` from the brand context card's
           inventory) into the scene with brand_guide provenance and place it into
-          `node_id` or `slot_id`. Logos place with fit `contain` (never cropped);
+          the same supported `node_id` target or `slot_id` as `place`.
+          Logos place with fit `contain` (never cropped);
           pick the variant by background (reversed on dark fields). Requires an
           attached kit — without one this action errors.
 

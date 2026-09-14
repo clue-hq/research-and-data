@@ -40,13 +40,41 @@ and attribution where needed. Their treatment follows the inspected examples,
 not a compulsory card. Use native connectors only when the relationship is real.
 
 Page before spend: on a pageless document compile the explicit page size, real
-copy, existing assets and sized artwork reservation together. New image nodes
-require actual asset IDs: generate against the sized frame only after the page
-exists, inspect the returned image, then insert it. Don't generate a flattened
-complete ad. Text, CTA, logo and product pixels remain independent layers.
+copy, existing assets and sized artwork reservation together. Reserve artwork
+as an empty leaf `fr`. For a real raster/logo asset, `asset(action="place", ...)`
+accepts that frame or an existing image: it changes the leaf to an image in
+place, preserving its ID, parent/order and geometry. It cannot consume a frame
+with children or create a missing target. Missing asset IDs remain errors.
+Path-backed vector assets remain native vectors.
 
-For an existing asset use `asset(action="place", asset_id=..., node_id=..., fit=...)`;
-for a kit asset use `asset(action="use_brand_asset", asset_id=..., node_id=...)`.
+Small mechanical example, using the public tool calls (dimensions illustrate
+the reservation only; they are not a composition template):
+
+```python
+import json
+
+compile_dsl_block(source='''page sample size(640,240,px)
+  artwork fr p(11,23) s(480,128) rd(12) clip(true)
+  caption text "Independent native copy" p(11,170) s(480,hug) font_size(20)
+''')
+# When new artwork is needed; [] deliberately uses no references in this example.
+generated = json.loads(asset(action="generate_image", target_node_id="artwork",
+    prompt="An isolated folded paper form, no text or logos", reference_asset_ids=[]))
+art_id = generated["image"]["asset_id"]
+view(target=f"asset:{art_id}")
+# After inspecting a successful real output:
+asset(action="place", asset_id=art_id, node_id="artwork", fit="contain")
+```
+
+For a known existing asset, skip generation and place its real ID into the same
+reservation; kit assets use `asset(action="use_brand_asset", asset_id=..., node_id="artwork")`.
+Direct DSL `image asset(<real_asset_id>)` is also valid. If a frame must remain a
+viewport/container, retain it and add an image child only once its real asset ID
+is available, using the checked DSL directives. An `image`/`img` declaration
+always needs `asset(...)`; no dummy ID or blank image is needed before placement.
+Don't generate a flattened complete ad. Text, CTA, logo and product pixels remain
+independent layers.
+
 Logos use contain with clear space; product crops preserve the relevant UI or
 object. Don't destructively crop an asset just to rescue a preselected skeleton.
 Read `knowledge/scene/references.md` when generating a component.
@@ -78,6 +106,12 @@ use a flat field only when that is the intended and justified visual direction.
 
 Author through `compile_dsl_block` or supported checked operations only. The
 DSL grammar/directives and artboard-frame reference are authoritative mechanics.
+Reparenting changes parent-relative placement and paint order. Inspect the new
+tree and geometry; an unindexed `parent(...)` can move content before its former
+background. For deliberate ordering, use `before`, `after` or indexed `parent`
+from `knowledge/lumen-dsl/directives.md`, then check the result. Managed siblings
+paint in stored order; pinned absolute nodes use a separate page pass above
+managed content and escape ancestor clipping (the page still clips them).
 Use measured geometry for repairs and keep unrelated existing content intact.
 After changes: preflight, render, view the actual composite and repair the
 specific failure. Components that compile still need visual judgment.

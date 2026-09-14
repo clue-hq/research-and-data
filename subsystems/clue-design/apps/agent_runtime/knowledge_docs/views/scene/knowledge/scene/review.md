@@ -11,6 +11,23 @@ needs none; a present CTA must have the right next step, brand-supported form,
 measured label and readable local contrast. Check placement-specific overlays
 through `knowledge/scene/placement.md`, never a universal bottom exclusion band.
 
+When expected text or artwork is absent, first locate it in
+`inspect(view="page", target=<page_id>)` or `node_tree`, then inspect its and its
+ancestors' geometry with `inspect(view="geometry", target=<node_id>)`. Reconcile
+the actual parent, child order and resolved placement with the current pixels
+before diagnosing color. Managed siblings paint in stored order, later over
+earlier; pinned absolute nodes paint in a separate page pass above managed
+content, escape ancestor clipping and remain page-clipped. A sibling index is
+therefore not a universal paint rank. Consider ancestor clipping, off-canvas
+placement, node/ancestor opacity and the placed asset's alpha. The tree/geometry
+views do not expose every paint property; when the available current scene and
+source evidence cannot establish a cause, mark it unverified. Bounding-box
+overlap or a native-text size row alone does not prove occlusion or visibility.
+Name the observed absence separately from the supported cause, make any deliberate
+repair through checked directives, inspect the resulting tree/geometry, render
+and view again. Judge remaining contrast at placement size after visibility is
+established; a color-only repair cannot fix confirmed coverage by later artwork.
+
 Preflight validates mechanics, not taste or fidelity. Inspect the image itself;
 do not accept because a tool returned success or a previous round looked good.
 After a repair, the new scene needs its own render and view. Save the critique
