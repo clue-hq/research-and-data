@@ -536,3 +536,46 @@ this plan (SkillBundle / DelegationRequest / AgentTurnRequest drift) and absorbe
 long-stale `open_icp_confirmation_gate@1` (pre-existing — the promoted-slot equality test in
 `tests/execution/test_recipes.py` has been red for it since before plan 3); the hand-written manual
 chapters teach the two new reads only through the generated `manual-tools`.
+
+## Plan 4 proven (2026-09-14) — `584cae976..848230dd6` on the lane stack
+
+Thirteen commits (SDD, Opus implementers, controller-reviewed). Two live-proof fixes beyond the
+plan: `f8524ed64` (skill v33 §7c regained its pointers to the tools and claims chapters) and
+`848230dd6` (ruling P4-16: `head-of-abm@v57` moves `turn_timeout_s` 300→1800 and
+`max_model_rounds` 24→100 — the founder's 2026-09-08 numbers — after a plan-draft turn was cut at
+300 s mid-reasoning with no stall and no loop; the generated `manual-limits` chapter renders both
+numbers, so the manual is at v4). Ladder as landed: profile v57 / stage0-interview v33 /
+icp-, persona-, plan-authoring v2 / recipe0-stage0 28 (promoted by worker boot seeding) /
+manual v4 / context policies v3; prompt stays v10; resolved prompt 24,986 B (62% of L1).
+
+**Live walk** (project `prj_82aef3…`, thread `thr_5f73f392…`, workers on v56 then v57):
+- "what was researched about Mid State Orthopaedic … every page" → `read_project_accounts@1`,
+  `read_account_research@2` ×5 (overview + claim pages at offsets 0/15/34/64 until `next_offset`
+  null), three receipts spilled to `reads/<operation_id>.json` (12.7–13.3 KB) and read back; 65
+  servable claims + 16 held back, reported honestly; 165 s.
+- "verified claims about Prevea Health since September 1st … and what is in the gallery" →
+  `read_claims@1` (`verification_status=verified`, `since=2026-09-01`) → 0 (verification is off on
+  this deployment, said so), 18 held back; the gallery answered from `project/artifacts/index.json`
+  (`artifacts: []`) — `read_artifact@1` is proven by its DB tests only, the project has no design
+  documents; 85 s.
+- "write a short competitive brief … you choose the file name" → `project/notes/dac-intake-vendors.md`
+  v1 `ready`, kind `competitive-brief` (the model's own word), card "DAC intake vendors v1"; 145 s.
+- "draft a one-page Q4 campaign plan as a new document" → first attempt on v56 FAILED
+  `agent_timeout` at 300 s (4 min of skill reading incl. a `submit_ingestion` detour and one
+  169 s reasoning stretch) → P4-16 → on v57: `project/notes/q4-campaign-plan.md` v1, kind
+  `campaign-plan`, card "Q4 campaign plan v1", 95 s; the agent judged it "not a replacement of the
+  pinned plan" and did not ask to pin.
+- "make that Q4 document the project's plan; pin it" → rewrite v2 with `role: plan`; `status.md`'s
+  Plan section now names `project/notes/q4-campaign-plan.md` v2 (the older `plan.md` v3 stays in
+  the library unpinned); card "Q4 campaign plan v2"; 95 s. No stall, loop or refresh errors.
+
+**Deferred** (ledger minors): `reads/` has no trimmer (workspace quota is the backstop);
+`recover()` rewrites a spilled file once per later governed call (idempotent); `read_artifact`'s
+`body_text` is mostly scene JSON inside 12 KiB; generic-writer rows leave `produced_by_turn_id`
+NULL (front matter carries the turn); a persona document claiming an `icp_key` is a last-resort
+gate candidate; `RECIPE_0_TOOL_ADDRESSES` still lists the stale `open_icp_confirmation_gate@1`
+(the promoted-slot equality test has been red for it since before plan 3); hand-written chapters
+teach the two new reads only via the generated `manual-tools`; with rounds at 100 and 1800 s a
+runaway turn is bounded by wall clock only — a telemetry alarm, not a lower cap, is the honest
+follow-up; the persona skill's "pin as personas" question and the plan skill's "ask before pinning"
+are asked of the agent, not enforced, by design.
