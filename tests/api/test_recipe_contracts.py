@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 26
+    assert CONVERSATION_RECIPE_VERSION == 27
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -402,7 +402,11 @@ def test_icp_authoring_mints_recipe_v24_without_rewriting_v23() -> None:
     )
     assert set(v23["graph"]["tool_allowlist"]) | added == set(v24["graph"]["tool_allowlist"])
     assert set(v23_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
-    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    # Retired at recipe0-stage0@27: `head-of-abm@v55` writes these documents as files under the
+    # versioned `project/` mount, so the addresses left the standing set. They stay REGISTERED, so
+    # this revision's own pinned executions still replay — which is exactly what the json-vs-json
+    # assertions above are here to prove.
+    assert added.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
     assert v23["version"] == 23
     assert v24["version"] == 24
     assert slot["dynamic_pin_kinds"] == v23_slot["dynamic_pin_kinds"]
@@ -443,7 +447,11 @@ def test_project_plan_mints_recipe_v25_without_rewriting_v24() -> None:
     )
     assert set(v24["graph"]["tool_allowlist"]) | added == set(v25["graph"]["tool_allowlist"])
     assert set(v24_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
-    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    # Retired at recipe0-stage0@27: `head-of-abm@v55` writes these documents as files under the
+    # versioned `project/` mount, so the addresses left the standing set. They stay REGISTERED, so
+    # this revision's own pinned executions still replay — which is exactly what the json-vs-json
+    # assertions above are here to prove.
+    assert added.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
     assert v24["version"] == 24
     assert v25["version"] == 25
     assert slot["dynamic_pin_kinds"] == v24_slot["dynamic_pin_kinds"]
@@ -489,6 +497,60 @@ def test_read_tools_mint_recipe_v26_without_rewriting_v25() -> None:
     assert v25["version"] == 25
     assert v26["version"] == 26
     assert slot["dynamic_pin_kinds"] == v25_slot["dynamic_pin_kinds"]
+
+
+def test_document_skills_mint_recipe_v27_without_rewriting_v26() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v26 = json.loads((root / "recipe0-stage0-v26.json").read_text())
+    v27 = json.loads((root / "recipe0-stage0-v27.json").read_text())
+    # The versioned project root REMOVES exactly three addresses — the first revision on this
+    # lineage that subtracts. `head-of-abm@v55` grants none of them: the proposed ICP, the personas
+    # and the plan are written as files under `project/`, so leaving them admitted here would keep
+    # saying the conversation may still call them.
+    removed = {"author_icp_document@1", "request_persona_synthesis@1", "write_project_document@1"}
+
+    v26_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v26.json")
+    assert SYSTEM_RECIPE_FILENAMES[v26_index : v26_index + 2] == (
+        "recipe0-stage0-v26.json",
+        "recipe0-stage0-v27.json",
+    )
+    assert removed <= set(v26["graph"]["tool_allowlist"])
+    assert removed.isdisjoint(v27["graph"]["tool_allowlist"])
+    slot = next(node for node in v27["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert removed.isdisjoint(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v27["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    gone = {tuple(address.split("@")) for address in removed}
+    assert gone.isdisjoint(slot_requirements)
+    assert gone.isdisjoint(node_compatibility)
+    # v27 is v26 MINUS the three addresses and nothing else: v26 is untouched on disk, so an
+    # execution pinned to it still validates against the surface it was validated against.
+    v26_slot = next(
+        node for node in v26["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v27["graph"]["tool_allowlist"]) | removed == set(v26["graph"]["tool_allowlist"])
+    assert set(slot["dynamic_tool_allowlist"]) | removed == set(v26_slot["dynamic_tool_allowlist"])
+    v26_requirements = {
+        (item["key"], item["version"])
+        for item in v26_slot["requirements"]
+        if item["kind"] == "tool"
+    }
+    v26_compatibility = {
+        (item["key"], item["version"])
+        for item in v26["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    assert slot_requirements | gone == v26_requirements
+    assert node_compatibility | gone == v26_compatibility
+    assert v26["version"] == 26
+    assert v27["version"] == 27
+    assert slot["dynamic_pin_kinds"] == v26_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

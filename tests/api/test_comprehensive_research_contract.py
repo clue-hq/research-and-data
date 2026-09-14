@@ -462,6 +462,9 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     # authoring) adds only `author_icp_document@1` and `request_persona_synthesis@1`. v47 (the
     # project plan) adds only `write_project_document@1`, and v48 (the ARV2 reads) only
     # `read_project_accounts@1`, `read_account_research@1` and `read_discovery_run@1`. v49 adds no
-    # tool at all — it re-pins the same three reads after their contracts were repaired.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v54"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v54"
+    # tool at all — it re-pins the same three reads after their contracts were repaired. v55 is
+    # the first version that takes tools AWAY (the three document tools, now file writes under
+    # `project/`), and the directive draft is not among them, so the granted address is unmoved
+    # and the two pins must still agree.
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v55"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v55"

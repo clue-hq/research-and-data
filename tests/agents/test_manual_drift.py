@@ -50,7 +50,15 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 
 #: The capability map is prepended to every system prompt, so the skills block is context the
 #: model pays for on every turn of every thread.
-SKILLS_BLOCK_MAX_BYTES = 4096
+#:
+#: Moved 4096 -> 4608 at `head-of-abm@v55`: the disclosed library grew from sixteen resources to
+#: nineteen when the three document skills joined it, and three lines of address, summary and path
+#: cost about 330 bytes no summary length can win back (the three are the shortest on the block).
+#: This is a cost heuristic, not the gate — the gate is
+#: ``test_the_resolved_system_prompt_fits_the_production_identity_budget`` below, which still has
+#: room to spare. Adding a resource is what is supposed to move this number; a summary that sprawls
+#: is what it is here to catch.
+SKILLS_BLOCK_MAX_BYTES = 4608
 
 #: The share of the production L1 budget the resolved system prompt may occupy.
 #:

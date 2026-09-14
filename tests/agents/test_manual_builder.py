@@ -88,7 +88,7 @@ def test_check_exits_one_when_a_committed_chapter_is_altered(tmp_path: Path) -> 
     shutil.copytree(manual.DEFAULT_CATALOG_ROOT, copied)
     assert main(["--check", "--catalog-root", str(copied)]) == 0
 
-    altered = copied / "skills" / "manual-limits" / "v1" / "SKILL.md"
+    altered = copied / "skills" / "manual-limits" / manual.MANUAL_VERSION / "SKILL.md"
     altered.write_bytes(altered.read_bytes() + b"\ndrifted\n")
     assert main(["--check", "--catalog-root", str(copied)]) == 1
 
@@ -110,7 +110,7 @@ def test_link_rewrites_the_handwritten_chapters_once_and_leaves_the_generated_on
 
     assert main(["--link", "--catalog-root", str(copied)]) == 0
     linked = target.read_text(encoding="utf-8")
-    assert "`.deepagent/skills/manual-turn/v1/SKILL.md`" in linked
+    assert f"`.deepagent/skills/manual-turn/{manual.MANUAL_VERSION}/SKILL.md`" in linked
     assert "manual:turn" not in linked
 
     # A second pass has nothing left to match, so the bytes do not move.

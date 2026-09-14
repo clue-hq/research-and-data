@@ -144,7 +144,17 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # and Stage 0 now points at the manual); skill pin v30→v31 (§1/§6/§7c/§10 name the chapter
     # that answers the step's question, and §6 no longer claims an unrouted finalization is
     # refused here).
-    AgentRole.HEAD_OF_ABM: "v54",
+    # v55 (the versioned project root, 2026-09-14): v54's surface with the project's documents
+    # written as FILES. `project/` joins `writable_prefixes`, so a `write_file` at
+    # `audience/icp-<key>.md`, `audience/persona-<key>.md` or `plan.md` lands a new version of the
+    # document that path names; `author_icp_document@1`, `request_persona_synthesis@1` and
+    # `write_project_document@1` are ungranted for exactly that reason — two ways to write one
+    # document is one too many. Skill pin v31→v32 keeps §5b/§5c/§6b as pointers and three new
+    # skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`) carry the
+    # procedures; none of them grants a tool. The manual re-mints at `manual-*@v2` because the
+    # grant it describes moved and a catalog version is immutable. Prompt stays v10. Three
+    # addresses leave the interaction slot, so the conversation recipe moves 26 → 27.
+    AgentRole.HEAD_OF_ABM: "v55",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -170,24 +180,18 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # They are deliberately NOT in ``_HUMAN_ONLY_TOOLS``: REQ-21 anticipates an agent filing or
     # splitting its own threads, so this is an ungranted capability, not a human-authority gate.
     "archive_thread": (),
-    # ICP authoring: granted with `head-of-abm@v46`; stage0-interview v23 §5b is the procedure.
-    # Writing the profile down is the same act as proposing one in prose — it is drafted only from
-    # the brand's knowledge files and what the human said on this turn — except that the written
-    # version is a durable, addressable document the confirmation gate can present. It approves
-    # nothing: the document is born proposed and the human confirms it through
-    # `open_icp_confirmation_gate@2`, exactly as they confirm a profile onboarding synthesized.
-    "author_icp_document": (AgentRole.HEAD_OF_ABM,),
-    # The persona request is the same kind of capability and lands on the same terms: a profile
-    # the human already confirmed needs its personas before research and outreach can use it, and
-    # asking for them queues a background onboarding turn rather than writing a document here.
-    # Granted with `head-of-abm@v46`; stage0-interview v23 §5c is the procedure.
-    "request_persona_synthesis": (AgentRole.HEAD_OF_ABM,),
-    # The project plan: granted with `head-of-abm@v47`; stage0-interview v24 §6b is the procedure.
-    # A project has one plan and this agent writes it, in the human's terms, out of the decisions
-    # the conversation already reached — it decides nothing new. The human edits the same document
-    # in the Plan tab, so the write carries the version it was authored against and a stale one is
-    # refused by name: the model re-reads, keeps the human's edits, and writes again.
-    "write_project_document": (AgentRole.HEAD_OF_ABM,),
+    # The three document tools, retired from the role at `head-of-abm@v55`. Each one wrote a
+    # project document through a governed call — a proposed ICP, its personas, the plan. The
+    # versioned `project/` mount does the same work from an ordinary `write_file`, so the grant
+    # would only offer two ways to write one document and two vocabularies for its refusals. They
+    # stay REGISTERED and audited — an execution pinned to recipe0-stage0@26 or earlier replays
+    # against its own immutable revision — and the procedures moved to the `icp-authoring`,
+    # `persona-authoring` and `plan-authoring` skills that stage0-interview v32 §5b/§5c/§6b point
+    # at. Empty here means structurally absent from every current model surface, as everywhere
+    # else in this map.
+    "author_icp_document": (),
+    "request_persona_synthesis": (),
+    "write_project_document": (),
     # The ARV2 reads: what this project's own rows already say — its accounts and their research
     # status, one account's overview or claims, one discovery run and its candidates. Granted with
     # `head-of-abm@v48` (contracts repaired at v49); stage0-interview v26 §7c is the procedure and
@@ -528,16 +532,12 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
                 "launch_arv2_person_research",
                 "open_product_set_selection_gate",
                 "open_icp_confirmation_gate",
-                # ARV2 context and authoring: both write. `author_icp_document` mints a durable
-                # proposed ICP version on the brand or the project, and `request_persona_synthesis`
-                # queues a real background onboarding turn that spends against providers — neither
-                # is a thing a manual-conversation-only dev harness may leave behind.
-                "author_icp_document",
-                "request_persona_synthesis",
-                # The project plan writes a durable document version off this surface and puts a
-                # plan card in the project's own chat — a manual-conversation-only dev harness
-                # may not leave one behind either.
-                "write_project_document",
+                # `author_icp_document`, `request_persona_synthesis` and `write_project_document`
+                # used to stand here. `head-of-abm@v55` does not grant any of them on any surface,
+                # and a policy may only narrow tools the profile pins, so there is nothing left to
+                # withhold — ungranted everywhere is the stronger statement, exactly as it was for
+                # the old-lane tools at v44. (The writes they performed are now file writes under
+                # `project/`, which this surface's workspace policy governs, not its tool ceiling.)
                 # The three ARV2 reads spend nothing and address nobody, so they are withheld for
                 # the OTHER reason PC-C8 §2.4 gives: the trial's own `build_toolbelt` passes no
                 # `arv2_reads`, so installed they would be advertised in the capability map and
@@ -586,8 +586,8 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         withheld_reason_code="project_conversation_no_autonomous_research",
         framing=(
             "This surface is the project conversation: you converse with the client, record what "
-            "they tell you, author the project's ICP and request its personas, open the "
-            "product-set and ICP confirmation gates, write the project plan, and launch ARV2 "
+            "they tell you, write the project's ICP, its personas and its plan as files under "
+            "`project/`, open the product-set and ICP confirmation gates, and launch ARV2 "
             "discovery, account research and person research on this project when the human asks "
             "for them. You read the project's accounts, research and discovery runs from the rows "
             "before speaking about them. You do not fetch external sources yourself, delegate to a "

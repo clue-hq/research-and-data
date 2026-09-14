@@ -124,6 +124,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # that says to read before speaking about accounts (§7b before proposing another discovery).
     # A call does NOT spend, approve or launch — each one only returns what the project's own rows
     # already say, which is what makes it safe to require before an answer.
+    # The versioned project root registers nothing (the count stays 132) and UNGRANTS three:
+    # `author_icp_document`, `request_persona_synthesis` and `write_project_document` are dropped
+    # from the role at `head-of-abm@v55`, because the documents they wrote are written as files
+    # under the `project/` mount now. They stay registered and audited — this file's
+    # complete-write-surface property is what keeps a retired tool visible — and an execution
+    # pinned to recipe0-stage0@26 or earlier still replays them against its own revision.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 132
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
@@ -131,12 +137,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("read_account_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_discovery_run@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("write_project_document@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("author_icp_document@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("request_persona_synthesis@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
+    assert c6_roles_for_tool("write_project_document@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()
+    assert c6_roles_for_tool("author_icp_document@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == ()
+    assert c6_roles_for_tool("request_persona_synthesis@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)

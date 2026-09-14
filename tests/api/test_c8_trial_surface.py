@@ -77,13 +77,9 @@ _WITHHELD = {
     "launch_arv2_discovery",
     "open_product_set_selection_gate",
     "open_icp_confirmation_gate",
-    # ARV2 context and authoring: both write something durable off this surface — a proposed ICP
-    # version, and a queued background persona run that spends — so both are withheld.
-    "author_icp_document",
-    "request_persona_synthesis",
-    # The project plan writes a durable document version and puts a plan card in the chat, so
-    # it is withheld with them.
-    "write_project_document",
+    # The ICP-authoring pair and the plan write used to head this group. They are gone from it
+    # because `head-of-abm@v55` no longer grants any of them (see `_ROLE_DROPPED`), which is the
+    # stronger statement — the same move the old-lane launches made at v44.
     # The three ARV2 reads are withheld for the OTHER reason: they spend nothing and address
     # nobody, but the trial's own `build_toolbelt` passes no `arv2_reads`, so installed they would
     # be advertised and then refuse `arv2_reads_not_composed` at call time — restriction by
@@ -116,6 +112,14 @@ _ROLE_DROPPED = {
     "launch_contact_research",
     "read_account_research_run",
     "read_contact_research_run",
+    # The versioned project root (2026-09-14): the three document tools. The trial used to
+    # withhold all three; `head-of-abm@v55` drops them from the ROLE, because the documents they
+    # wrote are written as files under the `project/` mount now, so there is nothing left to
+    # withhold. What the trial does NOT get from that is a write surface: `project/` is not on
+    # this deployment's workspace for a dev harness turn, and the file tools refuse it there.
+    "author_icp_document",
+    "request_persona_synthesis",
+    "write_project_document",
 }
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:
@@ -319,18 +323,28 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     tool, so no withholding can drop one, and the trial keeps the whole reference library while
     losing the procedure. The manual describes the UNNARROWED grant, so on this surface its tools
     chapter names tools the trial withholds; the trial's own refusals remain the truth there.
+
+    head-of-abm@v55 adds the three document skills on the same terms: none of them requires a
+    tool, so all three survive the narrowing too. They describe writing under `project/`, which
+    this surface's workspace does not mount — the same over-description the manual already has,
+    and the same answer: the refusal the file tool gives here is the truth.
     """
 
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
     trial_disclosures = [item.resource.address for item in trial.skill_disclosures()]
-    assert "skill:stage0-interview@v31" not in trial_disclosures
-    assert trial_disclosures == [f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS]
+    assert "skill:stage0-interview@v32" not in trial_disclosures
+    assert trial_disclosures == [
+        "skill:icp-authoring@v1",
+        "skill:persona-authoring@v1",
+        "skill:plan-authoring@v1",
+        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
+    ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v31" in base_disclosures
+    assert "skill:stage0-interview@v32" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -347,13 +361,9 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # ARV2 Track R, R4: the discovery launch is granted to the role and taught by
         # stage0-interview v22 §7b; the trial withholds it with its siblings.
         "launch_arv2_discovery",
-        # ARV2 context and authoring: the ICP-authoring pair is granted at `head-of-abm@v46` and
-        # taught by stage0-interview v23 §5b/§5c; the trial withholds both for the same sentence.
-        "author_icp_document",
-        "request_persona_synthesis",
-        # The project plan is granted at `head-of-abm@v47` and taught by stage0-interview v24
-        # §6b; the trial withholds it for the same sentence.
-        "write_project_document",
+        # The ICP-authoring pair and the plan write are gone from the skill's own required set at
+        # v32: `head-of-abm@v55` grants none of them, and §5b/§5c/§6b are pointers at the three
+        # document skills now, so there is nothing here for the trial to withhold.
         # The three reads are granted at `head-of-abm@v48` and taught by stage0-interview v25
         # §7b/§7c; the trial withholds them because it composes no read service, so installed they
         # could only refuse.
@@ -362,7 +372,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v31")
+    body = base.open_skill("skill:stage0-interview@v32")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

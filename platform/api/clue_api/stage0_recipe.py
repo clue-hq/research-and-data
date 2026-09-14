@@ -431,6 +431,10 @@ class Stage0StepPinProvider:
         # model-authored project, so the presenting turn is the coordinate the pin resolves from.
         # The project plan derives its project the same way and for the same reason: the tool
         # carries only the trusted `source_turn_ref` and never a model-authored project.
+        # `author_icp_document`, `request_persona_synthesis` and `write_project_document` are
+        # ungranted from `head-of-abm@v55` and out of the slot at recipe0-stage0@27, but they stay
+        # named here: an execution pinned to an earlier revision still plans them, and it still
+        # needs this pin resolved to replay.
         if step.tool_name in {
             "author_icp_document",
             "open_design_leg",

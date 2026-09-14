@@ -135,9 +135,14 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # real mounted path (`brand/index.json`, the tree root) — the skill body is in the
         # manifest, so the digest moves once more. v54 adds no address either: it discloses the
         # fifteen `manual-*@v1` chapters (each granting no tool), pins prompt v10 and skill v31,
-        # and every one of those bodies is in the manifest, so the digest moves again. Digest
-        # measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("a59adaa1bc23ea1ceb7d16aa0ef524c5db4a619a75c8da85143a7f8da9835ff3"),
+        # and every one of those bodies is in the manifest, so the digest moves again. v55 is the
+        # first version that SUBTRACTS: `author_icp_document@1`, `request_persona_synthesis@1` and
+        # `write_project_document@1` are ungranted, because `project/` is writable now and the
+        # three documents they wrote are written as files. It pins stage0-interview v32, the three
+        # document skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`, none of
+        # which grants a tool) and the re-minted `manual-*@v2` chapters, so the digest moves for
+        # both reasons at once. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("414e1e742a051554b47573ef9a357c19df9d5faa94bcde21182a2553f42418d9"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -414,8 +419,15 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `read_discovery_run@1`: the project's own rows, read. They spend nothing and start nothing,
     # so the skill can require them before the agent speaks about an account at all. Granted with
     # `head-of-abm@v48` and taught by stage0-interview v25 §7b/§7c.
+    #
+    # The versioned project root takes three away. `author_icp_document@1`,
+    # `request_persona_synthesis@1` and `write_project_document@1` are ungranted at
+    # `head-of-abm@v55`: `project/` is a writable prefix now, so the ICP, the personas and the plan
+    # are written with `write_file` and taught by `icp-authoring@v1`, `persona-authoring@v1` and
+    # `plan-authoring@v1`. They stay installed and disclosed as ROLE_UNAVAILABLE below, which is
+    # the whole point of disclosing a capability the role lacks: the model is not left to invent a
+    # workaround for a tool that vanished.
     assert available == {
-        "author_icp_document@1",
         "draft_account_research_directive@5",
         "get_research_view@1",
         "inspect_statement_history@1",
@@ -433,9 +445,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "read_discovery_run@1",
         "read_project_accounts@1",
         "record_interview_answer@1",
-        "request_persona_synthesis@1",
         "submit_ingestion@1",
-        "write_project_document@1",
     }
     # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
     # stops it inventing a workaround — and every one of them names WHY.
@@ -498,9 +508,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v54"
+    assert production.profile_ref.address == "profile:head-of-abm@v55"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v31"
+        "skill:stage0-interview@v32"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -544,7 +554,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v31")
+    body = production.open_skill("skill:stage0-interview@v32")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -604,8 +614,13 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v31",
-        *(f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS),
+        "skill:stage0-interview@v32",
+        # v55 adds the three document skills between the procedure and the reference shelf: each
+        # one is the whole procedure for one document written under `project/`, and grants no tool.
+        "skill:icp-authoring@v1",
+        "skill:persona-authoring@v1",
+        "skill:plan-authoring@v1",
+        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -687,13 +702,14 @@ def test_c67_account_deepagent_profile_is_historical_only(
         # reviewed profile's own scope, and re-gated. The two new situations the same version
         # creates get their own fixtures beside it.
         ("icp_revised", "draft the revised profile (section 5b) in the same scope"),
-        ("author_icp", "Call `author_icp_document` with `icp_key`, `document`, `scope`"),
-        ("personas_after_confirmation", "call `request_persona_synthesis` with the `icp_key`"),
-        # The project plan: the one situation v24 creates. The plan is written once the strategy
-        # is settled, and a stale write loses to the human's own edits rather than overwriting
-        # them — both are governed behaviours, not inferences.
-        ("write_plan", 'Call `write_project_document` with `document: "plan"`'),
-        ("plan_revision_conflict", "re-read the file, keep their edits, and write again"),
+        # The versioned project root moves three situations out of this skill and into their own.
+        # What v32 must still do is ROUTE them: each section names the skill that carries the
+        # procedure and the path to open it, so a model that reaches §5b, §5c or §6b is one read
+        # away from the whole rule rather than left with a sentence about a tool it no longer has.
+        ("author_icp", "open the `icp-authoring` skill"),
+        ("personas_after_confirmation", "open the `persona-authoring` skill"),
+        ("write_plan", "open the `plan-authoring` skill"),
+        ("document_skill_paths", "`.deepagent/skills/plan-authoring/v1/SKILL.md`"),
         # The ARV2 reads: the one situation v25 creates. Speaking about an account is gated on
         # reading it, and a read is never a launch — both are governed behaviours, not inferences.
         ("read_accounts_before_speaking", "Never state a fact about an account from memory"),
@@ -714,7 +730,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v31")
+    body = head.open_skill("skill:stage0-interview@v32")
 
     assert required_guidance in body
 
@@ -768,8 +784,15 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v31" not in remaining
-    assert remaining == [f"skill:manual-{name}@v1" for name in MANUAL_CHAPTERS]
+    assert "skill:stage0-interview@v32" not in remaining
+    # v55's three document skills survive with the manual chapters, and for the same reason: a
+    # skill that requires no tool cannot be made uncallable by withdrawing one.
+    assert remaining == [
+        "skill:icp-authoring@v1",
+        "skill:persona-authoring@v1",
+        "skill:plan-authoring@v1",
+        *(f"skill:manual-{name}@v2" for name in MANUAL_CHAPTERS),
+    ]
 
 
 def test_resolved_snapshot_materializes_through_c61_backend(

@@ -188,11 +188,11 @@ class _RecordingWorkspaces:
         self._inner = inner
         self.leases: list[Any] = []
         self.mounts: list[Any] = []
-        #: Add ``project`` to the resolved profile's writable prefixes at acquire time. The
-        #: promoted ``head-of-abm@v54`` reads the project mount but does not write it — granting
-        #: that is the *profile's* change, and it is the next task's, not this one's. A test that
-        #: must prove the versioned mount works end to end flips it here rather than minting a
-        #: profile version whose only purpose is to be a fixture.
+        #: Add ``project`` to the resolved profile's writable prefixes at acquire time. It is a
+        #: no-op since ``head-of-abm@v55``, which grants the prefix on the profile — the flip
+        #: stays so a test can still prove the mount works under a profile that does not, and so
+        #: the reason this fixture existed is legible. Duplicates are refused by the policy's own
+        #: uniqueness rule, so the grant is added only when it is missing.
         self.grant_project_writes = False
         #: Called with the turn's own lease while it is still open. The mounted libraries are
         #: only readable *during* the turn — a replay's pinned tree is removed when the turn
@@ -203,12 +203,13 @@ class _RecordingWorkspaces:
     def acquire(self, **kwargs: Any) -> Any:
         if self.grant_project_writes:
             policy = kwargs["policy"]
-            kwargs["policy"] = type(policy).model_validate(
-                {
-                    **policy.model_dump(),
-                    "writable_prefixes": (*policy.writable_prefixes, "project"),
-                }
-            )
+            if "project" not in policy.writable_prefixes:
+                kwargs["policy"] = type(policy).model_validate(
+                    {
+                        **policy.model_dump(),
+                        "writable_prefixes": (*policy.writable_prefixes, "project"),
+                    }
+                )
         lease = self._inner.acquire(**kwargs)
         self._last = dict(kwargs)
         self.leases.append(lease)
@@ -823,9 +824,15 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 # The manual is fifteen ordinary catalog skills, so the committed manifest names
                 # them alongside the interview skill. The chapter list is read from the builder
                 # rather than retyped, so adding a chapter does not make this assertion stale.
-                assert {item["name"] for item in manifest["skills"]} == {"stage0-interview"} | {
-                    f"manual-{chapter}" for chapter in MANUAL_CHAPTERS
-                }
+                # `head-of-abm@v55` adds the three document skills — the procedures for the ICP,
+                # the personas and the plan, each written as a file under `project/` — so the
+                # committed surface names those too.
+                assert {item["name"] for item in manifest["skills"]} == {
+                    "stage0-interview",
+                    "icp-authoring",
+                    "persona-authoring",
+                    "plan-authoring",
+                } | {f"manual-{chapter}" for chapter in MANUAL_CHAPTERS}
                 surface = {f"{pin['name']}@{pin['version']}" for pin in manifest["tools"]}
                 assert "launch_arv2_account_research@1" in surface
                 assert "launch_arv2_person_research@1" in surface

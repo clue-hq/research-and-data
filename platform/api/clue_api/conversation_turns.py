@@ -157,7 +157,14 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Nor does the operating manual (`head-of-abm@v54` / stage0-interview v31 / prompt head-of-abm
 # v10): it pins fifteen `manual-*@v1` chapters, each granting no tool, and edits prompt and skill
 # prose. No tool address is added, dropped or moved.
-CONVERSATION_RECIPE_VERSION = 26
+# Revision 27 (the versioned project root) is the first revision that REMOVES addresses:
+# ``author_icp_document@1``, ``request_persona_synthesis@1`` and ``write_project_document@1``
+# leave the interaction slot, because `head-of-abm@v55` no longer grants them — the three
+# documents they wrote are written as files under the versioned ``project/`` mount, taught by
+# `icp-authoring@v1`, `persona-authoring@v1` and `plan-authoring@v1` and pointed at from
+# stage0-interview v32 §5b/§5c/§6b. v26 stays the exact replay input for turns already pinned to
+# it, so a replayed turn still resolves all three.
+CONVERSATION_RECIPE_VERSION = 27
 
 #: What the human calls each project document the turn can write. The key is the object type the
 #: finalization carries, which ``PROJECT_DOCUMENT_OBJECT_TYPES`` derived from the document's kind,

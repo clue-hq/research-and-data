@@ -80,28 +80,52 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:audience-persona@v1",
         "skill:audience-persona@v2",
         "skill:content-exemplar@v1",
+        # The three document skills. Each one carries the whole procedure for one document
+        # the Head of ABM now writes as a file under `project/`, and grants no tool;
+        # stage0-interview v32 §5b, §5c and §6b are one-line pointers at them.
+        "skill:icp-authoring@v1",
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
         # The operating manual's chapters. Each is an ordinary skill so the profile pins it like
         # any other and the capability map discloses it with its path. Four of them (errors,
         # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
-        # is their only writer; the other eleven are hand written and founder reviewed.
+        # is their only writer; the other eleven are hand written and founder reviewed. Every
+        # chapter is here twice: `head-of-abm@v55` changed the grant the manual describes, and a
+        # catalog version is immutable, so the library re-minted at v2 while v54 keeps the v1 bytes
+        # it pins.
         "skill:manual-accounts-research@v1",
+        "skill:manual-accounts-research@v2",
         "skill:manual-claims@v1",
+        "skill:manual-claims@v2",
         "skill:manual-discovery@v1",
+        "skill:manual-discovery@v2",
         "skill:manual-documents-decisions@v1",
+        "skill:manual-documents-decisions@v2",
         "skill:manual-errors@v1",
+        "skill:manual-errors@v2",
         "skill:manual-fields@v1",
+        "skill:manual-fields@v2",
         "skill:manual-gates-authority@v1",
+        "skill:manual-gates-authority@v2",
         "skill:manual-glossary@v1",
+        "skill:manual-glossary@v2",
         "skill:manual-humans-screens@v1",
+        "skill:manual-humans-screens@v2",
         "skill:manual-index@v1",
+        "skill:manual-index@v2",
         "skill:manual-limits@v1",
+        "skill:manual-limits@v2",
         "skill:manual-siblings@v1",
+        "skill:manual-siblings@v2",
         "skill:manual-tools@v1",
+        "skill:manual-tools@v2",
         "skill:manual-turn@v1",
+        "skill:manual-turn@v2",
         "skill:manual-workspace@v1",
+        "skill:manual-workspace@v2",
+        "skill:persona-authoring@v1",
+        "skill:plan-authoring@v1",
         "skill:research-task@v1",
         "skill:research-task@v2",
         "skill:research-task@v3",
@@ -143,6 +167,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The operating manual: v30 with §1, §6, §7c and §10 naming the chapter that answers the
         # question the step raises, and §6 no longer claiming an unrouted finalization is refused.
         "skill:stage0-interview@v31",
+        # The versioned project root: v31 with §5b, §5c and §6b reduced to pointers at the
+        # three document skills, §10 saying the documents are written under `project/`, and
+        # the three retired tools gone from its front matter.
+        "skill:stage0-interview@v32",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -231,6 +259,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The operating manual: v53 plus the fifteen `manual-*@v1` chapter pins, with
         # stage0-interview v31 and prompt head-of-abm v10.
         "profile:head-of-abm@v54",
+        # The versioned project root: v54 with `project` writable, the three document tools
+        # ungranted, the three document skills pinned, stage0-interview v32 and the manual
+        # at `manual-*@v2`.
+        "profile:head-of-abm@v55",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

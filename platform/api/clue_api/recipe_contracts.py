@@ -80,18 +80,12 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # standing address.
     "launch_arv2_discovery@1",
     "read_arv2_account_research_run@1",
-    # ARV2 context and authoring (added in recipe0-stage0@24): the proposed ICP document the
-    # agent may write, and the persona synthesis it may request for a confirmed one. Both are
-    # granted at `head-of-abm@v46` and declare the same ``project`` pin as their siblings —
-    # the spine row the execution is bound to — which is what this audit requires of every
-    # standing address.
-    "author_icp_document@1",
-    "request_persona_synthesis@1",
-    # The project plan (added in recipe0-stage0@25): the one plan document the agent writes for
-    # a project, version-checked against the human's own edits. Granted at `head-of-abm@v47`
-    # and declaring the same ``project`` pin as its siblings — the spine row the execution is
-    # bound to — which is what this audit requires of every standing address.
-    "write_project_document@1",
+    # ``author_icp_document@1`` (added in @24), ``request_persona_synthesis@1`` (@24) and
+    # ``write_project_document@1`` (@25) were retired at recipe0-stage0@27: the documents they
+    # wrote are written as files under the versioned ``project/`` mount now, and `head-of-abm@v55`
+    # grants none of them. The addresses stay REGISTERED for replay of executions pinned to ≤v26,
+    # which read their own immutable revision — they are simply no longer standing, so this audit
+    # no longer requires them to keep declaring a ``project`` pin.
     # The ARV2 reads (added in recipe0-stage0@26): the project's accounts, one account's
     # research, and the discovery run — effect-free reads over rows that already exist.
     # Granted at `head-of-abm@v48` and declaring the same ``project`` pin as their siblings —

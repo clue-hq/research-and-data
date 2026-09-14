@@ -111,6 +111,14 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # v26 is v25 plus those three addresses and nothing else; v25 stays the exact replay input
     # for turns pinned to it.
     "recipe0-stage0-v26.json",
+    # The versioned project root: three addresses LEAVE the interaction slot —
+    # `author_icp_document@1`, `request_persona_synthesis@1` and `write_project_document@1` —
+    # because `head-of-abm@v55` no longer grants them and the documents they wrote are written as
+    # files under `project/` instead. The slot is a ceiling, so leaving them admitted would cost
+    # nothing at validation, but it would keep saying the conversation may still call them. v27 is
+    # v26 minus those three and nothing else; v26 stays the exact replay input for turns pinned
+    # to it, which is what keeps an already-pinned execution able to resolve them.
+    "recipe0-stage0-v27.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
