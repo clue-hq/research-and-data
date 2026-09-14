@@ -7,6 +7,7 @@ import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
 import {
   injectSkiaMeasurements,
   skiaLineMeasurements,
+  skiaRequestedMeasurements,
   skiaMeasurements,
 } from "../engine/scene/canvaskit/skiaMeasurements";
 import type { Diagnostic, PageId, Scene } from "../engine/scene/contracts";
@@ -111,6 +112,7 @@ export interface SceneDocumentState {
   /** Live renderer-only font failures. Scene/preflight diagnostics cannot
    * carry these because they arise while the browser loads/registers faces. */
   fontDiagnostics: Diagnostic[];
+  measurementIncomplete: boolean;
   /** Adopt the engine's current (relaid) scene as the rendered one. */
   refresh: () => void;
 }
@@ -175,6 +177,9 @@ export function useSceneDocument(
   reloadToken = 0,
 ): SceneDocumentState {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
+  const [measurementState, setMeasurementState] = useState<{
+    engine: WasmEngine; incomplete: boolean;
+  } | null>(null);
   const [engineStatus, setEngineStatus] =
     useState<SceneEngineStatus>(ENGINE_ACTIVE);
   const [kitFontDiagnosticState, setKitFontDiagnosticState] = useState<{
@@ -468,11 +473,13 @@ export function useSceneDocument(
       // stop changing (bounded; see `injectSkiaMeasurements`). The effect's
       // own signature includes those sizes, so its outer re-run then finds
       // nothing left to change.
-      injectSkiaMeasurements(engine, {
+      const measured = injectSkiaMeasurements(engine, {
         unconstrained: (scene) => skiaMeasurements(ck, fontProvider, scene),
         lines: (scene) => skiaLineMeasurements(ck, fontProvider, scene),
+        requests: (scene, requests) => skiaRequestedMeasurements(ck, fontProvider, scene, requests),
       });
       if (!cancelled) {
+        setMeasurementState({ engine, incomplete: !measured.converged });
         setLoad((current) =>
           current.kind === "ready" && current.engine === engine
             ? { ...current, scene: engine.scene }
@@ -504,6 +511,7 @@ export function useSceneDocument(
       undoDepth: history.undoDepth,
       tokenGeneration,
       fontDiagnostics,
+      measurementIncomplete: measurementState?.engine === engine && measurementState.incomplete,
       refresh: () => {
         setLoad((current) =>
           current.kind === "ready" && current.engine
@@ -512,5 +520,5 @@ export function useSceneDocument(
         );
       },
     };
-  }, [engine, engineStatus, fontDiagnostics, load, scene, tokenGeneration]);
+  }, [engine, engineStatus, fontDiagnostics, load, measurementState, scene, tokenGeneration]);
 }

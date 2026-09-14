@@ -855,3 +855,43 @@ skills =18families+12support (source_freeze legacycatalog28 is not this count).
 latency promotion; do not claim44%overallcompletion or measure quality by tests.
 Next bounded work: actualWASM/native renderer fixes + selectedresourceconsumption,
 thenall4controlbeforecoverageexpansion. Goalremainsactive;no push/PR/prodchange.
+
+Task23 renderer repair in progress (2026-09-14): preceding status-only goal turn
+classified no progress; resumed reproduced defects. Native SVG CSS fix delegated:
+class styles transiently inlined with simplecss/roxmltree/quick-xml, shared native
+render/thumbnail seam; source bytes preserved. Exact Oracle probe red10458/black0,
+41 targeted pixel/export cases pass. Root text regression first direct-column
+fixture passed (not valid RED); nested fill columns with token30/raw16 reproduce
+114px width vs236px shaped label. Added actual missing-input feedback from core
+ProvidedTextMeasurer through WASM ack to CanvasKit convergence, node-scoped keys,
+slot fixture/shrink-probe context, explicit cap failure banner. Independent review
+caught token-swap signature omission; node.id added with RED/GREEN58 adaptertests.
+Rust transport RED lacked missing ack; second RED exposed unscoped slot fixtures;
+shrink-probe RED40px instead16. Focused TS80pass after repairs (before final WASM
+vendor refresh). Full Rust1157pass/0fail. Release helper rebuilt. Final wasm/
+handshake then disposableDB runtime/API gates pending; no provider runs/restarts.
+
+Verification prep failures: first test edit used cwd-relative duplicate path,
+then missing setKitTokenMaps import; corrected before behavioral RED. tsx test
+name filter matched no real shim tests, so full file used. WASM build sandbox
+cache permission failed; authorized escalation succeeded. Initial Rust workspace
+Skia dependency DNS denied; escalation succeeded. First browser rerun loaded stale
+vendored WASM; copy-design-vendor refreshed and real regression passed. Full tsc
+has existing unrelated errors, none in changed paths; not a green full typecheck.
+Rustfmt noise in two Skia measure files removed, retaining only new input fields.
+All brand assets/scenes and external image experiment untouched; fullgoalactive.
+
+Task23 closing verification: status-only prior goal turn classified no progress;
+continuation completed native/browser evidence and full queued API gate. Rust1157
+pass; helper+WASM3e9f42eae167 handshakeOK; disposableDB runtime2320pass1skip,
+API2334pass6skip; frontend83focusedpass, productionNextbuild0 in temporary copy,
+designsystem/lint0. Fulltsc baselineerrors remain outsidechangedpaths. Exact saved
+Conduit nativeexport region13214black→13214source-red; sourceSVGbytesunchanged,
+other3PNGhashesidentical, all4exportversionsunchanged. Clue HUMAN REVIEW visibly
+complete; AWS mounts withexistingArialwarning; Conduit mountsred. Google3023 now
+signinexpired, normalemailflowopen and prioruserquestionpending; noauthbypass.
+No new generation; no new family/quality/latency claims. Scoped stack72508 remains
+running; fourbrowser17–20 retained. Evidence renderer-parity-20260914/assessment.
+Next selectedresourceconsumption audit delegated read-only while closingrenderer.
+One guessed substrate_fs_backend.py path absent; actual class location toinspect.
+Pillow getdata deprecation during pixel count harmless. No production/push.

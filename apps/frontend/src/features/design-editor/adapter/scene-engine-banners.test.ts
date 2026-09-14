@@ -198,3 +198,9 @@ it("names a command that exists in THIS repo (the one deviation, disclosed)", ()
   // And neither may be the upstream command, which does not exist here.
   assert.notEqual(engine.command, "npm run build:wasm");
 });
+
+it("names unresolved layout even when the font shaper is available", () => {
+  const [banner] = sceneEngineBanners(ACTIVE, "unsettled");
+  assert.equal(banner.title, "Text layout needs verification");
+  assert.match(banner.body, /could not confirm every text measurement/);
+});

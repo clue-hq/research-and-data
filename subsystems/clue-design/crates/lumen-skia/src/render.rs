@@ -32,7 +32,7 @@ use lumen_export::{
 use skia_safe::canvas::SaveLayerRec;
 use skia_safe::textlayout::TextAlign as SkTextAlign;
 use skia_safe::{
-    gradient, image_filters, surfaces, Canvas, Color4f, Data, EncodedImageFormat, FontMgr, Image,
+    gradient, image_filters, surfaces, Canvas, Color4f, Data, EncodedImageFormat, Image,
     ImageFilter, Matrix, Paint as SkPaint, PaintCap, PaintJoin, PaintStyle, PathEffect, Point,
     RRect, Rect as SkRect, SamplingOptions, Shader, TileMode,
 };
@@ -1321,8 +1321,7 @@ impl<'a> PagePainter<'a> {
         dest: SkRect,
     ) {
         if resolved.mime_type == "image/svg+xml" {
-            let font_mgr: FontMgr = FontMgr::new();
-            match skia_safe::svg::Dom::from_bytes(&resolved.bytes, font_mgr) {
+            match crate::svg_dom::parse(&resolved.bytes) {
                 Ok(mut dom) => {
                     canvas.save();
                     canvas.translate((dest.left, dest.top));

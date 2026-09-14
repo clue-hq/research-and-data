@@ -1814,3 +1814,43 @@ Ten families still need live coverage; adding more families does not resolve the
 known defects. Evidence is preserved in the ignored evaluation folder
 `review-feedback-four-brands-20260914/assessment.json` and its frozen source,
 registry, first-terminal, browser-edit and export receipts.
+
+### Task 23: Repair the measured browser/native rendering defects
+
+Native SVG parsing now resolves embedded static CSS through one shared transient
+preparation path for scene rendering and thumbnails. It preserves stored SVG
+bytes and vector export data. The exact Oracle image in the saved Conduit ad now
+exports red: the inspected logo region changed from13,214 black/0 source-red
+pixels to0 black/13,214 source-red pixels. Fresh PNGs for Clue, AWS and Google
+remain byte-identical to the preceding exports. All four document versions were
+unchanged by the nonpersisting export checks. Static CSS2.1 selectors/cascade are
+supported; external stylesheets, at-rules and full browser CSS parity are not.
+Previously stored preview images have not been rewritten.
+
+For text, the core reports missing measurement inputs to the browser, including
+source-node identity, exact available width and explicit shrink-probe size.
+CanvasKit measures those actual requests and returns them through the existing
+bounded convergence loop. Token identities now participate in invalidation.
+Unresolved convergence is visible in an editor warning, not silently successful.
+The real nested-fill WASM/CanvasKit regression changed from114px heuristic width
+to the required236px shaped width. The saved Clue ad visibly shows the complete
+HUMAN REVIEW label after reload. No authored scene/asset changes were required.
+
+Verification completed in engine-gate order:1,157 Rust workspace tests, release
+helper build, WASM rebuild with HANDSHAKE OK (`3e9f42eae167`), then disposable-DB
+runtime2,320 passed/1 skipped and API2,334 passed/6 skipped. The four focused
+frontend files pass83 tests; design-system build and full lint complete; the
+production Next build passes in a temporary isolated copy. Full standalone tsc
+still reports pre-existing errors outside the changed paths and is not a green
+gate. Independent review found no new blocking defect. Browser Clue/AWS/Conduit
+mount after the matching-build restart; AWS's existing missing-Arial kit warning
+remains. Google3023 requires normal reauthentication, so its current-build
+browser check is pending despite successful backend exports.
+
+This checkpoint repairs rendering mechanics; it does not establish improved
+creative quality, speed, new family coverage or production readiness. Native
+heuristic overflow/max-lines diagnostics and browser font retry remain separate
+limitations. Next, repair selected-resource pagination visibility, then compare
+the same four ordinary requests after all four browser sessions are usable.
+Evidence: ignored `renderer-parity-20260914/assessment.json`, JUnit outputs,
+export receipts, preserved logs and inline browser observations.

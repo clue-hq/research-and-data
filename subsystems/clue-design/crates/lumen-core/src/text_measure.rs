@@ -1,7 +1,7 @@
 use crate::scene::{normalize_content_mapped, transform_segments};
 use crate::{Diagnostic, Phase, Rect, TextDirection, TextNode, TextSpan, TextTransform, TextWrap};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// The LUMS0102 warning: text was measured with a non-shaping (heuristic)
 /// measurer, so glyph geometry — box sizes, wrap points, overflow verdicts — is
@@ -22,8 +22,15 @@ pub fn heuristic_measurement_diagnostic() -> Diagnostic {
     )
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct TextMeasureInput {
+    /// Browser measurement scope, so equal literals with different kit tokens do
+    /// not share overrides. Native shapers do not use this to select typography.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<String>,
+    /// Slot shrink probe size takes precedence over the browser's kit size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_size_override: Option<f64>,
     pub content: String,
     /// Requested font family. The heuristic measurer ignores it; shaping
     /// measurers resolve it against their loaded font set (missing families
@@ -158,7 +165,7 @@ pub fn measure_key(input: &TextMeasureInput) -> String {
             .unwrap_or_else(|| "_".to_owned())
     }
     // Unit-separator delimited; covers every field that affects measurement.
-    [
+    let key = [
         input.content.clone(),
         input.font_family.clone(),
         format!("{:.3}", input.font_size),
@@ -176,7 +183,15 @@ pub fn measure_key(input: &TextMeasureInput) -> String {
         format!("{:.3}", input.paragraph_spacing),
         spans_digest(&input.spans),
     ]
-    .join("\u{1f}")
+    .join("\u{1f}");
+    let key = input
+        .font_size_override
+        .map(|size| format!("shrink:{size:.3}:{key}"))
+        .unwrap_or(key);
+    match &input.node_id {
+        Some(node_id) => format!("{}:{}{}", node_id.len(), node_id, key),
+        None => key,
+    }
 }
 
 /// A stable digest of the spans (A6b D6) for `measure_key`: identical spans
@@ -237,6 +252,7 @@ pub struct ProvidedMetrics {
 pub struct ProvidedTextMeasurer {
     overrides: std::collections::HashMap<String, ProvidedMetrics>,
     fallback: HeuristicTextMeasurer,
+    missing: Mutex<std::collections::BTreeMap<String, TextMeasureInput>>,
 }
 
 impl ProvidedTextMeasurer {
@@ -244,18 +260,37 @@ impl ProvidedTextMeasurer {
         Self {
             overrides,
             fallback: HeuristicTextMeasurer,
+            missing: Mutex::default(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.overrides.is_empty()
     }
+
+    /// Exact requests made during this layout which still used the heuristic.
+    pub fn missing_inputs(&self) -> Vec<TextMeasureInput> {
+        self.missing
+            .lock()
+            .expect("measurement requests lock")
+            .values()
+            .cloned()
+            .collect()
+    }
 }
 
 impl TextMeasurer for ProvidedTextMeasurer {
     fn measure(&self, input: &TextMeasureInput) -> TextMeasureOutput {
         let mut output = self.fallback.measure(input);
-        if let Some(metrics) = self.overrides.get(&measure_key(input)) {
+        let key = measure_key(input);
+        // Older editor callers supplied unscoped metrics. Prefer the scoped
+        // record; retain their fallback without conflating new scoped nodes.
+        let metrics = self.overrides.get(&key).or_else(|| {
+            let mut unscoped = input.clone();
+            unscoped.node_id = None;
+            self.overrides.get(&measure_key(&unscoped))
+        });
+        if let Some(metrics) = metrics {
             output.width = metrics.width;
             output.height = metrics.height;
             // Plan 4 item F: a record that carries the editor's line boxes
@@ -278,6 +313,12 @@ impl TextMeasurer for ProvidedTextMeasurer {
                     .collect();
                 output.line_count = output.lines.len() as u16;
             }
+        } else {
+            self.missing
+                .lock()
+                .expect("measurement requests lock")
+                .entry(key)
+                .or_insert_with(|| input.clone());
         }
         output
     }
@@ -298,6 +339,8 @@ impl TextMeasurer for ProvidedTextMeasurer {
 impl TextMeasureInput {
     pub fn from_text_node(text: &TextNode) -> Self {
         Self {
+            node_id: None,
+            font_size_override: None,
             content: text.content.clone(),
             font_family: text.font_family.clone(),
             font_size: text.font_size,
@@ -315,6 +358,11 @@ impl TextMeasureInput {
             paragraph_spacing: text.paragraph_spacing,
             spans: text.spans.clone(),
         }
+    }
+
+    pub fn for_node(mut self, node_id: &crate::NodeId) -> Self {
+        self.node_id = Some(node_id.to_string());
+        self
     }
 
     pub fn with_bounds(mut self, bounds: &Rect) -> Self {
@@ -707,6 +755,8 @@ mod provided_measurer_tests {
 
     fn input(content: &str) -> TextMeasureInput {
         TextMeasureInput {
+            node_id: None,
+            font_size_override: None,
             content: content.to_owned(),
             font_family: "Inter".to_owned(),
             font_size: 18.0,
@@ -830,11 +880,15 @@ mod a6_heuristic_tests {
             text_transform: TextTransform::Uppercase,
             ..node("data")
         };
-        let upper =
-            HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&upper_node));
+        let upper = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&upper_node));
         assert_eq!(upper.lines[0].text, "DATA");
         // Uppercase glyphs weigh more in the heuristic → strictly wider.
-        assert!(upper.width > plain.width, "{} !> {}", upper.width, plain.width);
+        assert!(
+            upper.width > plain.width,
+            "{} !> {}",
+            upper.width,
+            plain.width
+        );
     }
 
     #[test]
@@ -850,15 +904,13 @@ mod a6_heuristic_tests {
 
     #[test]
     fn paragraph_spacing_adds_gap_between_paragraphs_only() {
-        let base = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node(
-            "alpha\\nbeta",
-        )));
+        let base =
+            HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&node("alpha\\nbeta")));
         let spaced_node = TextNode {
             paragraph_spacing: 10.0,
             ..node("alpha\\nbeta")
         };
-        let spaced =
-            HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&spaced_node));
+        let spaced = HeuristicTextMeasurer.measure(&TextMeasureInput::from_text_node(&spaced_node));
         // First line unchanged; the second paragraph shifts down by the gap.
         assert_eq!(spaced.lines[0].y, base.lines[0].y);
         assert!((spaced.lines[1].y - base.lines[1].y - 10.0).abs() < 1e-9);

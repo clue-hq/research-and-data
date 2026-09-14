@@ -14,7 +14,7 @@ import {
   normalizeContentMapped,
   transformSegments
 } from "../textTransform";
-import type { TextMeasurement, TextMeasurementLine } from "../wasmEngine";
+import type { TextMeasurement, TextMeasurementInput, TextMeasurementLine } from "../wasmEngine";
 
 /** The text arm of the node-kind union — the only shape these passes measure. */
 type TextNodeKind = Extract<Node["kind"], { kind: "text" }>;
@@ -50,7 +50,7 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
     const paragraphSpacing = t.paragraph_spacing ?? 0;
     const italic = t.italic ?? false;
     const spans = t.spans ?? [];
-    const record = measurementRecord(t);
+    const record = measurementRecord(t, node.id);
     if (spans.length > 0) {
       // A6b: spanned nodes measure ONE segmented paragraph — weight-span
       // overrides change shaping widths, so the styles must be in the measured
@@ -93,9 +93,10 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
  * a record whose key fields drift from the node is a lookup MISS, and the
  * engine silently falls back to the heuristic.
  */
-function measurementRecord(t: TextNodeKind): TextMeasurement {
+function measurementRecord(t: TextNodeKind, nodeId: string): TextMeasurement {
   const spans = t.spans ?? [];
   const record: TextMeasurement = {
+    node_id: nodeId,
     content: t.content,
     font_family: t.font_family,
     font_size: t.font_size,
@@ -159,7 +160,7 @@ export function skiaLineMeasurements(
       continue;
     }
     const measured = measureLinesAtWidth(ck, fontProvider, node.kind, bounds.width);
-    const base = measurementRecord(node.kind);
+    const base = measurementRecord(node.kind, node.id);
     out.push({
       ...base,
       max_width: bounds.width,
@@ -179,11 +180,30 @@ export function skiaLineMeasurements(
   return out;
 }
 
+/** Shape the constraints actually requested by Rust, retaining the node's kit
+ * tokens even for slot fixtures whose content differs from the saved text. */
+export function skiaRequestedMeasurements(
+  ck: CanvasKit,
+  fontProvider: TypefaceFontProvider,
+  scene: Scene,
+  requests: TextMeasurementInput[]
+): TextMeasurement[] {
+  return requests.map((input) => {
+    const source = input.node_id ? scene.nodes[input.node_id]?.kind : undefined;
+    if (input.node_id && source?.kind !== "text") {
+      throw new Error(`Text measurement references missing node ${input.node_id}`);
+    }
+    const text = { ...(source ?? {}), ...input, kind: "text" } as TextNodeKind;
+    const measured = measureLinesAtWidth(ck, fontProvider, text, input.max_width ?? Number.MAX_SAFE_INTEGER, input.font_size_override);
+    return { ...input, ...measured };
+  });
+}
+
 /** The slice of `WasmEngine` the injection loop drives: read the solved scene,
  * install a measurement set (which relayouts and replaces the snapshot). */
 export interface MeasurementEngine {
   readonly scene: Scene;
-  setMeasurements(measurements: TextMeasurement[]): void;
+  setMeasurements(measurements: TextMeasurement[]): TextMeasurementInput[] | void;
 }
 
 /** Hard cap on line-pass rounds. The loop is monotone over deterministic
@@ -207,33 +227,46 @@ export const MEASUREMENT_ROUNDS_MAX = 4;
  * same state. Deterministic input → the loop is monotone and stops;
  * `MEASUREMENT_ROUNDS_MAX` caps it regardless.
  *
- * Returns the number of `setMeasurements` calls made (the tests' handle on
- * convergence; nothing in the editor reads it).
+ * Returns convergence and any unresolved requests so the editor can warn when
+ * its bounded shaping loop cannot establish faithful text geometry.
  */
 export function injectSkiaMeasurements(
   engine: MeasurementEngine,
   passes: {
     unconstrained: (scene: Scene) => TextMeasurement[];
     lines: (scene: Scene) => TextMeasurement[];
+    requests?: (scene: Scene, requests: TextMeasurementInput[]) => TextMeasurement[];
   }
-): number {
+): { calls: number; converged: boolean; missing: TextMeasurementInput[] } {
   // Both sets ride every line call — `setMeasurements` REPLACES the override
   // set, so dropping the unconstrained records would take hug boxes back to
   // the heuristic.
   const unconstrained = passes.unconstrained(engine.scene);
-  engine.setMeasurements(unconstrained);
+  let missing = engine.setMeasurements(unconstrained) ?? [];
+  const requested = new Map<string, TextMeasurement>();
   let calls = 1;
   let previous = textSizeSignature(engine.scene);
   for (let round = 0; round < MEASUREMENT_ROUNDS_MAX; round += 1) {
-    engine.setMeasurements([...unconstrained, ...passes.lines(engine.scene)]);
+    for (const measurement of passes.requests?.(engine.scene, missing) ?? []) {
+      // Rust owns the authoritative lookup key. This local map only bounds
+      // repeated records; retain every requested constraint during convergence.
+      const input: Partial<TextMeasurement> = { ...measurement };
+      delete input.width;
+      delete input.height;
+      delete input.lines;
+      requested.set(JSON.stringify(input), measurement);
+    }
+    missing = engine.setMeasurements([
+      ...unconstrained, ...passes.lines(engine.scene), ...requested.values()
+    ]) ?? [];
     calls += 1;
     const next = textSizeSignature(engine.scene);
-    if (next === previous) {
-      break;
+    if (next === previous && (!passes.requests || missing.length === 0)) {
+      return { calls, converged: true, missing };
     }
     previous = next;
   }
-  return calls;
+  return { calls, converged: false, missing };
 }
 
 /**
@@ -278,9 +311,11 @@ function measureLinesAtWidth(
   ck: CanvasKit,
   fontProvider: TypefaceFontProvider,
   t: TextNodeKind,
-  boxWidth: number
+  boxWidth: number,
+  fontSizeOverride?: number | null
 ): MeasuredLines {
   const styled = resolvedTextFields(t);
+  if (fontSizeOverride != null) styled.fontSize = fontSizeOverride;
   const textTransform = t.text_transform ?? "none";
   const truncate = t.truncate ?? false;
   const wrap = t.wrap ?? "no_wrap";

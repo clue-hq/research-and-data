@@ -363,6 +363,44 @@ fn set_measurements_makes_hug_text_geometry_skia_faithful() {
 }
 
 #[test]
+fn measurement_ack_returns_unmet_layout_inputs_and_clears_them_after_shaping() {
+    let mut engine = Engine::from_scene_json(MINIMAL_SCENE).expect("scene loads");
+    let unconstrained = json!({
+        "content": "Dr. Priya Sharma", "font_family": "Inter",
+        "font_size": 18.0, "font_weight": 600, "line_height": 1.2,
+        "letter_spacing": 0.0, "wrap": "wrap", "max_lines": null,
+        "direction": "ltr", "width": 150.0, "height": 21.6
+    });
+    let ack = parse(engine.set_measurements(&json!([unconstrained]).to_string()));
+    let missing = ack["missing"]
+        .as_array()
+        .expect("report unmet shaping requests");
+    assert!(
+        missing
+            .iter()
+            .all(|input| input["node_id"] == "node_contact_name"),
+        "slot fixtures must retain their source node styling: {ack}"
+    );
+    assert!(
+        missing.iter().any(|input| {
+            input["content"] == "Dr. Priya Sharma"
+                && input["max_width"] == 160.0
+                && input["max_height"] == 28.0
+        }),
+        "the request is the engine's actual constraint, not an inferred container width: {ack}"
+    );
+    let mut filled = vec![unconstrained];
+    for input in missing {
+        let mut measured = input.clone();
+        measured["width"] = json!(150.0);
+        measured["height"] = json!(21.6);
+        filled.push(measured);
+    }
+    let shaped = parse(engine.set_measurements(&json!(filled).to_string()));
+    assert_eq!(shaped["missing"], json!([]));
+}
+
+#[test]
 fn provided_lines_place_text_lines_and_narrow_the_hit_target() {
     // Plan 4 item F: `node_contact_name` is a fixed 160×28 box at (24,40) on
     // the minimal scene. A record keyed on that box (the key

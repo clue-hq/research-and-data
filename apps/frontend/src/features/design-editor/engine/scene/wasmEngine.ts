@@ -65,6 +65,8 @@ export interface TextMeasurementLine {
  * each by the measurement input it lays out with, so providing these makes
  * text `computed` Skia-faithful (measure-then-inject). */
 export interface TextMeasurement {
+  node_id?: string;
+  font_size_override?: number | null;
   content: string;
   font_family: string;
   font_size: number;
@@ -74,8 +76,8 @@ export interface TextMeasurement {
   wrap: "no_wrap" | "wrap";
   max_lines: number | null;
   direction: "ltr" | "rtl" | "auto";
-  max_width?: number;
-  max_height?: number;
+  max_width?: number | null;
+  max_height?: number | null;
   /** A6a: geometry-affecting typography fields. They enter the engine's
    * `measure_key`, so an override for a node using them must carry them or the
    * layout lookup misses. Optional so pre-A6a payloads deserialize unchanged. */
@@ -102,6 +104,8 @@ export interface TextMeasurement {
   width: number;
   height: number;
 }
+
+export type TextMeasurementInput = Omit<TextMeasurement, "width" | "height" | "lines">;
 
 /** Wave 3 C3a: point→node hit result in absolute page space (scene units).
  * `hit` is the topmost node (single-click target); `stack` is bottom-to-top
@@ -268,9 +272,15 @@ export class WasmEngine implements OptimisticEnginePort {
    * override (back to the heuristic). The relaid scene is adopted as the
    * render snapshot.
    */
-  setMeasurements(measurements: TextMeasurement[]): void {
-    this.instance.setMeasurements(JSON.stringify(measurements));
+  setMeasurements(measurements: TextMeasurement[]): TextMeasurementInput[] {
+    const ack = JSON.parse(this.instance.setMeasurements(JSON.stringify(measurements))) as {
+      ok: boolean;
+      missing?: TextMeasurementInput[];
+      error?: { message: string };
+    };
+    if (!ack.ok) throw new Error(ack.error?.message ?? "Text measurements were rejected");
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    return ack.missing ?? [];
   }
 
   /**

@@ -624,6 +624,7 @@ function SceneDocumentCanvas({
     engine,
     engineStatus,
     fontDiagnostics,
+    measurementIncomplete,
     loadGeneration,
     pageId: loadedPageId,
     redoDepth,
@@ -636,11 +637,12 @@ function SceneDocumentCanvas({
   // The engine's own text-measurement status store — `heuristic` means the
   // Skia pass never ran, which is a real rendering difference the G-D banner
   // names (it was silent until then: the ad renders either way).
-  const measurementStatus = useSyncExternalStore(
+  const shapingStatus = useSyncExternalStore(
     subscribeTextMeasurementStatus,
     textMeasurementStatusSnapshot,
     textMeasurementStatusSnapshot,
   );
+  const measurementStatus = measurementIncomplete ? "unsettled" : shapingStatus;
 
   /* ---------------------------------------------------------------------
    * AD4.C — direct manipulation (drag-move + corner-resize).

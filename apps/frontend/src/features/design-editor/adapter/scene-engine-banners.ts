@@ -117,6 +117,16 @@ export function sceneEngineBanners(
     });
   }
 
+  if (measurementStatus === "unsettled") {
+    banners.push({
+      kind: "heuristic-measurement",
+      title: "Text layout needs verification",
+      body: "The editor could not confirm every text measurement. Some text may clip or differ from the export. Reload the editor and check the affected text before exporting.",
+      command: "Reload editor",
+      detail: null,
+    });
+  }
+
   if (fontDiagnostics.length > 0) {
     // One banner, led by the worst diagnostic: the array concatenates kit
     // before library, so without the severity sort an error-severity library

@@ -477,6 +477,7 @@ export function textMeasurementSignature(
     const t = node.kind;
     parts.push(
       [
+        node.id,
         t.content,
         t.font_family,
         t.font_size,

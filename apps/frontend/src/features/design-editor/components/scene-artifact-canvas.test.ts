@@ -25,7 +25,7 @@ vi.mock(require.resolve("../hooks/use-scene-document"), () => ({
     pageId: Object.keys(loadedScene.pages)[0], title: "Ad", error: null,
     engineStatus: { engineDisabled: false, reason: null, detail: null },
     currentVersion: 1, undoDepth: 0, redoDepth: 0, loadGeneration,
-    tokenGeneration: 0, fontDiagnostics: [], refresh() {},
+    tokenGeneration: 0, fontDiagnostics: [], measurementIncomplete: false, refresh() {},
   }),
 }));
 vi.mock(require.resolve("../engine/scene/canvaskit/loadCanvasKit"), (original) => ({

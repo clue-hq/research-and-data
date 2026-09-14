@@ -707,7 +707,7 @@ impl<'a> LayoutEngine<'a> {
             NodeKind::Text(text)
                 if !matches!(node.size.width, Dimension::Hug | Dimension::Token { .. }) =>
             {
-                let mut input = TextMeasureInput::from_text_node(text);
+                let mut input = TextMeasureInput::from_text_node(text).for_node(&node.id);
                 input.max_width = Some(width.max(0.0));
                 self.measurer.measure(&input).height
             }
@@ -720,7 +720,7 @@ impl<'a> LayoutEngine<'a> {
             NodeKind::Text(text) => {
                 let measured = self
                     .measurer
-                    .measure(&TextMeasureInput::from_text_node(text));
+                    .measure(&TextMeasureInput::from_text_node(text).for_node(&node.id));
                 Size2 {
                     width: measured.width,
                     height: measured.height,
@@ -761,7 +761,7 @@ impl<'a> LayoutEngine<'a> {
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
             NodeKind::Text(text) => {
-                let mut input = TextMeasureInput::from_text_node(text);
+                let mut input = TextMeasureInput::from_text_node(text).for_node(&node.id);
                 // A slot-bound text node must hug to the WORST-CASE fixture (the
                 // largest data it will ever hold), not just its placeholder/sample.
                 // Otherwise a hug height sized to the sample under-reserves and the
@@ -1011,10 +1011,7 @@ impl<'a> LayoutEngine<'a> {
     /// A node whose author declared `bleed(true)` — deliberate off-canvas
     /// intent (A4). Per-node, never inherited.
     fn is_declared_bleed(&self, node_id: &NodeId) -> bool {
-        self.scene
-            .nodes
-            .get(node_id)
-            .is_some_and(|node| node.bleed)
+        self.scene.nodes.get(node_id).is_some_and(|node| node.bleed)
     }
 
     /// A node a human freehands directly: pinned Absolute, or a child of a
@@ -1098,10 +1095,7 @@ impl<'a> LayoutEngine<'a> {
             // A6a D3: `truncate(true)` on freely-wrapping text with no
             // max_lines can never fire — nothing ever cuts the copy. Teach,
             // don't block (advisory), so the author knows the flag is inert.
-            if text.truncate
-                && text.max_lines.is_none()
-                && matches!(text.wrap, TextWrap::Wrap)
-            {
+            if text.truncate && text.max_lines.is_none() && matches!(text.wrap, TextWrap::Wrap) {
                 self.diagnostics.push(
                     Diagnostic::warning(
                         Phase::Layout,
@@ -1178,7 +1172,9 @@ impl<'a> LayoutEngine<'a> {
             }
 
             let measured = self.measurer.measure(
-                &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
+                &TextMeasureInput::from_text_node(text)
+                    .for_node(&node.id)
+                    .with_bounds(&geometry.layout_bounds),
             );
             // Plan 4 item F: keep what this measurement already knows — the
             // line boxes — instead of discarding them after the overflow
@@ -1331,9 +1327,10 @@ impl<'a> LayoutEngine<'a> {
         for fixture in fixtures {
             let fit = text_fit(
                 self.measurer,
+                node_id,
                 fixture,
                 text,
-                text.font_size,
+                None,
                 &geometry.layout_bounds,
                 &slot.overflow,
             );
@@ -1368,9 +1365,10 @@ impl<'a> LayoutEngine<'a> {
                 OverflowPolicy::ShrinkFont { min_font_size, .. } => {
                     let shrink_fit = text_fit(
                         self.measurer,
+                        node_id,
                         fixture,
                         text,
-                        *min_font_size,
+                        Some(*min_font_size),
                         &geometry.layout_bounds,
                         &OverflowPolicy::Error,
                     );
@@ -1973,9 +1971,10 @@ struct TextFit {
 
 fn text_fit(
     measurer: &dyn TextMeasurer,
+    node_id: &NodeId,
     content: &str,
     text: &crate::scene::TextNode,
-    font_size: f64,
+    font_size_override: Option<f64>,
     bounds: &Rect,
     policy: &OverflowPolicy,
 ) -> TextFit {
@@ -1993,9 +1992,11 @@ fn text_fit(
         _ => (text.wrap.clone(), text.max_lines),
     };
     let measured = measurer.measure(&TextMeasureInput {
+        node_id: Some(node_id.to_string()),
+        font_size_override,
         content: content.to_owned(),
         font_family: text.font_family.clone(),
-        font_size,
+        font_size: font_size_override.unwrap_or(text.font_size),
         font_weight: text.font_weight,
         // Italic selects a different face, changing advances → a fit input.
         italic: text.italic,

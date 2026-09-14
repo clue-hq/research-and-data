@@ -10,10 +10,14 @@ import {
   MEASUREMENT_ROUNDS_MAX,
   measureParagraph,
   skiaLineMeasurements,
+  skiaRequestedMeasurements,
   skiaMeasurements
 } from "../canvaskit/skiaMeasurements";
 import type { MeasurementEngine } from "../canvaskit/skiaMeasurements";
 import type { TextMeasurement } from "../wasmEngine";
+import { setKitTokenMaps } from "../renderAdapter";
+import { WasmEngine } from "../wasmEngine";
+import { loadWasmModuleFromDisk } from "./wasm-module-loader";
 
 /**
  * Wave 3 C4: the SkParagraph measurement provider. Verified with a system
@@ -69,6 +73,84 @@ describe.skipIf(!present)("SkParagraph measurement provider (Wave 3 C4)", () => 
     expect(base.width).toBeGreaterThan(0);
     expect(longer.width).toBeGreaterThan(base.width);
     expect(bigger.height).toBeGreaterThan(base.height);
+  });
+
+  it("fits a token-styled label inside nested fill columns with the real WASM layout", async () => {
+    setKitTokenMaps({ colors: {}, numbers: { "type.test": 30 }, typography: {} });
+    const scene = structuredClone(minimalScene);
+    scene.slots = {};
+    const child = scene.nodes.node_contact_name;
+    if (child.kind.kind !== "text") throw new Error("fixture");
+    child.kind = { ...child.kind, content: "Human review", font_family: family,
+      font_size: 16, font_weight: 400, line_height: 1, font_size_token: "type.test",
+      text_transform: "uppercase", wrap: "wrap", max_lines: 1 };
+    child.size = { width: { kind: "fill", value: { weight: 1 } }, height: { kind: "hug" } };
+    child.transform = { ...child.transform, x: 0, y: 0 };
+    scene.nodes.outer = { ...structuredClone(child), id: "outer",
+      kind: { kind: "auto_layout", direction: "column", wrap: false },
+      size: { width: { kind: "fixed", value: 600 }, height: { kind: "hug" } },
+      layout: { gap: 0, grow: 0, align_x: "start", align_y: "start", padding: [24, 32, 24, 32] },
+      children: ["inner"] };
+    scene.nodes.inner = { ...structuredClone(scene.nodes.outer), id: "inner",
+      size: { width: { kind: "fill", value: { weight: 1 } }, height: { kind: "hug" } },
+      layout: { gap: 0, grow: 0, align_x: "start", align_y: "start", padding: [0, 0, 0, 0] },
+      children: [child.id] };
+    scene.pages.page_a4.children = ["outer"];
+    const engine = new WasmEngine(await loadWasmModuleFromDisk(), scene);
+    injectSkiaMeasurements(engine, {
+      unconstrained: (snapshot) => skiaMeasurements(ck, fontMgr, snapshot),
+      lines: (snapshot) => skiaLineMeasurements(ck, fontMgr, snapshot),
+      requests: (snapshot, requests) => skiaRequestedMeasurements(ck, fontMgr, snapshot, requests)
+    });
+    const builder = ck.ParagraphBuilder.MakeFromFontProvider(new ck.ParagraphStyle({
+      textStyle: { fontFamilies: [family], fontSize: 30 }
+    }), fontMgr);
+    builder.addText("HUMAN REVIEW");
+    const paragraph = builder.build();
+    try {
+      paragraph.layout(536);
+      const intrinsic = paragraph.getMaxIntrinsicWidth();
+      const computed = engine.scene.nodes[child.id].computed!;
+      expect(computed.layout_bounds.width).toBeGreaterThanOrEqual(Math.floor(intrinsic));
+      expect(computed.text_lines![0].width).toBeGreaterThanOrEqual(Math.floor(intrinsic));
+      paragraph.layout(computed.layout_bounds.width + 0.5);
+      expect(paragraph.getLineMetrics()).toHaveLength(1);
+    } finally {
+      paragraph.delete();
+      builder.delete();
+      setKitTokenMaps({ colors: {}, numbers: {}, typography: {} });
+    }
+  });
+
+  it("reports unresolved requests when a shaping pass cannot supply them", async () => {
+    const engine = new WasmEngine(await loadWasmModuleFromDisk(), structuredClone(minimalScene));
+    const result = injectSkiaMeasurements(engine, {
+      unconstrained: (scene) => skiaMeasurements(ck, fontMgr, scene),
+      lines: () => [],
+      requests: () => []
+    });
+    expect(result.converged).toBe(false);
+    expect(result.missing.length).toBeGreaterThan(0);
+    expect(result.calls).toBe(1 + MEASUREMENT_ROUNDS_MAX);
+  });
+
+  it("honors a slot shrink probe without losing the source node's font styling", () => {
+    setKitTokenMaps({ colors: {}, numbers: { "type.test": 40 }, typography: {} });
+    const scene = structuredClone(minimalScene);
+    const node = scene.nodes.node_contact_name;
+    if (node.kind.kind !== "text") throw new Error("fixture");
+    node.kind = { ...node.kind, content: "HUMAN REVIEW", font_family: family,
+      font_size: 16, font_size_token: "type.test", font_weight: 400, line_height: 1 };
+    try {
+      const [base] = skiaMeasurements(ck, fontMgr, scene);
+      const [probe] = skiaRequestedMeasurements(ck, fontMgr, scene, [{
+        ...base, font_size: 16, font_size_override: 16, max_width: 600
+      }]);
+      expect(probe.height).toBeLessThan(25);
+      expect(probe.width).toBeLessThan(base.width / 2);
+    } finally {
+      setKitTokenMaps({ colors: {}, numbers: {}, typography: {} });
+    }
   });
 
   it("emits one metric per text node with the engine's key fields", () => {
@@ -320,7 +402,7 @@ describe("measure-then-inject convergence (Plan 4 item F)", () => {
       (call) => heights[Math.min(call - 1, heights.length - 1)]
     );
 
-    const calls = injectSkiaMeasurements(engine, {
+    const { calls } = injectSkiaMeasurements(engine, {
       unconstrained: unconstrainedPass,
       lines: linePass
     });
@@ -339,7 +421,7 @@ describe("measure-then-inject convergence (Plan 4 item F)", () => {
 
   it("stops after one line round when nothing moves", () => {
     const { engine, payloads } = scriptedEngine(() => 100);
-    const calls = injectSkiaMeasurements(engine, {
+    const { calls } = injectSkiaMeasurements(engine, {
       unconstrained: unconstrainedPass,
       lines: linePass
     });
@@ -349,7 +431,7 @@ describe("measure-then-inject convergence (Plan 4 item F)", () => {
 
   it("is bounded when the boxes never settle", () => {
     const { engine, payloads } = scriptedEngine((call) => 100 + call);
-    const calls = injectSkiaMeasurements(engine, {
+    const { calls } = injectSkiaMeasurements(engine, {
       unconstrained: unconstrainedPass,
       lines: linePass
     });

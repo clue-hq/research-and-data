@@ -463,6 +463,32 @@ test("editing text content re-measures", () => {
   );
 });
 
+test("swapping type tokens between equal-sized text nodes re-measures", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const first = scene.nodes.text_headline;
+  const second = scene.nodes.text_proof_stat;
+  assert.equal(first.kind.kind, "text");
+  if (first.kind.kind !== "text") throw new Error("expected text fixture");
+  first.kind = { ...first.kind, style_token: "type.headline" };
+  second.kind = { ...first.kind, style_token: "type.stat" };
+  for (const node of [first, second]) {
+    node.size = {
+      width: { kind: "fixed", value: 300 },
+      height: { kind: "fixed", value: 80 },
+    };
+    node.computed = {
+      layout_bounds: { x: 0, y: 0, width: 300, height: 80 },
+      render_bounds: { x: 0, y: 0, width: 300, height: 80 },
+    };
+  }
+  const before = textMeasurementSignature(scene, 0);
+
+  // The same styles now belong to different measurement-cache node IDs.
+  [first.kind, second.kind] = [second.kind, first.kind];
+
+  assert.notEqual(textMeasurementSignature(scene, 0), before);
+});
+
 test("Plan 4: a text node's solved size is part of the measurement signature", () => {
   // The line pass is keyed on the box the engine solved; a resized box must
   // re-measure or its lines go stale (the key misses → heuristic lines).

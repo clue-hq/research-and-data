@@ -1019,6 +1019,8 @@ mod glyph_fallback_tests {
 
     fn input(content: &str, family: &str) -> TextMeasureInput {
         TextMeasureInput {
+            node_id: None,
+            font_size_override: None,
             content: content.to_owned(),
             font_family: family.to_owned(),
             font_size: 32.0,

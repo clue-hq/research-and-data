@@ -68,6 +68,10 @@ struct ProvidedMeasurementLine {
 /// fields plus the SkParagraph width/height the editor measured for them.
 #[derive(Deserialize)]
 struct ProvidedMeasurement {
+    #[serde(default)]
+    node_id: Option<String>,
+    #[serde(default)]
+    font_size_override: Option<f64>,
     content: String,
     font_family: String,
     font_size: f64,
@@ -112,6 +116,8 @@ struct ProvidedMeasurement {
 impl ProvidedMeasurement {
     fn input(&self) -> TextMeasureInput {
         TextMeasureInput {
+            node_id: self.node_id.clone(),
+            font_size_override: self.font_size_override,
             content: self.content.clone(),
             font_family: self.font_family.clone(),
             font_size: self.font_size,
@@ -238,13 +244,15 @@ impl Engine {
                 },
             );
         }
-        self.measurer = if overrides.is_empty() {
+        let provided = Arc::new(ProvidedTextMeasurer::new(overrides));
+        self.measurer = if provided.is_empty() {
             None
         } else {
-            Some(Arc::new(ProvidedTextMeasurer::new(overrides)))
+            Some(provided.clone())
         };
         self.relayout();
-        json!({ "ok": true, "count": entries.len() }).to_string()
+        json!({ "ok": true, "count": entries.len(), "missing": provided.missing_inputs() })
+            .to_string()
     }
 
     /// Full scene snapshot out. Reserved for init/reconcile/undo-frame
