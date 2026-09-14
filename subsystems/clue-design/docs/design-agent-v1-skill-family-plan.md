@@ -1940,3 +1940,65 @@ procedure in realistic authoring contexts before changing shared copy guidance.
 In parallel, run the next ordinary four-brand coverage cases on unchanged source;
 retain each actual selected family and first delivery, including repeated routing
 or failures. Do not rename a selected family merely to increase coverage.
+
+## Task 27: ordinary requests broaden coverage (2026-09-14)
+
+Four concurrent ordinary requests on frozen `d67a775b` produced new ads in all
+four local workspaces. The prompts named the product/use case, not a skill,
+asset ID, headline or layout. All 264 source hashes and runtime settings stayed
+fixed. Every pre-existing registry row is unchanged; AWS added one generated
+image, Google two, and Conduit one. Clue reused authentic product and logo assets.
+Google also fetched the Glance logo through the agent's tool; that asset ID was
+already in the registry, so it is not counted as a newly registered asset.
+
+| Brand | Selected family | Inner runtime | Agent outcome | Text edit/reload/restore | Export matches reviewed preview |
+| --- | --- | ---: | --- | --- | --- |
+| Clue | authentic-product | 287.905 s | Accepted | Passed | Yes |
+| AWS | editorial-pov | 371.068 s | Accepted | Passed | No: supporting text |
+| Google Cloud | customer-spotlight | 726.985 s | Accepted | Passed | No: supporting text |
+| Conduit | attributed-proof | 532.331 s | Unaccepted draft | Passed | Yes |
+
+The two newly exercised families are authentic-product and attributed-proof:
+**10/18 (55.6%) live coverage, zero fully qualified families.** Google's complete
+read of case-study-narrative does not count as selection; it chose the already
+covered customer-spotlight. Eight families remain unexercised: problem-solution,
+product-in-use, launch-announcement, comparison-alternatives, case-study-narrative,
+objection-handling, offer-conversion and visual-metaphor. All nine selected or
+considered family-resource reads in this batch were returned completely in real
+graph ToolMessages; this proves delivery, not understanding.
+
+All four have native text and separate imagery/logo layers. Browser text edits
+survived reload, and the exact original persisted scenes were restored at
+versions 16/20/39/43. PNG/SVG exports succeeded without changing those versions;
+SVGs retain 3/2/3/6 text nodes and 2/2/3/2 images. However, AWS and Google exported
+supporting text differs from the agent-reviewed final PNG: 8,193 and 16,280 RGB
+pixels respectively, confined to their support-copy regions. This difference is
+present despite exact scene restoration, so successful export is not visual
+parity. Investigate the preview-to-persistence boundary before another generation
+round. A separate Clue inspector observation shows raw Inter/16 for a token-styled
+headline rendered in Season Mix; its display/edit behavior also needs correction.
+
+Quality still has material gaps. The critiques accept support, CTA and attribution
+at roughly 4–9 nominal em pixels in the illustrative 360px feed proxy. Google
+needed a second image generation to remove baked ad copy/framing; the final
+independent illustration follows the source's shopping-story treatment. Conduit
+autonomously found the existing Dale Brackett review creative and reproduced its
+words, but source pixels do not independently establish genuine customer speech.
+Its final rejection is for an upper-weighted card and large punchline gap, not
+for provenance or small text. Preserve those separate unresolved findings.
+
+There were 112 solo model calls and no failed model completions. No case meets
+240 seconds even before Home handoff and browser QA. The 419-second handoff gap
+includes operator time and a separate approval discussion; it is not pure system
+latency. A read-only review-serialization audit estimates only 3–8% fewer review
+characters from replacing repeated bindings with references. That does not justify
+claiming a speedup or removing review judgments. Google's direction-schema and
+write/read/edit recovery consumed another 59.707 model seconds; investigate that
+separately from required art-direction work.
+
+Evidence: ignored `coverage-next-families-20260914/assessment.json`, source and
+registry snapshots, first-terminal traces, browser persistence/export receipts,
+`family-coverage-audit.md` and `review-serialization-audit.md`. Task 26's separate
+copy-procedure diagnostic remains paused: automatic approval review rejected its
+specific external payload/destination; the user requested an explanation, not
+authorization. Zero diagnostic calls have run. No production changes or push.

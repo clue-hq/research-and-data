@@ -975,3 +975,56 @@ Task26 diagnostic delegated read-only/product-unmodified: three guidance arms,
 5reps across4authoringcontexts, max60calls/max3concurrent, fixedconfiguredmodel.
 Root will broaden ordinary four-brand family coverage on unchanged source while
 this runs. All current testmarkers restored; no production/push.
+
+Task26 approval boundary / Task27 launch checkpoint: automatic review rejected
+copy-procedure diagnostic before process creation because internal guidance and
+draft rationales would go to OpenRouter without explicit payload/destination
+approval. Zero diagnostic calls; user asked for explanation, not approval.
+Explained three arms x four contexts x five repetitions, existing model, manual
+copy faithfulness assessment and subsequent live validation. Diagnostic paused;
+no workaround or product-guidance edits. Reviewable request/input manifests
+remain in ignored copy-procedure-20260914. Opening note corrected to pending.
+Task27 separate normal-platform tests use unchanged d67a775b source/config; four
+Task25 derived registry entries recoverably archived, original catalogs fixed,
+generation caches backed up/reset. All4 Home requests 22:48:50.090–091Z; common
+handoff 22:55:49.086–087Z. Gap includes operator/approval discussion and cannot
+be treated as pure system latency. All4 actual design runs now running, observer
+13432 retained, stack38199 untouched. Ordinary cases product UI / AI outcomes /
+Glance story / customer quote; no prescribed family/asset/copy. Conduit browser
+had navigated to an older project; restored exact new test thread before Send.
+HeadABM Save-answer errors on Clue/AWS/Conduit; Conduit also initial completion
+failure then opened design. It asked user for a quote despite source catalog;
+design autonomous retrieval still to observe. Four tabs17–20 retained. Coverage
+and promotion counts unchanged pending rendered results; no source commit/push.
+
+Task27 closing evidence (2026-09-14): previous explanation-only goal turn was
+no progress for implementation; continuation revalidated all frozen source and
+registry records and completed assessment.json. Four terminal runs on d67a775b:
+Clue287.905s/18calls/authentic-product accepted; AWS371.068s/25/editorial-pov
+accepted; Google726.985s/42/customer-spotlight accepted; Conduit532.331s/27/
+attributed-proof unaccepted draft. Two new exercised families,10/18=55.6%
+coverage,0fullyqualified;0/4under240s.112solo completions/0failed. Conduit found
+existing quote pixels itself, but real-customer authenticity remains unverified;
+composition caused rejection. All9 family reads fully delivered. Small native
+support/CTA/attribution remains incorrectly accepted at illustrative feed size.
+
+All4 browser text edit/reload/restore checks complete, exact persisted originals
+restored16/20/39/43, no QA markers. PNG/SVG all1080 and versionsunchanged;
+nativeSVG text3/2/3/6,images2/2/3/2. Fresh hash comparison found only Clue/Conduit
+PNG parity: AWS8193changedRGBpixels in support bbox72,346,618,406;Google16280
+in72,692,1003,748. Thus export functionality4/4 but preview/exportparity2/4.
+Agent read-only audit traces state-dependent fills-only retokenization replay;
+repair pending. Raw Clue inspector displaysInter16 vs resolvedSeasonMix; separate
+unfixed display/edit limitation. Source264hashes+settings unchanged; every prior
+registryrow unchanged, addedgeneratedassetsAWS1/Google2/Conduit1. Glance fetched
+logoID existedalready; not a newly addedregistryasset. Normal observers13432
+(boundedtimeout thencontinuedsamejobs61950allterminal) andexport47240terminal.
+
+Reviewserialization audit estimatesonly3–8%fewercharacters; not enough evidence
+to implement or claimlatencywin. Google's directionrecovery59.707modelseconds
+separate. Task26diagnosticstillpaused, userexplanationnotapproval,zero calls.
+No source/model edits, serverrestart, production/push. Failedlocalassessment
+assert comparedUnicodeQAdot toescapedJSON; fixedensure_ascii=False thenallchecks
+passed. Initialscenecompare usedruntimefinal insteadpersistedterminal; all4
+persistedscenesexactlyrestored. Guessedinspector/testpathsabsent; actualfrontend
+image-inspector usesadapterhydration, standaloneTextSectionseparate. Goalactive.
