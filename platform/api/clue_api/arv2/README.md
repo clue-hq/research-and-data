@@ -2009,3 +2009,56 @@ and the three outputs carry typed rows (`ProjectAccountView`, `AccountOverviewSe
 
 That last one is why there is a `v49`/`v26` at all: typing the rows moved all three output digests
 (and `read_project_accounts`' input digest), and v48/v25 are immutable.
+
+## The four reads (2026-09-14) — every page walks, and nothing overflows its receipt
+
+The three reads answered a small question well and a large one not at all. A 72-claim account read
+encoded to more than the governed receipt's 16 KiB bound, and the bound is a **refusal** that lands
+*after* the tool has run and spent: the agent was told it could not read the account, which was both
+false and expensive. Two changes settle it — the reads page, and a result too big for a receipt goes
+to a file instead of into a refusal.
+
+**Paging.** `read_discovery_run@2` replaces `candidate_limit` with `offset`/`limit`, and
+`read_account_research@2` takes a `limit` its claims section honours; both answer `next_offset`, and
+a null `next_offset` is the only thing that means "that was the last page". A page can come back
+*shorter* than `limit` and still name a `next_offset`, because the byte budget
+(`READ_REFERENCES_BUDGET_BYTES`, 12 KiB) is the other ceiling and usually the binding one. Paging
+changes the input schema, so the two are new **addresses**, not edits: `@1` stays frozen and keeps
+resolving for receipts pinned to it. `read_project_accounts@1` needed no `@2` — `offset`, `limit` and
+`total` already were its contract.
+
+**`read_claims@1`** is the query the account read could not be. It takes an entity id that may be an
+account **or** a contact (the store keys claims on one entity id, and so does this read) and narrows
+by `field_prefix`, `tier`, `verification_status` and `since` (an ISO date compared against
+`collected_at`), paged like the others. It reuses `_account_claims`' display gate rather than
+restating it, so a served claim is exactly a claim the account pages would show, `excluded` still
+separates `sensitive` / `unverified` / `outreach_unsafe`, and `prefixes` reports the whole subject's
+servable families with their counts even when the filter matched nothing — "your query is empty" and
+"this subject is empty" stay two different answers. Refusals: `entity_not_found`, `since_invalid`
+(not a date), `offset_past_end`.
+
+**`read_artifact@1`** lives one directory up, in `platform/api/clue_api/artifact_read_tools.py`,
+because a design document is not an ARV2 row — but it is the same kind of read and it is granted
+beside these. Containment is the rail's own leg join (`design_leg_wiring.project_design_documents`),
+never the tenant alone: a document that join does not return is `artifact_not_found`, the identical
+code a document that never existed gets, so the read never tells one project that another project's
+artifact exists. `section="summary"` is the card; `section="content"` adds the page JSON as canonical
+text cut at `READ_REFERENCES_BUDGET_BYTES` with `body_truncated=True`.
+
+**Spilling.** Past `SPILL_THRESHOLD_BYTES` (12 KiB) the execution adapter writes the receipt's
+references as canonical bytes to `reads/<operation_id>.json` in the thread's workspace and puts a
+stub in the receipt — `spilled_to`, `count`, a `summary` sliver and the producing tool — which the
+model opens with `read_file`. `reads/` is in the model's readable prefixes and in nobody's writable
+ones, so the write is trusted, quota-counted, and idempotent by construction (an operation rewrites
+its own file). Both places a receipt is built apply the rule — the live one and the rebuilt one in
+`_hydrate_tool_reference_values`, which is the receipt the model is actually handed — and the full
+result is untouched either way: it is the journaled `result_ref` artifact, and only the inline copy
+shrinks. Surfaces with no thread lease (research, onboarding synthesis) have no sink, and there the
+old refusal still stands.
+
+The grant is `head-of-abm@v56` (pinning `stage0-interview@v33`, whose §7c now teaches following
+`next_offset` and opening a spill file) and `recipe0-stage0-v28.json` with
+`CONVERSATION_RECIPE_VERSION = 28`. A recipe slot resolves **one** version per `(kind, key)`, so v28
+*re-pins* `read_discovery_run` and `read_account_research` at `@2` and adds `read_claims@1` and
+`read_artifact@1`; v27 stays byte-identical on disk as the replay input for turns pinned to it.
+`stage0_recipe._execution_project_pin` names the two new tools, as it does the three before them.

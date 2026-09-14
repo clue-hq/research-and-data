@@ -393,3 +393,146 @@ domain_ref for the plan; the card comes from the row" — retires it); a persona
 `ARV2-ONBOARDING-PLAN.md` has no addendum for plans 2/2b; the trial surface discloses the three
 document skills while mounting no writable `project/`; `SKILLS_BLOCK_MAX_BYTES` moved 4096→4608
 (the 80% L1 budget is the binding gate, 7,337 B spare).
+
+## Plan 4 landed (2026-09-14) — paged and spilled reads, free-flowing documents, `2a9d23d15..f8524ed64`
+
+Ten commits (SDD, Opus implementers, controller-reviewed, tasks in the ruled order 0→1→2→3→4→7→5→6):
+`584cae976`+`323dc0581` (Task 0), `e3fe8a495` (Task 1), `3d58651ee` (Task 2), `224285502` (Task 3),
+`d0cd5c160`+`446e8f1db` (Task 4), `f2b3667f0` (Task 7), `08e2bcca0`+`f8524ed64` (Task 5).
+Plan: `docs/superpowers/plans/2026-09-13-paged-and-spilled-reads.md`; spec
+`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5).
+
+**Version ladder:** profile `head-of-abm@v56` / skill `stage0-interview@v33` /
+`recipe0-stage0-v28.json` (`CONVERSATION_RECIPE_VERSION = 28`) / manual `manual-*@v3` ×15
+(`MANUAL_VERSION = "v3"`, `PROFILE_VERSION = "v56"`), plus the three document skills at
+`icp-authoring@v2` / `persona-authoring@v2` / `plan-authoring@v2`; prompt stays v10. Four context
+policies move to v3 — `project-conversation-context-v3`, `stage0-trial-context-v3`,
+`onboarding-synthesis-context-v3`, `account-research-context-v3` (all four run the same assembler, so
+all four changed meaning). v55 / v32 / recipe 27 / manual v2 are byte-untouched, for replay.
+Recipe 28 is promoted by the workers' boot seeding.
+
+**Task 0 — context budgets are observability** (`584cae976`, `323dc0581`). Founder ruling 2026-09-14
+(plan 3 debrief): *"We should not put any hard budget limit on the LLM for anything, like if the L1
+budget exceeds the LLM would fail. We should just keep a track of what all things are there."*
+`DeterministicAgentContextAssembler._retain` no longer raises on a required candidate that does not
+fit and no longer excludes an optional one (`layer_budget_exceeded` is gone, and L6 stops dropping
+its oldest messages): every candidate is retained, `token_count` is counted against `token_budget`
+per layer on the receipt, and an over-budget layer logs one warning. No migration —
+`agent_context_layer` already persists both numbers. The prompt-size test asserts a sane
+`0 < prompt_bytes < 200_000` and *prints* the L1 share instead of failing on it.
+
+**Task 1 — the two existing reads page** (`e3fe8a495`). `read_discovery_run@2` replaces
+`candidate_limit` with `offset`/`limit` and answers `next_offset`; `read_account_research@2` takes
+`limit` and pages its claims the same way. Both are new addresses (ruling P4-12), registered
+ungranted with `make_default=False`; the `@1`s stay frozen for replay. `read_project_accounts@1`
+needed no `@2` — `offset`/`limit`/`total` already are the contract (P4-13).
+
+**Task 2 — `read_claims@1`** (`3d58651ee`). The general claims query, registered ungranted: any
+account *or* contact by `entity_id`, narrowed by `field_prefix`, `tier`, `verification_status` and
+`since` (compared against `collected_at`), paged with `offset`/`limit` (default 40, cap
+`MAX_CLAIMS` 120) and `next_offset`. It reuses the account read's display gate rather than
+duplicating it, so `excluded` still separates `sensitive` / `unverified` / `outreach_unsafe`, and
+`prefixes` reports the whole subject's servable families even when the filter matched nothing.
+Refusals: `entity_not_found`, `since_invalid`, `offset_past_end`.
+
+**Task 3 — `read_artifact@1`** (`224285502`). One gallery artifact by id, registered ungranted, in
+`platform/api/clue_api/artifact_read_tools.py`: membership through
+`design_leg_wiring.project_design_documents` (the rail's own join), then
+`clue_design.documents.get_document`. `section="summary"` is the card (kind, title, status, current
+version, origin thread, updated_at); `section="content"` adds the page JSON as canonical text cut at
+`READ_REFERENCES_BUDGET_BYTES` with `body_truncated`. A missing row and another project's document
+both refuse `artifact_not_found`; the project is ambient (the turn's `execution` row), never a body
+field.
+
+**Task 4 — spilling** (`d0cd5c160`, `446e8f1db`). A governed result whose references exceed
+`SPILL_THRESHOLD_BYTES` (12 KiB) is written as canonical bytes to `reads/<operation_id>.json` in the
+thread workspace and the receipt carries a stub instead — `spilled_to`, `count`, a `summary` sliver
+and the producing `tool` — which the model opens with `read_file`. The sink is
+`WorkspaceBackend.write_spill` (a trusted write: `reads/` is readable, writable by nobody; the quota
+still counts it; a re-run of the same operation replaces its own file), threaded only where a thread
+lease exists (`ConversationTurnEngine.execute` → `build_head_of_abm_stage0_execution` →
+`C5AgentExecutionAdapter(spill_sink=…)`); with no sink the old 16 KiB refusal stands. The fix round
+closed the real gap: **both** places a receipt is built apply the rule — the live one in
+`_execute_tool` and the rebuilt one in `_hydrate_tool_reference_values` (the rebuilt receipt is the
+one the model is handed, so a threshold applied in one place only is a threshold the model never
+sees). Nothing to do with `LANGCHAIN`; the full result is still the journaled `result_ref` artifact.
+
+**Task 7 — free-flowing project documents** (`f2b3667f0`). Founder ruling 2026-09-14: *"the harness
+is not to be made deterministic with a type, class or branch per narrow case."* Any markdown under
+`project/` that is not a compiled file is now a versioned document at that path, through one generic
+`write_project_document`; kind and title come from the document's own front matter (`document` and
+the first heading by default) and the platform stamps only `version`, `status: ready`, `project_id`,
+`brand_id`, `authored_by`, `authored_at`. The folder→kind map, `unknown_project_path` and the
+persona `icp_not_pinned` check are gone; migration `639d081ad799` (reversible) drops the `kind` and
+`folder` CHECK vocabularies. Plan, persona and ICP are **pins** the human agrees to in one question —
+`role: plan` / `role: persona` in front matter, and the ICP confirmation gate for an ICP, which now
+finds the document by the `icp_key` its front matter claims at any path (candidates merely *ordered*
+by how ICP-shaped they are; `_ANSWERABLE_STATUSES` gains `ready`). Cards collapse to one
+`project_document` object type titled from the document (`DomainObjectRef.title`).
+`write_project_persona` is deleted — no caller was left.
+
+**Task 5 — the one mint** (`08e2bcca0`, `f8524ed64`). Profile v56 pins skill v33, the three v2
+document skills and manual v3 ×15, grants `read_claims@1` and `read_artifact@1` and moves the two
+reads `@1`→`@2`; recipe 28 = 27 − the two `@1`s + the four addresses; `RECIPE_0_TOOL_ADDRESSES`
+re-pinned to the `@2` reads; `stage0_recipe`'s project-pin set gains the two new names. Skill v33
+§7c teaches reading pages (`next_offset` until null) and opening a spill file, and points at the
+`manual-tools` / `manual-claims` chapters. Measured at the mint: skills block 4,427 B, resolved
+prompt 24,984 B (62% of L1).
+
+**Rulings (controller, from the SDD ledger):**
+- **P4-1** Versions — skill v33 / profile v56 / recipe 28 (`CONVERSATION_RECIPE_VERSION = 28`) /
+  manual v3, context policies at `-v3`; prompt stays v10.
+- **P4-2** The spill sink is threaded only where a thread lease exists; with no sink the adapter
+  keeps today's refusal — only the conversation has a `reads/` folder.
+- **P4-3** `read_claims` refusals are `entity_not_found`, `since_invalid` and `offset_past_end`;
+  `since` compares against `collected_at`.
+- **P4-4** `read_artifact` reads one document with `clue_design.documents.get_document` after a
+  `project_design_documents` membership check; `artifact_not_found` covers missing *and* foreign;
+  `body_text` is the page JSON cut at `READ_REFERENCES_BUDGET_BYTES` with `body_truncated`.
+- **P4-5** The two new tool descriptions end with the manual anchor
+  `Manual: .deepagent/skills/manual-tools/v3/SKILL.md#<tool>`, written with `/v3/` from the start.
+- **P4-6** Execution order 0 → 1 → 2 → 3 → 4 → 7 → 5 → 6: Task 7 writes the skill bodies unpinned,
+  Task 5 is the single mint and re-measures every digest.
+- **P4-7** The plan/persona/ICP pin is `role:` in the document's own front matter, resolved by the
+  readers that already read the bytes; no new column and no new object type.
+- **P4-8** `open_icp_confirmation_gate@2` keeps taking `icp_key` and resolves the document by the key
+  its front matter claims, whatever the path.
+- **P4-9** Task 0 keeps `budgets` on the receipt and the seven-`LayerBudget` policy shape; only the
+  enforcement goes, and the prompt-size test prints its share instead of asserting a ceiling.
+- **P4-10** Test discipline as plans 0–3: offline suites without `.env`; DB suites only on the lane
+  DB with `--ignore-glob='*_live.py' -p no:cacheprovider`; never `*_live.py`; no `make check`.
+- **P4-11** Recipe 28 is promoted by the workers' boot seeding; the controller restarts the stack and
+  runs the live proof first-hand.
+- **P4-12 (amended during Task 5)** A slot resolves ONE version per `(kind, key)`, so `@1` and `@2`
+  of one tool cannot share recipe v28 (`conflicting_requirement` at promotion, proven on the lane
+  DB): v28 **re-pins** the two reads at `@2` and adds `read_claims@1` + `read_artifact@1`, v27 stays
+  byte-identical as the replay input, and `RECIPE_0_TOOL_ADDRESSES` drops the two `@1`s — replay
+  resolves through the pinned revision, not the standing list.
+- **P4-13** `read_project_accounts@1` already meets the pagination contract through
+  `offset`/`limit`/`total`; no `@2` for it.
+- **P4-14** Hydration honours the spill — `_hydrate_tool_reference_values` applies the same threshold
+  and stub with the same sink, so the receipt the model reads is the stub whenever the references are
+  over the threshold.
+- **P4-15** The frozen-contract digests are re-frozen once, in Task 5's mint — the drift predates
+  plan 4 and no receipt-reading code compares those digests at runtime.
+
+**Live proof — owed to the controller** (to run on the restarted stack, base `f8524ed64`): a new
+thread where the Arthur Direct Care question completes across pages; "what verified claims do we have
+about Woodlands since September?" → `read_claims`; "what is in the gallery?" → `read_artifact`
+summary; a deliberately huge claims page (limit 120, no prefix) showing a `spilled_to` receipt the
+agent then reads; SQL confirming the four `execution_node` tool names and a `reads/` file on disk in
+the turn directory.
+
+**Deferred (ledger minors):** `excluded_count` in the turn-inspector projections is 0 for new turns
+(honest, nothing is excluded any more); a web document's `body_text` is mostly scene-JSON structure
+inside the 12 KiB cut — watch it at the live proof; nothing trims `reads/` (the workspace quota is
+the only backstop — the folder's size cap is unbuilt; plan 1's retention purges the thread folder);
+`recover()` rewrites a spilled file once per later governed call (idempotent, and a sink failure
+fails the operation loudly); a persona document declaring the same `icp_key` is a last-resort ICP
+gate candidate, ordered after the ICP-shaped ones;
+`tests/agents/test_contracts.py::test_frozen_contract_json_schema_digests` was already red before
+this plan (SkillBundle / DelegationRequest / AgentTurnRequest drift) and absorbed
+`DomainObjectRef.title` into the same re-freeze; `RECIPE_0_TOOL_ADDRESSES` still carries the
+long-stale `open_icp_confirmation_gate@1` (pre-existing — the promoted-slot equality test in
+`tests/execution/test_recipes.py` has been red for it since before plan 3); the hand-written manual
+chapters teach the two new reads only through the generated `manual-tools`.

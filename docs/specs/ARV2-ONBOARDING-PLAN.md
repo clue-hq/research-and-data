@@ -788,6 +788,87 @@ re-materialized after every accepted write so the agent reads back what it wrote
   `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 3 landed (2026-09-14)"
   (live proof owed).
 
+### Addendum 2026-09-14 — catch-up: the workspace libraries and the operating manual (plans 2, 2b)
+
+Written late, because the two plans between the three reads and the versioned root never got an
+addendum here and the root above stands on both. **Plan 2 (profile v53, skill v30, prompt v9)** gave
+the Head of ABM two read-only libraries in its workspace instead of a context block to remember: the
+**brand library** is compiled once per knowledge version and mounted as `brand/`, and the **project
+library** is compiled from rows — `status.md`, `decisions.md`, one file per document version, and an
+`artifacts/index.json` — and mounted as `project/`. The turn pins the library manifest, so a replay
+opens the same bytes the original turn read, while writers and a DSAR erasure re-materialize the
+shared copy. **Plan 2b (profile v54, skill v31, prompt v10)** turned the Head of ABM's operating
+manual into fifteen catalog skills (`manual-*@v1`, four generated from the registry and drift-tested,
+eleven hand-written): the capability map discloses the chapters and the agent opens one with
+`read_file` when it needs the detail, which is why the L1 identity budget rose to 40,000 bytes. Both
+are proven live; close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` §§ "Plan 2
+proven" / "Plan 2b proven". Neither added a flag.
+
+### Addendum 2026-09-14 — paged and spilled reads, free-flowing documents (profile v56, skill v33, recipe 28, manual v3)
+
+The reads above could answer a small question and die on a big one: a 72-claim account read overflowed
+the governed receipt's 16 KiB bound *after* the tool had already run, and the agent was told it could
+not read the account at all. This addendum is the fix, plus the founder's two rulings of the same day.
+Plan: `docs/superpowers/plans/2026-09-13-paged-and-spilled-reads.md`; spec
+`docs/superpowers/specs/2026-09-13-agent-workspace-reorganization-design.md` (W4 read side, W9, §4.5);
+close-out `_memory/2026-09-13-live-walk-findings-and-workspace-reorg.md` § "Plan 4 landed (2026-09-14)"
+(live proof owed).
+
+- **Version ladder.** `head-of-abm@v56` pins `stage0-interview@v33`, the document skills at
+  `icp-authoring@v2` / `persona-authoring@v2` / `plan-authoring@v2` and the manual at `manual-*@v3`
+  ×15; `recipe0-stage0-v28.json` with `CONVERSATION_RECIPE_VERSION = 28`, promoted by the workers'
+  boot seeding. The prompt stays v10. v55 / v32 / recipe 27 / manual v2 are byte-untouched, for
+  replay.
+- **Four reads, all paged.** `read_discovery_run@2` and `read_account_research@2` replace
+  `candidate_limit` / the fixed 120-claim cut with `offset`/`limit` and answer `next_offset`; their
+  `@1`s stay frozen (a paging change is an input-schema change, and the profile's schema digest pin
+  exists to catch exactly that). `read_claims@1` is the general claims query — any account **or**
+  contact by `entity_id`, narrowed by `field_prefix`, `tier`, `verification_status` and `since`
+  (against `collected_at`), through the account pages' own display gate, so `excluded` still
+  separates `sensitive` / `unverified` / `outreach_unsafe`; refusals `entity_not_found`,
+  `since_invalid`, `offset_past_end`. `read_artifact@1` opens one gallery artifact by id —
+  membership through the rail's own leg join, `summary` (the card) or `content` (the page JSON as
+  text, cut at 12 KiB with `body_truncated`), and `artifact_not_found` for both a missing row and
+  another project's document. Both new tools are effect-free, ambient-scoped and flagless, like the
+  three before them. A slot resolves one version per `(kind, key)`, so recipe 28 **re-pins** the two
+  paged reads rather than admitting `@1` and `@2` side by side.
+- **Spilling, so a bound is never a refusal.** A governed result whose references exceed 12 KiB is
+  written as canonical bytes to `reads/<operation_id>.json` in the thread's workspace, and the
+  receipt carries a pointer — `spilled_to`, `count`, a `summary` sliver, the producing tool — which
+  the model opens with `read_file`. `reads/` is readable by the model and writable by nobody; the
+  write is trusted, quota-counted and idempotent per operation. Both places a receipt is built apply
+  the rule (the live one and the rebuilt, hydrated one the model is actually handed), and the full
+  result is still the journaled `result_ref` artifact. Where there is no thread lease — the research
+  and onboarding-synthesis surfaces — there is no sink and the old refusal stands.
+- **Free-flowing documents (founder ruling).** The harness is not made deterministic with a type or
+  branch per narrow case: any markdown under `project/` that is not a compiled file is a versioned
+  document at that path, its kind and title read from its own front matter, born `ready`, stamped by
+  the platform only with `version`, `status`, `project_id`, `brand_id`, `authored_by`,
+  `authored_at`. Migration `639d081ad799` (reversible) drops the `kind` and `folder` CHECK
+  vocabularies. The plan, the personas and the ICP are **pins the human agrees to in one question** —
+  `role: plan` / `role: persona` in front matter, and the existing confirmation gate for an ICP,
+  which now finds the document by the `icp_key` its front matter claims at any path. The only
+  refusals left are `compiled_file_read_only`, `unsupported_document_type`, `body_empty` and
+  `revision_conflict`; cards collapse to one `project_document` object type titled from the
+  document. (This supersedes the kinds-by-folder table above, which is kept for the receipts it
+  explains.)
+- **Budgets are observability (founder ruling).** No hard context budget may fail or trim a turn:
+  the deterministic assembler no longer raises on a required layer that does not fit and no longer
+  excludes an optional candidate, and L6 keeps every message in order. `agent_context_layer` already
+  persists `token_budget` and `token_count`, so "over budget" is a number on the receipt and one
+  warning in the log. The four context policies that share the assembler move to
+  `project-conversation-context-v3`, `stage0-trial-context-v3`, `onboarding-synthesis-context-v3`
+  and `account-research-context-v3`.
+- **Standing rule** (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`): v56 pins no
+  readiness / Stage-0 / Client-KB / Product-KB tool (it adds two reads and re-pins two); the
+  product-set gate source is untouched and no card compiler runs for a read or a document write; the
+  pin is the turn's own project pin, with no Client-KB pin and no new `AgentTurnScopePinConflict`
+  path; a read compiles nothing onto the lease and a spill is a workspace file, not lease state;
+  `launch_arv2_account_research` / `launch_arv2_discovery` gained no precondition; `lint-imports` was
+  re-run at Task 3, 26 kept / 0 broken; **env posture unchanged — no `.env.example` line moved and no
+  new flag**. The checklist is re-run in full at the live proof. Engineering detail:
+  `platform/api/clue_api/arv2/README.md` § "The four reads".
+
 ---
 
 ## 9. Phases, exit gates, ownership, timeline
