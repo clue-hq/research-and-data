@@ -14,7 +14,7 @@ Binding rules (v1):
   token (semantic names like space.md win over numeric space.3)
 - stroke width equal to a stroke token → width_token
 - node opacity equal to an opacity token → opacity_token
-- text without style_token: exact role match (family+weight+size) binds the
+- text without explicit typography tokens: exact role match (family+weight+size) binds the
   role; family+weight role match with the size on a type.size ramp step binds
   role + size token; a near-miss size within ``size_snap_tolerance`` of a ramp
   step SNAPS to the step (agent-draft mode: becoming *more* branded is the
@@ -172,7 +172,14 @@ def _retokenize_text_kind(
     kit_families: set[str],
     tolerance: float,
 ) -> Optional[tuple[JsonObject, JsonObject]]:
-    if kind.get("style_token"):
+    # Scalar tokens can be newly authored while their numeric fields still
+    # contain the previous resolved values. Inferring a role/ramp from those
+    # stale literals would overwrite the requested repair before core resolves
+    # it. Leave explicit typography to the canonical resolver, including its
+    # missing-token diagnostics; this pass only fills in unbound literals.
+    if any(kind.get(token) is not None for token in (
+        "style_token", "font_size_token", "line_height_token", "letter_spacing_token"
+    )):
         return None
     family = str(kind.get("font_family") or "").lower()
     size = float(kind.get("font_size") or 0)
