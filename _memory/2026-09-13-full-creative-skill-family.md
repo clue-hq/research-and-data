@@ -681,3 +681,38 @@ Evidence copy-binding-four-brands-20260914; independenttask-18-live-audit.md.
 Next: frozen judgment counterexamples beforefullnewbatch; noautomaticbrandban or
 genericpromptpatch. Task19auditonly, remainingfamilies/timing/quality open.
 Stack83351active, no push/production/otherworktree changes. Goal remains active.
+
+Task20 judgment diagnostic in progress. Prior case IDs exposed semantic hints
+(scope_inflation etc), despite withheld expected-label fields. New frozen18cases
+use opaque shuffled IDs, all10Task18native strings with companion copy plus
+four supported/four stronger controls. Same six original public-byte-verified
+sources; independent read-only audit confirmed hashes and Clue until-clause gap.
+Two conditions add/omit actual author support rationale; four concurrent calls
+per condition, same current745f3a6dguidance/Grok4.6medium. Payload checks pass:
+expectedlabels/reasons/descriptiveIDs absent, originalimages/system identical.
+Ignored judgment-isolation-20260914/probe.py and frozen/key files only; no product
+code/services/source-library changes. Existing plan records hypotheses and
+predeclared scoring/latency limits. Initial plan patch context failed atomically;
+corrected against actual tail. No new provider results or quality claims yet.
+
+Task20 complete: bothconditions reject all5 strongerclaims inclactualClueuntil;
+eachpermits2of4narrowpositives. CleanquestionsAWS/Conduit, authorAWS/Google.
+Independent audit saysAWS/Conduitexpectedpositivesunderspecifyadvertiserassertion
+vsverifiedoperation, notcertainfalsepositives. GoogleauthoraddsEnglishguide and
+availabilityrequirementsnotclaimed. No author-biascause proven. Exact18cases,
+sixsourceimages/fiveguidancebodies verified; requestsdifferonlywholeauthorsupport
+assessment(status/refs/reason/limits), notjustreasontext; labels/IDcuesabsent.
+EightGrok4.6mediumcalls completed; startswithin0.565/0.679s perall4condition.
+Clean Clue77.187/AWS54.541/Google68.089/Conduit71.480s; author53.485/57.107/
+70.303/60.222s. Rawprovider0.288594total, governedcost_cents0discrepancyretained.
+Firstlaunchabortedbeforecalls onscene_soloassert: dotenvimportorder; corrected
+before successfulcondition, no providerretryorenvmutation. Productcodeunchanged.
+Decision no newruntimejudge/vetoyet. Needexplicitscopes depictedappearance /
+advertiserassertion / verifiedproductbehavior; publicimagebytecustodydoesnot
+authenticatecatalogcaption. Brandworktreeownsharvest/labeling. Calibratedcasekey
+next, separatehumanreadability; no furthergenericpromptpatch. ExistingTask18
+artifactsretainedtabs13–16, correctworkspaceports, Cluecanvasvisuallyconfirmed.
+All4DOMsshowstaledesigningstatusalthoughCluefinishedcanvasvisible; notnewrunproof.
+No scenes/services/assets/modelsettings changed. UnrelatedSept8dirtpreserved.
+Goalprogress: improveddiagnosticvalidity andruledoutpromotionofunreliableveto;
+goalnotcomplete, notblocked. No push/production or externalfolderchanges.

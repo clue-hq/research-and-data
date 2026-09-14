@@ -1464,3 +1464,84 @@ Evidence: ignored `copy-binding-four-brands-20260914/`; independent audit
 `.superpowers/sdd/design-agent-v1-skill-family-plan/task-18-live-audit.md`.
 Local stack session83351 remains active. No production, push or separate worktree
 changes. The broader family goal stays open.
+
+### Task 20: Isolate factual judgment from the author's approval rationale
+
+Diagnostic only, within the approved four-brand validation work. No runtime
+topology, model, source library, skill body or platform document changes. The
+prior guided test withheld expected labels but exposed descriptive case IDs such
+as `scope_inflation`; this is a potential answer cue. It is not a clean blind
+baseline. Preserve that receipt and correct the methodology in this new probe.
+
+Freeze 18 cases: all ten exact Task18 native copy occurrences with their companion
+copy, plus one narrow supported and one unsupported contrast per brand. An
+independent read-only source audit confirmed six original image hashes. Keep
+scope limits explicit: advertiser metadata is not the guide body; a UI illustration
+is not a shipping policy; a named integration does not prove sync mechanics.
+Clue's headline is a contextual ambiguity and is not scored as a binary truth.
+
+Run two conditions, four simultaneous brand calls each, through the existing
+Grok4.6 medium factory. Identical current guidance, original pixels, metadata,
+copy and ordering; the single intervention adds the actual author's support
+assessment. Expected outcomes and descriptive IDs stay in a separate local key;
+model payloads use shuffled opaque IDs. The source records and system messages
+must compare equal between conditions. Never send expected reasons to the model.
+
+Before provider calls, classify outcomes: unsupported/unverified means the copy
+cannot pass the factual-support check; supported/nonfactual permits this narrow
+check only. Primary cases are Clue's actual `until` clause and four strengthened
+controls. Report false refusals on narrow positive controls as well as catches;
+classifying a supported invitation as nonfactual is not a failure. Inspect every
+reason, including the ambiguous headline and Google advisory wording. Record
+per-brand latency, usage and provider cost discrepancies. One sample per condition
+cannot prove causality or reliability; it can reject a proposed mechanism.
+
+This is a focused semantic probe, not another full creative run, visual evaluation
+or evidence of human readability. No independent runtime reviewer is added based
+only on successful guided results. Decide the next bounded change from the result
+and the latency cost. The existing four live artifacts remain the user deliverables.
+
+Task20 result: both conditions refused all five predeclared stronger claims,
+including the actual Clue `until` sentence. Neither condition established reliable
+acceptance: each permitted only two of four narrow positive controls. Clean
+questioned AWS and Conduit; author-assessment questioned AWS and Google. AWS and
+Conduit are scope ambiguities in the scoring key (advertised resource/connection
+versus verified live behavior), not definite false refusals. Google's second
+judgment demanded an English guide and current availability that the invitation
+did not promise. Resource and integration labels were frequently classified
+nonfactual, despite asserting identity when read with their companion copy.
+
+Independent input audit passed: six exact original image hashes, five guidance
+bodies from745f3a6d, opaque IDs and no expected-label/reason/origin leakage; request
+pairs differ only by `author_assessment`. That intervention contains the complete
+support assessment (status, evidence refs, reason and limitations), not rationale
+prose alone. Controls have no direct assessment, so their changes could be
+stochastic or batch-context effects. One sample per condition identifies neither
+a causal author-bias effect nor the reason full-agent self-review failed.
+
+All eight calls completed on the same configured Grok4.6 medium model. Four-brand
+dispatch spans0.565s and0.679s. Clean elapsed Clue77.187/AWS54.541/Google68.089/
+Conduit71.480s; author53.485/57.107/70.303/60.222s. Provider-reported cost sums
+0.144950 and0.143644; governed cost_cents remains0, an accounting discrepancy.
+The initial local attempt stopped before requests because dotenv loaded after
+imports; corrected order preserved the frozen payload. No failed provider call
+was concealed or silently retried.
+
+Decision: no production semantic veto or additional runtime agent from this
+probe. First make the evidence-scope contract explicit: depicted appearance,
+faithful advertiser assertion, and independently established product behavior
+are different judgments. Public image-byte custody alone does not authenticate
+a manually entered catalog caption. The design harness must preserve this
+distinction when consuming source context; source harvesting/labeling remains
+owned by the separate brand worktree. Calibrate the existing supported and
+unsupported contrasts against that boundary before adding acceptance authority.
+Human readability still needs its own validation; this test says nothing about
+whether small text is readable. The four live artifacts were retained in browser
+tabs13–16, with correct workspace/port names. Clue's actual canvas was reconfirmed
+visually; the DOM's lingering designing status does not reflect the visible
+finished canvas and is not evidence of a new running job.
+
+Evidence: ignored `judgment-isolation-20260914/{probe.py,frozen-input.json,
+scoring-key.json,clean/,author/,assessment.json}`. No skill body, product code,
+model/topology setting, original image, saved creative or service was changed.
+The full family goal, remaining coverage and four-minute target remain open.
