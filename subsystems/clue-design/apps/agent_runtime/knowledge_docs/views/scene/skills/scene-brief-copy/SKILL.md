@@ -35,8 +35,8 @@ Use the discovered skill descriptions or `knowledge/scene/catalog.md` to select
 the primary communicative job and read its playbook. The catalog is derived from
 the registered skill descriptions; no separate list of family names is maintained
 here. Blend a relevant supporting technique when evidence and intent call for it;
-record the main family in the handoff. These are procedures, not a template menu.
-The author and director can load another relevant body or re-read one during
+record the main family in the direction record. These are procedures, not a template menu.
+Load another relevant body or re-read one during
 composition, review or revision. A selection is not a one-time discovery lock.
 Already loaded shared guides need no second read through a wrapper skill. If the
 user asks for new imagery or variants, carry that requirement into generated
@@ -52,4 +52,5 @@ Write `/run_<id>/workspace/creative-direction.json` using
 Record concise assumptions, voice evidence, visual invariants and deliberate
 variations there rather than asking routine aesthetic questions.
 If validation refuses, repair the named fields; never proceed on an invalid
-handoff. Give the author this record inline and its workspace path.
+record. Use this validated record for construction. When delegating, pass it
+inline with its workspace path.

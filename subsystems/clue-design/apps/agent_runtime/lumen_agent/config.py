@@ -217,6 +217,9 @@ class AgentRuntimeConfig:
     fast_loop: bool = False
     # Scene-only knowledge rollout. Web harnesses always materialize legacy.
     scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Candidate-only one-agent scene experiment. The scene factory requires the
+    # candidate bundle and fast loop; website factories ignore this selector.
+    scene_solo: bool = False
     # R3 kill-switch: re-enable the `lumen-visual-reviewer` subagent on scene
     # turns WITHOUT leaving the fast loop. Read through
     # `scene_reviewer_enabled`, never directly — that property is the single
@@ -295,6 +298,7 @@ class AgentRuntimeConfig:
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
             scene_skill_bundle=settings.lumen_agent_scene_skill_bundle,
+            scene_solo=settings.lumen_agent_scene_solo,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,
             web_reviewer=settings.lumen_agent_web_reviewer,
@@ -318,8 +322,9 @@ class AgentRuntimeConfig:
         it is simply absent from the scene orchestrator's subagent list, which
         is tool-absence enforcement exactly as `request_clarification` does it.
         `LUMEN_AGENT_SCENE_REVIEWER=1` puts it back.
+        Scene solo overrides that switch because no subagent is constructed.
         """
-        return (not self.fast_loop) or self.scene_reviewer
+        return not self.scene_solo and ((not self.fast_loop) or self.scene_reviewer)
 
     @property
     def web_reviewer_enabled(self) -> bool:

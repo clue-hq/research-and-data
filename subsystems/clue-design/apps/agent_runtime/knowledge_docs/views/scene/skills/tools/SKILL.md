@@ -5,15 +5,14 @@ description: Use when choosing an available tool for a scene design step or reco
 
 # Scene tools
 
-Use only tools actually registered for your role. The director inspects/views,
-delegates via task, validates the creative direction and finalizes; it does not
-compile. The author uses compile_dsl_block, asset, fetch_logo, inspect/view,
-validate_binding_set, validate_creative_direction and preflight_design; in the
-fast loop it also renders. Validate revisions through the same shared handoff.
-The reviewer has inspect/view and filesystem tools only.
+Use only tools registered for the current agent. Use inspect/view for evidence,
+validate_creative_direction for the shared direction, checked compile/asset tools
+for construction, preflight_design and render_preview for current artifacts, and
+finalize_run only after the required review. Delegate only when the configured
+runtime exposes and calls for delegation.
 
-All roles can discover and read the registered skill bodies and shared resources
-on demand, including during review or a later revision. Read files via their
+All registered skills and shared resources remain available on demand during
+composition, review and later revision. Read files via their
 delivered virtual paths. Do not call an imagined knowledge
 loader, export API or image-edit command. Tool descriptions define argument
 schemas; `knowledge/lumen-dsl/*` defines DSL syntax. Asset/reference mechanics

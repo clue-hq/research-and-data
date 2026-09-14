@@ -17,6 +17,6 @@ it requires an explicit directive. `knowledge/lumen-dsl/directives.md` owns exac
 syntax and `knowledge/loop/layout-cluster-repair.md` covers bounds failures.
 
 Keep the shared creative direction current when copy, evidence or source choices
-change; a director must validate the changed handoff. Save the repair delta in
-the round's direction/report, preflight, render and view the new scene. An old
-acceptance cannot certify a repaired artifact.
+change; validate the revised record with its revision reason before using it.
+Record the repair delta once in the active round, then preflight, render and
+view the new scene. An old acceptance cannot certify a repaired artifact.

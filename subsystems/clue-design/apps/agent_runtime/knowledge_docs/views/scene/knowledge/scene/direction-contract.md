@@ -1,11 +1,11 @@
 # Creative direction record (schema version 1)
 
 Write one compact JSON record to the run workspace's `creative-direction.json`.
-Use `validate_creative_direction()` before delegation/authoring. This is the
-shared handoff; do not repeat it in separate creative/imagery/reference briefs.
+Use `validate_creative_direction()` before construction. This is the shared
+direction record; do not repeat it in separate creative/imagery/reference briefs.
 Round `direction.md` can refer to it and contain only the repair delta.
 The tool returns the direction digest and indexed review requirements. Carry
-that result with the handoff. A semantic revision after validation uses
+that result into current-scene review. A semantic revision after validation uses
 `validate_creative_direction(revision_reason="what changed and why")`; the new
 direction needs fresh review. Reformatting the same JSON is not a revision.
 
@@ -37,8 +37,8 @@ Required fields:
   in source_roles. Generated layers can name ordered `reference_asset_ids` and
   aligned `reference_roles` (source/treatment/composition, at most four).
 - Each layer's `placement`: `{x, y, width, height, fit}` as fractions of the
-  artboard within 0..1; fit is contain or cover (default contain). The author
-  translates these into artboard layout points; these are intent, not locked boxes.
+  artboard within 0..1; fit is contain or cover (default contain). Translate
+  these into artboard layout points; these are intent, not locked boxes.
 - Artboard `placement`: `{width, height, unit}` with unit px/pt/mm/in.
 - `review_needs`: nonempty list of specific checks; `assumptions`: concise list.
 
@@ -50,13 +50,12 @@ attributed-proof requires sourced quote/statistic and attribution linked to that
 proof. These prerequisites apply to new work and edits. Retain the relevant
 unchanged proof/source bindings in this direction during a narrow repair; the
 round delta names which existing components to mutate. Including unchanged
-attribution in the handoff does not authorize a collateral change. Intent=edit
+attribution in the direction does not authorize a collateral change. Intent=edit
 alone never permits missing required evidence. Other unchanged components may be
 omitted when their evidence and bindings are not needed for the selected work.
 Visible proof still needs honest qualification and attribution; a family name
 cannot certify evidence. Revisit the relevant skills at any stage and amend
 this same record explicitly if the copy, intent, sources or layer plan changes.
-The author can call the same validator after a revision; do so before using the
-changed handoff. It checks structure, references, available assets and registered
+Call the same validator after a revision, before using the changed record. It checks structure, references, available assets and registered
 evidence prerequisites, not a family-specific layout or a required CTA. It cannot prove
 truth or visual quality. Review sources and the final composition.

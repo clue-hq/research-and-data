@@ -538,7 +538,13 @@ def build_frame_payload(tools: Any) -> str:
     """The whole §5.1 block, appended to the flag-on author system prompt."""
     scene_candidate = getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate"
     sections: list[str] = [
-        _HEADER.replace("the resolved type ramp", "authored type context")
+        "COMPOSED FRAME PAYLOAD — the brand card, authored type context, initial "
+        "scene, placeable asset index and selected mechanics below are already "
+        "resolved for this turn. Reuse them instead of hunting for duplicates. "
+        "The validated direction is creative-direction.json in the run workspace. "
+        "Read other relevant skills and source_assets.json when they answer a "
+        "specific unresolved choice; the inline payload is not the full source "
+        "catalog or a limit on later discovery. Inspect current state after mutations."
         if scene_candidate else _HEADER
     ]
 

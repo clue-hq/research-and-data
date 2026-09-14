@@ -367,6 +367,9 @@ class Settings(BaseSettings):
     # Scene-only knowledge selection; separate workspace roots prevent mixing
     # knowledge during concurrent control/candidate runs. Website is unchanged.
     lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Default-off single-agent scene experiment. Requires candidate knowledge
+    # and the fast loop at scene construction; has no effect on website turns.
+    lumen_agent_scene_solo: bool = False
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the

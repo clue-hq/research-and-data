@@ -16,11 +16,13 @@ context; discovery is not limited to the opening move. Avoid loading the entire
 library without a specific need. Playbook selection explains intent, not a
 mandatory sequence of layouts or a limit on original composition.
 
-The canonical handoff is `creative-direction.json` in the run workspace.
-`knowledge/scene/direction-contract.md` owns its shape. It carries the selected
-copy, evidence pointers, intent and layer plan; do not create several competing
-briefs. The director validates it and delegates; the author uses checked DSL
-and the asset tools; the reviewer judges actual current pixels.
+The canonical direction is `creative-direction.json` in the run workspace.
+`knowledge/scene/direction-contract.md` owns its shape. It carries selected
+copy, evidence pointers, intent and the layer plan; do not create competing
+briefs. Validate it before use, construct through checked DSL and asset tools,
+and judge the actual current render. These responsibilities can belong to one
+agent; when the configured runtime delegates, share this same validated record.
+Available tools define each agent's authority.
 
 Load shared mechanics when needed:
 

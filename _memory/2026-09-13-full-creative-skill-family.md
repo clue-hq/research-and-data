@@ -333,3 +333,30 @@ five have actual selection evidence, thirteen are unvalidated. Reference-choice 
 human acceptance, paired comparison and 240s delivery remain open. Provider-transfer
 approval is resolved and persists; do not ask again for the same scope.
 Preserve the three unrelated September 8 memory changes outside these commits.
+
+## Resumed topology experiment and four-workspace steering
+
+Goal resumed with previous turn making real progress. Building default-off
+scene solo mode with actual delegation absence, same checked tools/skills/gates.
+Two Astra xhigh development agents cover runtime and read-only knowledge/source
+audits; root covers prompts, shared guidance, integration and live evaluation.
+Five shared docs contained explicit role policy;18family bodies need no change.
+SDK DeepAgents0.6.12 injects a general-purpose task even with subagents=[] and
+its profile registry is global, so a narrow scene-only middleware adapter avoids
+changing concurrent control/website runs. Actual graph tests required.
+User explicitly requires a fresh Clue ad and all4brands concurrently. Plan now
+requires4freshcontrols+4freshsolo cases with samebriefs/models/kits/sources; earlier
+Clue output cannot substitute. No new provider calls yet in this resumed round.
+
+Solo implementation verified:17real graph tests plus3prompt/frame tests; complete
+runtime suite exited0 with realhelper. Independent31focused tests passed; actual
+Grok/ChatOpenAI profile is default. Candidate frame's inherited delegation/no-
+discovery wording failed a regression, then was replaced with neutral reuse/
+on-demand guidance. Default flag0 added to localenv and bothenvexamples.
+Current test inputs: fourfresh ordinary Home briefs, noassetIDs/layout/skills.
+Seven identified prior asset_img_run generated layers archived via scopedAPI;
+originals/docs/blobs preserved. Perworkspace generationcache preserved/reset.
+Baseline local receipts under solo-four-brands-20260913. Home agent can rewrite
+briefs and multistyle auto-selection is nondeterministic; compare actual admitted
+inputs and call mismatches end-to-end screening, not identical-input causality.
+No provider generation yet; ready for current-source control-arm restart.

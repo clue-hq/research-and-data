@@ -791,3 +791,36 @@ frozen, ordinary requests, followed by coverage of the thirteen untested
 families. The final reliability patch has not yet had another provider-backed
 generation round. The full quality/promotion goal and 240-second target remain
 open; neither test count nor model acceptance closes them.
+
+## Single-agent comparison after reliability repairs
+
+Task 12 adds an explicitly selected, default-off scene-only single-agent mode.
+The one owner receives copy/direction, compilation, assets, review and finalization
+tools plus the same progressive skill catalog, evidence contract, filesystem
+permissions, checkpoints, cancellation and acceptance enforcement. It creates no
+author/reviewer model and exposes no delegation tool. Shared scene instructions
+become actor-neutral; all eighteen family bodies remain unchanged. Website and
+default scene topology are preserved. Removing handoff reports is not removal of
+source inspection, current-pixel critique or authoritative tool traces. The SDK's
+empty subagent list still enables a general-purpose agent; the isolated adapter
+must omit that capability without modifying process-global profiles.
+
+Task 13 tests four brands per arm, as explicitly requested: Clue, AWS, Google
+Cloud and Conduit. Each arm launches all four independent workspace requests
+together, using fresh projects/threads and ordinary short briefs. Both arms use
+the same source commit, models, budgets, kits and available source corpus; only
+scene topology changes. Record actual admitted inputs and output contamination
+checks; a mismatch invalidates a causal comparison instead of being hidden.
+Earlier Clue and three-brand deliveries are diagnostic history, not these controls.
+Observe first delivery, all source/image custody, actual skill reads and calls,
+review freshness, native edit/save/reload/export, visual quality and 240-second
+finished-delivery target. One paired output per brand is a screening experiment,
+not statistical proof or complete family validation. No production promotion.
+
+Input-parity limit confirmed before dispatch: ordinary saved generations enter
+the workspace asset library, and generation cache entries survive archive. The
+control prep therefore preserves receipts, archives identified experimental
+outputs, and resets only the backed-up perworkspace request cache. Fresh Home
+conversations can produce different handoff briefs, and multi-style ad selection
+may choose different automatic references. Compare admitted payloads; mismatched
+pairs are end-to-end screening, not isolated causal evidence about topology.

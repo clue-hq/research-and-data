@@ -590,16 +590,26 @@ class LumenDesignTools:
             output_summary=f"round {round_number}: {cap} compiles used",
             payload={"round": round_number, "cap": cap},
         )
+        recovery = (
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains). The canonical file write "
+            "registers the review. Open at most the permitted repair round if "
+            "needed, or call finalize_run with an honest outcome; acceptance still "
+            "requires a current preflight, preview and registered review. The "
+            "runtime already journals the DSL and diagnostics. "
+            if self.config.scene_solo else
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains), save dsl.lumen / "
+            "diagnostics.json / author_report.md, and return. The orchestrator "
+            "decides whether to open a repair round — that round gets its own "
+            "fresh budget of iterations. "
+        )
         return self._tool_error(
             "compile.inner_iteration_cap",
             f"REFUSED: this round has used its {cap} inner iterations (fast loop "
             "§5.2). Nothing was rolled back — the scene from your last successful "
             "compile stands. Stop compiling now: render_preview(), view(\"preview\"), "
-            "write an HONEST critique.json naming every issue still standing "
-            "(accepted:false if any blocker remains), save dsl.lumen / "
-            "diagnostics.json / author_report.md, and return. The orchestrator "
-            "decides whether to open a repair round — that round gets its own "
-            "fresh budget of iterations. If you were making one property edit per "
+            f"{recovery}If you were making one property edit per "
             "compile, that is the pattern this cap exists to stop: batch every "
             "planned fix into ONE whole-scene reconcile next time.",
             round=round_number,

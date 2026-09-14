@@ -248,6 +248,58 @@ def _filesystem_permissions():
     ]
 
 
+def _create_scene_solo_graph(*, model, backend, tools, system_prompt, skills, checkpointer):
+    """Compose DeepAgents 0.6.12 middleware without a delegation capability.
+
+    Its create_deep_agent(subagents=[]) still creates general-purpose + task.
+    Disabling that default is only exposed through the process-global model
+    profile registry, which would also change concurrent web/control turns.
+    This small scene-only adapter uses the same real middleware and permissions
+    with LangChain's factory; no profile/model identifiers are changed. Recheck
+    this composition when the pinned DeepAgents version changes. The filesystem
+    middleware's `_permissions` argument is the same enforcement seam used by
+    the upstream factory; our rules are deny-only, requiring no HITL layer.
+    """
+    from deepagents import __version__
+    from deepagents.graph import BASE_AGENT_PROMPT
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from deepagents.middleware.memory import MemoryMiddleware
+    from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+    from deepagents.middleware.skills import SkillsMiddleware
+    from deepagents.middleware.summarization import create_summarization_middleware
+    from langchain.agents import create_agent
+    from langchain.agents.middleware import TodoListMiddleware
+    from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+
+    middleware = [
+        TodoListMiddleware(),
+        SkillsMiddleware(backend=backend, sources=skills),
+        FilesystemMiddleware(backend=backend, _permissions=_filesystem_permissions()),
+        create_summarization_middleware(model, backend),
+        PatchToolCallsMiddleware(),
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+        MemoryMiddleware(
+            backend=backend, sources=["/.deepagent/AGENTS.md"], add_cache_control=True,
+        ),
+    ]
+    return create_agent(
+        model,
+        tools=tools,
+        system_prompt=system_prompt + "\n\n" + BASE_AGENT_PROMPT,
+        middleware=middleware,
+        state_schema=LumenTurnState,
+        checkpointer=checkpointer,
+        name="lumen-design-deepagent",
+    ).with_config({
+        "recursion_limit": 9_999,
+        "metadata": {
+            "ls_integration": "deepagents",
+            "lc_versions": {"deepagents": __version__},
+            "lc_agent_name": "lumen-design-deepagent",
+        },
+    })
+
+
 def create_design_deepagent(
     prompt: str,
     config: AgentRuntimeConfig | None = None,
@@ -303,6 +355,12 @@ def create_design_deepagent(
 
     runtime_config = config or AgentRuntimeConfig.from_env()
     scene_candidate = runtime_config.scene_skill_bundle == "candidate"
+    scene_solo = runtime_config.scene_solo
+    if scene_solo and (not scene_candidate or not runtime_config.fast_loop):
+        raise ValueError(
+            "Scene solo requires the candidate skill bundle and fast_loop=True. "
+            "Set LUMEN_AGENT_SCENE_SKILL_BUNDLE=candidate and LUMEN_AGENT_FAST_LOOP=1."
+        )
     if scene_candidate:
         # Shared hosts may assemble web/legacy and candidate turns concurrently.
         # Keep their derived knowledge and backend roots disjoint for the entire
@@ -345,13 +403,20 @@ def create_design_deepagent(
         critique_observer=tools.observe_written_critique,
     )
 
-    from .llm import assert_all_role_models_support_image_input
+    from .llm import assert_all_role_models_support_image_input, assert_model_supports_image_input
 
     # D10(c): every distinct configured role model must accept image input — the
     # loop is mandatory-multimodal for all three minds. Covering it HERE (not at
     # each callsite) means CLI and API entry paths are both guarded, since both
     # build through this factory. Loud only on a positive text-only finding.
-    assert_all_role_models_support_image_input(runtime_config)
+    if scene_solo:
+        assert_model_supports_image_input(
+            runtime_config.orchestrator_model,
+            base_url=runtime_config.agent_base_url,
+            api_key=runtime_config.agent_api_key,
+        )
+    else:
+        assert_all_role_models_support_image_input(runtime_config)
 
     # D10(a)+(c): build EXACTLY three model instances — one per role — bounded by
     # the shared max_tokens.
@@ -412,22 +477,19 @@ def create_design_deepagent(
         budget,
         **cancel_kwargs,
     )
-    author_model = _instrument(
-        runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
-    )
-    # The reviewer's model is built even when R3 quarantines the subagent below:
-    # construction costs nothing (a thin client object, no network), the web
-    # harness shares this constructor, and building it keeps the reviewer role
-    # REGISTERED with run_metrics — so a quarantined run reports the reviewer at
-    # zero calls rather than omitting it, which is the fact worth seeing.
-    reviewer_model = _instrument(
-        runtime_config,
-        tools,
-        runtime_config.reviewer_model,
-        "reviewer",
-        budget,
-        **cancel_kwargs,
-    )
+    if not scene_solo:
+        author_model = _instrument(
+            runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
+        )
+        # Preserve control-mode construction even when R3 quarantines review.
+        reviewer_model = _instrument(
+            runtime_config,
+            tools,
+            runtime_config.reviewer_model,
+            "reviewer",
+            budget,
+            **cancel_kwargs,
+        )
 
     view = make_view_tool(tools)
     # `budget` is None off the flag, so the orchestrator's render summary stays
@@ -440,7 +502,7 @@ def create_design_deepagent(
     # checkpoint must keep meaning "a round was accepted", and the author renders
     # mid-round precisely to find what is still wrong.
     author_render_preview = (
-        make_render_preview_tool(tools, checkpoint=False) if fast_loop else None
+        make_render_preview_tool(tools, checkpoint=False) if fast_loop and not scene_solo else None
     )
 
     # RC (D4/D5): references rode this turn → the orchestrator/author/reviewer
@@ -481,7 +543,7 @@ def create_design_deepagent(
     if scene_candidate:
         author_tools.append(tools.validate_creative_direction)
 
-    subagents = [
+    subagents = [] if scene_solo else [
         {
             "name": "lumen-dsl-author",
             "description": (
@@ -549,7 +611,7 @@ def create_design_deepagent(
     # `LUMEN_AGENT_SCENE_REVIEWER=1` is the kill-switch: it puts the reviewer back
     # WITHOUT leaving the fast loop, which is both §7's kill-switch check and the
     # rollback if self-audit scores diverge from human acceptance on a defect class.
-    if not runtime_config.scene_reviewer_enabled:
+    if not scene_solo and not runtime_config.scene_reviewer_enabled:
         quarantined = [sa for sa in subagents if sa["name"] == "lumen-visual-reviewer"]
         subagents = [sa for sa in subagents if sa["name"] != "lumen-visual-reviewer"]
         logger.info(
@@ -582,6 +644,34 @@ def create_design_deepagent(
     if not runtime_config.auto_defaults and not clarification_already_requested:
         # Insert before finalize_run so the honest exits sit together at the tail.
         orchestrator_tools.insert(len(orchestrator_tools) - 1, tools.request_clarification)
+
+    if scene_solo:
+        from .prompts import build_scene_solo_prompt
+
+        orchestrator_tools.extend([
+            tools.compile_dsl_block, tools.asset, tools.fetch_logo, tools.validate_binding_set,
+        ])
+        tools.record(
+            "orchestrator", "scene_agent_topology",
+            payload={"mode": "solo", "active_model_roles": ["orchestrator"], "subagents": []},
+        )
+        agent = _create_scene_solo_graph(
+            model=orchestrator_model,
+            backend=backend,
+            tools=orchestrator_tools,
+            system_prompt=build_scene_solo_prompt(
+                workspace_str,
+                has_references=has_references,
+                has_ad_assets=(workspace_root(tools) / "ad-assets.md").is_file(),
+                frame_payload=frame_payload,
+                target_llm_calls=runtime_config.fast_loop_target_llm_calls,
+                target_wall_clock_s=runtime_config.fast_loop_target_wall_clock_s,
+                inner_iterations=runtime_config.fast_loop_inner_iterations,
+            ),
+            skills=workspace_skills,
+            checkpointer=checkpointer,
+        )
+        return agent, tools
 
     agent = create_deep_agent(
         model=orchestrator_model,
