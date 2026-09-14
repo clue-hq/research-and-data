@@ -239,3 +239,9 @@ Next external action needs explicit OpenRouter transfer consent for internal
 guidance and relevant brand/reference payloads, including Conduit uploads if
 that scope is approved. No alternative route around either rejection. Preserve
 the three unrelated September8 memory changes; no push or production change.
+
+Goal marked blocked after the same unanswered provider-transfer approval
+persisted for three consecutive goal turns. No provider test is running and
+no additional local implementation is required before those tests. Resume the
+full visual-validation objective only after explicit consent or an authorized
+scope change; do not treat automatic continuations as consent.
