@@ -1810,6 +1810,13 @@ def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
         "stop_reason": "edit_scoped_acceptance",
         "run_id": "run_edit_scoped",
         "summary": "Requested edit applied and verified.",
+        "draft_verification": {
+            "scene_stamp": "current-scene",
+            "preflight": {"status": "current", "scene_stamp": "current-scene", "iteration": 1,
+                          "has_blocking_errors": False, "diagnostics": []},
+            "preview": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+            "review": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+        },
         "preview_paths": [],
         "ops_valid_through_iteration": 1,
         "critique": {
@@ -1908,7 +1915,7 @@ def test_agent_turn_preview_request_accepts_previous_turn_outcome() -> None:
 
 def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
     # Agent-quality: a run that exhausts its repair budget holding a
-    # preflight-clean best draft finalizes as `completed_with_warnings`. That
+    # preflight-clean best draft can finalize as `completed_with_warnings`. That
     # draft must reach the editor as a reviewable PROPOSAL (Accept/Reject),
     # not "failed" — with the unresolved critique as advisory warnings. The
     # critique arrives wrapped in the loop's last feedback envelope.
@@ -1922,6 +1929,13 @@ def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> No
         "stop_reason": "max_iterations_reached",
         "run_id": "run_best_draft",
         "summary": "Repair budget reached. Returned the best preflight-clean draft.",
+        "draft_verification": {
+            "scene_stamp": "current-scene",
+            "preflight": {"status": "current", "scene_stamp": "current-scene", "iteration": 1,
+                          "has_blocking_errors": False, "diagnostics": []},
+            "preview": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+            "review": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+        },
         "preview_paths": [],
         "ops_valid_through_iteration": 1,
         "critique": {

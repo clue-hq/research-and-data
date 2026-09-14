@@ -17,7 +17,7 @@ from uuid import uuid4
 from py_lumen_obs import bind_run_id, get_logger, log_span
 
 from lumen_api.core import CoreClient, CoreError
-from lumen_api.export_policy import partition_export_diagnostics
+from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -433,8 +433,10 @@ class LumenDesignTools:
         # Runtime-owned receipts bind acceptance to the exact reviewed scene
         # and bytes. Agent-authored JSON alone cannot certify a new render.
         self._preflight_scene_stamp: str | None = None
+        self._preflight_iteration: int | None = None
         self._preview_receipt: JsonObject | None = None
         self._review_receipt: JsonObject | None = None
+        self._review_iteration: int | None = None
         self._latest_visual_critique: JsonObject | None = None
         # A restarted substrate must validate its own direction. Production
         # checkpoint takeover restarts the turn; graph history is not a receipt.
@@ -3129,6 +3131,7 @@ class LumenDesignTools:
         platform default)."""
         iteration_dir = self._iteration_dir()
         self._preflight_scene_stamp = None
+        self._preflight_iteration = self.iteration
         self._latest_preflight_diagnostics = None
         try:
             # K2 belt: catch kit-asset references that arrived via structured
@@ -3986,6 +3989,7 @@ class LumenDesignTools:
         iteration_dir = self._iteration_dir()
         self._latest_visual_critique = None
         self._review_receipt = None
+        self._review_iteration = None
         try:
             if self.config.reference_assets or self._selected_reference_ids:
                 critique_json = json.dumps(stamp_reference_fidelity(json.loads(critique_json)))
@@ -4026,6 +4030,7 @@ class LumenDesignTools:
             "scene": self._scene_stamp(),
             "preview": self._current_preview_receipt(),
         }
+        self._review_iteration = self.iteration
         self._write_json(iteration_dir / "critique.json", payload)
         self.record(
             "visual-reviewer",
@@ -5130,6 +5135,37 @@ class LumenDesignTools:
             if refusal:
                 self.record("coordinator", "finalize_refused", output_summary=refusal)
                 return self._finalize_refusal(refusal)
+        verification = self.draft_verification()
+        historical_critique = None
+        if status != "accepted":
+            if critique and (
+                verification["review"]["status"] != "current"
+                or critique != self._latest_visual_critique
+            ):
+                registered = critique == self._latest_visual_critique
+                historical_critique = {
+                    "critique": critique,
+                    "status": verification["review"]["status"] if registered else "unbound",
+                    "scene_stamp": (self._review_receipt or {}).get("scene") if registered else None,
+                    "iteration": self._review_iteration if registered else None,
+                }
+            critique = (
+                dict(self._latest_visual_critique or {})
+                if verification["review"]["status"] == "current" else {}
+            )
+            if status == "completed_with_warnings":
+                note = draft_verification_note(verification)
+                # Agent prose may repeat an earlier review's failure. Retain
+                # that feedback above and in trace, never as the current verdict.
+                if verification["review"]["status"] == "current":
+                    summary = f"{note} {critique.get('summary', '')}".strip()
+                else:
+                    summary = note
+                if self._pending_pruned_pages:
+                    summary += (
+                        f"\nPruned {len(self._pending_pruned_pages)} empty page(s) "
+                        f"before finalizing: {', '.join(self._pending_pruned_pages)}."
+                    )
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -5139,6 +5175,8 @@ class LumenDesignTools:
             "effective_brand": self.effective_brand_context,
             "preview_paths": self.preview_paths,
             "critique": critique,
+            "historical_critique": historical_critique,
+            "draft_verification": verification,
             "gaps": self.gaps,
             "scene_update_sources": self.scene_update_sources,
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
@@ -5338,6 +5376,53 @@ class LumenDesignTools:
         # validity. Acceptance binds content and rendered bytes, not call count.
         content = json.dumps(self.scene, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(content.encode()).hexdigest()
+
+    def draft_verification(self) -> JsonObject:
+        """Report evidence freshness without spending, mutating, or accepting.
+
+        A retained warning draft can be unverified or blocked. Historical
+        preflight diagnostics do not describe the current scene; preview and
+        review validity also require the original rendered bytes to survive.
+        """
+        scene_stamp = self._scene_stamp()
+        preflight_current = (
+            self._preflight_scene_stamp == scene_stamp
+            and self._latest_preflight_diagnostics is not None
+        )
+        current_preview = self._current_preview_receipt()
+        preview_current = current_preview is not None and current_preview == self._preview_receipt
+        review_current = (
+            preview_current
+            and self._latest_visual_critique is not None
+            and self._review_receipt == {"scene": scene_stamp, "preview": current_preview}
+        )
+        blocking, advisory = partition_export_diagnostics(self._latest_preflight_diagnostics or [])
+        return {
+            "scene_stamp": scene_stamp,
+            "preflight": {
+                "status": "current" if preflight_current else ("stale" if self._preflight_scene_stamp else "missing"),
+                "scene_stamp": self._preflight_scene_stamp,
+                "iteration": self._preflight_iteration,
+                "has_blocking_errors": (
+                    bool(blocking or (self.latest_preflight_has_errors and not advisory))
+                    if preflight_current else None
+                ),
+                "diagnostics": (
+                    [diag.model_dump(mode="json") for diag in diagnostics_from(self._latest_preflight_diagnostics)]
+                    if preflight_current else []
+                ),
+            },
+            "preview": {
+                "status": "current" if preview_current else ("stale" if self._preview_receipt else "missing"),
+                "scene_stamp": (self._preview_receipt or {}).get("scene"),
+                "iteration": self._preview_rendered_iteration,
+            },
+            "review": {
+                "status": "current" if review_current else ("stale" if self._review_receipt else "missing"),
+                "scene_stamp": (self._review_receipt or {}).get("scene"),
+                "iteration": self._review_iteration,
+            },
+        }
 
     def _current_preview_receipt(self) -> JsonObject | None:
         summary = self.latest_export_summary or {}

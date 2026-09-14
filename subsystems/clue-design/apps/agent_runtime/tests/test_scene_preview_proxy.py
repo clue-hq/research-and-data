@@ -64,7 +64,7 @@ def _decode(block):
 
 def _metadata(content):
     text = next(block["text"] for block in content if block["type"] == "text" and "source_preview_sha256" in block["text"])
-    return json.loads(text.split("\n", 1)[1]), text
+    return json.JSONDecoder().raw_decode(text.split("\n", 1)[1])[0], text
 
 
 @pytest.mark.parametrize("size", [(1080, 1080), (1080, 1920), (1200, 628)])

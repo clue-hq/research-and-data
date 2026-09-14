@@ -399,6 +399,7 @@ def create_design_deepagent(
     # `write_file`, so this backend is the invariant's only choke point.
     backend = AgentWorkspaceBackend(
         root_dir=str(runtime_config.workspace_root),
+        active_run_id=tools.run_id,
         reference_turn=bool(runtime_config.reference_assets),
         critique_observer=tools.observe_written_critique,
     )
@@ -995,6 +996,27 @@ def run_deepagent_turn(
                                     accommodation_json=json.dumps(payload.get("accommodation")),
                                 )
                             )
+                    elif payload.get("status") == "completed_with_warnings":
+                        # A warning is still bound to the draft actually returned.
+                        # Later graph-batch edits or replaced preview bytes must
+                        # not leave its old review looking current at the API seam.
+                        verification = tools.draft_verification()
+                        if payload.get("draft_verification") != verification:
+                            same_scene = (
+                                (payload.get("draft_verification") or {}).get("scene_stamp")
+                                == verification["scene_stamp"]
+                            )
+                            payload = json.loads(tools.finalize_run(
+                                "completed_with_warnings",
+                                payload.get("stop_reason") or "draft_changed_at_return",
+                                payload.get("summary") or "Draft retained for review.",
+                                critique_json=json.dumps(payload.get("critique") or {}),
+                                ops_valid_through_iteration=(
+                                    payload.get("ops_valid_through_iteration") if same_scene else None
+                                ),
+                                baseline_advisory_json=json.dumps(payload.get("baseline_advisory")),
+                                accommodation_json=json.dumps(payload.get("accommodation")),
+                            ))
                     return payload, tools
 
             # A3: before the budget, because a human's stop outranks a machine's — though the two

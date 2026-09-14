@@ -1431,11 +1431,12 @@ def test_budget_breach_finalizes_with_warnings_and_a_gap(tmp_path, monkeypatch) 
 
     assert payload["status"] == "completed_with_warnings"
     assert payload["stop_reason"] == "budget_exhausted_llm_calls"
-    assert "45" in payload["summary"]
+    assert "unverified" in payload["summary"]
     # The honest incompleteness is in the ledger, not only in a log line.
     assert tools.gaps
     assert "budget" in tools.gaps[-1]["summary"]
     assert tools.gaps[-1]["area"] == "agent_protocol"
+    assert "45" in tools.gaps[-1]["evidence"]
     # And the run STILL emitted its §7 metrics.
     assert (tools.trace_dir / "metrics.json").exists()
 

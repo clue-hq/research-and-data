@@ -930,7 +930,7 @@ def test_finalize_still_refuses_when_the_prose_score_is_low(tmp_path, monkeypatc
 
 
 def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_path, monkeypatch):
-    """Metrics need the field on EVERY reference turn, not only accepted ones."""
+    """Unbound feedback retains typed metrics without becoming a current review."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
@@ -939,7 +939,11 @@ def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_pat
     assert not result.startswith("REFUSED")
 
     final = json.loads((tools.trace_dir / "final.json").read_text())
-    assert final["critique"]["reference_fidelity"]["score"] == 0
+    assert final["critique"] == {}
+    assert final["historical_critique"]["status"] == "unbound"
+    assert final["historical_critique"]["critique"]["reference_fidelity"]["score"] == 0
+    assert final["draft_verification"]["review"]["status"] == "missing"
+    assert final["acceptance_receipt"] is None
 
 
 def test_finalize_non_accepted_reference_turn_needs_no_fidelity(tmp_path, monkeypatch):

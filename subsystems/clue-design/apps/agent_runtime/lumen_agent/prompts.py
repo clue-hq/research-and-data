@@ -1266,8 +1266,9 @@ def build_scene_solo_prompt(
 direction, original copy, source selection, construction and visual review. Use
 the tools available to you and the scene skills throughout this work.
 
-1. Gather {workspace}/brief.md, brand_card.json, state.json and
-/knowledge_docs/skills/scene-brief-copy/SKILL.md together. A short user request
+1. Gather {workspace}/brief.md, brand_card.json, state.json,
+/knowledge_docs/skills/scene-brief-copy/SKILL.md and
+/knowledge_docs/knowledge/scene/components.md together. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the
 user provide a headline, asset IDs or a detailed image-generation prompt.
@@ -1292,8 +1293,8 @@ require revision_reason and renewed review. A request for new imagery needs
 generated_image layers and actual generation; old assets or native flat fields
 alone do not fulfill it.
 4. Create {workspace}/rounds/round_N for the active round, starting with round_1.
-Keep a concise decision or repair delta there. Read components/reference guides
-and the checked DSL grammar when needed. Use compile_dsl_block: establish page
+Keep a concise decision or repair delta there. Apply the loaded component guide;
+read reference guides and the checked DSL grammar when needed. Use compile_dsl_block: establish page
 dimensions, native text/geometry, authentic images and sized artwork reservations
 before image or logo operations. Then generate, edit, crop or reuse imagery as
 the validated direction requires. Inspect generated pixels before placement

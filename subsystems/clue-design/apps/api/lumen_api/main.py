@@ -72,6 +72,7 @@ from .custom_component_compiler import (
     default_compiler_worker_path,
 )
 from .export_policy import (
+    draft_verification_note,
     export_warning_views,
     has_blocking_export_diagnostics,
     partition_export_diagnostics,
@@ -12021,6 +12022,16 @@ def agent_response_from_trace(
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []
+    diagnostic_history: List[JsonObject] = []
+    verification = result.get("draft_verification")
+    if not isinstance(verification, dict):
+        verification = None
+    if verification:
+        preflight = verification.get("preflight")
+        if isinstance(preflight, dict) and preflight.get("status") == "current":
+            diagnostics.extend(agent_diagnostics_from_summaries(
+                preflight.get("diagnostics", []), "preflight"
+            ))
     # Phase 0b: the loop's keep-best snapshot can return an EARLIER iteration's
     # scene as the draft. Operations from later iterations are then not part of
     # that draft and must not be replayed by the editor.
@@ -12064,11 +12075,15 @@ def agent_response_from_trace(
                 except json.JSONDecodeError:
                     continue
                 compile_summary = compile_payload.get("compile") or {}
-                diagnostics.extend(
-                    agent_diagnostics_from_summaries(
-                        compile_summary.get("diagnostics", []), "dsl"
-                    )
+                attempt_diagnostics = agent_diagnostics_from_summaries(
+                    compile_summary.get("diagnostics", []), "dsl"
                 )
+                if attempt_diagnostics:
+                    diagnostic_history.append({
+                        "iteration": int(iteration_dir.name) if iteration_dir.name.isdigit() else iteration_dir.name,
+                        "phase": "dsl",
+                        "diagnostics": attempt_diagnostics,
+                    })
                 if (
                     ledger_operations is None
                     and compile_summary.get("status") == "ok"
@@ -12089,20 +12104,30 @@ def agent_response_from_trace(
     # verified applied proposes its operations even though the whole-design
     # critique still has (advisory) complaints.
     edit_scoped = result.get("status") == "edit_applied"
-    # Agent-quality: `completed_with_warnings` means the loop kept a
-    # PREFLIGHT-CLEAN best draft that simply never won explicit visual
-    # acceptance within the repair budget. That is a reviewable proposal —
-    # mapping it to "failed" threw away good drafts (runs d6e08a28/d77d41d in
-    # the 2e gate both died here). The unresolved critique rides along as
-    # advisory warnings, exactly like an edit-scoped acceptance.
+    # A warning result retains editable work. It does not certify current
+    # preflight, preview, or visual acceptance; the runtime receipts below
+    # describe those separately. Preserve the existing proposal policy.
     best_draft = result.get("status") == "completed_with_warnings"
     status = (
         "proposed" if (accepted or edit_scoped or best_draft) and operations else "failed"
     )
-    if (edit_scoped or best_draft) and status == "proposed":
+    review = (verification or {}).get("review")
+    review_current = isinstance(review, dict) and review.get("status") == "current"
+    if (edit_scoped or best_draft) and status == "proposed" and review_current:
         diagnostics.extend(
             advisory_critique_diagnostics(result.get("critique"))
         )
+    summary = result.get("summary") or "Agent run completed."
+    if best_draft and not review_current:
+        summary = draft_verification_note(verification)
+    historical_critique = result.get("historical_critique")
+    if not review_current and not historical_critique and result.get("critique"):
+        historical_critique = {
+            "critique": result["critique"],
+            "status": "unbound",
+            "scene_stamp": None,
+            "iteration": None,
+        }
     if status == "failed" and not diagnostics:
         diagnostics.append(
             agent_diagnostic(
@@ -12116,7 +12141,7 @@ def agent_response_from_trace(
     return {
         "schema_version": 1,
         "status": status,
-        "summary": result.get("summary") or "Agent run completed.",
+        "summary": summary,
         "run_id": result.get("run_id"),
         "trace_dir": str(trace_dir),
         "preview_paths": preview_paths,
@@ -12128,6 +12153,9 @@ def agent_response_from_trace(
         if isinstance(result.get("stop_reason"), str)
         else None,
         "diagnostics": diagnostics,
+        "diagnostic_history": diagnostic_history,
+        "draft_verification": verification,
+        "historical_critique": historical_critique,
         "artifacts": [
             {
                 "format": agent_artifact_format(path),

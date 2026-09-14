@@ -2072,6 +2072,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "selectolax" },
+    { name = "wcmatch" },
 ]
 
 [package.metadata]
@@ -2090,6 +2091,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "rich", specifier = ">=15,<16" },
     { name = "selectolax", specifier = ">=0.3.21,<1" },
+    { name = "wcmatch", specifier = ">=11,<12" },
 ]
 
 [[package]]

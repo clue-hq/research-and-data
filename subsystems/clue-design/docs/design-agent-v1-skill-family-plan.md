@@ -1,14 +1,15 @@
 # Design Agent V1: a coherent skill family and a cross-brand test
 
-Status: implementation in local validation, 2026-09-13. **Eighteen candidate
+Status: implementation in local validation, 2026-09-14. **Eighteen candidate
 playbooks** are implemented and enabled on localhost through on-demand discovery.
 The original four-playbook scope below records the earlier plan; the full-family
 continuation at the end is the current scope. Reference custody, acceptance,
-timing and crop safeguards are implemented. Ordinary-request diagnostics have
-run, but the paired cross-brand benchmark is incomplete and the four-minute
-finished-creative target has not passed. Branch: `codex/design-agent-v1`.
+timing and crop safeguards are implemented. Eight fresh ordinary-request outputs
+cover all four brands in director/author and single-agent configurations. The
+broader skill-family benchmark remains incomplete and the four-minute target
+has not passed. Branch: `codex/design-agent-v1`.
 
-The latest approved provider round delivered three new square drafts through
+The earlier approved provider round below delivered three new square drafts through
 ordinary Home requests and the normal Design handoff, without supplied asset IDs,
 skill names, prescribed headlines or layouts. There are now saved current-family
 samples across all four local brand workspaces. Five families have live selection
@@ -28,6 +29,31 @@ ordinary-request diagnostics, not a paired causal benchmark or a 240-second pass
 Clue's two earlier saved samples remain unchanged. Ports 3021–3024 serve distinct
 local workspace contexts through a shared local backend/database; they are not
 four independent database installations or cloud deployments.
+
+The latest four-brand topology comparison is recorded at the end of this plan.
+Its timings and saved artifacts are actual observations, but its context isolation
+is not a proven causal control: a subsequent audit reproduced sibling-run file
+access through the shared scene backend. The Clue trace requests a prior Conduit
+critique and AWS control-run feedback. Frozen logs do not include returned tool
+bodies, so historical ingestion is unverified; equal source catalogs alone do not
+prove equal or isolated model context. New provider comparisons must first verify
+that each run can read only its own files and the intended shared knowledge.
+
+The September 14 corrections fence scene filesystem tools to the active run and
+shared read-only instructions, including aliases, recursive searches and symlinks.
+Both scene topologies use the fence; the website backend retains its existing
+contract. The exact historical sibling requests now return no data. Current
+preflight/preview/review evidence is separated from historical feedback, and chat
+distinguishes an accepted design, scoped edit and unaccepted saved draft.
+
+The solo agent now gathers the existing component guide at the start: all four
+previous runs skipped it and later attempted image nodes without asset IDs.
+The existing placement preview also reports resolved native text em sizes at its
+actual 360px content scale. These are observations for the agent, not prescribed
+font sizes or a new visual-quality acceptance gate. The next four-brand round
+tests these changes with ordinary requests for Clue's human review, an AWS AI
+guide, Google Cloud's enterprise AI positioning, and Conduit's OPERA integration.
+No additional family is promoted merely because these mechanics pass tests.
 
 ## Earlier four-playbook implementation evidence and remaining gate
 

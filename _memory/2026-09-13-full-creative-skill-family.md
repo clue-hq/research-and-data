@@ -412,3 +412,42 @@ restartneededforreviews. Sourcecommit536f4d65, no pushes. All evidence under
 solo-four-brands-20260913; paired report20260914T065137Z includes frozen metrics,
 acceptance, custody and384verifiedruntimefiles acrossarms. Goal remains active:
 latency,humanquality,13uncoveredfamilies and truthful warnings remain unfinished.
+
+## September 14: current-evidence and run-isolation corrections
+
+Local42db3970 makes platform summaries distinguish design acceptance, scoped edit
+and retained draft. Current runtime preflight/preview/review receipts now accompany
+warning drafts; obsolete compile diagnostics and unbound critiques remain history.
+Summary prose cannot repeat stale export failures as current. Return-time scene or
+preview mutations refresh warning evidence. Draft retention/acceptance policy stays.
+
+Audit found Clue requested prior Conduit/AWS run files. Read-only replay confirmed
+shared filesystem reachability, not historical ingestion (tool results absent).
+Scene factory now passes active_run_id; backend fences read/write/edit/search/
+glob/upload/download, including aliases and symlinks, to its run and readonly
+knowledge. Scoped searches use checked SDK walker because inherited rg --follow
+could traverse private symlinks before result filtering. Reviewer caught/fixed a
+web relative-custom-component alias mutation; unscoped web behavior preserved.
+120 isolation tests and independent scratch probes pass. Historical requests denied.
+
+All4 earlier solos skipped components.md before missing-asset compile failures.
+Solo initial gather now includes that existing guide. Candidate preview adds
+resolved native-text em sizes at actual proxy scale, with unavailable states for
+unbound evidence; no fixed threshold. 129 focused tests/independent27 pass. Source
+images/proxy bytes/acceptance unchanged. Runtime suite exercised2155 cases:
+2147pass7skip1old critique-contract assertion; assertion repaired with historical
+reference metric preserved, full53 harness tests pass afterward. API mapping10 and
+platformsummary8 pass (platform9DBskipped). Broader APItest file attempted without
+throwaway DB, socket denied by sandbox; stopped after16fail10pass, no claimed DB
+integration. Use disposable DB for any future full API run; no escalation of this
+attempt. Existing prompts/view Ruff findings unchanged9/21; no new findings.
+
+Declared direct wcmatch>=11,<12 alreadylocked11. uv lock offline couldn't rebuild
+missing cache; amended only existing runtime dependency edges, uv lock --check
+--offline passes179packages with no resolution/version/install changes.
+
+Next4 coverage baseline prepared under ignored coverage-four-brands-20260914:
+4previous experimental raster layers reversibly archived, caches backed up/reset,
+original docs/blobs preserved. Globalidle90Fleetdone37designsuccess5failed before
+prepare. No provider call for new round yet. New source not loaded until scoped
+restart; current source frozen for checkpoint. No engine changes/WASM rebuild.

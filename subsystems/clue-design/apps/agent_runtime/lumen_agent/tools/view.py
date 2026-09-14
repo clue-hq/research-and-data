@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -204,7 +205,136 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _preview_readability_blocks(raw: bytes) -> list[dict]:
+def _preview_page_id(tools: LumenDesignTools, png: Path) -> str | None:
+    """Associate these exact preview bytes with their validated artifact's page."""
+    latest = tools.latest_preview_bundle or tools.latest_export_summary
+    if isinstance(latest, dict):
+        for artifact in reversed(latest.get("artifacts", []) or []):
+            candidate = artifact.get("path") or artifact.get("critic_input_path")
+            if artifact.get("format") == "png" and candidate and Path(candidate) == png:
+                return artifact.get("page_id")
+    return None
+
+
+def _preview_text_table(
+    scene: dict, page_id: str | None, source_height: int, proxy_height: int, *, resolved: bool,
+) -> str:
+    """Describe nominal em sizes, using the core's canonical page and resolved text.
+
+    Skia maps canonical page layout height to the actual raster height. The
+    proxy then resizes that raster to its *rounded* content height. No authored
+    unit conversion, token resolution, glyph measurement or acceptance policy
+    belongs here. Unsupported observations stay explicitly unavailable.
+    """
+    def unavailable(reason: str) -> str:
+        return f"\n\nNative text observation: native text metrics unavailable — {reason}."
+
+    def finite_number(value) -> bool:
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+        )
+
+    if not resolved:
+        return unavailable("no current preflight bound to these preview bytes")
+    page = (scene.get("pages") or {}).get(page_id)
+    if not isinstance(page, dict):
+        return unavailable("rendered page association is missing")
+    size = page.get("size") or {}
+    if size.get("unit") != "pt" or any(
+        not finite_number(size.get(axis)) or size[axis] < 1 for axis in ("width", "height")
+    ):
+        return unavailable("canonical page dimensions are missing or unsupported")
+
+    def cell(value: str, limit: int | None = None) -> str:
+        value = " ".join(value.split())
+        if limit is not None and len(value) > limit:
+            value = value[:limit - 1] + "…"
+        return (
+            value.replace("\\", "\\\\").replace("|", "\\|")
+            .replace("<", "&lt;").replace(">", "&gt;")
+        )
+
+    nodes = scene.get("nodes") or {}
+    rows: list[str] = []
+    hidden = instances = omitted = 0
+    visited: set[str] = set()
+    pending = [(node_id, False, None) for node_id in reversed(page.get("children") or [])]
+    while pending:
+        node_id, ancestor_hidden, ancestor_issue = pending.pop()
+        if node_id in visited:
+            continue
+        visited.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        # Pinned nodes paint from page space, outside ancestor opacity/transform.
+        if node.get("position_mode") == "absolute":
+            ancestor_hidden, ancestor_issue = False, None
+        opacity = node.get("opacity", 1)
+        issue = ancestor_issue
+        opacity_resolved = node.get("opacity_token") is None and finite_number(opacity)
+        if not opacity_resolved:
+            issue = "unresolved opacity"
+        node_hidden = ancestor_hidden or (opacity_resolved and opacity <= 0)
+        transform = node.get("transform") or {}
+        if any(transform.get(key, 0) != 0 for key in ("rotation", "skew_x", "skew_y")):
+            issue = "unsupported transform"
+        kind = node.get("kind") or {}
+        if kind.get("kind") == "instance":
+            instances += 1
+        if kind.get("kind") in ("frame", "group", "auto_layout"):
+            pending.extend(
+                (child, node_hidden, issue) for child in reversed(node.get("children") or [])
+            )
+        if kind.get("kind") != "text" or not (kind.get("content") or "").strip():
+            continue
+        if node_hidden:
+            hidden += 1
+            continue
+        if any(kind.get(key) is not None for key in (
+            "style_token", "font_size_token", "line_height_token", "letter_spacing_token",
+        )):
+            issue = "unresolved typography"
+        font_size = kind.get("font_size")
+        if not finite_number(font_size) or font_size <= 0:
+            issue = "invalid resolved font size"
+        source_em = font_size * source_height / size["height"] if issue is None else None
+        proxy_em = font_size * proxy_height / size["height"] if issue is None else None
+        if issue is None and not all(math.isfinite(value) for value in (source_em, proxy_em)):
+            issue = "unrepresentable em size"
+        if len(rows) >= 40:
+            omitted += 1
+            continue
+        values = (
+            f"unavailable ({issue}) | unavailable"
+            if issue else f"{source_em:.2f} | {proxy_em:.2f}"
+        )
+        rows.append(f"| {cell(node_id)} | {cell(kind['content'], 56)} | {values} |")
+
+    caption = (
+        f"\n\nNative text on page {cell(page_id)}: resolved em size in source-preview pixels "
+        "and in the "
+        "actual proxy content, rounded to 0.01px; not glyph height or a readability verdict. "
+        "Use these sizes with the image to judge legibility. Clipping, occlusion, "
+        "off-canvas placement and text inside images are not measured. "
+        f"{hidden} zero-opacity text nodes excluded; {instances} instances not expanded; "
+        f"{omitted} additional rows omitted."
+    )
+    if not rows:
+        return caption + " No native text rows available."
+    return (
+        caption
+        + "\n\n| Node | Authored text sample | Source preview em px | 360px proxy em px |"
+        + "\n| --- | --- | ---: | ---: |\n"
+        + "\n".join(rows)
+    )
+
+
+def _preview_readability_blocks(
+    raw: bytes, *, scene: dict | None = None, page_id: str | None = None, resolved: bool = False,
+) -> list[dict]:
     """A derived observation only: never an export, asset, or acceptance receipt.
 
     Padding keeps the 360px-wide content below the full-view scale even after
@@ -274,6 +404,8 @@ def _preview_readability_blocks(raw: bytes) -> list[dict]:
                 "legibility at this scale; successful preflight does not establish readability. "
                 "The full preview above remains the source; provider-internal resampling is unknown.\n"
                 + json.dumps(metadata, sort_keys=True)
+                + (_preview_text_table(scene, page_id, height, content_height, resolved=resolved)
+                   if scene is not None else "")
             ),
             _image_bytes_block(encoded.getvalue(), max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
@@ -352,7 +484,11 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             _image_bytes_block(raw) if raw is not None else _image_block(png),
         ]
         if raw is not None:
-            content.extend(_preview_readability_blocks(raw))
+            content.extend(_preview_readability_blocks(
+                raw, scene=tools.scene, page_id=_preview_page_id(tools, png),
+                resolved=(receipt is not None and rendered_scene is not None
+                          and getattr(tools, "_preflight_scene_stamp", None) == rendered_scene),
+            ))
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 
