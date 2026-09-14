@@ -335,3 +335,8 @@ class LangfuseRunRegistry:
 
     def pop(self, run_id: UUID) -> LangfuseIds | None:
         return self._ids.pop(run_id, None)
+
+    def latest(self) -> LangfuseIds | None:
+        """The most recently remembered ids — for a caller that runs one model call at a time and
+        has no run id of its own (the ARV2 round recorder)."""
+        return next(reversed(self._ids.values()), None)

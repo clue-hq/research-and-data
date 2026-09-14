@@ -136,5 +136,7 @@ def test_the_run_registry_remembers_and_pops_by_run_id() -> None:
     assert registry.get(run_id) is None
     registry.remember(run_id, LangfuseIds(trace_id="t", observation_id="o"))
     assert registry.get(run_id) == LangfuseIds(trace_id="t", observation_id="o")
+    assert registry.latest() == LangfuseIds(trace_id="t", observation_id="o")
     assert registry.pop(run_id) == LangfuseIds(trace_id="t", observation_id="o")
     assert registry.get(run_id) is None
+    assert registry.latest() is None
