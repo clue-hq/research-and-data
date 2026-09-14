@@ -120,7 +120,7 @@ from ..web_retokenize import build_web_retokenize_operations, summarize_class_pa
 from . import logo_fetch
 from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
-from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
+from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _image_observation_label, _text_block
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -8473,7 +8473,9 @@ class LumenWebTools:
             output_summary="cloned_section_viewed",
         )
         return [
-            _text_block(f"view: cloned section {fragment_id} — {label}"),
+            _text_block(_image_observation_label(
+                Path(preview_path), f"view: cloned section {fragment_id} — {label}"
+            )),
             # G5: every web view image rides the many-image ceiling — these accumulate in the
             # same conversation as the page captures.
             _image_block(Path(preview_path), max_px=_VISION_MANY_IMAGE_MAX_PX),
@@ -9712,9 +9714,9 @@ class LumenWebTools:
                 "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
             )
             return [
-                _text_block(
-                    f"view: latest preview at {width}px (iteration {self._preview_iteration})"
-                ),
+                _text_block(_image_observation_label(
+                    Path(path), f"view: latest preview at {width}px (iteration {self._preview_iteration})"
+                )),
                 # G5: web review is many-image by construction (three widths per
                 # render, state captures, and every image the orchestrator has
                 # already viewed rides the same request), so every image attached
@@ -9873,9 +9875,10 @@ class LumenWebTools:
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )
         return [
-            _text_block(
-                f"view: asset {asset_id} — {label} ({', '.join(details)})"
-            ),
+            _text_block(_image_observation_label(
+                path, f"view: asset {asset_id} — {label} ({', '.join(details)})",
+                source_mime=(record.get("media") or {}).get("mime_type"),
+            )),
             # G5 (see the preview branch): every web view image rides the
             # many-image ceiling, kit assets included — they accumulate in the
             # same conversation as the page captures.
@@ -9934,10 +9937,10 @@ class LumenWebTools:
             "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
         )
         return [
-            _text_block(
-                f"view: state capture {index} — {capture.get('kind')}"
+            _text_block(_image_observation_label(
+                Path(path), f"view: state capture {index} — {capture.get('kind')}"
                 f"{node_note} at {capture.get('width')}px"
-            ),
+            )),
             # G5: same many-image ceiling as the preview blocks above — a state
             # capture rides the identical accumulating request.
             _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),

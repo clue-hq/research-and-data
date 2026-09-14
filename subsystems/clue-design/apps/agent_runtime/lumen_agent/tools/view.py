@@ -135,7 +135,9 @@ def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[by
 
     Sub-minimum images are magnified with nearest-neighbor and over-ceiling ones are
     reduced with LANCZOS — aspect preserved either way — so a provider can never
-    reject the block; an image already inside the band passes through byte-identical.
+    reject the block for its dimensions. Static JPEG/PNG images already inside the
+    band pass through byte-identical with their actual MIME. Other formats and
+    animations become a PNG of frame zero of the viewed file; source bytes stay intact.
     Raises on unreadable/corrupt bytes — the caller contains it into an honest error
     string so the turn continues.
 
@@ -147,6 +149,9 @@ def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[by
     from PIL import Image
 
     with Image.open(io.BytesIO(raw)) as img:
+        source_format = img.format
+        animated = getattr(img, "is_animated", False)
+        img.seek(0)
         img.load()
         width, height = img.size
         scale = 1.0
@@ -154,8 +159,8 @@ def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[by
             scale = _VISION_MIN_PX / float(min(width, height))
         if max(width, height) * scale > max_px:
             scale = max_px / float(max(width, height))
-        if scale == 1.0:
-            return raw, "image/png"  # already inside the band — untouched bytes
+        if scale == 1.0 and not animated and source_format in ("JPEG", "PNG"):
+            return raw, "image/jpeg" if source_format == "JPEG" else "image/png"
         if scale > 1.0:
             new_size = (max(_VISION_MIN_PX, round(width * scale)), max(_VISION_MIN_PX, round(height * scale)))
             resample = Image.NEAREST
@@ -167,7 +172,7 @@ def _normalize_image_bytes(raw: bytes, max_px: int = _VISION_MAX_PX) -> tuple[by
             resample = Image.LANCZOS
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA")
-        resized = img.resize(new_size, resample)
+        resized = img.resize(new_size, resample) if scale != 1.0 else img
         buffer = io.BytesIO()
         resized.save(buffer, format="PNG")
         return buffer.getvalue(), "image/png"
@@ -191,6 +196,22 @@ def _image_block(png_path: Path, max_px: int = _VISION_MAX_PX) -> dict:
 
 def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
+
+
+def _image_observation_label(path: Path, label: str, *, source_mime: str | None = None) -> str:
+    """Describe the still observation in a standard text block beside the image.
+
+    The frame index belongs to the viewed file. A static thumbnail of a GIF does
+    not establish which original frame it depicts, even when its pixels are PNG.
+    """
+    from PIL import Image
+
+    with Image.open(path) as img:
+        if getattr(img, "is_animated", False):
+            return label + "; first frame only (frame index 0 of the viewed file); animation not reviewed."
+    if source_mime == "image/gif":
+        return label + "; still preview of GIF source; source frame index unknown; animation not reviewed."
+    return label
 
 
 def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
@@ -235,7 +256,9 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             tools.record("agent", "view_called", input_summary=target, output_summary="preview_stale")
             return content
         content = [
-            _text_block(f"view: latest rendered preview ({to_virtual(png, tools.config)})"),
+            _text_block(_image_observation_label(
+                png, f"view: latest rendered preview ({to_virtual(png, tools.config)})"
+            )),
             _image_block(png),
         ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
@@ -288,9 +311,10 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             tools.record("agent", "view_called", input_summary=target, output_summary="asset_missing_file")
             return content
         content = [
-            _text_block(
-                f"view: source preview for asset {asset_id} ({to_virtual(path, tools.config)})"
-            ),
+            _text_block(_image_observation_label(
+                path, f"view: source preview for asset {asset_id} ({to_virtual(path, tools.config)})",
+                source_mime=(record.get("media") or {}).get("mime_type"),
+            )),
             _image_block(path),
         ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
@@ -331,10 +355,10 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             return content
         label = entry.get("title") or asset_id
         content = [
-            _text_block(
-                f"view: reference {index} — {label} "
-                f"({to_virtual(path, tools.config)})"
-            ),
+            _text_block(_image_observation_label(
+                path, f"view: reference {index} — {label} ({to_virtual(path, tools.config)})",
+                source_mime=((entry.get("record") or {}).get("media") or {}).get("mime_type"),
+            )),
             _image_block(path),
         ]
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
