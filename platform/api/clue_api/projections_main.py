@@ -26,6 +26,10 @@ from clue_api.observability_wiring import build_observability_surface
 from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
+from clue_api.production_tracing import (
+    install_production_sentry,
+    install_production_tracing,
+)
 from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.projections_app import create_projections_app
@@ -78,6 +82,13 @@ def build_application(
     # Startup gate: a declared product path that is missing a provider credential refuses here,
     # before any collaborator is composed, rather than serving silently-degraded provider slots.
     assert_product_path_composition(resolved, resolved_secrets)
+    # Lane 3 slice 2: the process's tracer provider (and Sentry) before any collaborator exists,
+    # so every span this process opens belongs to one provider. Both are no-ops without an
+    # endpoint / a DSN, which is the shipped default.
+    tracing = install_production_tracing(
+        resolved, resolved_secrets, service_name="clue-projections-api"
+    )
+    install_production_sentry(resolved, resolved_secrets, service_name="clue-projections-api")
     storage = build_storage_backend(resolved)
     research_views: ProductionResearchViewRuntime | None = (
         build_production_research_view_runtime(storage=storage) if _c7_enabled(resolved) else None
@@ -386,6 +397,7 @@ def build_application(
             if resolved.entity_research_runtime_enabled and not resolved.budget_controls_enabled
             else None
         ),
+        tracing=tracing,
     )
 
 
