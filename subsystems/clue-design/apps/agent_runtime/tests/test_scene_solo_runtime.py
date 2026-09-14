@@ -265,8 +265,9 @@ def test_solo_budget_backstop_finishes_without_calling_another_model(tmp_path, m
     assert json.loads((tools.trace_dir / "final.json").read_text()) == result
 
 
+@pytest.mark.parametrize("verify_again", [False, True])
 def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, verify_again
 ):
     from test_render_preview_reuse import _RenderCore
     from test_scene_skill_family import direction
@@ -300,13 +301,14 @@ def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once
         },
     }
     finalize_args = {"status": "accepted", "stop_reason": "review_complete", "summary": "Ready."}
+    receipt = {"scene": tools._scene_stamp(), "preview": tools._preview_receipt}
     built[0][2].responses = [
-        call("finalize_run", finalize_args, "unreviewed"),
+        call("view", {"target": "preview"}, "pixels"),
         call("write_file", {
             "file_path": f"/{tools.run_id}/workspace/rounds/round_1/critique.json",
             "content": json.dumps(review),
         }, "review"),
-        call("render_preview", {}, "verified"),
+        *([call("render_preview", {}, "verified")] if verify_again else []),
         call("finalize_run", finalize_args, "accepted"),
         AIMessage(content="Creative ready."),
     ]
@@ -315,11 +317,27 @@ def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once
         message.tool_call_id: message.content
         for message in result["messages"] if isinstance(message, ToolMessage)
     }
-    assert outputs["unreviewed"].startswith("REFUSED")
-    assert '"registered_review_current": true' in outputs["verified"]
-    assert json.loads(outputs["accepted"])["status"] == "accepted"
+    assert any(block.get("type") == "image" and block.get("data") for block in outputs["pixels"])
+    if verify_again:
+        assert '"registered_review_current": true' in outputs["verified"]
+    final = json.loads(outputs["accepted"])
+    assert final["status"] == "accepted"
+    assert final["acceptance_receipt"] == receipt == tools._review_receipt
     assert len(checkpoints) == 1
     assert [op["kind"] for op in checkpoints[0][0]] == ["add_page", "insert_node"]
     assert tools.core.exports == ["svg", "png"]
     assert (round_dir / "critique.json").is_file()
     assert json.loads((tools.trace_dir / "final.json").read_text())["acceptance_receipt"]
+    events = [
+        json.loads(line)["event"]
+        for line in (tools.trace_dir / "trace.jsonl").read_text().splitlines()
+    ]
+    assert events.count("critique_result") == events.count("run_finalized") == 1
+    assert "preflight_completed" not in events[events.index("critique_result") + 1:]
+    final_calls = [
+        call for turn in built[0][2].seen for message in turn
+        if isinstance(message, AIMessage) for call in message.tool_calls
+        if call["name"] == "finalize_run"
+    ]
+    assert len(final_calls) == 1
+    assert final_calls[0]["args"] == finalize_args

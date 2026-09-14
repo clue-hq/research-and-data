@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.tools import StructuredTool
 from py_lumen_obs import get_logger
 from py_lumen_obs.config import run_log
+from pydantic import BaseModel, ConfigDict
 
 from .budget import BudgetExhausted, RunBudget, attach_budget_callback
 from .cancellation import (
@@ -48,6 +50,46 @@ from .tools.view import make_view_tool
 from .workspace import initial_turn_state, scaffold_workspace, workspace_root
 
 logger = get_logger("lumen_agent.harness")
+
+
+class _CandidateFinalizeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    stop_reason: str
+    summary: str
+    ops_valid_through_iteration: int | None = None
+    baseline_advisory_json: str = "null"
+    accommodation_json: str = "null"
+
+
+def _make_candidate_finalize_tool(tools: LumenDesignTools) -> StructuredTool:
+    def finalize_run(
+        status: str,
+        stop_reason: str,
+        summary: str,
+        ops_valid_through_iteration: int | None = None,
+        baseline_advisory_json: str = "null",
+        accommodation_json: str = "null",
+    ) -> str:
+        """Finalize with this run's latest registered visual review.
+
+        Missing, stale or rejected evidence still prevents acceptance. Write
+        the current review to the active round's critique.json before accepting.
+        ops_valid_through_iteration limits draft operation replay (None means
+        all ok iterations). baseline_advisory_json records pre-existing issues;
+        accommodation_json records accommodation moves. Both default to null.
+        """
+        return tools.finalize_run(
+            status=status,
+            stop_reason=stop_reason,
+            summary=summary,
+            ops_valid_through_iteration=ops_valid_through_iteration,
+            baseline_advisory_json=baseline_advisory_json,
+            accommodation_json=accommodation_json,
+        )
+
+    return StructuredTool.from_function(finalize_run, args_schema=_CandidateFinalizeInput)
 
 
 # --- fast loop v1 §5.7: the skill index the orchestrator selects from --------
@@ -628,7 +670,7 @@ def create_design_deepagent(
         tools.inspect,
         tools.preflight_design,
         tools.record_gap,
-        tools.finalize_run,
+        _make_candidate_finalize_tool(tools) if scene_candidate else tools.finalize_run,
     ]
     if scene_candidate:
         orchestrator_tools.insert(-1, tools.validate_creative_direction)

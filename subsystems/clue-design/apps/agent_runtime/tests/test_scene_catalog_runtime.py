@@ -35,8 +35,11 @@ EXPECTED_PLAYBOOKS = {
 class ScriptedModel(FakeMessagesListChatModel):
     seen: list = []
     bound_names: list = []
+    first_bound_tools: list | None = None
 
     def bind_tools(self, tools, **kwargs):
+        if self.first_bound_tools is None:
+            self.first_bound_tools = list(tools)
         self.bound_names = [tool.name if hasattr(tool, "name") else tool["name"] for tool in tools]
         return self
 
