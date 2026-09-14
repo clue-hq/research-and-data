@@ -130,6 +130,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # under the `project/` mount now. They stay registered and audited — this file's
     # complete-write-surface property is what keeps a retired tool visible — and an execution
     # pinned to recipe0-stage0@26 or earlier still replays them against its own revision.
+    # The paged reads add no NAME and so no entry here (the count stays 132): the `limit` on
+    # `read_account_research` and the `offset`/`limit` on `read_discovery_run` are new *addresses*
+    # of names this map already carries, because a changed input schema at the same address would
+    # break the digest `head-of-abm@v55` pins. Authority is therefore decided by address for both
+    # names below — the `@1`s keep the grant the promoted profile pins, and the `@2`s register
+    # ungranted until a reviewed profile version moves it, exactly as `open_icp_confirmation_gate`
+    # does with the grant on the other version.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 132
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
@@ -137,6 +144,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("read_account_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_discovery_run@1") == (AgentRole.HEAD_OF_ABM,)
+    # Registered, audited, and held by nobody — the paged pair waits for its profile version.
+    assert c6_roles_for_tool("read_account_research@2") == ()
+    assert c6_roles_for_tool("read_discovery_run@2") == ()
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
     assert c6_roles_for_tool("write_project_document@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()

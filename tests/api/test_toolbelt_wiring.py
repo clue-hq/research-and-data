@@ -1422,7 +1422,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
     # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
     # neither do the three ARV2 reads (147 -> 150).
-    assert len(registry) == 150
+    # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
+    # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
+    # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
+    # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
+    # `@2`.
+    assert len(registry) == 152
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1469,7 +1474,12 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
     # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
     # neither do the three ARV2 reads (147 -> 150).
-    assert len(registry) == 150
+    # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
+    # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
+    # the same address is exactly what `head-of-abm@v55`'s digest pin exists to catch — so the
+    # paging arrives beside the frozen `@1`s, which keep the name-only alias until a profile pins
+    # `@2`.
+    assert len(registry) == 152
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

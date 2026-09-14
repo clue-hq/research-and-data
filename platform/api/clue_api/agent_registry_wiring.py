@@ -687,6 +687,13 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # to ``@2`` with the ``head-of-abm@v44`` pin. ``@1`` stays registered and frozen for replay.
     if name == "open_icp_confirmation_gate":
         return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    # The paged reads. `read_account_research@2` and `read_discovery_run@2` take `offset`/`limit`
+    # and answer with `next_offset`; their `@1`s keep the grant because `head-of-abm@v55` pins
+    # those exact contracts, and a role holding a version no profile pins is authority nobody
+    # asked for. The `@2`s register ungranted so the audit sees them from the moment they exist —
+    # the same shape `open_icp_confirmation_gate` has, with the grant on the other version.
+    if name in {"read_account_research", "read_discovery_run"}:
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@1") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

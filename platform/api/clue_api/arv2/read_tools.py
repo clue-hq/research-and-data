@@ -19,6 +19,13 @@ Three properties are deliberate, and each one is a test:
 
 All three reads sit behind one :class:`Arv2ReadService` seam: one protocol the toolbelt tools
 call, one :class:`DbArv2ReadService` that opens one transaction per call.
+
+Two of them wear two faces. ``read_account_research`` and ``read_discovery_run`` are registered at
+``@1`` *and* at a paged ``@2`` that takes ``offset``/``limit`` and answers with ``next_offset``, so
+a run of sixty companies or an account of two hundred claims is walked to the end instead of being
+cut at the first page. ``@1`` is frozen — a promoted profile pins its schema digest, and that pin
+is exactly how a contract that changed underneath it gets noticed — so the new inputs arrive at a
+new address rather than by editing the old one.
 """
 
 from __future__ import annotations
@@ -84,12 +91,18 @@ __all__ = [
     "ReadAccountResearchInput",
     "ReadAccountResearchOutput",
     "ReadAccountResearchTool",
+    "ReadAccountResearchV2Input",
+    "ReadAccountResearchV2Tool",
     "ReadDiscoveryRunInput",
     "ReadDiscoveryRunOutput",
     "ReadDiscoveryRunTool",
+    "ReadDiscoveryRunV2Input",
+    "ReadDiscoveryRunV2Output",
+    "ReadDiscoveryRunV2Tool",
     "ReadProjectAccountsInput",
     "ReadProjectAccountsOutput",
     "ReadProjectAccountsTool",
+    "build_arv2_paged_read_tools",
     "build_arv2_read_tools",
     "claim_prefixes",
     "list_project_accounts",
@@ -546,6 +559,7 @@ async def _account_claims(
     field_prefix: str | None,
     settings: Settings,
     offset: int,
+    limit: int,
 ) -> tuple[tuple[AccountClaimView, ...], bool, dict[str, int], int | None, dict[str, int]]:
     """One page of the account's live claims under ``field_prefix``, **gated exactly as the account
     page gates them**, bounded, plus whether more is left, what was held back, where the next
@@ -564,9 +578,10 @@ async def _account_claims(
     matching subset — and the families it reports are the account's, which is the point: a read
     that guessed the wrong prefix is answered with the right ones instead of with a bare no.
 
-    The page is bounded twice: by :data:`MAX_CLAIMS` and — the binding one on a real account — by
-    :data:`READ_REFERENCES_BUDGET_BYTES`, measured in the receipt's own encoding. Whatever does not
-    fit is not dropped: the next offset says where to continue.
+    The page is bounded twice: by ``limit`` — what the caller asked for, itself capped at
+    :data:`MAX_CLAIMS` — and by :data:`READ_REFERENCES_BUDGET_BYTES`, the receipt's own encoding,
+    which is the binding one on a real account. A page ends at whichever comes first. Whatever does
+    not fit is not dropped: the next offset says where to continue.
 
     The claims read spans every project of the workspace that researched this account: the store
     holds account truth, not a per-project lens.
@@ -626,7 +641,7 @@ async def _account_claims(
             "offset_past_end",
             f"this account has {len(kept)} servable claims; offset {offset} is past the end",
         )
-    window = kept[offset : offset + MAX_CLAIMS]
+    window = kept[offset : offset + limit]
     views: list[AccountClaimView] = []
     for claim in window:
         evidence, evidence_truncated = _clip(claim.evidence_span or "", EVIDENCE_CHARS)
@@ -662,6 +677,7 @@ async def read_account_research(
     settings: Settings,
     field_prefix: str | None = None,
     offset: int = 0,
+    limit: int = MAX_CLAIMS,
 ) -> AccountResearch:
     """What research found about one account: its written overview, or its live claims.
 
@@ -669,9 +685,14 @@ async def read_account_research(
     actually know, and who says so?" — so one read never serves both: the unasked half is empty,
     and an unwritten overview is a refusal rather than an account that looks unresearched.
 
-    Claims are paged by ``offset`` under the receipt's byte budget; the overview is not paged (a
-    cut overview tells the model to read the claims instead), so an offset on it is refused rather
-    than ignored.
+    Claims are paged by ``offset`` under two ceilings — ``limit``, what the caller asked for, and
+    the receipt's byte budget — and the page ends at whichever binds first. ``limit`` defaults to
+    :data:`MAX_CLAIMS`, which is the shape ``read_account_research@1`` asks for: that version has
+    no ``limit`` of its own, so the budget alone bounds its page, exactly as it always did.
+
+    The overview is not paged (a cut overview tells the model to read the claims instead), so an
+    offset on it is refused rather than ignored, and ``limit`` — like ``field_prefix`` — says
+    nothing about it.
     """
 
     account_uuid, name = await _account_in_workspace(
@@ -697,6 +718,7 @@ async def read_account_research(
             field_prefix=field_prefix,
             settings=settings,
             offset=offset,
+            limit=limit,
         )
     return AccountResearch(
         account_entity_id=str(account_uuid),
@@ -763,6 +785,11 @@ class DiscoveryRunView:
     finished_at: str | None
     candidates: tuple[DiscoveryCandidateView, ...]
     candidate_total: int
+    #: Where this page started in the run's ordered candidates.
+    offset: int
+    #: Where the next page starts, or ``None`` when this page ends the list — the same walk the
+    #: claims read offers, so "read to the end" is one habit rather than two.
+    next_offset: int | None
 
 
 #: The hard ceiling on one candidate list, for the same reason as :data:`MAX_ACCOUNTS`: a run can
@@ -827,13 +854,18 @@ async def read_discovery_run(
     workspace_id: str,
     project_id: str,
     run_id: str | None,
-    candidate_limit: int,
+    limit: int,
+    offset: int = 0,
 ) -> DiscoveryRunView:
     """One discovery run of this project — the newest, or the one named — with its candidates.
 
     The project is checked first, so "that run is not this project's" and "that project is not
     yours" stay two different answers, and a run of *another* project is refused by name rather
     than served to a caller who happened to guess its id.
+
+    ``offset``/``limit`` walk the ordered candidates, and ``next_offset`` names where to continue —
+    a run of sixty companies is read in pages instead of being silently cut at the first twenty-
+    five. ``candidate_total`` is the whole run on every page, so a page never reads as a small run.
     """
 
     project = await get_project(conn, project_id)
@@ -883,6 +915,12 @@ async def read_discovery_run(
         ),
         key=_candidate_order,
     )
+    window = candidates[offset : offset + limit]
+    end = offset + len(window)
+    # A window that advanced nothing cannot name a next page: ``read_discovery_run@1``'s
+    # tallies-only shape (``candidate_limit=0``) would otherwise point a caller back at the very
+    # offset it just read, and an offset past the end would promise a page that is not there.
+    next_offset = end if window and end < len(candidates) else None
     return DiscoveryRunView(
         run_id=str(run.run_id),
         status=str(run.status),
@@ -907,10 +945,12 @@ async def read_discovery_run(
                 decision=candidate.decision,
                 fit=None if candidate.fit is None else float(candidate.fit),
             )
-            for candidate in candidates[:candidate_limit]
+            for candidate in window
         ),
         # The whole run, never the page: "the top 25 of 60" is one measurement and its remainder.
         candidate_total=len(candidates),
+        offset=offset,
+        next_offset=next_offset,
     )
 
 
@@ -920,7 +960,13 @@ async def read_discovery_run(
 
 
 class Arv2ReadService(Protocol):
-    """What the read tools call. One transaction per call is the implementation's business."""
+    """What the read tools call. One transaction per call is the implementation's business.
+
+    One seam serves both versions of the paged reads: ``offset``/``limit`` are always passed
+    explicitly, and it is the *tool* that decides what its own contract asks for — ``@1``, which
+    has no paging input, asks for the substrate's own ceiling, and ``@2`` asks for what the model
+    requested. A seam with a default would let those two disagree quietly.
+    """
 
     async def list_project_accounts(
         self,
@@ -940,6 +986,7 @@ class Arv2ReadService(Protocol):
         section: str,
         field_prefix: str | None,
         offset: int,
+        limit: int,
     ) -> AccountResearch: ...
 
     async def read_discovery_run(
@@ -948,7 +995,8 @@ class Arv2ReadService(Protocol):
         workspace_id: str,
         project_id: str,
         run_id: str | None,
-        candidate_limit: int,
+        offset: int,
+        limit: int,
     ) -> DiscoveryRunView: ...
 
 
@@ -993,6 +1041,7 @@ class DbArv2ReadService:
         section: str,
         field_prefix: str | None,
         offset: int,
+        limit: int,
     ) -> AccountResearch:
         async with self._conn_factory() as conn:
             return await read_account_research(
@@ -1003,6 +1052,7 @@ class DbArv2ReadService:
                 field_prefix=field_prefix,
                 settings=self._settings,
                 offset=offset,
+                limit=limit,
             )
 
     async def read_discovery_run(
@@ -1011,7 +1061,8 @@ class DbArv2ReadService:
         workspace_id: str,
         project_id: str,
         run_id: str | None,
-        candidate_limit: int,
+        offset: int,
+        limit: int,
     ) -> DiscoveryRunView:
         async with self._conn_factory() as conn:
             return await read_discovery_run(
@@ -1019,7 +1070,8 @@ class DbArv2ReadService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 run_id=run_id,
-                candidate_limit=candidate_limit,
+                offset=offset,
+                limit=limit,
             )
 
 
@@ -1187,6 +1239,18 @@ class ReadAccountResearchTool(Tool):
         del inputs, ctx
         return _not_composed() if self._service is None else ()
 
+    def _claims_limit(self, inputs: ReadAccountResearchInput) -> int:
+        """How many claims this version's contract asks for.
+
+        ``@1`` has no ``limit`` input and never will — a profile pins this contract's digest — so
+        it asks for the substrate's own ceiling and is bounded by the receipt's byte budget alone,
+        exactly as it was before the paged ``@2`` existed. ``@2`` overrides this with what the
+        model asked for.
+        """
+
+        del inputs
+        return MAX_CLAIMS
+
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, ReadAccountResearchInput)
         assert self._service is not None
@@ -1198,6 +1262,7 @@ class ReadAccountResearchTool(Tool):
                 section=inputs.section,
                 field_prefix=inputs.field_prefix,
                 offset=inputs.offset,
+                limit=self._claims_limit(inputs),
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
@@ -1214,6 +1279,53 @@ class ReadAccountResearchTool(Tool):
             prefixes=research.prefixes,
         )
         return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
+
+
+class ReadAccountResearchV2Input(ReadAccountResearchInput):
+    """``@1``'s inputs plus the page size the model may ask for.
+
+    A subclass rather than a copy: the two versions read the same rows and mean the same thing by
+    ``section``, ``field_prefix`` and ``offset``, and ``@1``'s own schema — pinned by the promoted
+    profile's digest — must not move because ``@2`` gained a field.
+    """
+
+    #: Claims only: how many claims this page may hold. The receipt's byte budget is the other
+    #: ceiling and usually the binding one, so a page may come back shorter than this and say so
+    #: with ``next_offset``; asking for fewer is how a model reads three families cheaply instead
+    #: of paying for a hundred claims it will not quote.
+    limit: int = Field(default=40, ge=1, le=MAX_CLAIMS)
+
+
+class ReadAccountResearchV2Tool(ReadAccountResearchTool):
+    """``read_account_research@2``: ``@1`` with a caller-chosen page size.
+
+    Everything else is ``@1``'s — the same service seam, the same refusals, the same gate, the
+    same output shape (which already carried ``offset``/``next_offset``). Only the *input* moved,
+    which is precisely why this is a new address: a changed input schema at ``@1`` would break the
+    digest pin a promoted profile holds, and that pin is what notices a silent contract change.
+    """
+
+    version = "2"
+    model_description = (
+        "Read what research found about one account. section='overview' returns the written "
+        "overview sections (prose citing claim ids); when the overview is not written yet the "
+        "read refuses with overview_not_written — then read section='claims'. section='claims' "
+        "returns the claims the account pages show, one page at a time: set limit for how many "
+        "you want (default 40), follow next_offset until it is null, or narrow with field_prefix "
+        "to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page "
+        "can come back shorter than limit and still name a next_offset. Sensitive, unverified "
+        "tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this "
+        "before saying anything specific about an account. Effect-free. "
+        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_account_research"
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV2Input
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("account_entity_id", "section", "field_prefix", "offset", "limit")
+    )
+
+    def _claims_limit(self, inputs: ReadAccountResearchInput) -> int:
+        assert isinstance(inputs, ReadAccountResearchV2Input)
+        return inputs.limit
 
 
 class ReadDiscoveryRunInput(ToolInput):
@@ -1287,41 +1399,131 @@ class ReadDiscoveryRunTool(Tool):
         del inputs, ctx
         return _not_composed() if self._service is None else ()
 
-    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        assert isinstance(inputs, ReadDiscoveryRunInput)
+    async def _read(
+        self, *, project_id: str, run_id: str | None, offset: int, limit: int, ctx: ToolContext
+    ) -> DiscoveryRunView:
+        """The run, or a typed refusal — written once, because both versions read it the same way
+        and differ only in which window they ask for."""
+
         assert self._service is not None
         try:
-            run = await self._service.read_discovery_run(
+            return await self._service.read_discovery_run(
                 # The tenant is AMBIENT authority, never model-authored.
                 workspace_id=ctx.workspace_id,
-                project_id=inputs.project_id,
-                run_id=inputs.run_id,
-                candidate_limit=inputs.candidate_limit,
+                project_id=project_id,
+                run_id=run_id,
+                offset=offset,
+                limit=limit,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
-        output = ReadDiscoveryRunOutput(
-            run_id=run.run_id,
-            status=run.status,
-            icp_key=run.icp_key,
-            icp_version=run.icp_version,
-            target_count=run.target_count,
-            asked=run.asked,
-            found=run.found,
-            verified=run.verified,
-            shown=run.shown,
-            approved=run.approved,
-            relaxed_requested=run.relaxed_requested,
-            started_at=run.started_at,
-            finished_at=run.finished_at,
-            candidates=run.candidates,
-            candidate_total=run.candidate_total,
-        )
+
+    def _result(self, output: ReadDiscoveryRunOutput) -> ToolResult:
         # ``by_alias`` is what turns ``pass_`` back into the schema's ``pass``; it is the only
         # aliased field on this surface, so the whole dump takes it.
         return ToolResult(
             tool=self.name, version=self.version, references=output.model_dump(by_alias=True)
         )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadDiscoveryRunInput)
+        run = await self._read(
+            project_id=inputs.project_id,
+            run_id=inputs.run_id,
+            # ``@1`` has no offset: its one page starts at the top, which is what its contract has
+            # always said. The whole run is still reported as ``candidate_total``.
+            offset=0,
+            limit=inputs.candidate_limit,
+            ctx=ctx,
+        )
+        return self._result(ReadDiscoveryRunOutput(**_discovery_fields(run)))
+
+
+class ReadDiscoveryRunV2Input(ToolInput):
+    project_id: str
+    #: Omitted means the project's newest run, which is what "how did discovery go?" means.
+    run_id: str | None = None
+    #: How many candidates to skip. With ``limit`` this walks a run larger than one page —
+    #: continue from the previous page's ``next_offset``; ``0`` starts at the top.
+    offset: int = Field(default=0, ge=0)
+    #: How many candidates this page may hold, best first.
+    limit: int = Field(default=25, ge=1, le=MAX_CANDIDATES)
+
+
+class ReadDiscoveryRunV2Output(ReadDiscoveryRunOutput):
+    """``@1``'s run report plus where this page sits in the run's candidates."""
+
+    #: Where this page started in the run's ordered candidates.
+    offset: int
+    #: Where the next page starts, or ``None`` when this page ends the list.
+    next_offset: int | None
+
+
+class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
+    """``read_discovery_run@2``: ``@1`` with the candidate list paged rather than cut.
+
+    ``@1`` served the top ``candidate_limit`` companies and nothing else — a run of sixty was read
+    as twenty-five, and the remaining thirty-five were reachable only by a number the tool never
+    named. ``@2`` replaces that one input with ``offset``/``limit`` and reports ``next_offset``, so
+    the rest of the run is reachable by following it to ``None``. The tallies, the ordering and
+    every refusal are ``@1``'s, unchanged.
+
+    A new address rather than an edit: ``@1``'s input schema is pinned by the promoted profile's
+    digest, and that pin exists precisely to notice a contract that changed underneath it.
+    """
+
+    version = "2"
+    model_description = (
+        "Read the project's latest discovery run (or one by id): status, what was asked for and "
+        "found, how many candidates the verifier judged against the ICP, how many were shown and "
+        "approved, and the candidates with their verdict, best first. Page with offset and limit "
+        "(default 25) and follow next_offset until it is null to see every candidate; "
+        "candidate_total is the whole run on every page. Read this before proposing another "
+        "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
+        "Manual: .deepagent/skills/manual-tools/v2/SKILL.md#read_discovery_run"
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunV2Input
+    output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV2Output
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "run_id", "offset", "limit")
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadDiscoveryRunV2Input)
+        run = await self._read(
+            project_id=inputs.project_id,
+            run_id=inputs.run_id,
+            offset=inputs.offset,
+            limit=inputs.limit,
+            ctx=ctx,
+        )
+        return self._result(
+            ReadDiscoveryRunV2Output(
+                **_discovery_fields(run), offset=run.offset, next_offset=run.next_offset
+            )
+        )
+
+
+def _discovery_fields(run: DiscoveryRunView) -> dict[str, Any]:
+    """The run as both output versions carry it, mapped once so the two cannot drift."""
+
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "icp_key": run.icp_key,
+        "icp_version": run.icp_version,
+        "target_count": run.target_count,
+        "asked": run.asked,
+        "found": run.found,
+        "verified": run.verified,
+        "shown": run.shown,
+        "approved": run.approved,
+        "relaxed_requested": run.relaxed_requested,
+        "started_at": run.started_at,
+        "finished_at": run.finished_at,
+        "candidates": run.candidates,
+        "candidate_total": run.candidate_total,
+    }
 
 
 def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
@@ -1338,4 +1540,22 @@ def build_arv2_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
         ReadProjectAccountsTool(service),
         ReadAccountResearchTool(service),
         ReadDiscoveryRunTool(service),
+    )
+
+
+def build_arv2_paged_read_tools(service: Arv2ReadService | None) -> tuple[Tool, ...]:
+    """The two reads whose inputs learned to page, at their own addresses.
+
+    Separate from :func:`build_arv2_read_tools` because these two are **not** their names' default
+    alias yet: `head-of-abm@v55` pins the ``@1`` contracts, and a default that disagreed with the
+    promoted profile's pin would hand an unversioned caller the version nobody holds — the same
+    reasoning that kept ``open_icp_confirmation_gate@1`` the default until its profile moved. The
+    grant, the recipe address and the alias move together in one later, reviewed step; until then
+    these register frozen-and-ungranted beside their ``@1`` siblings, on the same composition
+    (one service, one refusal code).
+    """
+
+    return (
+        ReadAccountResearchV2Tool(service),
+        ReadDiscoveryRunV2Tool(service),
     )

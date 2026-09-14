@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 import pytest
 
 from clue_api.arv2.read_tools import (
+    MAX_CANDIDATES,
+    MAX_CLAIMS,
     READ_REFERENCES_BUDGET_BYTES,
     AccountClaimView,
     AccountOverviewSection,
@@ -26,11 +28,17 @@ from clue_api.arv2.read_tools import (
     ReadAccountResearchInput,
     ReadAccountResearchOutput,
     ReadAccountResearchTool,
+    ReadAccountResearchV2Input,
+    ReadAccountResearchV2Tool,
     ReadDiscoveryRunInput,
     ReadDiscoveryRunOutput,
     ReadDiscoveryRunTool,
+    ReadDiscoveryRunV2Input,
+    ReadDiscoveryRunV2Output,
+    ReadDiscoveryRunV2Tool,
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
+    build_arv2_paged_read_tools,
     build_arv2_read_tools,
     receipt_bytes,
 )
@@ -93,8 +101,11 @@ class _FakeService:
     discovery: DiscoveryRunView | None = None
     refusal: Arv2ReadRefused | None = None
     account_reads: list[tuple[str, str, int, str | None, int]] = field(default_factory=list)
-    research_reads: list[tuple[str, str, str, str | None, int]] = field(default_factory=list)
-    discovery_reads: list[tuple[str, str, str | None, int]] = field(default_factory=list)
+    #: ``(workspace, account, section, prefix, offset, limit)`` — the window is recorded because
+    #: it is the whole difference between the two registered versions of this read.
+    research_reads: list[tuple[str, str, str, str | None, int, int]] = field(default_factory=list)
+    #: ``(workspace, project, run, offset, limit)``, for the same reason.
+    discovery_reads: list[tuple[str, str, str | None, int, int]] = field(default_factory=list)
 
     async def list_project_accounts(
         self,
@@ -119,17 +130,26 @@ class _FakeService:
         section: str,
         field_prefix: str | None,
         offset: int,
+        limit: int,
     ) -> AccountResearch:
-        self.research_reads.append((workspace_id, account_entity_id, section, field_prefix, offset))
+        self.research_reads.append(
+            (workspace_id, account_entity_id, section, field_prefix, offset, limit)
+        )
         if self.refusal is not None:
             raise self.refusal
         assert self.research is not None
         return self.research
 
     async def read_discovery_run(
-        self, *, workspace_id: str, project_id: str, run_id: str | None, candidate_limit: int
+        self,
+        *,
+        workspace_id: str,
+        project_id: str,
+        run_id: str | None,
+        offset: int,
+        limit: int,
     ) -> DiscoveryRunView:
-        self.discovery_reads.append((workspace_id, project_id, run_id, candidate_limit))
+        self.discovery_reads.append((workspace_id, project_id, run_id, offset, limit))
         if self.refusal is not None:
             raise self.refusal
         assert self.discovery is not None
@@ -284,8 +304,10 @@ def test_the_account_read_asks_about_the_ambient_workspace_and_serves_both_shape
 
         # The tenant is AMBIENT, never a model-authored input; the prefix and the page the model
         # asked to continue from are the model's, and both reach the service.
+        # ``@1`` has no ``limit`` of its own, so it asks the seam for the substrate's ceiling and
+        # is bounded by the receipt's byte budget alone — what it did before ``@2`` existed.
         assert service.research_reads == [
-            (WORKSPACE, ACCOUNT_ID, "claims", "account.resonance", 40)
+            (WORKSPACE, ACCOUNT_ID, "claims", "account.resonance", 40, MAX_CLAIMS)
         ]
         assert result.references["account_name"] == "Alpha Health"
         assert result.references["section"] == "claims"
@@ -422,6 +444,82 @@ def test_the_account_read_s_inputs_are_bounded_by_the_schema() -> None:
         ReadAccountResearchInput(account_entity_id=ACCOUNT_ID, field_prefix="a" * 81)
 
 
+def test_the_paged_account_read_asks_for_the_page_the_model_chose() -> None:
+    """``@2``'s whole difference from ``@1``: the model says how many claims it wants."""
+
+    async def scenario() -> None:
+        service = _FakeService(research=_research("claims"))
+        tool = ReadAccountResearchV2Tool(service)
+
+        result = await tool.invoke(
+            ReadAccountResearchV2Input(
+                account_entity_id=ACCOUNT_ID,
+                section="claims",
+                field_prefix="account.resonance",
+                offset=40,
+                limit=5,
+            ),
+            _context(),
+        )
+
+        assert service.research_reads == [
+            (WORKSPACE, ACCOUNT_ID, "claims", "account.resonance", 40, 5)
+        ]
+        # The answer is ``@1``'s answer: the output shape did not move, only the ask.
+        assert result.references["section"] == "claims"
+        assert (result.references["offset"], result.references["next_offset"]) == (0, 1)
+        assert result.references["excluded"] == {
+            "sensitive": 1,
+            "unverified": 2,
+            "outreach_unsafe": 0,
+        }
+
+    run_async(scenario())
+
+
+def test_the_paged_account_read_s_limit_is_bounded_by_the_schema() -> None:
+    defaults = ReadAccountResearchV2Input(account_entity_id=ACCOUNT_ID)
+    # Forty is a page a model can read and quote from, not the substrate's own ceiling.
+    assert (defaults.limit, defaults.offset, defaults.section) == (40, 0, "overview")
+    assert ReadAccountResearchV2Input(account_entity_id=ACCOUNT_ID, limit=MAX_CLAIMS).limit == 120
+    with pytest.raises(ValueError):
+        # Past the substrate's cap is a page the read could never serve.
+        ReadAccountResearchV2Input(account_entity_id=ACCOUNT_ID, limit=MAX_CLAIMS + 1)
+    with pytest.raises(ValueError):
+        # Zero claims is not a read; the tallies-only shape belongs to the discovery run.
+        ReadAccountResearchV2Input(account_entity_id=ACCOUNT_ID, limit=0)
+    # And ``@1``'s own contract did NOT learn the field: a promoted profile pins its digest.
+    assert "limit" not in ReadAccountResearchInput.model_fields
+    assert "limit" in ReadAccountResearchV2Input.model_fields
+    with pytest.raises(ValueError):
+        # ``extra="forbid"``: the frozen version refuses the new key loudly rather than ignoring
+        # it and serving a page the caller did not ask for.
+        ReadAccountResearchInput.model_validate({"account_entity_id": ACCOUNT_ID, "limit": 5})
+
+
+def test_the_two_account_read_versions_are_two_addresses_of_one_read() -> None:
+    """``@2`` inherits everything that is not the input: same effect class, same replay proof,
+    same pins, same output contract — which is why the profile can move to it as a page size and
+    not as a new capability."""
+
+    first = ReadAccountResearchTool(_FakeService())
+    second = ReadAccountResearchV2Tool(_FakeService())
+
+    assert (first.name, first.version) == ("read_account_research", "1")
+    assert (second.name, second.version) == ("read_account_research", "2")
+    assert second.effect_class is first.effect_class
+    assert second.replay == first.replay
+    assert second.pin_requirements == first.pin_requirements
+    assert second.descriptor.recipe_safe
+    # The output schema is byte-identical; only the input moved, which is the entire reason the
+    # paging could not be added at ``@1``.
+    assert second.descriptor.output_schema_sha256 == first.descriptor.output_schema_sha256
+    assert second.descriptor.input_schema_sha256 != first.descriptor.input_schema_sha256
+    # The model is told the field exists, and told a short page can still have a next one.
+    assert "limit" in second.model_description
+    assert "next_offset" in second.model_description
+
+
 def test_the_account_read_never_calls_the_claims_it_serves_verified() -> None:
     """The word the model reads must be true of the filter: the reads mirror the page's gate."""
 
@@ -476,6 +574,8 @@ def _discovery() -> DiscoveryRunView:
             ),
         ),
         candidate_total=42,
+        offset=0,
+        next_offset=25,
     )
 
 
@@ -490,7 +590,8 @@ def test_the_discovery_read_asks_about_the_ambient_workspace_and_serves_the_run(
         )
 
         # The tenant is AMBIENT, never a model-authored input.
-        assert service.discovery_reads == [(WORKSPACE, PROJECT, DISCOVERY_RUN_ID, 10)]
+        # ``@1`` reads one page from the top: that is what ``candidate_limit`` always meant.
+        assert service.discovery_reads == [(WORKSPACE, PROJECT, DISCOVERY_RUN_ID, 0, 10)]
         assert result.references["run_id"] == DISCOVERY_RUN_ID
         assert result.references["status"] == "completed"
         assert (result.references["asked"], result.references["found"]) == (35, 13)
@@ -585,6 +686,79 @@ def test_the_discovery_read_s_inputs_are_bounded_by_the_schema() -> None:
         ReadDiscoveryRunInput(project_id=PROJECT, candidate_limit=-1)
 
 
+def test_the_paged_discovery_read_serves_the_window_and_names_the_next_one() -> None:
+    """``@1`` cut a sixty-company run at twenty-five and named no way back to the rest."""
+
+    async def scenario() -> None:
+        service = _FakeService(discovery=_discovery())
+        tool = ReadDiscoveryRunV2Tool(service)
+
+        result = await tool.invoke(
+            ReadDiscoveryRunV2Input(project_id=PROJECT, run_id=DISCOVERY_RUN_ID, limit=25),
+            _context(),
+        )
+
+        assert service.discovery_reads == [(WORKSPACE, PROJECT, DISCOVERY_RUN_ID, 0, 25)]
+        # Where this page sits, and where the next one starts.
+        assert (result.references["offset"], result.references["next_offset"]) == (0, 25)
+        # The whole run, on every page, exactly as ``@1`` reported it.
+        assert result.references["candidate_total"] == 42
+        assert result.references["verified"] == 11
+        # ``pass`` is still the schema's word on the way out.
+        assert result.references["candidates"][0]["pass"] == "relaxed"
+        # And the runner's own re-validation accepts what the tool serialized.
+        canonical = validate_tool_output_references(ReadDiscoveryRunV2Output, result.references)
+        assert (canonical["offset"], canonical["next_offset"]) == (0, 25)
+
+    run_async(scenario())
+
+
+def test_the_paged_discovery_read_s_inputs_are_bounded_by_the_schema() -> None:
+    defaults = ReadDiscoveryRunV2Input(project_id=PROJECT)
+    # No run id still means the latest run; the page default is ``@1``'s own page size.
+    assert (defaults.run_id, defaults.offset, defaults.limit) == (None, 0, 25)
+    assert ReadDiscoveryRunV2Input(project_id=PROJECT, offset=50).offset == 50
+    with pytest.raises(ValueError):
+        ReadDiscoveryRunV2Input(project_id=PROJECT, limit=MAX_CANDIDATES + 1)
+    with pytest.raises(ValueError):
+        # A page of nothing cannot page: ``@1``'s ``candidate_limit=0`` tallies-only shape is the
+        # one thing ``@2`` does not inherit, because every page already reports the tallies.
+        ReadDiscoveryRunV2Input(project_id=PROJECT, limit=0)
+    with pytest.raises(ValueError):
+        ReadDiscoveryRunV2Input(project_id=PROJECT, offset=-1)
+    # ``@1``'s frozen contract keeps its own input, and gains nothing.
+    assert "candidate_limit" in ReadDiscoveryRunInput.model_fields
+    assert "candidate_limit" not in ReadDiscoveryRunV2Input.model_fields
+    assert {"offset", "limit"} <= set(ReadDiscoveryRunV2Input.model_fields)
+    assert not {"offset", "limit"} & set(ReadDiscoveryRunInput.model_fields)
+    for frozen, extra in (
+        (ReadDiscoveryRunInput, {"offset": 25}),
+        (ReadDiscoveryRunV2Input, {"candidate_limit": 25}),
+    ):
+        with pytest.raises(ValueError):
+            # Neither contract quietly accepts the other's word for a page.
+            frozen.model_validate({"project_id": PROJECT, **extra})
+
+
+def test_the_two_discovery_read_versions_are_two_addresses_of_one_read() -> None:
+    first = ReadDiscoveryRunTool(_FakeService())
+    second = ReadDiscoveryRunV2Tool(_FakeService())
+
+    assert (first.name, first.version) == ("read_discovery_run", "1")
+    assert (second.name, second.version) == ("read_discovery_run", "2")
+    assert second.effect_class is first.effect_class
+    assert second.replay == first.replay
+    assert second.pin_requirements == first.pin_requirements
+    assert second.descriptor.recipe_safe
+    # Both schemas moved here — ``@2`` also reports where the page sits — which is exactly why
+    # this is a new address and not an edit.
+    assert second.descriptor.input_schema_sha256 != first.descriptor.input_schema_sha256
+    assert second.descriptor.output_schema_sha256 != first.descriptor.output_schema_sha256
+    # ``@1``'s sentences survive: a read approves nothing, and "verified" keeps its meaning.
+    assert "approves nothing" in second.model_description
+    assert "the verifier judged" in second.model_description
+
+
 def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
     tool = ReadDiscoveryRunTool(_FakeService())
 
@@ -631,6 +805,33 @@ def test_the_builder_yields_the_three_reads_and_an_uncomposed_one_refuses_by_nam
         # Composed, the same three are ready to read.
         service = _FakeService(page=_page(), research=_research(), discovery=_discovery())
         for tool in build_arv2_read_tools(service):
+            assert await tool.preconditions(inputs[tool.name], _context()) == ()
+
+    run_async(scenario())
+
+
+def test_the_paged_pair_registers_beside_the_frozen_ones_on_the_same_composition() -> None:
+    """The two ``@2`` addresses are the same reads on the same service: one composition, one
+    refusal code, no second flag. They are built separately only because ``@1`` still owns the
+    name-only alias until a profile pins ``@2``."""
+
+    async def scenario() -> None:
+        paged = build_arv2_paged_read_tools(None)
+
+        assert [(tool.name, tool.version) for tool in paged] == [
+            ("read_account_research", "2"),
+            ("read_discovery_run", "2"),
+        ]
+        inputs: dict[str, ToolInput] = {
+            "read_account_research": ReadAccountResearchV2Input(account_entity_id=ACCOUNT_ID),
+            "read_discovery_run": ReadDiscoveryRunV2Input(project_id=PROJECT),
+        }
+        for tool in paged:
+            failures = await tool.preconditions(inputs[tool.name], _context())
+            assert [failure.reason_code for failure in failures] == ["arv2_reads_not_composed"]
+
+        service = _FakeService(page=_page(), research=_research(), discovery=_discovery())
+        for tool in build_arv2_paged_read_tools(service):
             assert await tool.preconditions(inputs[tool.name], _context()) == ()
 
     run_async(scenario())

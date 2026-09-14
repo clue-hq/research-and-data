@@ -72,7 +72,11 @@ from clue_api.arv2.discovery_launch import (
     build_arv2_discovery_tools,
 )
 from clue_api.arv2.icp_authoring import IcpAuthoringService
-from clue_api.arv2.read_tools import Arv2ReadService, build_arv2_read_tools
+from clue_api.arv2.read_tools import (
+    Arv2ReadService,
+    build_arv2_paged_read_tools,
+    build_arv2_read_tools,
+)
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.claim_entailment import FaithfulnessClaimEntailmentJudge
 from clue_api.client_knowledge_tools import (
@@ -2820,6 +2824,15 @@ def build_toolbelt(
     # refuse ``arv2_reads_not_composed`` before they touch a row.
     for tool in build_arv2_read_tools(arv2_reads):
         registry.register(tool, make_default=True)
+    # The paged `@2` of two of them, beside their frozen `@1`s. `head-of-abm@v55` pins the `@1`
+    # contracts, so `@1` keeps the name-only alias: a default that disagreed with the promoted
+    # profile's pin would hand an unversioned caller the version nobody holds — the reasoning
+    # `open_icp_confirmation_gate` already established, in the other direction. Registered here
+    # (ungranted, and not yet in a standing recipe) so the authority audit and the write-surface
+    # inventory see them from the moment they exist; the grant, the recipe address and the alias
+    # move together in one later reviewed step.
+    for tool in build_arv2_paged_read_tools(arv2_reads):
+        registry.register(tool, make_default=False)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
     # the gate that confirms one. Registered on every deployment for the same reason as its
     # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and

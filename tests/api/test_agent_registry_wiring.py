@@ -256,7 +256,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the persona request `request_persona_synthesis@1` on the same terms (145 -> 146).
     # The project plan's `write_project_document@1` installs ungranted (146 -> 147), and the
     # three ARV2 reads install on the same terms (147 -> 150).
-    assert len(by_address) == 150
+    # The paged reads install `read_account_research@2` and `read_discovery_run@2`, both UNGRANTED
+    # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
+    # new addresses and the grant moves with a later, reviewed profile version.
+    assert len(by_address) == 152
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -356,7 +359,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # request `request_persona_synthesis@1` the one after (145 -> 146).
     # The project plan's `write_project_document@1` installs ungranted (146 -> 147), and the
     # three ARV2 reads install on the same terms (147 -> 150).
-    assert len(by_address) == 150
+    # The paged reads install `read_account_research@2` and `read_discovery_run@2`, both UNGRANTED
+    # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
+    # new addresses and the grant moves with a later, reviewed profile version.
+    assert len(by_address) == 152
     for address in (
         "create_thread@1",
         "rename_thread@1",

@@ -883,6 +883,107 @@ def test_the_claims_read_fits_the_governed_receipt_and_pages_the_rest() -> None:
     run_async(scenario())
 
 
+def test_the_claims_page_ends_at_whichever_ceiling_binds_first() -> None:
+    """Two ceilings, not one: the byte budget is the substrate's, and ``limit`` is the caller's.
+
+    The budget alone cannot express "give me five claims, I only want to quote a couple" — a model
+    that wants three facts about an account still pays for every claim that fits in 12 KiB, on
+    this turn and every later one. ``read_account_research@2`` asks for a page; the budget still
+    binds first whenever the claims are large.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            # Twelve small claims: well inside the byte budget, so ``limit`` is the binding one.
+            for index in range(12):
+                await _seed_claim(
+                    conn,
+                    claims,
+                    project,
+                    account,
+                    label=f"claim_{index}",
+                    field_key=f"account.open_requisitions.role_{index:03d}",
+                    value={"title": f"Role {index}"},
+                    evidence_span=f"Hiring a Role {index}.",
+                    source_url=f"https://alpha.example/jobs/{index}",
+                )
+
+            first = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                settings=VERIFYING,
+                limit=5,
+            )
+
+            assert len(first.claims) == 5
+            assert (first.offset, first.next_offset) == (0, 5)
+            # Five of twelve is more to come, and the read says so rather than reading complete.
+            assert first.truncated is True
+
+            # The pages partition the account's servable claims, in order, without overlap.
+            seen = [view.claim_id for view in first.claims]
+            walked = [view.field_key for view in first.claims]
+            sizes = [len(first.claims)]
+            offset = first.next_offset
+            while offset is not None:
+                page = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="claims",
+                    settings=VERIFYING,
+                    offset=offset,
+                    limit=5,
+                )
+                assert page.offset == offset
+                seen.extend(view.claim_id for view in page.claims)
+                walked.extend(view.field_key for view in page.claims)
+                sizes.append(len(page.claims))
+                offset = page.next_offset
+            assert sizes == [5, 5, 2]
+            assert len(seen) == 12 and len(set(seen)) == 12
+            # One list read three times, not three lists: the walk is the store's own field order.
+            assert walked == [f"account.open_requisitions.role_{index:03d}" for index in range(12)]
+
+            # The other ceiling still binds when it is the smaller one: forty large claims asked
+            # for at once come back as whatever fits in the receipt, with the rest offered.
+            for index in range(40):
+                await _seed_claim(
+                    conn,
+                    claims,
+                    project,
+                    account,
+                    label=f"big_{index}",
+                    field_key=f"account.strategic_moves.move_{index:03d}",
+                    value={"summary": f"Move {index}", "posted": "2026-09-01"},
+                    evidence_span=("They are expanding: " + ("new clinics, ") * 24).strip(),
+                    source_url=f"https://alpha.example/news/{index}",
+                )
+
+            budgeted = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="claims",
+                field_prefix="account.strategic_moves",
+                settings=VERIFYING,
+                limit=40,
+            )
+
+            assert 0 < len(budgeted.claims) < 40
+            assert budgeted.next_offset == len(budgeted.claims)
+            assert receipt_bytes([view.model_dump() for view in budgeted.claims]) <= (
+                READ_REFERENCES_BUDGET_BYTES
+            )
+
+    run_async(scenario())
+
+
 def test_an_account_whose_every_claim_is_held_back_reads_empty_with_its_counts() -> None:
     """The gate now runs before the prefix filter, and an unnarrowed read must not turn that into
     a refusal: "there is something here and you may not have it" is the whole point of ``excluded``.
@@ -1332,7 +1433,7 @@ def test_the_latest_discovery_run_is_read_with_its_three_tallies() -> None:
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=None,
-                candidate_limit=25,
+                limit=25,
             )
 
             # The newest run, not the first one seeded.
@@ -1391,7 +1492,7 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=None,
-                candidate_limit=25,
+                limit=25,
             )
 
             assert [candidate.name for candidate in run.candidates] == [
@@ -1413,7 +1514,7 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=None,
-                candidate_limit=2,
+                limit=2,
             )
             assert [candidate.name for candidate in bounded.candidates] == [
                 "Alpha Health",
@@ -1427,11 +1528,100 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=None,
-                candidate_limit=0,
+                limit=0,
             )
             assert tallies_only.candidates == ()
             # Four candidates; three were judged — `not_chosen_before` is a pre-spend stamp.
             assert (tallies_only.candidate_total, tallies_only.verified) == (4, 3)
+
+    run_async(scenario())
+
+
+def test_the_candidates_are_paged_to_the_end_rather_than_cut_at_the_first_page() -> None:
+    """A sixty-company run read as twenty-five, and the other thirty-five were unreachable: the
+    tool named no way to continue, so the agent either spoke about a third of the run as if it
+    were the run, or asked for a bigger page it could not afford. The pages now partition the
+    ordered candidates, and the last one says it is the last.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            # Descending fit, so the read's own order ("shown first, then best fit") is a known
+            # sequence rather than whatever the table happens to return.
+            for index in range(60):
+                await _seed_candidate(
+                    conn,
+                    project,
+                    run_id,
+                    f"Company {index:03d}",
+                    disposition="pass",
+                    fit=1.0 - index / 100,
+                )
+
+            pages = []
+            offset: int | None = 0
+            while offset is not None:
+                page = await read_discovery_run(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    run_id=None,
+                    offset=offset,
+                    limit=25,
+                )
+                # The whole run on every page: a page never reads as a small run.
+                assert page.candidate_total == 60
+                assert page.offset == offset
+                pages.append(page)
+                offset = page.next_offset
+
+            assert [page.offset for page in pages] == [0, 25, 50]
+            assert [page.next_offset for page in pages] == [25, 50, None]
+            assert [len(page.candidates) for page in pages] == [25, 25, 10]
+            # The three pages are the ordered list, partitioned: no gap, no repeat, no reordering.
+            walked = [candidate.name for page in pages for candidate in page.candidates]
+            assert walked == [f"Company {index:03d}" for index in range(60)]
+
+    run_async(scenario())
+
+
+def test_a_discovery_page_that_advances_nothing_names_no_next_page() -> None:
+    """Two shapes that must not point a caller in a circle (or at a page that is not there):
+    ``read_discovery_run@1``'s tallies-only ask, and an offset past the end."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            for index in range(3):
+                await _seed_candidate(
+                    conn, project, run_id, f"Company {index}", disposition="pass", fit=0.5
+                )
+
+            tallies_only = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                limit=0,
+            )
+            assert tallies_only.candidates == ()
+            # ``next_offset 0`` would send a caller back to the page it just read, forever.
+            assert (tallies_only.next_offset, tallies_only.candidate_total) == (None, 3)
+
+            past_end = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=None,
+                offset=90,
+                limit=25,
+            )
+            assert (past_end.candidates, past_end.next_offset) == ((), None)
+            # And the run is still reported honestly: an empty page is not an empty run.
+            assert past_end.candidate_total == 3
 
     run_async(scenario())
 
@@ -1469,7 +1659,7 @@ def test_a_candidate_stamped_with_another_tenant_is_neither_listed_nor_counted()
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=None,
-                candidate_limit=25,
+                limit=25,
             )
 
             assert [candidate.name for candidate in run.candidates] == ["Alpha Health"]
@@ -1503,7 +1693,7 @@ def test_a_run_can_be_read_by_id_and_an_unfinished_one_reads_honestly() -> None:
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 run_id=str(older),
-                candidate_limit=25,
+                limit=25,
             )
 
             # The run asked for, not the newest one.
@@ -1537,7 +1727,7 @@ def test_another_project_s_run_and_a_project_without_discovery_refuse_by_name() 
                     workspace_id=project.workspace_id,
                     project_id=project.project_id,
                     run_id=None,
-                    candidate_limit=25,
+                    limit=25,
                 )
             assert none_yet.value.code == "no_discovery_run"
 
@@ -1550,7 +1740,7 @@ def test_another_project_s_run_and_a_project_without_discovery_refuse_by_name() 
                         workspace_id=project.workspace_id,
                         project_id=project.project_id,
                         run_id=run_id,
-                        candidate_limit=25,
+                        limit=25,
                     )
                 assert refused.value.code == "discovery_run_not_found"
 
@@ -1561,7 +1751,7 @@ def test_another_project_s_run_and_a_project_without_discovery_refuse_by_name() 
                     workspace_id=WORKSPACE,
                     project_id=foreign.project_id,
                     run_id=str(foreign_run),
-                    candidate_limit=25,
+                    limit=25,
                 )
             assert not_ours.value.code == "project_not_found"
 
