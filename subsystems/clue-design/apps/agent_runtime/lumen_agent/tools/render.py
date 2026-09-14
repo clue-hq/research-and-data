@@ -165,10 +165,7 @@ def _render_preview_text(
     if getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate":
         # Already-resolved/exported scene, no model/core/provider call. Never use
         # the truncated visual display table as copy-binding authority.
-        inventory = json.loads(tools.inspect("copy_review"))
-        for artifact in (inventory.get("preview_receipt") or {}).get("artifacts", []):
-            artifact["path"] = to_virtual(artifact["path"], tools.config)
-        lines.append("Native copy review inventory: " + json.dumps(inventory, indent=2))
+        lines.append("Native copy review inventory: " + tools.inspect("copy_review"))
 
     diagnostics = reviewer.get("diagnostics") or []
     if diagnostics:

@@ -9,6 +9,7 @@ import pytest
 from lumen_agent import harness
 from lumen_agent.tools import substrate
 from lumen_agent.tools.render import _render_preview_text
+from test_candidate_finalization_runtime import candidate_graph
 from test_scene_direction_review import accept, review, validate, write_direction
 from test_scene_direction_review import tools as tools
 from test_scene_skill_family import direction
@@ -91,8 +92,50 @@ def test_observation_returns_full_native_copy_for_each_exported_page(tools):
         ("square", "actual_headline", long_text),
     ]
     assert result["scene_stamp"] == tools._scene_stamp()
-    assert result["preview_receipt"] == tools._preview_receipt
+    assert result["preview_receipt"]["scene"] == tools._preview_receipt["scene"]
+    assert [a["sha256"] for a in result["preview_receipt"]["artifacts"]] == [
+        a["sha256"] for a in tools._preview_receipt["artifacts"]
+    ]
     assert result["evidence_verified"] is False
+
+
+@pytest.mark.parametrize("solo", [True, False])
+def test_registered_copy_inspect_virtualizes_paths_without_changing_receipt_or_freshness(
+    tmp_path, monkeypatch, solo
+):
+    graph, runtime, _ = candidate_graph(tmp_path, monkeypatch, solo=solo)
+    assert json.loads(runtime.compile_dsl_block("page page_test size(1080,1080,px)"))[
+        "compile"
+    ]["status"] == "ok"
+    render(runtime)
+    registered_inspect = graph.nodes["tools"].bound.tools_by_name["inspect"]
+    original_receipt = copy.deepcopy(runtime._preview_receipt)
+    original_export = copy.deepcopy(runtime.latest_export_summary)
+
+    observed = registered_inspect.invoke({"view": "copy_review"})
+    assert str(runtime.config.workspace_root) not in observed
+    result = json.loads(observed)
+    assert result["status"] == "ok"
+    assert result["occurrences"][0]["text"] == "Plan"
+    assert result["preview_receipt"]["scene"] == original_receipt["scene"]
+    for shown, internal in zip(
+        result["preview_receipt"]["artifacts"], original_receipt["artifacts"], strict=True
+    ):
+        assert shown["path"].startswith("/")
+        assert (runtime.config.workspace_root / shown["path"].lstrip("/")).resolve() == Path(
+            internal["path"]
+        ).resolve()
+        assert shown["sha256"] == internal["sha256"]
+    assert runtime._preview_receipt == original_receipt
+    assert runtime.latest_export_summary == original_export
+    assert runtime._current_preview_receipt() == original_receipt
+
+    # The public serialization must not weaken byte custody or replace its host paths.
+    Path(original_receipt["artifacts"][0]["path"]).write_text("Changed preview bytes")
+    stale = json.loads(registered_inspect.invoke({"view": "copy_review"}))
+    assert stale["status"] == "unavailable"
+    assert "No current preview" in stale["reason"]
+    assert runtime._preview_receipt == original_receipt
 
 
 def test_existing_render_returns_bindable_copy_without_another_observation_call(tools):
@@ -102,9 +145,15 @@ def test_existing_render_returns_bindable_copy_without_another_observation_call(
     assert '"node_id": "actual_headline"' in first
     assert '"text": "Make the next step clear"' in first
     assert '"preview_receipt"' in first
+    original_receipt = copy.deepcopy(tools._preview_receipt)
+    assert "Native copy review inventory: " + tools.inspect("copy_review") in first
     second = _render_preview_text(tools, checkpoint=False)
+    assert str(tools.trace_dir) not in second
     assert '"node_id": "actual_headline"' in second
     assert '"text": "Make the next step clear"' in second
+    assert "Native copy review inventory: " + tools.inspect("copy_review") in second
+    assert tools._preview_receipt == original_receipt
+    assert tools._current_preview_receipt() == original_receipt
 
 
 @pytest.mark.parametrize(

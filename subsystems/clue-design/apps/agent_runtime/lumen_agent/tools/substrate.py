@@ -20,6 +20,7 @@ from pydantic import StrictInt
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
 from ..native_copy import observe_native_text
+from ..paths import to_virtual
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -4490,7 +4491,12 @@ class LumenDesignTools:
             return self.summarize_slots()
         if view == "copy_review" and self.config.scene_skill_bundle == "candidate":
             with self._scene_mutation_lock:
-                return json.dumps(self._native_copy_inventory(), indent=2)
+                inventory = self._native_copy_inventory()
+                # The inventory has a fresh receipt; only the model-facing copy
+                # uses virtual paths. Internal custody keeps its host paths.
+                for artifact in (inventory.get("preview_receipt") or {}).get("artifacts", []):
+                    artifact["path"] = to_virtual(artifact["path"], self.config)
+                return json.dumps(inventory, indent=2)
         if view == "image_contrast":
             from ..image_contrast import measure_image_contrast
 
