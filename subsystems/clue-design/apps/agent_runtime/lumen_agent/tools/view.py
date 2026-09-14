@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -184,7 +186,11 @@ def _image_block(png_path: Path, max_px: int = _VISION_MAX_PX) -> dict:
     long-side ceiling to clamp to (see `_normalize_image_bytes`). May raise on
     unreadable/corrupt bytes — `_view_content` is wrapped to contain that into a
     string."""
-    normalized, mime = _normalize_image_bytes(png_path.read_bytes(), max_px=max_px)
+    return _image_bytes_block(png_path.read_bytes(), max_px=max_px)
+
+
+def _image_bytes_block(raw: bytes, max_px: int = _VISION_MAX_PX) -> dict:
+    normalized, mime = _normalize_image_bytes(raw, max_px=max_px)
     data = base64.b64encode(normalized).decode("ascii")
     return {
         "type": "image",
@@ -198,7 +204,86 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _image_observation_label(path: Path, label: str, *, source_mime: str | None = None) -> str:
+def _preview_readability_blocks(raw: bytes) -> list[dict]:
+    """A derived observation only: never an export, asset, or acceptance receipt.
+
+    Padding keeps the 360px-wide content below the full-view scale even after
+    our provider-size normalization. Provider-internal resampling is unknown.
+    """
+    from PIL import Image, ImageDraw
+
+    display_width, padding = 360, 32
+    metadata = {
+        "source_preview_sha256": hashlib.sha256(raw).hexdigest(),
+        "display_width_assumption_px": display_width,
+        "status": "unavailable",
+    }
+
+    def unavailable(reason: str) -> list[dict]:
+        metadata["status"] = "unavailable"
+        return [_text_block(
+            f"view: readability proxy unavailable: {reason}. "
+            "The full preview above remains available; feed-scale legibility was not observed.\n"
+            + json.dumps(metadata, sort_keys=True)
+        )]
+
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            width, height = source.size
+            metadata["source_size_px"] = [width, height]
+            if width < display_width:
+                return unavailable("source width is smaller than 360px; no enlarged proxy was made")
+            scale = display_width / width
+            content_height = round(height * scale)
+            canvas_size = (
+                max(_VISION_MIN_PX, display_width + 2 * padding),
+                max(_VISION_MIN_PX, content_height + 2 * padding),
+            )
+            if max(canvas_size) > _VISION_MANY_IMAGE_MAX_PX:
+                return unavailable("360px-wide proxy with padding exceeds the 2000px observation limit")
+            if content_height < 1:
+                return unavailable("scaled source height is below one pixel")
+            source.seek(0)
+            reduced = source.convert("RGBA").resize(
+                (display_width, content_height), Image.Resampling.LANCZOS
+            )
+            canvas = Image.new("RGBA", canvas_size, (224, 224, 224, 255))
+            x = (canvas.width - display_width) // 2
+            y = (canvas.height - content_height) // 2
+            # No mask: preserve the creative's own alpha, rather than compositing
+            # its transparent pixels onto the observation-only gray matte.
+            canvas.paste(reduced, (x, y))
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((x - 2, y - 2, x + display_width + 1, y + content_height + 1), outline=(96, 96, 96, 255))
+            draw.text((12, 10), "OBSERVATION ONLY - 360 px readability proxy", fill=(32, 32, 32, 255))
+            draw.text((12, canvas.height - 22), "Gray padding / border are outside the creative", fill=(32, 32, 32, 255))
+            encoded = io.BytesIO()
+            canvas.save(encoded, format="PNG")
+        metadata.update({
+            "status": "available",
+            "scale": scale,
+            "source_frame_index": 0,
+            "content_size_px": [display_width, content_height],
+            "canvas_size_px": list(canvas_size),
+            "content_rect_px": [x, y, display_width, content_height],
+        })
+        return [
+            _text_block(
+                "view: illustrative 360px-wide feed readability proxy, not a platform specification. "
+                "Gray padding, border and labels are outside the creative. Judge copy, CTA and product-detail "
+                "legibility at this scale; successful preflight does not establish readability. "
+                "The full preview above remains the source; provider-internal resampling is unknown.\n"
+                + json.dumps(metadata, sort_keys=True)
+            ),
+            _image_bytes_block(encoded.getvalue(), max_px=_VISION_MANY_IMAGE_MAX_PX),
+        ]
+    except (OSError, ValueError) as error:
+        return unavailable(f"observation could not be prepared ({type(error).__name__})")
+
+
+def _image_observation_label(
+    path: Path, label: str, *, source_mime: str | None = None, raw: bytes | None = None,
+) -> str:
     """Describe the still observation in a standard text block beside the image.
 
     The frame index belongs to the viewed file. A static thumbnail of a GIF does
@@ -206,7 +291,7 @@ def _image_observation_label(path: Path, label: str, *, source_mime: str | None 
     """
     from PIL import Image
 
-    with Image.open(path) as img:
+    with Image.open(io.BytesIO(raw) if raw is not None else path) as img:
         if getattr(img, "is_animated", False):
             return label + "; first frame only (frame index 0 of the viewed file); animation not reviewed."
     if source_mime == "image/gif":
@@ -217,7 +302,8 @@ def _image_observation_label(path: Path, label: str, *, source_mime: str | None 
 def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
     """Build the ToolMessage content (a LIST of blocks) for `view(target)`.
 
-    - "preview" -> latest rendered PNG as [text, image]; text-only when none,
+    - "preview" -> latest rendered PNG as [text, image], plus a candidate-scene
+      readability proxy when representable; text-only when none,
       or a stale-render refusal when the scene changed since the last render.
     - "asset:<id>" -> that kit, library, or current scene asset's preview as [text, image];
       text-only listing available ids when unknown/missing.
@@ -255,12 +341,18 @@ def _view_content(tools: LumenDesignTools, target: str) -> list[dict]:
             ]
             tools.record("agent", "view_called", input_summary=target, output_summary="preview_stale")
             return content
+        # Both observations derive from the same read, with the original full
+        # image first. Website/legacy/reference observations keep their contract.
+        candidate = getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate"
+        raw = png.read_bytes() if candidate else None
         content = [
             _text_block(_image_observation_label(
-                png, f"view: latest rendered preview ({to_virtual(png, tools.config)})"
+                png, f"view: latest rendered preview ({to_virtual(png, tools.config)})", raw=raw,
             )),
-            _image_block(png),
+            _image_bytes_block(raw) if raw is not None else _image_block(png),
         ]
+        if raw is not None:
+            content.extend(_preview_readability_blocks(raw))
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 
@@ -399,6 +491,11 @@ def make_view_tool(tools: LumenDesignTools):
         # agent can adapt and the loop continues.
         try:
             with log_span("tool_view", logger=logger, target=target):
+                if target == "preview":
+                    # Keep freshness, file selection and both pixel observations
+                    # in the same transaction as scene edits and preview exports.
+                    with tools._scene_mutation_lock:
+                        return _view_content(tools, target)
                 return _view_content(tools, target)
         except Exception as exc:  # noqa: BLE001 - deliberate turn-safety boundary
             try:

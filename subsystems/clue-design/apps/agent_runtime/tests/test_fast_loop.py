@@ -1462,13 +1462,14 @@ def test_a_budget_breach_after_the_agent_finalized_keeps_the_real_final(
     _install_deepagents_stub(monkeypatch, capture)
     breach = BudgetExhausted(BUDGET_LLM_CALLS, 45.0, 45.0)
     holder = _install_budget_agent(monkeypatch, breach, with_content=True)
-    real_invoke = _BudgetBlowingAgent.invoke
 
     def invoke_after_finalize(self, *args, **kwargs):
         prepare_acceptance_evidence(holder["tools"])
         result = holder["tools"].finalize_run("accepted", "reviewer_accepted", "shipped")
         assert json.loads(result)["status"] == "accepted"
-        return real_invoke(self, *args, **kwargs)
+        # This case is a late budget signal with unchanged accepted evidence.
+        # The general helper above also authors a new scene before raising.
+        raise breach
 
     monkeypatch.setattr(_BudgetBlowingAgent, "invoke", invoke_after_finalize)
 

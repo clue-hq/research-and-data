@@ -741,7 +741,8 @@ def run_deepagent_turn(
     """Create + invoke + guarantee an honest finalize payload.
 
     Returns (finalize_payload_dict, tools). If the orchestrator finalized (or
-    requested clarification), trust its `final.json`. If it never finalized
+    requested clarification), read its `final.json`; accepted results must still
+    match the live scene and reviewed preview at return. If it never finalized
     (crash, recursion limit, model error), finalize "failed" honestly here —
     never fabricate success.
 
@@ -872,8 +873,44 @@ def run_deepagent_turn(
     try:
         final_path = tools.trace_dir / "final.json"
         if final_path.exists():
-            payload = json.loads(final_path.read_text(encoding="utf-8"))
-            return payload, tools
+            # The API receives tools.scene, not the older final_scene.json.
+            # A later tool in the same graph batch can change that live draft
+            # after finalize returned. Recheck evidence at the handoff boundary
+            # without banning subsequent edits or discarding their operations.
+            with tools._scene_mutation_lock:
+                payload = json.loads(final_path.read_text(encoding="utf-8"))
+                if payload.get("status") == "accepted":
+                    reason = tools._acceptance_error(payload.get("critique") or {})
+                    if (
+                        reason is None
+                        and payload.get("acceptance_receipt") != tools._review_receipt
+                    ):
+                        reason = (
+                            "The finalized acceptance receipt differs from the current review."
+                        )
+                    if reason is not None:
+                        tools.record(
+                            "coordinator", "deepagent_turn_acceptance_stale",
+                            output_summary=reason,
+                            payload={
+                                "reason": reason,
+                                "acceptance_receipt": payload.get("acceptance_receipt"),
+                            },
+                        )
+                        payload = json.loads(
+                            tools.finalize_run(
+                                "completed_with_warnings",
+                                "acceptance_stale_at_return",
+                                "Final acceptance is stale; the current draft is "
+                                f"retained for review. {reason}",
+                                critique_json=json.dumps(payload.get("critique") or {}),
+                                baseline_advisory_json=json.dumps(
+                                    payload.get("baseline_advisory")
+                                ),
+                                accommodation_json=json.dumps(payload.get("accommodation")),
+                            )
+                        )
+                return payload, tools
 
         # A3: before the budget, because a human's stop outranks a machine's — though the two
         # are mutually exclusive in practice (the first raise out of the graph wins) and the
