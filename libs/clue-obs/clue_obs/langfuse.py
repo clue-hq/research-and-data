@@ -23,7 +23,7 @@ from uuid import UUID
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter
 
-from clue_obs.redact import mask_blob, redact_value
+from clue_obs.redact import is_secret_key, mask_blob, redact_value
 from clue_obs.truncate import truncate_str
 
 __all__ = [
@@ -74,11 +74,25 @@ _client: Any | None = None
 # --- the mask (R3) -------------------------------------------------------------------------
 
 
-def _mask_value(value: Any, limit: int) -> Any:
+def _mask_value(value: Any, limit: int, key: str | None = None) -> Any:
+    """The mask's recursion: the secret-key rule, the blob rule, truncation — and nothing else.
+
+    Deliberately NOT ``clue_obs.redact.redact_value``: the log chain's claim-value rule (the
+    ids-only rule for ``value_json`` / ``evidence_span`` / ``memory_body`` / ...) must never run
+    here. Langfuse is the surface for debugging exactly those values, so a tool input or output
+    that happens to carry a claim-shaped key is exported verbatim (R3).
+    """
+    if key is not None and is_secret_key(key):
+        return "***"
+    if isinstance(value, bytes | bytearray):
+        # The one borrowed branch: ``redact_value`` with NO key produces the shared binary
+        # placeholder (``<binary png ~12KB>``) and cannot reach the claim-value rule, which is
+        # key-driven and never recurses into bytes. Reusing it keeps one placeholder text.
+        return redact_value(value)
     if isinstance(value, str):
         return truncate_str(mask_blob(value), limit)
     if isinstance(value, Mapping):
-        return {str(k): _mask_value(v, limit) for k, v in value.items()}
+        return {str(k): _mask_value(v, limit, key=str(k)) for k, v in value.items()}
     if isinstance(value, list | tuple):
         return [_mask_value(v, limit) for v in value]
     return value
@@ -88,7 +102,7 @@ def make_mask(limit: int = DEFAULT_MASK_LIMIT) -> Callable[..., Any]:
     """The client's ``mask`` hook: secret-key rule, blob rule, truncation — in that order."""
 
     def mask(data: Any) -> Any:
-        return _mask_value(redact_value(data), limit)
+        return _mask_value(data, limit)
 
     return mask
 

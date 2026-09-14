@@ -89,11 +89,20 @@ def test_the_mask_applies_the_secret_and_blob_rules_and_truncates_but_keeps_clai
             "attachment": blob,
             "long": "x" * 50,
             "n": 3,
+            "claim": {
+                "value_json": "Acme uses Snowflake",
+                "evidence_span": "quoted span",
+                "api_key": "sk-nested",
+            },
         }
     )
     assert masked["api_key"] != "sk-live-abc"
     assert masked["nested"]["authorization"] != "Bearer x"
     assert masked["nested"]["value"] == "Acme uses Snowflake"  # the claim-value rule is NOT applied
+    # The log chain's ids-only rule must NOT run here: Langfuse is where these are debugged.
+    assert masked["claim"]["value_json"] == "Acme uses Snowflake"
+    assert masked["claim"]["evidence_span"] == "quoted span"
+    assert masked["claim"]["api_key"] == "***"  # ... but the secret-key rule still runs nested
     assert blob not in masked["attachment"]
     assert masked["long"].startswith("x" * 20) and "+30 chars" in masked["long"]
     assert masked["n"] == 3
