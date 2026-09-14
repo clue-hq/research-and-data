@@ -48,6 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from threading import Lock, RLock
 
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.backends.protocol import EditResult, WriteResult
@@ -86,6 +87,12 @@ class AgentWorkspaceBackend(FilesystemBackend):
         # its self-audit; an ordinary turn's `critique.json` is written verbatim.
         self._reference_turn = bool(reference_turn)
         self._critique_observer = critique_observer
+        # One backend is shared by a run's concurrent file tools. Stock edit
+        # reads then truncates/writes without a transaction; disjoint edits can
+        # both succeed while overwriting each other. Locks belong to validated
+        # canonical paths, so aliases serialize and independent files do not.
+        self._file_locks: dict[Path, RLock] = {}
+        self._file_locks_guard = Lock()
         # Stored from the constructor arg (not ``self.cwd``) so the class also works
         # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
         self._workspace_root = str(Path(root_dir))
@@ -216,15 +223,30 @@ class AgentWorkspaceBackend(FilesystemBackend):
             return "The workspace materialization lock is a read-only runtime file."
         return None
 
+    def _file_mutation_lock(self, key: str) -> RLock:
+        # Resolve with the existing normalization/containment checks BEFORE
+        # allocating a lock. Stock operations still resolve again inside the
+        # transaction; no cached file contents or relaxed replacement checks.
+        path = self._resolve_path(key)
+        with self._file_locks_guard:
+            if path not in self._file_locks:
+                self._file_locks[path] = RLock()
+            return self._file_locks[path]
+
     def write(self, file_path: str, content: str) -> WriteResult:
         if error := self._materialization_lock_write_error(file_path):
             return WriteResult(error=error)
         if self._is_component_projection_key(file_path):
             return WriteResult(error=self._projection_write_message())
-        result = super().write(file_path, self._normalize_self_audit(file_path, content))
-        if not result.error:
-            self._observe_critique(file_path)
-        return result
+        try:
+            lock = self._file_mutation_lock(file_path)
+        except (OSError, RuntimeError) as error:
+            return WriteResult(error=f"Error writing file '{file_path}': {error}")
+        with lock:
+            result = super().write(file_path, self._normalize_self_audit(file_path, content))
+            if not result.error:
+                self._observe_critique(file_path)
+            return result
 
     def edit(
         self,
@@ -237,15 +259,20 @@ class AgentWorkspaceBackend(FilesystemBackend):
             return EditResult(error=error)
         if self._is_component_projection_key(file_path):
             return EditResult(error=self._projection_write_message())
-        result = super().edit(
-            file_path,
-            old_string,
-            new_string,
-            replace_all=replace_all,
-        )
-        if not result.error:
-            self._observe_critique(file_path)
-        return result
+        try:
+            lock = self._file_mutation_lock(file_path)
+        except (OSError, RuntimeError) as error:
+            return EditResult(error=f"Error editing file '{file_path}': {error}")
+        with lock:
+            result = super().edit(
+                file_path,
+                old_string,
+                new_string,
+                replace_all=replace_all,
+            )
+            if not result.error:
+                self._observe_critique(file_path)
+            return result
 
     def _observe_critique(self, file_path: str) -> None:
         if self._critique_observer is not None and self._is_critique_key(file_path):
