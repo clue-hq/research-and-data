@@ -6,7 +6,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
-	redis-up redis-down manual manual-check manual-link
+	redis-up redis-down manual manual-check manual-link cost-report
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -113,3 +113,7 @@ eval-verification: ## M9.6 verification-battery DEMO (rubrics + per-mechanism + 
 
 eval-design-exit: ## P3.6 design-leg exit-judgment golden-set DEMO (fail-safe envelope + regression-on-weakened-judge; always exits 0)
 	uv run python -m clue_design.evals
+
+# --- cost (lane 3 slice 1) ---------------------------------------------------
+cost-report: ## Print a workspace's cost report from the two ledgers. Usage: make cost-report ARGS="--workspace acme [--project P] [--json]"
+	uv run python -m clue_projections.cost_cli $(ARGS)
