@@ -146,7 +146,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # different input digest), two are added (`read_claims@1`, `read_artifact@1`), and every
         # pinned skill body in the manifest is new — stage0-interview v33, the document skills at
         # v2, the re-minted `manual-*@v3`. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("0c2d02ea729cb5b6eb83b36524d6a5fbd478c82d46ad691aeaecf0f559ebc38b"),
+        AgentRole.HEAD_OF_ABM: ("f9376210bfcc9689a0423475e5759137a4230a66a56ffeec86c68699c7c08e2d"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

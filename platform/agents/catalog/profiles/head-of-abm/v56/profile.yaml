@@ -152,7 +152,7 @@ prompt:
 skills:
   - name: stage0-interview
     version: v33
-    sha256: 4f239cbfea8d46061487f1c3ec767f15cfd6f18d142831720d84e9fc782b9000
+    sha256: c15f3a2c8a10fe28f52fa41e0ca57586e34587ae47fd8fcb9ed55259297edd12
   # The three document skills. Each one is the whole procedure for one document the agent
   # now writes as a file under `project/`: the profile it may propose, the personas for the
   # profile the human confirmed, and the project's one plan. They grant no tool — the writing

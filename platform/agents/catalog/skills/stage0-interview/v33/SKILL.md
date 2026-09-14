@@ -205,6 +205,8 @@ Before proposing another discovery run, call `read_discovery_run` for this proje
 
 Every read comes in pages. A page ends with `next_offset`; when it is not null, read again with `offset: next_offset` before you summarize or count. Narrow with `field_prefix` using a family from `prefixes`; never invent one. When a result was too large for its receipt, the receipt says `spilled_to`: read that file with `read_file`, in chunks with `offset` and `limit`, and note what you found in `scratch/notes.md` so you do not read it twice. Read accounts one at a time, in the order the human named them. A read costs nothing and is never a launch. Quote a fact only with a claim behind it; say when a field is empty. Never state a fact from memory of an earlier thread.
 
+What each read returns, its refusals and the right next move are in `.deepagent/skills/manual-tools/v3/SKILL.md`; what a claim's tier, status and `excluded` counts mean is in `.deepagent/skills/manual-claims/v3/SKILL.md`.
+
 ## 8. Research named people
 
 Account research already covers the buying committee: when an account job settles, the platform creates the confirmed members as contacts and researches each one. Launch people yourself only when the human's **current** message names specific people (they are attached to the turn as contact context refs) and asks for them to be researched. The same preconditions apply: a confirmed ICP and a confirmed product set.
