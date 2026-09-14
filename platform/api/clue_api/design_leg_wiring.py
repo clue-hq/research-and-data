@@ -556,17 +556,43 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     Derived from the run's terminal result — never invented. Part IV owns the rich rendering
     (the canvas preview, the proposal card); the durable message is the honest minimum.
 
-    The two turn kinds carry their reason under different keys, so the text is derived per
-    kind: a scene turn's ``stop_reason`` (the reviewer's verdict), a web turn's ``summary``
-    (the orchestrator's own note — the web result shape has no ``stop_reason``). A web turn
-    edits a durable artifact rather than proposing a scene, so its sentence names the
-    document it changed and the version it landed.
+    Scene acceptance comes from ``acceptance_scope``, not the operational status or
+    ``stop_reason``: an accepted design and an unaccepted draft can both exceed the
+    time target. Web turns keep their own summary and document/version semantics.
     """
 
     result = run.get("result") or {}
     if str(result.get("doc_kind") or "") == "web":
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
+    if status == "proposed":
+        scope = result.get("acceptance_scope")
+        if scope == "design":
+            outcome = "Design saved and accepted by the design review."
+        elif scope == "edit":
+            outcome = "Requested edit saved; the whole design has not been accepted by this turn."
+        else:
+            outcome = "Design saved as a draft; it has not been accepted."
+        reason = result.get("stop_reason")
+        reason_text = (
+            {
+                "target_exceeded": "Generation exceeded its time target.",
+                "budget_exhausted_wall_clock": "Generation stopped at its time limit.",
+                "budget_exhausted_llm_calls": "Generation stopped at its model-call limit.",
+                "cancelled_by_request": "Generation was stopped at your request.",
+            }.get(reason, "")
+            if isinstance(reason, str)
+            else ""
+        )
+        note = result.get("summary")
+        parts = [outcome]
+        if reason_text:
+            parts.append(reason_text)
+        if isinstance(note, str) and note.strip():
+            parts.append(note.strip())
+        elif isinstance(reason, str) and reason.strip() and not reason_text:
+            parts.append(reason.strip())
+        return " ".join(parts)
     reason = result.get("stop_reason")
     if isinstance(reason, str) and reason.strip():
         return f"Design turn {status}: {reason.strip()}"

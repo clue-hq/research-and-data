@@ -441,6 +441,80 @@ async def _pin_document(
     return document
 
 
+@pytest.mark.parametrize(
+    ("scope", "expected_outcome"),
+    [
+        ("design", "accepted by the design review"),
+        ("edit", "whole design has not been accepted"),
+        (None, "saved as a draft; it has not been accepted"),
+    ],
+)
+def test_scene_summary_distinguishes_acceptance_from_execution_success(
+    scope: str | None, expected_outcome: str
+) -> None:
+    """The four-brand controls shared status/reason despite different verdicts."""
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "proposed",
+                "acceptance_scope": scope,
+                "stop_reason": "target_exceeded",
+                "summary": "Supporting copy still needs a readability check.",
+            },
+        }
+    )
+    assert expected_outcome in summary
+    assert "time target" in summary
+    assert "Supporting copy still needs a readability check." in summary
+
+
+@pytest.mark.parametrize(
+    ("reason", "limit"),
+    [
+        ("budget_exhausted_wall_clock", "time limit"),
+        ("budget_exhausted_llm_calls", "model-call limit"),
+        ("cancelled_by_request", "stopped at your request"),
+    ],
+)
+def test_scene_summary_preserves_unaccepted_draft_when_generation_stops(
+    reason: str, limit: str
+) -> None:
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "proposed",
+                "acceptance_scope": None,
+                "stop_reason": reason,
+                "summary": "Current draft awaits review.",
+            },
+        }
+    )
+    assert "saved as a draft; it has not been accepted" in summary
+    assert limit in summary
+    assert "Current draft awaits review." in summary
+
+
+def test_scene_acceptance_summary_does_not_change_website_summary() -> None:
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "document_id": "doc_website",
+            "result": {
+                "doc_kind": "web",
+                "status": "completed",
+                "current_version": 3,
+                "summary": "Updated the hero copy.",
+            },
+        }
+    )
+    assert summary == (
+        "Design turn completed on website document doc_website (now version 3): "
+        "Updated the hero copy."
+    )
+
+
 def test_a_conflicted_scene_result_summarizes_with_the_versions_it_names() -> None:
     """The consuming half of the design side's ``conflicted_agent_turn_response``.
 
