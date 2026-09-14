@@ -93,7 +93,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         max_file_size_mb: int = 10,
         custom_components_root: str | Path | None = None,
         reference_turn: bool = False,
-        critique_observer: Callable[[Path, str], None] | None = None,
+        critique_observer: Callable[[Path, str], str | None] | None = None,
         active_run_id: str | None = None,
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb)
@@ -101,6 +101,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         # owes a typed `reference_fidelity`, so only a reference turn normalizes
         # its self-audit; an ordinary turn's `critique.json` is written verbatim.
         self._reference_turn = bool(reference_turn)
+        # The observer returns a registration error, or None on success/ignore.
         self._critique_observer = critique_observer
         # One backend is shared by a run's concurrent file tools. Stock edit
         # reads then truncates/writes without a transaction; disjoint edits can
@@ -404,7 +405,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         with lock:
             result = super().write(file_path, self._normalize_self_audit(file_path, content))
             if not result.error:
-                self._observe_critique(file_path)
+                result.error = self._observe_critique(file_path)
             return result
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
@@ -444,10 +445,15 @@ class AgentWorkspaceBackend(FilesystemBackend):
                 replace_all=replace_all,
             )
             if not result.error:
-                self._observe_critique(file_path)
+                result.error = self._observe_critique(file_path)
             return result
 
-    def _observe_critique(self, file_path: str) -> None:
+    def _observe_critique(self, file_path: str) -> str | None:
         if self._critique_observer is not None and self._is_critique_key(file_path):
             path = self._resolve_path(file_path)
-            self._critique_observer(path, path.read_text(encoding="utf-8"))
+            if error := self._critique_observer(path, path.read_text(encoding="utf-8")):
+                return (
+                    f"File saved, but visual review was not registered: {error} "
+                    "Edit this saved file to resolve the review error."
+                )
+        return None

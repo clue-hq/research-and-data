@@ -788,3 +788,21 @@ timed out because ad tab returned Gallery; inspected/reopened then edit passed.
 One read-only rg path used nonexistent src/scene* glob (zsh no matches); corrected
 to actual lumen_agent path. Evidence ignored source-scope-four-brands-20260914
 assessment.json/receipts. Scope remains local, no pushes or production changes.
+
+Task22 diagnostic/fix checkpoint: Conduit and Clue registration hooks DID run.
+Conduit undeclared copy evidence and Clue duplicate native binding were rejected;
+file backend discarded observer diagnostics. Narrow fs_backend + substrate
+observer-return change exposes saved-file-but-unregistered-review reason, no
+acceptance weakening. Real-helper RED9failed/8passed; GREEN17passed; combined295
+passed16.05s, independent233passed/no findings; root-config Ruff0new diagnostics.
+Guidance unchanged for next all-four arm. Confirmed SDK partial read lacks total
+or continuation marker, so selected resource consumption remains open.
+Read-only DB preflight: all122fleet jobs done, design53succeeded/5failed; original
+registry records unchanged. Only last arm's AWS/Google generated layers are
+recoverable quarantine candidates. New ignored review-feedback-four-brands-
+20260914/prepare.py delegates existing comparison helper, not a product feature.
+Sandbox DB connection PermissionError resolved with authorized local escalation;
+initial python3.13 path assumed incorrectly, corrected inspected python3.12;
+nonexistent tests/test_knowledge_projection.py and start.sh reads made no edits.
+Live browser/export parity audit found two concrete renderer seams; final report
+pending, no renderer changes in this checkpoint. No DB tests/provider runs yet.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import threading
@@ -13,7 +14,8 @@ from types import SimpleNamespace
 import pytest
 from agent_fixtures import runtime_config
 from lumen_agent import harness
-from lumen_agent.models.schemas import VisualCritique
+from lumen_agent.fs_backend import AgentWorkspaceBackend
+from lumen_agent.models.schemas import SceneVisualCritique, VisualCritique
 from lumen_agent.tools import substrate
 from lumen_api import core as core_module
 from test_scene_skill_family import direction
@@ -271,4 +273,128 @@ def test_direction_validation_contends_with_scene_review_transaction(tools, monk
             release.set()
         assert json.loads(submission.result(5))["status"] == "ok"
         assert json.loads(revision.result(5))["status"] == "ok"
+    assert accept(tools).startswith("REFUSED")
+
+
+def review_backend(tools):
+    tools.config = replace(tools.config, reference_assets={"source-ad": {}})
+    return AgentWorkspaceBackend(
+        tools.trace_dir.parent,
+        active_run_id=tools.run_id,
+        reference_turn=True,
+        critique_observer=tools.observe_written_critique,
+    )
+
+
+@pytest.mark.parametrize("operation", ["write", "edit", "awrite", "aedit"])
+@pytest.mark.parametrize("defect", ["undeclared_evidence", "duplicate_binding"])
+def test_file_review_rejection_reports_the_registration_error_and_allows_repair(
+    tools, operation, defect,
+):
+    """A saved critique must expose the real rejection before finalize is called."""
+    body = review(validate(tools))
+    body["reference_fidelity"] = {"score": 2}
+    broken = copy.deepcopy(body)
+    if defect == "undeclared_evidence":
+        support = broken["direction_review"]["copy_occurrences"][0]["support"]
+        support.update(status="supported", evidence_refs=["undeclared-evidence"])
+        # Conduit's failure: schema-valid fidelity=2, but the direction join fails.
+        assert SceneVisualCritique.model_validate(broken).reference_fidelity.score == 2
+        reason = "Copy headline cites evidence not declared for that copy block."
+    else:
+        # Clue's failure: the same native placement is reviewed twice.
+        rows = broken["direction_review"]["copy_occurrences"]
+        rows.append(copy.deepcopy(rows[0]))
+        reason = "duplicate native copy binding"
+    backend = review_backend(tools)
+    path = tools.trace_dir / "workspace/rounds/round_2/critique.json"
+    key = f"/{tools.run_id}/workspace/rounds/round_2/critique.json"
+    if operation in {"edit", "aedit"}:
+        assert backend.write(key, json.dumps(body)).error is None
+        assert json.loads(accept(tools))["status"] == "accepted"
+        args = (str(path), path.read_text(), json.dumps(broken))
+    else:
+        args = (key, json.dumps(broken))
+    result = getattr(backend, operation)(*args)
+    if operation.startswith("a"):
+        result = asyncio.run(result)
+
+    assert json.loads(path.read_text()) == broken
+    assert tools._latest_visual_critique is None
+    assert tools._review_receipt is None
+    assert accept(tools).startswith("REFUSED")
+    assert result.error and reason in result.error
+    assert "saved" in result.error.lower() and "not registered" in result.error.lower()
+    assert "edit" in result.error.lower()
+
+    # Inline passing JSON cannot resurrect the invalidated registration.
+    assert tools.finalize_run(
+        "accepted", "review_complete", "Unregistered", json.dumps(body),
+    ).startswith("REFUSED")
+    repaired = backend.edit(key, path.read_text(), json.dumps(body))
+    assert repaired.error is None and repaired.occurrences == 1
+    final = json.loads(accept(tools))
+    assert final["status"] == "accepted"
+    assert final["critique"]["reference_fidelity"]["score"] == 2
+
+
+@pytest.mark.parametrize("defect", ["negative", "malformed", "low_fidelity"])
+def test_file_review_cannot_keep_an_earlier_passing_registration(tools, defect):
+    body = review(validate(tools))
+    body["reference_fidelity"] = {"score": 2}
+    backend = review_backend(tools)
+    path = tools.trace_dir / "workspace/critique.json"
+    assert backend.write(str(path), json.dumps(body)).error is None
+    assert json.loads(accept(tools))["status"] == "accepted"
+    if defect == "negative":
+        body["accepted"] = False
+    elif defect == "low_fidelity":
+        body["reference_fidelity"]["score"] = 1
+    content = "{invalid json" if defect == "malformed" else json.dumps(body)
+    result = backend.edit(str(path), path.read_text(), content)
+    assert path.read_text() == content
+    assert accept(tools).startswith("REFUSED")
+    if defect == "malformed":
+        assert result.error and "not registered" in result.error.lower()
+        assert tools._latest_visual_critique is None
+    else:
+        # A negative judgment is valid review data, but cannot authorize acceptance.
+        assert result.error is None
+
+
+@pytest.mark.parametrize("path_kind", ["sibling_run", "old_round", "wrong_path"])
+def test_file_review_registration_preserves_current_run_and_round_binding(tools, path_kind):
+    body = review(validate(tools))
+    body["reference_fidelity"] = {"score": 2}
+    backend = review_backend(tools)
+    (tools.trace_dir / "workspace/rounds/round_2").mkdir(parents=True)
+    key = {
+        "sibling_run": "/run_other/workspace/rounds/round_2/critique.json",
+        "old_round": f"/{tools.run_id}/workspace/rounds/round_1/critique.json",
+        "wrong_path": f"/{tools.run_id}/workspace/critique.json",
+    }[path_kind]
+    result = backend.write(key, json.dumps(body))
+    assert bool(result.error) == (path_kind == "sibling_run")
+    assert tools._latest_visual_critique is None
+    assert accept(tools).startswith("REFUSED")
+
+
+@pytest.mark.parametrize("changed", ["scene", "direction", "preview"])
+def test_file_review_registration_does_not_bypass_evidence_freshness(tools, changed):
+    body = review(validate(tools))
+    body["reference_fidelity"] = {"score": 2}
+    backend = review_backend(tools)
+    path = tools.trace_dir / "workspace/critique.json"
+    assert backend.write(str(path), json.dumps(body)).error is None
+    assert json.loads(accept(tools))["status"] == "accepted"
+    if changed == "scene":
+        tools.apply_operations(json.dumps([{"kind": "remove_node", "node_id": "panel"}]))
+        tools.preflight_design()
+        tools.export_preview("svg")
+    elif changed == "direction":
+        revised = direction()
+        revised["review_needs"].append("Check another requirement")
+        write_direction(tools, revised)
+    else:
+        Path(tools.latest_export_summary["artifacts"][0]["path"]).write_text("changed bytes")
     assert accept(tools).startswith("REFUSED")

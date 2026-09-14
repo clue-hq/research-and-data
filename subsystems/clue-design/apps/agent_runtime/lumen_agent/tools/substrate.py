@@ -4077,8 +4077,8 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
-    def observe_written_critique(self, path: Path, content: str) -> None:
-        """Register fast-loop self-review only from this run's canonical file."""
+    def observe_written_critique(self, path: Path, content: str) -> str | None:
+        """Register the canonical self-review; return rejection to the file tool."""
         workspace = self.trace_dir / "workspace"
         round_number = self._fast_loop_round_number()
         expected = (
@@ -4087,7 +4087,10 @@ class LumenDesignTools:
         )
         if path.resolve() != expected.resolve():
             return
-        self.submit_visual_critique(content)
+        result = json.loads(self.submit_visual_critique(content))
+        if result["status"] == ToolStatus.error.value:
+            return result["message"]
+        return None
 
     @_scene_mutation
     def validate_creative_direction(self, revision_reason: str = "") -> str:

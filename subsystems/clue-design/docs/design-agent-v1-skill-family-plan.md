@@ -1716,3 +1716,27 @@ each new live arm. Do not spend another family-coverage batch while calling
 these known failures a pass. Evidence: ignored
 `source-scope-four-brands-20260914/assessment.json`, frozen initial handoffs,
 first-preview/first-terminal receipts, native edit snapshots and qa-exports.
+
+### Task 22: Surface rejected file reviews before finalization
+
+The Task21 trace disproves the missing-write/edit-hook hypothesis. Both paths
+invoked registration. Conduit was rejected because its eyebrow cited evidence
+not declared for that copy block; Clue had a duplicate native-copy binding.
+Registration correctly invalidated the previous receipt. The filesystem backend
+silently discarded the observer result, so the agent saw a saved file followed
+by a misleading empty-review/fidelity failure at finalization.
+
+The narrow repair returns the real registration error through the existing
+write/edit result, explicitly distinguishing the saved file from an unregistered
+review and directing repair of that file. Current-run/round/path, copy evidence,
+scene/direction/preview freshness and acceptance checks remain unchanged.
+Nine failing cases reproduced the hidden diagnostic (eight controls passed);
+after repair all17 pass. The combined focused suites passed295 tests; independent
+review passed233 and found no actionable findings. No new Ruff diagnostics.
+Live recovery, creative quality and timing still require the all-four comparison.
+
+The pagination investigation also confirmed that the installed file backend
+returns only the requested lines, without total-line/continuation metadata.
+This arm leaves guidance unchanged to isolate review feedback. Complete selected
+resource consumption remains unresolved; do not claim the copy guidance was
+applied merely because its path appears in a tool call.
