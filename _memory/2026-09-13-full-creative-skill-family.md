@@ -716,3 +716,35 @@ All4DOMsshowstaledesigningstatusalthoughCluefinishedcanvasvisible; notnewrunproo
 No scenes/services/assets/modelsettings changed. UnrelatedSept8dirtpreserved.
 Goalprogress: improveddiagnosticvalidity andruledoutpromotionofunreliableveto;
 goalnotcomplete, notblocked. No push/production or externalfolderchanges.
+
+### Task21 — repeated source-scope calibration (2026-09-14)
+
+Forty configured Grok4.6 medium calls completed: five control/candidate samples
+for each of four brands, all-four dispatch span <=1.073s. Same six public source
+images and task/cases; only frozen review.md differs. No answer-key/author leak.
+Both conditions45/45 primary refusals and25/25 attributed/visible retentions.
+Candidate clarifies source-faithfulness, not verified truth; narrow Google guide
+and Conduit connection handled consistently at source scope. AWS title varies,
+composite topic refused; do not claim26-case accuracy or generalization. Exact
+candidate SHA90b40766b9e0c725ed213f7a7b020031ad7cdbf2dac6f42a3b3653eb0b040fc5.
+Only existing review resource authorized for application; brief/copy already
+references it and stays unchanged. Projection checks/review pending at this entry.
+Raw evidence ignored copy-scope-repeats-20260914; cost1.153124 provider total,
+governed cost_cents0 remains discrepancy. No provider failures/retries.
+All four local workspaces idle, old registry rows unchanged; two prior generated
+AWS/Google images remain ready and must be excluded in next frozen arm. Existing
+Task18 artifacts retained in browser13–16, correct workspace/port identities.
+Readability audit: full+360px proxy logged for all4, QA PNG equals final reviewed
+PNG; no established local delivery/unit defect. Critiques substitute full-size
+visibility/contrast/source similarity for feed readability. Historical outbound
+payloads absent; provider processing unproven. Possible paired proxy-only test
+not run; no font-threshold or new runtime reviewer implemented. No new full ad
+generation in this calibration, full-agent benefit and family/latency goals open.
+
+Task21 implementation checkpoint: exact frozen review.md applied; sole product
+file changed. Projection/isolation22passed7.36s, then independently22passed6.87s
+to provide missing stored terminal evidence for review. Reviewer audited20pairs,
+60imagepayloads/all40responses and approved local experimental validation with
+no findings; diffcheck clean. Receipt projection-test-output.txt. New ignored
+source-scope-four-brands-20260914/{prepare.py,observe.py} prepared only; next same
+four ordinary app requests pending. No production/remote changes; goal active.

@@ -82,16 +82,43 @@ unresolved typography does not establish unreadability: judge its actual pixels.
 Text inside authentic product images stays part of visual/source review, outside
 this native-copy inventory.
 
-For **every occurrence**, including `claim_kind=positioning`, judge the full
-sentence's subject, scope, modality and implied product promise. Matching feature
-nouns is insufficient; examine limiting and contrary evidence. Support status is
-`supported`, `nonfactual`, `unsupported` or `unverified`. A supported factual
-judgment cites evidence IDs declared for that copy block; nonfactual explains
-why the words assert no verifiable product or empirical promise. Give one concise
-reason and `source_limits` describing what the source does and does not establish,
-including contrary observations. An evidence ID only links your declared source
-and excerpt: the runtime does not independently verify those strings or their
-meaning. Inspect the supplied source itself; never treat schema validation as proof.
+For **every occurrence**, including `claim_kind=positioning`, read the exact
+words with their companion copy. Identify subject, action, condition and outcome,
+including scope and certainty. Short labels can assert a resource identity,
+topic or partnership pairing without a measured outcome.
+
+Compare that meaning with what inspected pixels depict, what supplied text
+asserts, and what independent verification, if available, establishes. Catalog
+labels/descriptions are supplied assertions; their presence, evidence IDs and
+image-byte custody do not authenticate authorship or provenance. Support judges
+faithfulness at that source scope, not external truth. A faithful restatement of
+a supplied assertion can be supported while its authority remains unknown.
+
+Compare relationships, not matching feature nouns. Depicted controls support
+visible affordances; a mandatory hold or release condition needs evidence of
+that relationship. An advertised resource identity/topic does not require its
+unseen body to support that identity/topic. An invitation's language alone
+promises neither the resource's language nor current availability; evaluate
+those promises when the wording actually adds them.
+
+Choose the existing support status from this comparison:
+
+- `supported`: factual meaning matches the depicted or supplied assertion scope,
+  with no added strength or unresolved contradiction. Cite evidence IDs declared
+  for that copy block.
+- `nonfactual`: contextual meaning is opinion, advice or invitation with no
+  factual identity, relationship or product/empirical promise.
+- `unsupported`: the words add a relationship, scope or certainty the source
+  does not support, or conflict with the source.
+- `unverified`: missing or ambiguous source material prevents deciding whether
+  the words faithfully represent it.
+
+Give one concise reason naming the meaning-to-source match or gap. In
+`source_limits`, state the depicted, supplied-assertion or independently verified
+scope actually available, unknown authority or behavior, and material contrary
+observations. Unknown provenance can accompany a supported source-level claim;
+a limitation cannot cure words that exceed their source. Inspect supplied
+material itself; schema validation does not verify source strings or meaning.
 
 Readability status is `readable`, `unreadable` or `unverified`, with a concise
 placement-specific reason covering all fragments of that occurrence. Examine

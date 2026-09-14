@@ -1545,3 +1545,99 @@ Evidence: ignored `judgment-isolation-20260914/{probe.py,frozen-input.json,
 scoring-key.json,clean/,author/,assessment.json}`. No skill body, product code,
 model/topology setting, original image, saved creative or service was changed.
 The full family goal, remaining coverage and four-minute target remain open.
+
+### Task 21: Calibrate the shared copy-support instructions
+
+Use the Task20 failure as the baseline: full sentence scope can be checked, but
+the evaluator mixes source-faithfulness, source authentication and independent
+verification. Change the existing shared review section only; no new runtime
+agent, model, tool, schema, skill registration or source-library rule. A source
+assertion is not automatically externally true. Its faithful representation and
+its authority need separate reasoning in the existing reason/source_limits fields.
+Labels identifying a resource or integration can carry factual meaning; invitations
+do not silently claim language, current availability or measured outcomes.
+
+One author prepares a replacement review resource in ignored SDD scratch. Root
+freezes that candidate before calls and tests it against the old resource. Keep
+same model, original images, metadata, task, companion copy and opaque IDs. Add
+explicitly attributed source statements and unsupported verification promises
+to clarify the boundary; retain all ten actual native strings and prior contrasts.
+Expected labels remain hypotheses outside model input. Read every refusal and
+contextual ambiguity. Use five fresh samples per viable variant; stop a failed
+candidate rather than spend toward an arbitrary pass count. A good result must
+retain rejection of Clue's unsupported waiting clause and unsupported mechanics,
+while preserving faithful source-level statements without inventing authority.
+
+If repeated evidence supports the change, apply exactly the tested resource bytes.
+Inspection found the brief/copy entry point already references the shared rule
+and its positioning warning is compatible; preserve that tested entry point.
+Run existing resource loading/contract
+checks and independent review. A successful micro-test is not a full creative
+quality claim. The following live validation must again use fresh concurrent
+ordinary requests in all four workspaces, frozen source catalogs and current
+receipts, with native editing/export checks and first-delivery timing. Do not
+advance remaining-family promotion on prose tests alone.
+
+Task21 calibration result: forty calls completed, five fresh samples per brand
+and condition. All four brands started within1.073s in each round. Inputs match
+except the review resource: same Grok4.6 medium, six original image hashes,
+catalog records, companion copy and opaque IDs. No expected labels, descriptive
+IDs or author judgments reached the model. Alternating condition order in repeats
+2–5 reduces simple ordering effects; these remain calibration cases authored
+from the same examples, with contrast-rich appended pairs, not held-out evidence.
+
+Both conditions blocked45/45 primary unsupported samples and retained25/25 direct
+source-description samples. There is no demonstrated improvement in that primary
+score. The candidate consistently distinguishes supplied resource/connection
+assertions from independent verification: Conduit's narrow connection becomes
+supported at supplied-caption scope, and Google's guide invitation is supported
+without requiring unseen contents or English availability. AWS's guide audience
+is supported as catalog wording, but its composite topic remains refused. The
+AWS title itself varies (three supported, one nonfactual, one unsupported), so
+this is not universal consistency. Eight short labels/advice, three scope-sensitive
+cases and the ambiguous Clue headline are reported separately from primary accuracy.
+The candidate blocks that contextual Clue headline in all five repeats; the
+control blocks it in two. This does not establish a universal slogan policy.
+
+Decision: apply only the exact tested review resource on the experimental scene
+route, subject to existing projection checks and independent review. `supported`
+means faithful at the stated source scope; unknown authority and unverified live
+behavior stay explicit. It is not source authentication, factual verification,
+production approval or evidence of improved rendered ads. No additional runtime
+reviewer, model, schema, source-data change or acceptance authority is introduced.
+Full-agent evaluation remains necessary before judging whether this helps the
+actual Clue copy failure; focused reviewers already rejected that clause before
+this change. No new live creative was generated during this diagnostic.
+
+Provider-reported cost0.574512 control +0.578612 candidate; governed cost_cents
+still0, an accounting discrepancy. Per-call medians60.843s and53.211s are not
+creative latency measurements or causal speed evidence. Raw results and matched
+request checks: ignored `copy-scope-repeats-20260914/{probe.py,repeat-series.py,
+assess.py,assessment.json,control/,candidate/}`. Candidate review SHA256
+`90b40766b9e0c725ed213f7a7b020031ad7cdbf2dac6f42a3b3653eb0b040fc5`.
+
+Read-only runtime/source check: all four workspaces idle; original registry
+records unchanged. Only the prior AWS and Google generated images are newly
+ready relative to the previous frozen catalog; keep them out of future reference
+arms with the existing recoverable quarantine. Browser tabs13–16 still show the
+correct four workspace/port names and finished artifacts.
+
+A parallel readability audit found no established local delivery or unit defect:
+all four final preview views logged full image +360px proxy delivery; final QA
+PNG bytes match reviewed PNGs. Historical outbound payloads are not logged, so
+provider handling remains unproven. The critiques instead justify readability
+using full-size visibility, contrast or matching the source despite small text.
+Full preview and literal copy are available before proxy assessment. A possible
+next diagnostic is a four-brand full+proxy versus proxy-only comparison with
+hidden transcription targets; it is not yet run, and transcription alone cannot
+establish human readability. Do not implement a universal font-size threshold
+or claim an image-delivery fix from this audit.
+
+Task21 implementation checkpoint: applied exactly the frozen candidate bytes.
+The existing scene-family projection/isolation suite passed22 tests (author7.36s;
+independent stored verification6.87s after the reviewer requested inspectable
+test evidence). Scoped diff check passes. Independent review found no issues
+for local experimental live validation; it verified20 request pairs,60 image
+payloads and all40 raw results. No other resource was changed. The ignored
+`source-scope-four-brands-20260914` folder prepares the next normal four-workspace
+comparison; this checkpoint does not claim its generation or quality result.
