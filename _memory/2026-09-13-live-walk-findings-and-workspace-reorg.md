@@ -361,3 +361,35 @@ whose `turn_id` is not an `agent_turn` row raises a raw FK IntegrityError rather
 `PROJECT_DOCUMENT_OBJECT_TYPES` is durable but cardless (logged loudly); `tests/execution/test_recipes.py`
 carries a pre-existing v16–v21 gap and lane-DB row collisions, and the design-profile model-id failure is
 the pre-existing env-dependent one.
+
+## Plan 3 proven (2026-09-14) — the versioned project root, `da7e4e7c3..94ef21dd1`
+
+Ten commits (SDD, Opus implementers, controller-reviewed): the bridge, the versioned mount, the root
+writer + persona writer, the per-turn wiring + kind-bearing cards, v55/v32/recipe 27/manual v2, the
+skill wording fix, the docs, and two live-proof fixes: `f1aee988f` (ruling P3-14: the writer's
+artifact reader is built on the bridge's own connection factory — the first live persona write
+landed but `refresh()` used the worker-loop engine from the bridge loop, asyncpg died "attached to a
+different loop", the mount told the model the refreshed library could not be opened, and the turn
+timed out) and `94ef21dd1` (ruling P3-15: `LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=300` in
+`.env.example`/`.env` — langchain-openai's 120 s parsed-chunk stall timeout fired while grok-4.6
+composed one long `write_file`; the runtime reports it `agent_timeout`).
+
+**Live walk** (project `prj_82aef3…`, stack restarted on the fixed code, recipe 27 promoted by the
+workers' boot seeding): thread `thr_a7dd514d…` — "write the personas" → `write_file` at
+`project/audience/persona-specialty-ambulatory-groups.md` → v2 `ready` (v1 was the pre-fix turn's
+row), library refreshed (35,681 B), "Personas v2" card, 225 s; "write the plan" → `project/plan.md`
+v1 `ready`, "Plan v1" card from the row, 115 s; human PUT through the frontend proxy with
+`expected_revision: 1` → v2, v1 superseded; new thread `thr_5f1360fa…` — "add one step" → v3 in
+65 s, the pilot step added, the human's note kept, "Plan v3" card. No stall, loop or refresh
+errors after the two fixes. Earlier failed turns on the same thread: `d44feca7` (refresh fault)
+and `bba614e3` (stall timeout) — both `failed`, both superseded.
+
+Deferred minors: plan rows leave `produced_by_turn_id` NULL (the persona writer stamps it; the
+front matter's `authored_by.turn_id` carries the turn); the model still declares its own
+`{object_type: "plan", object_id: <project>}` ref at finalize, so a generic "plan / Revision 3"
+card renders beside the row-derived "Plan v3" (a sentence in `plan-authoring` — "do not add a
+domain_ref for the plan; the card comes from the row" — retires it); a persona document takes
+~4 of the 5 turn minutes on grok-4.6 (`turn_timeout_s` is a profile field if it recurs);
+`ARV2-ONBOARDING-PLAN.md` has no addendum for plans 2/2b; the trial surface discloses the three
+document skills while mounting no writable `project/`; `SKILLS_BLOCK_MAX_BYTES` moved 4096→4608
+(the 80% L1 budget is the binding gate, 7,337 B spare).
