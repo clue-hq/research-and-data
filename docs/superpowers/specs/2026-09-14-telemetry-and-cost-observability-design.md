@@ -86,7 +86,7 @@ in §8 as deferred, with the trigger that re-opens it.
 
 | Capability | Where | State |
 | --- | --- | --- |
-| Structured logs with run context | `libs/clue-obs` — `clue_obs.context.bind_*` binds request, workspace, project, run, account, actor, profile version | Done. Milestone item 6. |
+| Structured logs with run context | `libs/clue-obs` — `clue_obs.context.bind_*` binds request, workspace, project, run, account, actor, profile version | Bound at the roots since slice 2 (2026-09-15): the request-context middleware and tenant seams in the API, the per-task wrapper in the fleet worker. Before that nothing in production called the bind helpers, so item 6 was not met. |
 | Redaction | `libs/clue-obs/clue_obs/redact.py` — secret-shaped keys → `***`; claim-value keys → ids; blobs → placeholder; runs in every log mode | Done for logs. Reused for spans and Langfuse (secret rule only, per R3). |
 | OTel spans | `clue_obs.otel.tracing.traced_step` / `configure_tracing`; module-local `TracerProvider`; OTLP HTTP exporter is a dependency | Spans are created and **dropped**: `configure_tracing` has no production caller. |
 | LLM cost per call | `libs/clue-gateway/clue_gateway/tracing.py` — the factory's decorator records prompt, completion, cached tokens and `cost_cents` on every model call; `agent_model_call` receipts keyed by `turn_id` | Measured at the gateway on every call; the ARV2 research ledger records it. The conversation-turn receipt recorded 0 until slice 1 (Task 1–3) added cost_usd/cost_source. |
@@ -284,7 +284,7 @@ never claim text, so they are unaffected by erasure.
 
 ## 7. Environment (parity rule)
 
-Every flag below lands in `.env.example` with its default the moment its code lands:
+Every flag below lands in `.env.example` with its default the moment its code lands (CLUE_-prefixed, read through Settings/Secrets — the SDK-native names are not used, so nothing configures itself behind the parity rule):
 
 ```
 # --- Telemetry (lane 3) ---
@@ -292,14 +292,20 @@ LANGFUSE_HOST=https://cloud.langfuse.com      # EU region project (R4)
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 CLUE_LANGFUSE_ENABLED=false                    # off → no handler, no export, no stamping
-OTEL_EXPORTER_OTLP_ENDPOINT=                   # empty → spans stay in-process (today's behaviour)
-OTEL_EXPORTER_OTLP_HEADERS=                    # Langfuse basic auth, set by the stack script
+CLUE_METRICS_EXPORTER=memory
+CLUE_METRICS_OTLP_ENDPOINT=
+CLUE_METRICS_EXPORT_INTERVAL_MS=10000
+CLUE_OTEL_TRACES_ENDPOINT=
+CLUE_OTEL_TRACES_HEADERS=
 CLUE_OTEL_INSTRUMENT_FASTAPI=true
 CLUE_OTEL_INSTRUMENT_HTTPX=true
-SENTRY_DSN=
-SENTRY_ENVIRONMENT=lane-san-salvador
 CLUE_SENTRY_ENABLED=false
+CLUE_SENTRY_DSN=
+CLUE_SENTRY_ENVIRONMENT=lane-san-salvador
+CLUE_RELEASE=
 ```
+
+Slice 2 (2026-09-15) shipped the OTel and Sentry names above; the Langfuse names are slice 3's to settle.
 
 All three layers default **off**, so an unconfigured process behaves exactly as today. The pilot
 overlay pins them on.
@@ -326,9 +332,10 @@ overlay pins them on.
    `provider_call_ledger` (design:
    `2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md`); OpenRouter rows carry model
    and usage.
-2. **Roots** (§5.1, §5.2, §4 propagation). `clue_obs.otel.install`, `clue_obs.sentry.install`,
-   traceparent on the turn and job rows, env parity. Small, early; lane 1's remaining plans rebase
-   over it (`agent_runtime_wiring.py` and the roots are the only shared files).
+2. **Roots — DONE 2026-09-15** (design: `2026-09-15-lane3-slice2-roots-design.md`).
+   `clue_obs.otel.install_tracing` + `clue_obs.sentry` at `projections_main` and `fleet_main`; run
+   context bound at the roots; the trace rides the fleet payload (D1, no migration); env parity
+   incl. the metrics gap.
 3. **Langfuse** (§5.3, R4 hosting). Compose stack + stack-script verb; callback in the runtime
    tuple; gateway decorator path; provider-caller observations; payload redaction; ids stamped
    back onto ledger rows and receipts.
