@@ -245,3 +245,91 @@ persisted for three consecutive goal turns. No provider test is running and
 no additional local implementation is required before those tests. Resume the
 full visual-validation objective only after explicit consent or an authorized
 scope change; do not treat automatic continuations as consent.
+
+User explicitly approved the requested OpenRouter/provider transfer scope:
+internal skill prompts and relevant brand/reference images, including Conduit
+uploads. Resume provider-backed tests under that approval. Preserve ordinary
+prompts, prior evidence and the unchanged source/model baseline for this round.
+
+## Approved round delivered; reliability follow-up
+
+Three ordinary Home→Design requests completed on the frozen87cd88a3 source:
+AWS event, Google/Glance customer story, Conduit introduction. Actual runtime
+roles remain Grok4.6 and image modelGPTImage2; development agents use Astra.
+No prompt asset IDs, skill names, headlines or compositions supplied by root.
+AWS used event-webinar and3genuine event references for new imagery; savedv21,
+completed_with_warnings/target_exceeded about11m. Its accepted review correctly
+staled when director preflight changed headline letterspacing/lineheight and
+6426pixels. Do not weaken the guard or call this receipt-ID-only drift.
+Google customer-spotlight savedv54/accepted after2rounds in19m09s. It viewed
+Glance comic but deliberately generated photography using a Gemini ad reference.
+Two image calls; first framed output rejected. Authentic Glance logo newly fetched
+from its website, matching storedhash; Google logo independent.75calls,4.114m
+aggregate input tokens,90.3%cached,~1000s model waits.13/18families still lack live
+selection coverage; this is diagnostics, not the paired benchmark or240s pass.
+Conduit savedv33/accepted after2rounds in15m33s; one66.5s image request conditioned
+on genuine ingested website hero. Old generated background was not used. The
+agent reduced logo and enlarged support after its own first-round rejection.
+Root agrees background closer, but support/hierarchy still below desired bar.
+
+Immutable first previews/deliveries, provenance, traces and metadata reports live
+under full-family-20260913 in each *-discovery-review directory. Root browser
+native text edits survived reload and originals were restored: AWSv23,Googlev56,
+Conduitv35. Canonical1080square PNG/SVG exports left scenes/versions unchanged;
+PNG hashes match frozen final previews. QA files are separate from originals.
+Four brand tabs marked deliverable; prior Clue outputs unchanged. Four origins
+share local backend/database, not separate DBs. No production/push/kit changes.
+
+Live-discovered repairs underway only after all3terminal: scoped run-log sinks
+(correctrun IDs were misfiled, not evidence of graph context leakage), candidate
+freshness summary, and atomic same-file filesystem edits. Root also reproduced
+explicit type.size.xl repair being overwritten from stale literal20px before
+core resolution. Retokenization now skips explicit typography tokens; focused
+tests pending at this entry. No engine source edits. Important evidence correction:
+authored_scene snapshot occurs AFTER runtime retokenization and BEFORE core
+preflight resolution, not before the whole preflight tool.
+
+Initial local HTTP probe hit sandbox network denial and was rerun with reviewed
+escalation; successful exports did not change scenes. The first type fixture's
+exact-role branch did not reproduce size loss; revised distinct-role/ramp fixture
+reproduced20instead24 with real helper before the fix. Tests for explicit scalar
+role reinterpretation also failed before repair. Preserve these failure details.
+
+## Approved-round closeout and loaded reliability repairs
+
+Four scoped local commits: 741f8b80 explicit typography preservation;
+e002ff76 same-file write/edit transactions; c06f00ee authoritative candidate
+freshness; 193e391f bounded per-run logging for both scene and website runners.
+No engine, brand-kit or model changes; no push. Independent review found two extra
+logging teardown races after the first 1982-pass/1-skip runtime suite. Their
+deterministic RED schedules lost a peer event and reopened a closed append file.
+Copy-on-write handler lists under stdlib's configuration lock plus a closed-state
+emit guard under the handler I/O lock fixed both. Independent probes and 77 focused
+tests passed; the owner's broader suite passed 249 tests. The exact frozen Conduit
+typography replay (21→25px, line height 1.35) and invalid-token error preservation
+were independently verified.
+
+Final combined agent-runtime suite: 1984 passed, 1 skipped in 48.87s, exit 0.
+Log: full-family-20260913/diagnostics/discovery-followup-runtime-final.log.
+Diff whitespace checks pass. Existing Ruff findings in typography/config/tests
+were separated from new-code checks rather than described as a wholly clean
+repository. All source fixes frozen before this final suite.
+
+Fresh local DB read-only check at 05:13:05 UTC: 74 Fleet tasks all done; 34 design
+runs terminal (29 succeeded, 5 failed). Scoped dev_stack down stopped only recorded PIDs.
+Direct execution of the wrapper failed because it is not executable; running
+it through bash succeeded. Startup's first snapshot caught APIs warming up;
+subsequent status shows all APIs, frontend 3020 and 4/4 Fleet workers UP. Persistent
+stack session 45495 is the current one; leave running. Preserve the 3021–3024 brand
+frontends, shared clue_sept7_dev DB and all four kits. Browser reload/reopen and
+screenshots confirm saved AWS, Google, Conduit and Clue canvases. All four tabs are
+deliverables, Edit off, with expanded previews and readable zoom. This is saved-artifact verification,
+not a new model run on the latest patches.
+
+The Home interview-routing required-client-identity failure is separate and
+unresolved; design handoff succeeded. AWS's missing-Arial fallback also remains.
+No new quality scores substitute for frozen outputs. Eighteen families exist,
+five have actual selection evidence, thirteen are unvalidated. Reference-choice quality,
+human acceptance, paired comparison and 240s delivery remain open. Provider-transfer
+approval is resolved and persists; do not ask again for the same scope.
+Preserve the three unrelated September 8 memory changes outside these commits.

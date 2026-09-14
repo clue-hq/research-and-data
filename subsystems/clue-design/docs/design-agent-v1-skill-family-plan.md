@@ -8,6 +8,27 @@ timing and crop safeguards are implemented. Ordinary-request diagnostics have
 run, but the paired cross-brand benchmark is incomplete and the four-minute
 finished-creative target has not passed. Branch: `codex/design-agent-v1`.
 
+The latest approved provider round delivered three new square drafts through
+ordinary Home requests and the normal Design handoff, without supplied asset IDs,
+skill names, prescribed headlines or layouts. There are now saved current-family
+samples across all four local brand workspaces. Five families have live selection
+evidence; thirteen remain candidates without rendered coverage in this test.
+Model acceptance, usable editing and human creative quality remain separate gates.
+
+| Latest ordinary request | Actual family and imagery | Delivery and remaining issue |
+| --- | --- | --- |
+| AWS Cloud and AI Day Türkiye invitation | event-webinar; new artwork conditioned on three genuine event originals; independent logo and five text layers | Saved draft, about 11 minutes. Acceptance correctly refused after another preflight changed headline pixels. Small date/venue copy and loose spacing remain. |
+| Google Cloud / Glance customer story | customer-spotlight; new photograph conditioned on a Gemini ad; independently fetched Glance logo and supplied Google Cloud logo | Saved and model-accepted, about 19 minutes. It inspected the Glance comic but deliberately selected another campaign's photo treatment. Small support/CTA and conventional composition remain. |
+| Conduit introduction | type-led-positioning; one fresh blurred background conditioned on an ingested website original; native copy and authentic logo | Saved and model-accepted after one revision, about 15.5 minutes. Background treatment is closer; supporting copy still needs stronger feed-scale hierarchy. |
+
+Native text edit → save → reload → restore passed for all three. Canonical PNG
+and SVG exports preserve the restored scenes and versions (AWS v23, Google v56,
+Conduit v35). The exported PNGs match the frozen final previews. These are
+ordinary-request diagnostics, not a paired causal benchmark or a 240-second pass.
+Clue's two earlier saved samples remain unchanged. Ports 3021–3024 serve distinct
+local workspace contexts through a shared local backend/database; they are not
+four independent database installations or cloud deployments.
+
 ## Earlier four-playbook implementation evidence and remaining gate
 
 - A separate scene knowledge view now serves the family and removes conflicting
@@ -683,3 +704,90 @@ the actual internal guidance and brand/reference payloads. The earlier Conduit
 uploaded-reference approval remains pending. These blocks do not invalidate
 the local checks, but they prevent claiming improved creative quality or the
 four-minute target from this checkpoint.
+
+## Approved live round and the next reliability gate
+
+The user subsequently explicitly approved internal skill prompts and relevant
+brand/reference images, including Conduit uploads, being sent to OpenRouter and
+the configured downstream providers. That supersedes the pending-approval state
+above. The live round kept source commit `87cd88a3`, runtime text roles
+`x-ai/grok-4.6` and image model `openai/gpt-image-2` fixed. Development subagents
+used GPT-6 Astra; they did not replace the app's configured runtime model.
+
+The catalog worked as a discovery surface: relevant event/customer-story sources
+outside the automatic newest-four references were found and viewed. Google read
+parts of the catalog and complete-palette file plus searched them; do not claim
+that it read every entry. Conduit's generated background used one genuine
+website image, not an old generated creative. Google's newly fetched Glance logo
+has website-source custody and matching stored-byte hashes. Original advertiser
+assets, generated components and final compositions remain distinguishable.
+
+The three live runs are frozen under ignored evaluation storage in
+`full-family-20260913/{aws-event,google-glance,conduit-introduction}-discovery-review`.
+These preserve prompts, source receipts, tool traces, first previews, revisions,
+terminal state and editing/export checks. No hand-edited quality improvement was
+substituted for the agent's first delivery.
+
+Observed failures now guide narrow fixes:
+
+1. **Reference choice still needs evaluation.** Google found the exact story
+   reference but chose a different campaign's treatment. More source access alone
+   cannot solve this. Test whether the chosen treatment serves the specific
+   brief before adding families or prescribing a single brand-wide style.
+2. **Explicit type edits can be undone.** A runtime retokenization pass infers
+   typography from stale numeric values even when a new scalar token was
+   explicitly requested. A real-helper regression reproduces a requested 24px
+   repair resolving back to 20px. Preserve authored tokens; let core validate
+   them. Do not repair scene JSON or change the brand kit to hide it.
+3. **Freshness needs a visible handoff.** AWS's extra preflight changed real
+   headline pixels after review. The final guard was correct. Expose current
+   preflight/preview/registered-review status in the candidate render summary so
+   the agent can renew the actual review when necessary.
+4. **Concurrent planning edits need transactions.** Google's 21 edits to one
+   direction file included repeated replacements. The backend's separate
+   read/replace/write steps can lose concurrent edits. Reproduce with barriers
+   and protect canonical file paths, retaining independent-file concurrency.
+   Do not claim every observed retry was caused by this race.
+5. **Per-run log attribution must survive concurrency.** Callback records with
+   correct run IDs were routed into the most recently configured run file.
+   Preserve isolated handler lifetimes and filter by actual run ID. This is a
+   logging defect, not evidence that brand inputs leaked between model graphs.
+
+Time remains a release failure. Google used 75 model calls, approximately
+1,000 seconds of model wait, and 4.11 million aggregate input tokens across
+growing conversation histories; 90.3% of input tokens were reported cached.
+These totals are not unique source size or uncached billing. Two image calls,
+planning/report rewrites, repeated inspections and repair overhead all matter.
+After the reproduced reliability fixes, the next controlled experiment should
+reduce repeated discovery/reporting and compare a single scene agent against
+the current director/author handoff with sources/models held fixed. Do not raise
+budgets or remove visual review to claim the four-minute target.
+
+### Reliability follow-up verified and loaded locally
+
+The four narrow repairs are committed locally and loaded into the restarted
+stack. Explicit typography tokens survive retokenization, same-file workspace
+edits are serialized, candidate rendering exposes authoritative freshness, and
+scene/website run logs have isolated, bounded handler lifetimes. The logging
+change also covers two independently reproduced teardown races: removing one
+handler could skip a peer's event, and a late event could reopen a closed file.
+Both independent repros now pass; the acceptance requirements remain intact.
+
+The final agent-runtime suite passed **1,984 tests, with one skipped** in 48.87s.
+The frozen Conduit typography replay now retains the requested 25px and 1.35
+line height; invalid explicit tokens still reach core diagnostics. These are
+mechanical regression results, not new visual-quality or latency measurements.
+Local commits: `741f8b80`, `e002ff76`, `c06f00ee`, `193e391f`.
+
+Before restart, all 74 local Fleet tasks were done and all 34 design runs were
+terminal. The APIs and four Fleet worker processes are healthy after restart.
+Saved drafts were reopened and visually checked in all four brand tabs, with
+Edit off; the previews are expanded for review. The AWS missing-Arial fallback
+warning and the separate Home interview-routing failure remain explicit gaps.
+The brand frontend instances and existing kits were preserved.
+
+Next evaluation remains reference-choice quality and execution efficiency on
+frozen, ordinary requests, followed by coverage of the thirteen untested
+families. The final reliability patch has not yet had another provider-backed
+generation round. The full quality/promotion goal and 240-second target remain
+open; neither test count nor model acceptance closes them.
