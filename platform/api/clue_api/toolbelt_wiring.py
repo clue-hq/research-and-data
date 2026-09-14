@@ -66,6 +66,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.account_research_fleet import read_latest_account_fleet_for_project_run
 from clue_api.agent_gate_wiring import register_agent_gate_tools
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.artifact_read_tools import build_artifact_read_tools
 from clue_api.arv2.account_research_launch import Arv2LaunchService, build_arv2_launch_tools
 from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryService,
@@ -2838,6 +2839,14 @@ def build_toolbelt(
     # move together in one later reviewed step.
     for tool in build_arv2_paged_read_tools(arv2_reads):
         registry.register(tool, make_default=False)
+    # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
+    # design documents and the legs that bind them to a project exist wherever there is a database,
+    # so the ambient ``conn_factory`` is its whole composition. Granted to NOBODY yet
+    # (`C6_AGENT_TOOL_AUTHORITY` says `()`) — it registers here so the authority audit and the tool
+    # inventory see it from the moment it exists, and a later reviewed profile version moves the
+    # grant together with the manual chapter that teaches it.
+    for tool in build_artifact_read_tools(conn_factory=conn_factory):
+        registry.register(tool, make_default=True)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
     # the gate that confirms one. Registered on every deployment for the same reason as its
     # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and

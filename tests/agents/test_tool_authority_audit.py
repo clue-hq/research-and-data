@@ -142,7 +142,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # behind the same display gate as `read_account_research`'s claims. It registers with the
     # name-only alias — it is the only version of itself — and is held by NOBODY: the grant needs
     # a profile version that pins its contract, which is a reviewed bump and not a dict edit.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 133
+    # The gallery read adds the next name (133 -> 134): `read_artifact@1` is one design
+    # artifact of this project — the rail's own row, plus the page JSON when asked for. It too
+    # registers with the name-only alias and is held by NOBODY until a reviewed profile version
+    # pins its contract.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 134
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
@@ -154,6 +158,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("read_discovery_run@2") == ()
     assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == ()
     assert c6_roles_for_tool("read_claims@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == ()
+    assert c6_roles_for_tool("read_artifact@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
     assert c6_roles_for_tool("write_project_document@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["author_icp_document"] == ()

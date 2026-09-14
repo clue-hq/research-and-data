@@ -208,6 +208,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # manual teaches it — `build_agent_profile_registry` refuses to compose when a role's
     # authority and its profile's tool list disagree, so the grant is that bump, never a dict edit.
     "read_claims": (),
+    # The same posture for the gallery read: one design artifact of this project — what it is,
+    # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
+    # changes nothing; it is granted to nobody until the reviewed profile version that pins its
+    # contract and the manual chapter that teaches it land together.
+    "read_artifact": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

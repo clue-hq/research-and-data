@@ -257,6 +257,18 @@ read_account_research:
     offset_past_end: You have already read to the end. Stop paging and answer from what you have.
     offset_not_paged: Drop offset; the overview is served whole.
 
+read_artifact:
+  afterwards: >-
+    Nothing changes. You hold one gallery artifact — what it is, what it is called, its status and
+    the thread it was made on — and, if you asked for content, the words on the page as far as the
+    cap allowed. When body_truncated is true, say so rather than describing a page you only saw the
+    beginning of.
+  skill_section: not taught by a skill yet; the grant and the chapter that teaches it land together.
+  see_also: [documents-decisions, workspace]
+  refusals:
+    artifact_not_found: Take the artifact id from the project's artifact index; an artifact of another project is refused the same way one that never existed is.
+    project_not_found: This turn carries no project, so there is no gallery to open. Say that rather than guessing at an artifact.
+
 read_arv2_account_research_run:
   afterwards: >-
     Nothing changes. You hold one research run's status and its per-account progress, which is how

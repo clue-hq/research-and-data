@@ -260,8 +260,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
     # new addresses and the grant moves with a later, reviewed profile version.
     # The general claims query `read_claims@1` installs UNGRANTED beside them (152 -> 153): one
-    # new name at one address, granted to nobody until a profile pins its contract.
-    assert len(by_address) == 153
+    # new name at one address, granted to nobody until a profile pins its contract. The gallery
+    # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
+    assert len(by_address) == 154
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -365,8 +366,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
     # new addresses and the grant moves with a later, reviewed profile version.
     # The general claims query `read_claims@1` installs UNGRANTED beside them (152 -> 153): one
-    # new name at one address, granted to nobody until a profile pins its contract.
-    assert len(by_address) == 153
+    # new name at one address, granted to nobody until a profile pins its contract. The gallery
+    # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
+    assert len(by_address) == 154
     for address in (
         "create_thread@1",
         "rename_thread@1",
