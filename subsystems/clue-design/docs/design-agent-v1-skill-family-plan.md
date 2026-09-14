@@ -989,3 +989,192 @@ model-message assertion that the component guide is inlined once and selected
 family bodies remain progressively loaded. This cleanup has no new live-run
 quality result. Local stack session 89189 remains running; no production changes
 or pushes were made.
+
+
+### Task 14: Align construction and repair guidance with existing tools
+
+The four-case audit reproduced assetless-image compilation failures in every
+brand despite the inlined guide. Existing core placement converts a reserved
+empty leaf frame into a real image or vector; the public tool description says
+an image node is required. Conduit separately failed to inspect paint order
+before diagnosing missing text as contrast. Repair these shared instructions,
+not the compiler, brand templates or automatic acceptance.
+
+Requirements:
+- Correct public `asset(place)` and `place_asset_in_node` descriptions, and the
+  canonical scene components guide. For raster/logo assets, an existing image
+  or intentionally reserved empty leaf `fr` is supported; placement changes the
+  leaf in place, preserving its identity/geometry. Populated containers cannot
+  be consumed; missing IDs remain errors. Do not imply native vectors become
+  raster images. Known real asset IDs remain valid directly in DSL.
+- Give a small executable mechanical example of reserve frame → generate when
+  needed → inspect → place returned asset into that same frame. It is not a
+  full-page template. Container-plus-image-child is an alternative only once
+  the child has a real asset ID. No dummy images, new insertion tool, compiler
+  relaxation, extra guide loading or universal layout rules.
+- Amend the shared scene review guide: when expected text/artwork is absent,
+  inspect the actual tree and resolved geometry for parent/order and placement
+  before attributing absence to color. Current inspect does not expose every
+  opacity/clipping field; retain those as hypotheses unless another available
+  observation supports them. Only assert a cause supported by evidence, accounting
+  for pinned rendering semantics. A bounding-box overlap alone is not proof
+  of occlusion; no new automatic detector or automatic reordering.
+- Use the exact offline reproductions in the ignored image-construction and
+  layer-review audit reports. Exercise real public placement with leaf frames,
+  native sibling preservation, ledger replay/inverse and refusal cases. Reuse
+  existing test fixtures where possible; do not add wording-mirror tests.
+- Preserve all eighteen playbooks, website semantics, current acceptance,
+  source custody and service/model settings. Root owns provider comparison,
+  source freeze, restarts, docs closeout and browser QA. No provider or DB writes
+  during this implementation. Stage explicit files and commit locally only.
+
+Evidence inputs are `.superpowers/sdd/design-agent-v1-skill-family-plan/` files
+`image-construction-audit.md` and `layer-review-audit.md`; the four frozen source
+runs remain the baseline. Offline passage proves mechanics and instruction
+consistency; live model behavior and quality require the next four-brand run.
+
+
+### Task 15: Finalize candidate scenes from their registered review
+
+The four frozen runs wrote/registered critique JSON, then sent the exact decoded
+object again in finalize_run. The recorded finalization model calls took
+19.903–23.143 seconds, while the tool body took under 84 ms. The optional omission
+path already works and is advertised; another reminder is not a strong correction.
+
+- At the existing candidate scene tool-binding seam, expose one `finalize_run`
+  facade without `critique_json`, a path or a replacement reference argument.
+  Preserve its name, all other arguments/defaults and same underlying finalizer.
+  Omission consumes the registered review; do not duplicate acceptance logic.
+- Apply to the candidate scene topology where this registered-review workflow is
+  authoritative (solo and director/author candidate); preserve legacy, website,
+  direct/internal finalizer users and warning exits. Never bind two finalizers.
+- Preserve missing/rejected/stale/mutated review, direction and preview checks,
+  accepted-design versus scoped-edit distinctions, warnings and draft retention.
+  A facade cannot make a review valid. Do not remove review writing or necessary
+  post-repair review, and do not add a new critic or model call.
+- Test the actual first model-bound schema, not just an intermediate callable;
+  prove candidate omission + current registered passing review works, missing/
+  rejected/stale evidence still refuses acceptance, one tool is bound, legacy
+  scene explicit-critique behavior is retained, and the website's existing
+  `finalize_web_run` schema is unchanged. Use existing real-graph and
+  acceptance tests; TDD for the new facade. No shared DB or provider calls.
+- Read `.superpowers/sdd/design-agent-v1-skill-family-plan/review-latency-audit.md`
+  for exact evidence and the existing binding seam. Root owns plan/memory, live
+  services, environment and four-brand comparison. Stage explicit paths, local
+  commits only. Report offline capability separately from unmeasured live savings.
+
+### Task 16: Let the scene agent inspect and extract an explicit animated frame
+
+All three newly harvested AWS GIF originals have nearly blank first frames and
+useful subsequent content (165/234/165 frames). The frozen agent explicitly says
+its GIF stills are blank. Current `view` emits only frame zero and `crop_image`
+refuses every animated source, so these references are unavailable for useful
+selection even though their original bytes exist. This is an image-tool gap,
+not a need to scrape synthetic substitutes or change the separate brand agent.
+
+- Add optional `frame_index` to the existing source-asset view operation. It is an
+  explicit nonnegative integer, never a bool/coerced fractional index. Existing
+  default static and preview behavior remains. Explicit frame selection requires
+  original bytes/digest in the authorized run asset context, never an unknown
+  thumbnail or a substituted frame. Return clear bounded errors for unavailable,
+  unsupported, corrupt or out-of-range input. Do not treat an asset ID as a path.
+- Describe animated source frame count and how to inspect a specific frame when
+  the original is available. Label selected index and decoded frame dimensions,
+  source digest and still-only observation honestly. Do not claim an animation
+  was reviewed or automatically choose a supposedly best frame. A placeholder or
+  near-blank first frame is not grounds to say the entire source has no content.
+- Extend existing `asset(action="crop_image")` with the same optional frame
+  selection rather than adding a duplicate persistence pipeline. With an explicit
+  valid index, extract the chosen decoded frame's requested source-pixel rectangle
+  (including the full frame) to an independent PNG. Preserve original bytes,
+  dimensions, alpha/displayed pixels, license checks, ready/source scope, digest
+  verification, existing canonical asset registration and explicit later placement.
+  Existing implicit animated cropping stays refused. No model or network call.
+- Receipt must bind original source digest/ID, selected frame index/count, decoded
+  coordinate system, crop rectangle and output digest. Preserve generated-origin
+  and placeholder refusal through crop ancestry; do not launder generated output
+  into advertiser evidence. No fake claim that a extracted frame is AI-generated.
+- Support GIF first as the directly observed format; other animated formats may
+  be clearly refused until tested. Respect existing bounded image decode checks.
+  GIF disposal/compositing and transparency require real animated fixtures; do
+  not prove this with a mocked image decoder or a static file renamed GIF.
+- Test exact selected decoded pixels on multi-frame GIFs, transparency/disposal,
+  source immutability, full-frame/subregion extraction, bad indices/types/MIME/
+  digest, current scoped-asset resolution and ancestry. Verify tool argument
+  coercion cannot bypass validation, default still/preview behavior remains,
+  and derived frames can be inspected and explicitly placed by current tools.
+- Update only canonical scene image/reference guidance to explain this conditional
+  workflow, not a fixed number of references or mandatory animation sampling.
+  The agent selects frames and chooses whether imagery is useful to the ad.
+- Root owns plan/memory, browser/provider generation and service changes. Keep
+  brand-ingestion/website agents unchanged. Stage explicit paths, local commits
+  only. Verify the real AWS originals offline after fixture tests; rendered
+  source views are diagnostics and must not become fake new campaign originals.
+
+### Task 17: Frozen four-brand verification after tool repairs
+
+Once the relevant source repairs are reviewed, freeze source, runtime settings,
+references and eligible experimental outputs. Reuse the four ordinary requests
+from coverage-four-brands-20260914 for a simultaneous all-four construction/
+review comparison before widening family coverage. Count every failed compile,
+actual reference use, image generation/extraction/placement, model calls, current
+review and finalization arguments, first preview and saved terminal latency.
+Preserve first deliveries. Verify native edit/save/reload/restore and export on
+all four again where generated scenes differ; never substitute a manual design
+repair for autonomous success. Next, exercise uncovered communicative purposes
+using supported brand evidence, including animated-source frames when relevant.
+The four-minute target and human creative quality remain unproven until measured.
+
+GIF decoding verification uses the installed Pillow implementation and real
+disposal/transparency fixtures; the format behavior is documented in
+[Pillow's image-format handbook](https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html).
+Decoded later frames may use a different mode from frame zero. Preserve their
+displayed pixels rather than assuming the opening frame's palette applies.
+
+## Subsequent coverage opportunities
+
+The frozen-source audit identifies ten families without selected/rendered
+coverage. After Task17, these three complete four-brand batches provide ten
+selection opportunities and two regressions. They do not guarantee selection:
+the agent may reasonably choose another family. Submit only the ordinary brief;
+keep the family hypothesis and audit evidence outside the user request.
+
+| Batch | Brand | Ordinary brief | Family hypothesis |
+| --- | --- | --- | --- |
+| 1 | Clue | Create a square LinkedIn ad showing revenue teams what the review interface in Clue looks like. | authentic-product |
+| 1 | AWS | Create a square LinkedIn ad for executives who are unsure how to move beyond experimenting with AI tools. | problem-solution |
+| 1 | Google Cloud | Create a square LinkedIn ad telling the story of how Glance worked with Google Cloud to help shoppers imagine clothes on themselves. | case-study-narrative |
+| 1 | Conduit | Create a square LinkedIn ad about what Wynwood House's customer-experience lead said about the quality of Conduit's AI replies. | attributed-proof |
+| 2 | Clue | Create a square LinkedIn ad about a revenue-team member reviewing and commenting on a draft in Clue during their workday. | product-in-use |
+| 2 | AWS | Create a square LinkedIn ad that makes the move from AI tools to AI outcomes easy for executives to picture. | visual-metaphor |
+| 2 | Google Cloud | Create a square LinkedIn ad encouraging business teams to download Google Cloud's guide about Gemini Enterprise. | offer-conversion |
+| 2 | Conduit | Create a square LinkedIn ad introducing Conduit's published voice-agent tool update to hospitality operators. | launch-announcement |
+| 3 | Clue | Create a square LinkedIn ad for revenue teams who worry about losing their say over agent-written drafts. | objection-handling |
+| 3 | AWS | Create a square LinkedIn ad to get executives to download AWS's guide on moving from AI adoption to AI autonomy. | educational-guide regression |
+| 3 | Google Cloud | Create a square LinkedIn ad introducing Gemini Enterprise to business teams. | type-led-positioning regression |
+| 3 | Conduit | Create a square LinkedIn ad helping hospitality operators compare the tools available to Conduit's voice agents and chat agents. | comparison-alternatives |
+
+Six supporting originals were visually inspected and hash-matched to the frozen
+workspace registry: Clue's capability-human image; AWS LinkedIn ad1550429314;
+Google ads1541315494 and1419693646; Conduit ads1513892706 and1502755166. The
+ignored `remaining-family-cases.md` audit retains exact asset IDs, hashes/source
+paths and provenance. This is local frozen-source evidence, not a fresh check of
+current offers or release dates.
+
+Evidence limits are part of the evaluation. The Clue UI shows available review
+controls and also an Auto-approved state; it does not substantiate mandatory
+human review of every draft. Its example names/chart percentages are not customer
+proof. Wynwood's quote identifies a role and organization, not a person's name.
+Conduit's satirical one-star review is not a verified endorsement. Its voice/chat
+comparison supports published tool parity, not competitor superiority. The
+Google offer is a guide download, without proven free-trial, pricing or promotion
+terms. If the agent chooses educational-guide for that request, offer-conversion
+remains uncovered; do not force a different label. A family selection alone still
+does not establish quality, cross-brand generality or the four-minute target.
+
+Tool-repair checkpoint: Tasks14–16 are implemented and independently reviewed
+at aaee28dc,48cc4888,5adc78a4 plus8c6d8d2a. Full runtime at5adc78a4:
+2253 passed,7 skipped. The final missing-thumbnail guidance correction has
+28 affected passing tests and scoped review approval. Three authentic AWS GIF
+originals passed offline selected-frame checks with unchanged custody. These
+results establish tool mechanics; Task17 must still establish live behavior.

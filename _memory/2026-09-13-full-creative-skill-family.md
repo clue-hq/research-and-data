@@ -496,3 +496,61 @@ promotion of all18families. Post-run prompt correction focused42tests pass,
 including actual model input once-only inlined guide. No new live test for cleanup.
 Prompt cleanup and documentation changed only after the provider runs terminated;
 no new provider/DB/browser/service/env action or engine/WASM change by this follow-up.
+
+## Tool-contract corrections before the next four-brand comparison
+
+Task14 committed aaee28dc: public asset placement guidance now describes the
+already-supported reserved leaf frame, with real-helper preservation/replay/
+inverse/refusal coverage; shared review calls for structural evidence before
+blaming absent content on contrast. 103 focused tests and final9 helper tests
+passed; independent review approved with only expected-refusal logging noise
+parked. No compiler or renderer changes.
+
+Task15 committed48cc4888: candidate-only finalize_run schema omits repeated
+critique_json and consumes the unchanged registered-review authority. Candidate
+solo/delegated, ToolNode extra-field refusal, current/stale/malformed/rejected
+review, direction/preview/fidelity checks, optional forwarding and legacy/web
+compatibility verified;154focused tests passed, independent review approved.
+LangChain subset schema drops extra-forbid metadata from provider emission;
+explicit input schema and actual ToolNode still reject extras. No provider-side
+additionalProperties guarantee or measured speedup is claimed.
+
+Task16 explicit GIF frame viewing/cropping is in progress separately. Three real
+AWS originals have blank opening frames and useful later diagrams; metadata and
+selected-frame extraction must preserve original custody, displayed pixels and
+crop ancestry. No new provider run or service restart has occurred in this
+continuation yet.
+
+Read-only comparison preflight: preceding original records unchanged,10 new
+ready assets all linked to controlled preceding documents (AWS/Google generated
+art plus Conduit crop/fetched logos). New preparation script is check-only until
+--apply; it will reversibly archive those10 to match prior ready catalogs and
+back up/reset generation caches. Logo/provider caches remain warm; prior logo
+state was not frozen, so no isolated causal latency claim. Four workers healthy,
+98Fleetdone and41designsuccess5failed; no live jobs at preflight.
+
+Remaining-family source audit proposes3complete4-brand batches for10 remaining
+selection opportunities plus2regressions, recorded in the existing plan. Six
+sources visually inspected and hashes matched. Clue illustrative UI says
+Auto-approved and cannot support mandatory human review of every draft; its
+chart/names are not customer evidence. Conduit satirical review is not proof;
+Wynwood quote has role/organization only. Voice/chat comparison is tool parity,
+not competitor superiority. Google download is a guide offer, no invented
+trial/price/release recency. Selection remains agent-owned; no claimed coverage
+from requests alone. Latest all4 live/native QA evidence remains the preceding
+coverage round until the next frozen dispatch. No push/production/brand-agent
+work or external image-model-experiment changes.
+
+Task16 committed 5adc78a4. Explicit GIF view/crop selection preserves source
+custody and displayed pixels; 192 focused tests and three actual originals
+passed. Full runtime gate now 2253 passed, 7 skipped in 173.18s. Independent
+Task16 review is pending; no live quality claim from these mechanical checks.
+Comparison preparation applied after the full gate:10 prior test-linked assets
+reversibly archived,4 generation caches backed up/reset, all four ready catalogs
+exactly match the previous frozen inputs. Existing originals/documents/blobs
+preserved. Receipts in ignored repairs-four-brands-20260914; warm-cache limits
+remain. No service restart or new provider request at this checkpoint.
+Task16 review found and fixed one missing-thumbnail asset discovery branch at
+8c6d8d2a; 28 affected tests pass, scoped independent re-review approves. Full
+runtime result above precedes this bounded hint addition; no unnecessary full
+repeat. Pre-restart queues still idle. Tasks14–16 are ready for live comparison.
