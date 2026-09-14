@@ -548,9 +548,7 @@ class _Snapshotter:
 
 
 def _snapshot() -> ParameterSnapshot:
-    # Build with whatever fields ParameterSnapshot declares (read invoker.py:31); every value may
-    # be a placeholder — the fake journal ignores it.
-    raise NotImplementedError  # replace in Step 3 after reading the dataclass
+    return ParameterSnapshot(artifact_key="ws-1/snapshot", content_sha256="0" * 64, display_params={})
 
 
 class _Journal:
@@ -692,7 +690,7 @@ def test_a_failure_is_an_error_with_the_stable_code() -> None:
     assert attrs["langfuse.observation.metadata.disposition"] == "failed"
 ```
 
-Before running: read `ParameterSnapshot` (invoker.py ~31–36) and fill `_snapshot()` with a literal; read `EchoTool`'s descriptor to confirm its `effect_class` (the test assumes `write`; if it is `read`, assert `"retriever"` and `"read"` instead and say so in the report). If `ExecutionNodeId`/`ExecutionAttemptId` are not UUID NewTypes, construct them the way `clue_core` does (`grep -n "ExecutionNodeId\|ExecutionAttemptId" libs/clue-core/clue_core/*.py`).
+Verified 2026-09-15: `ParameterSnapshot(artifact_key: str, content_sha256: str, display_params: dict[str, object])` — `_snapshot()` returns `ParameterSnapshot(artifact_key="ws-1/snapshot", content_sha256="0" * 64, display_params={})`; `EchoTool.effect_class` is `WRITE`; `ExecutionNodeId`/`ExecutionAttemptId` are UUID NewTypes.
 
 - [ ] **Step 2: Run to see it fail** → the "off" test passes; the rest FAIL (`StopIteration`).
 
@@ -841,7 +839,7 @@ def test_a_finalized_job_is_a_named_trace_with_priced_rounds_and_an_ending_event
     assert first["user.id"] == SCOPE.workspace_id
     assert first["langfuse.trace.metadata.job_id"] == str(SCOPE.job_id)
     assert json.loads(first["langfuse.observation.cost_details"]) == {"total": 0.025}
-    rows = [row for row in runtime.model_ledger.rows if row.phase == "result"]  # adjust to the BufferedLedger's accessor
+    rows = [row for row in runtime.model_ledger.drain() if row.phase == "result"]
     assert len(rows) == outcome.model_rounds
     exported = {format(s.context.span_id, "016x") for s in generations}
     for row in rows:
@@ -874,11 +872,11 @@ def test_off_the_rows_carry_no_langfuse_keys() -> None:
         return _priced(AIMessage(content="", tool_calls=[_call("finalize_research", 1)]))
 
     _run(_drive(_ScriptedModel(respond), [_finalizing_tool(runtime)], runtime))
-    rows = [row for row in runtime.model_ledger.rows if row.phase == "result"]
+    rows = [row for row in runtime.model_ledger.drain() if row.phase == "result"]
     assert rows and all("langfuse_trace_id" not in row.extras for row in rows)
 ```
 
-Read `BufferedLedger` (`platform/api/clue_api/arv2/provider_ledger.py`) for how buffered rows are read (`rows`, `drain`, or similar) and adjust the two `rows = ...` lines to its real accessor.
+`BufferedLedger` (`platform/api/clue_api/arv2/provider_ledger.py`) exposes its rows through `drain()` (verified 2026-09-15); each test drains once.
 
 - [ ] **Step 3: Run to see it fail** → FAIL.
 
@@ -1067,7 +1065,7 @@ def test_a_stopped_turn_records_a_work_guard_guardrail() -> None:
             return judgment
 ```
 
-with `_judgment_payload(judgment)` returning `judgment.model_dump(mode="json")` if `ExitJudgment` is a pydantic model, else `dataclasses.asdict(judgment)` (check `clue_design.exit_judgment.ExitJudgment`; note `clue_design` is the merged platform copy under `subsystems/design/`, read-only here). Imports: `from clue_api.langfuse_callbacks import build_langfuse_callbacks`, `from clue_obs.langfuse import observation, propagate_trace`.
+with `_judgment_payload(judgment)` returning `judgment.model_dump(mode="json")` (`clue_design.exit_judgment.ExitJudgment` is a frozen pydantic model with `action` and `reason`; `clue_design` under `subsystems/design/` is read-only here). Imports: `from clue_api.langfuse_callbacks import build_langfuse_callbacks`, `from clue_obs.langfuse import observation, propagate_trace`.
 
 `agent_runtime_wiring.TurnWorkGuard`:
 
@@ -1147,4 +1145,4 @@ git commit -m "docs(memory): lane 3 slice 3 — Langfuse on the roots, the agent
 
 - **Spec coverage:** §3.3 research agent + exit judge → Tasks 4, 5; §3.4 → Task 1; §3.5 → Task 2; §3.6 → Task 3; §3.7 (work guard, cap guardrails, ending event, pre-spend refusals as BLOCKED) → Tasks 3, 4, 5; §5 tests → each task's file; docs/memory → Task 6.
 - **Type consistency:** `observation(name, *, as_type, input, metadata, ...)` yields `ObservationLike` with `update(**fields)`, `.id`, `.trace_id`; `guardrail(name, *, reason, metadata)`; `event(name, *, output, level, status_message)`; `LangfuseRunRegistry.latest()`; `build_langfuse_callbacks() -> LangfuseCallbacks | None` — used identically across tasks and matching plan 3a.
-- **Placeholders:** Task 3's `_snapshot()` is the one deliberate "fill from the dataclass" step, called out with where to read; everything else is literal.
+- **Placeholders:** none; the invoker test's snapshot literal and the ledger accessor were verified against the code on 2026-09-15.
