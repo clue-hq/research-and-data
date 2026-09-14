@@ -270,6 +270,7 @@ def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once
     tmp_path, monkeypatch, verify_again
 ):
     from test_render_preview_reuse import _RenderCore
+    from test_scene_direction_review import review as candidate_review
     from test_scene_skill_family import direction
 
     built, _ = offline_models(monkeypatch)
@@ -282,24 +283,16 @@ def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once
     workspace = tools.trace_dir / "workspace"
     round_dir = workspace / "rounds/round_1"
     round_dir.mkdir(parents=True)
-    (workspace / "creative-direction.json").write_text(json.dumps(direction()))
+    planned = direction()
+    planned["copy"][0]["text"] = "Plan"  # The actual FakeCore fixture's native text.
+    (workspace / "creative-direction.json").write_text(json.dumps(planned))
     registered = graph.nodes["tools"].bound.tools_by_name
     validated = json.loads(registered["validate_creative_direction"].invoke({}))
     assert validated["status"] == "ok"
     registered["compile_dsl_block"].invoke({"source": "page page_test size(1080,1080,px)"})
     registered["preflight_design"].invoke({})
     assert "status=ok" in registered["render_preview"].invoke({})
-    review = {
-        "accepted": True, "summary": "Inspected the current fixture pixels.", "issues": [],
-        "direction_review": {
-            "direction_digest": validated["direction_digest"],
-            "checks": [
-                {"section": row["section"], "index": row["index"], "status": "met",
-                 "notes": "The fixture satisfies this declared requirement."}
-                for row in validated["review_requirements"]
-            ],
-        },
-    }
+    review = candidate_review(validated, page_id="page_test", node_id="headline", text="Plan")
     finalize_args = {"status": "accepted", "stop_reason": "review_complete", "summary": "Ready."}
     receipt = {"scene": tools._scene_stamp(), "preview": tools._preview_receipt}
     built[0][2].responses = [

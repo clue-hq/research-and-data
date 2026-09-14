@@ -117,23 +117,17 @@ def test_reuse_never_hides_changed_or_unvalidated_evidence(tmp_path, monkeypatch
 
 
 def _register_candidate_review(tools, *, accepted=True):
+    from test_scene_direction_review import review
     from test_scene_skill_family import direction
 
     path = tools.trace_dir / "workspace" / "creative-direction.json"
-    path.write_text(json.dumps(direction()))
+    planned = direction()
+    planned["copy"][0]["text"] = "Plan"  # The actual FakeCore fixture's native text.
+    path.write_text(json.dumps(planned))
     validated = json.loads(tools.validate_creative_direction())
     assert validated["status"] == "ok"
-    critique = {
-        "accepted": accepted, "summary": "Reviewed the current fixture pixels.", "issues": [],
-        "direction_review": {
-            "direction_digest": validated["direction_digest"],
-            "checks": [
-                {"section": row["section"], "index": row["index"], "status": "met",
-                 "notes": "The observed fixture preserves this declared requirement."}
-                for row in validated["review_requirements"]
-            ],
-        },
-    }
+    critique = review(validated, page_id="page_test", node_id="headline", text="Plan")
+    critique["accepted"] = accepted
     assert json.loads(tools.submit_visual_critique(json.dumps(critique)))["status"] == "ok"
     return tools._latest_visual_critique
 

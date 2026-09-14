@@ -165,7 +165,9 @@ def test_candidate_facade_preserves_authoritative_acceptance_checks(tmp_path, mo
         tools.preflight_design()
     if defect != "missing_preview":
         tools.export_preview("svg")
-    body = review(validate(tools))
+    planned = direction()
+    planned["copy"][0]["text"] = "Plan"  # The actual FakeCore fixture's native text.
+    body = review(validate(tools, planned), page_id="page_test", node_id="headline", text="Plan")
     if defect == "rejected":
         body["accepted"] = False
     elif defect in {"blocker", "error"}:
@@ -186,7 +188,9 @@ def test_candidate_facade_preserves_authoritative_acceptance_checks(tmp_path, mo
         body["reference_fidelity"] = {"score": 1 if defect == "fidelity_1" else 2}
     if defect != "missing_review":
         registered = json.loads(tools.submit_visual_critique(json.dumps(body)))
-        invalid = defect in {"missing_direction_index", "direction_deviation"}
+        invalid = defect in {
+            "missing_direction_index", "direction_deviation", "missing_preflight", "missing_preview"
+        }
         assert registered["status"] == ("error" if invalid else "ok")
     if defect == "malformed_review":
         tools.submit_visual_critique('{"accepted": true}')

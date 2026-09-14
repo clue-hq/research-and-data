@@ -213,15 +213,60 @@ class DirectionReviewCheck(DirectionModel):
         return self
 
 
+class NativeCopyBinding(DirectionModel):
+    page_id: NonEmpty
+    node_id: NonEmpty
+    # Preserve the actual words/whitespace in the receipt, unlike prose notes.
+    text: str
+    # Ordered fragments can split at a word boundary or within punctuation.
+    join_before: Literal["", " "] = ""
+
+
+class CopySupportJudgment(DirectionModel):
+    status: Literal["supported", "nonfactual", "unsupported", "unverified"]
+    evidence_refs: list[NonEmpty] = Field(default_factory=list)
+    reason: NonEmpty
+    source_limits: NonEmpty
+
+
+class CopyReadabilityJudgment(DirectionModel):
+    status: Literal["readable", "unreadable", "unverified"]
+    reason: NonEmpty
+
+
+class CopyOccurrenceReview(DirectionModel):
+    """One complete declared sentence occurrence, possibly authored in fragments."""
+
+    copy_id: NonEmpty
+    fragments: list[NativeCopyBinding] = Field(min_length=1)
+    # Partial rejected reviews remain useful. Passing reviews require both.
+    support: CopySupportJudgment | None = None
+    readability: CopyReadabilityJudgment | None = None
+
+    @model_validator(mode="after")
+    def one_placement_page(self) -> Self:
+        if len({fragment.page_id for fragment in self.fragments}) != 1:
+            raise ValueError("one copy occurrence cannot span multiple rendered pages")
+        return self
+
+
 class DirectionReview(DirectionModel):
     """Declared observations, never a certification of visual accuracy."""
 
     direction_digest: NonEmpty
+    scope: Literal["whole_creative", "scoped_edit"] = "whole_creative"
     checks: list[DirectionReviewCheck] = Field(default_factory=list)
+    copy_occurrences: list[CopyOccurrenceReview] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def unique_checks(self) -> Self:
         keys = [(check.section, check.index) for check in self.checks]
         if len(keys) != len(set(keys)):
             raise ValueError("duplicate direction review check")
+        bindings = [
+            (fragment.page_id, fragment.node_id)
+            for occurrence in self.copy_occurrences for fragment in occurrence.fragments
+        ]
+        if len(bindings) != len(set(bindings)):
+            raise ValueError("duplicate native copy binding")
         return self

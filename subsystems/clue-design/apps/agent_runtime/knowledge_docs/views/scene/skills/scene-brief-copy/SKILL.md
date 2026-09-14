@@ -21,8 +21,11 @@ its audience. Describe the evidence in the direction; a font or color is not voi
 Write original copy in that voice, with only the support the message needs.
 Prefer concrete product meaning to vague promises. Use provided claims accurately;
 quotes, numbers and customer attributions need actual evidence. Keep source IDs
-with factual copy. Missing proof is a reason to choose a positioning direction,
-not to invent results. For a CTA, decide whether this intent needs an artwork
+with factual copy. Missing proof is a reason to narrow or qualify the message,
+or choose nonfactual positioning. Labeling a product promise `positioning` does
+not make it nonfactual. Consider the full sentence's subject, scope and modality,
+including contrary evidence, before writing it. Review every actual occurrence
+under `knowledge/scene/review.md`. For a CTA, decide whether this intent needs an artwork
 action at all, whether the channel already supplies it, and how this advertiser's
 relevant examples express it: absent, inline text, a link, a button or another
 supported form. Choose copy that names the real next step. Do not default every

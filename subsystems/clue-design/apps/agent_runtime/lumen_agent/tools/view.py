@@ -14,6 +14,7 @@ from py_lumen_obs import get_logger, log_span
 from pydantic import StrictInt
 
 from ..image_crop import ImageCropError, decoded_source_raster, validate_frame_index
+from ..native_copy import finite_number, observe_native_text
 from ..paths import to_virtual
 from .asset_preview import rasterize_vector_preview
 from .substrate import LumenDesignTools, blob_path_for_digest
@@ -231,13 +232,6 @@ def _preview_text_table(
     def unavailable(reason: str) -> str:
         return f"\n\nNative text observation: native text metrics unavailable — {reason}."
 
-    def finite_number(value) -> bool:
-        return (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value)
-        )
-
     if not resolved:
         return unavailable("no current preflight bound to these preview bytes")
     page = (scene.get("pages") or {}).get(page_id)
@@ -258,50 +252,13 @@ def _preview_text_table(
             .replace("<", "&lt;").replace(">", "&gt;")
         )
 
-    nodes = scene.get("nodes") or {}
+    inventory = observe_native_text(scene, page_id)
     rows: list[str] = []
-    hidden = instances = omitted = 0
-    visited: set[str] = set()
-    pending = [(node_id, False, None) for node_id in reversed(page.get("children") or [])]
-    while pending:
-        node_id, ancestor_hidden, ancestor_issue = pending.pop()
-        if node_id in visited:
-            continue
-        visited.add(node_id)
-        node = nodes.get(node_id)
-        if not isinstance(node, dict):
-            continue
-        # Pinned nodes paint from page space, outside ancestor opacity/transform.
-        if node.get("position_mode") == "absolute":
-            ancestor_hidden, ancestor_issue = False, None
-        opacity = node.get("opacity", 1)
-        issue = ancestor_issue
-        opacity_resolved = node.get("opacity_token") is None and finite_number(opacity)
-        if not opacity_resolved:
-            issue = "unresolved opacity"
-        node_hidden = ancestor_hidden or (opacity_resolved and opacity <= 0)
-        transform = node.get("transform") or {}
-        if any(transform.get(key, 0) != 0 for key in ("rotation", "skew_x", "skew_y")):
-            issue = "unsupported transform"
-        kind = node.get("kind") or {}
-        if kind.get("kind") == "instance":
-            instances += 1
-        if kind.get("kind") in ("frame", "group", "auto_layout"):
-            pending.extend(
-                (child, node_hidden, issue) for child in reversed(node.get("children") or [])
-            )
-        if kind.get("kind") != "text" or not (kind.get("content") or "").strip():
-            continue
-        if node_hidden:
-            hidden += 1
-            continue
-        if any(kind.get(key) is not None for key in (
-            "style_token", "font_size_token", "line_height_token", "letter_spacing_token",
-        )):
-            issue = "unresolved typography"
-        font_size = kind.get("font_size")
-        if not finite_number(font_size) or font_size <= 0:
-            issue = "invalid resolved font size"
+    hidden = len(inventory["excluded"])
+    instances = sum("instance" in item["reason"] for item in inventory["unresolved"])
+    omitted = 0
+    for row in inventory["occurrences"]:
+        node_id, font_size, issue = row["node_id"], row["font_size"], row["observation_issue"]
         source_em = font_size * source_height / size["height"] if issue is None else None
         proxy_em = font_size * proxy_height / size["height"] if issue is None else None
         if issue is None and not all(math.isfinite(value) for value in (source_em, proxy_em)):
@@ -313,7 +270,7 @@ def _preview_text_table(
             f"unavailable ({issue}) | unavailable"
             if issue else f"{source_em:.2f} | {proxy_em:.2f}"
         )
-        rows.append(f"| {cell(node_id)} | {cell(kind['content'], 56)} | {values} |")
+        rows.append(f"| {cell(node_id)} | {cell(row['text'], 56)} | {values} |")
 
     caption = (
         f"\n\nNative text on page {cell(page_id)}: resolved em size in source-preview pixels "

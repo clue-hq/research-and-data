@@ -33,7 +33,9 @@ def tools(tmp_path, monkeypatch):
         "Make a square awareness creative",
     )
     assert json.loads(runtime.compile_dsl_block(
-        "page square size(1080,1080,px)\n  panel fr p(100,100) s(800,800) fill(#ff0000)"
+        "page square size(1080,1080,px)\n  panel fr p(100,100) s(800,800) fill(#ff0000)\n"
+        '  actual_headline text "Make the next step clear" '
+        'p(120,180) s(800,240) font_size(48) fill(#ffffff)'
     ))["compile"]["status"] == "ok"
     assert json.loads(runtime.preflight_design())["preflight"]["status"] == "ok"
     assert json.loads(runtime.export_preview("svg"))["export"]["status"] == "ok"
@@ -47,14 +49,14 @@ def write_direction(tools, payload=None, **dump_options):
     return path
 
 
-def validate(tools):
-    write_direction(tools)
+def validate(tools, payload=None):
+    write_direction(tools, payload)
     result = json.loads(tools.validate_creative_direction())
     assert result["status"] == "ok"
     return result
 
 
-def review(result):
+def review(result, *, page_id="square", node_id="actual_headline", text="Make the next step clear"):
     # The pre-change runtime ignores this whole field; exercise that refusal
     # gap even before it exposes a digest/requirements response.
     requirements = result.get("review_requirements", [
@@ -67,17 +69,39 @@ def review(result):
         "summary": "Reviewed the current scene against these direction requirements.",
         "direction_review": {
             "direction_digest": result.get("direction_digest", "unbound-before-contract"),
+            "scope": "whole_creative",
             "checks": [
                 {"section": item["section"], "index": item["index"],
                  "status": "met", "notes": "Observed this relationship in the current preview."}
                 for item in requirements
             ],
+            "copy_occurrences": [{
+                "copy_id": "headline",
+                "fragments": [{"page_id": page_id, "node_id": node_id,
+                               "text": text, "join_before": ""}],
+                "support": {"status": "nonfactual", "evidence_refs": [],
+                            "reason": "An invitation with no product performance promise.",
+                            "source_limits": "No empirical product claim or source is asserted."},
+                "readability": {"status": "readable",
+                                "reason": "All words read clearly in preview and feed proxy."},
+            }],
         },
     }
 
 
 def accept(tools):
     return tools.finalize_run("accepted", "review_complete", "Reviewed candidate")
+
+
+def test_declared_headline_cannot_accept_a_real_render_with_only_a_panel(tools):
+    """A self-authored met checklist cannot stand in for absent native copy."""
+    tools.apply_operations(json.dumps([{"kind": "remove_node", "node_id": "actual_headline"}]))
+    tools.preflight_design()
+    tools.export_preview("svg")
+    assert "actual_headline" not in tools.scene["nodes"]
+    result = validate(tools)
+    tools.submit_visual_critique(json.dumps(review(result)))
+    assert accept(tools).startswith("REFUSED")
 
 
 def test_candidate_score_only_review_cannot_accept_without_validated_direction(tools):

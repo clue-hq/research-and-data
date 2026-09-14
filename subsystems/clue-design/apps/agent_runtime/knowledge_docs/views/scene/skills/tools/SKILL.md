@@ -11,6 +11,13 @@ for construction, preflight_design and render_preview for current artifacts, and
 finalize_run only after the required review. Delegate only when the configured
 runtime exposes and calls for delegation.
 
+`render_preview` returns the complete current native-copy inventory with scene
+and preview bindings. Refresh it through `inspect(view="copy_review")` when
+needed; use those page/node IDs and full words for `direction_review`, following
+`knowledge/scene/review.md`. This is an observation of native text, not a factual
+support or readability verdict. Keep the registered current review and omit
+`critique_json` from `finalize_run` to reuse it.
+
 All registered skills and shared resources remain available on demand during
 composition, review and later revision. Read files via their
 delivered virtual paths. Do not call an imagined knowledge

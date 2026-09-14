@@ -19,6 +19,7 @@ from pydantic import StrictInt
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
+from ..native_copy import observe_native_text
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
@@ -4171,6 +4172,10 @@ class LumenDesignTools:
             return "The creative direction changed since validation; revise and validate it explicitly."
         if review.direction_digest != self._validated_direction_digest:
             return "The critique reviews an earlier direction; review the current validated direction."
+        if review.scope == "scoped_edit" and (
+            not self.seeded_from_initial_scene or self._validated_direction.intent != "edit"
+        ):
+            return "A scoped_edit review requires a seeded scene and a validated edit direction."
         required = {
             (item["section"], item["index"])
             for item in direction_review_requirements(self._validated_direction)
@@ -4183,6 +4188,102 @@ class LumenDesignTools:
                 return "Accepted review must cover every preserve and review_needs item."
             if any(check.status != "met" for check in review.checks):
                 return "Direction deviations or unverified requirements remain; repair or explicitly revise the direction."
+        return self._copy_review_error(critique)
+
+    def _native_copy_inventory(self) -> JsonObject:
+        """Observe exact text in current exported pages without another core call."""
+        scene_stamp = self._scene_stamp()
+        receipt = self._current_preview_receipt()
+        payload = {
+            "status": "unavailable", "scene_stamp": scene_stamp,
+            "direction_digest": self._validated_direction_digest,
+            "preview_receipt": receipt,
+            "occurrences": [], "excluded": [], "unresolved": [],
+            "evidence_verified": False,
+            "limits": (
+                "Native text only; instances are not expanded. Clipping, occlusion, "
+                "off-canvas placement and text inside images are not measured. "
+                "Support and placement readability remain model judgments; source/excerpt "
+                "strings are model-authored declarations, not independently verified evidence."
+            ),
+        }
+        if self._preflight_scene_stamp != scene_stamp or self._latest_preflight_diagnostics is None:
+            payload["reason"] = "No current resolved preflight."
+            return payload
+        if receipt is None or receipt != self._preview_receipt:
+            payload["reason"] = "No current preview bound to these scene contents and bytes."
+            return payload
+        artifacts = (self.latest_export_summary or {}).get("artifacts") or []
+        page_ids = [item.get("page_id") for item in artifacts]
+        if not page_ids or any(not isinstance(page_id, str) or not page_id for page_id in page_ids):
+            payload["reason"] = "Rendered page association is missing."
+            return payload
+        for page_id in sorted(set(page_ids)):
+            observed = observe_native_text(self.scene, page_id)
+            for key in ("occurrences", "excluded", "unresolved"):
+                payload[key].extend(observed[key])
+        payload["status"] = "ok"
+        return payload
+
+    def _copy_review_error(self, critique: SceneVisualCritique) -> str | None:
+        """Verify exact bindings/coverage and cited IDs, never semantic entailment."""
+        review = critique.direction_review
+        if not critique.accepted and not review.copy_occurrences:
+            return None
+        inventory = self._native_copy_inventory()
+        if inventory["status"] != "ok":
+            return f"Native copy review inventory unavailable: {inventory['reason']}"
+        if critique.accepted and review.scope == "whole_creative" and inventory["unresolved"]:
+            return f"Native copy observation is unresolved: {inventory['unresolved']}"
+        actual = {(row["page_id"], row["node_id"]): row for row in inventory["occurrences"]}
+        declared = {block.id: block for block in self._validated_direction.copy_blocks}
+        covered_nodes, covered_copy = set(), set()
+
+        def words(text: str) -> str:
+            return " ".join(text.split())
+
+        for occurrence in review.copy_occurrences:
+            block = declared.get(occurrence.copy_id)
+            if block is None:
+                return f"Unknown declared copy_id: {occurrence.copy_id}"
+            parts = []
+            for fragment in occurrence.fragments:
+                key = (fragment.page_id, fragment.node_id)
+                row = actual.get(key)
+                if row is None:
+                    return (
+                        "Native copy binding is absent, hidden, empty or outside "
+                        f"the exported pages: {key}"
+                    )
+                if not words(fragment.text) or words(fragment.text) != words(row["text"]):
+                    return f"Native copy binding does not match the current words: {key}"
+                if critique.accepted and row["binding_issue"]:
+                    return f"Native copy observation is unresolved for {key}: {row['binding_issue']}"
+                parts.append(fragment.join_before + fragment.text)
+                covered_nodes.add(key)
+            if critique.accepted and words("".join(parts)) != words(block.text):
+                return (
+                    f"Bound native copy differs from declared copy {block.id}; "
+                    "revise and validate the direction."
+                )
+            support, readability = occurrence.support, occurrence.readability
+            if support and not set(support.evidence_refs) <= set(block.evidence_refs):
+                return f"Copy {block.id} cites evidence not declared for that copy block."
+            if critique.accepted:
+                if support is None or support.status not in {"supported", "nonfactual"}:
+                    return f"Copy {block.id} needs a passing support judgment for this occurrence."
+                if support.status == "supported" and not support.evidence_refs:
+                    return f"Supported factual copy {block.id} requires cited declared evidence."
+                if readability is None or readability.status != "readable":
+                    return f"Copy {block.id} needs a readable placement judgment for this occurrence."
+            covered_copy.add(block.id)
+        if critique.accepted and review.scope == "whole_creative":
+            if covered_copy != set(declared):
+                return (
+                    "Accepted review must bind every declared copy ID to its actual native occurrences."
+                )
+            if covered_nodes != set(actual):
+                return "Accepted review leaves extra native copy occurrences unreviewed."
         return None
 
     def recommend_edit_surface(self, intent: str, context_json: str = "{}") -> str:
@@ -4370,6 +4471,8 @@ class LumenDesignTools:
         - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
         - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
         - `view="slots"` — every slot key → bound nodes.
+        - `view="copy_review"` — candidate-only, complete current exported native
+          text inventory for direction_review bindings; includes observation limits.
         - `view="geometry"` (target=node_id) — stored computed geometry + declared
           transform/size for one node.
         - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
@@ -4385,6 +4488,9 @@ class LumenDesignTools:
             return self.summarize_scene()
         if view == "slots":
             return self.summarize_slots()
+        if view == "copy_review" and self.config.scene_skill_bundle == "candidate":
+            with self._scene_mutation_lock:
+                return json.dumps(self._native_copy_inventory(), indent=2)
         if view == "image_contrast":
             from ..image_contrast import measure_image_contrast
 
@@ -5493,6 +5599,14 @@ class LumenDesignTools:
         direction_error = self._direction_review_error(typed)
         if direction_error:
             return direction_error
+        if (
+            getattr(typed, "direction_review", None)
+            and typed.direction_review.scope != "whole_creative"
+        ):
+            return (
+                "Whole-creative acceptance requires a whole_creative review; "
+                "scoped_edit can only support edit_applied."
+            )
         if self._preflight_scene_stamp != self._scene_stamp():
             return "The current scene has no fresh preflight."
         diagnostics = self._latest_preflight_diagnostics

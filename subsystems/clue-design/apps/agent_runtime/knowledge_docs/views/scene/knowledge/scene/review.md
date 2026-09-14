@@ -46,10 +46,15 @@ support acceptance; otherwise report a draft or failure and the specific gap.
 The candidate critique also carries `direction_review`:
 
 ```json
-{"direction_digest":"<returned by validate_creative_direction>","checks":[
+{"direction_digest":"<returned by validate_creative_direction>","scope":"whole_creative","checks":[
   {"section":"preserve","index":0,"status":"met","notes":"What the current pixels show"},
   {"section":"review_needs","index":0,"status":"deviation","notes":"The retained treatment is still missing"}
-]}
+],"copy_occurrences":[{
+  "copy_id":"headline",
+  "fragments":[{"page_id":"square","node_id":"actual_title","text":"Make the next step clear","join_before":""}],
+  "support":{"status":"nonfactual","evidence_refs":[],"reason":"An invitation, with no empirical product promise.","source_limits":"No product behavior is asserted."},
+  "readability":{"status":"readable","reason":"All words are legible at this placement in the current full preview and feed proxy."}
+}]}
 ```
 
 Use the tool's indexed requirements; cover every `preserve` and `review_needs`
@@ -61,3 +66,44 @@ requirements. If a different direction is justified within the user's scope,
 revise it explicitly with a reason, validate it and review that result; retain
 material departures in the final report. A rejected critique may be incomplete
 while reporting the specific repairs needed.
+
+Use the complete native-copy inventory returned by `render_preview`, or refresh
+it with `inspect(view="copy_review")`. The forty-row text-size display is a
+truncated aid, never the inventory. Bind every declared copy ID to current
+`page_id`/`node_id` occurrences and exact words. Planned layer IDs may differ
+from actual nodes. One row represents one complete occurrence on one page;
+repeat the row for each repeated placement. Separately authored fragments are
+ordered explicitly; `join_before` is `""` or a single space to reconstruct the
+sentence. Only whitespace reflow may differ from the direction. Every nonempty
+native text node in the exported pages needs coverage. Hidden and unreachable
+text cannot satisfy a visible-copy promise; unsupported instance expansion or
+unresolved opacity must remain a gap. A metric limitation such as rotation or
+unresolved typography does not establish unreadability: judge its actual pixels.
+Text inside authentic product images stays part of visual/source review, outside
+this native-copy inventory.
+
+For **every occurrence**, including `claim_kind=positioning`, judge the full
+sentence's subject, scope, modality and implied product promise. Matching feature
+nouns is insufficient; examine limiting and contrary evidence. Support status is
+`supported`, `nonfactual`, `unsupported` or `unverified`. A supported factual
+judgment cites evidence IDs declared for that copy block; nonfactual explains
+why the words assert no verifiable product or empirical promise. Give one concise
+reason and `source_limits` describing what the source does and does not establish,
+including contrary observations. An evidence ID only links your declared source
+and excerpt: the runtime does not independently verify those strings or their
+meaning. Inspect the supplied source itself; never treat schema validation as proof.
+
+Readability status is `readable`, `unreadable` or `unverified`, with a concise
+placement-specific reason covering all fragments of that occurrence. Examine
+each occurrence in the existing current full preview and feed proxy, including
+overlap, clipping, local contrast and small support/attribution. There is no
+universal font-size threshold. Whole acceptance requires complete passing copy
+coverage, support and readability, bound to this direction, scene and preview.
+An incomplete rejected review can retain partial rows and unresolved judgments.
+
+For a seeded, validated `intent=edit` turn, `scope="scoped_edit"` may review only
+the named edit and relevant copy, retaining unchanged unrelated text. Keep the
+existing target/operation scope checks and report collateral changes. A passing
+scoped review can support `edit_applied`; it never permits final `accepted` or
+claims to certify the whole creative. Reuse the registered current critique in
+`finalize_run` by omitting `critique_json`; no additional reviewer round is required.

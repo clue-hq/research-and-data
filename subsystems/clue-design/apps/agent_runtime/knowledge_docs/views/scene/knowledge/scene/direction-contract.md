@@ -22,7 +22,9 @@ Required fields:
   statistic. Assertion/quote/statistic needs evidence IDs. A quote also requires
   an attribution copy block sharing its evidence ID. CTA is optional.
 - `evidence`: list of `{id, source, excerpt}`. Point to supplied or actually
-  retrieved evidence. These are provenance references, not invented proof.
+  retrieved evidence. These are model-authored source descriptions, not
+  independently verified evidence handles. Record limiting/contrary evidence
+  honestly; a screenshot of controls does not establish a universal product rule.
 - `source_roles`: list of `{asset_id, role}`. Role is source/treatment/composition/
   logo/product; asset IDs must be available in this run's sources.
 - `preserve`, `vary`: string lists of visible properties; no contradictory entry.
@@ -59,3 +61,11 @@ this same record explicitly if the copy, intent, sources or layer plan changes.
 Call the same validator after a revision, before using the changed record. It checks structure, references, available assets and registered
 evidence prerequisites, not a family-specific layout or a required CTA. It cannot prove
 truth or visual quality. Review sources and the final composition.
+
+Whole-creative review binds this declared copy to the actual exported native
+text inventory, including repeated and separately authored occurrences. Planned
+layer IDs need not equal final node IDs. If the authored words change beyond
+whitespace reflow, revise this record with a reason before reviewing. The
+`positioning` label exempts no sentence from support review: implied product
+promises require evidence too. Follow `knowledge/scene/review.md` for occurrence
+bindings, support/source limits, placement readability and scoped edit review.
