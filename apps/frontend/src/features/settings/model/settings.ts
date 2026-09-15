@@ -14,6 +14,20 @@ export const SettingsSectionSchema = z.enum([
 
 export type SettingsSection = z.infer<typeof SettingsSectionSchema>;
 
+export const DataModelEntitySchema = z.enum(["accounts", "contacts"]);
+export const DataModelViewSchema = z.enum(["fields", "display"]);
+export type DataModelEntity = z.infer<typeof DataModelEntitySchema>;
+export type DataModelView = z.infer<typeof DataModelViewSchema>;
+
+const DataModelFieldSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  editableBy: z.string(),
+  aiFill: z.enum(["Auto", "None"]),
+  system: z.boolean(),
+});
+
 export const ConnectionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -30,6 +44,16 @@ export const StaticSettingsSchema = z.object({
     planDescription: z.string(),
     remainingCredits: z.number().int().nonnegative(),
     totalCredits: z.number().int().positive(),
+  }),
+  dataModel: z.object({
+    entities: z.array(
+      z.object({ id: DataModelEntitySchema, name: z.string() }),
+    ),
+    fields: z.array(DataModelFieldSchema),
+    display: z.object({
+      alwaysShown: z.array(z.string()),
+      collapsed: z.array(z.string()),
+    }),
   }),
   pages: z.object({
     customDomain: z.string(),
@@ -52,13 +76,25 @@ export type StaticSettings = z.infer<typeof StaticSettingsSchema>;
 export const SettingsRouteSchema = z
   .array(z.string())
   .max(3)
-  .transform((segments) => {
-    const [section = "profile", entity, view] = segments;
-    return {
-      section: SettingsSectionSchema.parse(section),
-      entity,
-      view,
-    };
-  });
+  .transform(
+    ([section = "profile", entity, view]): {
+      section: string;
+      entity?: string;
+      view?: string;
+    } => ({ section, entity, view }),
+  )
+  .pipe(
+    z
+      .object({
+        section: SettingsSectionSchema,
+        entity: DataModelEntitySchema.optional(),
+        view: DataModelViewSchema.optional(),
+      })
+      .refine(
+        ({ section, entity, view }) =>
+          section === "data-model" || (!entity && !view),
+        "Only Data model supports nested settings routes",
+      ),
+  );
 
 export type SettingsRoute = z.infer<typeof SettingsRouteSchema>;

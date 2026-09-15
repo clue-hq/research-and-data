@@ -1,4 +1,4 @@
-// Presentation placeholders under inert Coming soon overlays; never live-read fallbacks.
+// Presentation placeholders; never live-read fallbacks.
 import type { StaticSettings } from "../model/settings";
 export const staticSettingsSections: StaticSettings = {
   connections: [
@@ -29,6 +29,65 @@ export const staticSettingsSections: StaticSettings = {
     planDescription: "500 credits included, expiring Aug 31, 2026.",
     remainingCredits: 300,
     totalCredits: 500,
+  },
+  dataModel: {
+    entities: [
+      { id: "accounts", name: "Accounts" },
+      { id: "contacts", name: "Contacts" },
+    ],
+    fields: [
+      {
+        id: "record-id",
+        name: "Record id",
+        type: "Text",
+        editableBy: "System only",
+        aiFill: "None",
+        system: true,
+      },
+      {
+        id: "created-at",
+        name: "Created at",
+        type: "Date & time",
+        editableBy: "System only",
+        aiFill: "None",
+        system: true,
+      },
+      {
+        id: "name",
+        name: "Name",
+        type: "Text",
+        editableBy: "Anyone",
+        aiFill: "None",
+        system: false,
+      },
+      {
+        id: "linkedin",
+        name: "Linkedin",
+        type: "Link",
+        editableBy: "Anyone",
+        aiFill: "Auto",
+        system: false,
+      },
+      {
+        id: "about-business",
+        name: "About their business",
+        type: "Text",
+        editableBy: "Anyone",
+        aiFill: "Auto",
+        system: false,
+      },
+    ],
+    display: {
+      alwaysShown: [
+        "Name",
+        "Owner",
+        "Industry",
+        "Headcount",
+        "Revenue",
+        "Score",
+      ],
+      collapsed: ["Created at", "Last funding"],
+    },
   },
   pages: {
     customDomain: "https://acme.com",

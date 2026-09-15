@@ -18,19 +18,6 @@ function NavigationItems({
   return items.map((item) => {
     const active = item.section === activeSection;
 
-    if (item.section === "data-model")
-      return (
-        <span
-          aria-disabled="true"
-          className={styles.navigationItem}
-          key={item.href}
-          title="Research fields is awaiting the updated design"
-        >
-          <SettingsNavIcon name={item.icon} />
-          <span>{item.label}</span>
-        </span>
-      );
-
     return (
       <Link
         aria-current={active ? "page" : undefined}

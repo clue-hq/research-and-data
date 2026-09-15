@@ -28,7 +28,7 @@ Founder rulings from the 2026-09-14 discussion fix the scope:
 | Connections, MCP server, Integrations | Lifted exactly as the dummy's inert "Coming soon" previews | Yes (static) |
 | Billing | Stays a dummy | Yes (static, see §8) |
 | Pages | Stays a dummy | Yes (static, see §8) |
-| Data model | Re-scoped with the co-founder to "Research fields" before anything is wired | Fully specified in §9; the build is gated on the redrawn frames |
+| Data model | Existing dummy remains accessible; re-scope to "Research fields" before backend integration | Dummy now; fully specified in §9, with the build gated on the redrawn frames |
 
 Two cross-cutting rulings apply to every editable field: **autosave on blur** with an ephemeral
 confirmation card, and **the sidebar shows the signed-in person's display name**, never a
@@ -36,9 +36,10 @@ placeholder.
 
 Original assumptions and subsequent founder rulings:
 
-- **A1 — superseded by founder follow-up, 2026-09-15.** Billing shows the existing dummy frontend
-  without the "Coming soon" overlay. Its values and buttons remain placeholders. Pages is part of
-  V1, still awaiting development, and keeps the overlay temporarily until its functionality is ready.
+- **A1 — superseded by latest founder follow-up, 2026-09-15.** Billing and Pages show their existing
+  dummy frontends without the "Coming soon" overlay. Pages is part of V1 and still awaits development;
+  the earlier permission to retain its overlay is withdrawn. Data model also remains clickable with
+  its original dummy overview and Fields/Display views while Research fields integration is deferred.
 - **A2.** The static "Clue workspace" caption under the person's name in the profile menu becomes
   the real workspace name (a data binding into an existing slot).
 
@@ -306,9 +307,9 @@ dummies by ruling, not a fallback for a failed read.
 
 The catch-all route parses the section, entity and view with the dummy's `SettingsRouteSchema`,
 loads only the section's data on the server (profile, workspace or members), and renders the
-lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing and Pages render from the
-placeholder module. Connections, MCP server, Integrations and Pages retain the overlay; Billing
-renders directly in the standard Settings body per the founder's A1 follow-up.
+lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing, Pages and Data model render
+from the placeholder module. Only Connections, MCP server and Integrations retain the overlay.
+Billing, Pages and Data model render directly in the standard Settings body per the latest A1 ruling.
 
 ### 6.3 Autosave
 
@@ -366,10 +367,10 @@ than creating rows that no email will ever follow.
 
 ## 8. Static sections
 
-Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing and
-Pages currently use data from the placeholder module. Billing exposes the dummy frontend directly;
-Pages retains the temporary overlay and remains in V1 scope. Re-scope notes recorded for when they
-become real:
+Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing, Pages
+and Data model expose their dummy frontends directly using the placeholder module. Pages remains
+in V1 scope; its backend integration is still pending. Re-scope notes recorded for when they become
+real:
 
 - **Billing.** Usage-only v1 over lane 3's cost read (`GET /cost/report`) once it merges: a plan
   record per workspace (name, included credits, expiry) set by the founders, credits derived from
@@ -382,6 +383,11 @@ become real:
   custom domain, no indexing toggles, no llms.txt.
 
 ## 9. Data model → Research fields: full specification (build gated on the redraw)
+
+Latest founder follow-up, 2026-09-15: keep Data model clickable and show the existing dummy frontend.
+The overview, Accounts/Contacts Fields and Display routes, and back navigation are available with
+static presentation data. This does not implement field creation, editing, retirement or display
+order persistence. The full Research fields implementation specified below remains outstanding.
 
 ### 9.1 What the page is
 
