@@ -367,6 +367,9 @@ class Settings(BaseSettings):
     # Scene-only knowledge selection; separate workspace roots prevent mixing
     # knowledge during concurrent control/candidate runs. Website is unchanged.
     lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Optional caller-owned viewing profile from the candidate manifest. Empty
+    # means no numeric native-copy floor. Never inferred from page units/brand.
+    lumen_agent_scene_review_profile: str = ""
     # Default-off single-agent scene experiment. Requires candidate knowledge
     # and the fast loop at scene construction; has no effect on website turns.
     lumen_agent_scene_solo: bool = False

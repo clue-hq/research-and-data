@@ -63,7 +63,7 @@ def scene_view_manifest(root: Path | None = None) -> dict:
     """The versioned authored catalog, shared by delivery and runtime validation."""
     source = root or _PACKAGE_KNOWLEDGE_DOCS
     manifest = json.loads((source / "views/scene/manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != 1:
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
         raise RuntimeError("Unsupported scene knowledge view manifest")
     for field in ("skills", "playbooks"):
         names = manifest.get(field, [])
@@ -84,6 +84,19 @@ def scene_view_manifest(root: Path | None = None) -> dict:
             PlaybookEvidenceRequirements.model_validate(requirement)
     except ValueError as error:
         raise RuntimeError("Invalid scene playbook evidence requirements") from error
+    from .native_copy import NativeCopyReviewProfile
+
+    profiles = manifest.get("review_profiles", {})
+    if not isinstance(profiles, dict) or any(
+        not isinstance(name, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", name)
+        for name in profiles
+    ):
+        raise RuntimeError("Invalid scene review profile registration")
+    try:
+        for profile in profiles.values():
+            NativeCopyReviewProfile.model_validate(profile)
+    except ValueError as error:
+        raise RuntimeError("Invalid scene review profile") from error
     return manifest
 
 

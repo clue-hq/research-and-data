@@ -222,11 +222,20 @@ class NativeCopyBinding(DirectionModel):
     join_before: Literal["", " "] = ""
 
 
+class SourceGap(DirectionModel):
+    """A reported meaning-to-source gap, not an independently verified finding."""
+
+    kind: Literal["omitted_necessary_context", "added_meaning", "unresolved_contradiction"]
+    reason: NonEmpty
+
+
 class CopySupportJudgment(DirectionModel):
     status: Literal["supported", "nonfactual", "unsupported", "unverified"]
     evidence_refs: list[NonEmpty] = Field(default_factory=list)
     reason: NonEmpty
     source_limits: NonEmpty
+    # History and rejected reviews may omit assessment; acceptance requires [].
+    source_gaps: list[SourceGap] | None = None
 
 
 class CopyReadabilityJudgment(DirectionModel):

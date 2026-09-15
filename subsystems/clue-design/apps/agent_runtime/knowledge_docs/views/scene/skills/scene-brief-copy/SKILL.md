@@ -23,8 +23,12 @@ Prefer concrete product meaning to vague promises. Use provided claims accuratel
 quotes, numbers and customer attributions need actual evidence. Keep source IDs
 with factual copy. Missing proof is a reason to narrow or qualify the message,
 or choose nonfactual positioning. Labeling a product promise `positioning` does
-not make it nonfactual. Consider the full sentence's subject, scope and modality,
-including contrary evidence, before writing it. Review every actual occurrence
+not make it nonfactual. Compare the whole meaning, including implied timing,
+control, causality, availability and authority, with the source; imperative grammar
+alone does not remove a factual relationship. For quantitative proof, preserve the
+metric and the subject, comparison and qualifiers needed to interpret it in the
+visible composition, across layers if useful. Narrow or omit proof whose necessary
+context is unavailable; never invent missing qualifiers. Review every actual occurrence
 under `knowledge/scene/review.md`. For a CTA, decide whether this intent needs an artwork
 action at all, whether the channel already supplies it, and how this advertiser's
 relevant examples express it: absent, inline text, a link, a button or another

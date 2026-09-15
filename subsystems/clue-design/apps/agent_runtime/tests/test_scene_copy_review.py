@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from lumen_agent import harness
+from lumen_agent.models.schemas import SceneVisualCritique
 from lumen_agent.tools import substrate
 from lumen_agent.tools.render import _render_preview_text
 from test_candidate_finalization_runtime import candidate_graph
@@ -40,10 +41,12 @@ def set_text(runtime, text):
     render(runtime)
 
 
-def add_text(runtime, node_id, text):
+def add_text(runtime, node_id, text, *, y=None):
     node = copy.deepcopy(runtime.scene["nodes"]["actual_headline"])
     node.update(id=node_id, children=[])
     node["kind"]["content"] = text
+    if y is not None:
+        node["transform"]["y"] = y
     result = json.loads(
         runtime.apply_operations(
             json.dumps(
@@ -208,6 +211,137 @@ def test_copy_binding_and_judgment_defects_block_whole_acceptance(tools, defect)
     else:
         row["support"]["evidence_refs"] = ["invented"]
     assert submit(tools, body)["status"] == "error"
+    assert accept(tools).startswith("REFUSED")
+
+
+@pytest.mark.parametrize("assessment", ["missing", "null"])
+def test_accepted_copy_requires_an_explicit_source_gap_assessment(tools, assessment):
+    """A passing label must not bypass assessment of omitted or added meaning."""
+    body = review(validate(tools))
+    support = body["direction_review"]["copy_occurrences"][0]["support"]
+    support.pop("source_gaps", None)
+    if assessment == "null":
+        support["source_gaps"] = None
+    assert submit(tools, body)["status"] == "error"
+    assert accept(tools).startswith("REFUSED")
+
+
+@pytest.mark.parametrize(
+    ("text", "claim_kind", "status", "excerpt", "gap"),
+    [
+        (
+            "Comment on the draft before it goes out.", "positioning", "nonfactual",
+            "Review controls include Add comment and Approve; no send relationship is shown.",
+            {"kind": "added_meaning",
+             "reason": "The imperative adds before-send timing absent from the source."},
+        ),
+        (
+            "92%", "statistic", "supported",
+            "The pilot's resolution rate went from 56% to 92%.",
+            {"kind": "omitted_necessary_context",
+             "reason": "The rendered number has no metric, subject or comparison context."},
+        ),
+        (
+            "Available to every team.", "assertion", "supported",
+            "Access is limited to invited pilot teams.",
+            {"kind": "unresolved_contradiction",
+             "reason": "Universal access conflicts with the supplied invitation-only scope."},
+        ),
+    ],
+)
+def test_reported_source_gap_cannot_be_overridden_by_passing_copy_status(
+    tools, text, claim_kind, status, excerpt, gap,
+):
+    """Frozen Q failures: matching numbers or imperative grammar waived known gaps.
+
+    These declared judgments test enforcement, not automated semantic inference.
+    """
+    set_text(tools, text)
+    payload = direction()
+    payload["copy"][0].update(text=text, claim_kind=claim_kind, evidence_refs=["source"])
+    payload["evidence"] = [
+        {"id": "source", "source": "Supplied campaign material", "excerpt": excerpt}
+    ]
+    body = review(validate(tools, payload), text=text)
+    body["direction_review"]["copy_occurrences"][0]["support"].update(
+        status=status, evidence_refs=["source"],
+        reason="The reviewer assigned a passing label despite the recorded gap.",
+        source_limits=excerpt, source_gaps=[gap],
+    )
+    assert submit(tools, body)["status"] == "error"
+    assert accept(tools).startswith("REFUSED")
+    # The same assessment remains useful in a rejected repair report.
+    body["accepted"] = False
+    assert submit(tools, body)["status"] == "ok"
+    assert accept(tools).startswith("REFUSED")
+
+
+def test_complete_quantitative_context_can_be_reviewed_across_native_layers(tools):
+    """Supplied-assertion scope can pass without pretending it is independently verified."""
+    blocks = [
+        ("headline", "actual_headline", "Pilot resolution rate", "assertion"),
+        ("result", "actual_result", "92%", "statistic"),
+        ("comparison", "actual_comparison", "After the pilot, up from 56% before", "assertion"),
+    ]
+    set_text(tools, blocks[0][2])
+    for y, (_, node_id, text, _) in zip((440, 700), blocks[1:], strict=True):
+        add_text(tools, node_id, text, y=y)
+    render(tools)
+    payload = direction()
+    payload["copy"] = [
+        {"id": copy_id, "role": "support", "text": text,
+         "claim_kind": kind, "evidence_refs": ["source"]}
+        for copy_id, _, text, kind in blocks
+    ]
+    payload["evidence"] = [{
+        "id": "source", "source": "Supplied campaign statement; author not independently verified",
+        "excerpt": "The pilot's resolution rate went from 56% before to 92% after the pilot.",
+    }]
+    layer = payload["layers"][0]
+    payload["layers"] = [dict(layer, id=copy_id, copy_id=copy_id) for copy_id, *_ in blocks]
+    result = validate(tools, payload)
+    body = review(result)
+    rows = []
+    for copy_id, node_id, text, _ in blocks:
+        row = review(result, node_id=node_id, text=text)["direction_review"]["copy_occurrences"][0]
+        row["copy_id"] = copy_id
+        row["support"].update(
+            status="supported", evidence_refs=["source"], source_gaps=[],
+            reason=(
+                "Companion layers retain the supplied metric, pilot subject "
+                "and before/after comparison."
+            ),
+            source_limits=(
+                "Faithful to the supplied statement; authorship and result "
+                "are not independently verified."
+            ),
+        )
+        rows.append(row)
+    body["direction_review"]["copy_occurrences"] = rows
+    assert submit(tools, body)["status"] == "ok"
+    final = json.loads(accept(tools))
+    assert final["status"] == "accepted"
+    assert final["critique"]["direction_review"]["copy_occurrences"] == rows
+
+
+@pytest.mark.parametrize("gap", [
+    {"kind": "added_meaning", "reason": "  "},
+    {"kind": "other", "reason": "A concrete but unclassified concern"},
+])
+def test_source_gap_requires_a_known_kind_and_concrete_reason(tools, gap):
+    body = review(validate(tools))
+    body["accepted"] = False
+    body["direction_review"]["copy_occurrences"][0]["support"]["source_gaps"] = [gap]
+    assert submit(tools, body)["status"] == "error"
+
+
+def test_history_and_rejected_reviews_can_omit_source_gap_assessment(tools):
+    body = review(validate(tools))
+    body["direction_review"]["copy_occurrences"][0]["support"].pop("source_gaps")
+    historical = SceneVisualCritique.model_validate(body)
+    assert historical.direction_review.copy_occurrences[0].support.source_gaps is None
+    body["accepted"] = False
+    assert submit(tools, body)["status"] == "ok"
     assert accept(tools).startswith("REFUSED")
 
 

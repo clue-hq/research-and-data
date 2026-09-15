@@ -19,7 +19,11 @@ from pydantic import StrictInt
 
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
-from ..native_copy import observe_native_text
+from ..native_copy import (
+    NativeCopyReviewProfile,
+    native_nominal_em_at_width,
+    observe_native_text,
+)
 from ..paths import to_virtual
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
@@ -4060,10 +4064,7 @@ class LumenDesignTools:
 
         payload = {"status": ToolStatus.ok.value, "critique": critique.model_dump(mode="json")}
         self._latest_visual_critique = payload["critique"]
-        self._review_receipt = {
-            "scene": self._scene_stamp(),
-            "preview": self._current_preview_receipt(),
-        }
+        self._review_receipt = self._review_receipt_for(self._current_preview_receipt())
         self._review_iteration = self.iteration
         self._write_json(iteration_dir / "critique.json", payload)
         self.record(
@@ -4113,6 +4114,8 @@ class LumenDesignTools:
             manifest = (
                 json.loads(descriptor.read_text()) if descriptor.is_file() else scene_view_manifest()
             )
+            if not isinstance(manifest, dict):
+                raise ValueError("Delivered scene catalog must be an object.")
             if direction.playbook not in manifest.get("playbooks", []):
                 raise ValueError("Playbook is not in the delivered scene catalog.")
             direction.validate_evidence_requirements(
@@ -4130,6 +4133,7 @@ class LumenDesignTools:
             if unknown:
                 raise ValueError(f"Sources are unavailable in this run: {', '.join(unknown)}")
             candidate = self.config.scene_skill_bundle == "candidate"
+            review_profile = self._native_copy_review_profile() if candidate else None
             digest = canonical_direction_digest(direction)
             previous_digest = self._validated_direction_digest
             changed = previous_digest is not None and previous_digest != digest
@@ -4153,6 +4157,7 @@ class LumenDesignTools:
                 revision_reason=revision_reason.strip(),
                 review_requirements=direction_review_requirements(direction),
                 visual_accuracy_verified=False,
+                native_copy_review_profile=review_profile,
             )
         self.record("coordinator", "creative_direction_validated", payload=payload)
         return json.dumps(payload, indent=2)
@@ -4194,6 +4199,27 @@ class LumenDesignTools:
                 return "Direction deviations or unverified requirements remain; repair or explicitly revise the direction."
         return self._copy_review_error(critique)
 
+    def _native_copy_review_profile(self) -> JsonObject | None:
+        """Caller-owned viewing assumptions from this run's delivered catalog."""
+        profile_id = self.config.scene_review_profile.strip()
+        if self.config.scene_skill_bundle != "candidate" or not profile_id:
+            return None
+        from ..materialize import scene_view_manifest
+
+        descriptor = self.config.workspace_root / ".deepagent/knowledge-view.json"
+        manifest = (
+            json.loads(descriptor.read_text()) if descriptor.is_file() else scene_view_manifest()
+        )
+        if not isinstance(manifest, dict):
+            raise ValueError("Delivered scene catalog must be an object.")
+        profiles = manifest.get("review_profiles", {})
+        if not isinstance(profiles, dict):
+            raise ValueError("Delivered scene review profiles must be an object.")
+        profile = profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Unknown caller-selected scene review profile: {profile_id}")
+        return {"id": profile_id, **NativeCopyReviewProfile.model_validate(profile).model_dump()}
+
     def _native_copy_inventory(self) -> JsonObject:
         """Observe exact text in current exported pages without another core call."""
         scene_stamp = self._scene_stamp()
@@ -4217,6 +4243,20 @@ class LumenDesignTools:
         if receipt is None or receipt != self._preview_receipt:
             payload["reason"] = "No current preview bound to these scene contents and bytes."
             return payload
+        try:
+            profile = self._native_copy_review_profile()
+        except (OSError, ValueError, RuntimeError) as error:
+            payload["reason"] = f"Native copy review profile unavailable: {error}"
+            return payload
+        if profile is not None:
+            payload["review_profile"] = profile
+            payload["limits"] += (
+                " The caller-selected profile checks normalized native nominal em, "
+                "not rendered glyph height or a platform font rule. Its width is an "
+                "explicit viewing assumption, not inferred from page units. Passing "
+                "the minimum does not establish readability; transformed and raster "
+                "text still need visual review."
+            )
         artifacts = (self.latest_export_summary or {}).get("artifacts") or []
         page_ids = [item.get("page_id") for item in artifacts]
         if not page_ids or any(not isinstance(page_id, str) or not page_id for page_id in page_ids):
@@ -4224,6 +4264,16 @@ class LumenDesignTools:
             return payload
         for page_id in sorted(set(page_ids)):
             observed = observe_native_text(self.scene, page_id)
+            if profile is not None:
+                for row in observed["occurrences"]:
+                    measured = native_nominal_em_at_width(
+                        self.scene, page_id, row, profile["display_width_px"],
+                    )
+                    measured["passes_minimum"] = (
+                        measured["nominal_em_px"] >= profile["minimum_nominal_em_px"]
+                        if measured["status"] == "ok" else None
+                    )
+                    row["nominal_size_review"] = measured
             for key in ("occurrences", "excluded", "unresolved"):
                 payload[key].extend(observed[key])
         payload["status"] = "ok"
@@ -4263,6 +4313,23 @@ class LumenDesignTools:
                     return f"Native copy binding does not match the current words: {key}"
                 if critique.accepted and row["binding_issue"]:
                     return f"Native copy observation is unresolved for {key}: {row['binding_issue']}"
+                if (
+                    critique.accepted and review.scope == "whole_creative"
+                    and inventory.get("review_profile") is not None
+                ):
+                    measured = row["nominal_size_review"]
+                    profile = inventory["review_profile"]
+                    if measured["status"] != "ok":
+                        return f"Native copy size is unavailable for {key}: {measured['reason']}"
+                    if not measured["passes_minimum"]:
+                        return (
+                            f"Native copy {key} is below caller-selected {profile['id']}: "
+                            f"{measured['nominal_em_px']:.6g}px normalized nominal em at "
+                            f"{profile['display_width_px']:g}px width; minimum "
+                            f"{profile['minimum_nominal_em_px']:g}px. Recompose or simplify "
+                            "the copy and inspect a fresh preview; "
+                            "a readable label cannot waive this check."
+                        )
                 parts.append(fragment.join_before + fragment.text)
                 covered_nodes.add(key)
             if critique.accepted and words("".join(parts)) != words(block.text):
@@ -4278,6 +4345,14 @@ class LumenDesignTools:
                     return f"Copy {block.id} needs a passing support judgment for this occurrence."
                 if support.status == "supported" and not support.evidence_refs:
                     return f"Supported factual copy {block.id} requires cited declared evidence."
+                if support.source_gaps is None:
+                    return (
+                        f"Copy {block.id} needs an explicit source_gaps assessment "
+                        "for this occurrence."
+                    )
+                if support.source_gaps:
+                    gaps = "; ".join(f"{gap.kind}: {gap.reason}" for gap in support.source_gaps)
+                    return f"Copy {block.id} has unresolved source gaps: {gaps}"
                 if readability is None or readability.status != "readable":
                     return f"Copy {block.id} needs a readable placement judgment for this occurrence."
             covered_copy.add(block.id)
@@ -5538,10 +5613,12 @@ class LumenDesignTools:
         )
         current_preview = self._current_preview_receipt()
         preview_current = current_preview is not None and current_preview == self._preview_receipt
+        current_review = self._review_receipt_for(current_preview)
         review_current = (
             preview_current
             and self._latest_visual_critique is not None
-            and self._review_receipt == {"scene": scene_stamp, "preview": current_preview}
+            and current_review is not None
+            and self._review_receipt == current_review
         )
         blocking, advisory = partition_export_diagnostics(self._latest_preflight_diagnostics or [])
         return {
@@ -5570,6 +5647,16 @@ class LumenDesignTools:
                 "iteration": self._review_iteration,
             },
         }
+
+    def _review_receipt_for(self, preview: JsonObject | None) -> JsonObject | None:
+        try:
+            profile = self._native_copy_review_profile()
+        except (OSError, ValueError, RuntimeError):
+            return None
+        receipt = {"scene": self._scene_stamp(), "preview": preview}
+        if profile is not None:
+            receipt["native_copy_review_profile"] = profile
+        return receipt
 
     def _current_preview_receipt(self) -> JsonObject | None:
         summary = self.latest_export_summary or {}
@@ -5627,7 +5714,7 @@ class LumenDesignTools:
         current = self._current_preview_receipt()
         if current is None or current != self._preview_receipt:
             return "The preview is missing, changed, or does not represent the current scene."
-        if self._review_receipt != {"scene": self._scene_stamp(), "preview": current}:
+        if self._review_receipt != self._review_receipt_for(current):
             return "The registered critique does not review the current scene and preview bytes."
         return None
 

@@ -52,7 +52,7 @@ The candidate critique also carries `direction_review`:
 ],"copy_occurrences":[{
   "copy_id":"headline",
   "fragments":[{"page_id":"square","node_id":"actual_title","text":"Make the next step clear","join_before":""}],
-  "support":{"status":"nonfactual","evidence_refs":[],"reason":"An invitation, with no empirical product promise.","source_limits":"No product behavior is asserted."},
+  "support":{"status":"nonfactual","evidence_refs":[],"reason":"An invitation, with no empirical product promise.","source_limits":"No product behavior is asserted.","source_gaps":[]},
   "readability":{"status":"readable","reason":"All words are legible at this placement in the current full preview and feed proxy."}
 }]}
 ```
@@ -96,10 +96,28 @@ a supplied assertion can be supported while its authority remains unknown.
 
 Compare relationships, not matching feature nouns. Depicted controls support
 visible affordances; a mandatory hold or release condition needs evidence of
-that relationship. An advertised resource identity/topic does not require its
+that relationship. Read implied timing, control, causality, availability and
+authority before classifying the claim; imperative grammar or absence of a
+measured outcome does not make those relationships nonfactual. An advertised resource identity/topic does not require its
 unseen body to support that identity/topic. An invitation's language alone
 promises neither the resource's language nor current availability; evaluate
 those promises when the wording actually adds them.
+
+For quantitative proof, read the number and its visible companions as one claim.
+Identify what is measured, about whom or what, compared with what, and any material
+unit, time window or condition supplied by the source. Keep the context necessary
+to interpret that claim visible together, across native layers or intact authentic
+source imagery. Matching values alone does not preserve meaning. Context recorded
+only in evidence, assumptions or review notes is not visible qualification. If
+necessary context is unavailable, narrow or omit the proof or report the gap;
+never fabricate qualifiers to complete the claim.
+
+Record `source_gaps` as a list of `{kind, reason}` assessments before choosing the
+support status. Kinds are `omitted_necessary_context`, `added_meaning` and
+`unresolved_contradiction`; each reason names the concrete contextual gap.
+Use `[]` when the comparison reveals no such gap. A passing status cannot waive
+a reported gap: candidate acceptance requires an explicit empty list for every
+occurrence. Rejected reviews may retain gaps or omit the unfinished assessment.
 
 Choose the existing support status from this comparison:
 
@@ -127,6 +145,18 @@ overlap, clipping, local contrast and small support/attribution. There is no
 universal font-size threshold. Whole acceptance requires complete passing copy
 coverage, support and readability, bound to this direction, scene and preview.
 An incomplete rejected review can retain partial rows and unresolved judgments.
+
+When direction validation or the native-copy inventory reports a caller-selected
+`native_copy_review_profile` / `review_profile`, its viewing assumption is part of
+this run's contract. Check each fragment's `nominal_size_review` before accepting.
+An unavailable or below-minimum measurement blocks whole-creative acceptance;
+recompose, simplify, or remove optional copy through the checked tools and inspect
+the updated preview. The current compact-feed profile uses a conservative native
+size floor at its declared display width. This is an internal review condition,
+not a platform specification, a rendered glyph measurement, or proof that copy is
+readable above the floor. It does not measure words inside images. The caller
+selects the profile; changing page units, role names or the direction cannot waive
+it. Without a profile, evaluate the actual requested viewing conditions visually.
 
 For a seeded, validated `intent=edit` turn, `scope="scoped_edit"` may review only
 the named edit and relevant copy, retaining unchanged unrelated text. Keep the

@@ -56,7 +56,9 @@ attribution in the direction does not authorize a collateral change. Intent=edit
 alone never permits missing required evidence. Other unchanged components may be
 omitted when their evidence and bindings are not needed for the selected work.
 Visible proof still needs honest qualification and attribution; a family name
-cannot certify evidence. Revisit the relevant skills at any stage and amend
+cannot certify evidence. A statistic's metric and necessary subject, comparison
+and qualifying context must survive in the visible layers, not only this record.
+Do not invent context the source does not supply. Revisit the relevant skills at any stage and amend
 this same record explicitly if the copy, intent, sources or layer plan changes.
 Call the same validator after a revision, before using the changed record. It checks structure, references, available assets and registered
 evidence prerequisites, not a family-specific layout or a required CTA. It cannot prove
@@ -68,4 +70,7 @@ layer IDs need not equal final node IDs. If the authored words change beyond
 whitespace reflow, revise this record with a reason before reviewing. The
 `positioning` label exempts no sentence from support review: implied product
 promises require evidence too. Follow `knowledge/scene/review.md` for occurrence
-bindings, support/source limits, placement readability and scoped edit review.
+bindings, support/source limits, explicit `source_gaps` assessment, placement
+readability and scoped edit review. Passing candidate review requires
+`source_gaps: []`; recording a gap while labeling copy supported or nonfactual
+does not resolve it.

@@ -2157,3 +2157,57 @@ verification confirms the older user Clue document remains exactly v19. Next
 address actual feed-scale review and source-context preservation, and implement
 the scoped preference handoff before qualifying these families or claiming
 the four-minute target. Keep the full goal active.
+
+## Task 31: enforce reported copy gaps and an explicit viewing condition
+
+The Task30 Clue and Conduit runs read the complete shared review resource. Their
+failures were not missing skill discovery: the accepted Clue review acknowledged
+that the source did not establish before-send timing, and Conduit's direction
+deliberately removed the resolution caption despite retaining its percentages.
+Both reviews could label those occurrences supported/nonfactual and still pass.
+
+Candidate copy review now requires an explicit `source_gaps` assessment. Reported
+omitted necessary context, added meaning or unresolved contradiction blocks
+acceptance even when the support status passes. Rejected/historical records remain
+parseable. Shared brief-copy and review guidance compare whole meaning, including
+implied relationships, and preserve a statistic's necessary visible companions
+across layers. Source-level fidelity does not require pretending a supplied claim
+was independently verified. This enforces reported gaps; it does not independently
+prove semantic entailment or guarantee the model notices every gap.
+
+Native sizing has a separate, caller-selected profile. `compact-feed-v1` in the
+versioned candidate manifest defines a 360px viewing width and an 8px minimum
+normalized native nominal em. That conservative rejection floor is an internal
+test condition, not a platform specification, target typography scale or evidence
+of readability above it. It cannot measure raster text, actual glyph shape,
+contrast, clipping or a transformed visual result. The existing PNG-aware preview
+table remains unchanged; its rounded proxy measurement is a different quantity.
+
+Set `LUMEN_AGENT_SCENE_REVIEW_PROFILE=compact-feed-v1` only for explicitly scoped
+feed evaluations. The default and current local value are empty/disabled. Page
+units and the agent's direction cannot choose or evade the caller's profile.
+When enabled, every bound fragment needs a current resolved measurement at or
+above the minimum for whole-creative acceptance. Rotation/skew does not exempt
+the untransformed nominal size. Scoped user edits keep their limited acceptance
+boundary. The selected profile and its values bind the review receipt; changing
+them invalidates acceptance. Unknown/malformed profiles fail closed. Website and
+legacy review ignore this setting. Root/subsystem environment examples document it.
+
+Real-helper regressions failed before these changes and pass afterward. Coverage
+includes missing/contradictory source assessments, complete quantitative companions,
+tiny text despite a readable label, exact floor boundaries, fragmented/repeated
+copy beyond the display table's row limit, canonical units, transforms, pinned
+descendants, ambiguous typography, scoped edits, default-off behavior, environment
+loading and stale/malformed profile records. The broader candidate suite passed;
+the final affected subset passed 133 tests, and the independent profile/preview
+subset passed 92 (overlapping counts). Root lint comparison leaves the same 203
+pre-existing diagnostics and no introduced diagnostics. Independent code review
+found no remaining actionable issue. No core/provider calls were added.
+
+No new generation or latency result is claimed by this checkpoint. The running
+app has not been restarted onto this change, and the optional profile is not
+enabled locally. Coverage remains 13/18 exercised, zero fully qualified. Fresh
+ordinary four-brand delivery is still required to establish behavioral improvement.
+The older user-edited Clue scene remains exact v19 with its charcoal/cream palette.
+Fresh-session preference assembly is still missing; preserve that feedback in the
+scoped-memory integration rather than hardcoding it into shared creative skills.

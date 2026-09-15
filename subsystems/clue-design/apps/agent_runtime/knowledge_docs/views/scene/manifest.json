@@ -90,6 +90,12 @@
       }
     ]
   },
+  "review_profiles": {
+    "compact-feed-v1": {
+      "display_width_px": 360,
+      "minimum_nominal_em_px": 8
+    }
+  },
   "playbook_requirements": {
     "authentic-product": {
       "source_role": "product"

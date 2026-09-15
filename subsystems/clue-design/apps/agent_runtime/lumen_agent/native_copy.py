@@ -7,6 +7,17 @@ off-canvas placement and raster-contained text remain visual review concerns.
 
 import math
 
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class NativeCopyReviewProfile(BaseModel):
+    """Caller-selected nominal-size policy, never an inferred viewing context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    display_width_px: float = Field(gt=0, allow_inf_nan=False, strict=True)
+    minimum_nominal_em_px: float = Field(gt=0, allow_inf_nan=False, strict=True)
+
 
 def finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -86,3 +97,62 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
             }
         )
     return result
+
+
+def native_nominal_em_at_width(
+    scene: dict, page_id: str, row: dict, display_width_px: float,
+) -> dict:
+    """Measure untransformed nominal type at a caller-selected display width.
+
+    ``row`` must come from ``observe_native_text`` on this same resolved scene;
+    its binding issue retains ancestor opacity and pinned-node semantics. The
+    caller owns preflight/preview freshness. This width-normalized measure is
+    neither the rounded PNG proxy size nor rendered glyph size. Transforms,
+    clipping, occlusion and raster-contained text remain visual review limits.
+    """
+    def unavailable(reason: str) -> dict:
+        return {"status": "unavailable", "nominal_em_px": None, "reason": reason}
+
+    if not finite_number(display_width_px) or display_width_px <= 0:
+        return unavailable("display width must be positive and finite")
+    page = (scene.get("pages") or {}).get(page_id)
+    if not isinstance(page, dict):
+        return unavailable("rendered page association is missing")
+    size = page.get("size") or {}
+    if size.get("unit") != "pt" or any(
+        not finite_number(size.get(axis)) or size[axis] < 1 for axis in ("width", "height")
+    ):
+        return unavailable("canonical page dimensions are missing or unsupported")
+    if row.get("page_id") != page_id:
+        return unavailable("native text row belongs to another page")
+    if row.get("binding_issue"):
+        return unavailable(row["binding_issue"])
+    issue = row.get("observation_issue")
+    if issue not in (None, "unsupported transform"):
+        return unavailable(issue)
+
+    node = (scene.get("nodes") or {}).get(row.get("node_id"))
+    if not isinstance(node, dict):
+        return unavailable("native text source node is missing")
+    kind = node.get("kind") or {}
+    if kind.get("kind") != "text" or not (kind.get("content") or "").strip():
+        return unavailable("source node has no native text")
+    if kind["content"] != row.get("text"):
+        return unavailable("native text row does not match its source")
+    opacity = node.get("opacity", 1)
+    if node.get("opacity_token") is not None or not finite_number(opacity) or opacity <= 0:
+        return unavailable("source opacity is hidden or unresolved")
+    if any(
+        kind.get(key) is not None
+        for key in ("style_token", "font_size_token", "line_height_token", "letter_spacing_token")
+    ):
+        return unavailable("unresolved source typography")
+    font_size = kind.get("font_size")
+    if not finite_number(font_size) or font_size <= 0:
+        return unavailable("invalid resolved source font size")
+    if not finite_number(row.get("font_size")) or row["font_size"] != font_size:
+        return unavailable("native font size row does not match its source")
+    nominal_em = font_size / size["width"] * display_width_px
+    if not math.isfinite(nominal_em) or nominal_em <= 0:
+        return unavailable("unrepresentable nominal em size")
+    return {"status": "ok", "nominal_em_px": nominal_em, "reason": None}

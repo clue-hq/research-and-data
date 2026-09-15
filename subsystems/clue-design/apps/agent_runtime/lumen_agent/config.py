@@ -217,6 +217,9 @@ class AgentRuntimeConfig:
     fast_loop: bool = False
     # Scene-only knowledge rollout. Web harnesses always materialize legacy.
     scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Caller-selected viewing condition for candidate acceptance. Empty disables
+    # numeric sizing policy; the model cannot select it through its direction.
+    scene_review_profile: str = ""
     # Candidate-only one-agent scene experiment. The scene factory requires the
     # candidate bundle and fast loop; website factories ignore this selector.
     scene_solo: bool = False
@@ -298,6 +301,7 @@ class AgentRuntimeConfig:
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
             scene_skill_bundle=settings.lumen_agent_scene_skill_bundle,
+            scene_review_profile=settings.lumen_agent_scene_review_profile.strip(),
             scene_solo=settings.lumen_agent_scene_solo,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,

@@ -1204,3 +1204,38 @@ font fix. Root inspected actual output. All4 SVG structural comparisons differ
 only root data-lumen-document-id. Native PNGs compared in RGB (not RGBA alpha-only
 bbox), all pixel-exact. Newdocs remain restored, live inspectors show original
 values after reload. Firstterminal outputs/quality scores remain immutable.
+
+Task31 continuation: full review-resource reads confirmed in failed Clue/Conduit
+Q traces. Source-gap model+shared brief/copy/review procedure now require explicit
+assessment; known missing necessary context/added meaning/contradiction cannot
+pass merely by choosing supported/nonfactual. This checks reported gaps, not
+independent truth or model attention. Rejected/history parsing remains compatible.
+Real submit/finalize missing-assessment RED reproduced before implementation.
+
+Added optional caller-owned compact-feed-v1 review profile in candidate manifest:
+360px normalized viewing width,8px conservative native nominal-em rejection floor.
+Default/currentlocal LUMEN_AGENT_SCENE_REVIEW_PROFILE is empty/disabled, documented
+in root/subsystemexamples and added empty to local.env without showing secrets.
+No profile inferred from brand/pageunits; no universal font-size/platform-law claim.
+Pure measurement leaves existing PNG-proxytable unchanged. Enabled full acceptance
+checks every fragment beyond40rows; transforms cannot hide tiny untransformedtype;
+unknown measurements block, scopededits and legacy/web remain unchanged. Receipt
+pins profile/values; changes stale acceptance. Malformed descriptor root/table REDs
+fixed with explicitdictvalidation. No sceneJSON mutations or new core/providercalls.
+
+Verification: root broader candidate/test_materialize suite exit0; final affected
+direction/profile/skillfamily133pass; independent profile/preview92pass (overlap).
+Ruff initial213errors =203old+10new test/line issues; allnewfixed, exactbaseline
+comparison203old/nointroduced. No unrelated cleanup. Independent code review no
+actionable issues. Some initial file searches targeted absent settings/Makefile
+paths; corrected to py-lumen-config. No architecture migration/engine/WASM change.
+Documentation updated same plan Task31. Runtime not restarted; new model behavior,
+firstdeliveryquality and speed remain unvalidated. No provider diagnosticcalls.
+
+Freshreadonly protection06:45:09UTC: older userClue exactv19, samepinnedkitv4,
+resolved charcoal/cream unchanged. All4brandfrontends andbaseports live; fleet154done,
+design69success/5historicfailures,0active then. CUAcheckedcurrent4batchtabs correct
+workspace labels and preserved11–14 asdeliverables; no furthercanvas/browserwrites.
+Canvas feedback still not assembled asfreshdesignscopedmemory; next integrate
+trustedquote/scopedpin handoff and run the next frozen ordinary fourbrand test.
+Keep goalactive at13/18exercised,0qualified. Task26 remains0calls/unapproved.
