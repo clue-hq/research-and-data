@@ -2456,6 +2456,40 @@ pub fn resolve_scene_tokens(
     }
 }
 
+/// Resolve only a targeted text's source typography for a checked edit. This
+/// reuses the renderer's resolver without baking unrelated scene nodes.
+pub(crate) fn resolve_text_for_edit(
+    scene: &Scene,
+    node_id: &NodeId,
+    text: &TextNode,
+    brand_kit: &BrandKit,
+    options: &TokenResolutionOptions,
+) -> Result<TextNode, Vec<Diagnostic>> {
+    let options = crate::preflight::token_options_for_scene_medium(scene, options);
+    let mut resolver = TokenResolver::new(brand_kit, options);
+    if scene.meta.brand_kit.is_some() {
+        resolver.validate_scene_brand_ref(scene);
+    }
+    resolver.diagnostics.extend(validate_brand_kit(brand_kit));
+    if has_error(&resolver.diagnostics) {
+        return Err(resolver.diagnostics);
+    }
+    let mut node = Node::new(node_id.clone(), NodeKind::Text(text.clone()));
+    resolver.resolve_node(&mut node);
+    let NodeKind::Text(resolved) = node.kind else {
+        unreachable!()
+    };
+    if has_error(&resolver.diagnostics)
+        || resolved.style_token.is_some()
+        || resolved.font_size_token.is_some()
+        || resolved.line_height_token.is_some()
+        || resolved.letter_spacing_token.is_some()
+    {
+        return Err(resolver.diagnostics);
+    }
+    Ok(resolved)
+}
+
 pub fn compile_styles_brand_kit(
     source: &str,
     id: BrandKitId,

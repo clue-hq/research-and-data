@@ -70,7 +70,7 @@ def test_clean_compile_sink_push_carries_operations(tmp_path, monkeypatch):
 
 
 class _RaisingCore(FakeCoreClient):
-    def compile_dsl_into_scene(self, scene, source, dsl_session=None, protected_node_ids=None):
+    def compile_dsl_into_scene(self, scene, source, dsl_session=None, protected_node_ids=None, brand_kit=None, mode=None):
         raise CoreError("dsl.parse_error", "unbalanced block")
 
 
@@ -165,7 +165,7 @@ def test_non_mutating_event_sink_push_is_unchanged(tmp_path, monkeypatch):
 class _ThreeOpCore(FakeCoreClient):
     """A clean compile that applies three operations (the base fake applies two)."""
 
-    def compile_dsl_into_scene(self, scene, source, dsl_session=None, protected_node_ids=None):
+    def compile_dsl_into_scene(self, scene, source, dsl_session=None, protected_node_ids=None, brand_kit=None, mode=None):
         response = super().compile_dsl_into_scene(
             scene, source, dsl_session=dsl_session, protected_node_ids=protected_node_ids
         )

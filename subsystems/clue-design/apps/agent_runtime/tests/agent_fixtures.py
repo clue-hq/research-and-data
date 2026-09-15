@@ -32,7 +32,7 @@ class FakeCoreClient:
         }
 
     def compile_dsl_into_scene(
-        self, scene, source: str, dsl_session=None, protected_node_ids=None
+        self, scene, source: str, dsl_session=None, protected_node_ids=None, brand_kit=None, mode=None
     ):
         # Slice 3 phase B: record the protected-id kwarg the runtime passes so
         # tests can assert the seed contract (None on fresh runs, the seed id
@@ -217,7 +217,7 @@ class FakeCoreClient:
             },
         }
 
-    def apply_structured_edit(self, scene, edit, scope=None):
+    def apply_structured_edit(self, scene, edit, scope=None, brand_kit=None, mode=None):
         if scope and scope.get("mode") == "strict":
             allowed_ids = {target.get("id") for target in scope.get("allowed", [])}
             target_id = (edit.get("target") or {}).get("id")

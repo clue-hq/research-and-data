@@ -81,10 +81,17 @@ class CoreClient:
         scene: JsonObject,
         edit: JsonObject,
         scope: Optional[JsonObject] = None,
+        *,
+        brand_kit: Optional[JsonObject] = None,
+        mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         request = {"action": "apply_structured_edit", "scene": scene, "edit": edit}
         if scope is not None:
             request["scope"] = scope
+        if brand_kit is not None:
+            request["brand_kit"] = brand_kit
+        if mode is not None:
+            request["mode"] = mode
         return self._run(request)
 
     def compile_dsl_into_scene(
@@ -93,6 +100,9 @@ class CoreClient:
         source: str,
         dsl_session: Optional[JsonObject] = None,
         protected_node_ids: Optional[list[str]] = None,
+        *,
+        brand_kit: Optional[JsonObject] = None,
+        mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         request: JsonObject = {
             "action": "compile_dsl_into_scene",
@@ -105,6 +115,10 @@ class CoreClient:
         # empty (pure declarative). Phase B wires the runtime call site.
         if protected_node_ids is not None:
             request["protected_node_ids"] = protected_node_ids
+        if brand_kit is not None:
+            request["brand_kit"] = brand_kit
+        if mode is not None:
+            request["mode"] = mode
         return self._run(request)
 
     def preflight_scene(

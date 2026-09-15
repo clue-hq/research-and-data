@@ -682,11 +682,14 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         try:
+            brand_source, brand_kit, _ = self._effective_brand_kit()
             response = self.core.compile_dsl_into_scene(
                 self.scene,
                 source,
                 dsl_session=self.dsl_session,
                 protected_node_ids=self.protected_node_ids,
+                brand_kit=brand_kit,
+                mode=self._brand_context(brand_source, brand_kit)["mode"],
             )
         except CoreError as error:
             summary = CompileSummary(
@@ -861,7 +864,11 @@ class LumenDesignTools:
             if not isinstance(edit, dict):
                 raise ValueError("edit_json must decode to an object")
             scope = edit.pop("scope", None)
-            response = self.core.apply_structured_edit(self.scene, edit, scope=scope)
+            brand_source, brand_kit, _ = self._effective_brand_kit()
+            response = self.core.apply_structured_edit(
+                self.scene, edit, scope=scope, brand_kit=brand_kit,
+                mode=self._brand_context(brand_source, brand_kit)["mode"],
+            )
         except (CoreError, ValueError, json.JSONDecodeError) as error:
             diagnostics = []
             if isinstance(error, CoreError):

@@ -3082,10 +3082,20 @@ def create_app(
         _refuse_if_agent_running(document_id, repo)
         require_base_version(document, payload.base_version)
         try:
+            # Preserve the same pinned typography the editor's preview resolves.
+            # A missing pin must not silently become the platform default.
+            has_brand_pin = (document["scene"].get("meta") or {}).get("brand_kit") is not None
+            _, brand_kit = choose_effective_brand(
+                app.state.core, repo, document,
+                PreflightRequest(strict_no_fallback=has_brand_pin),
+            )
+            mode = choose_effective_brand_mode(document, brand_kit, None)
             result = app.state.core.apply_structured_edit(
                 document["scene"],
                 payload.edit,
                 scope=payload.scope.model_dump() if payload.scope else None,
+                brand_kit=brand_kit,
+                mode=mode,
             )
         except CoreError as error:
             raise core_http_error(error) from error
