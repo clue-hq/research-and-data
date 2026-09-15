@@ -1552,3 +1552,26 @@ identical.250focusedpassed0skips56.81s; scoped reviewer7passed andP2resolved.
 Task41 source/reviewcomplete, no freshvisual/latencyqualification. Task40 next
 fixes canonicalcanvas/exportgeometry; combined orderedgate stillpending. No
 service/auth/modelchanges, livegeneration or protectedConduitv19 edits.
+
+2026-09-15 continuation: Task40 source c43bc1ee adds exact export-selected kit/mode
+at scene GET and canonical Rust-derived presentation, preserving authored state.
+Independent review found two lifecycle regressions; f43955c8 preserves legacy
+no-context measurements and rejects non-ready streamed frames. Re-review clean.
+Helper regression wording corrected in test-only268ecc17 (strict error retained);
+test-only26db3fbb removes reserved module variable. Independent reviews approved.
+Full Rust workspace passed; release helper rebuilt; WASM/handshake9fcd0ae6b11e
+passed. Served WASM hash matches build4c6301fbe122a1bc60294e3e5f7d2ec766f854b549147d37fc64d7d94fa4684e;
+generated artifacts committeda13ef584. Actual WASM20tests passed. Runtime2546
+passed1live-provider skip; frontend2887passed1skip, productionbuild passed,
+design-systembuild passed, lint0errors2existingwarnings. Manualfulltsc still55
+baseline testdiagnostics, none new againste5bbc4c6; productionbuild TypeScript
+step passed. API fullsuite running on owned disposableDB, notliveworkspaceDB.
+Sandbox WASMcache/tsxIPC failures retried with scoped approval; notcodefailures.
+No service restart or freshgenerationyet. Four normal signed-in Home tabs ready
+on3021-3024, no authenticationbypass. ProtectedConduitv19readonly unchanged;
+headline size tokenresolves50.5, supportliteral32 hasno overridingtypebinding.
+Combined API gate completed:2355passed6skipped437.46s, disposableDB only.
+Automated ordered gate and frontendbuild complete; source/independentreviewclear.
+Livequality, latency, nativeedit/reload/export custody remainunproven. Next:
+ownedidleAPI/workerreload, retainedpilot +protectedConduitread-onlyrendercheck,
+frozen11case ordinary-request qualification. Optional60copydiagnostics unused.

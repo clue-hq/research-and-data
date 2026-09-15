@@ -2804,13 +2804,26 @@ loader and UI is not part of the current platform qualification. Tests must
 still prove old no-context calls do not regress. No claim of fixing every
 standalone editor surface is made.
 
+Source and independent review are complete in `c43bc1ee` and `f43955c8`;
+`268ecc17` and `26db3fbb` correct test expectations/naming only. Browser artifacts
+were rebuilt in `a13ef584`. The combined ordered gate passed: Rust workspace,
+release helper, WASM/handshake (`9fcd0ae6b11e`), 2,546 runtime tests (one live
+provider skip), and 2,355 API tests (six skips) on a disposable database.
+The real browser artifact passed 20 tests; frontend tests passed 2,887 with one
+skip, and its production build, design-system build and lint passed (two
+inherited lint warnings). Manual full `tsc` still reports 55 pre-existing test
+diagnostics, independently matched against the baseline. These automated
+results do not establish visual quality, four-minute delivery, or downloaded
+export custody. Runtime reload and the eleven fresh qualification cases remain.
+
 ### Task 41: Make account identity part of the ABM composition
 
 Source and independent review complete in `0b9e9d89` and `e5bbc4c6`.
 Candidate prompts, the bound logo tool and its returned guidance agree on both
 treatments; legacy behavior is preserved. Focused implementation verification
 passed 250 tests and scoped independent re-review passed seven. Fresh visual,
-editing and latency qualification remains pending the shared integration gate.
+editing and latency qualification remains pending; the shared automated
+integration gate has now passed, as recorded under Task40.
 
 User clarification on 2026-09-15 supersedes the pilot's detached target-logo
 chip. Support two deliberate treatments: an optically balanced advertiser ×
