@@ -679,8 +679,8 @@ export class SceneRevealPump {
       this.markDirty();
       return null;
     }
-    this.pendingDisplay = outcome.scene;
-    const geometry = revealGeometry(step, outcome.scene);
+    this.pendingDisplay = outcome.presentationScene ?? outcome.scene;
+    const geometry = revealGeometry(step, this.pendingDisplay);
     const page = geometry.pageId ? outcome.scene.pages[geometry.pageId] : undefined;
     return revealTiming(
       geometry.kind,

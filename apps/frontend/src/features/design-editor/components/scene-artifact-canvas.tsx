@@ -335,6 +335,7 @@ export interface SceneCanvasControls {
   /** The scene as rendered right now (the relaid engine scene when the engine
    * is live, the server snapshot otherwise), or null before it loads. */
   sceneSnapshot(): Scene | null;
+  presentationSnapshot?(): Scene | null;
   /**
    * Clipboard Task 8 / R21: the centre of what the user is LOOKING at, in page
    * space — where a ⌘V of an image file lands when no pointer named a spot.
@@ -511,6 +512,7 @@ export interface SceneArtifactCanvasProps {
     scene: Scene | null,
     pageId: PageId | null,
     documentId: string,
+    presentationScene?: Scene | null,
   ) => void;
   /**
    * AD2.7: the session's primary selection, once the shell owns it. Absent
@@ -630,6 +632,7 @@ function SceneDocumentCanvas({
     redoDepth,
     refresh,
     scene,
+    presentationScene,
     tokenGeneration,
     undoDepth,
   } = useSceneDocument(documentId, reloadToken);
@@ -718,7 +721,11 @@ function SceneDocumentCanvas({
   // skips optimizing the whole component (`preserve-manual-memoization` errors
   // on `commitTextEdit`/`cancelTextEdit`). Nothing reads either value before
   // here, so the position costs nothing and buys the compiled component back.
-  const drawnScene = displayScene ?? scene;
+  // An invalid/pending derivation has editable authored state but no trusted
+  // presentation. Keep its diagnostics visible instead of painting old kit maps.
+  const drawnScene = engine && engine.derivation.status !== "ready"
+    ? null
+    : displayScene ?? presentationScene ?? scene;
   const pageId = effectiveScenePageId(loadedPageId, drawnScene);
 
   // genad2 Task 5: the loaded-but-pageless line, or null. Pure and derived —
@@ -904,7 +911,8 @@ function SceneDocumentCanvas({
           // fires afterwards with the final rendered (possibly relaid) scene;
           // that second setLoaded is idempotent. This is the MVP editor's own
           // shape: EditorApp installs result.scene in the accept path.
-          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId);
+          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId,
+            outcome.derivation?.status === "ready" ? outcome.presentationScene : null);
         }
         return outcome;
       },
@@ -924,7 +932,8 @@ function SceneDocumentCanvas({
         // document on its very next render.
         if (outcome.accepted) {
           refresh();
-          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId);
+          onSceneChangeRef.current?.(outcome.scene, loadedPageId, documentId,
+            outcome.derivation?.status === "ready" ? outcome.presentationScene : null);
         }
         return outcome;
       },
@@ -938,7 +947,8 @@ function SceneDocumentCanvas({
       hitTest: (x, y) =>
         engine && pageId ? engine.hitTest(pageId, x, y) : null,
       refresh,
-      sceneSnapshot: () => scene,
+      sceneSnapshot: () => engine?.scene ?? scene,
+      presentationSnapshot: () => engine?.derivation.status === "ready" ? engine.presentationScene : null,
       // R21: the stage's own centre, run through the SAME chain a press takes
       // (`handlePointerDown` below) — screen → workspace → page space. It reads
       // the LIVE `viewport`, so a pasted image lands where the user has panned
@@ -1638,8 +1648,9 @@ function SceneDocumentCanvas({
   // that repeat is an idempotent `setLoaded` — the two are not redundant, they
   // cover different arrivals.
   useEffect(() => {
-    onSceneChangeRef.current?.(scene, loadedPageId, documentId);
-  }, [documentId, loadedPageId, scene]);
+    onSceneChangeRef.current?.(scene, loadedPageId, documentId,
+      engine?.derivation.status === "ready" ? presentationScene : null);
+  }, [documentId, loadedPageId, scene, engine, presentationScene]);
 
   /**
    * Press-selects, the gesture machine's own semantics (the source editor

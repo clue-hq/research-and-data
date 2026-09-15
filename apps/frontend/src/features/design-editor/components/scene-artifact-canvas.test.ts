@@ -21,7 +21,7 @@ const decodedImage = { delete() {} } as Image;
 // loader and GPU are boundaries here; this is not a pixel or handshake test.
 vi.mock(require.resolve("../hooks/use-scene-document"), () => ({
   useSceneDocument: (): SceneDocumentState => ({
-    kind: "ready", scene: loadedScene, engine: null,
+    kind: "ready", scene: loadedScene, presentationScene: loadedScene, engine: null,
     pageId: Object.keys(loadedScene.pages)[0], title: "Ad", error: null,
     engineStatus: { engineDisabled: false, reason: null, detail: null },
     currentVersion: 1, undoDepth: 0, redoDepth: 0, loadGeneration,

@@ -1157,6 +1157,19 @@ fn default_mode_values() -> BTreeMap<String, String> {
     ])
 }
 
+/// Validate requested context without changing canonical mode precedence or token fallback.
+pub fn validate_requested_brand_mode(kit: &BrandKit, mode: &BrandMode) -> Vec<Diagnostic> {
+    mode.values.iter().filter_map(|(axis, value)| {
+        if kit.modes.axes.get(axis).is_some_and(|values| values.contains(value)) {
+            None
+        } else {
+            Some(Diagnostic::error(Phase::Brand, "EDITOR_RENDER_MODE_UNSUPPORTED",
+                format!("Brand Kit {}@{} does not declare mode {axis}.{value}", kit.id, kit.version),
+                Some(DiagnosticSubject::Document)))
+        }
+    }).collect()
+}
+
 fn effective_mode(brand_kit: &BrandKit, requested: BrandMode) -> BrandMode {
     let mut values = brand_kit.modes.defaults.clone();
     for (axis, value) in requested.values {

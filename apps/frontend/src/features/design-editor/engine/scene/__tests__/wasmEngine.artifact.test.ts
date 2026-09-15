@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 // @vitest-environment node
 import { describe, expect, it, vi } from "../../__tests__/vitest-shim";
 
@@ -43,6 +44,30 @@ function cloneScene(scene: Scene): Scene {
 }
 
 describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
+  it("canonical context resolves 72/token32 without changing authored values", async () => {
+    const module = await loadWasmModuleFromDisk();
+    const scene = cloneScene(baseScene);
+    scene.slots = {}; scene.export_profiles = []; scene.meta.medium = "digital";
+    const child = scene.nodes.node_contact_name;
+    scene.nodes.frame = { ...child, id:"frame", kind:{ kind:"auto_layout", direction:"column", wrap:false },
+      transform:{ ...child.transform, x:0, y:0 },
+      size:{ width:{kind:"fixed",value:500}, height:{kind:"fixed",value:500} },
+      children:[child.id], layout:{ gap:72, gap_token:"space.md", padding:[72,72,72,72], padding_token:"space.md", grow:0 } };
+    scene.pages.page_a4.children = ["frame"];
+    const kit = JSON.parse(readFileSync(new URL("../../../../../../../../subsystems/clue-design/crates/lumen-core/fixtures/brand_kits/platform_default.json", import.meta.url), "utf8"));
+    kit.tokens.spacing["space.md"].value.default.value = 32;
+    kit.modes.axes.medium = ["digital", "print"];
+    kit.modes.defaults.medium = "digital";
+    const engine = new WasmEngine(module, scene);
+    expect(engine.scene.nodes.node_contact_name.computed?.layout_bounds.x).toBe(72);
+    engine.setRenderContext({ context_key:"fixture", document_id:scene.meta.id, document_version:1,
+      scene_brand_ref:null, scene_medium:"digital", source:"test", brand_kit:kit, mode:null, diagnostics:[] });
+    expect(engine.derivation.status).toBe("ready");
+    expect(engine.scene.nodes.frame.layout?.padding).toEqual([72,72,72,72]);
+    expect(engine.presentationScene.nodes.frame.layout?.padding).toEqual([32,32,32,32]);
+    expect(engine.presentationScene.nodes.node_contact_name.computed?.layout_bounds.x).toBe(32);
+  });
+
   for (const [property, value, expectedFamily, expectedSize, expectedWeight] of [
     ["fontSize", "72", "Season Mix", 72, 500],
     ["fontSize", "16", "Season Mix", 16, 500],

@@ -2539,6 +2539,8 @@ def create_app(
         # document, so a scene GET does not pay for a registry scan whose answer it throws
         # away.
         is_web = document.get("doc_kind") == "web"
+        if not is_web:
+            result["render_context"] = document_render_context(app.state.core, repo, document)
         rows = repo.list_web_fragments() if is_web else ()
         meta = fragment_meta_for_document(document, rows)
         if meta is not None:
@@ -8498,6 +8500,39 @@ def choose_effective_brand(
     if payload.strict_no_fallback:
         return "none", None
     return "platform_default", core.platform_default_brand_kit()
+
+
+def document_render_context(
+    core: CoreClient, repo: HybridRepository, document: JsonObject
+) -> JsonObject:
+    """Fresh normal-export inputs, projected only at the saved scene READ seam.
+
+    This is neither persisted metadata nor an attach/rebind operation. A fallback
+    chosen by export stays identifiable as that fallback, never as an exact pin.
+    """
+    meta = document["scene"].get("meta", {})
+    pin = meta.get("brand_kit")
+    diagnostics: List[JsonObject] = []
+    source, kit = "unavailable", None
+    try:
+        source, kit = choose_effective_brand(core, repo, document, PreflightRequest())
+    except (NotFoundError, CoreError) as error:
+        diagnostics.append({"severity": "error", "phase": "brand",
+            "code": "EDITOR_RENDER_CONTEXT_UNAVAILABLE", "message": str(error),
+            "subject": {"kind": "document"}, "hint": None})
+    if pin and kit and (pin.get("id"), pin.get("version")) != (kit.get("id"), kit.get("version")):
+        diagnostics.append({"severity": "error", "phase": "brand", "code": "LUMB0101",
+            "message": "Selected export Brand Kit does not match the scene's exact pinned kit.",
+            "subject": {"kind": "document"},
+            "hint": "Restore the exact version or use the explicit attach/rebind path."})
+    context = {"document_id": document["id"],
+        "document_version": document["current_version"], "scene_brand_ref": pin,
+        "scene_medium": meta.get("medium"), "source": source, "brand_kit": kit,
+        "mode": choose_effective_brand_mode(document, kit, None), "diagnostics": diagnostics}
+    context["context_key"] = hashlib.sha256(
+        json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return context
 
 
 def choose_effective_brand_for_scene_preview(

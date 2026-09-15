@@ -92,6 +92,7 @@ interface LoadedScene {
   forDocumentId: string;
   pageId: PageId | null;
   scene: Scene;
+  presentationScene: Scene | null;
 }
 
 export function useSceneEditingSession({
@@ -145,8 +146,8 @@ export function useSceneEditingSession({
   // switched artifact never hydrates from the previous one's nodes.
   const [loaded, setLoaded] = useState<LoadedScene | null>(null);
   const onSceneChange = useCallback(
-    (scene: Scene | null, pageId: PageId | null, documentId: string) => {
-      setLoaded(scene ? { forDocumentId: documentId, pageId, scene } : null);
+    (scene: Scene | null, pageId: PageId | null, documentId: string, presentationScene: Scene | null = null) => {
+      setLoaded(scene ? { forDocumentId: documentId, pageId, scene, presentationScene } : null);
     },
     [],
   );
@@ -261,9 +262,10 @@ export function useSceneEditingSession({
   const hydrated = useMemo<SceneInspectorState | null>(
     () =>
       scene
-        ? hydrateSceneSelectionState(scene, pageId, primaryNode ?? null, tokenMaps)
+        ? hydrateSceneSelectionState(scene, pageId, primaryNode ?? null, tokenMaps,
+            primaryNode ? live?.presentationScene?.nodes[primaryNode.id] ?? null : null)
         : null,
-    [pageId, primaryNode, scene, tokenMaps],
+    [pageId, primaryNode, scene, tokenMaps, live?.presentationScene],
   );
 
   // AD2.6: `expanded` is an INPUT to the row builder — nobody below owns it.

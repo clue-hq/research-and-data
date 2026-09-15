@@ -1,3 +1,4 @@
+import { parseRenderContext, type RenderContext } from "./renderContext";
 // PLATFORM DELTA (AD3.3) — this module is otherwise verbatim upstream code. The
 // one divergence is that `LoadedDocument`/`fetchDocument` now also parse the
 // three history fields `GET /documents/{id}` already returns —
@@ -40,6 +41,7 @@ export interface CreatedDocument {
 }
 
 export interface LoadedDocument {
+  renderContext: RenderContext | null;
   documentId: string;
   title: string;
   scene: Scene;
@@ -161,6 +163,7 @@ export async function fetchDocument(
     id?: unknown;
     title?: unknown;
     scene?: unknown;
+    render_context?: unknown;
     agent_instructions?: unknown;
     layout_managed_editing?: unknown;
     current_version?: unknown;
@@ -174,6 +177,9 @@ export async function fetchDocument(
     documentId: typeof payload.id === "string" ? payload.id : documentId,
     title: typeof payload.title === "string" ? payload.title : "Untitled design",
     scene: payload.scene as Scene,
+    renderContext: parseRenderContext(payload.render_context,
+      typeof payload.id === "string" ? payload.id : documentId,
+      "current_version" in payload && typeof payload.current_version === "number" ? payload.current_version : null),
     agentInstructions:
       typeof payload.agent_instructions === "string" ? payload.agent_instructions : null,
     layoutManagedEditing: payload.layout_managed_editing === true,

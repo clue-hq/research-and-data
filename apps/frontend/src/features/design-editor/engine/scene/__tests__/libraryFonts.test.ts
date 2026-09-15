@@ -472,3 +472,19 @@ describe("libraryFonts — DOM leg (document.fonts registration)", () => {
     }
   });
 });
+
+it("does not install stale library bytes or suppress a later current retry", async () => {
+  resetFontLibraryForTests();
+  const before = vi.mocked(registerKitFontFaces).mock.calls.length;
+  let current=true;
+  const fetchImpl = (async (url:unknown)=>String(url).endsWith("/font-library")
+    ? new Response(JSON.stringify(LIBRARY), {headers:{"content-type":"application/json"}})
+    : { ok:true, arrayBuffer:async()=>{current=false;return new ArrayBuffer(4);} }) as typeof fetch;
+  const result = await loadLibraryFontFaces({font_family:"Aeonik"}, {
+    apiBaseUrl:"http://localhost:8002",fetchImpl,isCurrent:()=>current });
+  expect(result).toBe(false);
+  expect(vi.mocked(registerKitFontFaces).mock.calls.length).toBe(before);
+  current=true;
+  const freshFetch = (async()=>new Response(new Uint8Array([1,2,3]))) as typeof fetch;
+  expect(await loadLibraryFontFaces({font_family:"Aeonik"}, {apiBaseUrl:"http://localhost:8002",fetchImpl:freshFetch,isCurrent:()=>current})).toBe(true);
+});

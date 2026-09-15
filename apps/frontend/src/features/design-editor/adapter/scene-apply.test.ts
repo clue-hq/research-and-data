@@ -1259,12 +1259,10 @@ it("§1.4/L10 Auto Layout: a layout-LESS node seeds `defaultLayoutProps()` — t
   );
 });
 
-it("§1.4/OQ-2 Auto Layout: gap/padding TOKENS and the layout mode ride along untouched", () => {
-  // §1.4's Auto Layout bullet keeps tokens and fill weights OFF the surface, so
-  // no control on this panel can restate one — which means a numeric commit
-  // that DROPPED them would destroy a binding the user cannot get back. The
-  // spread preserves them; `undefined` keys are never introduced, because the
-  // spread only carries what the node actually holds (wire-format minimization).
+it("Task40: numeric gap replaces its binding and preserves padding binding and layout mode", () => {
+  // Intentional correction: a numeric edit must reach export. Preserving its
+  // hidden token previously made the user's input ineffective. Undo retains
+  // the original binding through the authored inverse, not this new layout.
   const scene = clone(SCENE);
   const node = scene.nodes.auto_row_copy;
   node.layout = {
@@ -1279,7 +1277,7 @@ it("§1.4/OQ-2 Auto Layout: gap/padding TOKENS and the layout mode ride along un
       align_x: "start",
       align_y: "center",
       gap: 12,
-      gap_token: "$space.md",
+      gap_token: undefined,
       grow: 0,
       layout_mode: "stack",
       padding: [40, 44, 40, 44],
@@ -4066,4 +4064,22 @@ it("A32: the generated placement differs from the stored one in the ALT TEXT and
   assert.ok(operations, "the harvested image takes a generated picture");
   const { placement } = operations[1] as { placement: AssetPlacement };
   assert.deepEqual({ ...placement, alt_text: stored.alt_text }, stored);
+});
+
+it("canonical spacing overrides one binding and materializes only the effective padding siblings", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.layout = { ...node.layout!, gap:72, gap_token:"space.8", padding:[72,72,72,72], padding_token:"space.8" };
+  const effective = { ...node, layout: { ...node.layout, gap:32, padding:[32,32,32,32] as [number,number,number,number] } };
+  const operation = sceneChangeToOperation({ property:"padding.top", value:"40", selectionId:node.id }, node, scene, null, null, effective);
+  assert.deepEqual(operation, updateNodeLayout(node, { ...node.layout, padding:[40,32,32,32], padding_token:undefined }));
+  const state = hydrateSceneInspectorState(node, scene, null, effective);
+  assert.equal(state.gap,"32");
+  assert.deepEqual(state.padding,{ top:"32", right:"32", bottom:"32", left:"32" });
+  assert.equal(sceneChangeToOperation({ property:"padding.top", value:"40", selectionId:node.id }, node, scene, null, null, null), null);
+  assert.deepEqual(node.layout.padding,[72,72,72,72]);
+  if (operation?.kind !== "update_node" || operation.patch.layout.kind !== "set") throw new Error("expected layout");
+  const edited = { ...node, layout:operation.patch.layout.value };
+  const second = sceneChangeToOperation({ property:"padding.left", value:"48", selectionId:node.id }, edited, scene, null, null, edited);
+  assert.deepEqual(second, updateNodeLayout(edited, { ...edited.layout!, padding:[40,32,32,48] }));
 });

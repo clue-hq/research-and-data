@@ -1,3 +1,4 @@
+import type { RenderContext } from "./renderContext";
 import type {
   AssetId,
   AssetRecord,
@@ -38,6 +39,8 @@ import { defaultDesignFetch } from "../config";
 export interface WasmEngineInstance {
   loadScene(sceneJson: string): void;
   sceneJson(): string;
+  setRenderContext?(contextJson: string): string;
+  presentationJson?(): string;
   applyOperations(operationsJson: string): string;
   applyStructuredEdit(editJson: string): string;
   compileDslBlock(source: string): string;
@@ -142,9 +145,18 @@ export interface SceneDelta {
   export_profiles?: ExportProfile[];
 }
 
+export interface Derivation {
+  context_key: string | null;
+  input_revision: number;
+  status: "ready" | "pending" | "unavailable" | "invalid";
+  diagnostics: Diagnostic[];
+}
+
 export interface EngineApplyOutcome {
   accepted: boolean;
   scene: Scene;
+  presentationScene?: Scene;
+  derivation?: Derivation;
   message?: string;
   code?: string;
   diagnostics: Diagnostic[];
@@ -233,6 +245,8 @@ export class WasmEngine implements OptimisticEnginePort {
   readonly version: EngineVersionInfo;
   private readonly instance: WasmEngineInstance;
   private snapshot: Scene;
+  private presentationSnapshot: Scene;
+  derivation: Derivation = { context_key: null, input_revision: 0, status: "ready", diagnostics: [] };
 
   constructor(module: WasmModule, initialScene: Scene) {
     this.instance = new module.LumenEngine(JSON.stringify(initialScene));
@@ -241,11 +255,43 @@ export class WasmEngine implements OptimisticEnginePort {
     // the raw input — otherwise the editor renders a scene whose computed
     // geometry disagrees with the engine's (the coordinate-model desync).
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.presentationSnapshot = this.snapshot;
+    this.readPresentation();
     this.version = JSON.parse(module.engineVersion()) as EngineVersionInfo;
   }
 
   get scene(): Scene {
     return this.snapshot;
+  }
+
+  /** Resolved read-only input for paint, measurement and effective inspector reads. */
+  get presentationScene(): Scene { return this.presentationSnapshot; }
+
+  private readPresentation(): void {
+    if (!this.instance.presentationJson) { this.presentationSnapshot = this.snapshot; return; }
+    const { scene, ...derivation } = JSON.parse(this.instance.presentationJson()) as Derivation & { scene: Scene };
+    this.presentationSnapshot = scene;
+    this.derivation = derivation;
+  }
+
+  setRenderContext(context: RenderContext | null): void {
+    if (!this.instance.setRenderContext) {
+      this.derivation = { context_key: null, input_revision: this.derivation.input_revision + 1,
+        status: "unavailable", diagnostics: [{ severity: "error", phase: "brand",
+          code: "EDITOR_RENDER_CONTEXT_UNSUPPORTED", message: "Browser engine must be rebuilt for canonical render context.",
+          subject: { kind: "document" }, hint: null }] };
+      return;
+    }
+    this.instance.setRenderContext(JSON.stringify(context));
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
+  }
+
+  private mergePresentation(result: { presentation_delta?: SceneDelta; derivation?: Derivation }): void {
+    if (result.derivation) {
+      this.presentationSnapshot = applySceneDelta(this.presentationSnapshot, result.presentation_delta ?? {});
+      this.derivation = result.derivation;
+    } else { this.presentationSnapshot = this.snapshot; }
   }
 
   reset(scene: Scene): void {
@@ -255,6 +301,7 @@ export class WasmEngine implements OptimisticEnginePort {
     // server's Skia computed directly — which would jump text on every
     // reconcile. Geometry stays coherent and jump-free across the session.
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
   }
 
   /**
@@ -272,7 +319,8 @@ export class WasmEngine implements OptimisticEnginePort {
    * override (back to the heuristic). The relaid scene is adopted as the
    * render snapshot.
    */
-  setMeasurements(measurements: TextMeasurement[]): TextMeasurementInput[] {
+  setMeasurements(measurements: TextMeasurement[], expectedRevision = this.derivation.input_revision): TextMeasurementInput[] {
+    if (expectedRevision !== this.derivation.input_revision) throw new Error("Stale presentation measurement rejected");
     const ack = JSON.parse(this.instance.setMeasurements(JSON.stringify(measurements))) as {
       ok: boolean;
       missing?: TextMeasurementInput[];
@@ -280,6 +328,7 @@ export class WasmEngine implements OptimisticEnginePort {
     };
     if (!ack.ok) throw new Error(ack.error?.message ?? "Text measurements were rejected");
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
     return ack.missing ?? [];
   }
 
@@ -298,12 +347,16 @@ export class WasmEngine implements OptimisticEnginePort {
       diagnostics?: Diagnostic[];
       inverse_operations?: Operation[] | null;
       delta?: SceneDelta;
+      presentation_delta?: SceneDelta;
+      derivation?: Derivation;
       error?: { code: string; message: string };
     };
     if (!result.ok) {
       return {
         accepted: false,
         scene: this.snapshot,
+        presentationScene: this.presentationSnapshot,
+        derivation: this.derivation,
         message: result.error?.message ?? "operation batch rejected by the engine",
         code: result.error?.code,
         diagnostics: result.diagnostics ?? [],
@@ -312,9 +365,12 @@ export class WasmEngine implements OptimisticEnginePort {
       };
     }
     this.snapshot = applySceneDelta(this.snapshot, result.delta ?? {});
+    this.mergePresentation(result);
     return {
       accepted: true,
       scene: this.snapshot,
+      presentationScene: this.presentationSnapshot,
+      derivation: this.derivation,
       diagnostics: result.diagnostics ?? [],
       inverseOperations: result.inverse_operations ?? null,
       appliedOperations: result.applied_operations ?? 0
@@ -329,12 +385,16 @@ export class WasmEngine implements OptimisticEnginePort {
       operations?: Operation[];
       edit?: EngineEditMetadata;
       delta?: SceneDelta;
+      presentation_delta?: SceneDelta;
+      derivation?: Derivation;
       error?: { code: string; message: string };
     };
     if (!result.ok) {
       return {
         accepted: false,
         scene: this.snapshot,
+        presentationScene: this.presentationSnapshot,
+        derivation: this.derivation,
         message: result.error?.message ?? "structured edit rejected by the engine",
         code: result.error?.code,
         diagnostics: result.diagnostics ?? [],
@@ -345,9 +405,12 @@ export class WasmEngine implements OptimisticEnginePort {
       };
     }
     this.snapshot = applySceneDelta(this.snapshot, result.delta ?? {});
+    this.mergePresentation(result);
     return {
       accepted: true,
       scene: this.snapshot,
+      presentationScene: this.presentationSnapshot,
+      derivation: this.derivation,
       diagnostics: result.diagnostics ?? [],
       inverseOperations: result.edit?.inverse_operations ?? null,
       appliedOperations: result.applied_operations ?? 0,

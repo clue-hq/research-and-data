@@ -439,3 +439,19 @@ describe("measure-then-inject convergence (Plan 4 item F)", () => {
     expect(payloads).toHaveLength(1 + MEASUREMENT_ROUNDS_MAX);
   });
 });
+
+it("every convergence pass and request uses the paired resolved text snapshot", () => {
+  const authored = structuredClone(minimalScene) as Scene;
+  const presented = structuredClone(authored);
+  const text = presented.nodes.node_contact_name.kind;
+  if (text.kind !== "text") throw new Error("expected text");
+  text.font_size = 48;
+  text.spans = [{start:0,end:2,font_size:24} as TextSpan];
+  const seen: Scene[] = [];
+  const engine: MeasurementEngine = { scene:authored, presentationScene:presented, setMeasurements:()=>[] };
+  injectSkiaMeasurements(engine, { unconstrained:scene=>{seen.push(scene);return[];},
+    lines:scene=>{seen.push(scene);return[];}, requests:scene=>{seen.push(scene);return[];} });
+  expect(seen.length).toBeGreaterThan(2);
+  for(const value of seen) expect(value).toBe(presented);
+  expect(JSON.stringify(authored.nodes.node_contact_name.kind)).not.toBe(JSON.stringify(text));
+});

@@ -38,13 +38,9 @@ export function skiaMeasurements(ck: CanvasKit, fontProvider: TypefaceFontProvid
       continue;
     }
     const t = node.kind;
-    // K1.5: measure with the kit's RESOLVED type-role fields (style_token /
-    // *_token over the literals). Agent proposals insert skeleton text
-    // (Inter 16) whose real 80pt style arrives only at server preflight —
-    // measuring the skeleton fed relayout ~17px lines, and the accept-time
-    // freeze baked those collapsed POSITIONS (the LUMV0903/0810 ghost). The
-    // measurement RECORD keeps the node's literal fields: that's the key the
-    // engine matches on — only the measured extent reflects the resolution.
+    // Canonical callers pass the Rust presentation: consumed bindings are
+    // absent, so shaping and the record key read the exact same text/span
+    // fields. The legacy no-context path retains its existing role adapter.
     const styled = resolvedTextFields(t);
     const textTransform = t.text_transform ?? "none";
     const paragraphSpacing = t.paragraph_spacing ?? 0;
@@ -202,6 +198,7 @@ export function skiaRequestedMeasurements(
 /** The slice of `WasmEngine` the injection loop drives: read the solved scene,
  * install a measurement set (which relayouts and replaces the snapshot). */
 export interface MeasurementEngine {
+  readonly presentationScene?: Scene;
   readonly scene: Scene;
   setMeasurements(measurements: TextMeasurement[]): TextMeasurementInput[] | void;
 }
@@ -241,13 +238,13 @@ export function injectSkiaMeasurements(
   // Both sets ride every line call — `setMeasurements` REPLACES the override
   // set, so dropping the unconstrained records would take hug boxes back to
   // the heuristic.
-  const unconstrained = passes.unconstrained(engine.scene);
+  const unconstrained = passes.unconstrained((engine.presentationScene ?? engine.scene));
   let missing = engine.setMeasurements(unconstrained) ?? [];
   const requested = new Map<string, TextMeasurement>();
   let calls = 1;
-  let previous = textSizeSignature(engine.scene);
+  let previous = textSizeSignature((engine.presentationScene ?? engine.scene));
   for (let round = 0; round < MEASUREMENT_ROUNDS_MAX; round += 1) {
-    for (const measurement of passes.requests?.(engine.scene, missing) ?? []) {
+    for (const measurement of passes.requests?.((engine.presentationScene ?? engine.scene), missing) ?? []) {
       // Rust owns the authoritative lookup key. This local map only bounds
       // repeated records; retain every requested constraint during convergence.
       const input: Partial<TextMeasurement> = { ...measurement };
@@ -257,10 +254,10 @@ export function injectSkiaMeasurements(
       requested.set(JSON.stringify(input), measurement);
     }
     missing = engine.setMeasurements([
-      ...unconstrained, ...passes.lines(engine.scene), ...requested.values()
+      ...unconstrained, ...passes.lines((engine.presentationScene ?? engine.scene)), ...requested.values()
     ]) ?? [];
     calls += 1;
-    const next = textSizeSignature(engine.scene);
+    const next = textSizeSignature((engine.presentationScene ?? engine.scene));
     if (next === previous && (!passes.requests || missing.length === 0)) {
       return { calls, converged: true, missing };
     }

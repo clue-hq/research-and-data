@@ -1145,3 +1145,27 @@ test("a NEW run's ledger starts over — a rebase forgets what was applied", () 
     pump.stop();
   });
 });
+
+test("a queued reveal retains the presentation belonging to its own authored operation", () => {
+  onFakeClock(() => {
+    const engine = fakeEngine();
+    const displays: (Scene | null)[] = [];
+    let latest: Scene | null = null;
+    const pump = new SceneRevealPump({
+      apply: operations => {
+        const result = engine.apply(operations)!;
+        latest = { ...result.scene, meta:{ ...result.scene.meta, title:`effective-${engine.batches.length}` } };
+        return { ...result, presentationScene:latest };
+      }, engineAvailable:() => true, onDisplayScene: scene => displays.push(scene), reducedMotion:true,
+    });
+    pump.start(); pump.enqueue([insertNode("n1")]);
+    const clock = steppedClock(); clock.advance(FIRST_LEAD + REDUCED_MOTION_STEP_MS + 1);
+    const first = displays.filter(Boolean).at(-1)!;
+    assert.equal(first.meta.title,"effective-1");
+    pump.enqueue([insertNode("n2")]);
+    clock.advance(FIRST_LEAD + REDUCED_MOTION_STEP_MS + 1);
+    assert.equal(first.meta.title,"effective-1");
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title,"effective-2");
+    pump.stop();
+  });
+});

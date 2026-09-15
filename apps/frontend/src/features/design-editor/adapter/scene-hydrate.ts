@@ -756,6 +756,7 @@ export function hydrateSceneInspectorState(
   node: Node,
   scene: Scene,
   tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): SceneInspectorState {
   const state: SceneInspectorState = {};
 
@@ -953,15 +954,19 @@ export function hydrateSceneInspectorState(
   const layout =
     node.layout ?? (node.kind.kind === "auto_layout" ? defaultLayoutProps() : null);
   if (layout) {
-    state.gap = numberText(layout.gap);
+    const effective = effectiveNode?.layout;
+    state.gap = layout.gap_token && effectiveNode !== undefined && !effective ? "" : numberText(effective?.gap ?? layout.gap);
     state.grow = numberText(layout.grow);
-    const [top, right, bottom, left] = layout.padding;
+    const [top, right, bottom, left] = effective?.padding ?? layout.padding;
     state.padding = {
       bottom: numberText(bottom),
       left: numberText(left),
       right: numberText(right),
       top: numberText(top),
     };
+    if (layout.padding_token && effectiveNode !== undefined && !effective) {
+      state.padding = { top: "", right: "", bottom: "", left: "" };
+    }
     // UNCONDITIONAL, unlike the valign row above — and for the same reason the
     // four rows above it are: these are BOUND rows on a section that renders
     // for every auto-layout node, while `align_x`/`align_y` are optional in the
@@ -1000,11 +1005,12 @@ export function hydrateSceneSelectionState(
   pageId: PageId | null,
   node: Node | null,
   tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): SceneInspectorState | null {
   if (!node) {
     return pageId ? hydrateSceneCanvasState(scene, pageId) : null;
   }
-  const nodeState = hydrateSceneInspectorState(node, scene, tokenMaps);
+  const nodeState = hydrateSceneInspectorState(node, scene, tokenMaps, effectiveNode);
   if (!pageId || node.id !== rootFrameId(scene, pageId)) {
     return nodeState;
   }

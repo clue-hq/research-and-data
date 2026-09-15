@@ -268,11 +268,9 @@ const PADDING_SLOTS: Record<string, 0 | 1 | 2 | 3> = {
  * L10), and the same seed `updateAutoLayoutAlignment` uses internally, so the
  * panel and the engine cannot disagree about what such a node lays out as.
  *
- * Spreading the STORED object is what preserves `gap_token` / `padding_token` /
- * `layout_mode`: §1.4/OQ-2 keeps tokens and fill weights off this surface, so
- * no control here can restate a binding a numeric commit dropped. It also
- * introduces no `undefined` keys — only the members the node actually holds
- * ride along (wire-format minimization).
+ * Spread authored properties to preserve unrelated bindings and layout mode.
+ * An explicit gap or padding override replaces only its own binding; padding
+ * siblings come from the paired resolved view before its shared token is removed.
  */
 function layoutBase(node: Node): AutoLayoutProps {
   return node.layout ?? defaultLayoutProps();
@@ -698,6 +696,7 @@ export function sceneChangeToOperation(
    * token write happens. Every other row ignores it. */
   palette?: ScenePalette | null,
   tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): Operation | null {
   const { property } = detail;
 
@@ -1210,7 +1209,9 @@ export function sceneChangeToOperation(
       if (size === null) {
         return null;
       }
-      return updateNodeLayout(node, { ...layoutBase(node), [property]: size });
+      const layout = { ...layoutBase(node), [property]: size };
+      if (property === "gap" && layout.gap_token) layout.gap_token = undefined;
+      return updateNodeLayout(node, layout);
     }
 
     // ── §1.4 Auto Layout: Pad T / R / B / L ──────────────────────────────────
@@ -1230,9 +1231,12 @@ export function sceneChangeToOperation(
       // order (`PADDING_SLOTS` is where that order is stated). The tuple is
       // rebuilt rather than mutated — `layoutBase` may hand back the node's own
       // stored array, and an operation must never edit the scene it reads.
-      const padding: AutoLayoutProps["padding"] = [...base.padding];
+      if (base.padding_token && !effectiveNode?.layout) return null;
+      const padding: AutoLayoutProps["padding"] = [
+        ...(base.padding_token ? effectiveNode!.layout!.padding : base.padding),
+      ];
       padding[PADDING_SLOTS[property]] = size;
-      return updateNodeLayout(node, { ...base, padding });
+      return updateNodeLayout(node, { ...base, padding, ...(base.padding_token ? { padding_token: undefined } : {}) });
     }
 
     // ── §1.4 Auto Layout: Align X / Align Y ──────────────────────────────────

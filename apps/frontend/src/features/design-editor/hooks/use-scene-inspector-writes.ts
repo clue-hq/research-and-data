@@ -281,6 +281,7 @@ export function useSceneInspectorWrites({
   // Latest-value refs so the one listener reads current state without
   // re-arming (written passively, per this repo's react-hooks rules).
   const applyOpsRef = useRef(edits.applyOps);
+  const reportNoteRef = useRef(edits.reportNote);
   const artifactIdRef = useRef(artifactId);
   const controlsRef = useRef(canvasControls);
   const pageIdRef = useRef(pageId);
@@ -295,6 +296,7 @@ export function useSceneInspectorWrites({
   const sceneRef = useRef(scene);
   useEffect(() => {
     applyOpsRef.current = edits.applyOps;
+    reportNoteRef.current = edits.reportNote;
     artifactIdRef.current = artifactId;
     controlsRef.current = canvasControls;
     pageIdRef.current = pageId;
@@ -354,7 +356,7 @@ export function useSceneInspectorWrites({
       // event's selectionId is a web node id, which is never the ad session's
       // primary selection.
       if (primaryNodeIdRef.current !== detail.selectionId) return;
-      const live = sceneRef.current;
+      const live = controlsRef.current.current?.sceneSnapshot() ?? sceneRef.current;
       if (!live) return;
       // The scene the engine is holding must really carry that node — the
       // adapter needs the Node itself, and a miss means the selection and the
@@ -437,6 +439,7 @@ export function useSceneInspectorWrites({
         writeScene = post;
       }
 
+      const effectiveNode = controls.presentationSnapshot?.()?.nodes[writeNode.id] ?? null;
       const operation = sceneChangeToOperation(
         {
           property: detail.property,
@@ -447,10 +450,16 @@ export function useSceneInspectorWrites({
         writeScene,
         paletteRef.current,
         tokenMapsRef.current,
+        effectiveNode,
       );
       // The AD3.1 null contract: an unmapped property, an unparseable value or
       // a locked node produces no operation, and no operation is no write.
-      if (!operation) return;
+      if (!operation) {
+        if (detail.property.startsWith("padding.") && writeNode.layout?.padding_token && !effectiveNode?.layout) {
+          reportNoteRef.current("Padding is bound to an unavailable Brand Kit value. Restore the exact kit or reload before editing one side.");
+        }
+        return;
+      }
       applyOpsRef.current([operation], `inspector: ${detail.property}`);
     };
     window.addEventListener("clue:inspector-property-change", onChange);
