@@ -1078,3 +1078,16 @@ proof tabs closed. Task26 diagnostic remains0calls pendingexplicitapproval.
 No push, production or external-image-experiment mutation. Next authenticate/
 reconnect browser, validate typography edit/save/reload/export on fourbrands, then
 freeze and launch the prepared ordinary coverage batch simultaneously.
+
+Resume checkpoint after user reported stopped progress (2026-09-14): goal tool
+confirms active. Saved Task29 as local commit a191b346 (14 scoped files), unrelated
+September8 notes untouched. Both ordinary and escalated lsof found no app listeners;
+old session35486 handle missing. Restarted existing base launcher in session40788:
+3020/8010/8020/8030 UP and4/4workers. Restarted existing manifest manager12606 for
+Clue3021/AWS3022/Google3023/Conduit3024. Browser reconnected; oldtesttabs17–20 gone
+from returned inventory, user/Ploy tabs preserved. New tabs7–10 all render correct
+brand-titled expired-session pages, marked deliverables. Tab7 normal Sign-in-again
+opened onboarding/sign-in; no credentials entered. User normal signin remains
+needed for live QA/generation. Task26 still0calls/noapproval. No new generation,
+production change or push. Next verify typography on all4, then frozen ordinary
+four-brand coverage batch. Startup state alone is not authenticated end-to-end QA.
