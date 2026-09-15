@@ -1118,3 +1118,32 @@ section. No auth bypass/membership edit/new brand account/new creative. Hardcode
 sidebar profile name explains misleading visible identity; not fixed here.
 Login blocker resolved, goal tool still blocked (no agent-side resume operation).
 Pending live typography QA and prepared four-brand generation, coverage unchanged.
+
+User palette correction during live QA (September14 local): the current Clue
+document v19 contains deliberate user edits, not test damage. Treat v19 or any
+newer user version as authoritative; NEVER restore the historical v16 scene.
+Read-only pinned-kit rendering confirms charcoal artboard/CTA text and warm cream
+headline/support/CTA surface. User prefers this restrained color relationship over
+orange emphasis for this Clue direction; it is not a rule for every brand or every
+creative. Preserve colorful authentic product imagery. Separate ignored receipt
+under inspector-typography-20260914/live-qa/current-user-edit-20260915T053416.
+Manual typography QA must not undo or overwrite this user work. The next Clue
+evaluation should distinguish this explicit user taste feedback from an autonomous
+unconditioned first delivery. Canvas persistence alone is not verified automatic
+workspace-preference learning; trace the existing context seam before claiming it.
+Goal is active again. Other brand source audit confirms all264 frozen source hashes
+unchanged and four proposed ordinary briefs viable; no new generations yet.
+
+Feedback trace: same-document continuation reloads the persisted scene; fresh
+DesignLeg turns have no scoped-memory bundle. Do not say the user palette edit has
+automatically trained or updated workspace taste. Candidate solo excludes legacy
+brand-application.md. Shared card code still computes accent, but all4 Task27
+actual cards have accent=null, so this run cannot be blamed on that cue.
+Live Task29 progress: AWS native inspector showed Amazon Ember64/700; ordinary
+size edit to65 persisted v21 with unchanged effective family/weight/leading/tracking
+and only target typography changes. Normal menu Undo restored exact baseline
+scene/token bindings atv22. Ignored receipts aws-size65-saved/undone. Reload begun;
+font-family/weight/export and other brands still pending. Clue user scene untouched.
+Google tab now points to an older project (navigation provenance unconfirmed);
+Conduit is on normal
+session-expired page again. Verify current route/auth state, not generic login.
