@@ -2648,3 +2648,210 @@ Track each output's failures and timing rather than skill count as success.
 Further family expansion, brand intelligence, account-setup integration and
 Head-of-ABM work remain separate backlog scopes. No goal status was changed by
 this recommendation.
+
+### Active qualification goal — 2026-09-15
+
+The replacement goal is now active, verified through the goal service. It requires
+eight fresh ordinary-request creatives (two per advertiser) and three account
+ads, with human visual acceptance, native edit/save/reload/export evidence and
+finished delivery within four minutes. No previous failure becomes a pass.
+Additional families, brand intelligence and account setup remain backlog.
+
+### Task 38: Complete review-contract delivery and concise preflight results
+
+Fix two demonstrated model-context defects before qualification. Current solo
+guidance names a schema below but supplies only the legacy envelope; the first
+100-line read of the scene guide ends inside its example. The account pilot then
+made three correctly refused schema submissions. Its successful preflight also
+returned roughly 15 KB of raw token/layout operation arrays repeatedly, although
+the complete report already exists in the current run's iteration directory.
+
+Scope: candidate scene runtime only. Keep all validators, tools, current evidence,
+receipts, source access, strict finalization and legacy/website behavior intact.
+
+1. Move a complete, compact review contract and valid unverified rejected example
+   to the beginning of the existing scene review guide. Include all nested enums,
+   exact native copy bindings, support.source_gaps, and accepted versus rejected
+   coverage rules in the first normal 100-line read. Detailed creative guidance
+   stays accessible below. Correct candidate prompt references; retain the legacy
+   envelope for legacy callers. One canonical candidate contract, no duplicate
+   handwritten schema and no automatic passing judgments.
+2. Preserve full preflight.json and trace payloads. For candidate model-facing
+   results only, omit raw token/layout operation arrays from the immediate return,
+   retaining complete diagnostics, effective brand, autofix/collision findings,
+   relevant status and operation counts. Return a real current-run virtual path
+   for the full report, readable through the existing scoped file backend. Do
+   not truncate diagnostic lists or change scene operations/acceptance semantics.
+3. Test actual materialization plus first-window read and Pydantic parsing;
+   test file-observer rejection/correction for invalid enum, misplaced source
+   gaps and incomplete accepted copy. Existing rejection/freshness/legibility
+   gates remain. Test candidate return versus complete saved/trace report,
+   full-report scoped read, and byte-equivalent legacy return. Reproduce the
+   delivery/volume failures before editing production code.
+
+No new providers, env flags, model changes, engine edits or live service changes
+in this task. Do not claim these source tests prove taste or the four-minute
+goal; the fresh platform outputs remain the required evidence. Implementation
+report and review artifacts belong to the existing ignored SDD directory.
+
+### Task 39: Preserve deliberate geometry and effective typography
+
+The pilot's padding changed because LUMB0806 recommended card padding as the
+repair for a deliberate numeric margin. The model explicitly took that advice;
+canonical resolution correctly applied a different value. Separately, repeated
+retokenization matched text roles using family/weight/size but ignored leading
+and tracking, causing actual measured typography changes and collision repairs.
+
+1. Correct gap/padding governance messages and hints in the shared core. Preserve
+   diagnostic code, subjects, severity, strict/advisory enforcement and all token
+   resolution/edit semantics. Do not name an arbitrary or nonexistent token as
+   an equivalent repair. Explain that a binding changes the resolved geometry;
+   intentional literals can remain when policy is advisory. Align the shared
+   brand-and-tokens guidance; no fixed dimensions or brand-specific exception.
+   Apply the same truthful guidance to LUMB0805 unbound typography: do not
+   prescribe a body-role replacement that can change family, size, leading or
+   tracking. Preserve its code/severity and strict enforcement; distinguish
+   missing binding from an invalid visual treatment. Otherwise the honest
+   retokenizer would leave literals that the next model repair silently undoes.
+2. Correct live lumen_agent.retokenize role selection so all effective
+   typography fields written by a role are equivalent before that role is
+   inferred. Preserve explicit tokens and checked authored/replayed operations.
+   A matching size ramp can still bind when a whole style is not equivalent.
+   Default inference must preserve numeric size too, including near-role values;
+   use zero default size-snap tolerance. Preserve the existing explicit positive
+   tolerance parameter as an opt-in size-only snap, with no other style drift.
+   This task does not create a new font size or acceptance floor.
+   Account for optional role values, resolved literal state, and active modes:
+   never infer an effective match from a different mode's defaults. Use existing
+   canonical semantics or conservatively decline ambiguous inference rather
+   than implementing a competing resolver.
+3. First reproduce exact leading/tracking changes with real helper operations,
+   two preflight cycles, equal-family/weight roles and a size-ramp override.
+   Verify explicit numeric line-height repair survives and authored ledger
+   replay matches runtime. Test live module, not frozen archive imports.
+   Verify advisory/strict, asymmetric margins, empty/nonstandard spacing kits,
+   and literal-vs-explicit-token precedence. Never mutate scenes in Python.
+
+Independent review follows focused tests. Task 39 and dependent Task 40 share
+one final integration gate after both source corrections; neither is release
+qualified before it passes. Required engine gate remains ordered:
+Rust workspace tests, release helper, WASM rebuild/handshake, runtime suite, API
+suite. Parent coordinates the full gate and owned idle runtime reload; no test
+failures are concealed or weakened. Browser spacing-binding/edit parity is a
+separate measured issue and is not claimed fixed by this task. All fresh output
+qualification still follows source verification, with the same eight-plus-three
+goal and no promotion based solely on static checks.
+
+### Task 40: Align native canvas geometry with canonical export
+
+The existing browser engine lays out authored fallback spacing, while export
+resolves the same scene's kit tokens first. For the pilot this means a stored
+72-point margin with a 32-point token can display and export differently. Native
+controls also show fallback values and retain a hidden binding on numeric edits.
+These are real qualification gaps; do not avoid them by selecting only unbound
+scenes for the test set.
+
+Add exact pinned-kit/mode context to the existing WASM derivation boundary and
+reuse the shared Rust token resolver before layout. Keep authored scene values,
+bindings, operation history and undo as authority; derive resolved geometry on
+a clone, never bake tokens into the saved authoring scene to make it look right.
+Share scene-medium option normalization with canonical preflight. No duplicate
+TypeScript alias/mode resolver and no per-brand layout exceptions. Loading,
+reconciliation, optimistic/streamed operations, kit changes, measurement relayout
+and undo/redo must use the same derivation. Hit testing must follow the resulting
+geometry. Unknown tokens, unavailable exact kit pins and unsupported context
+must remain visible diagnostics, not silent substitution of another kit.
+
+Expose effective spacing values at the existing inspector adapter seam. An
+explicit numeric gap edit replaces only its own binding. Padding uses a single
+token for all four sides: before replacing it for one-side editing, materialize
+the other sides from the same effective tuple so they remain unchanged. Preserve
+unrelated bindings and authored undo values. Reconcile and document the prior
+token-preserving numeric-edit test as an intentional correction of ineffective
+user input. Presentation components remain transport-free.
+
+First reproduce literal72/token32 using the real browser-engine code and compare
+canonical server geometry. Cover unbound literals, aliases/modes, missing tokens,
+asymmetric numeric edits, successive operations, undo/reload, kit switching and
+stale async context. Retain font/measurement diagnostics and distinguish equal
+spacing semantics from claims of pixel-perfect text measurement across engines.
+Use existing Rust, WASM-wrapper and frontend adapter/loader tests. Complete the
+ordered engine gates and frontend gates, refresh the served frontend WASM,
+restart only owned idle services, and verify the retained pilot without editing
+the user-approved Conduit document. Then dispatch the frozen eleven-case
+qualification matrix through the normal signed-in platform workflow.
+
+Implementation boundary confirmed by source review: the saved document GET
+currently strips attached kit JSON, and historical effective-brand metadata
+does not establish current export selection. Add a read-only `render_context`
+beside the scene on that existing response, selected by the same server helpers
+as normal export. Include exact selected kit/mode/provenance and context identity;
+do not persist or silently rebind it. Document the additive correction in the
+existing frontend projects contract and validate it at the data adapter.
+
+The shared WASM engine keeps authored and resolved presentation snapshots
+separate. Paint, measurement keys, hit testing and inspector effective values
+consume the paired presentation; operation construction/history continue to use
+authored state. Carry paired deltas through optimistic edits and streamed reveal,
+not the newest presentation paired with an older authoring frame. A pending or
+failed context must be explicit, including unsupported modes and attached-kit /
+scene-pin mismatches. No same-ID latest-kit substitution.
+
+This correction targets the platform's four local workspaces. Preserve the
+existing standalone editor's no-context engine API behavior; mirror new shared
+types only where required for compatibility. Migrating its separate application
+loader and UI is not part of the current platform qualification. Tests must
+still prove old no-context calls do not regress. No claim of fixing every
+standalone editor surface is made.
+
+### Task 41: Make account identity part of the ABM composition
+
+User clarification on 2026-09-15 supersedes the pilot's detached target-logo
+chip. Support two deliberate treatments: an optically balanced advertiser ×
+target lockup near the top, or a target logo/recognizable favicon integrated as
+a primary identity anchor. These are compositional options, not two mandatory
+templates. Select from campaign intent, supplied direction and relevant examples.
+Do not require an extra “For the marketing team” caption or a CTA on every ad.
+
+Keep both real logos independently placeable and replaceable; the separator is
+native text or geometry. Use appropriate authentic variants and clear space,
+without recoloring, stretching or generating a company mark. Preserve the
+advertiser's voice and visual system unless a deliberate departure is requested.
+Company-specific relevance can be carried by artwork copy, accompanying channel
+copy, or both. A company-name substitution alone is not a relevance argument.
+Do not invent account pains, installed tools, performance, or a relationship.
+A requested × lockup is permitted; unsupported written partnership/customer
+claims are not. Avoid adding blanket disclaimer labels that undermine the
+requested treatment.
+
+Use the existing direction record: source_roles identifies logo sources; layer
+purpose and preserve/vary describe the visual relationship. Its copy list stays
+limited to native artwork text. No new account schema or publishing subsystem:
+when accompanying copy is requested, return it separately as a labeled draft
+in the existing response, never bake it into the raster or report it published.
+Full channel delivery/account setup remains outside this task.
+
+Remove the candidate scene preflight's hidden advertiser-logo auto-insertion.
+It currently invents an overlay even when the selected composition deliberately
+uses only the target logo. Candidate composition and review own this decision;
+the existing legacy place-once behavior is preserved. Do not replace the overlay
+with another automatic layout, weaken source checks or accept missing logos by
+default. Align the on-demand account skill, shared ABM review guidance and any
+conflicting candidate instructions. Keep the complete actionable support skill
+within the ordinary first read window; detailed mechanical logo rules can link
+to the existing tool guidance.
+
+Focused regressions must prove actual delivered skill availability and candidate
+preflight behavior for target-only, dual-logo, intentionally unbranded and seeded
+edits, including repeated preflight and legacy place-once behavior. Both logos
+and the separator remain independent native/asset layers. No model-call test
+claims visual qualification. Update the prepared three-account test matrix to
+cover the two requested treatments plus one autonomous choice, without asset IDs,
+pixel coordinates, skill names or prewritten headlines. Record that two cases
+explicitly request an ordinary compositional preference; the third remains an
+unprescribed autonomy test. All eight general brand prompts remain unchanged.
+
+Task 41 follows Task 39 source review before the larger Task 40 canvas correction,
+so the current user steering is implemented promptly. All three changes share
+the already required final combined integration gate and fresh output evaluation.
+Do not overwrite the failed pilot or the user-approved Conduit composition.

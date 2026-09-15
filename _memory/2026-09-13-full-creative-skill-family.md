@@ -1501,3 +1501,43 @@ Useraskswhetherreplacegoals: recommendcheckpointthenbounded8fresh4-brandads+
 3explicit-inputABMexamples withhumanquality/nativeediting/timinggates. Do notmark
 oldgoalcomplete; nogoalstatuschanged. Furtherfamilies/brandagent/accountsetup/
 HeadABMseparatebacklog. Noextradiagnosticcalls, no production/push.
+
+Qualification goal restart 2026-09-15: goal service now confirms active8fresh
+four-brand creatives +3explicit-inputABMads, human visual/nativeediting/240s
+gates; prior status-onlyturn classified no-progress. HEAD270b6865 and unrelated
+September8changes reverified. Readonlyauditproves padding72to32was explicit
+modelrepairdrivenby misleading LUMB0806 hint, not retokenization. Separate live
+typeprobe with releasehelper found16effectivefieldpreservationfailures across
+fivecases/twopasses/runtime+authoredreplay; in-memoryequivalencefixzero. Reports
+and executable evidence retained in existingignoredSDDdirectory. Complete
+reviewcontractwasoutsidefirst100lineread; actualsolo prompt suppliedlegacy
+envelope. Threevalidrefusals consumed27.844s correctivecalls, not full400.749s.
+Task38 implementingcanonicalfirst-windowreviewcontract +candidateonlycompact
+preflightreturn, fullreport/tracepreserved. Task39 plannedexacttypeequivalence
+andhonestspacingdiagnostics; defaultimplicitfontsnaptozero, explicitopt-inretained.
+Readonlyqueuecheck173fleetdone/83designsuccess/5historicfailed; readyads
+Clue0/AWS11/Google10/Conduit12. Fourworkspaceassets42/86/491/587. NativeClue
+sessionstillloggedin. Browsercanvasrawspacing vsserverresolvedspacing has
+sourceproofandapproximatevisualcorroboration; exactparityfix/measurementpending.
+Elevenordinaryrequestcasespreparedin qualified-delivery-20260915/qualification-plan.json,
+zerodispatches. No service restart, new generation, auth change, production or
+optionaldiagnosticprovider calls. ProtectedConduitdocumentnotedited.
+
+Qualification continuation: prior status turn classified NO PROGRESS. Task38
+review found one candidate reviewer branch still using legacy fidelity contract.
+Fixed418565ee; RED2 then26focusedpassed0skips2.06s; legacy byte equality verified;
+independent re-review clear. Task38 complete, fullqualification stillopen. Task39
+inprogress preserving exact typography and correcting arbitrary spacing/type
+binding advice. Task40 seam audit found resolved clone must feed canvasmeasurement
+as well as geometry; existing GET strips attachedkit and historical effective
+brand fields are insufficient to guarantee currentexportcontext. No service
+restart/newgeneration/approveddocumentmutation in this continuation sofar.
+
+Latest user ABM clarification: target identity should be a prominent top
+advertiser×target lockup or integrated target mark; personalization can live in
+artwork and/or separate platform copy. Planned Task41 after39 source review and
+before40; no fixed logo layout, no forced disclaimer/addressing, no invented
+relationship. Source audit found preflight auto-inserts advertiser mark even for
+intentional target-only candidate composition; narrow candidate-only removal
+planned with legacy place-once regression. Task39 committed f9370b41, 40Python/
+44Rust/probe0 failures, independent review pending. No new generation/live edits.
