@@ -4,6 +4,7 @@ import {
   ProjectDocumentsResponseSchema,
   ProjectDocumentSaveSchema,
   documentEditedLabel,
+  documentKindLabel,
   planDocumentOf,
   toProjectDocument,
 } from "./project-documents";
@@ -20,9 +21,29 @@ test("document lists map backend fields without inventing content or an ICP key"
     version: 2, status: "ready", updatedAt: summary.updated_at, icpKey: null,
   });
   assert.deepEqual(ProjectDocumentsResponseSchema.parse({ data: { documents: [] } }).data.documents, []);
-  for (const invalid of [{ version: 0 }, { kind: "brand-document" }, { updated_at: "yesterday" }]) {
+  for (const invalid of [{ version: 0 }, { kind: "" }, { updated_at: "yesterday" }]) {
     assert.equal(ProjectDocumentsResponseSchema.safeParse({ data: { documents: [{ ...summary, ...invalid }] } }).success, false);
   }
+});
+
+test("a document's kind is the word its own front matter says, never a closed list", () => {
+  // Founder ruling 2026-09-14: the agent writes any document under project/ and names its kind
+  // itself; the backend serves that word as is. A kind the frontend has never seen must not
+  // fail the whole list — that hid every document in the Gallery on 2026-09-15.
+  for (const kind of ["campaign-plan", "competitive-brief", "meeting-notes"]) {
+    const parsed = ProjectDocumentsResponseSchema.safeParse({ data: { documents: [{ ...summary, kind }] } });
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.success && toProjectDocument(parsed.data.data.documents[0]).kind, kind);
+  }
+});
+
+test("known kinds keep their labels and an unknown kind is read as its own words", () => {
+  assert.equal(documentKindLabel("project-plan"), "Plan");
+  assert.equal(documentKindLabel("icp-definition"), "Ideal customer profile");
+  assert.equal(documentKindLabel("audience-persona"), "Personas");
+  assert.equal(documentKindLabel("campaign-plan"), "Campaign plan");
+  assert.equal(documentKindLabel("competitive-brief"), "Competitive brief");
+  assert.equal(documentKindLabel("notes"), "Notes");
 });
 
 test("the plan is selected by its canonical path, not a title or another project's filename", () => {

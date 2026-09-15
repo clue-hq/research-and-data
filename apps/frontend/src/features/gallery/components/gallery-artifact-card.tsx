@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { ProjectIcon, type ProjectIconName } from "@/features/projects/components/project-icon";
+import { documentKindLabel } from "@/features/projects/model/project-documents";
 import type { GalleryArtifact } from "../model/project-gallery";
 import styles from "./project-gallery.module.css";
 
@@ -139,7 +140,7 @@ export function GalleryArtifactListRow({
         </span>
         <span>
           <strong>{artifact.title}</strong>
-          <small>{artifact.document ? (artifact.document.kind === "project-plan" ? "Plan" : artifact.document.kind === "icp-definition" ? "Ideal customer profile" : "Personas") : artifact.originThreadId}</small>
+          <small>{artifact.document ? documentKindLabel(artifact.document.kind) : artifact.originThreadId}</small>
         </span>
       </span>
       <span className={styles.listAccountCell}>

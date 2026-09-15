@@ -2280,6 +2280,13 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
 - **Scope is the store's, not a check re-applied at the route.** Every read and write is
   `(workspace, project)`-keyed, so another project's — or another tenant's — document is *absent*,
   never refused differently; a probe cannot tell "not yours" from "not there".
+- **`kind` is an open string, not an enum** (founder ruling 2026-09-14, free-flowing documents):
+  the agent writes any markdown document under `project/` and names its kind in the document's
+  own front matter; the backend serves that word as is (`campaign-plan`, `competitive-brief`, …
+  beside `project-plan`, `icp-definition`, `audience-persona`). The frontend validates `kind` as
+  a non-empty string and labels the three it knows; any other kind is labelled by its own words
+  (`documentKindLabel`). Amended 2026-09-15: the earlier three-value enum failed the whole
+  document list — and so the Gallery — the first time the agent wrote a fourth kind.
 - **`title` is the one composed value**: `kind = "project-plan"` → `"Plan"`;
   `kind = "audience-persona"` → `` `Personas — ${icp_key}` ``; everything else is titled by its own
   text (front-matter `title`, else its first heading) through the same rule the ICP gate uses. A

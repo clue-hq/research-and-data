@@ -1,6 +1,26 @@
 import { z } from "zod";
 
-export const ProjectDocumentKindSchema = z.enum(["project-plan", "icp-definition", "audience-persona"]);
+/**
+ * A document's kind is the word its own front matter says (founder ruling 2026-09-14: the agent
+ * writes any document under `project/` and names it; the backend serves that word as is). An open
+ * string, never a closed list — an enum here hid every document in the Gallery the first time the
+ * agent wrote a `campaign-plan`.
+ */
+export const ProjectDocumentKindSchema = z.string().min(1);
+
+const KNOWN_KIND_LABELS: Readonly<Record<string, string>> = {
+  "project-plan": "Plan",
+  "icp-definition": "Ideal customer profile",
+  "audience-persona": "Personas",
+};
+
+/** The card's small label: the platform's wording for the kinds it knows, else the kind's own words. */
+export function documentKindLabel(kind: string): string {
+  const known = KNOWN_KIND_LABELS[kind];
+  if (known) return known;
+  const words = kind.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 export const ProjectDocumentSummarySchema = z.object({
   id: z.string().min(1),
