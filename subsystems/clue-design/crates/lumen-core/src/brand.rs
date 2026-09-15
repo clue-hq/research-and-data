@@ -1670,6 +1670,8 @@ pub fn validate_brand_kit_product_ready(brand_kit: &BrandKit) -> Vec<Diagnostic>
     diagnostics
 }
 
+const UNBOUND_SPACING_HINT: &str = "Check existing spacing tokens in the active mode before binding: a binding changes resolved geometry, and a padding token sets every edge to one value. Intentional literals may remain under advisory governance. Under strict governance, use an equivalent existing token or review the intended geometry change; do not substitute an unrelated token.";
+
 pub fn validate_scene_brand_governance(
     scene: &Scene,
     brand_kit: &BrandKit,
@@ -1846,15 +1848,12 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0806",
                         format!(
-                            "node {} layout gap uses a raw value outside the Brand Kit",
+                            "node {} layout gap has no Brand Kit spacing binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use g(${}) or another Brand Kit spacing token.",
-                        suggested_token(&brand_kit.tokens.spacing, "space.stack.default", "space.")
-                    )),
+                    .with_hint(UNBOUND_SPACING_HINT),
                 );
             }
             if layout.padding_token.is_none() && layout.padding.iter().any(|value| *value != 0.0) {
@@ -1863,15 +1862,12 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0806",
                         format!(
-                            "node {} layout padding uses raw values outside the Brand Kit",
+                            "node {} layout padding has no Brand Kit spacing binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use pad(${}) or another Brand Kit spacing token.",
-                        suggested_token(&brand_kit.tokens.spacing, "space.card.padding", "space.")
-                    )),
+                    .with_hint(UNBOUND_SPACING_HINT),
                 );
             }
         }
@@ -1882,15 +1878,14 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0805",
                         format!(
-                            "node {} text style is raw typography outside the Brand Kit",
+                            "node {} text has no Brand Kit typography role binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use style(${}) or another Brand Kit typography role.",
-                        suggested_token(&brand_kit.tokens.typography, "type.body", "type.")
-                    )),
+                    .with_hint(
+                        "A missing binding does not establish an invalid visual treatment. Before binding, check that the active-mode role preserves the intended family, weight, size, leading, tracking and color; a size token alone does not make a whole role equivalent. Intentional literals may remain under advisory governance. Under strict governance, use an equivalent existing role or review the intended typography change; do not substitute an unrelated role.",
+                    ),
                 );
             }
             validate_text_contrast_for_governance(

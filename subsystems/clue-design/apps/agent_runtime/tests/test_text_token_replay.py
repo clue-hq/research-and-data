@@ -36,17 +36,19 @@ def test_color_rebind_preserves_text_role_on_resolved_and_authored_replay(
         authored, repair["dsl"]["compile_output"]["operations"]
     )["scene"]
     if scalar_overrides:
-        for scene in (runtime, replayed):
-            kind = scene["nodes"]["support"]["kind"]
-            kind.update(
-                font_size_token="type.size.xl",
-                line_height_token="test.leading",
-                letter_spacing_token="test.tracking",
-            )
         for name, value in (("test.leading", 1.65), ("test.tracking", 2.0)):
             kit["tokens"]["numbers"][name] = {"value": {"default": {
                 "kind": "number", "unit": "px", "value": value,
             }}}
+        scalar_repair = core.compile_dsl_into_scene(
+            runtime,
+            "#support style($type.body) font_size($type.size.xl) "
+            "lh($test.leading) ls($test.tracking)",
+        )
+        runtime = scalar_repair["scene"]
+        replayed = core.apply_operations(
+            replayed, scalar_repair["dsl"]["compile_output"]["operations"]
+        )["scene"]
 
     before = copy.deepcopy(runtime)
     operations = build_retokenize_operations(runtime, kit)
@@ -72,8 +74,7 @@ def test_active_retokenize_preserves_size_on_unresolved_ledger_replay(
 ) -> None:
     core = CoreClient(repo_root=Path(__file__).resolve().parents[3])
     kit = core.platform_default_brand_kit()
-    # Valid kit fixture with one family/weight and distinct role defaults:
-    # rebinding may select another role, but the requested size must survive.
+    # Equal family/weight does not make roles with different leading equivalent.
     for name, entry in kit["tokens"]["typography"].items():
         style = entry["value"]["default"]
         if style.get("kind") == "style":
@@ -91,6 +92,7 @@ def test_active_retokenize_preserves_size_on_unresolved_ledger_replay(
     resolved = core.preflight_scene(unresolved, kit)
     assert not resolved["preflight"]["has_errors"]
     assert resolved["scene"]["nodes"]["headline"]["kind"]["font_size"] == expected_size
+    expected = resolved["scene"]["nodes"]["headline"]["kind"]
     operations = build_retokenize_operations(resolved["scene"], kit)
     runtime = core.apply_operations(resolved["scene"], operations)["scene"]
     replayed = core.apply_operations(unresolved, operations)["scene"]
@@ -100,6 +102,7 @@ def test_active_retokenize_preserves_size_on_unresolved_ledger_replay(
         preflight = core.preflight_scene(scene, kit)
         assert not preflight["preflight"]["has_errors"]
         assert preflight["scene"]["nodes"]["headline"]["kind"]["font_size"] == expected_size
+        assert preflight["scene"]["nodes"]["headline"]["kind"] == expected
         text_kinds.append(preflight["scene"]["nodes"]["headline"]["kind"])
     assert text_kinds[0] == text_kinds[1]
 
@@ -131,10 +134,10 @@ def test_explicit_size_repair_survives_retokenization_before_resolution() -> Non
 
 
 @pytest.mark.parametrize(
-    "binding", ["font_size_token", "line_height_token", "letter_spacing_token"]
+    "binding", ["style_token", "font_size_token", "line_height_token", "letter_spacing_token"]
 )
 @pytest.mark.parametrize("token", ["authored.binding", ""])
-def test_explicit_scalar_typography_is_not_reinterpreted_from_old_literals(binding, token) -> None:
+def test_explicit_typography_is_not_reinterpreted_from_old_literals(binding, token) -> None:
     kind = {
         "kind": "text", "content": "Keep this decision", "font_family": "Inter",
         "font_size": 16.0, "font_weight": 400, binding: token,
