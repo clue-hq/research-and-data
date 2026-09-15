@@ -94,7 +94,11 @@ authority table asserted at 134 (`test_tool_authority_audit.py`), precondition m
 `test_toolbelt_wiring.py`.
 
 **Design spec written: `docs/superpowers/specs/2026-09-15-artifacts-page-integration-design.md`
-(for founder review; no code yet; plan only after approval).**
+(for founder review; no code yet).** **Implementation plan written 2026-09-15:
+`docs/superpowers/plans/2026-09-15-artifacts-page-integration.md` — 16 tasks (lane + contract; two migrations;
+workspace query + feed filter; the read; marks + erasure; design DAL; design tools/routes; authority entries;
+frontend model/repos; gallery changes; document writes + ad export; library screen; `?open=`; header rename;
+gates + walk). Execution not started.**
 
 ## Gaps (for the founder discussion, as first presented)
 
