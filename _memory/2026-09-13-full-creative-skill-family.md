@@ -1091,3 +1091,18 @@ opened onboarding/sign-in; no credentials entered. User normal signin remains
 needed for live QA/generation. Task26 still0calls/noapproval. No new generation,
 production change or push. Next verify typography on all4, then frozen ordinary
 four-brand coverage batch. Startup state alone is not authenticated end-to-end QA.
+
+Resume preflight closing (2026-09-14 local): both manager sessions40788/12606
+still running; Clue tab7 remains at normal sign-in, tabs7–10 retained. Read-only
+local DB verifies all4 prepared registries unchanged, no generated/edited assets
+ready, all4 generation caches empty with backups, fleet146done and design65success/
+5historicalfailures, no active jobs. Froze candidate-source.json on422d5b5a and
+verified264 source hashes; scene_solo=true/candidate bundle. Evidence is ignored
+coverage-second-families-20260914/resume-preflight.json. No new generations or
+provider calls. Task26 remains0calls pending separate payload approval. Coverage
+still10/18 exercised,0qualified. Normal sign-in blocker has now persisted across
+Task29, recovery, and this continuation; no useful independent prerequisite work
+remains. Goal marked blocked, not complete; async sign-in handoff pending. After
+user sign-in, recheck frozen inputs and perform four-brand typography persistence
+QA, then launch the ordinary requests simultaneously. Initial note patch used
+an incomplete context line and failed without mutation; corrected below.
