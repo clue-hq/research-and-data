@@ -59,7 +59,7 @@ it("keeps each mutation's presentation paired and rejects stale measurements", (
   presented.nodes.node_contact_name.name = "effective";
   let revision = 1;
   const metadata = () => ({ context_key: "ctx", input_revision: revision, status: "ready", diagnostics: [] });
-  const module = { engineVersion: () => "{}", LumenEngine: class {
+  const wasmModule = { engineVersion: () => "{}", LumenEngine: class {
     sceneJson() { return JSON.stringify(authored); }
     presentationJson() { return JSON.stringify({ ...metadata(), scene: presented }); }
     setRenderContext() { return this.presentationJson(); }
@@ -68,7 +68,7 @@ it("keeps each mutation's presentation paired and rejects stale measurements", (
     } }, derivation:metadata() }); }
     setMeasurements() { throw new Error("stale measurement reached WASM"); }
   }} as unknown as WasmModule;
-  const engine = new WasmEngine(module, authored);
+  const engine = new WasmEngine(wasmModule, authored);
   const before = engine.presentationScene;
   const stamp = engine.derivation.input_revision;
   const result = engine.applyOperations([]);
