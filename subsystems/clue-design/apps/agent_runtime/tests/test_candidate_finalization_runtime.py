@@ -222,6 +222,30 @@ def test_candidate_facade_preserves_authoritative_acceptance_checks(tmp_path, mo
         assert not (tools.trace_dir / "final.json").exists()
 
 
+def test_reviewed_candidate_preserves_separate_draft_channel_copy_in_final_summary(
+    tmp_path, monkeypatch,
+):
+    """The handoff consumes final.json, so a loose assistant message is insufficient."""
+    graph, tools, _ = candidate_graph(tmp_path, monkeypatch)
+    _compile(tools)
+    tools.preflight_design()
+    tools.export_preview("svg")
+    planned = direction()
+    planned["copy"][0]["text"] = "Plan"
+    body = review(validate(tools, planned), page_id="page_test", node_id="headline", text="Plan")
+    assert json.loads(tools.submit_visual_critique(json.dumps(body)))["status"] == "ok"
+    summary = "Creative reviewed.\n\nDraft LinkedIn copy:\nAcme team, explore a clearer next step."
+    result = json.loads(graph.nodes["tools"].bound.tools_by_name["finalize_run"].invoke({
+        **FINAL_ARGS, "summary": summary,
+    }))
+    persisted = json.loads((tools.trace_dir / "final.json").read_text())
+    assert result["status"] == persisted["status"] == "accepted"
+    assert result["summary"] == persisted["summary"] == summary
+    # Companion draft copy does not enter the artwork or add a direction field.
+    assert tools.scene["nodes"]["headline"]["kind"]["content"] == "Plan"
+    assert tools._validated_direction.copy_blocks[0].text == "Plan"
+
+
 @pytest.mark.parametrize(
     "status,stale",
     [

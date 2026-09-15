@@ -14,13 +14,16 @@ generation. CTA, eyebrow, benefit row and proof card are optional.
 Use native editable text for copy, native geometry for frames, simple paths,
 connectors and meaningful UI-independent diagrams. Use real independently
 placeable images for logos and authentic product screenshots/photos. Never
-redraw, recolor or typeset a substitute logo; a favicon does not replace a
-readable wordmark. Choose a supplied variant that fits its background. Missing
+redraw, recolor or typeset a substitute logo. A recognizable authentic target
+favicon may be a deliberate account identity anchor; it cannot replace an
+explicitly required readable wordmark. Choose a supplied variant that fits its background. Missing
 variants are gaps; a white plate is not the absent reversed logo. Preserve the
 source logo's aspect and real clearspace guidance. Inspect visible ink against
 the local background, including transparent padding and texture; containing the
 file does not prove the visible mark is readable. Choose a contrasting authentic
-variant or repair the surrounding composition. Do not manufacture a new lockup.
+variant or repair the surrounding composition. A group of separate unchanged
+real logos and a native separator is valid; do not fabricate a merged or redrawn
+company mark.
 
 Related headline, support and action should read as one message group. Establish
 that relationship through proximity, alignment and reading order suited to the

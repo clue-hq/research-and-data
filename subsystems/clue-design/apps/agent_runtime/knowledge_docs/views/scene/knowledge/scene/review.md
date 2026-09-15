@@ -131,16 +131,27 @@ concept or removing an optional element; adding decoration does not resolve a
 missing visual argument.
 
 For account adaptation, review advertiser ownership and target identity separately.
-Read the target name/logo with its companion copy: does it address that company,
-or imply it is a customer, partner or endorser? Check the exact identity against
-the supplied or retrieved source and the logo against the viewed returned asset;
-co-placement is not relationship evidence. Identity-only invitations can be valid
-when recorded honestly, but an assumed need or use case cannot become an account
-fact. Missing required proof or ambiguous identity remains a named gap. Revisit
-`account-adaptation` for that distinction and the supported logo path. Check long
-names, independent logo/text layers and preserved advertiser type, palette and
-approved groups in the final pixels. No fixed logo row or copy size establishes
-success across accounts.
+Check a requested prominent top advertiser × target group or integrated target
+logo/recognizable favicon anchor in the actual reading order. A detached footer
+badge does not fulfill that request. Judge optical balance, clear space and the
+message relationship, not equal boxes or fixed coordinates. Each authentic logo
+and the native separator must remain independently editable; preserve advertiser
+voice, type, palette and approved groups unless a departure was requested.
+Candidate preflight adds no advertiser overlay, so evaluate any deliberate
+omission against the direction and request; missing required identity is a gap.
+
+Check exact identity against its source and logo pixels against the viewed asset.
+A requested × treatment is allowed without a blanket disclaimer or addressing
+caption. Co-placement is not evidence for written customer, partner or endorsement
+claims. Read artwork and requested companion channel copy as one argument: a name
+swap alone does not establish account relevance, and assumed pains, tools or results
+cannot become facts. An honestly scoped identity-only invitation can be valid.
+Keep companion copy separately labeled as draft in the existing finalization
+summary, outside the image and native-copy inventory; verify its source limits
+and report any handoff/review gap without claiming publication. Missing required
+proof or ambiguous identity remains a named gap. Revisit `account-adaptation`
+for source handling. Check long names and the complete composition at placement
+size; neither a fixed logo row, mandatory CTA nor copy size establishes success.
 
 When expected text or artwork is absent, first locate it in
 `inspect(view="page", target=<page_id>)` or `node_tree`, then inspect its and its

@@ -424,7 +424,7 @@ class LumenDesignTools:
         # None = nothing rendered yet. Names "round N" in the unchanged fact
         # export_preview_bundle surfaces when re-rendering byte-identical pixels.
         self._preview_rendered_iteration: Optional[int] = None
-        # Deterministic logo placement is PLACE-ONCE (sweep A3 re-injection fix):
+        # Legacy logo placement is PLACE-ONCE (sweep A3 re-injection fix):
         # once a kit logo has been present (author-placed or our auto-overlay),
         # a later removal is the author's choice and must be respected, not undone.
         self._brand_logo_seen: bool = False
@@ -3218,48 +3218,34 @@ class LumenDesignTools:
                         # A rejected rebind never blocks the turn; preflight
                         # proceeds on the unmodified scene.
                         pass
-                # Deterministic logo presence (same philosophy as the token
-                # rebind): authoring adoption is coin-flip and repair-scope
-                # constraints make instructions unactionable — so the loop
-                # PLACES the mark once, as a page overlay the agent may then
-                # move/restyle and the critic judges. K2 preflight
-                # auto-register upserts the record from the manifest.
-                #
-                # PLACE-ONCE / respect-removal (sweep A3 re-injection fix): the
-                # earlier code re-ran `build_logo_placement_operations` on EVERY
-                # preflight, so any preflight where the scene TRANSIENTLY lacked
-                # a kit logo re-injected `brand_logo_auto` — even right after the
-                # author deleted it, or after a full recreate wiped the mark
-                # (A3 shipped a re-injected `brand_logo_auto` the author had
-                # explicitly removed). Root cause: the mechanism only asked "is
-                # a logo present NOW?", never "was one ever present and removed?"
-                # Fix: once a kit logo has been present (author-placed or our own
-                # overlay), remember it and never re-inject — a removal is the
-                # author's decision. We place at most once, when a logo has
-                # never been present in this run.
-                if scene_has_kit_logo(self.scene, brand_kit):
-                    self._brand_logo_seen = True
-                elif not self._brand_logo_seen:
-                    placement_ops = build_logo_placement_operations(
-                        self.scene, brand_kit
-                    )
-                    if placement_ops:
-                        try:
-                            placed = self.core.apply_operations(
-                                self.scene, placement_ops
-                            )
-                            self._replace_scene_from_core_response(
-                                placed, "place_brand_logo", operations=placement_ops
-                            )
-                            self._brand_logo_seen = True
-                            self.record(
-                                "coordinator",
-                                "brand_logo_placed",
-                                output_summary="kit mark auto-placed (page overlay)",
-                                payload={"operation_count": len(placement_ops)},
-                            )
-                        except CoreError:
-                            pass
+                # Candidate identity is authored composition: a target-only or
+                # deliberately unbranded scene must not acquire a hidden overlay.
+                # Legacy keeps PLACE-ONCE / respect-removal: after either an
+                # authored or automatic kit logo has existed, never re-inject it.
+                if self.config.scene_skill_bundle != "candidate":
+                    if scene_has_kit_logo(self.scene, brand_kit):
+                        self._brand_logo_seen = True
+                    elif not self._brand_logo_seen:
+                        placement_ops = build_logo_placement_operations(
+                            self.scene, brand_kit
+                        )
+                        if placement_ops:
+                            try:
+                                placed = self.core.apply_operations(
+                                    self.scene, placement_ops
+                                )
+                                self._replace_scene_from_core_response(
+                                    placed, "place_brand_logo", operations=placement_ops
+                                )
+                                self._brand_logo_seen = True
+                                self.record(
+                                    "coordinator",
+                                    "brand_logo_placed",
+                                    output_summary="kit mark auto-placed (page overlay)",
+                                    payload={"operation_count": len(placement_ops)},
+                                )
+                            except CoreError:
+                                pass
             # K4: brand governance judges the AUTHORED scene — resolution
             # deliberately CONSUMES token bindings (resolution-once: the
             # resolved scene is fully literal, style_token = None), so any
