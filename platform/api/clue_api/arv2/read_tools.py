@@ -58,6 +58,7 @@ from clue_api.arv2.errors import Arv2Error
 from clue_config import Settings
 from clue_core import Claim, EntityId, UseClass, VerificationStatus
 from clue_db import ConnFactory, transaction
+from clue_obs.langfuse import tag_entities
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
 from clue_spine import get_project
 from clue_toolbelt import (
@@ -1504,6 +1505,7 @@ class ReadAccountResearchTool(Tool):
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        tag_entities([research.account_entity_id])
         output = ReadAccountResearchOutput(
             account_entity_id=research.account_entity_id,
             account_name=research.account_name,
@@ -1866,6 +1868,7 @@ class ReadClaimsTool(Tool):
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        tag_entities([page.entity_id])
         output = ReadClaimsOutput(
             entity_id=page.entity_id,
             entity_type=page.entity_type,
