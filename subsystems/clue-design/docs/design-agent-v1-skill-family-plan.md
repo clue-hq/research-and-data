@@ -2531,3 +2531,120 @@ isolated pilot before account-selector integration. The durable logo/account
 binder found today belongs to the web route; do not call that proof of the scene
 handoff. Content scaling remains scaffolded. Audit the account branch before
 pulling/integrating it; no such merge or one-to-one pilot has occurred here yet.
+
+## Task 37: shared account-adaptation skill and ordinary-request pilot
+
+Add one on-demand supporting skill, `account-adaptation`, to the scene candidate
+view. It composes with the existing 18 communicative families; it is not a new
+family, agent, account database, research engine or batch-content subsystem.
+Keep the website/legacy view unchanged. Implement through the existing
+`knowledge_docs/views/scene/skills/`, manifest, scene brief entry point and shared
+review resources. Cover real catalog discovery/materialization in
+`test_scene_skill_family.py` rather than only counting names or matching prose.
+
+The skill should distinguish advertiser brand ownership, target company identity,
+account facts, persona/use-case hypothesis, campaign intent and relationship
+evidence. Use only supplied or actually retrieved context; metadata, a logo and
+co-placement do not establish target needs or a customer/partner relationship.
+Use existing `creative-direction.json` evidence/copy/source_roles/preserve/vary/
+review_needs fields; do not add unsupported direction fields or opaque research
+IDs. A company name/domain is enough to start an identity-specific invitation,
+but cannot manufacture account research. Record that limited personalization
+honestly. Ambiguous company identity or required missing proof is a specific gap.
+
+Inspect the current approved scene before adapting it. Preserve its advertiser
+kit, effective type, palette and successful groups where the request calls for
+variants; recompose where different words/images genuinely require it. Never
+transfer the recently approved Conduit32px size to other brands as a default.
+Choose whether the target name/logo belongs in the concept and use an explicit
+addressing treatment when necessary to avoid implying endorsement. No compulsory
+dual-logo row, CTA pill, fixed coordinates or fixed page skeleton.
+
+Use the already exposed `fetch_logo(domain, company_name)` after a page exists,
+view the real returned asset and place a suitable lockup as an independent layer
+through checked tools. Honor cached provenance and actual missing-family cells;
+do not repaint, recreate or generate a logo. Respect unavailable/needs_review
+results, with a named text-only treatment when the request permits it. Newly
+fetched assets must use actual supported direction/source behavior; inspect and
+test that seam rather than inventing asset IDs or pretending an unavailable
+asset is in the initial reference catalog.
+
+Resolve the page-required/source-ID circularity in the candidate solo prompt:
+allow a page-only bootstrap with explicit dimensions for required authentic-logo
+acquisition before the first complete direction. Fetch and view the real logo,
+then validate the complete direction before creative-node composition or new
+artwork generation. This narrowly scoped exception avoids a throwaway direction
+and revision; it does not waive creative-direction validation. Align shared scene
+wording and the actual bound solo-prompt test. Legacy and website prompts stay
+unchanged.
+
+Review the complete visual argument, exact identity/logo, evidence-scoped copy,
+reading order at placement size, editable layers and preserved properties.
+Vary account messaging only when evidence changes the argument. Do not claim
+all-account scaling or a connected account picker: engine audience/slot tools
+are primitives and content scaling remains a separate seam.
+
+Verification: real knowledge delivery/routing and existing logo/source/direction
+tests, plus pressure cases for an ambiguous name, missing logo, unsupported
+partnership, identity-only input, long target name and preserved advertiser
+branding. Record the ordinary-request live pilot separately from static guidance
+review. First run an editable exemplar on one advertiser/account through the
+normal signed-in platform route; verify actual skill reads, logo provider/result
+custody, source evidence, final pixels and saved independent layers before the
+planned three-account/three-concept expansion. Use a new document/session to
+preserve user-approved artifacts. Keep repeated four-advertiser qualification
+open; a one-account pilot does not replace it.
+
+### Task 37 checkpoint — 2026-09-15
+
+Source implemented in `d449f272`, with review correction `8645fa9b`. One new
+on-demand support skill brings the candidate catalog to 31 skills: 18 families
+and 13 support capabilities. The fetched-logo source seam already existed;
+this change adds the procedure, actual delivery tests and consistent candidate
+page-only source preparation. Focused verification: 151 tests, zero skips;
+review correction reproduced the eager-context conflict and passed four focused
+checks. Independent source re-review approved. No website/legacy or engine change.
+
+The ordinary Clue-to-Conduit request was submitted through the signed-in Home
+composer, with no skill name, prescribed headline/layout or attached images.
+Home opened a new design session; its interview-capture tool failed because the
+local project has no client entity. A normal “Create it.” follow-up started the
+design. This setup limitation is recorded separately from design generation.
+
+The agent read account-adaptation itself, selected type-led-positioning, fetched
+Conduit's authentic website SVG and preserved separate Clue/Conduit image layers
+and native copy. The saved draft reloaded, and the native inspector exposed its
+supporting text. Parent visual review does **not** accept this creative: the
+large gaps, detached target-logo block, small secondary type and peach support
+need work. Authored outer padding72 was overridden by card.padding32; the
+inspector showed72 while rendered geometry used32. This is a concrete authoring/
+resolved-geometry seam to investigate, not a reason to hardcode32 globally.
+
+Runtime: 400.749 seconds, 38 model calls, first preview320.411 seconds, seven
+compiles, two rounds. It missed240 seconds. Three critique schema refusals and
+undefined spacing-token repair contributed; model self-acceptance is not human
+quality acceptance. No new raster artwork was generated for this type-led
+concept. Do not count this as a qualified family or connected account scaling.
+
+Evidence: ignored `account-adaptation-20260915/pilot-audit.json` plus complete
+frozen first-terminal files. All267 source files matched the pre-pilot freeze.
+User-approved Conduit scene remained byte-equivalent canonically at version19;
+new pilot remained version54 through inspection. Further edit/export mutation
+checks were not run after visual failure. Existing four-brand qualification
+remains open. Only owned idle designAPI/fourworkers were reloaded; runtime
+supervisor session28212 remains live. No push, production changes, or optional
+copy-diagnostic provider calls.
+
+### Proposed goal reset — recommendation, not applied
+
+Preserve this task, local commits and evidence. The current broad goal is still
+unfinished; do not mark it complete or discard its failure history. The next
+active goal should be a bounded release checkpoint: eight fresh ordinary-request
+ads (two per Clue/AWS/Google/Conduit) meeting human visual acceptance, authentic
+reference/logo custody, readable subordinate copy, editable save/reload/export
+and the four-minute finished-creative target; then three explicit-input 1:1
+account ads with correct target identity and no invented relationship claims.
+Track each output's failures and timing rather than skill count as success.
+Further family expansion, brand intelligence, account-setup integration and
+Head-of-ABM work remain separate backlog scopes. No goal status was changed by
+this recommendation.

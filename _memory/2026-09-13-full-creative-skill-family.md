@@ -1478,3 +1478,26 @@ ladderandindependentplacementexist. Durableaccountbinderiswebpath; fullscene
 account handoff/contentbatchnotvalidated, contentpackageisscaffold. Recommend
 bounded1advertiserx3evidence-readyaccountsx3conceptsnextwithoutwaiting18families;
 source/accountbranchreviewbeforeintegration. Noaccountpilotlaunched. Goalactive.
+
+Task37 checkpoint2026-09-15: account-adaptation supportskill/sourcecommitd449f272,
+reviewfix8645fa9b. Catalog31=18families+13supports. 151focused0skips50.96s;
+4fixchecks1.75s; independent re-reviewapproved. Shared eagercomponents nowagrees
+withcandidate solo page-only authentic-logo preparation beforevalidatedcreative
+construction. No newlogo service/schema/agent/website/legacychanges. Rootcommit
+neededescalationforindex.lock; unrelated3filesuntouched.
+OwnedidleAPI+4fleetworkers reloaded18:48:55Z, supervisor28212; API10606,
+workers10607–10610; frontends/platformAPIsunchanged. Actual/build-infohandshake
+28e1d9988ecd; guessed/health404recorded. NormalHomeaccountpilot thenCreateit.
+Setupinterviewcapturefailedmissingcliententity; designlegopened. Newaccount
+skillactuallyread, realtargetSVGfetched/inspected, separateauthenticlogos andnative
+copy saved/reloaded. Pilot400.749s/38calls/firstpreview320.411s; qualityandtiming
+bothfail. Largegaps/detachedtargetmark/smallcopy/peachtreatment; authoredpad72 vs
+renderedtoken32notresolvedbythisskill. Threecritiqueschemarefusals/undefined
+spacingtokenrepairs. Noimagegenerationneededfortype-leddirection. Noedit/export
+mutationproofaftervisualfailure, nofamilyqualification. All267sourcehashesstable;
+userapprovedConduitv19unchanged, pilotv54unchangedduringinspection. Frozenignored
+account-adaptation-20260915/pilot-audit.json preservesfailureandprovenance.
+Useraskswhetherreplacegoals: recommendcheckpointthenbounded8fresh4-brandads+
+3explicit-inputABMexamples withhumanquality/nativeediting/timinggates. Do notmark
+oldgoalcomplete; nogoalstatuschanged. Furtherfamilies/brandagent/accountsetup/
+HeadABMseparatebacklog. Noextradiagnosticcalls, no production/push.
