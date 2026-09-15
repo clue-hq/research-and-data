@@ -1106,3 +1106,15 @@ remains. Goal marked blocked, not complete; async sign-in handoff pending. After
 user sign-in, recheck frozen inputs and perform four-brand typography persistence
 QA, then launch the ordinary requests simultaneously. Initial note patch used
 an incomplete context line and failed without mutation; corrected below.
+
+Login recovery correction (2026-09-14): user authorized using the previous saved
+workspace account, then corrected the initial generic runbook-account selection.
+That example account authenticated but was correctly denied the pinned workspace;
+signed it out. Exact read-only four-workspace memberships/auth identities and the
+matching Clerk development user prove one shared real Google-linked owner. User
+completed its Google passkey verification. All4 Brand Context Asset routes now
+render correct existing catalogs. See 2026-09-13-local-brand-instances.md recovery
+section. No auth bypass/membership edit/new brand account/new creative. Hardcoded
+sidebar profile name explains misleading visible identity; not fixed here.
+Login blocker resolved, goal tool still blocked (no agent-side resume operation).
+Pending live typography QA and prepared four-brand generation, coverage unchanged.

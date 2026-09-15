@@ -68,3 +68,30 @@ Four authenticated brand tabs are open and marked as deliverables in Codex at
 their individual ports. Browser asset previews, navigation and reload checks pass;
 the base backend and all four frontend listeners are running. The session-isolation
 change is ready for a scoped local commit. No creative-quality acceptance is implied.
+
+## September 14: recover the existing login by membership
+
+- Do not use the generic DEV_STACK.md development test login for these four
+  workspaces. This recovery initially selected it without checking ownership;
+  normal Clerk verification succeeded but the pinned workspace correctly returned
+  WORKSPACE_FORBIDDEN. The incorrect example session was then signed out.
+- User explicitly requested the previous workspace account. Read-only queries of
+  the four manifest workspace memberships joined through platform_user and
+  auth_identity showed one shared, active owner and Clerk identity. A read-only
+  lookup of that exact user in the configured Clerk development instance recovered
+  its real Google-linked login. Credentials and personal account details are not
+  stored in this note. Recover through those records, not the runbook example or
+  the sidebar profile label.
+- Selected the verified Google account through normal browser sign-in. Google
+  required a passkey; the user completed verification. All four ports then opened
+  Brand Context Assets with their own existing logos/source catalogs. No new
+  accounts/workspaces/memberships were created for recovery and no authentication
+  bypass, permission change, or provider generation was performed.
+- The sidebar profile text is literally hardcoded in
+  apps/frontend/src/components/shell/app-sidebar.tsx; it is not identity evidence.
+  Display-name integration remains a separate unfixed UI issue.
+- Browser tabs7–10 remain the four deliverables. The login blocker is resolved;
+  the goal tool still reports blocked and has no agent-side resume action. Next
+  creative work remains four-brand typography persistence QA, then the prepared
+  ordinary-request batch. Task26 external diagnostic still requires its separate
+  payload approval; this login authorization does not authorize those calls.
