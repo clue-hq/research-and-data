@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import ArtifactRef, DomainObjectRef
 from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
 from clue_fleet import FleetTaskKind, WorkId, enqueue_task
+from clue_obs.otel import bind_and_annotate
 
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
@@ -532,6 +533,13 @@ async def dispatch_next_thread_turn(
     if row is None:
         return None
     turn_id = UUID(str(row["turn_id"]))
+    # Lane 3 slice 2: the turn this dispatch is about, bound for the rest of this request (its log
+    # lines and the enqueue span) and written onto the span that is already open.
+    bind_and_annotate(
+        project_id=str(row["project_id"]),
+        thread_id=thread_id,
+        turn_id=str(turn_id),
+    )
     payload: dict[str, JsonValue] = {
         # References only, never a token and never a message body (substrate §5b, Lane B §7).
         "turn_id": str(turn_id),

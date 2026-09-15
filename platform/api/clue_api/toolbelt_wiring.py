@@ -3095,6 +3095,11 @@ def build_toolbelt(
     for tool in build_onboarding_evidence_tools(
         settings=resolved_settings,
         secrets=secrets,
+        artifacts=(
+            None
+            if storage is None
+            else DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
+        ),
     ):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra

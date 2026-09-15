@@ -30,6 +30,7 @@ from clue_api.arv2.display.personas import PERSONA_RANK, persona_label
 from clue_api.arv2.display.recipes import recipes_for
 from clue_api.arv2.display.runner import LunaSectionRunner
 from clue_api.arv2.errors import ProviderHalted
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.frontend_read.display_pages import (
     DEFAULT_WHY_THEY_MATTER,
     DERIVED_ROLE_MARKER,
@@ -59,6 +60,7 @@ from tests.arv2.display._seed import Seeded, seed_display_fixture, write_claim
 # The D2 page suite's keyed provider double and its one-runner-per-section factory. Imported so
 # both suites answer with the same canned section for the same request.
 from tests.arv2.display.test_page_db import RoutingTransport, _factory
+from tests.arv2.test_provider_ledger_db import FakeArtifacts
 from tests.claimstore.conftest import (  # noqa: F401
     migrated_db,
     require_claimstore_db,
@@ -115,6 +117,7 @@ def _pages(conn: AsyncConnection, *, runner_factory: Any = None, **kwargs: Any) 
         secrets=kwargs.pop("secrets", NO_KEY),
         conn_factory=conn_session_factory(conn),
         runner_factory=runner_factory,
+        artifacts=kwargs.pop("artifacts", FakeArtifacts()),
     )
 
 
@@ -174,8 +177,18 @@ def test_the_seam_builds_no_runner_without_a_key_even_when_generation_is_on() ->
             settings=SETTINGS,
             secrets=keyed,
             conn_factory=_factory_unused,  # type: ignore[arg-type]
+            artifacts=FakeArtifacts(),
         ).generates
         is True
+    )
+    # A key, but nowhere to put the raw bodies the ledger rows cite: still a pure projection.
+    assert (
+        DisplayPages(
+            settings=SETTINGS,
+            secrets=keyed,
+            conn_factory=_factory_unused,  # type: ignore[arg-type]
+        ).generates
+        is False
     )
     off = Settings(_env_file=None, arv2_display_generate_on_read=False)
     assert (
@@ -208,6 +221,31 @@ def test_without_a_runner_the_page_is_the_stored_one_and_no_model_is_called() ->
             assert read.stale == ()
             assert read.cited_claim_ids == ()
             assert read.degraded_reason is None
+
+    run_async(_run())
+
+
+def test_a_runner_without_an_artifact_sink_serves_the_stored_page_and_calls_nothing() -> None:
+    """Slice 1b: a ledger row cites the artifact its reply became, so a seam with no artifact
+    store cannot record what a page would cost — it serves what is stored, exactly as a keyless
+    deployment does, rather than spending money it cannot account for."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            # ``allowed=False`` raises if the provider is called at all — the runner really exists.
+            transport = RoutingTransport(allowed=False)
+            pages = _pages(conn, runner_factory=_factory(transport), artifacts=None)
+
+            assert pages.generates is False, "a runner alone is not enough to write a page"
+
+            read = await _contact_page(pages, conn, seeded)
+
+            assert transport.sections == []
+            assert read.generated == ()
+            assert read.degraded_reason is None
+            assert all(section["empty"] for section in _sections(read))
+            assert read.cited_claim_ids == ()
 
     run_async(_run())
 
@@ -342,7 +380,7 @@ def test_a_stale_page_read_with_generate_false_reports_staleness_and_schedules_n
 
 
 def test_a_halted_provider_serves_an_empty_page_and_names_the_reason() -> None:
-    def _halted() -> LunaSectionRunner:
+    def _halted(raw: RawSink, ledger: LedgerSink) -> LunaSectionRunner:
         raise ProviderHalted("openrouter", "insufficient_credits")
 
     async def _run() -> None:

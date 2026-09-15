@@ -694,6 +694,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 zip(self.models, self.model_ids, strict=True)
             ):
                 yielded = False
+                pending: ChatGenerationChunk | None = None
                 try:
                     for chunk in model._stream(
                         messages,
@@ -701,10 +702,15 @@ class GovernedAgentChatModel(BaseChatModel):
                         run_manager=run_manager,
                         **kwargs,
                     ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
                         yielded = True
-                        if _carries_usage(chunk.message):
-                            _stamp_answering_model(chunk.message, fallback=model_id)
-                        yield chunk
+                        yield pending
                     return
                 except Exception as exc:
                     # A partially consumed stream cannot be replayed: the consumer already holds
@@ -736,6 +742,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 zip(self.models, self.model_ids, strict=True)
             ):
                 yielded = False
+                pending: ChatGenerationChunk | None = None
                 try:
                     async for chunk in model._astream(
                         messages,
@@ -743,10 +750,15 @@ class GovernedAgentChatModel(BaseChatModel):
                         run_manager=run_manager,
                         **kwargs,
                     ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
                         yielded = True
-                        if _carries_usage(chunk.message):
-                            _stamp_answering_model(chunk.message, fallback=model_id)
-                        yield chunk
+                        yield pending
                     return
                 except Exception as exc:
                     # A partially consumed stream cannot be replayed: the consumer already holds
@@ -1198,16 +1210,15 @@ def _normalize_tool_choice(
     raise ValueError(f"tool_choice names no bound function: {tool_choice!r}")
 
 
-def _carries_usage(message: BaseMessage) -> bool:
-    """The one streamed chunk the gateway attributes: the provider's usage chunk.
+_MODEL_KEYS: tuple[str, ...] = ("model_name", "model", _ANSWERING_MODEL_KEY)
 
-    LangChain merges a stream's chunks by concatenating equal string metadata, so a label written
-    on every chunk reads back once per chunk on the merged message the turn runtime records from
-    (``x-ai/grok-4.6`` came back 41 times over on a real turn). Streams always ask for usage
-    (``stream_usage=True``), so the usage chunk is the single place the served model is written;
-    the wrapper's cost annotation reads it from that same chunk.
-    """
-    return isinstance(message, AIMessageChunk) and message.usage_metadata is not None
+
+def _strip_model_keys(message: BaseMessage) -> None:
+    """LangChain's chunk merge concatenates equal string metadata, so only ONE chunk of a stream
+    may carry the model keys (the last, which is the provider's truthful one)."""
+    metadata = message.response_metadata
+    if any(key in metadata for key in _MODEL_KEYS):
+        message.response_metadata = {k: v for k, v in metadata.items() if k not in _MODEL_KEYS}
 
 
 def _stamp_answering_model(message: BaseMessage, *, fallback: str) -> None:

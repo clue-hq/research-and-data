@@ -57,6 +57,7 @@ from clue_api.arv2.display.page import (
 from clue_api.arv2.display.personas import persona_display, persona_label
 from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
+from clue_api.arv2.provider_ledger import ArtifactSink
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
 from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts
 from clue_api.url_safety import safe_public_url
@@ -157,6 +158,7 @@ class DisplayPages:
         secrets: Secrets | None,
         conn_factory: ConnFactory,
         runner_factory: RunnerFactory | None = None,
+        artifacts: ArtifactSink | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -165,7 +167,16 @@ class DisplayPages:
             if runner_factory is not None
             else _production_runner_factory(settings, secrets)
         )
+        self._artifacts = artifacts
         self._regenerating: dict[tuple[str, str, str, str], asyncio.Task[None]] = {}
+        if self._runner_factory is not None and artifacts is None:
+            # Stated once, at composition, rather than discovered as a page that never fills in:
+            # slice 1b makes the artifact sink part of what a write costs, so a seam without one
+            # serves stored blocks only.
+            log.warning(
+                "frontend_read.display.regeneration_disabled",
+                reason="no artifact store composed",
+            )
 
     @property
     def settings(self) -> Settings:
@@ -174,9 +185,16 @@ class DisplayPages:
         ``Settings`` in the same process."""
         return self._settings
 
+    @property
     def generates(self) -> bool:
-        """Whether this seam can write a page at all (a key is configured and generation is on)."""
-        return self._runner_factory is not None
+        """Whether a page may be written: a runner to write it AND a sink for its raw bodies.
+
+        Both halves, not just the key: slice 1b put the sections' spend on
+        ``provider_call_ledger``, and a ledger row cites the artifact its reply became — so a seam
+        with no artifact store cannot record what a page costs and does not write one. It serves
+        what is stored instead, the same fail-closed-before-spend posture a missing key has.
+        """
+        return self._runner_factory is not None and self._artifacts is not None
 
     # -- the page ------------------------------------------------------------------------------
 
@@ -215,7 +233,8 @@ class DisplayPages:
 
         generated: tuple[str, ...] = ()
         degraded_reason: str | None = None
-        if generate and self._runner_factory is not None:
+        if generate and self.generates:
+            assert self._runner_factory is not None and self._artifacts is not None
             try:
                 result = await ensure_page(
                     conn,
@@ -225,6 +244,8 @@ class DisplayPages:
                     page=page,
                     settings=self._settings,
                     runner_factory=self._runner_factory,
+                    artifacts=self._artifacts,
+                    spend_conn_factory=self._conn_factory,
                     regenerate_stale=False,
                 )
             except _DEGRADING as exc:
@@ -292,7 +313,7 @@ class DisplayPages:
         and cannot corrupt anything (``insert_block`` retires and replaces under the live index in
         one transaction).
         """
-        if self._runner_factory is None:
+        if not self.generates:
             return False
         key = (workspace_id, subject_kind, subject_id, page)
         running = self._regenerating.get(key)
@@ -326,8 +347,9 @@ class DisplayPages:
         this, and the next read will simply find the same section stale and try again.
         """
         try:
-            if self._runner_factory is None:  # pragma: no cover - guarded at the scheduler
+            if not self.generates:  # pragma: no cover - guarded at the scheduler
                 return
+            assert self._runner_factory is not None and self._artifacts is not None
             async with self._conn_factory() as conn:
                 await ensure_page(
                     conn,
@@ -337,6 +359,8 @@ class DisplayPages:
                     page=page,
                     settings=self._settings,
                     runner_factory=self._runner_factory,
+                    artifacts=self._artifacts,
+                    spend_conn_factory=self._conn_factory,
                     regenerate_stale=True,
                 )
         except Exception as exc:  # noqa: BLE001 - a background task may never escalate

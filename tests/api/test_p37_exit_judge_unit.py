@@ -28,9 +28,11 @@ class _FakeModel:
     def __init__(self, completion: Any) -> None:
         self._completion = completion
         self.prompts: list[Any] = []
+        self.configs: list[Any] = []
 
-    async def ainvoke(self, prompt: Any) -> Any:
+    async def ainvoke(self, prompt: Any, **kwargs: Any) -> Any:
         self.prompts.append(prompt)
+        self.configs.append(kwargs)
         return self._completion
 
 
@@ -118,3 +120,26 @@ def test_garbage_and_provider_errors_stay_fail_safe() -> None:
 
     exploding = build_design_leg_exit_judge(models=_ExplodingModels(), profiles=_FakeProfiles())
     assert _run(exploding) is None
+
+
+def test_with_langfuse_the_judge_is_an_evaluator_holding_its_generation() -> None:
+    from tests._langfuse import finished_spans, langfuse_installed
+
+    with langfuse_installed() as (exporter, _provider):
+        judge, model = _judge_with(AIMessage(content=_VERDICT))
+        verdict = _run(judge)
+        spans = finished_spans(exporter)
+    assert verdict is not None
+    evaluator = next(s for s in spans if s.name == "design-leg.exit_judge")
+    attrs = dict(evaluator.attributes or {})
+    assert attrs["langfuse.observation.type"] == "evaluator"
+    assert attrs["langfuse.trace.name"] == "design-leg.exit_judge"
+    assert "finish" in attrs["langfuse.observation.output"]
+    # The handler was attached to the direct model call so its generation nests here.
+    assert model.configs and "callbacks" in (model.configs[0].get("config") or {})
+
+
+def test_without_langfuse_no_config_is_passed_to_the_model() -> None:
+    judge, model = _judge_with(AIMessage(content=_VERDICT))
+    assert _run(judge) is not None
+    assert model.configs == [{}]

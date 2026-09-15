@@ -176,6 +176,12 @@ status() {
   else
     echo "  fleet-worker: DOWN"
   fi
+  load_env
+  if [ "${CLUE_LANGFUSE_ENABLED:-false}" = "true" ]; then
+    echo "  langfuse: enabled (${CLUE_LANGFUSE_HOST:-https://cloud.langfuse.com}, env=${CLUE_LANGFUSE_ENVIRONMENT:-unset}) — make langfuse-check to verify the keys"
+  else
+    echo "  langfuse: disabled"
+  fi
 }
 
 case "${1:-status}" in

@@ -46,8 +46,17 @@ from langchain_core.tools import StructuredTool
 from clue_api.arv2.account_research_refusals import refusal_json
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.sinks import LedgerRow
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_SOURCE_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
+from clue_obs.langfuse import (
+    LangfuseRunRegistry,
+    event,
+    guardrail,
+    observation,
+    propagate_trace,
+    tag_entities,
+)
 
 log = get_logger("clue_api.arv2.account_research_agent")
 
@@ -126,10 +135,17 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
     first attempt's and being dropped by the drain's ``ON CONFLICT DO NOTHING``.
     """
 
-    def __init__(self, runtime: ToolRuntime, *, attempt: int) -> None:
+    def __init__(
+        self,
+        runtime: ToolRuntime,
+        *,
+        attempt: int,
+        langfuse_ids: LangfuseRunRegistry | None = None,
+    ) -> None:
         super().__init__()
         self._runtime = runtime
         self._attempt = attempt
+        self._langfuse_ids = langfuse_ids
         self.count = 0
         self._spend = ModelSpend()
 
@@ -182,6 +198,14 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
                 "cost_source": source,
             }
         )
+        # The graph runs one model round at a time, so the registry's most recent entry is this
+        # round's generation: the durable row and the Langfuse observation name each other.
+        if message is not None and self._langfuse_ids is not None:
+            ids = self._langfuse_ids.latest()
+            if ids is not None:
+                extras["langfuse_trace_id"] = ids.trace_id
+                if ids.observation_id is not None:
+                    extras["langfuse_observation_id"] = ids.observation_id
         row = LedgerRow(
             # Deterministic in the job, the attempt and the round, so the drain — which runs
             # inside the driver's settlement transaction and may be retried after a rollback —
@@ -274,6 +298,15 @@ class _RoundShapeMiddleware(AgentMiddleware[Any, Any, Any]):
                 position=position,
                 limit=self._limit,
             )
+            guardrail(
+                "arv2.too_many_parallel_calls",
+                reason=detail,
+                metadata={
+                    "tool": str(call.get("name") or ""),
+                    "position": position,
+                    "limit": self._limit,
+                },
+            )
             return ToolMessage(
                 content=refusal_json("too_many_parallel_calls", detail),
                 tool_call_id=str(call.get("id") or ""),
@@ -338,7 +371,10 @@ async def run_account_agent(
     loop's model rounds write, so a re-driven job's spend adds up instead of colliding.
     """
 
-    rounds = _ModelUsageRecorder(runtime, attempt=attempt)
+    langfuse = build_langfuse_callbacks()
+    rounds = _ModelUsageRecorder(
+        runtime, attempt=attempt, langfuse_ids=langfuse.registry if langfuse is not None else None
+    )
     agent = create_agent(
         model=model,
         tools=list(tools),
@@ -355,7 +391,79 @@ async def run_account_agent(
     # The graph takes one step per node, so the ceiling has to cover every round's model call, its
     # tool wave and the middleware hops around them, plus the entry and exit nodes. Below this the
     # graph would raise GraphRecursionError long before the round cap it is supposed to defer to.
-    config = RunnableConfig(recursion_limit=max_model_rounds * (max_tool_calls_per_round + 2) + 4)
+    config = RunnableConfig(
+        recursion_limit=max_model_rounds * (max_tool_calls_per_round + 2) + 4,
+        callbacks=[langfuse.handler] if langfuse is not None else [],
+    )
+    scope = runtime.scope
+    # One job is one named trace: every span the graph opens inside — the agent tree the handler
+    # reports, the tools' provider observations — carries the job's session, user and metadata.
+    with (
+        propagate_trace(
+            trace_name="arv2.account_research",
+            session_id=str(scope.run_id),
+            user_id=scope.workspace_id,
+            metadata={
+                "project_id": scope.project_id,
+                "project_run_id": scope.project_run_id,
+                "job_id": scope.job_id,
+                "account_id": scope.account_id,
+                "contact_id": scope.contact_id,
+                "subject_kind": scope.subject_kind,
+                "attempt": attempt,
+            },
+            tags=("arv2", scope.subject_kind),
+        ),
+        observation(
+            "arv2.account_research",
+            as_type="agent",
+            input={
+                "account_id": str(scope.account_id),
+                "subject_kind": scope.subject_kind,
+                "attempt": attempt,
+            },
+            metadata={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
+        ) as current,
+    ):
+        # The subject first, before any work: a job that dies mid-round still names who it was
+        # about on its trace.
+        tag_entities([scope.account_id, scope.contact_id])
+        outcome = await _drive_graph(
+            agent,
+            opening,
+            config,
+            runtime=runtime,
+            rounds=rounds,
+            max_runtime_s=max_runtime_s,
+        )
+        # Inside the observation: the graph the handler reported, the tools' provider hops and
+        # this ending all sit beneath the one agent observation, under one trace id.
+        _report_ending(outcome)
+        # Everything the job wrote a claim about, re-emitted whole onto the job's trace.
+        tag_entities(runtime.entities_touched)
+        current.update(
+            output={
+                "reason": outcome.reason,
+                "model_rounds": outcome.model_rounds,
+                "tool_calls": outcome.tool_calls,
+                "model_spend_usd": str(outcome.model_spend.usd),
+            },
+            level="ERROR" if outcome.reason == "model_error" else "DEFAULT",
+            status_message=outcome.error if outcome.reason == "model_error" else None,
+        )
+    return outcome
+
+
+async def _drive_graph(
+    agent: Any,
+    opening: InputAgentState,
+    config: RunnableConfig,
+    *,
+    runtime: ToolRuntime,
+    rounds: _ModelUsageRecorder,
+    max_runtime_s: float,
+) -> AgentOutcome:
+    """Run the graph to one of its four endings. Never raises."""
     # The invoke runs as its own task so the two ``TimeoutError``s can be told apart. Our runtime
     # cap and a provider timeout raised *inside* the graph are the same exception type reaching the
     # same handler, and they are opposite endings: one is us stopping a job that was still working,
@@ -380,3 +488,28 @@ async def run_account_agent(
     if runtime.finalization is not None:
         return AgentOutcome("finalized", rounds.count, runtime.tool_calls, None, rounds.spend)
     return AgentOutcome("round_cap", rounds.count, runtime.tool_calls, None, rounds.spend)
+
+
+def _report_ending(outcome: AgentOutcome) -> None:
+    """The job's ending as one event (and a guardrail when a cap, not the agent, ended it)."""
+    event(
+        "arv2.agent.ending",
+        output={
+            "reason": outcome.reason,
+            "model_rounds": outcome.model_rounds,
+            "tool_calls": outcome.tool_calls,
+            "error": outcome.error,
+            "model_spend_usd": str(outcome.model_spend.usd),
+        },
+        level="ERROR" if outcome.reason == "model_error" else "DEFAULT",
+        status_message=outcome.error if outcome.reason == "model_error" else None,
+    )
+    if outcome.reason in ("round_cap", "runtime_cap"):
+        guardrail(
+            f"arv2.{outcome.reason}",
+            reason=(
+                f"the job ended on its {outcome.reason.replace('_', ' ')} after "
+                f"{outcome.model_rounds} rounds"
+            ),
+            metadata={"model_rounds": outcome.model_rounds, "tool_calls": outcome.tool_calls},
+        )

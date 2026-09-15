@@ -15,7 +15,7 @@ from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
 from langchain.tools import ToolRuntime
-from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.tools import BaseTool, StructuredTool
@@ -61,6 +61,7 @@ from clue_api.agent_turn_wiring import (
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.client_context_authority import trusted_client_kb_version_fields
 from clue_api.client_knowledge_privacy import stream_tool_receipt
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_api.product_context_authority import (
     product_scope_from_constitution,
     trusted_product_scope_fields,
@@ -70,6 +71,7 @@ from clue_api.turn_binding import trusted_turn_fields
 from clue_db import ConnFactory, transaction
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
+from clue_obs.langfuse import LangfuseRunRegistry, guardrail, propagate_trace
 from clue_toolbelt import ToolEffectClass, ToolRegistry
 
 #: What a document the turn *wrote* is called in the finalization's ``domain_refs``. One type for
@@ -143,12 +145,14 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         initial_sequence: int,
         artifacts: DurableAgentArtifactStore,
         turns: DbAgentTurnJournal,
+        langfuse_ids: LangfuseRunRegistry | None = None,
     ) -> None:
         self._request = request
         self._requested_model = requested_model
         self._next_sequence = initial_sequence
         self._artifacts = artifacts
         self._turns = turns
+        self._langfuse_ids = langfuse_ids
         self._lock = asyncio.Lock()
         self._pending: dict[UUID, tuple[int, datetime, float, ArtifactRef]] = {}
 
@@ -205,10 +209,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         )
         response_metadata = getattr(message, "response_metadata", None) or {}
         llm_output = response.llm_output or {}
-        # The gateway's own stamp says who answered. LangChain's chunk merge concatenates a
-        # provider's repeated ``model`` field on a streamed turn (OpenRouter repeats it on the
-        # usage chunk, so ``model_name`` read ``x-ai/grok-4.6x-ai/grok-4.6``); the stamp is
-        # written once, on one chunk, and is the platform's record of the served model.
+        # Lane 3 slice 3: the gateway's own stamp is the served model (fallback-aware, stamped
+        # once per stream); the provider's field is the fallback for a call that reached us
+        # without one.
         answering_model = str(
             response_metadata.get(ANSWERING_MODEL_KEY)
             or llm_output.get("model_name")
@@ -283,6 +286,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         cost_source: ModelCostSource | None = None,
     ) -> None:
         sequence, started_at, started_clock, input_ref = pending
+        langfuse = self._langfuse_ids.pop(run_id) if self._langfuse_ids is not None else None
         receipt = AgentModelCallReceipt(
             model_call_id=run_id,
             turn_id=self._request.turn_id,
@@ -308,6 +312,8 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             latency_ms=(time.monotonic() - started_clock) * 1000,
             error_code=error_code,
             role=role,
+            langfuse_trace_id=langfuse.trace_id if langfuse is not None else None,
+            langfuse_observation_id=langfuse.observation_id if langfuse is not None else None,
             started_at=started_at,
             completed_at=datetime.now(UTC),
         )
@@ -721,10 +727,18 @@ class TurnWorkGuard(AsyncCallbackHandler):
         self.check = check
 
     async def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
-        await self.check()
+        await self._admit()
 
     async def on_llm_end(self, *args: Any, **kwargs: Any) -> None:
-        await self.check()
+        await self._admit()
+
+    async def _admit(self) -> None:
+        try:
+            await self.check()
+        except BaseException as exc:
+            # Lane 3 slice 3: a refused admission is a guardrail in the tree, then the same raise.
+            guardrail("turn.work_guard", reason=f"{type(exc).__name__}: {exc}"[:200])
+            raise
 
 
 class GovernedAgentToolFactory:
@@ -1326,30 +1340,53 @@ class DurableDeepAgentTurnRunner:
             turn_id=request.turn_id,
             workspace_id=workspace_id,
         )
+        # Lane 3 slice 3: the Langfuse handler reports the graph (agent, nodes, sub-agents,
+        # tools, generations); its registry hands each generation's ids to the recorder below.
+        # ``None`` when Langfuse is off, so the tuple is then exactly what it was.
+        langfuse = build_langfuse_callbacks()
         model_calls = DurableAgentModelCallHandler(
             request=request,
             requested_model=resolved_profile.profile.model.model_id,
             initial_sequence=await self._turns.next_model_call_sequence(turn_id=request.turn_id),
             artifacts=self._artifacts,
             turns=self._turns,
+            langfuse_ids=langfuse.registry if langfuse is not None else None,
         )
         # FI Lane D D3: attaching the stream handler is also what opts *this* turn into the model's
         # streaming path (the handler is structurally a LangChain streaming consumer). With no
         # stream attached the callback tuple, and therefore the model path, is exactly what it was.
-        callbacks: tuple[AsyncCallbackHandler, ...] = (model_calls,)
+        # The Langfuse handler is a plain BaseCallbackHandler and does not opt the turn in.
+        callbacks: tuple[BaseCallbackHandler, ...] = (model_calls,)
         if self._before_work is not None:
             callbacks = (TurnWorkGuard(self._before_work), *callbacks)
+        if langfuse is not None:
+            callbacks = (*callbacks, langfuse.handler)
         if stream is not None:
             callbacks = (*callbacks, TurnStreamCallbackHandler(emitter=stream))
+        constitution = request.constitution
+        profile_ref = constitution.profile_ref
         try:
-            outcome = await self._runtime.run(
-                request=request,
-                resolved_profile=resolved_profile,
-                context=context,
-                backend=lease.backend,
-                governed_tools=tools,
-                callbacks=callbacks,
-            )
+            with propagate_trace(
+                trace_name="head-of-abm.turn",
+                session_id=str(request.thread_id),
+                user_id=workspace_id,
+                metadata={
+                    "project_id": constitution.project_id,
+                    "turn_id": request.turn_id,
+                    "execution_id": constitution.execution_id,
+                    "profile": f"{profile_ref.name}@{profile_ref.version}",
+                    "actor_id": constitution.actor_id,
+                },
+                tags=(constitution.role.value,),
+            ):
+                outcome = await self._runtime.run(
+                    request=request,
+                    resolved_profile=resolved_profile,
+                    context=context,
+                    backend=lease.backend,
+                    governed_tools=tools,
+                    callbacks=callbacks,
+                )
         except BaseException:
             await self._turns.mark_unfinalized(
                 turn_id=request.turn_id,

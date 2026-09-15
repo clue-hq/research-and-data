@@ -6,8 +6,10 @@ already holds, so the sinks only buffer, and the async side drains them right af
 bodies to the artifact store (one artifact per attempt: the ``RawRecord`` as JSON plus the body,
 base64 when not UTF-8), ledger rows to ``provider_call_ledger`` with the job stamp.
 
-``provider_call_ledger.entity_research_job_id`` carries the R2 ``arv2_research_job.job_id`` — the
-column was named by D1 before R2 existed; its meaning is "the job that spent".
+``provider_call_ledger.entity_research_job_id`` carries the R2 ``arv2_research_job.job_id``, a
+discovery run id, or (slice 1b) an onboarding run id — the column was named by D1 before R2
+existed; its meaning is "the job that spent", and it is NULL for spend with no job (a display
+page, a chat-turn tool).
 A call in flight when the runtime cap fires drains at finalization (Task 5 waits, bounded, for
 in-flight hops); a lost lease can lose that hop's rows — recorded as the known residual.
 """
@@ -116,12 +118,15 @@ class BufferedLedger:
 
 @dataclass(frozen=True)
 class LedgerStamp:
-    """Whose spend this is: the workspace, the project and run it belongs to, the job that spent."""
+    """Whose spend this is. ``workspace_id`` is the one fact every row carries; the project, the
+    project run and the job are stamped when the spender has them and left NULL when it does not
+    (slice 1b: an onboarding run stamps its own id as the job; a display page or a chat-turn tool
+    stamps the workspace alone)."""
 
     workspace_id: str
-    project_id: str
-    project_run_id: str
-    job_id: UUID
+    project_id: str | None = None
+    project_run_id: str | None = None
+    job_id: UUID | None = None
 
 
 @dataclass(frozen=True)

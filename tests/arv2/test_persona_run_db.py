@@ -253,8 +253,8 @@ class _UnusedArtifacts:
         raise AssertionError("a personas run publishes no document of its own")
 
 
-def _unused_exa(*, run_id: UUID, step_label: str) -> Any:
-    del run_id, step_label
+def _unused_exa(*, run_id: UUID, step_label: str, raw: Any, ledger: Any) -> Any:
+    del run_id, step_label, raw, ledger
     raise AssertionError("a personas run buys no provider call")
 
 

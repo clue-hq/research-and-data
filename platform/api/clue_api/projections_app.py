@@ -34,9 +34,11 @@ import clue_obs
 from clue_agents import AgentProfileRegistry
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import (
+    REQUEST_ID_HEADER,
     authenticated_route_resolvers,
     install_auth_wiring,
     principal_from_request,
+    request_id_for,
 )
 from clue_api.brand_kit_ingestion import build_brand_kit_ingestion_trigger
 from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
@@ -60,6 +62,7 @@ from clue_api.onboarding_routes import (
     onboarding_workspace_resolver,
 )
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.production_tracing import production_tracing_lifespan
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
@@ -88,6 +91,8 @@ from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
 from clue_execution.run_events import list_run_events
+from clue_obs import bound_context
+from clue_obs.otel import TracingRuntime, bind_and_annotate
 from clue_projections import (
     DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
@@ -148,6 +153,10 @@ def header_workspace_resolver(
     ``dependency_overrides``; the routes never change."""
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    # Lane 3 slice 2: the header tenant seam. ``bind_and_annotate`` (not a plain bind): the
+    # instrumentor's server span opened before any route dependency ran, so the span that is
+    # already open needs the workspace written onto it, not just bound for what comes after.
+    bind_and_annotate(workspace_id=x_workspace_id)
     return x_workspace_id
 
 
@@ -800,6 +809,7 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
     async with (
+        production_tracing_lifespan(getattr(_app.state, "tracing", None)),
         production_metrics_lifespan(
             _app.state.settings,
             service_name="clue-projections-api",
@@ -848,6 +858,7 @@ def create_projections_app(
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
     project_library: ProjectLibraryRefresher | None = None,
     project_library_closer: Callable[[], None] | None = None,
+    tracing: TracingRuntime | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -869,7 +880,10 @@ def create_projections_app(
     ICP-confirmation pin. It is ``None`` on a deployment with no agent-workspace root, and both
     hooks are then no-ops. ``project_library_closer`` releases the workspace factory that
     refresher was built over; this process owns one only for that purpose, so it is closed with
-    the other shutdown closers rather than left to process exit."""
+    the other shutdown closers rather than left to process exit.
+
+    ``tracing`` is the process's tracer runtime; when given and the settings ask for it, the app
+    is instrumented at construction."""
     resolved = settings if settings is not None else load_settings()
     if resolved.auth_environment == "production" and auth_service is None:
         raise RuntimeError("production projections require the authenticated principal service")
@@ -882,6 +896,11 @@ def create_projections_app(
     app.state.auth_closer = auth_closer
     app.state.project_library_closer = project_library_closer
     app.state.settings = resolved
+    app.state.tracing = tracing
+    if tracing is not None and resolved.otel_instrument_fastapi:
+        # Lane 3 slice 2: server spans. At construction on purpose — Starlette refuses new
+        # middleware once the app has started.
+        tracing.instrument_app(app)
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -890,6 +909,24 @@ def create_projections_app(
     async def _schema_version_header(request: Any, call_next: Any) -> Any:
         response = await call_next(request)
         response.headers[PROJECTIONS_SCHEMA_HEADER] = PROJECTIONS_SCHEMA_VERSION
+        return response
+
+    @app.middleware("http")
+    async def _request_context(request: Any, call_next: Any) -> Any:
+        """Bind the request id for the whole request (log lines, span attributes, Sentry tags)
+        and echo it. The frontend-read envelope middleware, when it runs first, has already
+        minted one on ``request.state``; a safe incoming ``X-Request-Id`` is kept; else new."""
+        existing = getattr(request.state, "request_id", None)
+        request_id = existing if isinstance(existing, str) else request_id_for(request)
+        request.state.request_id = request_id
+        with bound_context(request_id=request_id):
+            # The FastAPI instrumentor wraps ``build_middleware_stack``, so its server span is
+            # OUTSIDE every HTTP middleware — it had already opened when this one ran, and the
+            # start-of-span context copy missed the id. Annotate the open span too, as the tenant
+            # seams do. ``bound_context`` still owns the scope: the binding is undone on exit.
+            bind_and_annotate(request_id=request_id)
+            response = await call_next(request)
+        response.headers.setdefault(REQUEST_ID_HEADER, request_id)
         return response
 
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,

@@ -170,6 +170,35 @@ class Settings(BaseSettings):
     metrics_otlp_endpoint: str | None = None
     metrics_export_interval_ms: int = Field(default=10_000, ge=100)
 
+    # --- telemetry roots (lane 3 slice 2; all off by default) ------------------------------
+    # OTLP/HTTP traces endpoint (slice 3 points it at Langfuse). Empty → spans are created
+    # in-process and exported nowhere, today's behaviour. Env: ``CLUE_OTEL_TRACES_ENDPOINT``.
+    otel_traces_endpoint: str | None = None
+    # Instrument the FastAPI app (server spans) and httpx (client spans) at the roots. On by
+    # default because without an endpoint the spans cost nothing and go nowhere.
+    # Env: ``CLUE_OTEL_INSTRUMENT_FASTAPI`` / ``CLUE_OTEL_INSTRUMENT_HTTPX``.
+    otel_instrument_fastapi: bool = True
+    otel_instrument_httpx: bool = True
+    # Sentry (R6): installed only when enabled AND ``CLUE_SENTRY_DSN`` (a secret) is set; the
+    # roots refuse ``enabled`` with no DSN. ``sentry_environment`` names the deployment posture
+    # on every event; ``release`` is the code version (a git sha), empty → unset.
+    # Env: ``CLUE_SENTRY_ENABLED`` / ``CLUE_SENTRY_ENVIRONMENT`` / ``CLUE_RELEASE``.
+    sentry_enabled: bool = False
+    sentry_environment: str = "lane-san-salvador"
+    release: str | None = None
+
+    # --- Langfuse (lane 3 slice 3, R4: cloud, EU) -------------------------------------------
+    # On by default (founder, 2026-09-15): installed whenever both keys (secrets) are set; with
+    # the keys blank the roots log ``langfuse.not_installed`` and run without it, so a process
+    # without a project (CI, a fresh worktree) still boots. Set it false to silence a configured
+    # project. The client attaches to the process's tracer provider, so the agent tree, the HTTP
+    # spans and the worker's task span are one trace. ``langfuse_environment`` names the
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
+    langfuse_enabled: bool = True
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_environment: str = "lane-san-salvador"
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0

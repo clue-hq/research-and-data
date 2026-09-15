@@ -108,6 +108,19 @@ class Secrets(BaseSettings):
     # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
     gemini_api_key: SecretStr | None = None
 
+    # --- telemetry roots (lane 3 slice 2) ---
+    # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).
+    sentry_dsn: SecretStr | None = None
+    # Env: CLUE_OTEL_TRACES_HEADERS — "k=v,k2=v2" sent with every OTLP trace export (Langfuse's
+    # basic-auth header in slice 3); a secret because it carries the project keys.
+    otel_traces_headers: SecretStr | None = None
+
+    # --- Langfuse (lane 3 slice 3) ---
+    # Env: CLUE_LANGFUSE_PUBLIC_KEY / CLUE_LANGFUSE_SECRET_KEY — the project's key pair (the
+    # public key is also an identifier, but the pair authorises ingest, so both are secrets).
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+
     # --- durable artifact storage (Phase B2 / REQ-07) ---
     # Credentials for the S3-compatible StorageBackend (AWS S3 / R2 / MinIO). Non-secret knobs
     # (bucket, endpoint, region, backend selector) live in Settings; only the key pair is secret.

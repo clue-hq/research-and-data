@@ -27,6 +27,7 @@ from datetime import datetime
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
 from clue_api.arv2.errors import (
     ProviderHalted,
@@ -49,6 +50,7 @@ from clue_api.arv2.sinks import (
     sha256_hex,
 )
 from clue_api.arv2.transport import HttpRequest, HttpResponse, Transport, TransportFailure
+from clue_obs.langfuse import ObservationLike, ObservationType, guardrail, observation
 
 #: The statuses Appendix A law 2 retries with the ``12·(n+1)`` s (or ``Retry-After``) backoff.
 DEFAULT_RETRY_STATUSES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
@@ -216,6 +218,70 @@ class CallResult:
             raise RawParseError(self.raw_ref, f"raw body is not JSON: {exc}") from exc
 
 
+def _observation_type(operation: str) -> ObservationType:
+    """What kind of work a provider operation is, for the tree: a model completion, an embedding,
+    or a fetch/tool hop (the default — an ATS board, a watch page, a media upload leg)."""
+    lowered = operation.lower()
+    if lowered.endswith("chat/completions") or lowered == "agent_completion":
+        return "generation"
+    if "embed" in lowered:
+        return "embedding"
+    return "tool"
+
+
+def _observation_input(spec: CallSpec, *, over_ceiling: bool) -> dict[str, object]:
+    """What a provider call *was*, for the viewer: never the query string, headers or body (R3).
+
+    The host is ``hostname``, not ``netloc``: a URL that embeds credentials (``user:pw@host``)
+    must not export them, and the port is not worth that risk. ``netloc`` is the fallback for the
+    URL shapes ``hostname`` cannot parse.
+    """
+    parts = urlsplit(spec.request.url)
+    return {
+        "method": spec.request.method,
+        "host": parts.hostname or parts.netloc,
+        "path": parts.path,
+        "label": spec.label,
+        "estimate": {
+            "usd": str(spec.estimate.usd),
+            "credits": str(spec.estimate.credits),
+            "media_seconds": spec.estimate.media_seconds,
+        },
+        "over_ceiling_estimate": over_ceiling,
+    }
+
+
+def _usage_details(cost: CostReading, *, credits: Decimal, media_seconds: int) -> dict[str, int]:
+    """Langfuse's usage map (ints only). Tokens when the reader reported them, else the unit the
+    provider actually bills in — credits or media seconds — so a non-token call still shows usage.
+    """
+    details: dict[str, int] = {}
+    for source_key, target_key in (
+        ("prompt_tokens", "input"),
+        ("completion_tokens", "output"),
+        ("cached_prompt_tokens", "cache_read_input"),
+    ):
+        value = cost.extras.get(source_key)
+        if isinstance(value, int) and value > 0:
+            details[target_key] = value
+    if not details:
+        if credits > 0:
+            details["credits"] = int(credits)
+        if media_seconds > 0:
+            details["media_seconds"] = media_seconds
+    return details
+
+
+def _langfuse_extras(current: ObservationLike | None) -> dict[str, object]:
+    """The ids that join a ledger row to its observation — empty when Langfuse is off."""
+    if current is None or current.trace_id is None:
+        return {}
+    extras: dict[str, object] = {"langfuse_trace_id": current.trace_id}
+    if current.id is not None:
+        extras["langfuse_observation_id"] = current.id
+    return extras
+
+
 class ProviderCaller:
     """Sends one :class:`CallSpec` at a time, applying laws 1 and 2 in a fixed order."""
 
@@ -265,127 +331,168 @@ class ProviderCaller:
         """
         latched_reason = self._halted.get(spec.provider)
         if latched_reason is not None:
+            guardrail(
+                "provider.halt_latch",
+                reason=f"{spec.provider}: latched:{latched_reason}",
+                metadata={
+                    "provider": spec.provider,
+                    "operation": spec.operation,
+                    "label": spec.label,
+                },
+            )
             raise ProviderHalted(spec.provider, f"latched:{latched_reason}", latched=True)
 
         call_id = str(uuid.uuid4())
         over_ceiling = self._exceeds_ceilings(spec.estimate)
-        self._record(
-            spec,
-            call_id=call_id,
-            phase="estimate",
-            outcome="estimate",
-            over_ceiling=over_ceiling,
-        )
+        with observation(
+            f"{spec.provider}.{spec.operation}",
+            as_type=_observation_type(spec.operation),
+            input=_observation_input(spec, over_ceiling=over_ceiling),
+            metadata={
+                "call_id": call_id,
+                "provider": spec.provider,
+                "operation": spec.operation,
+                "label": spec.label,
+            },
+        ) as current:
+            if over_ceiling:
+                guardrail(
+                    "provider.ceiling",
+                    reason=f"{spec.provider}.{spec.operation}: the estimate exceeds a ceiling",
+                    metadata={"call_id": call_id, "phase": "estimate"},
+                )
+            self._record(
+                spec,
+                call_id=call_id,
+                phase="estimate",
+                outcome="estimate",
+                over_ceiling=over_ceiling,
+            )
 
-        raw_refs: list[str] = []
-        response: HttpResponse | None = None
-        attempts = 0
-        latency_ms = 0
-        for index in range(spec.max_attempts):
-            attempts = index + 1
-            is_last = index == spec.max_attempts - 1
-            started = self._monotonic()
-            try:
-                response = self._transport.send(spec.request)
-            except TransportFailure as exc:
+            raw_refs: list[str] = []
+            response: HttpResponse | None = None
+            attempts = 0
+            latency_ms = 0
+            for index in range(spec.max_attempts):
+                attempts = index + 1
+                is_last = index == spec.max_attempts - 1
+                started = self._monotonic()
+                try:
+                    response = self._transport.send(spec.request)
+                except TransportFailure as exc:
+                    latency_ms = self._elapsed_ms(started)
+                    if not is_last:
+                        self._sleep(2.0 * (index + 1))
+                        continue
+                    self._record(
+                        spec,
+                        call_id=call_id,
+                        phase="result",
+                        outcome="transport_error",
+                        over_ceiling=over_ceiling,
+                        attempts=attempts,
+                        latency_ms=latency_ms,
+                        error_code="transport_error",
+                        extras={"last_error": str(exc), **_langfuse_extras(current)},
+                    )
+                    current.update(
+                        level="ERROR",
+                        status_message="transport_error",
+                        output={
+                            "outcome": "transport_error",
+                            "attempts": attempts,
+                            "latency_ms": latency_ms,
+                        },
+                    )
+                    raise ProviderTransportError(spec.provider, attempts, str(exc)) from exc
                 latency_ms = self._elapsed_ms(started)
-                if not is_last:
-                    self._sleep(2.0 * (index + 1))
+                try:
+                    response = self._scrub(spec, response)
+                except Exception as exc:
+                    raw_refs.append(
+                        self._save_raw(
+                            spec, call_id, index, latency_ms, response, persist_body=False
+                        )
+                    )
+                    self._settle(
+                        spec,
+                        call_id=call_id,
+                        outcome="client_error",
+                        attempts=attempts,
+                        latency_ms=latency_ms,
+                        status=response.status,
+                        cost=CostReading(),
+                        error_code="raw_scrub_failed",
+                        raw_ref=raw_refs[-1],
+                        current=current,
+                    )
+                    raise RawScrubFailed(spec.provider, raw_refs[-1], str(exc)) from exc
+                raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
+                if response.status in spec.retry_statuses and not is_last:
+                    self._sleep(self._retry_delay(response, index))
                     continue
-                self._record(
+                break
+
+            if response is None:  # pragma: no cover - max_attempts is always >= 1
+                raise ProviderTransportError(spec.provider, attempts, "no attempt was made")
+
+            cost = CostReading()
+            error_code: str | None = None
+            if spec.cost_reader is not None:
+                try:
+                    cost = spec.cost_reader(response)
+                except Exception:
+                    # An unreadable cost is "the provider did not tell us", never zero: the
+                    # row falls back to the estimate and says so, and the call still returns
+                    # its body.
+                    cost = CostReading()
+                    error_code = "cost_unreadable"
+
+            halt_reason = spec.halt_rule(response) if spec.halt_rule is not None else None
+            if halt_reason is not None:
+                self._halted[spec.provider] = halt_reason
+                settled, _ = self._settle(
                     spec,
                     call_id=call_id,
-                    phase="result",
-                    outcome="transport_error",
-                    over_ceiling=over_ceiling,
-                    attempts=attempts,
-                    latency_ms=latency_ms,
-                    error_code="transport_error",
-                    extras={"last_error": str(exc)},
-                )
-                raise ProviderTransportError(spec.provider, attempts, str(exc)) from exc
-            latency_ms = self._elapsed_ms(started)
-            try:
-                response = self._scrub(spec, response)
-            except Exception as exc:
-                raw_refs.append(
-                    self._save_raw(spec, call_id, index, latency_ms, response, persist_body=False)
-                )
-                self._settle(
-                    spec,
-                    call_id=call_id,
-                    outcome="client_error",
+                    outcome="halted",
                     attempts=attempts,
                     latency_ms=latency_ms,
                     status=response.status,
-                    cost=CostReading(),
-                    error_code="raw_scrub_failed",
-                    raw_ref=raw_refs[-1],
+                    cost=cost,
+                    error_code=halt_reason,
+                    raw_ref=raw_refs[-1] if raw_refs else None,
+                    current=current,
                 )
-                raise RawScrubFailed(spec.provider, raw_refs[-1], str(exc)) from exc
-            raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
-            if response.status in spec.retry_statuses and not is_last:
-                self._sleep(self._retry_delay(response, index))
-                continue
-            break
+                raise ProviderHalted(
+                    spec.provider,
+                    halt_reason,
+                    http_status=response.status,
+                    ledger_row_id=settled.ledger_row_id,
+                )
 
-        if response is None:  # pragma: no cover - max_attempts is always >= 1
-            raise ProviderTransportError(spec.provider, attempts, "no attempt was made")
-
-        cost = CostReading()
-        error_code: str | None = None
-        if spec.cost_reader is not None:
-            try:
-                cost = spec.cost_reader(response)
-            except Exception:
-                # An unreadable cost is "the provider did not tell us", never zero: the row falls
-                # back to the estimate and says so, and the call still returns its body.
-                cost = CostReading()
-                error_code = "cost_unreadable"
-
-        halt_reason = spec.halt_rule(response) if spec.halt_rule is not None else None
-        if halt_reason is not None:
-            self._halted[spec.provider] = halt_reason
-            settled, _ = self._settle(
+            settled, actual_over_ceiling = self._settle(
                 spec,
                 call_id=call_id,
-                outcome="halted",
+                outcome=self._outcome(response.status, spec.retry_statuses),
                 attempts=attempts,
                 latency_ms=latency_ms,
                 status=response.status,
                 cost=cost,
-                error_code=halt_reason,
+                error_code=error_code,
                 raw_ref=raw_refs[-1] if raw_refs else None,
+                current=current,
             )
-            raise ProviderHalted(
-                spec.provider,
-                halt_reason,
-                http_status=response.status,
+            return CallResult(
+                response=response,
+                latency_ms=latency_ms,
+                attempts=attempts,
+                raw_ref=raw_refs[-1] if raw_refs else None,
+                raw_refs=tuple(raw_refs),
                 ledger_row_id=settled.ledger_row_id,
+                cost=cost,
+                over_ceiling=actual_over_ceiling,
+                call_cost=settled,
             )
-
-        settled, actual_over_ceiling = self._settle(
-            spec,
-            call_id=call_id,
-            outcome=self._outcome(response.status, spec.retry_statuses),
-            attempts=attempts,
-            latency_ms=latency_ms,
-            status=response.status,
-            cost=cost,
-            error_code=error_code,
-            raw_ref=raw_refs[-1] if raw_refs else None,
-        )
-        return CallResult(
-            response=response,
-            latency_ms=latency_ms,
-            attempts=attempts,
-            raw_ref=raw_refs[-1] if raw_refs else None,
-            raw_refs=tuple(raw_refs),
-            ledger_row_id=settled.ledger_row_id,
-            cost=cost,
-            over_ceiling=actual_over_ceiling,
-            call_cost=settled,
-        )
 
     # -- internals ---------------------------------------------------------------------------
 
@@ -570,6 +677,7 @@ class ProviderCaller:
         cost: CostReading,
         error_code: str | None,
         raw_ref: str | None,
+        current: ObservationLike | None = None,
     ) -> tuple[CallCost, bool]:
         """Update the running totals from the reading, then write the result row.
 
@@ -602,6 +710,12 @@ class ProviderCaller:
         over_ceiling = self._exceeds_ceilings(
             SpendEstimate(usd=usd, credits=credits, media_seconds=media_seconds)
         )
+        if over_ceiling:
+            guardrail(
+                "provider.ceiling",
+                reason=f"{spec.provider}.{spec.operation}: the settled cost exceeds a ceiling",
+                metadata={"call_id": call_id, "phase": "result"},
+            )
         self._totals = SpendTotals(
             usd=self._totals.usd + usd,
             credits=self._totals.credits + credits,
@@ -622,8 +736,42 @@ class ProviderCaller:
             provider_request_id=cost.provider_request_id,
             error_code=error_code,
             raw_ref=raw_ref,
-            extras={**cost.extras, "cost_source": source},
+            extras={**cost.extras, "cost_source": source, **_langfuse_extras(current)},
         )
+        if current is not None:
+            model = cost.extras.get("model")
+            current.update(
+                output={
+                    "status": status,
+                    "outcome": outcome,
+                    "attempts": attempts,
+                    "latency_ms": latency_ms,
+                    "provider_request_id": cost.provider_request_id,
+                    "raw_ref": raw_ref,
+                },
+                cost_details={"total": float(usd)},
+                usage_details=_usage_details(cost, credits=credits, media_seconds=media_seconds)
+                or None,
+                metadata={
+                    "ledger_row_id": row_id,
+                    "cost_source": source,
+                    "over_ceiling": over_ceiling,
+                    # The SDK carries ``cost_details``/``usage_details``/``model`` on
+                    # generation-like observations only, and drops them on span-like ones (a
+                    # ``tool`` fetch, an ``agent`` leg). The money is therefore repeated in
+                    # metadata, which every observation type keeps, so a free or non-token call
+                    # still shows what it settled at.
+                    "cost_usd": str(usd),
+                    "credits": str(credits),
+                    "media_seconds": media_seconds,
+                },
+                **({"model": model} if isinstance(model, str) and model else {}),
+                **(
+                    {"level": "ERROR", "status_message": error_code or outcome}
+                    if outcome != "ok"
+                    else {}
+                ),
+            )
         return (
             CallCost(
                 cost_usd=usd,

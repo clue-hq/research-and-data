@@ -46,6 +46,7 @@ from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.structuring_client import FieldCatalog
 from clue_core import EntityId
 from clue_obs import get_logger
+from clue_obs.langfuse import tag_entities
 from clue_research.identity import get_contact, insert_contact_entity
 
 log = get_logger("clue_api.arv2.committee_step")
@@ -224,6 +225,8 @@ async def _fan_out(
         profile_sha256=person_profile_sha256,
     )
     if inserted:
+        # The member is born here: the account job's trace names every person it created.
+        tag_entities([contact_id])
         for draft in committee_member_claims(
             candidate, scope=scope, contact_id=contact_id, catalog=catalog
         ):

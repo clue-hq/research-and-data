@@ -87,6 +87,7 @@ from clue_api.arv2.onboarding_driver import (
 )
 from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
 from clue_api.arv2.read_tools import DbArv2ReadService
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
@@ -142,6 +143,12 @@ from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
 from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.production_tracing import (
+    install_production_langfuse,
+    install_production_sentry,
+    install_production_tracing,
+    production_tracing_lifespan,
+)
 from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
@@ -188,6 +195,7 @@ from clue_execution import (
 from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
+from clue_obs.sentry import capture
 from clue_research.adapters import default_scrape_backend
 from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_research.narrative import ProseSynthesizer
@@ -233,8 +241,9 @@ async def _orphan_sweep_loop(
                 deleted = await run_orphan_blob_sweep(conn, storage=storage)
             if deleted:
                 log.info("fleet.orphan_sweep.deleted", count=len(deleted))
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.orphan_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.Task[None] | None:
@@ -268,8 +277,9 @@ async def _stream_token_sweep_loop(
                 deleted = await sweep_stream_tokens(conn)
             if deleted:
                 log.info("fleet.stream_token_sweep.deleted", count=deleted)
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.stream_token_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_stream_token_sweep(settings: Settings) -> asyncio.Task[None] | None:
@@ -308,8 +318,9 @@ async def _chat_sweep_loop(
             )
             if dispatched or pruned:
                 log.info("fleet.chat_sweep.done", dispatched=dispatched, pruned=pruned)
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.chat_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_chat_sweep(settings: Settings) -> asyncio.Task[None] | None:
@@ -336,8 +347,9 @@ async def _agent_cleanup_loop(
                     removed=result.removed,
                     already_absent=result.already_absent,
                 )
-        except Exception:  # noqa: BLE001 — cleanup failure must not sink run execution
+        except Exception as exc:  # noqa: BLE001 — cleanup failure must not sink run execution
             log.warning("fleet.agent_cleanup.error", exc_info=True)
+            capture(exc)
 
 
 def _start_agent_cleanup(
@@ -367,8 +379,9 @@ async def _external_research_wake_loop(
             completed = await worker.run_due()
             if completed:
                 log.info("fleet.external_research.woke", run_count=completed)
-        except Exception:  # noqa: BLE001 - one wake scan must not sink the fleet
+        except Exception as exc:  # noqa: BLE001 - one wake scan must not sink the fleet
             log.warning("fleet.external_research.wake_error", exc_info=True)
+            capture(exc)
         await sleep(settings.external_research_wake_worker_interval_s)
 
 
@@ -654,7 +667,7 @@ def _build_onboarding_handler(
     if not settings.onboarding_v2_enabled:
         return None
     try:
-        exa = build_onboarding_exa_client_factory(settings, secrets)
+        exa = build_onboarding_exa_client_factory(secrets)
     except ValueError:
         log.warning(
             "onboarding.handler_not_composed",
@@ -678,14 +691,15 @@ def _build_onboarding_handler(
 
 def _build_catalog_reconciler_factory(
     settings: Settings, secrets: Secrets
-) -> Callable[[UUID], CatalogReconciler] | None:
+) -> Callable[[RawSink, LedgerSink], CatalogReconciler] | None:
     """The catalog identity ladder's model stage, behind the reconcile flag.
 
     (``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``, model ``CLUE_ONBOARDING_RECONCILE_MODEL``.)
 
     A **factory of one reconciler per run**, not a reconciler: the call spends through R1's
-    ``ProviderCaller``, whose raw records and ledger belong under that run's own folder
-    (``arv2_raw_root/onboarding/<run_id>/catalog-reconcile/``), so the run id has to reach it.
+    ``ProviderCaller`` built over the catalog step's own buffered sinks, so its one call lands on
+    ``provider_call_ledger`` with the run's stamp (slice 1b) — the driver hands the factory the
+    sinks.
 
     Missing credential ≠ missing handler here (unlike the Exa key one level up): without the model
     stage the ladder still runs its deterministic rungs, which is exactly what it did before the
@@ -715,11 +729,9 @@ def _build_catalog_reconciler_factory(
         return None
     base_url = GatewayConfig().base_url
 
-    def factory(run_id: UUID) -> CatalogReconciler:
+    def factory(raw: RawSink, ledger: LedgerSink) -> CatalogReconciler:
         return OpenRouterCatalogReconciler(
-            caller_factory=lambda: build_onboarding_provider_caller(
-                settings, run_id=run_id, step_label="catalog-reconcile"
-            ),
+            caller_factory=lambda: build_onboarding_provider_caller(raw=raw, ledger=ledger),
             api_key=key,
             model=settings.onboarding_reconcile_model,
             base_url=base_url,
@@ -807,8 +819,16 @@ async def _serve() -> None:
     # Startup gate: a declared product path that is missing a provider credential refuses here,
     # before any lifecycle is opened or handler composed (see ``product_path_preflight``).
     assert_product_path_composition(settings, secrets)
+    # Lane 3 slice 2: the worker's tracer provider (and Sentry) before any lifecycle is opened, so
+    # every task span belongs to one provider. Both are no-ops without an endpoint / a DSN.
+    tracing = install_production_tracing(settings, secrets, service_name="clue-worker-fleet")
+    install_production_sentry(settings, secrets, service_name="clue-worker-fleet")
+    install_production_langfuse(
+        settings, secrets, runtime=tracing, service_name="clue-worker-fleet"
+    )
     storage = build_storage_backend(settings)
     async with (
+        production_tracing_lifespan(tracing),
         production_metrics_lifespan(
             settings,
             service_name="clue-worker-fleet",

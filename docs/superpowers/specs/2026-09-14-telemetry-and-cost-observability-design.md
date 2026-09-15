@@ -86,12 +86,12 @@ in §8 as deferred, with the trigger that re-opens it.
 
 | Capability | Where | State |
 | --- | --- | --- |
-| Structured logs with run context | `libs/clue-obs` — `clue_obs.context.bind_*` binds request, workspace, project, run, account, actor, profile version | Done. Milestone item 6. |
+| Structured logs with run context | `libs/clue-obs` — `clue_obs.context.bind_*` binds request, workspace, project, run, account, actor, profile version | Bound at the roots since slice 2 (2026-09-15): the request-context middleware and tenant seams in the API, the per-task wrapper in the fleet worker. Before that nothing in production called the bind helpers, so item 6 was not met. |
 | Redaction | `libs/clue-obs/clue_obs/redact.py` — secret-shaped keys → `***`; claim-value keys → ids; blobs → placeholder; runs in every log mode | Done for logs. Reused for spans and Langfuse (secret rule only, per R3). |
 | OTel spans | `clue_obs.otel.tracing.traced_step` / `configure_tracing`; module-local `TracerProvider`; OTLP HTTP exporter is a dependency | Spans are created and **dropped**: `configure_tracing` has no production caller. |
 | LLM cost per call | `libs/clue-gateway/clue_gateway/tracing.py` — the factory's decorator records prompt, completion, cached tokens and `cost_cents` on every model call; `agent_model_call` receipts keyed by `turn_id` | Measured at the gateway on every call; the ARV2 research ledger records it. The conversation-turn receipt recorded 0 until slice 1 (Task 1–3) added cost_usd/cost_source. |
 | Paid provider usage | `platform/api/clue_api/arv2/calls.py` `ProviderCaller` → `provider_call_ledger` (`workspace_id, project_id, project_run_id, entity_research_job_id, provider, operation, label, phase, http_status, latency_ms, attempts, cost_usd, credits, media_seconds, over_ceiling, outcome, cost_source, raw ref`) | Done for every ARV2 call. Milestone item 5 for the pilot path. |
-| Onboarding / display / evidence spend | ProviderCaller with JsonlLedger (arv2/onboarding_driver.py, arv2/display/page.py, onboarding_evidence_tools.py) | On disk, not queryable — slice 1b routes them to provider_call_ledger. |
+| Onboarding / display / evidence spend | ProviderCaller over buffered sinks drained by the onboarding driver, the display page and the evidence tool (slice 1b) | On provider_call_ledger since 2026-09-14; the onboarding run id is the job stamp. |
 | Outbound HTTP | httpx everywhere (32 files under `libs`, `subsystems`, `platform`; no `requests`, no `aiohttp`) | One instrumentor covers all of it. |
 | Langfuse, Sentry, OTel instrumentors, OTLP endpoint config | — | Absent. No references anywhere in the tree or `.env.example`. |
 
@@ -246,9 +246,10 @@ No new table. One read, `clue_projections.cost.cost_report`, over the two ledger
 
 The two tables never hold the same call, so the total is their plain sum. Served as
 `GET /cost/report` on the projections router and as `make cost-report`. Every report carries a
-`not_covered` list naming the spend this read cannot see: the onboarding lane, the display
-prewrite and the persona-evidence tool (JSONL ledgers on disk — **slice 1b** routes them to the
-Postgres ledger), the design subsystem's providers (R12 hold), and pre-cost-column turn rows.
+`not_covered` list naming the spend this read cannot see: the design subsystem's providers (R12
+hold) and pre-cost-column turn rows. Slice 1b (2026-09-14) put the onboarding lane, the display
+prewrite and the persona-evidence tool on the Postgres ledger, and made every OpenRouter row carry
+its model and token counts.
 
 Agent-and-tool-level cost is **not** materialised in Postgres (R9). Langfuse holds that tree, and
 every ledger row and receipt carries the observation id (§5.3), so a ledger line opens to the agent
@@ -268,6 +269,10 @@ not recorded anywhere, because nothing today needs to know which entities a turn
 **What lane 3 does.** The entity tagging in §5.3: the ARV2 job and the ARV2 read tools tag the
 current trace with the entity ids they wrote or returned. After that, "every trace that carried
 contact X" is one Langfuse query by metadata.
+Shipped 2026-09-15 (slice 4): the query is *traces with tag `entity:<id>`* (or metadata `entities`
+contains `<id>`); the job's trace carries its subject, every entity it wrote about and each
+committee member; a turn's trace carries every entity `read_account_research` / `read_claims`
+served.
 
 **What lane 3 does not do.** The erasure itself. ARV2 has no `erase` today; the only one in the
 tree is the old lane's `compliance/dsar.py`, which tombstones old-lane claim rows and is off limits
@@ -283,22 +288,29 @@ never claim text, so they are unaffected by erasure.
 
 ## 7. Environment (parity rule)
 
-Every flag below lands in `.env.example` with its default the moment its code lands:
+Every flag below lands in `.env.example` with its default the moment its code lands (CLUE_-prefixed, read through Settings/Secrets — the SDK-native names are not used, so nothing configures itself behind the parity rule):
 
 ```
 # --- Telemetry (lane 3) ---
-LANGFUSE_HOST=https://cloud.langfuse.com      # EU region project (R4)
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
-CLUE_LANGFUSE_ENABLED=false                    # off → no handler, no export, no stamping
-OTEL_EXPORTER_OTLP_ENDPOINT=                   # empty → spans stay in-process (today's behaviour)
-OTEL_EXPORTER_OTLP_HEADERS=                    # Langfuse basic auth, set by the stack script
+CLUE_LANGFUSE_ENABLED=true                     # on by default (2026-09-15); blank keys → logged skip
+CLUE_LANGFUSE_HOST=https://cloud.langfuse.com  # EU region project (R4)
+CLUE_LANGFUSE_PUBLIC_KEY=                      # secret
+CLUE_LANGFUSE_SECRET_KEY=                      # secret
+CLUE_LANGFUSE_ENVIRONMENT=lane-san-salvador
+CLUE_METRICS_EXPORTER=memory
+CLUE_METRICS_OTLP_ENDPOINT=
+CLUE_METRICS_EXPORT_INTERVAL_MS=10000
+CLUE_OTEL_TRACES_ENDPOINT=
+CLUE_OTEL_TRACES_HEADERS=
 CLUE_OTEL_INSTRUMENT_FASTAPI=true
 CLUE_OTEL_INSTRUMENT_HTTPX=true
-SENTRY_DSN=
-SENTRY_ENVIRONMENT=lane-san-salvador
 CLUE_SENTRY_ENABLED=false
+CLUE_SENTRY_DSN=
+CLUE_SENTRY_ENVIRONMENT=lane-san-salvador
+CLUE_RELEASE=
 ```
+
+Slice 2 (2026-09-15) shipped the OTel and Sentry names; slice 3a (2026-09-15) settled the Langfuse names as CLUE_-prefixed (D3 in its design note): the client attaches to the slice 2 provider, so CLUE_OTEL_TRACES_ENDPOINT stays empty for Langfuse and remains the seam for any other collector.
 
 All three layers default **off**, so an unconfigured process behaves exactly as today. The pilot
 overlay pins them on.
@@ -315,23 +327,36 @@ overlay pins them on.
 | Cost readers for the legacy resolvers | never: R11; they are visible as httpx spans with latency only |
 | **Design subsystem: root instrumentation, Langfuse on the design leg, ledger rows for its paid calls (§5.4)** | **HIGH PRIORITY.** The moment the co-founder's design agent-structure changes are finalised. Until then the pilot cost picture omits the design leg's image and ad-DNA spend (R12) |
 | ARV2 erasure endpoints (D10) + Langfuse trace deletion | second priority; its own lane after lane 3 slices 1–3 (R13) |
+| Non-graph gateway completions (value narrative, exit judge, Stage-0 extractor, judges) and the old lane's Sumble / Exa tier-3 provider calls on a Postgres ledger | founder ruling 2026-09-15: leave as is; they are visible in Langfuse with settled cost (gateway path) or as httpx spans (old-lane resolvers); the cost read does not see them |
 
 ## 9. Slices, in order
 
 1. **Cost read** (§5.5). Spends nothing, needs no new service, answers the founder's question on
    day one. Projection endpoint + make target + tests over seeded ledger rows.
-1b. **JSONL ledgers onto Postgres.** The onboarding lane, the display prewrite and the
-   persona-evidence tool write through `ProviderCaller` to JSONL files; route them to
-   `provider_call_ledger` (mechanics in `_memory/2026-09-14-lane3-slice1-cost-read.md`). Runs
-   after slice 1, before the pilot's first customer onboarding is counted.
-2. **Roots** (§5.1, §5.2, §4 propagation). `clue_obs.otel.install`, `clue_obs.sentry.install`,
-   traceparent on the turn and job rows, env parity. Small, early; lane 1's remaining plans rebase
-   over it (`agent_runtime_wiring.py` and the roots are the only shared files).
-3. **Langfuse** (§5.3, R4 hosting). Compose stack + stack-script verb; callback in the runtime
-   tuple; gateway decorator path; provider-caller observations; payload redaction; ids stamped
-   back onto ledger rows and receipts.
-4. **Entity tagging on traces** (§6): the ARV2 job and read tools tag traces with entity ids.
-   Small, ARV2-only. The Langfuse deletion step is handed to the erasure lane (R13).
+1b. **JSONL ledgers onto Postgres — DONE 2026-09-14.** The onboarding lane, the display
+   prewrite and the persona-evidence tool drain their `ProviderCaller` sinks onto
+   `provider_call_ledger` (design:
+   `2026-09-14-lane3-slice1b-jsonl-ledgers-to-postgres-design.md`); OpenRouter rows carry model
+   and usage.
+2. **Roots — DONE 2026-09-15** (design: `2026-09-15-lane3-slice2-roots-design.md`).
+   `clue_obs.otel.install_tracing` + `clue_obs.sentry` at `projections_main` and `fleet_main`; run
+   context bound at the roots; the trace rides the fleet payload (D1, no migration); env parity
+   incl. the metrics gap.
+3. **Langfuse** (§5.3, R4 hosting; design: `2026-09-15-lane3-slice3-langfuse-design.md`).
+   **3a — DONE 2026-09-15:** the client attached to the slice 2 provider (D1), the LangChain
+   handler in the turn's callback tuple with the run registry and settled cost on every graph
+   generation, receipt ids (D4, migration `b7193eb28363`), payload redaction, `make langfuse-check`,
+   the streamed `answering_model` fix. **3b — DONE 2026-09-15:** the research job as one agent
+   observation with priced rounds and generation ids on its ledger rows, the exit judge as an
+   evaluator, gateway generations/embeddings, provider-caller observations with settled money
+   and halt/ceiling guardrails, governed-tool/retriever observations with the disposition, the
+   work-guard guardrail. Live proof owed (founder-triggered, after the keys are set and the stack
+   restarted): one chat turn and one research job opened in Langfuse; the receipt's
+   `langfuse_trace_id` and a ledger row's `extras_json.langfuse_trace_id` open those traces.
+4. **Entity tagging on traces — DONE 2026-09-15** (design: `2026-09-15-lane3-slice4-entity-tags-design.md`):
+   `clue_obs.langfuse.tag_entities`; the job tags its subject, its writes and its committee
+   members; the two read tools tag what they served. The Langfuse deletion step is the erasure
+   lane's (R13).
 
 **Held, high priority (R12):** the design subsystem slice (§5.4: root instrumentation, Langfuse on
 the design leg, provider-caller seam moved to a shared package, image provider and ad-DNA call on

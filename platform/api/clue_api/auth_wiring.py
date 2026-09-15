@@ -36,6 +36,7 @@ from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_obs.otel import bind_and_annotate
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
@@ -45,7 +46,7 @@ _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 log = get_logger("clue_api.auth")
 
 
-def _request_id(request: Request) -> str:
+def request_id_for(request: Request) -> str:
     existing = request.headers.get(REQUEST_ID_HEADER, "").strip()
     if existing and _SAFE_REQUEST_ID.fullmatch(existing):
         return existing
@@ -215,6 +216,10 @@ def authenticated_route_resolvers(
     async def workspace(
         principal: Annotated[RequestPrincipal, Depends(principal_dependency)],
     ) -> str:
+        # Lane 3 slice 2: the authenticated tenant seam. ``bind_and_annotate`` (not a plain bind):
+        # the server span opened in the instrumentor's middleware, before this dependency ran, so
+        # the start-time context copy has already happened and the span needs the second write.
+        bind_and_annotate(workspace_id=principal.workspace_id)
         return principal.workspace_id
 
     async def actor(
@@ -341,7 +346,7 @@ def build_auth_router(
             semantics (``clue_db.transaction``) — the whole operation is one transaction and
             the 409 path must roll everything back. Wiring ``clue_db.connection`` here would
             silently roll back every successful provision."""
-            request_id = _request_id(request)
+            request_id = request_id_for(request)
             response.headers[REQUEST_ID_HEADER] = request_id
             log.info("auth.provision.started", request_id=request_id)
             try:
@@ -412,7 +417,7 @@ def install_auth_wiring(
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
-        request_id = _request_id(request)
+        request_id = request_id_for(request)
         # Every refusal is named in the operator log — the route, the code and, when the refusing
         # step knew it, WHO: the provider subject (a verified Clerk user id) and the Clue user.
         # Added 2026-09-11 after a browser session was bounced to provisioning with a bare 403
@@ -464,5 +469,6 @@ __all__ = [
     "build_principal_service",
     "install_auth_wiring",
     "principal_from_request",
+    "request_id_for",
     "require_principal",
 ]

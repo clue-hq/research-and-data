@@ -8,7 +8,10 @@ walk: one persona turn for one already-registered ICP document, and nothing else
 :meth:`OnboardingRunWorkHandler._personas_only`).
 
 Every provider call is R1's synchronous ``ProviderCaller`` run in ``asyncio.to_thread`` with ONE
-caller per step, so a blocking HTTP poll loop never owns the event loop.
+caller per step, so a blocking HTTP poll loop never owns the event loop. Nothing is written to
+disk: the step's sinks buffer its raw bodies and ledger rows, and the driver drains them after
+the step onto the artifact store and ``provider_call_ledger``, stamped with the workspace and
+this run's id as the job (lane 3 slice 1b, D1).
 
 The failure law: a provider failure, timeout or empty answer is a **step outcome**, never an
 exception — the step lands ``failed``/``empty`` with its reason, its document is closed without a
@@ -25,7 +28,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -64,7 +66,14 @@ from clue_api.arv2.onboarding_requests import (
     product_research_output_schema,
     product_research_query,
 )
-from clue_api.arv2.sinks import FileRawSink, JsonlLedger
+from clue_api.arv2.provider_ledger import (
+    BufferedLedger,
+    BufferedRawSink,
+    DrainReport,
+    LedgerStamp,
+    drain_provider_calls,
+)
+from clue_api.arv2.sinks import LedgerSink, RawSink
 from clue_api.arv2.transport import HttpxTransport
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
@@ -81,6 +90,7 @@ __all__ = [
     "SYNTHESIS_TURN_HARD_TIMEOUT_S",
     "ArtifactSink",
     "ClientEntityBinder",
+    "DrainProviderCalls",
     "ExaAgentSurface",
     "ExaClientFactory",
     "IcpRef",
@@ -196,9 +206,18 @@ class ExaAgentSurface(Protocol):
 
 class ExaClientFactory(Protocol):
     """One client per step, because one :class:`ProviderCaller` per step is R1's rule: a halt
-    latched by one step's provider must not silently stop another step's calls."""
+    latched by one step's provider must not silently stop another step's calls. The step's sinks
+    are the driver's (slice 1b): it buffers the step's raw bodies and ledger rows and drains them
+    onto the artifact store and ``provider_call_ledger`` after the step's calls."""
 
-    def __call__(self, *, run_id: UUID, step_label: str) -> ExaAgentSurface: ...
+    def __call__(
+        self, *, run_id: UUID, step_label: str, raw: RawSink, ledger: LedgerSink
+    ) -> ExaAgentSurface: ...
+
+
+#: The drain the driver runs after each provider step — injectable so the offline tests record
+#: every drain without a database, the way the store and the synchronizer are injected.
+DrainProviderCalls = Callable[..., Awaitable[DrainReport]]
 
 
 class ArtifactSink(Protocol):
@@ -278,25 +297,15 @@ class SynthesisLauncher(Protocol):
     ) -> SynthesisOutcome: ...
 
 
-def build_onboarding_provider_caller(
-    settings: Settings, *, run_id: UUID, step_label: str
-) -> ProviderCaller:
-    """One caller for one step, writing its raw records and ledger under the step's own folder.
-
-    The folder is per-step so "what did this step cost, and what came back" is answerable without
-    de-interleaving one shared ledger across a fan-out.
-    """
-    root = Path(settings.arv2_raw_root) / "onboarding" / str(run_id) / step_label.replace(":", "_")
-    root.mkdir(parents=True, exist_ok=True)
+def build_onboarding_provider_caller(*, raw: RawSink, ledger: LedgerSink) -> ProviderCaller:
+    """One caller for one step, over the step's own sinks. Since slice 1b nothing is written to
+    disk: the sinks buffer, and the driver drains them onto the artifact store and the ledger."""
     return ProviderCaller(
-        transport=HttpxTransport(),
-        raw_sink=FileRawSink(root / "raw"),
-        ledger=JsonlLedger(root / "ledger.jsonl"),
-        now=lambda: datetime.now(UTC),
+        transport=HttpxTransport(), raw_sink=raw, ledger=ledger, now=lambda: datetime.now(UTC)
     )
 
 
-def build_onboarding_exa_client_factory(settings: Settings, secrets: Secrets) -> ExaClientFactory:
+def build_onboarding_exa_client_factory(secrets: Secrets) -> ExaClientFactory:
     """The production factory. A blank key is unset (``.env.example`` ships the empty line), so it
     fails here at composition rather than as a provider 401 in the middle of a run."""
     key = secrets.exa_api_key
@@ -304,9 +313,11 @@ def build_onboarding_exa_client_factory(settings: Settings, secrets: Secrets) ->
         raise ValueError("CLUE_EXA_API_KEY is required for the onboarding lane")
     api_key = SecretStr(key.get_secret_value())
 
-    def factory(*, run_id: UUID, step_label: str) -> ExaAgentSurface:
-        caller = build_onboarding_provider_caller(settings, run_id=run_id, step_label=step_label)
-        return ExaClient(caller, api_key)
+    def factory(
+        *, run_id: UUID, step_label: str, raw: RawSink, ledger: LedgerSink
+    ) -> ExaAgentSurface:
+        del run_id, step_label  # the sinks are the step's identity now; the labels ride the rows
+        return ExaClient(build_onboarding_provider_caller(raw=raw, ledger=ledger), api_key)
 
     return factory
 
@@ -362,7 +373,8 @@ class OnboardingRunWorkHandler:
         store: Any = default_store,
         synchronize_catalog: Callable[..., Any] = default_synchronize,
         known_products: Callable[[AsyncConnection, str], Awaitable[Sequence[str]]] | None = None,
-        reconciler_factory: Callable[[UUID], CatalogReconciler] | None = None,
+        reconciler_factory: Callable[[RawSink, LedgerSink], CatalogReconciler] | None = None,
+        drain: DrainProviderCalls = drain_provider_calls,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
@@ -378,12 +390,15 @@ class OnboardingRunWorkHandler:
         # Same reason as the store and the synchronizer: the offline driver tests must never reach
         # a database, and the lineup's re-run hint is a read.
         self._known_products = known_products or _default_known_products
-        # A factory, not a reconciler: the model stage spends through a ``ProviderCaller`` whose
-        # raw records and ledger live under THIS run's folder (the one-caller-per-step law), so
-        # the run id has to reach it. ``None`` is a composed lane without the model stage — the
+        # A factory, not a reconciler: the model stage spends through a ``ProviderCaller`` built
+        # over the catalog step's own buffered sinks, so its one call lands on the ledger with
+        # this run's stamp (slice 1b). ``None`` is a composed lane without the model stage — the
         # ladder then stops after its deterministic rungs, which is what it did before the stage
         # existed.
         self._reconciler_factory = reconciler_factory
+        # Injected like the store and the synchronizer, so the offline tests record every drain
+        # without a database.
+        self._drain_calls = drain
         # The driver holds at most ONE connection at a time. Its row writes are small, ordered
         # facts about one run and the parallelism that matters is the provider calls (which run
         # off both the loop and this lock), so serializing them costs nothing — and it lets a
@@ -453,6 +468,43 @@ class OnboardingRunWorkHandler:
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
         async with self._db_lock, self._conn_factory() as conn:
             yield conn
+
+    def _stamp(self, scope: _Scope) -> LedgerStamp:
+        """D1 (slice 1b): a run's provider spend is the workspace's, with the run id as the job,
+        so ``make cost-report --job <run id>`` answers "what did this onboarding cost". No project:
+        the whole-brand walk is brand-scoped, and a personas run makes no provider call here."""
+        return LedgerStamp(workspace_id=scope.workspace_id, job_id=scope.run_id)
+
+    async def _drain(
+        self,
+        scope: _Scope,
+        raw: BufferedRawSink,
+        ledger: BufferedLedger,
+        *,
+        step_label: str,
+        conn: AsyncConnection | None = None,
+    ) -> None:
+        """Land a step's buffered raw bodies and ledger rows: under the driver's own connection,
+        or on ``conn`` when the caller already holds one (the catalog step). A drain that fails
+        raises — the rows are the call's money, and losing them quietly is the one thing this
+        lane must never do; ``handle``'s containment then fails the run loudly."""
+        if conn is not None:
+            report = await self._drain_calls(
+                conn, raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=self._stamp(scope)
+            )
+        else:
+            async with self._connection() as own:
+                report = await self._drain_calls(
+                    own, raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=self._stamp(scope)
+                )
+        log.info(
+            "onboarding.ledger_drained",
+            run_id=str(scope.run_id),
+            step=step_label,
+            rows=report.rows,
+            artifacts=report.artifacts,
+            cost_usd=str(report.cost_usd),
+        )
 
     # -- the run -----------------------------------------------------------------------------
 
@@ -640,7 +692,8 @@ class OnboardingRunWorkHandler:
                 step_id=step_id,
             )
         label = f"{kind}:{subject}" if subject else kind
-        client = self._exa(run_id=scope.run_id, step_label=label)
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        client = self._exa(run_id=scope.run_id, step_label=label, raw=raw, ledger=ledger)
         try:
             run = await asyncio.to_thread(
                 client.agent_run,
@@ -654,6 +707,9 @@ class OnboardingRunWorkHandler:
             # A provider halt or a transport failure is a step outcome, not a run failure.
             await self._settle(scope, step_id, document_id, _failed_step(error))
             return
+        finally:
+            # Whatever the call's outcome, its rows are money: land them (slice 1b).
+            await self._drain(scope, raw, ledger, step_label=label)
         if run.status != "completed" or not isinstance(run.structured, dict):
             # A run that finished ``completed`` without a structured object did not answer the
             # schema, which is its own failure — reporting it as ``completed`` would name the
@@ -735,7 +791,8 @@ class OnboardingRunWorkHandler:
                     reason=str(error)[:200],
                 )
                 known = ()
-        client = self._exa(run_id=scope.run_id, step_label="lineup")
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        client = self._exa(run_id=scope.run_id, step_label="lineup", raw=raw, ledger=ledger)
         query = f"Exhaustive list of products of {scope.company_domain}"
         if known:
             query = f"{query}\n\n{_KNOWN_PRODUCTS_HINT}{'; '.join(known)}"
@@ -761,6 +818,8 @@ class OnboardingRunWorkHandler:
         except Exception as error:
             await self._settle(scope, step_id, document_id, _failed_step(error))
             return ()
+        finally:
+            await self._drain(scope, raw, ledger, step_label="lineup")
         merged = _merge_lineups(own, open_web)
         document = product_catalog_document(
             merged, company_domain=scope.company_domain, as_of=self._clock()
@@ -830,19 +889,24 @@ class OnboardingRunWorkHandler:
                 # (the provider caller is built lazily, per call), but if it ever did raise, the
                 # failure law says this step lands ``failed`` with its reason — not that the run
                 # dies in ``handle``'s containment.
+                raw, ledger = BufferedRawSink(), BufferedLedger()
                 reconciler = (
-                    self._reconciler_factory(scope.run_id)
+                    self._reconciler_factory(raw, ledger)
                     if self._reconciler_factory is not None
                     else None
                 )
-                links = await self._sync(
-                    conn,
-                    workspace_id=scope.workspace_id,
-                    brand_id=scope.brand_id,
-                    document_id=document_id,
-                    products=products,
-                    reconciler=reconciler,
-                )
+                try:
+                    links = await self._sync(
+                        conn,
+                        workspace_id=scope.workspace_id,
+                        brand_id=scope.brand_id,
+                        document_id=document_id,
+                        products=products,
+                        reconciler=reconciler,
+                    )
+                finally:
+                    # The step already holds the connection: drain on it (slice 1b).
+                    await self._drain(scope, raw, ledger, step_label="catalog-reconcile", conn=conn)
             except Exception as error:
                 await self._store.finish_step(
                     conn,

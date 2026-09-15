@@ -232,6 +232,7 @@ def build_frontend_read_router(
         return router
     # Imported here, not at module scope: the endpoint modules import ``WorkspaceDep`` from this
     # one, so a top-level import would be circular.
+    from clue_api.agent_turn_wiring import DurableAgentArtifactStore
     from clue_api.frontend_read.account_detail import register_account_detail_routes
     from clue_api.frontend_read.account_logo import register_account_logo_route
     from clue_api.frontend_read.account_workspace import register_account_workspace_routes
@@ -247,7 +248,19 @@ def build_frontend_read_router(
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
     )
-    display = DisplayPages(settings=settings, secrets=secrets, conn_factory=conn_factory)
+    # Slice 1b: a written section's raw body becomes an artifact the ledger row cites, so the
+    # display seam is handed a sink built on the storage this root already holds. No storage,
+    # no sink — and the seam then serves stored pages instead of writing ones it cannot record.
+    display = DisplayPages(
+        settings=settings,
+        secrets=secrets,
+        conn_factory=conn_factory,
+        artifacts=(
+            None
+            if evidence_storage is None
+            else DurableAgentArtifactStore(storage=evidence_storage, conn_factory=conn_factory)
+        ),
+    )
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.

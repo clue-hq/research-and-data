@@ -38,7 +38,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import timedelta
-from typing import TypeVar
+from typing import Any, TypeVar
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -115,6 +115,7 @@ from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
 )
 from clue_api.frontend_read import latest_project_run_context
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
     CompiledProjectFile,
@@ -164,6 +165,7 @@ from clue_fleet import (
     release_work_lease,
 )
 from clue_obs import get_logger
+from clue_obs.langfuse import observation, propagate_trace
 from clue_projections import (
     PROJECT_CONVERSATION_CARD_MEDIA_TYPE,
     compile_project_conversation_card,
@@ -1624,6 +1626,12 @@ def _completion_text(completion: object) -> str | dict[str, object]:
     return ""
 
 
+def _judgment_payload(judgment: ExitJudgment) -> dict[str, object]:
+    """The verdict as a JSON-safe mapping for the evaluator observation's output."""
+
+    return judgment.model_dump(mode="json")
+
+
 def build_design_leg_exit_judge(
     *,
     models: AgentModelProvider,
@@ -1658,8 +1666,30 @@ def build_design_leg_exit_judge(
                     )
                 )
             prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
-            completion = await model_holder[0].ainvoke(prompt)  # type: ignore[attr-defined]
-            return parse_exit_judgment(_completion_text(completion))
+            # Lane 3 slice 3b: the judge is an `evaluator` in its own trace, and the direct
+            # model call carries the LangChain handler so its generation nests underneath.
+            # The rendered prompt stays OUT of the observation — only the turn's message and
+            # how much history it weighed.
+            langfuse = build_langfuse_callbacks()
+            call_kwargs: dict[str, Any] = (
+                {"config": {"callbacks": [langfuse.handler]}} if langfuse is not None else {}
+            )
+            with (
+                propagate_trace(trace_name="design-leg.exit_judge", tags=("design",)),
+                observation(
+                    "design-leg.exit_judge",
+                    as_type="evaluator",
+                    input={"message": message, "history_turns": len(history)},
+                ) as current,
+            ):
+                completion = await model_holder[0].ainvoke(prompt, **call_kwargs)  # type: ignore[attr-defined]
+                judgment = parse_exit_judgment(_completion_text(completion))
+                current.update(
+                    output=None if judgment is None else _judgment_payload(judgment),
+                    level="DEFAULT" if judgment is not None else "WARNING",
+                    status_message=None if judgment is not None else "unparseable verdict",
+                )
+            return judgment
         except Exception:
             log.warning("design_leg.exit_judge_failed", exc_info=True)
             return None
