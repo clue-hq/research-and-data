@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 import structlog
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from opentelemetry.sdk.trace import SpanProcessor
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -127,6 +127,36 @@ def test_instrument_app_yields_a_server_span_carrying_the_bound_context() -> Non
     assert server.attributes is not None
     assert server.attributes.get("http.route") == "/ping"
     assert server.attributes.get("request_id") == "req-1"
+
+
+def test_instrument_app_survives_a_partial_match_on_an_included_router() -> None:
+    """FastAPI 0.138 keeps ``include_router`` sub-routers in ``app.routes`` as entries that can
+    match a request but carry no ``path``. The OTel FastAPI instrumentation (0.63b1 through
+    0.65b0) guards that on a full match and reads ``.path`` unguarded on a partial one, so a
+    request whose path matches such a router with the wrong method took the whole request down
+    with a 500 (the live thread-page failure of 2026-09-15). The span falls back to the raw path,
+    exactly as the library already does for a full match, and the app answers as it would
+    uninstrumented."""
+    runtime, exporter = _runtime()
+    app = FastAPI()
+    router = APIRouter()
+
+    @router.post("/things/{thing_id}")
+    async def create_thing(thing_id: str) -> dict[str, str]:
+        return {"thing": thing_id}
+
+    app.include_router(router, prefix="/api/v1")
+    runtime.instrument_app(app)
+
+    async def scenario() -> int:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            return (await client.get("/api/v1/things/42")).status_code
+
+    assert asyncio.run(scenario()) == 405
+    server = next(s for s in exporter.get_finished_spans() if s.kind is SpanKind.SERVER)
+    assert server.attributes is not None
+    assert server.attributes.get("http.route") == "/api/v1/things/42"
 
 
 def test_bind_and_annotate_reaches_a_span_that_is_already_open() -> None:

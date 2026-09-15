@@ -10,7 +10,7 @@ copies the structlog-bound run context onto every span through the one redaction
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -142,14 +142,60 @@ class TracingRuntime:
     def instrument_app(self, app: Any) -> None:
         """Server spans for one FastAPI app. Call at construction — Starlette refuses new
         middleware once the app has started."""
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        import opentelemetry.instrumentation.fastapi as fastapi_instrumentation
 
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=self.provider)
+        _install_safe_route_details(fastapi_instrumentation)
+        fastapi_instrumentation.FastAPIInstrumentor.instrument_app(
+            app, tracer_provider=self.provider
+        )
 
     def shutdown(self) -> None:
         """Flush the batch exporter and stop the provider (graceful shutdown)."""
         self.provider.force_flush()
         self.provider.shutdown()
+
+
+def _route_details(scope: MutableMapping[str, Any]) -> str | None:
+    """The route template a request matched, for the server span's name and ``http.route``.
+
+    This is the instrumentation's own ``_get_route_details`` with one difference: a matched
+    route that carries no ``path`` falls back to the request's raw path on a *partial* match as
+    well as on a full one. FastAPI 0.138 keeps every ``include_router`` sub-router in
+    ``app.routes`` as an ``_IncludedRouter`` — it can match a request but has no ``path`` — and
+    the library (0.63b1 through 0.65b0) reads ``.path`` unguarded on the partial branch, so a
+    request whose path matched such a router with the wrong method failed with a 500 before it
+    reached any handler (the live thread-page failure of 2026-09-15).
+    """
+    from starlette.routing import Match, Route
+
+    route: str | None = None
+    for starlette_route in scope["app"].routes:
+        match, _ = (
+            Route.matches(starlette_route, scope)
+            if isinstance(starlette_route, Route)
+            else starlette_route.matches(scope)
+        )
+        if match == Match.FULL:
+            return getattr(starlette_route, "path", None) or scope.get("path")
+        if match == Match.PARTIAL:
+            route = getattr(starlette_route, "path", None) or scope.get("path")
+    return route
+
+
+def _install_safe_route_details(fastapi_instrumentation: Any) -> None:
+    """Point the instrumentation's span-details callback at :func:`_route_details`.
+
+    ``_get_default_span_details`` (the callback the instrumentor wires into its middleware)
+    resolves ``_get_route_details`` through its module at call time, so replacing that name is
+    the whole intervention. The name is checked so an upstream rename fails at boot, where a
+    human sees it, rather than silently restoring the crash on the next request.
+    """
+    if not callable(getattr(fastapi_instrumentation, "_get_route_details", None)):
+        raise RuntimeError(
+            "opentelemetry-instrumentation-fastapi no longer exposes _get_route_details; "
+            "revisit clue_obs.otel.install._route_details against the installed version"
+        )
+    fastapi_instrumentation._get_route_details = _route_details
 
 
 def install_tracing(
