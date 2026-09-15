@@ -2806,6 +2806,12 @@ standalone editor surface is made.
 
 ### Task 41: Make account identity part of the ABM composition
 
+Source and independent review complete in `0b9e9d89` and `e5bbc4c6`.
+Candidate prompts, the bound logo tool and its returned guidance agree on both
+treatments; legacy behavior is preserved. Focused implementation verification
+passed 250 tests and scoped independent re-review passed seven. Fresh visual,
+editing and latency qualification remains pending the shared integration gate.
+
 User clarification on 2026-09-15 supersedes the pilot's detached target-logo
 chip. Support two deliberate treatments: an optically balanced advertiser ×
 target lockup near the top, or a target logo/recognizable favicon integrated as
@@ -2828,7 +2834,8 @@ Use the existing direction record: source_roles identifies logo sources; layer
 purpose and preserve/vary describe the visual relationship. Its copy list stays
 limited to native artwork text. No new account schema or publishing subsystem:
 when accompanying copy is requested, return it separately as a labeled draft
-in the existing response, never bake it into the raster or report it published.
+in `finalize_run.summary`, the existing durable response handoff. Never bake it
+into the raster or report it published.
 Full channel delivery/account setup remains outside this task.
 
 Remove the candidate scene preflight's hidden advertiser-logo auto-insertion.

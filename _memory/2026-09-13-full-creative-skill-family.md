@@ -1541,3 +1541,14 @@ relationship. Source audit found preflight auto-inserts advertiser mark even for
 intentional target-only candidate composition; narrow candidate-only removal
 planned with legacy place-once regression. Task39 committed f9370b41, 40Python/
 44Rust/probe0 failures, independent review pending. No new generation/live edits.
+
+Task39 independent review clean:40Python+44Rust rerunpassed; sourcef9370b41.
+Task41 initial0b9e9d89 removes hidden candidate advertiser-logo insertion and
+adds flexible top advertiser×target or integrated target-mark direction; separate
+channel draft uses existingfinalize_run.summary. Independent review found actual
+prompt/tool/response still restricted targetmarks; fixe5bbc4c6 aligns allthree
+candidate surfaces while eight legacy prompt variants/originaltool bytes remain
+identical.250focusedpassed0skips56.81s; scoped reviewer7passed andP2resolved.
+Task41 source/reviewcomplete, no freshvisual/latencyqualification. Task40 next
+fixes canonicalcanvas/exportgeometry; combined orderedgate stillpending. No
+service/auth/modelchanges, livegeneration or protectedConduitv19 edits.
