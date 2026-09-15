@@ -311,6 +311,7 @@ def propagate_trace(
         return
     from langfuse import propagate_attributes
 
+    _seed_entities()
     cleaned = {k: str(v) for k, v in (metadata or {}).items() if v is not None}
     with propagate_attributes(
         trace_name=trace_name,
@@ -338,6 +339,24 @@ _entities: ContextVar[tuple[str, set[str]] | None] = ContextVar(
 )
 
 
+def _seed_entities() -> None:
+    """Plant an empty accumulator for the current trace, in the task that opens the trace.
+
+    Called from :func:`propagate_trace`. In production the turn runner and the research job both
+    open their trace under the worker's ``fleet.task`` span, so the seed lands in the PARENT task
+    and every child task / ``copy_context`` thread inherits the same set object to mutate. With
+    no parent span current there is nothing to key on, so the seed is skipped and the first
+    :func:`tag_entities` call plants it instead.
+    """
+    current = current_ids()
+    if current is None:
+        return
+    held = _entities.get()
+    if held is not None and held[0] == current.trace_id:
+        return
+    _entities.set((current.trace_id, set()))
+
+
 def tag_entities(entity_ids: Iterable[object]) -> None:
     """Tag the current trace with the entities it wrote or served.
 
@@ -356,9 +375,16 @@ def tag_entities(entity_ids: Iterable[object]) -> None:
     if current is None:
         return
     held = _entities.get()
-    seen = set(held[1]) if held is not None and held[0] == current.trace_id else set()
-    seen |= ids
-    _entities.set((current.trace_id, seen))
+    if held is not None and held[0] == current.trace_id:
+        # Mutate the set the accumulator already holds — never rebind the ContextVar. A child
+        # task or a ``copy_context`` thread sees the same tuple, so mutating its set is visible
+        # to its siblings and to the parent; a ``set()`` there would be invisible outside it.
+        # (``held[1] |= ids`` would rebind the tuple slot and raise — ``update`` mutates.)
+        seen = held[1]
+        seen.update(ids)
+    else:
+        seen = set(ids)
+        _entities.set((current.trace_id, seen))
     ordered = sorted(seen)
     from langfuse import propagate_attributes
 

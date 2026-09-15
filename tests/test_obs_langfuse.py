@@ -181,3 +181,20 @@ def test_tag_entities_with_no_current_trace_opens_nothing() -> None:
         tag_entities(["acc-1"])  # no span is current: nowhere to tag
         spans = finished_spans(exporter)
     assert [s.name for s in spans] == []
+
+
+def test_tag_entities_from_child_tasks_shares_one_accumulator() -> None:
+    import asyncio
+
+    async def scenario() -> None:
+        with observation("root", as_type="agent"), propagate_trace(trace_name="t"):
+            await asyncio.create_task(asyncio.to_thread(tag_entities, ["acc-1"]))
+            await asyncio.create_task(asyncio.to_thread(tag_entities, ["con-2"]))
+
+    with langfuse_installed() as (exporter, _provider):
+        asyncio.run(scenario())
+        spans = finished_spans(exporter)
+    sets = [
+        _attrs(s)["langfuse.trace.metadata.entities"] for s in spans if s.name == "entities.tagged"
+    ]
+    assert sets == ["acc-1", "acc-1,con-2"]
