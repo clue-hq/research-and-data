@@ -188,12 +188,14 @@ class Settings(BaseSettings):
     release: str | None = None
 
     # --- Langfuse (lane 3 slice 3, R4: cloud, EU) -------------------------------------------
-    # Installed only when enabled AND both keys (secrets) are set; the roots refuse ``enabled``
-    # with a missing key. The client attaches to the process's tracer provider, so the agent
-    # tree, the HTTP spans and the worker's task span are one trace. ``langfuse_environment``
-    # names the deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # On by default (founder, 2026-09-15): installed whenever both keys (secrets) are set; with
+    # the keys blank the roots log ``langfuse.not_installed`` and run without it, so a process
+    # without a project (CI, a fresh worktree) still boots. Set it false to silence a configured
+    # project. The client attaches to the process's tracer provider, so the agent tree, the HTTP
+    # spans and the worker's task span are one trace. ``langfuse_environment`` names the
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
     # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
-    langfuse_enabled: bool = False
+    langfuse_enabled: bool = True
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_environment: str = "lane-san-salvador"
 

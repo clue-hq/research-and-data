@@ -292,7 +292,7 @@ Every flag below lands in `.env.example` with its default the moment its code la
 
 ```
 # --- Telemetry (lane 3) ---
-CLUE_LANGFUSE_ENABLED=false                    # off → no client, no handler, no stamping
+CLUE_LANGFUSE_ENABLED=true                     # on by default (2026-09-15); blank keys → logged skip
 CLUE_LANGFUSE_HOST=https://cloud.langfuse.com  # EU region project (R4)
 CLUE_LANGFUSE_PUBLIC_KEY=                      # secret
 CLUE_LANGFUSE_SECRET_KEY=                      # secret

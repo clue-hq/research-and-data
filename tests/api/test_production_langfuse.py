@@ -30,11 +30,14 @@ def test_disabled_installs_nothing() -> None:
     assert not langfuse_is_installed()
 
 
-def test_enabled_without_both_keys_refuses_at_composition() -> None:
+def test_enabled_without_both_keys_skips_and_boots() -> None:
+    """On by default (founder, 2026-09-15): blank keys mean "no project here", never a crash."""
     settings = Settings(_env_file=None, langfuse_enabled=True)
     secrets = Secrets(_env_file=None, langfuse_public_key="pk-only")  # type: ignore[call-arg]
-    with pytest.raises(RuntimeError, match="CLUE_LANGFUSE_SECRET_KEY"):
+    assert (
         install_production_langfuse(settings, secrets, runtime=_runtime(), service_name="t")
+        is False
+    )
     assert not langfuse_is_installed()
 
 

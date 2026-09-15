@@ -81,8 +81,9 @@ def install_production_sentry(settings: Settings, secrets: Secrets, *, service_n
 def install_production_langfuse(
     settings: Settings, secrets: Secrets, *, runtime: TracingRuntime, service_name: str
 ) -> bool:
-    """Install Langfuse on the process's provider when enabled. Enabled with a missing key
-    refuses loudly at composition (the Sentry posture); disabled installs nothing."""
+    """Install Langfuse on the process's provider when enabled and both keys are set. Enabled
+    with a key missing logs a warning and installs nothing (on by default, so a keyless process
+    must still boot); disabled installs nothing."""
     if not settings.langfuse_enabled:
         log.info("langfuse.not_installed", reason="CLUE_LANGFUSE_ENABLED is off")
         return False
@@ -96,10 +97,19 @@ def install_production_langfuse(
         if secrets.langfuse_secret_key is not None
         else ""
     )
-    if not public_key:
-        raise RuntimeError("CLUE_LANGFUSE_ENABLED=true requires CLUE_LANGFUSE_PUBLIC_KEY")
-    if not secret_key:
-        raise RuntimeError("CLUE_LANGFUSE_ENABLED=true requires CLUE_LANGFUSE_SECRET_KEY")
+    missing = [
+        name
+        for name, value in (
+            ("CLUE_LANGFUSE_PUBLIC_KEY", public_key),
+            ("CLUE_LANGFUSE_SECRET_KEY", secret_key),
+        )
+        if not value
+    ]
+    if missing:
+        # On by default (founder, 2026-09-15): a process without a project still boots. The
+        # skip is logged, and ``make langfuse-check`` reports the missing names as a failure.
+        log.warning("langfuse.not_installed", reason="keys missing", missing=missing)
+        return False
     installed = install_langfuse(
         public_key=public_key,
         secret_key=secret_key,

@@ -25,7 +25,7 @@ TELEMETRY_SETTING_DEFAULTS: dict[str, object] = {
     "sentry_environment": "lane-san-salvador",
     "release": None,
     # lane 3 slice 3
-    "langfuse_enabled": False,
+    "langfuse_enabled": True,
     "langfuse_host": "https://cloud.langfuse.com",
     "langfuse_environment": "lane-san-salvador",
 }
