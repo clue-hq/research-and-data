@@ -56,8 +56,6 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     scene.pages.page_a4.children = ["frame"];
     const kit = JSON.parse(readFileSync(new URL("../../../../../../../../subsystems/clue-design/crates/lumen-core/fixtures/brand_kits/platform_default.json", import.meta.url), "utf8"));
     kit.tokens.spacing["space.md"].value.default.value = 32;
-    kit.modes.axes.medium = ["digital", "print"];
-    kit.modes.defaults.medium = "digital";
     const engine = new WasmEngine(module, scene);
     expect(engine.scene.nodes.node_contact_name.computed?.layout_bounds.x).toBe(72);
     engine.setRenderContext({ context_key:"fixture", document_id:scene.meta.id, document_version:1,

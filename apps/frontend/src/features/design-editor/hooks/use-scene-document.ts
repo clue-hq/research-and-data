@@ -358,8 +358,8 @@ export function useSceneDocument(
       ? libraryFontDiagnosticState.diagnostics
       : NO_DIAGNOSTICS;
   const fontDiagnostics = useMemo(
-    () => [...kitFontDiagnostics, ...libraryFontDiagnostics, ...(engine?.derivation.diagnostics ?? [])],
-    [kitFontDiagnostics, libraryFontDiagnostics, engine?.derivation],
+    () => [...kitFontDiagnostics, ...libraryFontDiagnostics],
+    [kitFontDiagnostics, libraryFontDiagnostics],
   );
 
   // C4 measure-then-inject. The dep is a digest of TEXT MEASUREMENT INPUTS

@@ -1,5 +1,6 @@
 import type { SceneEngineStatus } from "../hooks/use-scene-document";
 import type { Diagnostic } from "../engine/scene/contracts";
+import type { Derivation } from "../engine/scene/wasmEngine";
 
 /**
  * Gate G-D (founder, 2026-08-21): what the two engine-forced failure states
@@ -38,7 +39,7 @@ export type SceneTextMeasurementStatus = string;
 
 export interface SceneEngineBanner {
   /** Stable key + test hook; mirrors the source's `data-testid` names. */
-  kind: "engine-disabled" | "heuristic-measurement" | "font-fallback";
+  kind: "engine-disabled" | "heuristic-measurement" | "font-fallback" | "render-context";
   /** The bold first line. */
   title: string;
   /** The sentence under it. */
@@ -91,6 +92,7 @@ export function sceneEngineBanners(
   engineStatus: SceneEngineStatus,
   measurementStatus: SceneTextMeasurementStatus,
   fontDiagnostics: Diagnostic[] = [],
+  derivation?: Pick<Derivation, "status" | "diagnostics">,
 ): SceneEngineBanner[] {
   const banners: SceneEngineBanner[] = [];
 
@@ -103,6 +105,24 @@ export function sceneEngineBanners(
       command: REBUILD_ENGINE_COMMAND,
       detail: engineStatus.detail,
     });
+  }
+
+  if (derivation && (derivation.status !== "ready" || derivation.diagnostics.length > 0)) {
+    const first = derivation.diagnostics.find(diagnostic => diagnostic.severity === "error")
+      ?? derivation.diagnostics[0];
+    const blocked = derivation.status !== "ready";
+    const additional = Math.max(0, derivation.diagnostics.length - 1);
+    banners.push({
+      kind: "render-context",
+      title: blocked ? "Canvas rendering unavailable" : "Canvas rendering diagnostics",
+      body: `${first?.message ?? "Waiting for a valid render context."}${additional > 0
+        ? ` ${additional} additional render diagnostic${additional === 1 ? "" : "s"} reported.` : ""}`,
+      command: blocked ? "Resolve the render context and reload" : "Review rendering diagnostics",
+      detail: first?.hint ?? null,
+    });
+    // There is no painted canvas while the derivation is blocked: neither
+    // approximate geometry nor an Inter fallback is being displayed.
+    if (blocked) return banners;
   }
 
   // The dangerous one: the ad still renders, so nothing LOOKS broken while the

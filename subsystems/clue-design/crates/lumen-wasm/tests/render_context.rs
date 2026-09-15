@@ -283,3 +283,99 @@ fn dsl_and_structured_edits_rederive_and_scene_medium_matches_canonical_prefligh
     assert_eq!(result["ok"], true);
     assert_eq!(inset(&engine), 44.0);
 }
+
+#[test]
+fn implicit_medium_on_legacy_kits_matches_canonical_export_without_rebinding() {
+    for medium in ["digital", "ad", "email", "web", "print", "direct_mail"] {
+        for explicit_mode in [false, true] {
+            let mut source = scene();
+            source["meta"]["medium"] = json!(medium);
+            let mut ctx = context(&source);
+            // Persisted kits may declare only theme/density/accessibility.
+            // Export still supplies its normalized scene-medium selector.
+            ctx["brand_kit"]["modes"]["axes"]
+                .as_object_mut()
+                .unwrap()
+                .remove("medium");
+            ctx["brand_kit"]["modes"]["defaults"]
+                .as_object_mut()
+                .unwrap()
+                .remove("medium");
+            let mut options = PreflightOptions::default();
+            if explicit_mode {
+                let normalized = if ["print", "direct_mail"].contains(&medium) {
+                    "print"
+                } else {
+                    "digital"
+                };
+                ctx["mode"] = json!({"values":{"medium":normalized}});
+                options.token_resolution.mode =
+                    serde_json::from_value(ctx["mode"].clone()).unwrap();
+            }
+            let kit = serde_json::from_value(ctx["brand_kit"].clone()).unwrap();
+            let canonical = preflight_scene(
+                serde_json::from_str::<Scene>(&source.to_string()).unwrap(),
+                Some(&kit),
+                options,
+            );
+            assert!(
+                canonical.layout_result.is_some(),
+                "{medium}: {:?}",
+                canonical.diagnostics
+            );
+            let mut engine = Engine::from_scene_json(&source.to_string()).unwrap();
+            engine.set_render_context(&ctx.to_string());
+            let presentation = parse(engine.presentation_json());
+            assert_eq!(
+                presentation["status"], "ready",
+                "{medium} explicit={explicit_mode}: {}",
+                presentation["diagnostics"]
+            );
+            let exported = parse(serde_json::to_string(&canonical.scene).unwrap());
+            assert_eq!(
+                presentation["scene"]["nodes"]["node_contact_name"]["computed"],
+                exported["nodes"]["node_contact_name"]["computed"]
+            );
+            assert_eq!(
+                parse(engine.scene_json())["nodes"]["frame"]["layout"]["padding"],
+                json!([72.0, 72.0, 72.0, 72.0])
+            );
+            assert!(ctx["brand_kit"]["modes"]["axes"].get("medium").is_none());
+        }
+    }
+}
+
+#[test]
+fn implicit_medium_support_does_not_allow_invalid_or_declared_unsupported_modes() {
+    let source = scene();
+    let mut ctx = context(&source);
+    ctx["brand_kit"]["modes"]["axes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("medium");
+    ctx["brand_kit"]["modes"]["defaults"]
+        .as_object_mut()
+        .unwrap()
+        .remove("medium");
+    let mut engine = Engine::from_scene_json(&source.to_string()).unwrap();
+    for mode in [
+        json!({"medium":"holographic"}),
+        json!({"theme":"undeclared"}),
+        json!({"unknown":"digital"}),
+    ] {
+        ctx["mode"] = json!({"values":mode});
+        engine.set_render_context(&ctx.to_string());
+        let state = parse(engine.presentation_json());
+        assert_eq!(state["status"], "invalid");
+        assert!(state["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["code"] == "EDITOR_RENDER_MODE_UNSUPPORTED"));
+    }
+    ctx["brand_kit"]["modes"]["axes"]["medium"] = json!(["print"]);
+    ctx["brand_kit"]["modes"]["defaults"]["medium"] = json!("print");
+    ctx["mode"] = json!({"values":{"medium":"digital"}});
+    engine.set_render_context(&ctx.to_string());
+    assert_eq!(parse(engine.presentation_json())["status"], "invalid");
+}

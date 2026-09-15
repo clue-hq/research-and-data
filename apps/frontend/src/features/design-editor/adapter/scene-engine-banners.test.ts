@@ -204,3 +204,20 @@ it("names unresolved layout even when the font shaper is available", () => {
   assert.equal(banner.title, "Text layout needs verification");
   assert.match(banner.body, /could not confirm every text measurement/);
 });
+
+it("classifies blocked render context separately from fonts and does not claim a rendered fallback", () => {
+  const banners = sceneEngineBanners(ACTIVE, "heuristic", [{
+    severity: "warning", phase: "brand", code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+    message: "A font asset is unavailable.", subject: { kind: "document" }, hint: null,
+  }], { status: "invalid", diagnostics: [{
+    severity: "error", phase: "brand", code: "EDITOR_RENDER_MODE_UNSUPPORTED",
+    message: "Brand Kit does not declare mode theme.unknown", hint: "Select a supported theme.",
+    subject: { kind: "document" },
+  }] });
+  assert.equal(banners.length, 1);
+  assert.equal(banners[0].kind, "render-context");
+  assert.equal(banners[0].title, "Canvas rendering unavailable");
+  assert.match(banners[0].body, /theme\.unknown/);
+  assert.equal(banners[0].detail, "Select a supported theme.");
+  assert.doesNotMatch(JSON.stringify(banners), /Inter|font unavailable|geometry is approximate/);
+});

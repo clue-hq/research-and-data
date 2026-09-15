@@ -1575,3 +1575,16 @@ Automated ordered gate and frontendbuild complete; source/independentreviewclear
 Livequality, latency, nativeedit/reload/export custody remainunproven. Next:
 ownedidleAPI/workerreload, retainedpilot +protectedConduitread-onlyrendercheck,
 frozen11case ordinary-request qualification. Optional60copydiagnostics unused.
+
+Live qualification preflight 2026-09-15: owned API/workers reloaded at22:49Z,
+healthy8010 build9fcd0ae6b11e. Retainedpilot andprotectedConduit canvases then
+exposed EDITOR_RENDER_MODE_UNSUPPORTED medium.digital: persistedkits explicitly
+omitmedium whileexportinjects it. No savedkit/scene mutation. Task40 follow-up
+allows onlycanonicalbuilt-in medium values whenaxisabsent; declaredaxes/invalid
+valuesstaystrict. Accurate contextbanner replaces misleadingfontfallbackclaim.
+Focused31Rust/44brand/15UIgreen; independentreview andorderedrebuild inprogress.
+FourordinaryHome sessions opened22:58-22:59Z; generationnotdispatchedpending
+livecanvasrecovery. ClueAXsetValue causedLexicalremoveChilderror; reload+existing
+sidebarlink recoveredthesamecreatedsession, no duplicate. Otherthree setupnormal.
+Frozenqualificationplan retainsallIDs/timestamps andexplicitoperatorsetupdelay.
+Optional60diagnostics remainunused. ProtectedConduitv19 neveredited.

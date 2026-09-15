@@ -21,7 +21,8 @@ class RawEngine {
   constructor(value:string) { this.scene = JSON.parse(value); }
   sceneJson() { return JSON.stringify(this.scene); }
   presentationJson() { return JSON.stringify({ scene:this.scene, context_key:this.context?.context_key,
-    input_revision:1, status:this.context ? "ready" : "pending", diagnostics:[] }); }
+    input_revision:1, status:this.context ? "ready" : "pending", diagnostics:[{ severity:"warning", phase:"layout",
+      code:"TEST_RENDER_DIAGNOSTIC", message:"Review the rendered geometry." }] }); }
   setRenderContext(value:string) { this.context = JSON.parse(value); return this.presentationJson(); }
 }
 vi.mock(require.resolve("../engine/scene/wasmEngine"), original => ({ ...original,
@@ -70,6 +71,8 @@ test("fresh loads fence out-of-order success/failure, same-pin mode changes and 
     await act(async()=>requests[0].resolve(loaded("A","light")));
     const first=read().engine!;
     assert.equal(first.derivation.context_key,"light");
+    assert.equal(first.derivation.diagnostics[0].code,"TEST_RENDER_DIAGNOSTIC");
+    assert.equal(read().fontDiagnostics.length,0, "render diagnostics must not be labeled as font failures");
     await render("B");
     await render("C");
     await act(async()=>requests[2].resolve(loaded("C","light")));

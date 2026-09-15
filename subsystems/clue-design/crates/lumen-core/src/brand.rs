@@ -1159,8 +1159,15 @@ fn default_mode_values() -> BTreeMap<String, String> {
 
 /// Validate requested context without changing canonical mode precedence or token fallback.
 pub fn validate_requested_brand_mode(kit: &BrandKit, mode: &BrandMode) -> Vec<Diagnostic> {
+    let implicit_axes = default_mode_axes();
     mode.values.iter().filter_map(|(axis, value)| {
-        if kit.modes.axes.get(axis).is_some_and(|values| values.contains(value)) {
+        // Canonical preflight supplies the normalized scene medium even for
+        // legacy kits that omit this axis. Only its built-in values are implicit;
+        // an explicitly declared axis and every other requested axis stay strict.
+        let supported = kit.modes.axes.get(axis).or_else(|| {
+            if axis == "medium" { implicit_axes.get(axis) } else { None }
+        }).is_some_and(|values| values.contains(value));
+        if supported {
             None
         } else {
             Some(Diagnostic::error(Phase::Brand, "EDITOR_RENDER_MODE_UNSUPPORTED",

@@ -132,6 +132,7 @@ import {
   type StructuredEdit,
 } from "../engine/scene/structuredEdits";
 import type {
+  Derivation,
   EngineApplyOutcome,
   EngineStructuredEditOutcome,
   HitResult,
@@ -2062,6 +2063,7 @@ function SceneDocumentCanvas({
       <SceneEngineBanners
         engineStatus={engineStatus}
         fontDiagnostics={fontDiagnostics}
+        derivation={engine?.derivation}
         measurementStatus={measurementStatus}
         onInsetChange={reportBannerInset}
       />
@@ -2102,11 +2104,13 @@ function SceneDocumentCanvas({
 function SceneEngineBanners({
   engineStatus,
   fontDiagnostics,
+  derivation,
   measurementStatus,
   onInsetChange,
 }: {
   engineStatus: SceneEngineStatus;
   fontDiagnostics: Diagnostic[];
+  derivation?: Derivation;
   measurementStatus: string;
   /** The bottom edge of the banner band in stage px, or 0 for no banners. */
   onInsetChange: (inset: number) => void;
@@ -2116,6 +2120,7 @@ function SceneEngineBanners({
     engineStatus,
     measurementStatus,
     fontDiagnostics,
+    derivation,
   );
   const bannerCount = banners.length;
   useEffect(() => {
