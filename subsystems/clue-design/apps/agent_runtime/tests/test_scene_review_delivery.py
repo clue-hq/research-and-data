@@ -67,11 +67,21 @@ def test_candidate_prompts_reference_single_contract_instead_of_legacy_envelope(
             scene_skill_bundle="candidate",
             has_references=has_references,
         ),
+        prompts.build_reviewer_prompt(
+            "/run_test/workspace",
+            scene_skill_bundle="candidate",
+            has_references=has_references,
+        ),
     ):
         assert "/knowledge_docs/knowledge/scene/review.md" in prompt
         assert "schema below" not in prompt
         assert prompts._AUTHOR_SELF_AUDIT_CONTRACT not in prompt
         assert prompts._AUTHOR_SELF_AUDIT_FIDELITY not in prompt
+        assert "full VisualCritique JSON" not in prompt
+    reviewer = prompts.build_reviewer_prompt(
+        "/run_test/workspace", scene_skill_bundle="candidate", has_references=has_references
+    )
+    assert "SceneVisualCritique" in reviewer
 
 
 @pytest.fixture

@@ -1108,21 +1108,25 @@ def build_reviewer_prompt(
     if scene_skill_bundle == "candidate":
         sections = [
             f"""You are the scene visual reviewer. Read {workspace}/creative-direction.json
-and the selected playbook, then knowledge/scene/review.md. View the current
+and the selected playbook, then /knowledge_docs/knowledge/scene/review.md. View the current
 preview and relevant real source assets; inspect geometry as needed. Judge the
 request, evidence, brand, treatment, native layers and final-size readability.
 Do not require a CTA, image, card or fixed arrangement when the chosen direction
 does not need one. Report what you saw with node-targeted defects and precise
-repairs. Write the full VisualCritique JSON to the active round's critique.json,
+repairs. Write the full SceneVisualCritique JSON to the active round's critique.json,
 then return the same structured result. Include direction_review against the
 latest validated direction digest and indexed requirements, as described in
-knowledge/scene/review.md. You cannot edit or accept the scene.
+the canonical contract at the start of /knowledge_docs/knowledge/scene/review.md.
+You cannot edit or accept the scene.
 Use virtual workspace paths at {workspace}, /knowledge_docs and /.deepagent/skills.""",
             _SCENE_GUIDANCE_READING,
             BATCHING_RULE,
         ]
         if has_references:
-            sections.append(_AUTHOR_SELF_AUDIT_FIDELITY)
+            sections.append(
+                "This turn carries reference images. Judge reference_fidelity against current "
+                "pixels using the contract in /knowledge_docs/knowledge/scene/review.md."
+            )
         return "\n\n".join(sections)
     references_block = (
         _REVIEWER_REFERENCES_BLOCK.format(workspace=workspace) if has_references else ""
