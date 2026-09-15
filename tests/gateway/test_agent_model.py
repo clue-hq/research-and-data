@@ -1361,3 +1361,65 @@ def test_the_async_lookup_awaits_the_lag_rather_than_blocking_and_still_retries_
 
     assert asyncio.run(ask()) == Decimal("4.5600")
     assert len(seen) == 2
+
+
+class OpenRouterShapedStreamingChatModel(BaseChatModel):
+    """A stream shaped the way OpenRouter serves Grok: the finish chunk carries the model name
+    and finish reason in its generation info, and the trailing usage chunk repeats both."""
+
+    @property
+    def _llm_type(self) -> str:
+        return "openrouter-shaped-streaming-test-model"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del messages, stop, run_manager, kwargs
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="complete"))])
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        del messages, stop, run_manager, kwargs
+        info = {"finish_reason": "stop", "model_name": "served/streaming-model"}
+        yield ChatGenerationChunk(message=AIMessageChunk(content="streamed "))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="answer"), generation_info=info)
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                usage_metadata={"input_tokens": 5, "output_tokens": 3, "total_tokens": 8},
+                chunk_position="last",
+            ),
+            generation_info=dict(info),
+        )
+
+
+def test_the_merged_stream_carries_the_answering_model_exactly_once() -> None:
+    """LangChain merges streamed chunks by concatenating equal string metadata, so a label stamped
+    on every chunk reads back N times over on the merged message the turn runtime records from.
+    The gateway therefore stamps the served model once, on the chunk that carries usage."""
+    model = GovernedAgentChatModel(
+        models=(OpenRouterShapedStreamingChatModel(),),
+        model_ids=("served/streaming-model",),
+        requested_model="requested/model",
+        gateway_config=GatewayConfig(),
+    )
+
+    chunks = list(model.stream("Stream the answer."))
+    merged = chunks[0]
+    for chunk in chunks[1:]:
+        merged = merged + chunk
+
+    assert merged.response_metadata["clue_answering_model"] == "served/streaming-model"
+    assert merged.response_metadata["clue_requested_model"] == "requested/model"
+    # LangChain's own merge still doubles the provider's repeated fields; that is why readers
+    # must prefer the gateway's stamp over ``model_name``.
+    assert merged.response_metadata["model_name"] == "served/streaming-modelserved/streaming-model"

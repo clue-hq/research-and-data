@@ -149,19 +149,22 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     if cost is None:
         cost = _decimal(usage.get("cost"))
     request_id = body.get("id")
-    # Slice 1b: the model and the token counts ride the reading's extras, so every row written
-    # through this reader (structuring, media, reconcile, display) carries what the research
-    # agent's rows already carry and the cost read's per-model view stays whole.
-    token_details = usage.get("prompt_tokens_details")
-    token_details = token_details if isinstance(token_details, dict) else {}
-    extras: dict[str, object] = {
-        "prompt_tokens": _count(usage.get("prompt_tokens")),
-        "completion_tokens": _count(usage.get("completion_tokens")),
-        "cached_prompt_tokens": _count(token_details.get("cached_tokens")),
-    }
+    # The model that answered and the token counts ride along as extras, under the same keys the
+    # research agent writes on its ``round-*`` rows, so the per-model cost breakdown reads every
+    # chat/completions row the same way. Only what the body actually said is written.
+    extras: dict[str, object] = {}
     model = body.get("model")
     if isinstance(model, str) and model:
         extras["model"] = model
+    prompt_details = usage.get("prompt_tokens_details")
+    prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
+    for key, value in (
+        ("prompt_tokens", usage.get("prompt_tokens")),
+        ("completion_tokens", usage.get("completion_tokens")),
+        ("cached_prompt_tokens", prompt_details.get("cached_tokens")),
+    ):
+        if isinstance(value, int) and not isinstance(value, bool):
+            extras[key] = value
     return CostReading(
         cost_usd=cost,
         provider_request_id=request_id if isinstance(request_id, str) else None,
