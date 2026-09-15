@@ -208,3 +208,23 @@ def test_write_each_records_every_drafts_entity_before_writing() -> None:
     results = _run(runtime.write_each(drafts))
     assert len(results) == 2
     assert runtime.entities_touched == {"acc-1", "con-2"}
+
+
+def test_write_records_every_drafts_entity_too() -> None:
+    """The code-built batch (an ATS board, a provider record) names its entities just as loudly."""
+    runtime = _runtime()
+
+    class _Writer:
+        async def write(self, conn: Any, draft: Any) -> Any:
+            return WriteReceipt(
+                claim_id=ClaimId(uuid4()),
+                field_key=draft.field_key,
+                markers={},
+                registered_field=False,
+            )
+
+    runtime._writer = _Writer()  # type: ignore[attr-defined]
+    drafts = [_draft(runtime, "core.industry", "acc-1"), _draft(runtime, "core.headcount", "con-2")]
+    receipts = _run(runtime.write(drafts))
+    assert len(receipts) == 2
+    assert runtime.entities_touched == {"acc-1", "con-2"}

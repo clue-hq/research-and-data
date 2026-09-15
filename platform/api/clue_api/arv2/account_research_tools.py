@@ -510,6 +510,10 @@ class ToolRuntime:
         drafts = self.compliance_pass(drafts)
         if not drafts:
             return []
+        # Recorded before the write, exactly as ``write_each`` does: a provider-built batch names
+        # people too (``lookup_people``), and erasure has to find them whether the store took them
+        # or the transaction rolled back.
+        self.entities_touched.update(str(draft.entity_id) for draft in drafts)
         async with self._conn_factory() as conn:
             return [await self._writer.write(conn, draft) for draft in drafts]
 
