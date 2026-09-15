@@ -1,6 +1,56 @@
 # Design Agent V1: a coherent skill family and a cross-brand test
 
-Status: implementation in local validation, 2026-09-14. **Eighteen candidate
+## Current status — September 15, 2026
+
+The catalog and substantial runtime/editor repairs are implemented locally, but
+reliable creative quality and the four-minute delivery target remain unmet.
+The historical checkpoints below record evidence at their own dates; this
+status supersedes their older coverage counts and pending-restart statements.
+
+| Goal | Current evidence | Status |
+| --- | --- | --- |
+| Full callable family | 18 family playbooks and 12 shared support skills in the scene manifest | Implemented locally |
+| Actual use | 27 distinct explicit skill read requests: 15 families and all 12 support skills | Exercised, not proof of comprehension |
+| Rendered family coverage | 13/18 families selected with evaluated rendered output | Partial; approximately 72% coverage only |
+| Cross-brand qualification | No family has passed repeated human quality, source, editing and latency gates across the required brands | 0/18 qualified |
+| Four local brand workspaces | Clue 3021, AWS 3022, Google Cloud 3023, Conduit 3024; separate workspace scopes, shared local backend/Postgres | Operational; not cloud deployments |
+| Reference-driven generation | Selected originals, provider input/output custody, crops, generated components and independent scene layers exercised | Implemented; source relevance and treatment still inconsistent |
+| Native editing/export | Prior fresh four-brand batch passed editing, undo, save/reload and PNG/SVG export checks | Verified for that frozen batch; not automatically every subsequent revision |
+| Approved taste across fresh runs | Current document edits persist; automatic scoped preference handoff is missing | Not implemented |
+| Finished creative within 240 seconds | Latest four revisions took 464.247–635.172 seconds | 0/4 pass |
+| Production promotion | Candidate remains local on codex/design-agent-v1 | Not promoted or pushed |
+
+Selected/rendered families: type-led-positioning, authentic-product,
+attributed-proof, workflow-contrast, feature-deep-dive, product-in-use,
+launch-announcement, event-webinar, integration-ecosystem, educational-guide,
+visual-metaphor, customer-spotlight and editorial-pov. Case-study-narrative and
+offer-conversion have read requests but no selected/rendered evaluation.
+Problem-solution, comparison-alternatives and objection-handling have neither.
+
+The 12 support skills are scene-brief-copy, create-design, plan-design,
+reference-image-direction, reference-conditioned-ads, generative-imagery,
+brand-imagery, visual-review, repair-design, brand-and-tokens, effects and tools.
+Composition variants and the 21 shared knowledge resources are not additional
+independently qualified subskills. Four of those resources are pinned.
+
+Most elapsed generation time is in model-call spans and repeated deliberation,
+inspection, authoring and repair, rather than local rendering. Earlier measured
+runs spent 80–99% in model calls; that historical attribution is not a measured
+breakdown of all development time. Investigation also uncovered real replay,
+isolation, text measurement, SVG color, token and inspector defects. Repairing
+them was necessary, but successive diagnostic batches are not a clean causal
+comparison or proof that skill expansion improved the customer outcome. Model
+self-acceptance repeatedly disagreed with independent/user visual review.
+
+Next priority is a narrow measured repair of actual palette matching, readable
+copy grouping and preservation of approved styles; no more catalog expansion
+until that behavior is dependable. The separate 60-call Task26 diagnostic has
+made zero calls and remains unapproved. Brand Asset Intelligence, Head of ABM,
+website work and production release remain outside this implementation.
+
+## Historical implementation record
+
+Status at the earlier checkpoint: implementation in local validation, 2026-09-14. **Eighteen candidate
 playbooks** are implemented and enabled on localhost through on-demand discovery.
 The original four-playbook scope below records the earlier plan; the full-family
 continuation at the end is the current scope. Reference custody, acceptance,
@@ -2211,3 +2261,65 @@ ordinary four-brand delivery is still required to establish behavioral improveme
 The older user-edited Clue scene remains exact v19 with its charcoal/cream palette.
 Fresh-session preference assembly is still missing; preserve that feedback in the
 scoped-memory integration rather than hardcoding it into shared creative skills.
+
+## Task 32: coherent composition and the user's revision controls
+
+The user's four screenshots identify composition failures that valid geometry
+and independent layers did not prevent. Clue combines a product crop and an
+unrelated office portrait, with peach accents contrary to the selected treatment.
+Google separates the title, support, artwork and action into disconnected regions.
+AWS's material vocabulary does not visibly explain its claimed transition.
+Conduit's cyan/white vector treatment is liked; its support needed to sit closer
+to the headline. The user's saved v58 achieves that by changing support geometry
+only: two lines instead of three, with a measured visible gap of 31 px instead of 148 px.
+These measurements document that edit, not a universal layout prescription.
+
+The shared component procedure now measures text lines versus allocated frames,
+composes related copy and CTA together, reflows the dependent positions and
+preserves approved text groups. Placement adaptation applies the same procedure.
+Review evaluates the complete visual argument and whether each image earns its
+place. Educational-guide applies it to resource invitations; product-in-use
+requires a visible task connection for a companion; visual-metaphor selects the
+supported relationship before its material treatment. No new families, separate
+runtime agents, fixed coordinates or brand-specific palettes were added.
+
+Baseline Q failures remain frozen. The focused delivery/copy/direction suite
+passed 107 tests and mechanical review checked the inspector and span capabilities.
+These checks do not establish creative improvement. Four normal chat revisions
+were dispatched together at 2026-09-15T07:11:59.972Z, with short user-feedback
+requests and existing editable scenes. Preserve the saved Conduit grouping and
+older protected Clue v19. Record the new run IDs explicitly because these are
+existing projects. This is conditioned revision testing; neither prior generated
+assets nor warm caches are being reset. It is not a causal first-delivery or
+latency benchmark. The optional sizing profile remains disabled.
+
+A trace audit separates 30 available skills (18 families + 12 support), 27 distinct skill
+read requests (15 families + 12 support), and 13 families selected with rendered evidence.
+Case-study-narrative and offer-conversion were read without becoming the selected
+family. Alongside those two, problem-solution, comparison-alternatives and
+objection-handling lack selected/rendered evaluation evidence. No family yet
+meets all cross-brand, source, visual, editing and 240-second qualification gates.
+
+### Task32 result: all four conditioned revisions finished
+
+| Brand | Saved version / runtime outcome | Inner seconds | Independent finding |
+| --- | --- | ---: | --- |
+| Clue | v47 / edit_applied | 464.247 | Competing portrait removed; peach support/CTA, small type, loose spacing and product crop concerns remain. The direction incorrectly described the existing peach value as cream. |
+| AWS | v36 / accepted | 622.147 | New artwork visibly progresses from scattered pieces to an assembled volume; excessive headline-to-artwork separation remains. |
+| Google Cloud | v50 / edit_applied | 520.603 | Headline, support and CTA form a clearer group; support and CTA remain only 7.17px and 5.67px nominal em at the 360px proxy. |
+| Conduit | v76 / edit_applied | 635.172 | Exact approved headline/support geometry preserved; source-supported resolution caption added; cyan/white retained. Unrequested corner and stat-style changes prevent exact preservation of the rest of the chart. |
+
+All 166 captured trace-file hashes verified. Old user-approved Clue remains exact
+v19; Conduit's v58 headline/support position, size, text and typography are exact
+in v76. Its chart corners nevertheless changed from 28 to 10, and stat leading
+and tracking changed. Clue's style token changed from type.title to type.headline,
+but frozen resolved scenes retain Season Mix; no font-family regression is proven.
+The optional compact sizing gate remained disabled, so this batch does not test it.
+
+The observed outcomes are partial improvements, not four quality passes. All four
+missed 240 seconds. Complete fresh native editing/export QA was not repeated on
+these revisions; prior-batch receipts cannot certify them. No fifth corrective
+run was submitted before the user's request for the 16-hour status report.
+Evidence is frozen under ignored composition-revisions-20260915/, including
+observer-terminal-verification.json and independent-review/. Local fleet and
+design queues were idle after terminal capture. Keep the full goal active.

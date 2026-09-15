@@ -37,19 +37,34 @@ available, record the evidence gap and treat the result as a kit-derived directi
 
 ## Compose around the use moment
 
+State the supported use moment in one sentence: who is doing what with which
+visible product state. Choose the asset that carries that moment. Add a companion
+only when it clarifies something the leading asset cannot show. Name the visible
+connection: attention or gesture toward the task, a credible device interaction,
+or an explanatory inset tied to the same action. Sharing a frame does not connect
+an office portrait to a product crop. If the sources cannot establish an interaction,
+keep the scene illustrative and make the explanatory relationship clear; remove
+context that adds no task meaning. Record this relationship in `preserve` and
+`review_needs`, rather than merely requiring both assets to appear.
+
 - **Task at the center:** an authentic or clearly illustrative use scene leads;
   native copy names the task and a small independent product detail clarifies the
   mechanism. Useful when the situation carries the idea immediately.
 - **Product with context:** a large intact product source sits beside a cropped
-  contextual image or a few native task cues. Useful when a believable composite
-  interaction is unavailable or the interface needs a frontal readable view.
+  contextual image or native task cues that explain the same use moment. Give the
+  product and its explanation distinct emphasis; an additional image is optional.
+  Useful when the interface needs a frontal readable view.
 - **Handoff between roles:** separate authentic product states or native task
   labels show one participant's action reaching another. Useful when coordination
   is the value; keep the cast and number of states small enough for one read.
 
 Select an approach from the intended task and sources, without compulsory people,
-device mockups, desk props or equal-width panels. Native copy explains the useful
-moment; invented elapsed time and guaranteed outcomes add no credibility.
+device mockups, desk props or equal-width panels. Protect the leading action and
+the detail that explains it when cropping or resizing. Compare the combined
+palette, tonal contrast, lighting and edges with the approved brand and chosen
+references. Harmonize authored surroundings or choose more compatible imagery;
+preserve authentic product pixels. Native copy explains the useful moment;
+invented elapsed time and guaranteed outcomes add no credibility.
 
 ## Construct and verify
 
@@ -62,8 +77,10 @@ logos or a named customer's real event. Unsupported perspective or occlusion is
 a reason to simplify the composition, not invent invisible editing capabilities.
 
 Use `knowledge/scene/placement.md` to adapt square and portrait around the meaningful
-action, preserving hands, product detail and readable copy. Review the scene for
-physical plausibility, factual product fidelity and whether the context earns its
-space. If the task is unsupported, change to a supported demonstration and record
-the missing-use evidence. Choose the next-step CTA only when the destination and
+action, preserving hands, product detail and readable copy. Review the whole image:
+can the viewer connect the person or context to the specific product task? If
+removing a companion leaves that meaning unchanged, simplify or replace it.
+Check physical plausibility and factual product fidelity. If the task is
+unsupported, change to a supported demonstration and record the missing-use
+evidence. Choose the next-step CTA only when the destination and
 campaign purpose warrant it.

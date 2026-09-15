@@ -55,6 +55,14 @@ editable. Topic imagery should clarify the idea rather than impersonating proof.
 Let the lesson or resource lead, with authentic brand identity as a recognizable
 publisher cue rather than a competing second headline.
 
+For a resource invitation, compose the title and reason to read as one message
+group. Relate the artwork and action to that group through the inspected source's
+reading order, alignment and focal scale. A small topic illustration can act as an
+accent; it does not automatically justify a large empty middle and a detached
+button. Inspect the complete title's line breaks after emphasis or type changes,
+then measure its support and action at the actual viewing size. Use the shared
+component procedure to reflow the group together.
+
 Select the artwork CTA from the relevant original ads and request: a self-contained
 lesson may end without a button, while a resource invitation may use one. Match
 the action to real access conditions. For square and portrait versions, use

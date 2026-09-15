@@ -1239,3 +1239,60 @@ workspace labels and preserved11–14 asdeliverables; no furthercanvas/browserwr
 Canvas feedback still not assembled asfreshdesignscopedmemory; next integrate
 trustedquote/scopedpin handoff and run the next frozen ordinary fourbrand test.
 Keep goalactive at13/18exercised,0qualified. Task26 remains0calls/unapproved.
+
+Task32 (2026-09-15) follows user screenshot feedback. Task31 checkpoint committed
+locally as51a06df9. Shared components/placement/review now distinguish message
+groups and measured line boxes from allocated frames; reflow support and dependent
+CTA together and preserve approved user adjustments. Educational-guide adds this
+to resource invitations. Product-in-use requires a visible task relationship for
+companion imagery; visual-metaphor requires visible supported meaning before
+material selection. Brand-specific palettes remain input preferences, no hardcodes.
+Frozen Q is behavioral RED; updated behavior awaits actual revisions. Focused
+scene-family/copy/direction suite107passed; diffcheckclean, independent source/mechanic
+reviews complete. No engine changes or additional provider diagnostic calls.
+
+Read-only current-user baseline06:57:54Z: QClue28/AWS18/Google34 unchanged since
+prior QA; ConduitNEWv58 moved support up/wider (2lines), opticalgap148→31px by
+existingfrontendpainter. Only supportgeometrychanged; preserveit. OldCluev19exact.
+New ignored evidence composition-revisions-20260915 freezes source/config/assets;
+no archive/cache resets because currentgeneratedassets belong to these revisions.
+Counts:30catalog=18family+12support,27distinct explicit skillreadrequests=15family
++12support,13selected/rendered families,0fullyqualified. Readrequests do not prove
+completebodydelivery/comprehension. Fiveunexercised:problem-solution,
+comparison-alternatives,case-study-narrative,objection-handling,offer-conversion.
+
+Restarted idle localbase stack with existinglauncher toloadTask31+32. Directscript
+execution failed nonexecutablefile; Bashlauncher succeeded persistent62087. Initial
+8secstartup showed8020/8030down then bothhealthy07:07Z. Fourbrandfrontendservers
+preserved. NewDBreadonlycheck requiredsandboxnetworkescalation, succeeded; no DB
+writes. Duplicateartifactmenu is unimplemented; clickcreatednothing. Conduitchat
+hadstale401 whileClerksaidalreadysignedin; freshnormalhome/chatnavigationrecovered
+withoutauthbypass or userpasskeystep. RootusedfreshConduittab15,keptoriginal14.
+
+Normalbrowser revisionmessages dispatchedall4concurrently07:11:59.972Z inexisting
+Qthreads; requestsareconditionedonuserfeedback,notfreshfirstdeliveryqualification.
+Clueaskscoherentimages/charcoalwarmcream; AWSlogicalmetaphor; Googlegrouping/type;
+Conduitpreservelatesttightgroup/cyanandaddnecessarysourcecontexttopercentages.
+No assetIDs,skillnames,coordinatesorreplacementheadlinesinsubmissions. Current
+artifactsreceiveversionedrequestedrevisions; frozenfirstdeliveriesanduserbaseline
+remainimmutableevidence. ObservermustbindonlyNEWouterrunsexcludingQIDs. Profile
+remainsempty/disabled; visualreviewstillrequired. Goalactiveandnoqualityclaimyet.
+
+Task32 closing / user status request (2026-09-15): all four conditioned revisions
+are terminal and frozen; observer67180 exit0,166tracefilehashes verified. Cluev47
+464.247s/edit_applied; AWSv36 622.147s/accepted; Googlev50 520.603s/edit_applied;
+Conduitv76 635.172s/edit_applied. No240s passes. Allqueuesidle; oldClueexactv19.
+Conduit approvedv58 headline/support geometry,text,typographyexact in v76, but
+chartcorners28→10 andstatleading1→1.05/tracking0→−0.02 changedcollaterally.
+Resolutioncaptionnowvisibleandsource-supported. Googlegroupingbetter butnominal
+proxy support7.17px/CTA5.67pxstilltiny. AWSnowvisible scattered→assembledrelationship
+butlargeartgap. Clueremovedportraitbutretainedpeach#FCE4C4 calledcreamindirection;
+still smalltype/gap/crop/timing-implication concerns. Styletokenchangedbutallfrozen
+resolvedscenesSeasonMix: do notclaimprovenfamilychange. IndependentreviewsunderR.
+Task32focused107passed plus22skillfamily rerun; noenginechanges. Latestrevisions
+didnotgetfreshfullnativeedit/exportQA; QreceiptscannotcertifyR. Useraskedstatus
+before additionalrepairskillchange/Cluecorrectiverun; neitherhasoccurred.
+Plan nowhascurrentstatus abovehistoricalentries, supersedingstale8/18andnotrestarted
+statements. Counts30available,27readrequests,13/18rendered,0qualified. Goaltool
+reported58460trackedseconds (~16h14m); exactdevelopmenttimeattributionunavailable.
+Task26 remains0calls/unapproved, fresh-runpreferenceassemblymissing, noprodpush.

@@ -11,6 +11,31 @@ needs none; a present CTA must have the right next step, brand-supported form,
 measured label and readable local contrast. Check placement-specific overlays
 through `knowledge/scene/placement.md`, never a universal bottom exclusion band.
 
+Read the composite as a short visual argument: identify its first read, the
+support that belongs to it, and what the artwork explains. Headline and support
+should read as one message group when the support completes that headline; judge
+the visible lines, not unused space in a tall text frame. Check intentional line
+breaks and emphasis, then the relationship of this group to imagery and any CTA.
+Whitespace earns its place by strengthening hierarchy or reference treatment.
+When copy, a corner image and a floating button feel like separate placements,
+recompose their relationship using `knowledge/scene/components.md`.
+
+For combined images, name what each contributes and how the combination makes
+the message clearer. Test the weaker element by mentally removing it; if meaning
+and brand recognition survive and hierarchy improves, simplify. For a metaphor,
+name the relationship its visible forms express before reading the explanation
+in the direction notes. Attractive shapes without that relationship do not prove
+the concept works. Inspect the whole palette at once: independent product pixels
+may retain their real colors, while authored type, fields and buttons follow the
+selected treatment and explicit user corrections. Use actual supplied preference
+context; do not infer that all later runs have learned a saved canvas edit.
+
+Record failures in the existing critique issues and affected direction checks,
+with the observed symptom and coherent repair. Preserve successful user-edited
+groups and source treatments. A visual repair may require replacing the chosen
+concept or removing an optional element; adding decoration does not resolve a
+missing visual argument.
+
 When expected text or artwork is absent, first locate it in
 `inspect(view="page", target=<page_id>)` or `node_tree`, then inspect its and its
 ancestors' geometry with `inspect(view="geometry", target=<node_id>)`. Reconcile

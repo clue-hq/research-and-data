@@ -22,19 +22,61 @@ the local background, including transparent padding and texture; containing the
 file does not prove the visible mark is readable. Choose a contrasting authentic
 variant or repair the surrounding composition. Do not manufacture a new lockup.
 
-Use brand tokens and the kit's actual type families and weights. Let the real
-headline determine its measure and line breaks. Text height hugs content;
-width follows the composition. Don't shrink support to excuse overcrowding.
-At placement size the headline must be readable and support must still function.
-Kit role sizes are source values, not universal ad sizes. Measure the actual
-words at the intended output and preview size, then choose hierarchy and line
-breaks from the direction. There is no compulsory headline width, type ratio,
-margin fraction, card count or two-column split.
+Related headline, support and action should read as one message group. Establish
+that relationship through proximity, alignment and reading order suited to the
+reference; unrelated regions need their own separation. A group can be asymmetric
+and need no visible card or vertical stack. A headline and its explanation should
+not become separate islands merely because each fits its own frame.
 
-If the direction calls for a CTA, build its observed form with native text and
-independent geometry when appropriate. Measure label width and height before
-adding content-driven padding and brand-supported corner treatment. A text CTA
-needs no invented button frame; a creative with no CTA needs no reserved CTA row.
+Work through the actual copy and its dependent layout together:
+
+1. Use brand tokens and the kit's available families/weights. Choose headline
+   width from meaningful phrase breaks and the intended focal scale. Choose
+   support width from its own words and available space; it need not match the
+   headline width. If support wraps awkwardly, inspect whether a wider measure
+   improves it before reducing type size. Prefer content-hugging text height;
+   reserve fixed-height slots only when the composition needs them. Kit role
+   sizes are source values, not universal ad sizes. No fixed width, line count,
+   type ratio or margin fraction follows from this procedure.
+2. After preflight, use `inspect(view="geometry", target=<node_id>)` for the
+   related text and container nodes. `computed.layout_bounds` describes the
+   allocated box; `computed.render_bounds` is not a glyph-ink silhouette.
+   `computed.text_lines`, when present, gives each measured painted line box,
+   including horizontal/vertical alignment, in page-space unrotated coordinates.
+   For ordinary untransformed text, compare the last headline line with the
+   first support line and the support's last line with the action. Check the
+   visible ink in the current render too: line boxes are not pixel-tight optical
+   bounds. Missing/stale geometry, font fallback, heuristic measurement or
+   transformed ancestors limit what those numbers establish.
+3. Repair the cause of a disconnected group: excess fixed-height slack, a stale
+   vertical offset, an unnecessarily narrow support box, or unrelated padding.
+   Preserve an approved headline when the support's measure and position are the
+   problem. Adjust dependent positions after reflow; don't leave the CTA at its
+   old coordinate after the paragraph above it changes height. Use an existing
+   auto-layout group's `g(...)`/`pad(...)` where it expresses the relationship,
+   or repair the affected parent-relative positions together. Inspect the tree
+   before reparenting; structural grouping is not proof of visual grouping.
+   When inspection reports a pinned node, honor its authoritative `absolute_box`;
+   changing ordinary position fields alone may not move it.
+4. If the direction includes a CTA, keep its native label and any button geometry
+   in one coherent component, with content-driven padding and brand-supported
+   corners. Measure the actual label, then check the whole component's relation
+   to the message it acts on. Avoid an independently floating label or detached
+   action island. A text CTA needs no invented button frame; a creative without
+   a CTA needs no reserved action row.
+
+For emphasis within a sentence, prefer a supported span in one native text node
+so the phrase reflows together. The DSL's `[[phrase]]` plus `span(...)` supports
+solid/token fill, weight, italic and decorations; it cannot change a span's family,
+size or leading. Use only supplied faces. Weight/italic can change line breaks,
+so remeasure after emphasis changes. `span(...)` is creation syntax; later edits
+use checked structured span operations. A content edit clears old spans: restore
+the intended emphasis against the new words. See `knowledge/lumen-dsl/text.md`
+for exact syntax and limits. Separate native nodes are appropriate for distinct
+independent text roles; coloring one phrase alone is not a reason to split a
+headline into manually positioned pieces. Review product names and phrase breaks
+after every width change, and revise validated copy explicitly if words change.
+
 Quotes and metrics use independent native text with source-backed qualification
 and attribution where needed. Their treatment follows the inspected examples,
 not a compulsory card. Use native connectors only when the relationship is real.

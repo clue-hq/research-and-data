@@ -36,6 +36,22 @@ support, labels and any CTA; adjust image frames and crops around meaningful
 product content. An ultra-wide banner may need shorter copy or a different focal
 relationship. A vertical version need not become a fixed three-beat ladder.
 
+Adapt each message group as a unit using the procedure in
+`knowledge/scene/components.md`. Reflow the real words at the new width before
+placing the group's dependent elements. Headline and support may need different
+measures; a narrower canvas does not justify preserving an accidental line break
+or shrinking the explanation until it no longer works. An approved headline can
+remain intact while support gains usable width and moves closer. Recheck the CTA
+after that reflow. Judge the spacing between visible text and its companion
+elements, not just the empty area allocated to their frames; generous whitespace
+elsewhere does not require a large gap inside a closely related message.
+
+Render and inspect both the whole composition and its intended display size.
+Verify that headline, explanation and action connect in the intended order,
+emphasized phrases survive reflow, and body copy remains usable rather than
+merely clearing a technical minimum. The nominal-size review profile and the
+preview's text-size table do not measure grouping, optical spacing or raster text.
+
 Use a placement-specific overlay or supplied safe-area specification when one is
 available. Review at the actual visible crop and display scale. In a story, check
 the top and bottom interface; in a cover, check the avatar and viewport crop; in

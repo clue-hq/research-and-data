@@ -15,9 +15,14 @@ imagination; it does not permit fictional product evidence.
 
 Identify the exact idea: coordination friction, selection, focus, continuity or
 another supported experience. State what each important visual element stands
-for and which visible relationship makes the point. If the explanation works
-only after a long caption, simplify or choose a more direct family. Check for
-unintended meanings, including promises of guaranteed safety, unlimited capacity,
+for and which visible relationship makes the point. For a change or transition,
+identify the difference or interaction the viewer will actually see; naming a
+shift in the headline does not make an unchanged object arrangement express it.
+Point to source support for the intended meaning, separately from the reference
+that supplies the material treatment. Record the relationship in `preserve` and
+`review_needs` before choosing or generating artwork. If the explanation works
+only through the headline or a long caption, simplify or choose a more direct
+family. Check for unintended meanings, including promises of guaranteed safety, unlimited capacity,
 instantaneous work or measured superiority.
 
 Inspect the brand's relevant original ads before choosing a metaphor vocabulary.
@@ -40,11 +45,13 @@ They are choices only when the meaning and sources justify them.
   when shape itself carries the idea; a simulated data chart is not abstraction.
 
 These are possible approaches, not a required three-option output. Keep the
-chosen original's composition or material treatment when the request asks for a
-close companion. Name what changes and what remains visible: the subject can
-change while edge softness, lighting and texture remain. Palette resemblance
-alone is insufficient. In a new-concept request, make the semantic relationship
-distinct as well as changing its surface styling.
+chosen original's relevant composition or material treatment when the request asks
+for a close companion. Name what changes and what remains visible: the subject can
+change while edge softness, lighting and texture remain. A familiar object or
+material motif does not establish the requested relationship. If the source's
+arrangement cannot carry that idea, explicitly adapt it within the requested intent
+or select a better-supported direction. In a new-concept request, make the semantic
+relationship distinct as well as changing its surface styling.
 
 ## Compose the idea, then test its reading
 
@@ -56,8 +63,12 @@ metaphorical component rather than the whole ad. Requested new artwork needs a
 real inspected output; native geometry is suitable only when it meets the request.
 
 Choose whether image or language delivers the first read; the second should
-resolve the thought, not repeat it. Keep brand identity recognizable without
-turning a logo into a fictional object. CTA presence and treatment follow the
+resolve the thought, not repeat it. Give the visible relationship focal emphasis
+through the objects' scale, spacing, interaction and contrast. Connect the copy's
+placement and line breaks to that focal area; assess negative space by whether it
+helps the reading. Compare palette, light and material across the whole composition
+so separately generated assets support one visual argument. Keep brand identity
+recognizable without turning a logo into a fictional object. CTA presence and treatment follow the
 relevant original ads and request. Use `knowledge/scene/placement.md` for square
 or portrait adaptation, protecting the relationship between objects and its
 readable connection to the copy, not just each object separately.
@@ -65,6 +76,9 @@ readable connection to the copy, not just each object separately.
 If evidence does not support the claimed benefit, choose a supported idea; if
 reference pixels are missing, record the fidelity gap. Counterexamples: an
 unexplained beautiful sculpture, a stopwatch implying unsupported time savings,
-or a fabricated dashboard rendered as conceptual art. Probe “Make a conceptual
-ad about reducing coordination friction”: can a viewer infer the intended task,
-and would this image still fit any unrelated product unchanged? If so, revise.
+or a fabricated dashboard rendered as conceptual art. Inspect the final image
+before reading the headline and name the relationship its arrangement conveys.
+Then read the copy: it should make that visible idea specific to the supported
+message. If swapping in an unrelated headline leaves the image equally suitable,
+or the planned relationship disappeared during generation or recomposition,
+revise the arrangement or choose a more direct direction.
