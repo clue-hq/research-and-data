@@ -1043,3 +1043,38 @@ no new errors, existing baseline violations remain. No Rust/wasm changes.
 Plan records boundary; small typography, copy, inspector and latency unresolved.
 Task26 external copy diagnostic remains paused with zero calls; explanation is
 not approval. Next idle-worker refresh and second four-brand coverage batch.
+
+Task29 (2026-09-14) closing: preceding user-explanation turn was no progress for
+implementation. Completed the pending inspector typography repair using the
+renderer resolver with exact document-kit maps and async hydration dependency.
+Manual font edits preserve effective untouched fields; keep compatible scalar
+bindings, clear shadowed ones, same-value no-op. Missing maps/roles and indirect
+families ($ and token syntax) refuse writes before literal fast path; UI blanks
+and disables only font controls. Own-property guards prevent inherited-role
+false readiness. Content remains editable. Browser leading/tracking precedence
+corrected to core role-over-numeric; no Rust, agent, website or model edits.
+
+RED/GREEN: initial6 previous-turn regressions,7 missing-map/UI cases,5 reference
+edge cases; mounted real session+panel test passes and fails when async hydration
+dependency removed. JSDOM needed ResizeObserver/scrollIntoView shims and DOM before
+BaseUI import (otherwise external-store shim froze labels; not a product bug).
+Fixed new test typing and node-kind discriminator after full tsc exposed them.
+127 editor/chat-shell testfiles:2372pass,1existing realclipboard skip,0fail.
+Designsystem build0,final isolated Nextbuild0,lint0 with2old helper warnings.
+Fulltsc55errors matches HEAD55 with equal generatedroute types, no introduced
+diagnostics. Independent candidate_finalize review no remaining findings.
+Ignored evidence inspector-typography-20260914. Live typography-edit persistence
+still unverified; family coverage remains10/18,0qualified, no new generations.
+
+Operational recovery from prior turn: idle scoped base stack was restarted into
+session35486 to load b69bbe56; four brandfrontends untouched. Q batch preparation
+applied4recoverable generated-layer archives and reset backedup4generation caches;
+original source rows verified unchanged; no new candidate run. Browser login
+submission from saved localtestcredential rejected by automaticapprovalreview,
+which said user had not explicitly authorized those credentials. Asked user to
+sign in normally at3021, no answer yet; no retry/bypass. This turn readonlytab17
+observation timedout/kernelreset; fresh CUAinventory returned browsers:[], not
+proof tabs closed. Task26 diagnostic remains0calls pendingexplicitapproval.
+No push, production or external-image-experiment mutation. Next authenticate/
+reconnect browser, validate typography edit/save/reload/export on fourbrands, then
+freeze and launch the prepared ordinary coverage batch simultaneously.

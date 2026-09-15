@@ -807,7 +807,7 @@ type Restatement =
  * a token ref therefore resolves its weight from that typography token exactly
  * as a `style_token` node does, so it has no literal weight to restate either.
  */
-function namesTokenRef(fontFamily: string): boolean {
+export function namesTokenRef(fontFamily: string): boolean {
   return /^\s*(\$|token\()/.test(fontFamily);
 }
 

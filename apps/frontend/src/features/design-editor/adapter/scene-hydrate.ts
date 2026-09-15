@@ -24,7 +24,8 @@ import {
   nodePageSpaceBox,
   parentInfoForNode,
 } from "../engine/scene/sceneQueries";
-import { oklchToHexCss } from "../engine/scene/tokenColors";
+import { oklchToHexCss, type KitTokenMaps } from "../engine/scene/tokenColors";
+import { resolvedTextFields, textTypographyResolves } from "../engine/scene/renderAdapter";
 import { sceneAssetPassthroughUrl } from "./scene-canvas-view";
 import { paletteHex, type ScenePalette } from "./scene-palette";
 
@@ -262,6 +263,8 @@ export interface SceneInspectorExtraState {
   title?: string;
   /** §1.2: the V-alignment toggles are disabled while the height mode is hug. */
   valignDisabled?: boolean;
+  /** Bound font values cannot be edited until this document's kit resolves. */
+  typographyUnavailable?: boolean;
 }
 
 /** §1.4/OQ-2's three display labels. ONE statement of the vocabulary, in the
@@ -752,6 +755,7 @@ function solvedManagedOffset(
 export function hydrateSceneInspectorState(
   node: Node,
   scene: Scene,
+  tokenMaps?: KitTokenMaps | null,
 ): SceneInspectorState {
   const state: SceneInspectorState = {};
 
@@ -866,9 +870,11 @@ export function hydrateSceneInspectorState(
     // concern (the engine uppercases when it draws, not when it stores), so the
     // row must state what a commit will replace, never what the canvas shows.
     state.content = text.content;
-    state.fontFamily = text.font_family;
-    state.fontSize = numberText(text.font_size);
-    const weight = vocabulary(FONT_WEIGHT_LABELS, String(text.font_weight));
+    state.typographyUnavailable = !textTypographyResolves(text, tokenMaps);
+    const styled = resolvedTextFields(text, tokenMaps ?? { typography: {}, numbers: {} });
+    state.fontFamily = styled.fontFamily;
+    state.fontSize = numberText(styled.fontSize);
+    const weight = vocabulary(FONT_WEIGHT_LABELS, String(styled.fontWeight));
     if (weight) state.fontWeight = weight;
     // §1.2 row 5: `TextAlign` passes straight through — the ad schema's fourth
     // toggle IS `justify` (§2 row 2), so nothing is dropped at this seam.
@@ -993,11 +999,12 @@ export function hydrateSceneSelectionState(
   scene: Scene,
   pageId: PageId | null,
   node: Node | null,
+  tokenMaps?: KitTokenMaps | null,
 ): SceneInspectorState | null {
   if (!node) {
     return pageId ? hydrateSceneCanvasState(scene, pageId) : null;
   }
-  const nodeState = hydrateSceneInspectorState(node, scene);
+  const nodeState = hydrateSceneInspectorState(node, scene, tokenMaps);
   if (!pageId || node.id !== rootFrameId(scene, pageId)) {
     return nodeState;
   }

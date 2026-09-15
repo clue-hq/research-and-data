@@ -336,6 +336,8 @@ function AdTextInspector({
   // A hydrated weight is a real one and wins; a node whose weight is off the
   // nine-name ramp hydrates none (AD2.4) and keeps this default.
   const initial = { fontWeight: "600 Semi Bold", ...hydrated };
+  const typographyUnavailable = hydrated?.typographyUnavailable === true;
+  const typographyInert = inert || typographyUnavailable;
   const controller = useInspectorController([], "text", initial, addressing, {
     // AD4.R: live only when a real scene is behind the panel — the dummy
     // fixture path (no hydration) stays the interactive mock it shipped as.
@@ -399,12 +401,13 @@ function AdTextInspector({
           />
         </InspectorField>
         <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
+        <InspectorField label="Font"><InspectorSelect disabled={typographyInert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={typographyUnavailable ? "" : state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
-          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" disabled={inert} onCommitValue={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
-          <InspectorField label="Weight"><InspectorSelect disabled={inert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
+          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" disabled={typographyInert} onCommitValue={(value) => setValue("fontSize", value)} value={typographyUnavailable ? "" : state.fontSize} /></InspectorField>
+          <InspectorField label="Weight"><InspectorSelect disabled={typographyInert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={typographyUnavailable ? "" : state.fontWeight} /></InspectorField>
         </div>
+        {typographyUnavailable ? <p className={styles.inspectorStatusNote} role="status">Brand typography is unavailable. If this persists, reload to try again.</p> : null}
         <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>

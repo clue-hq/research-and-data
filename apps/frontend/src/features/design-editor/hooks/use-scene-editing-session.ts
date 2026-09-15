@@ -29,6 +29,7 @@ import type { NodeId, PageId, Scene } from "../engine/scene/contracts";
 import { fetchBrandKitDetail } from "../engine/scene/documentStore";
 import { collectKitFontFaceRefs } from "../engine/scene/kitFonts";
 import { fetchFontLibrary } from "../engine/scene/libraryFonts";
+import { buildKitTokenMaps, type KitTokenMaps } from "../engine/scene/tokenColors";
 import { useSceneArrange } from "./use-scene-arrange";
 import { useSceneAssetLibrary } from "./use-scene-asset-library";
 import { useSceneClipboard } from "./use-scene-clipboard";
@@ -212,6 +213,21 @@ export function useSceneEditingSession({
       ? selectedIds[0]
       : null;
   const primaryNode = primaryNodeId ? scene?.nodes[primaryNodeId] : null;
+  const brandKitId = scene?.meta.brand_kit?.id ?? null;
+  const brandKitVersion = scene?.meta.brand_kit?.version ?? null;
+  const brandKitRef =
+    brandKitId && brandKitVersion !== null
+      ? `${brandKitId}@${brandKitVersion}`
+      : null;
+  const [kitPalette, setKitPalette] = useState<{
+    forBrandKitRef: string;
+    palette: ScenePalette | null;
+    tokenMaps: KitTokenMaps;
+  } | null>(null);
+  // Scope to the document's pinned kit, and rehydrate when its async fetch
+  // settles even if the selected node and authored scene have not changed.
+  const tokenMaps = brandKitRef && kitPalette?.forBrandKitRef === brandKitRef
+    ? kitPalette.tokenMaps : null;
 
   // Ruling 18: the two hydration sources are separate on purpose. A selected
   // node hydrates through AD2.4's node mapper; the EMPTY selection is the
@@ -245,9 +261,9 @@ export function useSceneEditingSession({
   const hydrated = useMemo<SceneInspectorState | null>(
     () =>
       scene
-        ? hydrateSceneSelectionState(scene, pageId, primaryNode ?? null)
+        ? hydrateSceneSelectionState(scene, pageId, primaryNode ?? null, tokenMaps)
         : null,
-    [pageId, primaryNode, scene],
+    [pageId, primaryNode, scene, tokenMaps],
   );
 
   // AD2.6: `expanded` is an INPUT to the row builder — nobody below owns it.
@@ -353,12 +369,6 @@ export function useSceneEditingSession({
   // AD4.0 step 3 (§1.6): the SAME kit response also carries the colour
   // palette, so `kitPalette` below is set from the one `fetchBrandKitDetail`
   // the fonts already needed — never a second identical request.
-  const brandKitId = scene?.meta.brand_kit?.id ?? null;
-  const brandKitVersion = scene?.meta.brand_kit?.version ?? null;
-  const brandKitRef =
-    brandKitId && brandKitVersion !== null
-      ? `${brandKitId}@${brandKitVersion}`
-      : null;
   const [libraryFamilies, setLibraryFamilies] = useState<string[]>([]);
   const [kitFamilies, setKitFamilies] = useState<string[]>([]);
   // Replace-image lane: the kit's own pictures, which the asset library pins
@@ -376,10 +386,6 @@ export function useSceneEditingSession({
   // bind a token this document's kit may not define. (The `kitFamilies`
   // sibling is not stamped; a stale font NAME is a weaker failure and is not
   // this step's row, but it is the same shape and is recorded.)
-  const [kitPalette, setKitPalette] = useState<{
-    forBrandKitRef: string;
-    palette: ScenePalette | null;
-  } | null>(null);
   const palette =
     brandKitRef && kitPalette?.forBrandKitRef === brandKitRef
       ? kitPalette.palette
@@ -433,6 +439,7 @@ export function useSceneEditingSession({
         setKitPalette({
           forBrandKitRef: brandKitRef,
           palette: buildScenePalette(detail),
+          tokenMaps: buildKitTokenMaps(detail),
         });
         setFetchedKitEntries(kitLibraryEntries(detail));
       })
@@ -526,6 +533,7 @@ export function useSceneEditingSession({
     onReload: onWriteReload,
     pageId,
     palette,
+    tokenMaps,
     primaryNodeId,
     redoDepth: liveHistory?.redoDepth ?? 0,
     scene,

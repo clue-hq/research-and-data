@@ -24,6 +24,8 @@ import {
   updateNodeLayout,
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
+import { setKitTokenMaps, setTokenColorMap } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
   AD_PAGE_ID,
@@ -76,6 +78,47 @@ import {
  */
 
 const SCENE = HARVESTED_AD_PAGE;
+
+for (const missing of ["pending", "role", "size", "leading", "tracking", "family-alias",
+  "wrapped-family-alias", "raw-family-alias", "wrapped-raw-family-alias", "constructor", "__proto__"] as const) {
+  it(`refuses typography edits with ${missing} brand values without disabling content edits`, () => {
+    const scene = structuredClone(SCENE);
+    const node = scene.nodes.text_headline;
+    if (node.kind.kind !== "text") throw new Error("expected text");
+    node.kind = { ...node.kind, font_family: "Inter", font_size: 16, font_weight: 400,
+      style_token: "$type.headline", font_size_token: "$type.size",
+      line_height_token: "$type.leading", letter_spacing_token: "$type.tracking" };
+    const canvasMaps: KitTokenMaps = { colors: {}, typography: {
+      "type.headline": { fontFamily: "Season Mix", fontSize: 80, fontWeight: 500 },
+    }, numbers: { "type.size": 67.5, "type.leading": 1.12, "type.tracking": -0.6 } };
+    const maps = structuredClone(canvasMaps);
+    if (missing === "role") delete maps.typography["type.headline"];
+    if (missing === "size") delete maps.numbers["type.size"];
+    if (missing === "leading") delete maps.numbers["type.leading"];
+    if (missing === "tracking") delete maps.numbers["type.tracking"];
+    if (missing === "family-alias") maps.typography["type.headline"].fontFamily = "$font.brand";
+    if (missing === "wrapped-family-alias") maps.typography["type.headline"].fontFamily = " token(font.brand) ";
+    if (missing === "constructor" || missing === "__proto__") node.kind.style_token = missing;
+    if (missing === "raw-family-alias" || missing === "wrapped-raw-family-alias") {
+      node.kind = { ...node.kind, style_token: null, font_size_token: null,
+        line_height_token: null, letter_spacing_token: null,
+        font_family: missing === "raw-family-alias" ? "$type.headline" : " token(type.headline) " };
+    }
+    setKitTokenMaps(canvasMaps);
+    const before = JSON.stringify(scene);
+    try {
+      for (const [property, value] of [["fontSize", "72"], ["fontFamily", "Mona Sans"], ["fontWeight", "700 Bold"]]) {
+        assert.equal(sceneChangeToOperation({ property, value, selectionId: node.id }, node, scene, null,
+          missing === "pending" ? null : maps), null);
+      }
+      assert.notEqual(sceneChangeToOperation({ property: "content", value: "Revised headline", selectionId: node.id },
+        node, scene, null, null), null);
+      assert.equal(JSON.stringify(scene), before);
+    } finally {
+      setTokenColorMap({});
+    }
+  });
+}
 /** The page's root frame — the node §1.1's Background rows write. */
 const AD_ROOT_FRAME_ID = "frame_ad_root";
 

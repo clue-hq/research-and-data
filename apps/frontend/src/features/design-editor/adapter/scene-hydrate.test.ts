@@ -37,6 +37,8 @@ import {
   sceneSelectionFor,
 } from "./scene-hydrate";
 import { buildScenePalette } from "./scene-palette";
+import { setKitTokenMaps, setTokenColorMap } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 
 /** The dummy ad inspector's own source, read off disk: a `.tsx` cannot be
  * imported under this runner (`tsx --test`, no DOM), so the vocabulary guard
@@ -492,6 +494,39 @@ it("rung A: a NON-text node states no content at all — the row is text-only", 
 
 it("§1.2: the font family reads TextNode.font_family", () => {
   assert.equal(hydrateSceneInspectorState(adPlainText(), SCENE).fontFamily, "Inter");
+});
+
+it("token-styled inspector values follow the supplied kit, never another canvas's kit", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_headline;
+  assert.equal(node.kind.kind, "text");
+  if (node.kind.kind !== "text") throw new Error("expected text");
+  node.kind = { ...node.kind, font_family: "Inter", font_size: 16, font_weight: 400,
+    style_token: "type.headline", font_size_token: "type.size.6xl" };
+  const maps: KitTokenMaps = { colors: {}, typography: {
+    "type.headline": { fontFamily: "Season Mix", fontSize: 80, fontWeight: 500 },
+  }, numbers: { "type.size.6xl": 67.5 } };
+  const before = JSON.stringify(scene);
+  setKitTokenMaps({ colors: {}, typography: {
+    "type.headline": { fontFamily: "Wrong Brand", fontSize: 32, fontWeight: 900 },
+  }, numbers: {} });
+  try {
+    const state = hydrateSceneSelectionState(scene, AD_PAGE_ID, node, maps);
+    assert.equal(state?.fontFamily, "Season Mix");
+    assert.equal(state?.fontSize, "67.5");
+    assert.equal(state?.fontWeight, "500 Medium");
+    assert.equal(state?.typographyUnavailable, false);
+    const loading = hydrateSceneSelectionState(scene, AD_PAGE_ID, node, null);
+    assert.equal(loading?.fontFamily, "Inter");
+    assert.equal(loading?.fontSize, "16");
+    assert.equal(loading?.typographyUnavailable, true);
+    const incomplete = structuredClone(maps);
+    delete incomplete.typography["type.headline"];
+    assert.equal(hydrateSceneSelectionState(scene, AD_PAGE_ID, node, incomplete)?.typographyUnavailable, true);
+    assert.equal(JSON.stringify(scene), before);
+  } finally {
+    setTokenColorMap({});
+  }
 });
 
 it("§1.2: the font size is the free number as a string", () => {

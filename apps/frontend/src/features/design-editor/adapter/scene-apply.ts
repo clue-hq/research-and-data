@@ -21,6 +21,7 @@ import type {
   Scene,
   Stroke,
   TextAlign,
+  TextNode,
   Unit,
   VerticalAlign,
 } from "../engine/scene/contracts";
@@ -42,6 +43,8 @@ import {
   updateTextNode,
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
+import { resolvedTextFields, textTypographyResolves } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import {
   remapSpansByDiff,
   spanValidationIssues,
@@ -642,12 +645,48 @@ function positionOperation(
   );
 }
 
+/** Detach an edited role while preserving the other effective text fields. */
+function inspectorTypographyOperation(
+  node: Node,
+  change: Partial<Pick<TextNode, "font_family" | "font_size" | "font_weight">>,
+  tokenMaps?: KitTokenMaps | null,
+): Operation | null {
+  if (node.kind.kind !== "text") return null;
+  const text = node.kind;
+  if (!textTypographyResolves(text, tokenMaps)) return null;
+  if (!text.style_token && !text.font_size_token && !text.line_height_token && !text.letter_spacing_token) {
+    return updateTextNode(node, change);
+  }
+  const maps = tokenMaps ?? { typography: {}, numbers: {} };
+  const styled = resolvedTextFields(text, maps);
+  const effective = { ...text, font_family: styled.fontFamily, font_size: styled.fontSize,
+    font_weight: styled.fontWeight, line_height: styled.lineHeight,
+    letter_spacing: styled.letterSpacing };
+  if (Object.entries(change).every(([key, value]) => effective[key as keyof TextNode] === value)) {
+    return null;
+  }
+  // A literal edit detaches the role. Keep other bindings only when they still
+  // produce the value the user saw; a previously shadowed token must not wake up.
+  const detached = resolvedTextFields({ ...text, style_token: null }, maps);
+  const kind: typeof text = { ...effective, ...change, style_token: null,
+    font_size_token: change.font_size === undefined && detached.fontSize === styled.fontSize
+      ? text.font_size_token : null,
+    line_height_token: detached.lineHeight === styled.lineHeight ? text.line_height_token : null,
+    letter_spacing_token: detached.letterSpacing === styled.letterSpacing ? text.letter_spacing_token : null,
+  };
+  return { kind: "update_node", node_id: node.id, patch: nodePatch({
+    kind: set(kind), explicit_text_tokens: {
+      style: false, font_size: kind.font_size_token != null,
+      line_height: kind.line_height_token != null,
+      letter_spacing: kind.letter_spacing_token != null,
+    },
+  }) };
+}
+
 /**
  * One inspector change → one engine operation, or `null`.
- *
- * `isNodeDirectGeometryEditable` is the ready-made gate for the geometry rows
- * (unlocked AND (not solver-managed OR freehand)); it is the engine's own
- * predicate and is never re-implemented here.
+ * `isNodeDirectGeometryEditable` gates geometry rows using the engine's own
+ * predicate (unlocked AND either unmanaged or freehand).
  */
 export function sceneChangeToOperation(
   detail: SceneChangeDetail,
@@ -658,6 +697,7 @@ export function sceneChangeToOperation(
    * caller that has not threaded one — means no label can be validated, so no
    * token write happens. Every other row ignores it. */
   palette?: ScenePalette | null,
+  tokenMaps?: KitTokenMaps | null,
 ): Operation | null {
   const { property } = detail;
 
@@ -872,7 +912,7 @@ export function sceneChangeToOperation(
       if (!text || value.trim() === "") {
         return null;
       }
-      return updateTextNode(node, { font_family: value });
+      return inspectorTypographyOperation(node, { font_family: value }, tokenMaps);
     }
 
     // ── §1.2 row 3: Size — a free number ≥ 1 (§2 delta row 2) ────────────────
@@ -884,7 +924,7 @@ export function sceneChangeToOperation(
       if (size === null || size < 1) {
         return null;
       }
-      return updateTextNode(node, { font_size: size });
+      return inspectorTypographyOperation(node, { font_size: size }, tokenMaps);
     }
 
     // ── §1.2 row 4: Weight — the nine named labels (§2 delta row 2) ──────────
@@ -896,7 +936,7 @@ export function sceneChangeToOperation(
       if (weight === undefined) {
         return null;
       }
-      return updateTextNode(node, { font_weight: weight });
+      return inspectorTypographyOperation(node, { font_weight: weight }, tokenMaps);
     }
 
     // ── §1.2 row 5: H-alignment — four toggles (§2 delta row 2) ──────────────

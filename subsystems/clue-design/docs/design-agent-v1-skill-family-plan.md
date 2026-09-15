@@ -2037,3 +2037,53 @@ and generation latency remain open. Next, refresh idle local workers and run the
 second ordinary four-brand coverage batch with source catalogs frozen and prior
 experimental imagery recoverably excluded. Task26 remains paused pending explicit
 approval; no diagnostic calls are included in this checkpoint.
+
+## Task 29: preserve brand typography during manual edits (2026-09-14)
+
+The Task27 Clue document exposed a separate editability defect: its authored
+placeholder was Inter 16/400 while its pinned role rendered Season Mix 67.5.
+The inspector displayed the placeholder. Editing one font property could detach
+the role and reset other properties to those placeholders.
+
+The inspector now reads effective typography through the renderer's resolver,
+using only the selected document's exact kit/version. Its hydration updates when
+that asynchronous kit arrives. A manual family, size or weight edit preserves the
+other effective fields, retains compatible scalar bindings, and clears bindings
+that would otherwise reactivate a previously shadowed value. Re-entering the
+visible value is a no-op. Browser leading/tracking precedence now matches core:
+the role overrides numeric leading/tracking, while the size token overrides role
+size. No Rust sources or agent guidance changed.
+
+Typography controls remain blank and unavailable until all referenced values
+can be resolved, with a status message. Content/color/alignment editing continues.
+This includes missing roles, unresolved indirect family references and a delayed
+response from another brand or kit version. Unsupported aliases are refused for
+manual typography edits; this does not implement full client alias/mode parity.
+
+Verification: seven unavailable-map/UI regressions and five indirect-reference
+regressions failed before their fixes. The mounted real session/controller/panel
+test proves async hydration without replacing the scene, pin/version switching,
+late-response rejection and missing-role refusal; removing the new hydration
+dependency reproduces its failure. Real WASM cases cover family/size/weight edits,
+the raw-equal size case, preserved and shadowed scalar tokens, JSON replay and
+undo. The broader 127-file editor/chat-shell suite passed 2,372 tests, with one
+pre-existing browser ClipboardEvent/DataTransfer test skipped in JSDOM. Design
+system build, final isolated production Next build and lint passed; two existing
+unused-helper lint warnings remain. Standalone tsc reports the same 55 diagnostic
+errors as HEAD with the same generated route types, none introduced by this diff.
+Independent review has no remaining findings. Evidence is in ignored
+`inspector-typography-20260914/`.
+
+Live browser save/reload/export of this typography fix is still outstanding.
+Normal four-brand sessions expired. Automatic approval review rejected submitting
+a saved test password whose use had not been explicitly authorized; user sign-in
+was requested, and no alternate credential path was attempted. A subsequent
+read-only browser check timed out, then the browser inventory returned no available
+browser surfaces. This is not evidence that the existing user tabs were closed.
+
+The separate 60-call copy diagnostic remains paused without approval and has made
+zero calls. The next four-brand batch is prepared but not launched: prior generated
+layers were recoverably excluded and original source catalogs retained. The full
+goal remains 18 creative families plus 12 support skills; 10/18 families have live
+exercise evidence and zero are fully qualified. No new quality or latency result
+is claimed by this editor checkpoint.

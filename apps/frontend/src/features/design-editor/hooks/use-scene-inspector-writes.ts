@@ -12,6 +12,7 @@ import { panelWriteIntent } from "../adapter/scene-panel-freeze";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
 import type { Node, PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import { freezeLayoutEdit } from "../engine/scene/structuredEdits";
 import {
   useSceneManualEdits,
@@ -225,6 +226,7 @@ export function useSceneInspectorWrites({
   onReload,
   pageId,
   palette,
+  tokenMaps,
   primaryNodeId,
   redoDepth,
   scene,
@@ -256,6 +258,7 @@ export function useSceneInspectorWrites({
    * kit still in flight) means no token write can be validated, so none
    * happens; the hex rows are untouched by it. */
   palette: ScenePalette | null;
+  tokenMaps?: KitTokenMaps | null;
   /** The session's primary selection — `selectedIds[0]`, already resolved
    * against the live scene. */
   primaryNodeId: string | null;
@@ -282,6 +285,7 @@ export function useSceneInspectorWrites({
   const controlsRef = useRef(canvasControls);
   const pageIdRef = useRef(pageId);
   const paletteRef = useRef(palette);
+  const tokenMapsRef = useRef(tokenMaps);
   // C-9 panel parity: the persist-ONLY seam, for the freeze the panel fires.
   // It is `applyOps` minus the apply, because `applyStructuredEdit` has already
   // applied the freeze to the engine — routing its batch through `applyOps`
@@ -295,6 +299,7 @@ export function useSceneInspectorWrites({
     controlsRef.current = canvasControls;
     pageIdRef.current = pageId;
     paletteRef.current = palette;
+    tokenMapsRef.current = tokenMaps;
     persistAppliedOpsRef.current = edits.persistAppliedOps;
     primaryNodeIdRef.current = primaryNodeId;
     sceneRef.current = scene;
@@ -441,6 +446,7 @@ export function useSceneInspectorWrites({
         writeNode,
         writeScene,
         paletteRef.current,
+        tokenMapsRef.current,
       );
       // The AD3.1 null contract: an unmapped property, an unparseable value or
       // a locked node produces no operation, and no operation is no write.
