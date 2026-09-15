@@ -108,9 +108,13 @@ Quotes and metrics use independent native text with source-backed qualification
 and attribution where needed. Their treatment follows the inspected examples,
 not a compulsory card. Use native connectors only when the relationship is real.
 
-Page before spend: on a pageless document compile the explicit page size, real
-copy, existing assets and sized artwork reservation together. Reserve artwork
-as an empty leaf `fr`. For a real raster/logo asset, `asset(action="place", ...)`
+Page before spend: on a pageless document compile explicit page dimensions before
+logo or image operations. Required authentic target-logo acquisition permits
+page-only source preparation before the first complete direction: fetch and view
+the real logo, then validate the direction with its returned asset ID. Creative
+nodes and artwork construction, including new imagery spend, follow validated
+direction. Reserve artwork as an empty leaf `fr`.
+For a real raster/logo asset, `asset(action="place", ...)`
 accepts that frame or an existing image: it changes the leaf to an image in
 place, preserving its ID, parent/order and geometry. It cannot consume a frame
 with children or create a missing target. Missing asset IDs remain errors.
