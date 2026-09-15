@@ -106,3 +106,27 @@ redraw; Billing and Pages dummy. **Design spec written 2026-09-15 for founder re
 `docs/superpowers/specs/2026-09-15-settings-integration-design.md` (carries assumptions A1 overlay on
 Billing/Pages dummies, A2 real workspace name in the profile-menu caption). No code yet; the plan
 is drawn only after the founder approves the spec.**
+
+## Addendum 2026-09-15 — Research fields fully specified (spec §9)
+
+Founder asked for the complete Data-model spec. Written into the same spec as §9.1–9.7 (commit
+after `a73f6d97c`). Key design facts found while writing it:
+- `insert_claim` → `check_claim_writable` → `validate_effective_value` resolves keys through the
+  per-workspace overlay `workspace_field_definition` (global + workspace rows, retirement and the
+  erasure marker joined). A NEW table would be invisible to that gate → the lenient writer would
+  file every custom-field claim as a global *proposed* field (cross-tenant). So the home is the
+  existing overlay with its old-lane-only CHECKs relaxed (namespace `client.%` → +`account.%`/
+  `contact.%`; pack CHECK split; `promoted_from_proposal_id` nullable; `client_kb_role` +`research`;
+  new nullable `label`). Table is on the Phase-6 KEEP list (claim-store substrate), so this is not
+  an old-lane bridge.
+- New registry fns: `register_workspace_research_field`, `update_workspace_research_field`;
+  `retire_workspace_field` reused (`human:` prefix). Catalog readers `read_account_catalog` /
+  `read_person_catalog` take `workspace_id` and union the workspace rows (call sites hold it).
+  Accounts custom-column SQL drops `pack='client'`. Contact custom fields: no designed slot → invisible.
+- New permission `workspace.manage_settings` (policy revision 3; admin+owner) for rename + fields.
+- Routes: `GET/POST /frontend/v1/settings/research-fields`, `PATCH/DELETE …/{key}`; key derived
+  from label; description required (it is the instruction); retire is final (two-step confirm).
+- Open for the founder: R-1 show all platform keys incl. bookkeeping ones (no hidden flag added).
+- Frames owed by the co-founder: the Research fields table; the Create field form (invite-row pattern).
+- Follow-up (Track R): `_register_proposed_field` still files agent-invented keys globally.
+
