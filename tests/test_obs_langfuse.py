@@ -3,6 +3,7 @@ posture when it is not installed."""
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from clue_obs.langfuse import (
     make_mask,
     observation,
     propagate_trace,
+    tag_entities,
 )
 from tests._langfuse import finished_spans, langfuse_installed
 
@@ -140,3 +142,42 @@ def test_the_run_registry_remembers_and_pops_by_run_id() -> None:
     assert registry.pop(run_id) == LangfuseIds(trace_id="t", observation_id="o")
     assert registry.get(run_id) is None
     assert registry.latest() is None
+
+
+def test_tag_entities_is_a_no_op_when_not_installed() -> None:
+    tag_entities(["acc-1"])  # must not raise, must open nothing
+
+
+def test_tag_entities_accumulates_per_trace_and_re_emits_the_whole_set() -> None:
+    with langfuse_installed() as (exporter, _provider):
+        with (
+            propagate_trace(trace_name="head-of-abm.turn", session_id="t-1", tags=("head_of_abm",)),
+            observation("turn", as_type="agent"),
+        ):
+            tag_entities(["acc-1", "", None])
+            tag_entities(["con-9", "acc-1"])
+        with observation("another-trace", as_type="agent"):
+            tag_entities(["con-2"])
+        spans = finished_spans(exporter)
+    tagged = [s for s in spans if s.name == "entities.tagged"]
+    assert len(tagged) == 3
+    first, second, third = (_attrs(s) for s in tagged)
+    assert first["langfuse.trace.tags"] == ("head_of_abm", "entity:acc-1")
+    assert first["langfuse.trace.metadata.entities"] == "acc-1"
+    assert second["langfuse.trace.tags"] == ("head_of_abm", "entity:acc-1", "entity:con-9")
+    assert second["langfuse.trace.metadata.entities"] == "acc-1,con-9"
+    assert second["langfuse.trace.name"] == "head-of-abm.turn"
+    assert second["session.id"] == "t-1"
+    assert json.loads(second["langfuse.observation.output"]) == {"entities": ["acc-1", "con-9"]}
+    # A different trace starts a fresh set.
+    assert third["langfuse.trace.metadata.entities"] == "con-2"
+    assert third["langfuse.trace.tags"] == ("entity:con-2",)
+    turn = next(s for s in tagged if _attrs(s)["langfuse.trace.metadata.entities"] == "acc-1")
+    assert format(turn.context.trace_id, "032x") != format(tagged[2].context.trace_id, "032x")
+
+
+def test_tag_entities_with_no_current_trace_opens_nothing() -> None:
+    with langfuse_installed() as (exporter, _provider):
+        tag_entities(["acc-1"])  # no span is current: nowhere to tag
+        spans = finished_spans(exporter)
+    assert [s.name for s in spans] == []

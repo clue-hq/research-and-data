@@ -14,8 +14,9 @@ import the SDK — an import-linter contract keeps it that way.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
@@ -28,6 +29,8 @@ from clue_obs.truncate import truncate_str
 
 __all__ = [
     "DEFAULT_MASK_LIMIT",
+    "ENTITIES_METADATA_KEY",
+    "ENTITY_TAG_PREFIX",
     "LangfuseIds",
     "LangfuseRunRegistry",
     "Level",
@@ -45,6 +48,7 @@ __all__ = [
     "observation",
     "propagate_trace",
     "shutdown_langfuse",
+    "tag_entities",
 ]
 
 ObservationType = Literal[
@@ -316,6 +320,53 @@ def propagate_trace(
         tags=list(tags) or None,
     ):
         yield
+
+
+# --- entity tags (lane 3 slice 4, R5) ------------------------------------------------------
+
+#: The trace tag naming one entity a trace carried claims about: ``entity:<id>``.
+ENTITY_TAG_PREFIX = "entity:"
+#: The trace metadata key holding the same ids, sorted and comma-joined (the "contains" filter).
+ENTITIES_METADATA_KEY = "entities"
+
+#: The entities tagged so far on the current trace: ``(trace_id, ids)``. Set, never reset, so it
+#: outlives the ``propagate_trace`` block that opened the trace and reaches later work in the
+#: same task (the research driver's committee step after the agent). A different current trace
+#: starts a fresh set.
+_entities: ContextVar[tuple[str, set[str]] | None] = ContextVar(
+    "clue_langfuse_entities", default=None
+)
+
+
+def tag_entities(entity_ids: Iterable[object]) -> None:
+    """Tag the current trace with the entities it wrote or served.
+
+    The whole accumulated set is re-emitted on every call (as ``entity:<id>`` tags and as the
+    ``entities`` metadata list) inside the SDK's own attribute propagation, so the trace ends up
+    complete whether Langfuse merges trace attributes by union or by last writer, and the outer
+    trace name, session, user and tags stay on the emitted span. A no-op when Langfuse is not
+    installed, when no span is current, or when nothing is left after dropping blanks.
+    """
+    if _client is None:
+        return
+    ids = {str(item).strip() for item in entity_ids if item is not None and str(item).strip()}
+    if not ids:
+        return
+    current = current_ids()
+    if current is None:
+        return
+    held = _entities.get()
+    seen = set(held[1]) if held is not None and held[0] == current.trace_id else set()
+    seen |= ids
+    _entities.set((current.trace_id, seen))
+    ordered = sorted(seen)
+    from langfuse import propagate_attributes
+
+    with propagate_attributes(
+        tags=[f"{ENTITY_TAG_PREFIX}{entity}" for entity in ordered],
+        metadata={ENTITIES_METADATA_KEY: ",".join(ordered)},
+    ):
+        _client.create_event(name="entities.tagged", output={ENTITIES_METADATA_KEY: ordered})
 
 
 # --- the run registry (LangChain run id → Langfuse ids) --------------------------------------
