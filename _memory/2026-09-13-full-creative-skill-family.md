@@ -1378,3 +1378,22 @@ incorrectly reportedDOWN; unrestrictedscopedstatus corrected. Initial read-only
 DSN usedasyncpg-onlyreplace butlocalDSNwaspsycopg; normalizedschemeandquerypassed.
 One test invocation usedwrongtracefilename/no tests; correctedactual14testfile.
 Live restart/browser verification is next, not claimed at this checkpoint.
+
+Task34 closing: staged preference integration committedcd5a4450, defaultOFF.
+Console actual-echo regression passed across design/platform reconfigure; initial
+81combinedtests passed. Rootreview found nestedordinaryscope clearinginherited
+privacy; additionalREDtest reproduced untagged+threaded leaks, correctionpassed
+70focusedloggingtests. Rootreview/diffcheckcomplete; no new lint categoriesin
+changedcallbackfiles (legacydiagnosticsremain).
+Idlebase stack restarted through existingpidledger; persistentlauncher14072.
+All4fleetworkers+8010/8020/8030/3020 healthy; separate3021–24frontends preserved.
+LiveAPI28e1d9988ecd; all4servedWASMbytes match refreshedvendorSHA
+f618ba2849df780c220162836c1a8fe53570265482b10e466c51c46db12c3c9a. Receipt in
+scoped-palette-repair-20260915/restarted-engine-receipt.json. Existingtabs11–14
+reloaded/reopenedcorrectClue/AWS/Google/Conduitworkspacecanvases andmarkedkeep.
+AWS still warns missingArialfontasset andInterfallback; notfixedorqualified.
+Clue nativeinspector reportsheadlineSeasonMix50.5/400,#F8F5DC; nofieldeditsmade.
+Clearedinspection-created headline targetchip so nextuserpromptisunconditioned.
+Clue UIreportednewPNGandSVGexportedsuccess; freshDownloadsmetadatafoundnone,
+so freshdownloadedbyteparity remainsunproven. Noauthbypass,newproviders,artwork,
+accountpilot,preferencewrites,liveDBwrites orproductionpush. Goalactive.

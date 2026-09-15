@@ -2463,3 +2463,13 @@ No new provider generation or account-specific batch was run in this slice.
 The next creative work remains approved-direction variants, followed by the
 shared account-adaptation pilot described above; brand/ABM ownership remains
 separate. Qualification stays 0/18, selected/rendered coverage 13/18.
+
+Task34 live verification: default-off integration committed locally as
+`cd5a4450`. The local stack was restarted after confirming idle queues; all four
+brand frontends serve the rebuilt WASM bytes and reopened the correct saved
+canvases. Clue's native inspector reports Season Mix and cream #F8F5DC without
+any field edits. Its PNG/SVG export UI reported success, but fresh downloaded
+bytes were not located, so byte parity remains unproven. AWS still reports its
+missing Arial asset and deterministic Inter fallback. No new generation or
+family qualification occurred. Console echo suppression passed actual echo,
+reconfiguration, concurrency and inherited-context regression tests.
