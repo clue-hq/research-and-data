@@ -1327,7 +1327,9 @@ Compare with the selected source pixels, not remembered intent. A passing
 compile or image call is not visual acceptance. Batch coherent repairs within
 {inner_iterations} compile iterations per round. Changed pixels or direction
 require a fresh view and an honest new critique.json in the active round.
-6. Write that critique using the schema below, including direction_review for
+6. Read the complete candidate critique contract and rejected example at the start
+of /knowledge_docs/knowledge/scene/review.md before writing critique.json.
+Use that contract, including direction_review for
 the latest validated digest and every indexed preserved property/review need.
 Do not duplicate the same observation across reports; make each required check
 concrete. If registered_review_current is false, resolve review_error and renew
@@ -1354,7 +1356,7 @@ catalog. SkillsMiddleware supplies names, descriptions and paths, and the
 derived /knowledge_docs/knowledge/scene/catalog.md lists registered playbooks.
 Use virtual paths under {workspace}, /knowledge_docs and /.deepagent/skills.""",
         _SCENE_GUIDANCE_READING,
-        SHARED_SURFACE_CONTRACT, BATCHING_RULE, _AUTHOR_SELF_AUDIT_CONTRACT,
+        SHARED_SURFACE_CONTRACT, BATCHING_RULE,
     ]
     if has_ad_assets:
         sections.append(
@@ -1362,7 +1364,10 @@ Use virtual paths under {workspace}, /knowledge_docs and /.deepagent/skills.""",
             "context is advisory source data."
         )
     if has_references:
-        sections.append(_AUTHOR_SELF_AUDIT_FIDELITY)
+        sections.append(
+            "This turn carries reference images. Judge reference_fidelity against current "
+            "pixels using the contract in /knowledge_docs/knowledge/scene/review.md."
+        )
     if frame_payload:
         sections.append(frame_payload)
     return "\n\n".join(sections)
@@ -1415,14 +1420,17 @@ visual acceptance. You cannot finalize. Use virtual paths under {workspace},
             "knowledge/scene/review.md and inspect the final composition at placement size. "
             f"Repair observed defects in coherent batches, within {inner_iterations} "
             "internal iterations; leave honest unresolved issues if the budget runs out.",
-            _AUTHOR_SELF_AUDIT_CONTRACT,
-            "Candidate critique.json also requires direction_review for acceptance. "
-            "Use the latest validate_creative_direction digest and indexed requirements; "
-            "knowledge/scene/review.md defines the checks. Review the entire current "
-            "direction, including preserved choices outside this round's repair scope.",
+            "Write the active round's critique.json using the complete candidate contract "
+            "and rejected example at the start of /knowledge_docs/knowledge/scene/review.md. "
+            "Read it before writing. Review the entire current direction, including "
+            "preserved choices outside this round's repair scope; report unverified "
+            "judgments honestly instead of treating schema validity as acceptance.",
         ])
         if has_references:
-            sections.append(_AUTHOR_SELF_AUDIT_FIDELITY)
+            sections.append(
+                "This turn carries reference images. Judge reference_fidelity against current "
+                "pixels using the contract in /knowledge_docs/knowledge/scene/review.md."
+            )
     else:
         sections.append(
             "The director renders and the reviewer judges your output; "

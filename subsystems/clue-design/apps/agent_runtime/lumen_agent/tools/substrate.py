@@ -3302,7 +3302,7 @@ class LumenDesignTools:
                 diagnostics=[diag.model_dump(mode="json") for diag in summary.diagnostics],
                 payload=payload,
             )
-            return json.dumps(payload, indent=2)
+            return self._preflight_model_result(payload, iteration_dir)
 
         self._replace_scene_from_core_response(response, "preflight_design")
         raw_diagnostics = list(response.get("diagnostics", []) or [])
@@ -3389,6 +3389,24 @@ class LumenDesignTools:
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
+        return self._preflight_model_result(payload, iteration_dir)
+
+    def _preflight_model_result(self, payload: JsonObject, iteration_dir: Path) -> str:
+        """Keep the full saved/trace report; shorten only candidate model delivery."""
+        if self.config.scene_skill_bundle == "candidate":
+            payload = {
+                **payload,
+                "full_report_path": to_virtual(iteration_dir / "preflight.json", self.config),
+            }
+            if "raw_preflight" in payload:
+                raw = dict(payload["raw_preflight"])
+                counts = {}
+                for key in ("token_operations", "layout_operations"):
+                    if isinstance(raw.get(key), list):
+                        counts[key] = len(raw.pop(key))
+                if counts:
+                    raw["operation_counts"] = counts
+                payload["raw_preflight"] = raw
         return json.dumps(payload, indent=2)
 
     @_scene_mutation

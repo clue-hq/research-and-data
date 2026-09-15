@@ -1,5 +1,86 @@
 # Scene review
 
+## Candidate critique contract — read before writing
+
+Write `<active round_dir>/critique.json` as one `SceneVisualCritique` JSON object.
+This is the canonical candidate contract; legacy callers keep `VisualCritique`.
+Required outer fields: `accepted` (boolean), `summary` (string).
+Optional outer fields: `issues` (list, default []), `repair_instruction` (string/null),
+`acceptance_notes` and `requirement_coverage_notes` (string lists, default []),
+`confidence` (0–1 number, default 0), `reference_fidelity` (object/null),
+`direction_review` (object/null; required for acceptance).
+Each issue: `severity` = `info|warning|error|blocker` (default warning),
+`category` = `hierarchy|spacing|alignment|contrast|clipping|overflow|page_dimensions|typography|brand_fit|asset_use|imagery|visual_balance|semantic_slot_coverage|request_satisfaction|compiler_repair|tool_failure`,
+`message` and `suggested_repair` (strings), optional `target` (object/null) with
+optional `page_id`, `node_id`, `slot_key` (strings/null).
+On reference turns supply `reference_fidelity`: `score` (integer 0–3), `reasons`
+(string), `regressed_to_house_style` (boolean). Inspect references against current
+pixels: 0 ignored, 1 palette only, 2 visual system with missed details, 3 faithful.
+
+`direction_review`: `direction_digest` (current validate_creative_direction result),
+`scope` = `whole_creative|scoped_edit` (default whole_creative), `checks` and
+`copy_occurrences` (lists, default []). Each check: `section` = `preserve|review_needs`,
+`index` (nonnegative integer from the tool's indexed requirements),
+`status` = `met|deviation|unverified`, `notes` (nonempty observed reason).
+No duplicate section/index checks or duplicate page_id/node_id bindings.
+Each copy occurrence: `copy_id` (declared ID), `fragments` (nonempty ordered list),
+`support` and `readability` (objects/null). Each fragment has current `page_id`,
+`node_id`, exact `text` and `join_before` = `""` or `" "` (default empty).
+All fragments in a row belong to one page; repeat rows for repeated placements.
+`support`: `status` = `supported|nonfactual|unsupported|unverified`, `evidence_refs`
+(list of declared evidence IDs, default []), `reason` and `source_limits` (nonempty),
+`source_gaps` (list/null). Each gap: `kind` =
+`omitted_necessary_context|added_meaning|unresolved_contradiction`, `reason` (nonempty).
+Put `source_gaps` INSIDE `support`, never beside it. `readability`: `status` =
+`readable|unreadable|unverified`, `reason` (nonempty placement-specific observation).
+Nested direction/copy objects forbid unknown fields. IDs/digest/notes must be nonempty.
+
+A valid, deliberately unverified REJECTED example follows. Replace its digest,
+indices, IDs and words with the current tool results; it is not a passing review.
+```json
+{
+  "accepted": false,
+  "summary": "Current source support and placement readability still need inspection.",
+  "issues": [], "acceptance_notes": [], "confidence": 0,
+  "direction_review": {
+    "direction_digest": "<current validated direction_digest>",
+    "scope": "whole_creative",
+    "checks": [{"section": "preserve", "index": 0, "status": "unverified", "notes": "This preserved relationship has not yet been checked in current pixels."}],
+    "copy_occurrences": [{
+      "copy_id": "headline",
+      "fragments": [{"page_id": "square", "node_id": "actual_title", "text": "Make the next step clear", "join_before": ""}],
+      "support": {"status": "unverified", "evidence_refs": [], "reason": "Meaning has not yet been compared with available sources.", "source_limits": "Source scope and authority have not yet been inspected.", "source_gaps": []},
+      "readability": {"status": "unverified", "reason": "This occurrence has not yet been read in the current placement preview."}
+    }]
+  }
+}
+```
+
+Acceptance requires every `preserve` and `review_needs` item exactly once, all `met`.
+Bind every declared copy ID and every nonempty native text node in exported pages
+using `render_preview`'s complete inventory or `inspect(view="copy_review")`, not
+its truncated text-size display. Use actual node IDs, not planned layer IDs.
+Ordered fragments must reconstruct the declared words; only whitespace reflow may
+vary. Hidden/unreachable text or unresolved binding cannot fulfill visible copy.
+Every occurrence needs support `supported` or `nonfactual`, explicit
+`support.source_gaps: []`, and readability `readable`. Supported factual copy
+must cite evidence declared for that copy block. Unknown source authority may
+limit a supported supplied assertion; it cannot excuse added factual meaning.
+A rejected review may omit unfinished checks/rows/judgments and retain gaps;
+present rows still need valid enums, current exact bindings and declared evidence.
+It does not certify the unreviewed remainder. Never turn unverified into met/readable
+just to register. Notes, empty gaps and schema validity are not proof of taste/truth.
+Whole acceptance also needs clean current preflight, current preview/view and a
+current registered accepted critique. A changed scene/direction needs renewed review.
+A caller-selected native_copy_review_profile also applies; no score waives a failure.
+`scoped_edit` requires a seeded validated `intent=edit` turn; review its named edit
+and relevant copy. It can support `edit_applied`, never final whole-creative `accepted`.
+After registration, omit `critique_json` in `finalize_run` to reuse that current review.
+For preflight operation details, read the returned `full_report_path`; diagnostics
+remain complete in the immediate result. Continue below for visual/source judgment.
+
+## Visual and source judgment
+
 Judge the actual current rendered scene at full view and final placement size.
 Read the supporting sentence in the compact placement preview without referring
 back to the larger image or the known copy. If it is only decipherable when
@@ -92,20 +173,6 @@ native editability and valid export do not compensate for those failures.
 Follow the runtime critique schema, including typed reference fidelity when the
 turn requires it. Only finalize accepted when the current review and preflight
 support acceptance; otherwise report a draft or failure and the specific gap.
-
-The candidate critique also carries `direction_review`:
-
-```json
-{"direction_digest":"<returned by validate_creative_direction>","scope":"whole_creative","checks":[
-  {"section":"preserve","index":0,"status":"met","notes":"What the current pixels show"},
-  {"section":"review_needs","index":0,"status":"deviation","notes":"The retained treatment is still missing"}
-],"copy_occurrences":[{
-  "copy_id":"headline",
-  "fragments":[{"page_id":"square","node_id":"actual_title","text":"Make the next step clear","join_before":""}],
-  "support":{"status":"nonfactual","evidence_refs":[],"reason":"An invitation, with no empirical product promise.","source_limits":"No product behavior is asserted.","source_gaps":[]},
-  "readability":{"status":"readable","reason":"All words are legible at this placement in the current full preview and feed proxy."}
-}]}
-```
 
 Use the tool's indexed requirements; cover every `preserve` and `review_needs`
 item once. Status is `met`, `deviation` or `unverified`, with a concrete observed
