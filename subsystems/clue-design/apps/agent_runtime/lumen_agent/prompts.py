@@ -65,6 +65,22 @@ THE SHARED-SURFACE CONTRACT (policy for WHAT may change; grammar lives elsewhere
    content may be dropped freely (reconcile omission removes it).
 """
 
+# One candidate selection rule for system prompts, the bound logo tool and its
+# next-step advice. The legacy contract above remains byte-for-byte unchanged.
+SCENE_LOGO_SELECTION_GUIDANCE = """\
+`*_lockup` is the complete logo and `*_mark` is the bare symbol. Choose the
+authentic variant for the intended identity treatment and surface, not size alone.
+A recognizable published target mark or favicon may be a primary target anchor,
+even when a complete lockup exists. Preserve an explicitly required wordmark.
+Keep each real logo independent and use native text or geometry for a separator;
+never recolor, redraw or merge company marks into a fabricated logo."""
+
+_SCENE_SURFACE_CONTRACT = SHARED_SURFACE_CONTRACT.replace(
+    "`*_lockup` is the complete logo (symbol + name — the first choice wherever\n"
+    "it fits), `*_mark` is the bare symbol (small placements only); place them\n",
+    SCENE_LOGO_SELECTION_GUIDANCE + "\nPlace each asset\n",
+)
+
 
 IMAGERY_RUBRIC = """\
 Imagery axes (a `*` axis is a hard gate — a clear failure means the design is not shippable):
@@ -1232,7 +1248,7 @@ Use workspace-rooted virtual paths under {workspace}, /knowledge_docs and
 validate_creative_direction, record_gap, finalize_run, task and filesystem.
 The director has no scene mutation tools; the author uses the compiler.""",
         _SCENE_GUIDANCE_READING,
-        SHARED_SURFACE_CONTRACT, BATCHING_RULE,
+        _SCENE_SURFACE_CONTRACT, BATCHING_RULE,
         "SkillsMiddleware supplies current skill names, descriptions and read paths "
         "on each model call. The derived /knowledge_docs/knowledge/scene/catalog.md "
         "lists registered playbooks only. Bodies remain on-demand resources.",
@@ -1360,7 +1376,7 @@ catalog. SkillsMiddleware supplies names, descriptions and paths, and the
 derived /knowledge_docs/knowledge/scene/catalog.md lists registered playbooks.
 Use virtual paths under {workspace}, /knowledge_docs and /.deepagent/skills.""",
         _SCENE_GUIDANCE_READING,
-        SHARED_SURFACE_CONTRACT, BATCHING_RULE,
+        _SCENE_SURFACE_CONTRACT, BATCHING_RULE,
     ]
     if has_ad_assets:
         sections.append(
@@ -1416,7 +1432,7 @@ assumptions and remaining defects. A compile or successful image call is not
 visual acceptance. You cannot finalize. Use virtual paths under {workspace},
 /knowledge_docs and /.deepagent/skills.""",
         _SCENE_GUIDANCE_READING,
-        SHARED_SURFACE_CONTRACT, BATCHING_RULE,
+        _SCENE_SURFACE_CONTRACT, BATCHING_RULE,
     ]
     if fast_loop:
         sections.extend([

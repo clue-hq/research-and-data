@@ -1640,6 +1640,14 @@ class LumenDesignTools:
                 "alternative only when the cell does not fit the placement, and say so."
             ),
         }
+        if self.config.scene_skill_bundle == "candidate":
+            from ..prompts import SCENE_LOGO_SELECTION_GUIDANCE
+
+            payload["next"] = payload["next"].replace(
+                "*_lockup is the full logo (first choice on any surface that fits it), "
+                "*_mark is the bare symbol (small placements only).",
+                SCENE_LOGO_SELECTION_GUIDANCE,
+            )
         if failures:
             payload["failed_cells"] = failures
         if failed_alternatives:

@@ -40,6 +40,7 @@ from .frame import build_frame_payload
 from .models.schemas import SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
 from .prompts import (
+    SCENE_LOGO_SELECTION_GUIDANCE,
     build_author_prompt,
     build_orchestrator_prompt,
     build_reviewer_prompt,
@@ -52,6 +53,15 @@ from .tools.view import make_view_tool
 from .workspace import initial_turn_state, scaffold_workspace, workspace_root
 
 logger = get_logger("lumen_agent.harness")
+
+
+def _make_candidate_fetch_logo_tool(tools: LumenDesignTools) -> StructuredTool:
+    """Replace only legacy selection advice; use the original callable/schema."""
+    description = tools.fetch_logo.__doc__
+    start = description.index("        In an account-personalized")
+    end = description.index("\n\n", start)
+    description = description[:start] + SCENE_LOGO_SELECTION_GUIDANCE + description[end:]
+    return StructuredTool.from_function(tools.fetch_logo, description=description)
 
 
 class _CandidateFinalizeInput(BaseModel):
@@ -596,13 +606,14 @@ def create_design_deepagent(
     # assembled once per turn and never mutated — inside the cache-stable prefix
     # the L1 invariant above protects, so it is paid for once, not per call.
     frame_payload = build_frame_payload(tools) if fast_loop else None
+    fetch_logo = _make_candidate_fetch_logo_tool(tools) if scene_candidate else tools.fetch_logo
 
     author_tools = [
         view,
         tools.inspect,
         tools.compile_dsl_block,
         tools.asset,
-        tools.fetch_logo,
+        fetch_logo,
         tools.validate_binding_set,
         tools.preflight_design,
     ]
@@ -719,7 +730,7 @@ def create_design_deepagent(
         from .prompts import build_scene_solo_prompt
 
         orchestrator_tools.extend([
-            tools.compile_dsl_block, tools.asset, tools.fetch_logo, tools.validate_binding_set,
+            tools.compile_dsl_block, tools.asset, fetch_logo, tools.validate_binding_set,
         ])
         tools.record(
             "orchestrator", "scene_agent_topology",
