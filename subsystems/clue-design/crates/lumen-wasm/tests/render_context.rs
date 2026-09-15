@@ -216,7 +216,8 @@ fn measurement_keys_use_resolved_text_and_context_replacement_clears_metrics() {
     metric["width"] = json!(100);
     metric["height"] = json!(99);
     let input_revision = parse(engine.presentation_json())["input_revision"].clone();
-    let ack = parse(engine.set_measurements(&json!([metric]).to_string()));
+    let measurements = json!([metric]).to_string();
+    let ack = parse(engine.set_measurements(&measurements));
     assert_eq!(
         parse(engine.presentation_json())["input_revision"],
         input_revision,
@@ -237,6 +238,20 @@ fn measurement_keys_use_resolved_text_and_context_replacement_clears_metrics() {
         parse(engine.scene_json())["nodes"]["node_contact_name"]["computed"]["layout_bounds"]
             ["height"],
         99.0
+    );
+    engine.set_measurements(&measurements);
+    assert_eq!(
+        parse(engine.scene_json())["nodes"]["node_contact_name"]["computed"]["layout_bounds"]
+            ["height"],
+        99.0
+    );
+    engine.load_scene(&source.to_string()).unwrap();
+    assert_eq!(parse(engine.presentation_json())["status"], "ready");
+    assert_ne!(
+        parse(engine.scene_json())["nodes"]["node_contact_name"]["computed"]["layout_bounds"]
+            ["height"],
+        99.0,
+        "canonical-context reset must still invalidate prior measurements"
     );
 }
 

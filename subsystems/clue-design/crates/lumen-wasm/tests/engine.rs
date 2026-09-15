@@ -356,6 +356,19 @@ fn set_measurements_makes_hug_text_geometry_skia_faithful() {
     assert_ne!(after, before, "heuristic width should be replaced");
     assert_eq!(after, 350.0, "computed width is the injected Skia width");
 
+    // Legacy standalone reconcile/undo can replace geometry without changing
+    // its text measurement signature, so it will not reinject these metrics.
+    let original = scene.to_string();
+    scene["nodes"]["node_contact_name"]["transform"]["x"] = json!(84.0);
+    engine.load_scene(&scene.to_string()).expect("reconcile loads");
+    assert_eq!(node_computed_width(&engine, "node_contact_name"), 350.0);
+    assert_eq!(
+        parse(engine.scene_json())["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["x"],
+        84.0
+    );
+    engine.load_scene(&original).expect("undo snapshot loads");
+    assert_eq!(node_computed_width(&engine, "node_contact_name"), 350.0);
+
     // Clearing the override returns to the heuristic width.
     let clear = parse(engine.set_measurements("[]"));
     assert_eq!(clear["ok"], true);

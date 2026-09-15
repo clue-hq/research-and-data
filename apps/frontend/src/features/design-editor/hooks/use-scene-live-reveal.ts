@@ -679,8 +679,15 @@ export class SceneRevealPump {
       this.markDirty();
       return null;
     }
-    this.pendingDisplay = outcome.presentationScene ?? outcome.scene;
-    const geometry = revealGeometry(step, this.pendingDisplay);
+    const presentation = outcome.presentationScene ?? outcome.scene;
+    // Readiness belongs to this outcome, not the engine's newest revision.
+    // Keep applying the stream so a later operation can repair the context,
+    // but never queue degraded literal geometry for a later ready engine to
+    // unmask while its own reveal is still held. Legacy outcomes omit status.
+    this.pendingDisplay = outcome.derivation && outcome.derivation.status !== "ready"
+      ? null
+      : presentation;
+    const geometry = revealGeometry(step, presentation);
     const page = geometry.pageId ? outcome.scene.pages[geometry.pageId] : undefined;
     return revealTiming(
       geometry.kind,

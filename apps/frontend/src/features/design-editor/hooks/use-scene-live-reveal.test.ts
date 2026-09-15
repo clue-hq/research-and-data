@@ -1169,3 +1169,52 @@ test("a queued reveal retains the presentation belonging to its own authored ope
     pump.stop();
   });
 });
+
+test("a non-ready reveal frame never resurfaces while the next ready frame is held", () => {
+  onFakeClock(() => {
+    const engine = fakeEngine();
+    const displays: (Scene | null)[] = [];
+    const statuses = ["ready", "invalid", "ready"] as const;
+    const pump = new SceneRevealPump({
+      apply: operations => {
+        const result = engine.apply(operations)!;
+        const revision = engine.batches.length;
+        const presentationScene = {
+          ...result.scene,
+          meta: { ...result.scene.meta, title: `frame-${revision}` },
+        };
+        return {
+          ...result,
+          presentationScene,
+          derivation: { context_key: "context", input_revision: revision,
+            status: statuses[revision - 1], diagnostics: [] },
+        };
+      },
+      engineAvailable: () => true,
+      onDisplayScene: scene => displays.push(scene),
+      reducedMotion: false,
+    });
+    const clock = steppedClock();
+    pump.start();
+    pump.enqueue([insertNode("n1")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title, "frame-1");
+    pump.enqueue([insertNode("n2")]);
+    clock.advance(FIRST_LEAD + NODE_HOLD);
+    // The accepted second operation is applied, but its invalid derivation
+    // must never become an override that a newer engine status can unmask.
+    assert.equal(engine.batches.length, 2);
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title, "frame-1");
+    pump.enqueue([insertNode("n3")]);
+    clock.advance(FIRST_LEAD);
+    assert.equal(engine.batches.length, 3);
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title, "frame-1");
+    clock.advance(NODE_HOLD - 1);
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title, "frame-1");
+    clock.advance(1);
+    assert.equal(displays.filter(Boolean).at(-1)!.meta.title, "frame-3");
+    assert.equal(displays.some(scene => scene?.meta.title === "frame-2"), false);
+    assert.equal(pump.isClean(), true);
+    pump.stop();
+  });
+});

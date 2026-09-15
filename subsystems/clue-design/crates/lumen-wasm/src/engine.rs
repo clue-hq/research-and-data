@@ -196,7 +196,7 @@ impl Engine {
     /// Replace the local scene (serialization in: reconcile / undo frames).
     /// Resets the DSL session: it indexed the previous scene state. The
     /// reconciled scene is relaid-out so editor render geometry stays
-    /// single-source (local heuristic) and never inherits the server's Skia
+    /// single-source (local measurements) and never inherits the server's Skia
     /// `computed` directly, which would jump text on every reconcile.
     pub fn load_scene(&mut self, scene_json: &str) -> Result<(), String> {
         let scene: Scene = serde_json::from_str(scene_json)
@@ -204,7 +204,12 @@ impl Engine {
         self.scene = scene;
         self.revision += 1;
         self.dsl_session = None;
-        self.measurer = None;
+        // Canonical inputs must be remeasured after reconciliation. Legacy
+        // standalone callers remeasure only when text changes, so retain their
+        // keyed metrics across same-text geometry/undo snapshots.
+        if self.context_enabled {
+            self.measurer = None;
+        }
         self.relayout();
         Ok(())
     }
