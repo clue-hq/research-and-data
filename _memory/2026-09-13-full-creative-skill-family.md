@@ -1588,3 +1588,21 @@ livecanvasrecovery. ClueAXsetValue causedLexicalremoveChilderror; reload+existin
 sidebarlink recoveredthesamecreatedsession, no duplicate. Otherthree setupnormal.
 Frozenqualificationplan retainsallIDs/timestamps andexplicitoperatorsetupdelay.
 Optional60diagnostics remainunused. ProtectedConduitv19 neveredited.
+
+2026-09-15 live continuation closing checkpoint: medium compatibility fix
+b237b9e6 independentlyapproved; fullRust passed64.29s, releasehelper32.699s,
+WASM27.66s, handshake62c7de8b022e. Fullfrontend2888passed1skip7.93s; actual
+artifactraw-kitregressiongreen; eight-sourcehashesunchangedthroughverification.
+OwnedidleAPI/workers reloaded23:08Z; bothretainedcanvasesrender. Newfreeze
+qualified-delivery-20260915/freeze-20260915T231034Z. FourHomesetups succeeded;
+all11generationcasesstillundispatched. AutomaticreviewrejectedSend andsameUI
+retry usingrecordedconsent; requested explicitdirectapproval forinternal skills,
+selectedbrandcontext/referenceimages(includingConduituploads) toOpenRouter with
+existingGrok4.6/GPTImage2 for11normaltests. Noalternateroute; optional60stillzero.
+NativepilotQA v54→55 texteditpersisted/reloaded, canonical1080PNGpreviewrendered,
+thenrestoredv56 exactoriginalscenehasha6722305…; protectedConduitv19 hashc98c1016…
+unchanged. SupporteddownloadMedia returned butnonewDownloadsPNG/SVG; nofileproof.
+A chat-onlySignintoContinue alertappearedafterreload; designlocaledit/exportstill
+worked. Rechecksessionnormallybeforeapprovedgeneration, noauthbypass. Runtime
+idle177fleetdone/83designsucceeded5historicfailed; no newdesignruns. Goal remains
+active with firstcurrentapproval-blockturn; donotmarkcomplete orblockedearly.

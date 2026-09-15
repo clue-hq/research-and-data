@@ -2814,7 +2814,8 @@ skip, and its production build, design-system build and lint passed (two
 inherited lint warnings). Manual full `tsc` still reports 55 pre-existing test
 diagnostics, independently matched against the baseline. These automated
 results do not establish visual quality, four-minute delivery, or downloaded
-export custody. Runtime reload and the eleven fresh qualification cases remain.
+export custody. Runtime reload completed; the live follow-up and remaining
+qualification boundary are recorded below.
 
 ### Task 41: Make account identity part of the ABM composition
 
@@ -2875,3 +2876,31 @@ Task 41 follows Task 39 source review before the larger Task 40 canvas correctio
 so the current user steering is implemented promptly. All three changes share
 the already required final combined integration gate and fresh output evaluation.
 Do not overwrite the failed pilot or the user-approved Conduit composition.
+
+
+### Live qualification checkpoint — September 15, after `b237b9e6`
+
+The retained-canvas check exposed a compatibility gap that enriched test kits
+had hidden: existing kits omit the medium axis, while canonical export injects
+digital/print from the scene. The reviewed correction accepts those built-in
+values only when the axis is absent, preserving declared restrictions and invalid
+mode rejection. Rendering failures now have a separate diagnostic from fonts.
+Full Rust tests, release helper, WASM/handshake `62c7de8b022e` and 2,888 frontend
+tests passed (one skip); the actual-WASM regression is included. The eight-file
+source freeze remained unchanged through these checks. Both retained canvases
+render after the owned runtime reload.
+
+Local native QA on the failed pilot verified text save/reload and canonical PNG
+preview at v55, then restored the exact original scene at v56. The protected
+Conduit remains v19 with identical scene hash. A saved download file was not
+observable; that part of export qualification remains unverified. Nonblocking
+canonical rendering diagnostics remain visible, including PDF metadata advice.
+
+Four fresh ordinary Home sessions are open, but all eleven creative generations
+remain undispatched. Automatic approval review rejected Send twice, including
+an evidence-based retry using the recorded earlier consent. A direct question is
+pending for the exact OpenRouter/Grok4.6/GPT Image2 payload and eleven-test scope.
+No alternate provider submission was attempted; the separate sixty-call copy
+diagnostic remains unapproved and unused. Record Home/setup delay separately
+from generation-submission timing when testing resumes. No quality, speed, or
+new ABM-creative success is claimed at this checkpoint.
