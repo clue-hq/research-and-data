@@ -5,7 +5,9 @@ import copy
 import json
 from dataclasses import replace
 
+import pytest
 from lumen_agent.fs_backend import AgentWorkspaceBackend
+from lumen_agent.image_crop import crop_source_pixels, has_generated_image_origin
 from lumen_agent.tools.view import make_view_tool
 from lumen_agent.workspace import scaffold_workspace
 from test_scene_view_generated_assets import _raster, _tools
@@ -57,6 +59,7 @@ def test_older_public_source_outside_opening_four_is_discoverable_and_viewable(t
     assert row["description"] == "A published customer story"
     assert row["role"] == "customer example"
     assert row["source_kind"] == "uploaded"
+    assert row["generated_origin"] is None
     assert row["dimensions"] == {"width": 512, "height": 512}
     assert row["mime_type"] == "image/png"
     assert row["provenance"]["source_url"] == "https://www.linkedin.com/ad-library/detail/1541315494"
@@ -155,9 +158,11 @@ def test_generated_unknown_and_missing_description_stay_honest_without_locator_l
 
     generated_row, unknown_row = catalog["assets"]
     assert generated_row["source_kind"] == "generated"
+    assert generated_row["generated_origin"] is True
     assert generated_row["available_via"] == ["library"]
     assert generated_row["provenance"]["source_asset_id"] == "source_original"
     assert unknown_row["source_kind"] == "unknown"
+    assert unknown_row["generated_origin"] is None
     assert unknown_row["title"] is None and unknown_row["label"] is None
     assert unknown_row["description"] is None and unknown_row["description_status"] == "missing"
     assert state["reference_asset_ids"] == []
@@ -168,6 +173,74 @@ def test_generated_unknown_and_missing_description_stay_honest_without_locator_l
     ):
         assert private not in text
     assert "record" not in generated_row
+
+
+@pytest.mark.parametrize("generated", [False, True])
+def test_manual_crop_discloses_recorded_origin_without_changing_pixel_availability(
+    tmp_path, generated,
+):
+    entry, raw = _entry(tmp_path, "crop", source_kind="manual")
+    record = entry["record"]
+    cropped = crop_source_pixels(
+        raw, source_asset_id="parent", mime_type="image/png", rect=[0, 0, 512, 512],
+        source_generated=generated,
+    )
+    raw = cropped.png_bytes
+    digest = cropped.receipt["output_digest"]
+    output = tmp_path / "store" / "sha256" / digest[:2] / digest
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(raw)
+    record["media"]["digest"]["value"] = digest
+    record["provenance"] = {"notes": ["asset_derivation=" + json.dumps({
+        **cropped.receipt,
+        "private_prompt": "PRIVATE_GENERATION_PROMPT",
+        "private_path": "/private/source-custody",
+    })]}
+    tools = _tools(tmp_path, scene_skill_bundle="candidate", asset_library={"crop": entry})
+    before = copy.deepcopy(tools.scene)
+    catalog, state, serialized = _catalog(tools)
+    row = catalog["assets"][0]
+    assert row["source_kind"] == "manual"
+    assert row["generated_origin"] is generated
+    assert has_generated_image_origin(record) is generated
+    assert row["available_via"] == ["library"]
+    assert row["view_target"] == "asset:crop"
+    assert state["reference_asset_ids"] == []
+    blocks = make_view_tool(tools).invoke({"target": row["view_target"]})
+    assert base64.b64decode(next(b["data"] for b in blocks if b["type"] == "image")) == raw
+    assert tools.scene == before and tools.operations_ledger == []
+    for private in (b"PRIVATE_GENERATION_PROMPT", b"/private/", b"asset_derivation="):
+        assert private not in serialized
+
+
+@pytest.mark.parametrize(
+    "invalid", ["stale_digest", "bad_digest", "wrong_type", "malformed", "absent"],
+)
+def test_invalid_or_absent_crop_receipts_leave_generated_origin_unknown(tmp_path, invalid):
+    entry, _ = _entry(tmp_path, "crop", source_kind="manual")
+    receipt = {
+        "version": 1, "operation": "crop_image", "source_asset_id": "parent",
+        "source_digest": "a" * 64,
+        "output_digest": entry["record"]["media"]["digest"]["value"],
+        "source_generated": False,
+    }
+    if invalid == "stale_digest":
+        receipt["output_digest"] = "b" * 64
+    elif invalid == "bad_digest":
+        receipt["source_digest"] = "forged"
+    elif invalid == "wrong_type":
+        receipt["source_generated"] = "false"
+    body = "PRIVATE_INVALID_JSON" if invalid == "malformed" else json.dumps(receipt)
+    notes = [] if invalid == "absent" else ["asset_derivation=" + body]
+    entry["record"]["provenance"] = {"notes": notes}
+    catalog, _, serialized = _catalog(_tools(
+        tmp_path, scene_skill_bundle="candidate", asset_library={"crop": entry},
+    ))
+    assert catalog["assets"][0]["generated_origin"] is None
+    assert has_generated_image_origin(entry["record"]) is False
+    assert catalog["assets"][0]["source_kind"] == "manual"
+    assert catalog["assets"][0]["available_via"] == ["library"]
+    assert b"PRIVATE_INVALID_JSON" not in serialized
 
 
 def test_invalid_kit_entry_cannot_advertise_shadowed_library_pixels(tmp_path):

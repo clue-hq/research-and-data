@@ -9,6 +9,13 @@ the style from labels or an ad-DNA summary alone. Record visual invariants in
 `assumptions` or evidence references. Compare focal scale, spacing, hierarchy,
 logo clearspace/contrast, text-image relationships and material behavior.
 
+The source catalog keeps `source_kind` separate from `generated_origin`, which
+reports recorded ancestry, including recognized crops. `null` means unknown;
+neither `false` nor `null` authenticates an advertiser source. Digest binding
+associates a crop receipt with its bytes; it does not verify arbitrary source
+claims. Prior generated artwork can inform treatment without supplying authentic
+advertiser proof, even when its cropped record says `source_kind: manual`.
+
 When a source is animated, a blank first still or unknown thumbnail does not
 establish that the source has no useful content. If its verified GIF original is
 available, `view` reports the frame count; choose an explicit index with

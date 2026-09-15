@@ -11,6 +11,7 @@ from py_lumen_obs import get_logger
 
 from .engine_mirror import record_pixel_dims
 from .frame import render_ad_dna_card_text, render_pregenerated_assets_text
+from .image_crop import recorded_generated_image_origin
 from .paths import to_virtual
 from .tools.asset_preview import PREVIEWABLE_MIME_TYPES, blob_path_for_digest
 from .tools.substrate import LumenDesignTools
@@ -177,6 +178,7 @@ def _source_assets_catalog(tools: LumenDesignTools) -> dict:
             "source_kind": (
                 source_kind if isinstance(source_kind, str) and source_kind else "unknown"
             ),
+            "generated_origin": recorded_generated_image_origin(record),
             "mime_type": (record.get("media") or {}).get("mime_type") or selected.get("mime_type"),
             "dimensions": {"width": dimensions[0], "height": dimensions[1]} if dimensions else None,
             "provenance": _source_provenance(record),
@@ -191,6 +193,8 @@ def _source_assets_catalog(tools: LumenDesignTools) -> dict:
         "observation": (
             "Use each view_target to inspect pixels. Descriptions are advisory; "
             "source_kind is the recorded value, not advertiser verification. "
+            "generated_origin is recorded ancestry (null means unknown); "
+            "false or null does not authenticate advertiser evidence. "
             "Generated sources are not promoted to references. "
             "Availability checks existing previews; image decoding is deferred to view."
         ),

@@ -1397,3 +1397,32 @@ Clearedinspection-created headline targetchip so nextuserpromptisunconditioned.
 Clue UIreportednewPNGandSVGexportedsuccess; freshDownloadsmetadatafoundnone,
 so freshdownloadedbyteparity remainsunproven. Noauthbypass,newproviders,artwork,
 accountpilot,preferencewrites,liveDBwrites orproductionpush. Goalactive.
+
+Task35 start (2026-09-15): previous planning reply classified no-progress for
+implementation; goal remains active. New read-only source audit finds automatic
+scene discovery takes newest24 placeable rows and includes6 prior generated-origin
+assets acrossClue/AWS/Google. This is intentional library reuse, not automatic
+advertiser provenance. One AWS manual crop hides its generated ancestry in the
+candidate catalog; bounded metadata/receipt correction assigned, retaining all
+view/place availability. New ordinary-request observer prepared under ignored
+repeatable-directions-20260915; four fresh Home sessions created through existing
+signed-in brand tabs at17:36:58–17:37:19Z, no auth bypass. Generation admission,
+source freeze refresh and pixel review still pending. This is a field test, not
+an isolated causal benchmark; prior generated assets remain in the libraries.
+
+Task35 checkpoint: candidate source catalog now exposes recorded generated_origin
+as true/false/null using the existing digest-bound crop parser; manual crops no
+longer hide recorded generated ancestry. Shared reference guidance distinguishes
+recorded origin from advertiser proof. Existing view/place and bool gating remain
+unchanged. Root reviewed all4 source/test changes. First root test command used
+nonexistent test_asset_crop.py; corrected actual crop/catalog/view matrix passed
+72/72 in2.51s. No engine changes/rebuild needed. Idle design queue verified74success/
+5historicfailures; only pid-ledger-owned designAPI restarted (session31378), live
+build-info28e1d9988ecd verified. All other workers/frontends preserved.
+Fresh four-brand ordinary requests dispatched17:43:45–17:44:07Z; all4 exact runs
+bound and running by17:44:55Z. New pre-generation source freeze retained273 files;
+original preparation freeze preserved. Observer session52579 captures actual source
+views, knowledge reads, new artwork and saved scene/timing. Initial4roles allsolo
+orchestrator. Home request setup timestamps are separate from generation dispatch;
+the intervening developer validation wait is not model generation time. No quality
+pass, imagery result, new family qualification or personalization pilot claimed yet.

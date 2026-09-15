@@ -64,12 +64,21 @@ def _crop_receipt(record: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def has_generated_image_origin(record: dict[str, Any]) -> bool:
-    """Keep the generated-imagery gate across our digest-bound crop receipts."""
+def recorded_generated_image_origin(record: dict[str, Any]) -> bool | None:
+    """Recorded origin only; digest binding associates a receipt, not advertiser truth.
+
+    None means no recognized origin evidence. In particular, a manual/website/uploaded
+    source kind alone cannot prove that its imagery was not generated.
+    """
     if (record.get("source") or {}).get("kind") in {"generated", "edited"}:
         return True
     receipt = _crop_receipt(record)
-    return bool(receipt and receipt["source_generated"])
+    return bool(receipt["source_generated"]) if receipt is not None else None
+
+
+def has_generated_image_origin(record: dict[str, Any]) -> bool:
+    """Keep the generated-imagery gate across our digest-bound crop receipts."""
+    return recorded_generated_image_origin(record) is True
 
 
 def require_supported_crop_origin(
