@@ -7,13 +7,15 @@ operation key, and refuse to place anything it cannot attribute.
 
 from __future__ import annotations
 
+import base64
+import copy
+import hashlib
 import io
 import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from agent_fixtures import FakeCoreClient, runtime_config
 from lumen_agent.config import AgentRuntimeConfig
 from lumen_agent.tools import logo_fetch
@@ -317,6 +319,101 @@ def test_scene_fetch_logo_registers_with_the_asset_op_key(tmp_path, monkeypatch)
     assert logged, "an unlogged scene mutation vanishes at accept"
 
     assert "asset(action='place'" in result["next"]
+
+
+@pytest.mark.skipif(
+    not (REPO_ROOT / "target/release/lumen-api-helper").exists(),
+    reason="release helper not built",
+)
+def test_fetched_scene_logo_is_viewable_valid_direction_source_and_independent_layer(
+    tmp_path, monkeypatch
+):
+    """Exercise fetched-ID custody without adding it to the opening reference catalog."""
+    from lumen_agent.tools import substrate
+    from lumen_agent.tools.view import make_view_tool
+    from lumen_agent.workspace import scaffold_workspace
+    from lumen_api import core as core_module
+    from PIL import Image
+    from test_scene_skill_family import direction
+
+    raw = _flat_png(240, 48, DARK_INK)
+    _fake_site(
+        monkeypatch,
+        '<html><head><title>Acme Systems</title></head><body><header>'
+        '<img src="/brand/acme-logo.png" alt="Acme Systems" width="240" height="48">'
+        '</header></body></html>',
+        {"https://acme.example/brand/acme-logo.png": (raw, "image/png")},
+        "acme.example",
+    )
+    monkeypatch.setattr(
+        core_module.settings, "lumen_core_helper",
+        str(REPO_ROOT / "target/release/lumen-api-helper"),
+    )
+    core = core_module.CoreClient(repo_root=REPO_ROOT)
+    monkeypatch.setattr(substrate, "CoreClient", lambda **_: core)
+    config = replace(
+        runtime_config(tmp_path), repo_root=REPO_ROOT, scene_skill_bundle="candidate",
+        asset_store_root=tmp_path / "assets",
+    )
+    tools = LumenDesignTools(config, "Address an advertiser creative to Acme Systems")
+    workspace = scaffold_workspace(tools, tools.prompt)
+    opening_catalog = (workspace / "source_assets.json").read_bytes()
+    payload = direction()
+    path = workspace / "creative-direction.json"
+    assert json.loads(tools.compile_dsl_block(
+        'page square size(1080,1080,px)\n'
+    ))["compile"]["status"] == "ok"
+    assert tools.scene["nodes"] == {}
+
+    result = json.loads(tools.fetch_logo("acme.example", "Acme Systems"))
+    logo = next(row for row in result["logos"] if row["cell"] == "light_lockup")
+    asset_id = logo["asset_id"]
+    assert logo["source"] == "ladder"
+    assert asset_id in tools.scene["assets"]
+    stored_digest = tools.scene["assets"][asset_id]["media"]["digest"]["value"]
+    assert stored_digest == hashlib.sha256(raw).hexdigest()
+    assert not config.reference_assets and not config.asset_library and not config.brand_kit_assets
+    assert (workspace / "source_assets.json").read_bytes() == opening_catalog
+    blocks = make_view_tool(tools).invoke({"target": f"asset:{asset_id}"})
+    image = next(block for block in blocks if block["type"] == "image")
+    # Engine ingestion also derives a resized preview; original custody above
+    # and the actual view pixels below must both remain tied to this target.
+    with Image.open(io.BytesIO(base64.b64decode(image["data"]))) as preview:
+        assert preview.width / preview.height == 5
+        rgba = preview.convert("RGBA")
+        assert rgba.getpixel((preview.width // 2, preview.height // 2)) == (*DARK_INK, 255)
+        assert rgba.getpixel((0, 0))[3] == 0
+
+    payload["source_roles"] = [{"asset_id": asset_id, "role": "logo"}]
+    payload["layers"].append({
+        "id": "target_logo", "kind": "authentic_image", "purpose": "Identify the addressee",
+        "asset_id": asset_id,
+        "placement": {"x": 0.1, "y": 0.3, "width": 0.3, "height": 0.08, "fit": "contain"},
+    })
+    path.write_text(json.dumps(payload))
+    validated = json.loads(tools.validate_creative_direction())
+    assert validated["status"] == "ok"
+    assert validated["source_ids"] == [asset_id]
+    assert validated["evidence_verified"] is False
+
+    assert json.loads(tools.compile_dsl_block(
+        '  headline text "Make the next step clear" p(80,80) s(800,150) '
+        'font_size(48) fill(#123456)\n'
+        '  target_logo fr p(80,320) s(300,80)'
+    ))["compile"]["status"] == "ok"
+    advertiser_before = copy.deepcopy(tools.scene["nodes"]["headline"])
+
+    placed = json.loads(tools.asset(
+        action="place", asset_id=asset_id, node_id="target_logo", fit="contain"
+    ))
+    assert placed["placement"]["status"] == "ok"
+    assert tools.scene["nodes"]["headline"] == advertiser_before
+    assert any(
+        entry["source"] == "fetch_logo" and entry["operation"]["kind"] == "upsert_asset"
+        for entry in tools.operations_ledger
+    )
+    assert tools.scene["nodes"]["target_logo"]["kind"]["asset_id"] == asset_id
+    assert tools.scene["nodes"]["target_logo"]["asset_placement"]["fit"] == "contain"
 
 
 def test_scene_fetch_logo_needs_review_ingests_nothing(tmp_path, monkeypatch):

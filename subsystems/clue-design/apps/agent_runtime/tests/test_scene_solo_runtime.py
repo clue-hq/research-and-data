@@ -110,18 +110,25 @@ def test_solo_compiled_graph_has_no_dispatch_and_builds_only_the_active_model(
     }
 
 
-def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "skill_name,user_prompt",
+    [("event-webinar", "Make an event ad"), ("account-adaptation", "Make an ad addressed to Acme")],
+)
+def test_solo_uses_real_progressive_skills_permissions_and_durable_state(
+    tmp_path, monkeypatch, skill_name, user_prompt
+):
+    virtual_skill = f"/.deepagent/skills/{skill_name}/SKILL.md"
     responses = [
-        call("read_file", {"file_path": "/.deepagent/skills/event-webinar/SKILL.md"}, "read"),
+        call("read_file", {"file_path": virtual_skill}, "read"),
         call(
             "write_file",
-            {"file_path": "/.deepagent/skills/event-webinar/forbidden.txt", "content": "new file"},
+            {"file_path": f"/.deepagent/skills/{skill_name}/forbidden.txt", "content": "new file"},
             "denied",
         ),
         call(
             "edit_file",
-            {"file_path": "/.deepagent/skills/event-webinar/SKILL.md",
-             "old_string": "name: event-webinar", "new_string": "name: changed"},
+            {"file_path": virtual_skill,
+             "old_string": f"name: {skill_name}", "new_string": "name: changed"},
             "edit-denied",
         ),
         call("task", {"subagent_type": "general-purpose", "description": "Delegate"}, "absent"),
@@ -130,12 +137,12 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_pat
     built, _ = offline_models(monkeypatch, responses)
     checkpoint = InMemorySaver()
     graph, tools = harness.create_design_deepagent(
-        "Make an event ad", solo_config(tmp_path), checkpointer=checkpoint
+        user_prompt, solo_config(tmp_path), checkpointer=checkpoint
     )
-    skill_path = tools.config.workspace_root / ".deepagent/skills/event-webinar/SKILL.md"
+    skill_path = tools.config.workspace_root / virtual_skill.lstrip("/")
     original = skill_path.read_text()
     invocation = {"configurable": {"thread_id": "solo-offline"}}
-    result = graph.invoke(initial_turn_state(tools, "Make an event ad"), invocation)
+    result = graph.invoke(initial_turn_state(tools, user_prompt), invocation)
     outputs = {
         message.tool_call_id: message
         for message in result["messages"] if isinstance(message, ToolMessage)
@@ -152,7 +159,7 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_pat
     assert "denied" in outputs["edit-denied"].content.lower()
     assert len(built) == 1
     first_system = built[0][2].seen[0][0].text
-    assert "event-webinar" in first_system
+    assert skill_name in first_system
     assert original.split("---", 2)[2].strip() not in first_system
     component_path = "/knowledge_docs/knowledge/scene/components.md"
     component_body = (tools.config.workspace_root / component_path.lstrip("/")).read_text()
@@ -162,8 +169,28 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(tmp_pat
     assert "Apply the loaded component guide" in first_system
     saved = checkpoint.get_tuple(invocation)
     assert saved is not None
-    assert saved.checkpoint["channel_values"]["turn_request"] == "Make an event ad"
+    assert saved.checkpoint["channel_values"]["turn_request"] == user_prompt
     assert tools.fast_loop_budget.calls == 5
+
+
+def test_solo_bound_prompt_separates_logo_page_bootstrap_from_creative_construction(
+    tmp_path, monkeypatch
+):
+    """Catch the page-required/source-ID cycle in the prompt the solo model receives."""
+    built, _ = offline_models(monkeypatch)
+    graph, tools = harness.create_design_deepagent(
+        "Make an account ad using its real logo", solo_config(tmp_path)
+    )
+    graph.invoke(initial_turn_state(tools, tools.prompt))
+    prompt = built[0][2].seen[0][0].text
+    preparation = prompt.split("2. Inspect ", 1)[1].split("3. Write ", 1)[0]
+    assert "page-only source preparation" in preparation
+    assert preparation.index("compile_dsl_block") < preparation.index("fetch_logo")
+    assert preparation.index("fetch_logo") < preparation.index("view('asset:<returned_id>')")
+    assert "creative nodes or new imagery spend" in preparation
+    direction = prompt.split("3. Write ", 1)[1].split("4. Create ", 1)[0]
+    assert "validate_creative_direction()" in direction
+    assert "Resolve refusals before construction" in direction
 
 
 @pytest.mark.parametrize(

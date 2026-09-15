@@ -15,6 +15,12 @@ For “make an ad,” choose a 1080 square awareness creative unless supplied co
 implies another placement. Record that assumption; `knowledge/scene/placement.md`
 governs adaptation. Do not ask the user to become the copywriter.
 
+When addressing a named target company or adapting approved creative for an
+account, read [account-adaptation](/.deepagent/skills/account-adaptation/SKILL.md)
+alongside the selected family. It governs identity, evidence limits, advertiser
+preservation and real target-logo use; account-specific guidance is not a new
+communicative family.
+
 Infer brand voice from approved copy and inspected advertiser examples: directness,
 vocabulary, rhythm, specificity, degree of playfulness and how the brand addresses
 its audience. Describe the evidence in the direction; a font or color is not voice.

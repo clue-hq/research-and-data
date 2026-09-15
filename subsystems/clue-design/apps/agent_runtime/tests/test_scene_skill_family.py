@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import re
 import shutil
 from dataclasses import replace
 from pathlib import Path
@@ -12,6 +13,7 @@ from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.middleware.skills import _list_skills
 from lumen_agent import harness, materialize
 from lumen_agent.frame import build_pinned_knowledge
+from lumen_agent.fs_backend import AgentWorkspaceBackend
 
 
 def candidate_config(tmp_path):
@@ -51,6 +53,48 @@ def test_scene_view_discovers_only_scene_family_and_hides_legacy_policy(tmp_path
     ).exists()
     assert not (config.workspace_root / "knowledge_docs/views").exists()
     assert set(dict(harness._materialized_skill_index(config))) == discovered
+
+
+def test_account_adaptation_routes_to_delivered_support_without_becoming_a_family(tmp_path):
+    """Catch missing registration, broken brief links, eager pinning or family promotion."""
+    config = candidate_config(tmp_path)
+    materialize.materialize_agent_workspace(config, knowledge_view="scene")
+    backend = AgentWorkspaceBackend(config.workspace_root)
+    discovered = {s["name"]: s for s in _list_skills(backend, "/.deepagent/skills/")}
+    assert "account-adaptation" in discovered
+
+    brief_path = discovered["scene-brief-copy"]["path"]
+    brief = backend.download_files([brief_path])[0]
+    assert brief.error is None
+    targets = re.findall(r"\]\((/\.deepagent/skills/[^)]+/SKILL\.md)\)", brief.content.decode())
+    support_path = discovered["account-adaptation"]["path"]
+    assert support_path in targets
+    support = backend.download_files([support_path])[0]
+    assert support.error is None
+    source = materialize._PACKAGE_KNOWLEDGE_DOCS / "views/scene/skills/account-adaptation/SKILL.md"
+    assert support.content == source.read_bytes()
+
+    descriptor = json.loads((config.workspace_root / ".deepagent/knowledge-view.json").read_text())
+    assert "account-adaptation" not in descriptor["playbooks"]
+    catalog = backend.download_files(["/knowledge_docs/knowledge/scene/catalog.md"])[0]
+    assert catalog.error is None
+    family_paths = re.findall(
+        r"\]\((/\.deepagent/skills/[^)]+/SKILL\.md)\)", catalog.content.decode()
+    )
+    assert support_path not in family_paths
+    assert {discovered[name]["path"] for name in descriptor["playbooks"]} == set(family_paths)
+    assert support.content.decode() not in "\n".join(dict(build_pinned_knowledge(config)).values())
+
+    # Switching the same derived workspace back to legacy must remove the support
+    # skill and preserve the complete legacy knowledge tree, including website guidance.
+    materialize.materialize_agent_workspace(config)
+    assert "account-adaptation" not in dict(harness._materialized_skill_index(config))
+    assert backend.download_files([support_path])[0].error is not None
+    expected = {
+        p: b for p, b in files(materialize._PACKAGE_KNOWLEDGE_DOCS).items()
+        if not p.startswith("views/")
+    }
+    assert files(config.workspace_root / "knowledge_docs") == expected
 
 
 def test_view_switch_and_override_changes_invalidate_stamp(tmp_path):

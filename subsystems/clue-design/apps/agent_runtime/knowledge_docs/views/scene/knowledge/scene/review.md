@@ -49,6 +49,18 @@ groups and source treatments. A visual repair may require replacing the chosen
 concept or removing an optional element; adding decoration does not resolve a
 missing visual argument.
 
+For account adaptation, review advertiser ownership and target identity separately.
+Read the target name/logo with its companion copy: does it address that company,
+or imply it is a customer, partner or endorser? Check the exact identity against
+the supplied or retrieved source and the logo against the viewed returned asset;
+co-placement is not relationship evidence. Identity-only invitations can be valid
+when recorded honestly, but an assumed need or use case cannot become an account
+fact. Missing required proof or ambiguous identity remains a named gap. Revisit
+`account-adaptation` for that distinction and the supported logo path. Check long
+names, independent logo/text layers and preserved advertiser type, palette and
+approved groups in the final pixels. No fixed logo row or copy size establishes
+success across accounts.
+
 When expected text or artwork is absent, first locate it in
 `inspect(view="page", target=<page_id>)` or `node_tree`, then inspect its and its
 ancestors' geometry with `inspect(view="geometry", target=<node_id>)`. Reconcile

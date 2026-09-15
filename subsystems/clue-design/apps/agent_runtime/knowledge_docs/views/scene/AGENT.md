@@ -20,8 +20,10 @@ The canonical direction is `creative-direction.json` in the run workspace.
 `knowledge/scene/direction-contract.md` owns its shape. It carries selected
 copy, evidence pointers, intent and the layer plan; do not create competing
 briefs. Validate it before use, construct through checked DSL and asset tools,
-and judge the actual current render. These responsibilities can belong to one
-agent; when the configured runtime delegates, share this same validated record.
+and judge the actual current render. Page-only preparation for fetching a required
+authentic target logo may precede the direction under the direction contract;
+creative construction and new imagery spend may not. These responsibilities can
+belong to one agent; when the configured runtime delegates, share this same validated record.
 Available tools define each agent's authority.
 
 Load shared mechanics when needed:
