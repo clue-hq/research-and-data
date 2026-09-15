@@ -2087,3 +2087,73 @@ layers were recoverably excluded and original source catalogs retained. The full
 goal remains 18 creative families plus 12 support skills; 10/18 families have live
 exercise evidence and zero are fully qualified. No new quality or latency result
 is claimed by this editor checkpoint.
+
+## Task 30: fresh four-brand samples and native edit/export verification
+
+Normal authentication recovered the four existing local workspaces. A fresh
+concurrent batch used ordinary Home requests and the same follow-up, “Go ahead
+and create it.” The requests contained no asset IDs, skill names, headlines,
+layout specifications or image-generation prompts. The agent selected its own
+references and loaded the family resources. Catalogs were frozen and previous
+experimental imagery excluded before launch; first-terminal documents, previews
+and traces were captured before manual QA. Source at dispatch was `0bc02055`.
+
+| Brand | Selected family | Inner run, seconds | Independent first-delivery concern |
+|---|---|---:|---|
+| Clue | product-in-use | 562.756 | Small support/CTA; review-before-send implication exceeds the visible review evidence |
+| AWS | visual-metaphor | 370.630 | Source treatment holds, but static cubes weakly express the requested transition |
+| Google Cloud | educational-guide | 625.692 | Small support/CTA; weak spatial hierarchy despite an authentic guide offer |
+| Conduit | launch-announcement | 548.789 | Sourced percentages omit their essential resolution label/context |
+
+All four finalizers accepted. Independent review does not qualify them. Coverage
+is now **13/18 exercised, zero fully qualified**: product-in-use, visual-metaphor
+and launch-announcement are new; educational-guide was already exercised.
+Offer-conversion remains unexercised. These counts are not a percentage of goal
+completion. All four miss 240 seconds. The Home-to-follow-up interval also
+contains 168.160 seconds of operator delay, excluded from inner-run timing.
+
+Native QA on these new documents changed headline size by one, then changed a
+brand font family (Clue, Google, Conduit) or weight (AWS). Read-back through the
+actual typography resolver and exact pinned kit verified the requested change
+and preservation of all other effective fields. Normal Undo twice restored each
+exact first-terminal scene, including token bindings; brand kits were unchanged.
+Reload/reopen showed the original inspector values. User-edited older Clue v19
+was excluded from mutations and must never be restored to obsolete v16.
+
+All four native UI PNG exports are 1080 square and RGB-pixel-identical to their
+frozen final previews. SVG exports preserve native text and independent imagery;
+their sole XML difference from previews is the root document ID. This proves
+preview-to-export consistency, not full browser-canvas pixel parity. A suspected
+Clue headline face difference was not reproduced by the actual CanvasKit painter
+offline: it selects the same Season Mix face and matches line breaks/metrics to
+0.011px, with rasterization differences. The live canvas reports no font
+diagnostics; do not infer a font bug from the screenshot alone. AWS still displays an unavailable
+Arial warning even though the tested headline uses Amazon Ember. Reload opens
+the gallery, requiring the artifact to be reopened. These are separate issues.
+
+The latency audit reproduced false empty palette searches: agents used regex
+syntax against a literal-only grep tool after partially reading a 760-line,
+42-token palette. The candidate-only scaffold now emits the same JSON data with
+one complete token per line (48 lines for these catalogs). Aliases, modes,
+provenance, ordering and string escaping are preserved; legacy/website behavior
+is unchanged. A real filesystem-backend regression failed before and passed
+after the change; 43 adjacent tests passed and independent review found no
+actionable defect. This formatting repair has no measured live speedup yet.
+It does not address the larger direction-writing, image wait and repair costs.
+
+The user's restrained charcoal/cream Clue correction is explicit taste feedback,
+not a universal palette rule. Same-document continuation sees the edited scene;
+fresh design legs do not yet receive scoped preferences. The existing memory
+write and assembly seams are the intended owners. A future integration needs
+trusted user-quote capture, canonical brand scope, a body-free selection pin,
+scoped resolution and erasure/replay tests; do not concatenate preference bodies
+into durable design prompts or claim automatic learning from canvas persistence.
+
+Evidence: ignored `coverage-second-families-20260914/` contains source/input
+freezes, first-terminal artifacts, independent review, timing measurements and
+`typography-qa/` receipts plus native exports. The separate Task26 diagnostic
+still has zero calls and remains paused without payload approval. Fresh read-only
+verification confirms the older user Clue document remains exactly v19. Next
+address actual feed-scale review and source-context preservation, and implement
+the scoped preference handoff before qualifying these families or claiming
+the four-minute target. Keep the full goal active.

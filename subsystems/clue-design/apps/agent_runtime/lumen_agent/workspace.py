@@ -289,16 +289,32 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
         # hiding supplied palette choices. Preserve aliases and mode variants;
         # the engine remains the authority for their resolved active values.
         kit = tools.config.brand_kit or {}
+        color_catalog = {
+            "kit": {"id": kit.get("id"), "version": kit.get("version")},
+            "modes": kit.get("modes") or {},
+            "colors": {
+                name: {key: row[key] for key in ("role", "description", "value", "provenance") if key in row}
+                for name, row in ((kit.get("tokens") or {}).get("colors") or {}).items()
+                if isinstance(row, dict)
+            },
+        }
+        # One complete token per line lets a normal file read expose the full
+        # palette instead of paginating through each token's nested metadata.
+        # Keep the JSON shape, insertion order and source values unchanged.
+        color_rows = ",\n".join(
+            f"    {json.dumps(name)}: {json.dumps(row)}"
+            for name, row in color_catalog["colors"].items()
+        )
         (workspace / "brand_colors.json").write_text(
-            json.dumps({
-                "kit": {"id": kit.get("id"), "version": kit.get("version")},
-                "modes": kit.get("modes") or {},
-                "colors": {
-                    name: {key: row[key] for key in ("role", "description", "value", "provenance") if key in row}
-                    for name, row in ((kit.get("tokens") or {}).get("colors") or {}).items()
-                    if isinstance(row, dict)
-                },
-            }, indent=2), encoding="utf-8",
+            "\n".join([
+                "{",
+                f'  "kit": {json.dumps(color_catalog["kit"])},',
+                f'  "modes": {json.dumps(color_catalog["modes"])},',
+                '  "colors": {',
+                color_rows,
+                "  }",
+                "}",
+            ]), encoding="utf-8",
         )
 
     if tools.config.scene_skill_bundle == "candidate":

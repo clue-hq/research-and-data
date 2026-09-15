@@ -9,6 +9,7 @@ import pytest
 from agent_fixtures import runtime_config
 from lumen_agent.brand_card import build_brand_card
 from lumen_agent.frame import build_frame_payload
+from lumen_agent.fs_backend import AgentWorkspaceBackend
 from lumen_agent.retokenize import build_retokenize_operations
 from lumen_agent.tools.substrate import LumenDesignTools
 from lumen_agent.tools.web_substrate import LumenWebTools
@@ -188,3 +189,44 @@ def test_scene_color_catalog_preserves_modes_aliases_without_exporting_full_kit(
     legacy_workspace = scaffold_workspace(legacy, "Make an ad")
     assert not (legacy_workspace / "brand_colors.json").exists()
     assert "color_catalog" not in legacy.brand_card
+
+
+def test_candidate_palette_is_complete_in_one_normal_file_read(tmp_path, kit):
+    """A normal 100-line read must expose the full palette, including tail aliases."""
+    token = 'text.source."quoted"'
+    kit["tokens"]["colors"][token] = {
+        "role": "text",
+        "description": "Campaign ink\nwith a quoted \"source\" and café label",
+        "value": {
+            "default": {"kind": "alias", "token": "palette.neutral.950"},
+            "modes": {"theme.dark": {"kind": "hex", "value": "#FAFAFA"}},
+        },
+        "provenance": {"source": "official_style_guide", "confidence": 1.0},
+    }
+    original = copy.deepcopy(kit)
+    tools = scene_tools(tmp_path, kit)
+    workspace = scaffold_workspace(tools, "Make an ad")
+    backend = AgentWorkspaceBackend(
+        tools.trace_dir.parent, active_run_id=tools.run_id,
+    )
+    result = backend.read(f"/{tools.run_id}/workspace/brand_colors.json", limit=100)
+    assert result.error is None
+    content = result.file_data["content"]
+    assert content == (workspace / "brand_colors.json").read_text(), (
+        "The full palette still requires another model turn to paginate"
+    )
+    catalog = json.loads(content)
+    assert list(catalog) == ["kit", "modes", "colors"]
+    assert list(catalog["colors"]) == list(kit["tokens"]["colors"])
+    assert list(catalog["colors"][token]) == ["role", "description", "value", "provenance"]
+    assert catalog["colors"][token] == {
+        "role": "text",
+        "description": "Campaign ink\nwith a quoted \"source\" and café label",
+        "value": {
+            "default": {"kind": "alias", "token": "palette.neutral.950"},
+            "modes": {"theme.dark": {"kind": "hex", "value": "#FAFAFA"}},
+        },
+        "provenance": {"source": "official_style_guide", "confidence": 1.0},
+    }
+    assert catalog["modes"] == kit["modes"]
+    assert kit == original

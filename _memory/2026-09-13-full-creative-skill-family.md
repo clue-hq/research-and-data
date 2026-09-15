@@ -1147,3 +1147,60 @@ font-family/weight/export and other brands still pending. Clue user scene untouc
 Google tab now points to an older project (navigation provenance unconfirmed);
 Conduit is on normal
 session-expired page again. Verify current route/auth state, not generic login.
+
+Task30 continuation (September14 local/September15 UTC): normal Google sign-in
+recovered Conduit using the already verified owner; no account, membership or
+auth-bypass changes. Base40788 and brand-manager12606 remain live. Rechecked Q
+source catalogs and froze dispatch on0bc02055. Four ordinary Home requests sent
+05:43:54Z, followed concurrently by normal create confirmation05:46:42Z. Operator
+gap168.160s is separate from creative execution. Q is ignored evaluation folder
+coverage-second-families-20260914. Observer29119 completed, immutable first-terminal
+evidence captured for all4 before manual edits. Actual new families product-in-use,
+visual-metaphor, launch-announcement; Google educational-guide repeated. Coverage
+13/18 exercised,0qualified. Inner seconds Clue562.756/AWS370.630/Google625.692/
+Conduit548.789, all miss240. Independent review rejects tiny support/CTA in Clue/
+Google, unsupported review timing implication in Clue, weak AWS transition metaphor,
+and lost resolution metric caption in Conduit despite all4 self-accepting.
+
+New-doc QA only: headline size+1 all4; alternate brand-family Clue/Google/Conduit
+and AWS700→400 weight. Actual resolver and exact pinned-kit readbacks pass with
+untouched effective fields preserved. Normal Undo twice restores exact original
+scenes/bindings at new versions28/18/34/56. Reload/reopen inspectors correct.
+All4 native UI PNG exports1080 square match first-terminal RGB pixels exactly;
+SVGs preserve text/images and differ only root document ID. Evidence Q/typography-qa.
+This is preview/export parity, NOT full browser-canvas parity: Clue's live headline
+looks more serif than export; same supplied face bytes, under investigation.
+Live canvas is wasm/skia with0font diagnostics; DOM font registry empty (custom
+CanvasKit). AWS unused Arial warning persists. Reload lands gallery and requires
+reopening artifact. Old userCluev19 untouched, never restore obsoletev16.
+
+After all4 runs terminal, made candidate-only palette JSON serialization compact:
+760→48lines for42tokens, same values/order/aliases/modes/provenance. Actual backend
+100-line read regression RED→GREEN; root independently reran43 nearby tests green,
+independent review no findings, diff check clean. No live speedup claim or restart.
+Only workspace.py/test_scene_brand_card.py source edits; no models/website/engine.
+Q/latency-audit reproduces invalid regex against literal grep; model time and image
+critical waits dominate. No identical file rereads in this batch, just pagination.
+Plan Task30 updated. One doc patch initially failed on mismatched context with no
+mutation; corrected. CUA generic-role evaluation timed out; grounded getByLabel
+worked. No tests or credentials bypassed. Task26 remains0calls/noapproval.
+
+Taste follow-up audit: existing MemoryWriteSeam supports user-stated preferences,
+but DesignLeg runner lacks memory assembly. Correct minimal integration is platform
+trusted-quote adapter plus body-free scoped pin/resolver delivered to candidate
+scene with replay/erasure accounting. No direct design→memory-internals import or
+raw preference bodies in saved prompts. This is not implemented. Preserve this
+Clue direction's restrained palette without hardcoding all brands or all Clue ads.
+Goal active; next finish font parity investigation and enforce meaningful feed-scale
+review/source context before additional qualification. User-created old tabs intact;
+new batch tabs11–14 retained for review. No push or production changes.
+
+Closing Task30 verification: old userClue remains v19/exact current-user snapshot
+at06:25:59Z via read-only query. Offline actual CanvasKit painter with served WASM
+hash and exact font bytes selects same Season Mix420 face as server for requested
+400; line metrics agree within0.011px and linebreaks match. Rasterization differs,
+not a demonstrated wrong-face bug. Live canvas font diagnostics0; no speculative
+font fix. Root inspected actual output. All4 SVG structural comparisons differ
+only root data-lumen-document-id. Native PNGs compared in RGB (not RGBA alpha-only
+bbox), all pixel-exact. Newdocs remain restored, live inspectors show original
+values after reload. Firstterminal outputs/quality scores remain immutable.
