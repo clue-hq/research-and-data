@@ -2405,3 +2405,25 @@ That needs a shared checked-edit fix, not another brand-specific prompt rule.
 This is a conditioned repair, with no new image generation, not fresh creative
 qualification. Remaining copy/crop/hierarchy concerns and full-family coverage
 stay open. Evidence lives in ignored `scoped-palette-repair-20260915/`.
+
+## Task 34: scoped-preference delivery prerequisite
+
+The shared memory read contract now has `select` and `resolve`: a durable pin
+contains the canonical scope, selected IDs, original journal ID and bundle hash,
+with no preference body or trigger text. Resolution verifies the journal and
+current selected records, and returns typed stale/unavailable outcomes after
+content, label, identity, eligibility or switch changes. Unrelated new memories
+do not silently change an existing run's selection. Legacy `assemble` remains.
+The platform transaction wrapper implements both methods; account scope is now
+included in the existing journal JSON without a schema migration.
+
+Independent root verification passed all 86 memory tests against a disposable
+database, including 32 new selection/wrapper cases, plus focused lint/types and
+all 26 import contracts. An initial sandbox run skipped the database tests and
+was not counted as integration verification.
+
+The read prerequisite does not yet deliver preferences to the design agent.
+Still required: trusted scope/selection on the design envelope, runtime-only
+labeled context, explicit preference capture through the governed write seam,
+and matching erasure/replay handling. These must be verified together before
+claiming that taste learned in one design reaches a fresh design run.

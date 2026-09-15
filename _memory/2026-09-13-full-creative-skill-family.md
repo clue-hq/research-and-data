@@ -1333,3 +1333,17 @@ fix and minimal kit/mode transport plumbing now assigned to typography agent.
 Root22scene-family tests passed. No new image generation or family qualification.
 Prior planning turn primarily restated the roadmap; this continuation moves code
 and verifies evidence. Goal active; Task26 still0diagnostic calls/unapproved.
+
+Task34 prerequisite (2026-09-15): ContextAssembly now exposes select/resolve with
+a versioned body-free selection pin. Original selected IDs and full body/label
+hash are journal-authoritative; changes stale the pin, inactive/deleted/off states
+return no content, unrelated new rows do not change retries. Account scope is now
+included in journal JSON. TransactionalMemoryAssembly forwards both methods.
+Root reviewed all changed source/tests. First sandboxed test run skipped72 DB
+tests (14offlinepassed); reran with local-network permission against disposable
+Postgres55479:86passed/0skipped, including32new cases. Focused Ruff/mypy/format
+checks passed; import contracts26kept/0broken. No production/four-brand DB writes
+or provider calls. This is a read-seam prerequisite only: no fresh design-runtime
+injection, preference writer, or privacy bridge delivered yet.
+Task33 skill/evidence/next-step plan committed locally4576ba04. Engine replay fix
+continues independently; no service restart from root during that unfinished work.

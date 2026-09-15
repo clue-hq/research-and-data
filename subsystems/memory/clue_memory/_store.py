@@ -145,6 +145,25 @@ async def get_memory(conn: AsyncConnection, memory_id: str) -> Memory | None:
     return _row_to_memory(dict(row), refs.get(memory_id, ()))
 
 
+async def get_selected_records(
+    conn: AsyncConnection, *, workspace_id: str, memory_ids: tuple[str, ...]
+) -> list[Memory]:
+    """Fetch only selected tenant rows and their labels in one SQL snapshot.
+
+    Resolution must not combine a pre-erasure body with post-erasure refs/status from another
+    statement. Status is deliberately returned for the read seam's fail-closed eligibility check.
+    """
+    result = await conn.execute(
+        text(
+            f"SELECT {_MEMORY_COLUMNS}, ARRAY(SELECT claim_id FROM memory_claim_ref r "
+            "WHERE r.memory_id = memory.memory_id ORDER BY claim_id) AS claim_refs "
+            "FROM memory WHERE workspace_id = :workspace_id AND memory_id = ANY(:ids)"
+        ),
+        {"workspace_id": workspace_id, "ids": list(memory_ids)},
+    )
+    return [Memory(**dict(row)) for row in result.mappings().all()]
+
+
 async def list_records(
     conn: AsyncConnection,
     *,
