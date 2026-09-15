@@ -16,7 +16,7 @@ status supersedes their older coverage counts and pending-restart statements.
 | Four local brand workspaces | Clue 3021, AWS 3022, Google Cloud 3023, Conduit 3024; separate workspace scopes, shared local backend/Postgres | Operational; not cloud deployments |
 | Reference-driven generation | Selected originals, provider input/output custody, crops, generated components and independent scene layers exercised | Implemented; source relevance and treatment still inconsistent |
 | Native editing/export | Prior fresh four-brand batch passed editing, undo, save/reload and PNG/SVG export checks | Verified for that frozen batch; not automatically every subsequent revision |
-| Approved taste across fresh runs | Current document edits persist; automatic scoped preference handoff is missing | Not implemented |
+| Approved taste across fresh runs | Body-free selection and per-call scoped preference delivery are implemented and tested; production wiring is default-off pending output-history erasure and governed preference capture | Staged; no automatic taste learning claim |
 | Finished creative within 240 seconds | Latest four revisions took 464.247–635.172 seconds | 0/4 pass |
 | Production promotion | Candidate remains local on codex/design-agent-v1 | Not promoted or pushed |
 
@@ -2427,3 +2427,39 @@ Still required: trusted scope/selection on the design envelope, runtime-only
 labeled context, explicit preference capture through the governed write seam,
 and matching erasure/replay handling. These must be verified together before
 claiming that taste learned in one design reaches a fresh design run.
+
+
+## Task 34 continuation: checked edit preservation and staged preference context
+
+The separate fill-only replay defect is fixed in shared Rust checked editing,
+with the selected kit/mode passed by both the agent and human HTTP edit paths.
+Unrequested effective typography survives role detachment and replay; undo
+restores the exact authored scene. Local commit `215af2da` contains this unit.
+Verification: Rust 1,165 passed; runtime 2,455 passed/1 skipped; API 2,347 passed/
+6 skipped; frozen Clue replay/undo 10/10; rebuilt helper/WASM stamp
+`28e1d9988ecd`. Frontend vendor copy is refreshed. These checks do not qualify
+a new family or prove browser/export pixel parity.
+
+Preference delivery now freezes a body-free selection on the design envelope,
+records conservative erasure dependencies, and resolves labeled advice at each
+model call. The runtime rechecks durable turn/scope/kit authority and privacy
+fencing before and after the read. Advice stays out of saved input/checkpoint
+state; debug system-input traces omit its data block. A durable local-run
+binding and active lock make owned runtime files discoverable and prevent
+physical cleanup from reporting success while that runtime still writes.
+Preference-enabled legacy runner overrides are refused.
+
+`CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED=false` is the explicit rollout gate,
+documented in the root example and kept off locally. Ordinary platform memory
+and existing scene generation keep their previous route while off. The
+producer/resolver/gate battery passed 205 tests without skips. Model echoes in
+platform context artifacts, linked checkpoints and run workspaces have tested
+erasure/fencing support, but delivered scenes, snapshots, templates and generated
+assets still need complete version/dependency closure. The preference writer
+through the governed write seam is also absent. Do not enable this feature or
+claim automatic taste learning until both are validated.
+
+No new provider generation or account-specific batch was run in this slice.
+The next creative work remains approved-direction variants, followed by the
+shared account-adaptation pilot described above; brand/ABM ownership remains
+separate. Qualification stays 0/18, selected/rendered coverage 13/18.

@@ -27,6 +27,7 @@ from typing import Any
 from uuid import uuid4
 
 from clue_api.design_event_forwarder import _DesignEventForwarder
+from clue_api.design_memory_runtime import PreferenceResolverFactory
 from clue_db import transaction
 from clue_fleet import (
     LeaseGeneration,
@@ -52,7 +53,10 @@ class DesignRuntimeUnavailable(RuntimeError):
 
 
 def build_design_job_handler(
-    *, enabled: bool, purpose: str = "design_job_drain"
+    *,
+    enabled: bool,
+    purpose: str = "design_job_drain",
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -75,7 +79,16 @@ def build_design_job_handler(
             "install the design app (subsystems/clue-design/apps/{api,agent_runtime}) or "
             "unset CLUE_DESIGN_RUNTIME_ENABLED"
         ) from error
-    handler: Any = _build()
+    if preference_resolver_factory is None:
+        handler: Any = _build()
+    else:
+        from lumen_api.fleet_handler import DesignTurnHost
+
+        handler = _build(
+            host_provider=lambda: DesignTurnHost(
+                preference_resolver_factory=preference_resolver_factory
+            )
+        )
     if handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise DesignRuntimeUnavailable("the design handler does not own design_job tasks")
     log.info(
@@ -392,7 +405,9 @@ class InlineDesignLaneDriver:
             await asyncio.sleep(self._join_poll_interval_s)
 
 
-def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | None:
+def build_design_leg_lane_driver(
+    *, enabled: bool, preference_resolver_factory: PreferenceResolverFactory | None = None
+) -> InlineDesignLaneDriver | None:
     """The design-leg lane for :func:`build_agent_turn_work_handler`, or ``None`` when off.
 
     Same switch, same lazy import, same fail-loud stance as :func:`build_design_job_handler` —
@@ -400,7 +415,11 @@ def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | N
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
     """
-    handler = build_design_job_handler(enabled=enabled, purpose="design_leg_inline_lane")
+    handler = build_design_job_handler(
+        enabled=enabled,
+        purpose="design_leg_inline_lane",
+        preference_resolver_factory=preference_resolver_factory,
+    )
     if handler is None:
         return None
     return InlineDesignLaneDriver(handler=handler)

@@ -16,6 +16,7 @@ See ``docs/deepagent-architecture.md`` for the ratified design.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
@@ -44,6 +45,7 @@ from .prompts import (
     build_reviewer_prompt,
 )
 from .run_metrics import emit_run_metrics
+from .scoped_preferences import PreferenceResolver, ScopedPreferencesMiddleware
 from .tools.render import make_render_preview_tool
 from .tools.substrate import LumenDesignTools
 from .tools.view import make_view_tool
@@ -290,7 +292,9 @@ def _filesystem_permissions():
     ]
 
 
-def _create_scene_solo_graph(*, model, backend, tools, system_prompt, skills, checkpointer):
+def _create_scene_solo_graph(
+    *, model, backend, tools, system_prompt, skills, checkpointer, context_middleware=(),
+):
     """Compose DeepAgents 0.6.12 middleware without a delegation capability.
 
     Its create_deep_agent(subagents=[]) still creates general-purpose + task.
@@ -326,6 +330,7 @@ def _create_scene_solo_graph(*, model, backend, tools, system_prompt, skills, ch
         MemoryMiddleware(
             backend=backend, sources=["/.deepagent/AGENTS.md"], add_cache_control=True,
         ),
+        *context_middleware,
     ]
     return create_agent(
         model,
@@ -355,6 +360,7 @@ def create_design_deepagent(
     checkpointer: Any = None,
     scene_checkpoint=None,
     cancel_requested=None,
+    scoped_preferences: PreferenceResolver | None = None,
 ) -> tuple[Any, LumenDesignTools]:
     """Build the v0 deepagent + substrate. Mirrors
     factory.create_lumen_design_agent's signature so callers can swap.
@@ -453,6 +459,17 @@ def create_design_deepagent(
         from .guidance_reads import SceneGuidanceReadMiddleware
 
         guidance_middleware = [SceneGuidanceReadMiddleware(backend)]
+
+    def preference_middleware(role):
+        if scoped_preferences is None:
+            return []
+        return [ScopedPreferencesMiddleware(
+            scoped_preferences,
+            lambda payload: tools.record(role, "scoped_preferences_resolved", payload=payload),
+        )]
+
+    def model_middleware(role):
+        return [*guidance_middleware, *preference_middleware(role)]
 
     from .llm import assert_all_role_models_support_image_input, assert_model_supports_image_input
 
@@ -613,7 +630,7 @@ def create_design_deepagent(
             "model": author_model,
             "tools": author_tools,
             "skills": workspace_skills,
-            **({"middleware": guidance_middleware} if scene_candidate else {}),
+            **({"middleware": model_middleware("author")} if scene_candidate or scoped_preferences else {}),
         },
         {
             "name": "lumen-visual-reviewer",
@@ -629,7 +646,7 @@ def create_design_deepagent(
             "model": reviewer_model,
             "tools": [view, tools.inspect],
             "skills": workspace_skills,
-            **({"middleware": guidance_middleware} if scene_candidate else {}),
+            **({"middleware": model_middleware("reviewer")} if scene_candidate or scoped_preferences else {}),
             # D11 (docs/deepagent-architecture.md "Post-R6 decisions"): the
             # reviewer's structured output goes through the TOOL strategy, not
             # the provider/native one. Trigger: P1r7 died twice on
@@ -723,6 +740,8 @@ def create_design_deepagent(
             ),
             skills=workspace_skills,
             checkpointer=checkpointer,
+            # Solo already installs guidance-read middleware above.
+            context_middleware=preference_middleware("orchestrator"),
         )
         return agent, tools
 
@@ -750,7 +769,7 @@ def create_design_deepagent(
             scene_skill_bundle=runtime_config.scene_skill_bundle,
         ),
         subagents=subagents,
-        **({"middleware": guidance_middleware} if scene_candidate else {}),
+        **({"middleware": model_middleware("orchestrator")} if scene_candidate or scoped_preferences else {}),
         name="lumen-design-deepagent",
         checkpointer=checkpointer,
         **(
@@ -882,6 +901,8 @@ def run_deepagent_turn(
     thread_id: str | None = None,
     scene_checkpoint=None,
     cancel_requested=None,
+    scoped_preferences: PreferenceResolver | None = None,
+    runtime_workspace_guard=None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -918,13 +939,20 @@ def run_deepagent_turn(
         checkpointer=checkpointer,
         scene_checkpoint=scene_checkpoint,
         cancel_requested=cancel_requested,
+        **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
     )
 
     # Attach only this run's attributed events through finalization and metrics.
     # The shared console keeps its env/default configuration; overlapping runs
     # retain independent file handlers, which close on every exit path.
     run_log_path = tools.trace_dir / "logs" / "run.jsonl"
-    with run_log(tools.run_id, run_log_path):
+    guard = (
+        runtime_workspace_guard(tools.run_id, tools.trace_dir)
+        if runtime_workspace_guard is not None else nullcontext()
+    )
+    with guard, run_log(
+        tools.run_id, run_log_path, private_payloads=scoped_preferences is not None,
+    ):
         logger.debug("run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
 
         tools.record(

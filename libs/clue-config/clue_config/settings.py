@@ -277,6 +277,10 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Staged until output-history erasure closure and explicit preference writes are validated.
+    # Gates only production scene preference selection/resolution, not ordinary platform memory.
+    # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
+    design_preference_context_enabled: bool = False
     # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
     # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
     # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``

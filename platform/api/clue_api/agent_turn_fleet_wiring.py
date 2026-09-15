@@ -461,6 +461,7 @@ class ProjectConversationTurnRunner:
                         thread_id=submission.thread_id,
                     ),
                     stream=stream,
+                    scope_pin=scope_pin,
                 ),
                 submission=submission,
                 turn_id=turn_id,
@@ -1472,6 +1473,7 @@ def build_agent_turn_work_handler(
     design_lane: DesignLegLaneDriver | None = None,
     design_exit_judge: DesignLegExitJudge | None = None,
     design_leg_finisher: DesignLegFinisher | None = None,
+    design_preference_context_enabled: bool = False,
     conn_factory: ConnFactory = transaction,
     streaming: bool = True,
     stream_policy: TurnStreamPolicy | None = None,
@@ -1511,6 +1513,8 @@ def build_agent_turn_work_handler(
         lane=design_lane if design_lane is not None else _DesignLaneUnavailable(),
         exit_judge=design_exit_judge,
         finisher=design_leg_finisher,
+        # Staged until output-history erasure closure and preference writes are validated.
+        memory=memory if design_preference_context_enabled else None,
         conn_factory=conn_factory,
     )
     return AgentTurnWorkHandler(

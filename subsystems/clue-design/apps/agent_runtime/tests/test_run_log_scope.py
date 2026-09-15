@@ -265,6 +265,113 @@ def test_foreign_console_reconfigure_preserves_run_attribution_and_threshold(tmp
     assert [r["event"] for r in entries(b)] == ["b_after_foreign"]
 
 
+@pytest.mark.parametrize("reconfigure", [None, "design", "platform"])
+@pytest.mark.parametrize("private", [True, False])
+def test_scene_preference_echo_stays_in_run_trace_only(
+    tmp_path, monkeypatch, capsys, reconfigure, private,
+):
+    """Real trace callbacks must not copy model echoes into the shared console."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+    from lumen_agent.trace_callbacks import TraceCallbackHandler
+
+    monkeypatch.setenv("LUMEN_LOG_MODE", "debug")
+    monkeypatch.setenv("LUMEN_LOG_FORMAT", "json")
+    monkeypatch.setattr(substrate, "CoreClient", FakeCoreClient)
+    sentinel = "Use the PRIVATE_PREFERENCE_ECHO in supporting copy."
+    tools = substrate.LumenDesignTools(runtime_config(tmp_path), "fixture request")
+
+    def create(_prompt, **kwargs):
+        def invoke(*_args, **_kwargs):
+            if reconfigure == "design":
+                obs.configure(mode="debug", fmt="json")
+            elif reconfigure == "platform":
+                from clue_obs import setup
+
+                setup(mode="debug", fmt="json")
+            advice = kwargs["scoped_preferences"]() if private else sentinel
+            callback = TraceCallbackHandler("orchestrator")
+            callback.on_llm_end(LLMResult(generations=[[ChatGeneration(message=AIMessage(
+                content=advice,
+                tool_calls=[{"id": "call_1", "name": "write_file", "args": {"text": advice}}],
+            ))]]))
+            callback.on_llm_error(RuntimeError(advice))
+            logging.getLogger("foreign").error(
+                "model echoed %s", advice, exc_info=ValueError(advice),
+            )
+
+        return SimpleNamespace(invoke=invoke), tools
+
+    monkeypatch.setattr(harness, "create_design_deepagent", create)
+    harness.run_deepagent_turn(
+        "fixture request", tools.config,
+        **({"scoped_preferences": lambda: sentinel} if private else {}),
+    )
+    console = capsys.readouterr().out
+    trace = (tools.trace_dir / "logs/run.jsonl").read_text()
+    assert sentinel in trace, "the actual model echo must remain in removable run custody"
+    assert (sentinel in console) is not private
+    obs.get_logger("ordinary").info("ordinary_after_private_scope")
+    assert "ordinary_after_private_scope" in capsys.readouterr().out
+
+
+def test_ordinary_nested_scope_cannot_clear_inherited_private_context(tmp_path, capsys):
+    with obs.bound_context(run_id=None), ThreadPoolExecutor(max_workers=1) as pool:
+        with run_log("private", tmp_path / "outer.jsonl", private_payloads=True):
+            with run_log("nested", tmp_path / "nested.jsonl"):
+                logging.getLogger("foreign").error("PRIVATE_UNTAGGED_NESTED_ECHO")
+                pool.submit(
+                    obs.get_logger("trace", run_id="nested").error,
+                    "PRIVATE_ATTRIBUTED_NESTED_ECHO",
+                ).result(timeout=5)
+        logging.getLogger("foreign").info("ordinary_after_nested_scope")
+
+    console = capsys.readouterr().out
+    assert "PRIVATE_" not in console
+    assert "ordinary_after_nested_scope" in console
+    assert "PRIVATE_ATTRIBUTED_NESTED_ECHO" in (tmp_path / "nested.jsonl").read_text()
+
+
+def test_private_console_scope_isolates_workers_and_nested_lifetimes(tmp_path, capsys):
+    from contextvars import copy_context
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with run_log("private", tmp_path / "outer.jsonl", private_payloads=True):
+            late_context = copy_context()
+            with run_log("private", tmp_path / "inner.jsonl", private_payloads=True):
+                pool.submit(
+                    obs.get_logger("trace", run_id="private").error,
+                    "PRIVATE_NESTED_ECHO",
+                ).result(timeout=5)
+            # Closing one registration must not remove the still-active outer one.
+            pool.submit(
+                obs.get_logger("trace", run_id="private").error,
+                "PRIVATE_OUTER_ECHO",
+            ).result(timeout=5)
+
+            def ordinary_worker():
+                with run_log("ordinary", tmp_path / "ordinary.jsonl"):
+                    obs.get_logger("trace", run_id="ordinary").info("ordinary_concurrent")
+
+            pool.submit(ordinary_worker).result(timeout=5)
+        # The active-run registration is gone; an inherited private context still
+        # suppresses a late callback without reopening its now-closed trace.
+        before = (tmp_path / "outer.jsonl").read_bytes()
+        late_context.run(obs.get_logger("trace").error, "PRIVATE_LATE_ECHO")
+        assert (tmp_path / "outer.jsonl").read_bytes() == before
+        pool.submit(
+            obs.get_logger("trace", run_id="private").info,
+            "ordinary_after_last_registration",
+        ).result(timeout=5)
+
+    console = capsys.readouterr().out
+    assert "PRIVATE_" not in console
+    assert "ordinary_concurrent" in console
+    assert "ordinary_after_last_registration" in console
+    assert "PRIVATE_OUTER_ECHO" in (tmp_path / "outer.jsonl").read_text()
+    assert "PRIVATE_" not in (tmp_path / "ordinary.jsonl").read_text()
+
+
 @pytest.mark.parametrize("outcome", ["completed_with_warnings", "exception", "cancel"])
 def test_web_runner_closes_log_after_finalization(tmp_path, monkeypatch, outcome):
     from lumen_agent import harness_web

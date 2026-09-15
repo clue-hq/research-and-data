@@ -466,6 +466,7 @@ class BudgetCallbackHandler:
     #: langchain-core's opt-in: without it, ``handle_event`` logs our exception
     #: and carries on — which would turn the ceiling back into a suggestion.
     raise_error = True
+    run_inline = False
     ignore_llm = False
     ignore_chain = True
     ignore_agent = True

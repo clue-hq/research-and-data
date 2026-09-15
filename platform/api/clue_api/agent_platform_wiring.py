@@ -446,6 +446,11 @@ def build_agent_platform_components(
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
     profiles = build_agent_profile_registry(tools)
+    design_run_purger = None
+    if settings.design_runtime_enabled:
+        from lumen_api.runtime_privacy import build_runtime_workspace_purger
+
+        design_run_purger = build_runtime_workspace_purger()
     return AgentPlatformComponents(
         profiles=profiles,
         models=build_agent_model_provider(config=gateway_config, secrets=secrets),
@@ -458,6 +463,7 @@ def build_agent_platform_components(
             storage=storage,
             workspaces=workspaces,
             conn_factory=conn_factory,
+            design_run_purger=design_run_purger,
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
     )

@@ -589,6 +589,7 @@ def _build_embedded_fleet_worker(app: FastAPI) -> Any:
             # into the SAME place the request paths read (a suite that builds the app with an
             # explicit root would otherwise have its worker writing into the settings default).
             engine_cache_root=app.state.engine_cache_root,
+            preference_resolver_factory=getattr(app.state, "preference_resolver_factory", None),
         )
 
     worker = LeasedWorkWorker(
@@ -9076,6 +9077,8 @@ def run_agent_turn_preview(
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
     scene_checkpoint: Any = None,
     cancel_requested: Any = None,
+    scoped_preferences: Any = None,
+    runtime_workspace_guard: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -9275,6 +9278,8 @@ def run_agent_turn_preview(
             # THROUGH — the synchronous preview route holds the request open and has no id a
             # second caller could name.
             cancel_requested=cancel_requested,
+            **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
+            **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -10113,6 +10118,36 @@ def execute_agent_turn_job(
         run_id=envelope.run_id, lease_generation=lease_generation
     )
     payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
+    scoped_preferences = None
+    runtime_workspace_guard = None
+    if "design_memory" in envelope.config:
+        # The platform verifies this opaque selection against its durable scope,
+        # run and journal authority. Never treat a queued body-free pin as access.
+        factory = getattr(host, "preference_resolver_factory", None)
+        try:
+            if not callable(factory):
+                raise RuntimeError("preference authority unavailable")
+            scoped_preferences = factory(envelope)
+            if scoped_preferences is not None and not callable(scoped_preferences):
+                raise RuntimeError("invalid preference resolver")
+        except Exception:
+            failed = failed_agent_turn_response(
+                "scoped_preferences.unavailable",
+                "Saved design preferences could not be authorized for this turn.",
+                "The platform must resolve this turn's original scoped selection before retrying.",
+            )
+            return "failed", failed, "error", {"message": "scoped preferences unavailable"}
+        if scoped_preferences is not None:
+            from .runtime_privacy import bind_runtime_workspace
+
+            def runtime_workspace_guard(inner_run_id, trace_dir):
+                return bind_runtime_workspace(
+                    workspace_id=envelope.workspace_id, outer_run_id=envelope.run_id,
+                    inner_run_id=inner_run_id, trace_dir=trace_dir,
+                    emit=lambda event, data: store.emit_run_event(
+                        envelope.run_id, event, data, expected_generation=lease_generation,
+                    ),
+                )
     # G9: the USER's own words, captured BEFORE the leg prompt render below composes the brief
     # and the history into them. This is the human-facing ``intent`` on the durable edit
     # envelope, so it must never become the rendered brief block.
@@ -10243,7 +10278,8 @@ def execute_agent_turn_job(
             )
         if override is not None:
             response = _call_turn_override(
-                override, payload, root, scene_checkpoint=_checkpoint_sink(committer)
+                override, payload, root, scene_checkpoint=_checkpoint_sink(committer),
+                scoped_preferences=scoped_preferences,
             )
         else:
             response = run_agent_turn_preview(
@@ -10267,6 +10303,8 @@ def execute_agent_turn_job(
                 # doomed W5 run was a plain editor turn, and "you can only stop it if it came
                 # from chat" would be an arbitrary line to draw through a paid run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
+                **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
+                **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
             )
         operations = response.get("operations")
         if committer is not None and doc is not None and response.get("status") == "proposed":
@@ -10545,7 +10583,10 @@ def _run_cancel_probe(store: HybridRepository, run_id: str):
     return CancellationProbe(lambda: store.cancellation_requested(run_id))
 
 
-def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
+def _call_turn_override(
+    override: Any, payload: Any, root: Path, *, scene_checkpoint: Any,
+    scoped_preferences: Any = None,
+):
     """Call the injected turn-runner test seam, handing it the checkpoint sink only if it wants it.
 
     ``DesignTurnHost.agent_turn_runner`` is a test double whose shipped contract is
@@ -10561,9 +10602,12 @@ def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkp
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
-    if wants_sink:
-        return override(payload, root, scene_checkpoint=scene_checkpoint)
-    return override(payload, root)
+    kwargs = {"scene_checkpoint": scene_checkpoint} if wants_sink else {}
+    if scoped_preferences is not None:
+        # The legacy override seam has no enforceable runtime-workspace custody
+        # contract. A keyword declaration alone cannot prove binding before use.
+        raise RuntimeError("scoped_preferences.override_unsupported")
+    return override(payload, root, **kwargs)
 
 
 def _persist_leg_scene_proposal(

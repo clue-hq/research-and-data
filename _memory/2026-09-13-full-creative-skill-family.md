@@ -1347,3 +1347,34 @@ or provider calls. This is a read-seam prerequisite only: no fresh design-runtim
 injection, preference writer, or privacy bridge delivered yet.
 Task33 skill/evidence/next-step plan committed locally4576ba04. Engine replay fix
 continues independently; no service restart from root during that unfinished work.
+
+Task34 continuation (2026-09-15), implementation checkpoint: committed shared
+checked text-edit preservation as215af2da. Rust1165passed; runtime2455passed/1skip;
+API2347passed/6skip; frozen Clue DSL/HTTP replay+exactundo10/10. Release helper and
+WASM stamp28e1d9988ecd; frontend vendor copy refreshed. Agent gate evidence in
+scoped-palette-repair-20260915/dsl-typography-audit/. No new user document writes.
+
+Scoped preference producer+resolver+runtime middleware now implemented locally.
+Frozen body-free selection and conservative dependency receipt; per-model-call
+authority checked before/after shared resolve; no direct body in persisted
+input/state/debug system logs. Model echoes remain possible and need closure.
+New durable runtime_workspace_bound receipt/local marker+active lock own removable
+run folders; privacy bridge fences and closes linked platform artifacts, design
+checkpoints/events and owned folders, refuses missing/unsafe physical ownership.
+Legacy preference-enabled overrides now refused. Root13 API filesystem/delivery
+tests passed after3meaningfulRED failures; root25combined preference/API cases
+passed plus14trace tests and3realDBprivacy tests on disposable DB55479. Producer/
+resolver/gate agent205passed0skipped; no provider or liveDB mutation.
+
+Rollout is explicitly OFF: CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED=false in Settings,
+rootexample and local.env (no secrets output). Ordinary platform memory unchanged.
+Delivered scene/snapshot/template/generated-asset erasure closure and governed
+preference writer still absent; do not claim automatic taste learning or complete
+design DSAR. Console echo filtering added to existing shared logging seam; final
+nested privacy inheritance regression is finishing. No production push or Task26
+calls. Coverage remains13/18rendered,0qualified. Basequeue readonly check74success/
+5historicfailures,0activeleases; all4fleet workers actuallyUP. Restrictedpsview
+incorrectly reportedDOWN; unrestrictedscopedstatus corrected. Initial read-only
+DSN usedasyncpg-onlyreplace butlocalDSNwaspsycopg; normalizedschemeandquerypassed.
+One test invocation usedwrongtracefilename/no tests; correctedactual14testfile.
+Live restart/browser verification is next, not claimed at this checkpoint.
