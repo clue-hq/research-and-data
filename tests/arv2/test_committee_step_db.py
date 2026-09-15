@@ -32,11 +32,13 @@ from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.committee_step import run_committee_step
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import EntityId, new_project_run_id
+from clue_obs.langfuse import ENTITIES_METADATA_KEY, observation
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.durable.project_run import ensure_project_run
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.profiling.committee.fields import load_committee_pack
 from clue_research.profiling.fields import load_deep_profiling_pack
+from tests._langfuse import finished_spans, langfuse_installed
 from tests._workspace import seed_project
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -49,6 +51,11 @@ from tests.claimstore.conftest import (  # noqa: F401
 from tests.db.conftest import run_async
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
+
+
+def _attributes(span: Any) -> dict[str, Any]:
+    return dict(span.attributes or {})
+
 
 WORKSPACE = "ws_r3_committee"
 SHA = "a" * 64
@@ -279,6 +286,41 @@ def test_confirmed_candidates_become_contacts_claims_and_person_jobs() -> None:
             assert by_field["contact.persona"].source_url == "https://probook.ai/team"
             assert by_field["contact.persona"].evidence_span == "Dana Reyes, VP Marketing"
             assert by_field["contact.persona"].run_id == run.run_id
+
+    run_async(scenario())
+
+
+def test_each_member_is_tagged_on_the_jobs_trace_as_they_are_born() -> None:
+    """A member born here tags the job's trace, so "which traces carried contact X" is a query."""
+
+    async def scenario() -> None:
+        with langfuse_installed() as (exporter, _provider):
+            async with rollback_conn(seed_pack=True) as conn:
+                run, account, job_id = await _seed(conn)
+                job = await store.read_job(conn, job_id=job_id)
+                assert job is not None
+                with observation("job", as_type="agent"):
+                    await run_committee_step(
+                        conn,
+                        job=job,
+                        run=run,
+                        scope=_scope(run, account),
+                        candidates=CANDIDATES,
+                        writer=LenientClaimWriter(lenient=True),
+                        person_profile_sha256=arv2_person_profile_sha256(),
+                        catalog=COMMITTEE_CATALOG,
+                    )
+                members = [str(row["id"]) for row in await _contacts(conn, account)]
+            spans = finished_spans(exporter)
+        tagged = [
+            _attributes(s)[f"langfuse.trace.metadata.{ENTITIES_METADATA_KEY}"]
+            for s in spans
+            if s.name == "entities.tagged"
+        ]
+        assert members and len(members) == 2
+        assert tagged, "a confirmed member tags the trace it was born on"
+        assert tagged[0].split(",") == [members[0]], "the first member tags the trace alone"
+        assert set(tagged[-1].split(",")) == set(members)
 
     run_async(scenario())
 

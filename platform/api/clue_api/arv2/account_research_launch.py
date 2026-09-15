@@ -69,6 +69,7 @@ from clue_core import EntityId, ExtractionMethod, Persona, ProjectPhase, Project
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkQueue
 from clue_obs import get_logger
+from clue_obs.langfuse import tag_entities
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.claimstore.run_lineage import record_run_lineage
 from clue_research.durable.project_run import ensure_project_run, get_project_run
@@ -900,6 +901,8 @@ async def seat_person_on_committee(
         "rationale": f"launched on demand by {requested_by_user_id}",
         "confirmed_by": None,
     }
+    # The seat is this person's: the launch's trace names them.
+    tag_entities([contact_id])
     for draft in committee_member_claims(
         candidate,
         scope=scope,

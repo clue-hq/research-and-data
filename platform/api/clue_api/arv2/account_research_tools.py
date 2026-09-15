@@ -383,6 +383,10 @@ class ToolRuntime:
         #: so the display can say a thing was removed and why without ever showing the thing.
         self.compliance_log: list[dict[str, str]] = []
 
+        #: Every entity this job asked the writer to write a claim about (lane 3 slice 4): the
+        #: ending tags the job's trace with them, so "which traces carried contact X" is a query.
+        self.entities_touched: set[str] = set()
+
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._inflight: set[asyncio.Task[Any]] = set()
@@ -532,6 +536,9 @@ class ToolRuntime:
         """
         results: list[tuple[ClaimDraft, WriteReceipt | WriteFailure]] = []
         for draft in self.compliance_pass(drafts):
+            # Recorded before the write, not after: a draft the store refuses is still an entity
+            # this job worked on, and the trace should say so.
+            self.entities_touched.add(str(draft.entity_id))
             try:
                 async with self._conn_factory() as conn:
                     results.append((draft, await self._writer.write(conn, draft)))

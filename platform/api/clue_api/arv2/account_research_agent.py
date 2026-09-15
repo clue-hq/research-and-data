@@ -55,6 +55,7 @@ from clue_obs.langfuse import (
     guardrail,
     observation,
     propagate_trace,
+    tag_entities,
 )
 
 log = get_logger("clue_api.arv2.account_research_agent")
@@ -424,6 +425,9 @@ async def run_account_agent(
             metadata={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
         ) as current,
     ):
+        # The subject first, before any work: a job that dies mid-round still names who it was
+        # about on its trace.
+        tag_entities([scope.account_id, scope.contact_id])
         outcome = await _drive_graph(
             agent,
             opening,
@@ -435,6 +439,8 @@ async def run_account_agent(
         # Inside the observation: the graph the handler reported, the tools' provider hops and
         # this ending all sit beneath the one agent observation, under one trace id.
         _report_ending(outcome)
+        # Everything the job wrote a claim about, re-emitted whole onto the job's trace.
+        tag_entities(runtime.entities_touched)
         current.update(
             output={
                 "reason": outcome.reason,

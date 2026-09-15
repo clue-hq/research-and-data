@@ -1,21 +1,30 @@
 """Lane 3 slice 3b, Task 4: an ARV2 research job is one named Langfuse trace; each model round
-row carries its generation's ids; the ending is an event and a cap is a guardrail."""
+row carries its generation's ids; the ending is an event and a cap is a guardrail.
+
+Lane 3 slice 4, Task 2: the same trace is tagged with the entities the job carried — its subject
+before any work, and everything it wrote a claim about at the ending."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage
 
+from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
+from clue_core import ClaimId, EntityType, ExtractionMethod, ResearchMode, RunId
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_CENTS_KEY, COST_SOURCE_KEY
+from clue_obs.langfuse import ENTITIES_METADATA_KEY
 from tests._langfuse import finished_spans, langfuse_installed
 from tests.arv2.test_account_research_agent import (
     SCOPE,
+    StructuredTool,
     _call,
     _counting_tool,
     _drive,
     _finalizing_tool,
+    _NoArgs,
     _run,
     _runtime,
     _ScriptedModel,
@@ -110,3 +119,92 @@ def test_off_the_rows_carry_no_langfuse_keys() -> None:
     _run(_drive(_ScriptedModel(respond), [_finalizing_tool(runtime)], runtime))
     rows = [row for row in runtime.model_ledger.drain() if row.phase == "result"]
     assert rows and all("langfuse_trace_id" not in row.extras for row in rows)
+
+
+def _tagged_sets(spans: Any) -> list[str]:
+    return [
+        _attrs(s)[f"langfuse.trace.metadata.{ENTITIES_METADATA_KEY}"]
+        for s in spans
+        if s.name == "entities.tagged"
+    ]
+
+
+def test_the_job_tags_its_subject_and_every_entity_it_wrote() -> None:
+    runtime = _runtime()
+    written = StructuredTool.from_function(
+        coroutine=_writing(runtime, "con-77"),
+        name="write_claims",
+        description="records an entity the job wrote about",
+        args_schema=_NoArgs,
+    )
+
+    def respond(messages: Any) -> AIMessage:
+        if any(getattr(m, "name", None) == "finalize_research" for m in messages):
+            return _priced(AIMessage(content="done"))
+        if any(getattr(m, "name", None) == "write_claims" for m in messages):
+            return _priced(AIMessage(content="", tool_calls=[_call("finalize_research", 2)]))
+        return _priced(AIMessage(content="", tool_calls=[_call("write_claims", 1)]))
+
+    with langfuse_installed() as (exporter, _provider):
+        outcome = _run(
+            _drive(_ScriptedModel(respond), [written, _finalizing_tool(runtime)], runtime)
+        )
+        spans = finished_spans(exporter)
+    assert outcome.reason == "finalized"
+    sets = _tagged_sets(spans)
+    assert sets[0] == str(SCOPE.account_id)  # the subject, first thing in the trace
+    assert sets[-1] == ",".join(sorted({str(SCOPE.account_id), "con-77"}))  # the ending
+    job = next(s for s in spans if s.name == "arv2.account_research")
+    last = next(
+        s
+        for s in spans
+        if s.name == "entities.tagged"
+        and _attrs(s)[f"langfuse.trace.metadata.{ENTITIES_METADATA_KEY}"] == sets[-1]
+    )
+    assert format(last.context.trace_id, "032x") == format(job.context.trace_id, "032x")
+    assert f"entity:{SCOPE.account_id}" in _attrs(last)["langfuse.trace.tags"]
+
+
+def _writing(runtime: Any, entity: str) -> Any:
+    async def call() -> str:
+        runtime.tool_calls += 1
+        runtime.entities_touched.add(entity)  # what write_each records for every draft it writes
+        return json.dumps({"ok": True})
+
+    return call
+
+
+def _draft(runtime: Any, field_key: str, entity_id: str) -> ClaimDraft:
+    """One draft shaped like the ones the model's write tool hands the runtime."""
+    return ClaimDraft(
+        entity_id=entity_id,  # type: ignore[arg-type]
+        entity_type=EntityType.ACCOUNT,
+        field_key=field_key,
+        value_json="robotics",
+        extraction_method=ExtractionMethod.LLM_SYNTHESIS,
+        run_id=RunId(runtime.scope.run_id),
+        research_mode=ResearchMode.ACCOUNT_PROFILING,
+        workspace_id=runtime.scope.workspace_id,
+        source_url="https://probook.ai/about",
+    )
+
+
+def test_write_each_records_every_drafts_entity_before_writing() -> None:
+    runtime = _runtime()
+
+    class _Writer:
+        async def write(self, conn: Any, draft: Any) -> Any:
+            if draft.field_key.endswith("bad"):
+                raise RuntimeError("store refused")
+            return WriteReceipt(
+                claim_id=ClaimId(uuid4()),
+                field_key=draft.field_key,
+                markers={},
+                registered_field=False,
+            )
+
+    runtime._writer = _Writer()  # type: ignore[attr-defined]
+    drafts = [_draft(runtime, "core.industry", "acc-1"), _draft(runtime, "core.bad", "con-2")]
+    results = _run(runtime.write_each(drafts))
+    assert len(results) == 2
+    assert runtime.entities_touched == {"acc-1", "con-2"}
