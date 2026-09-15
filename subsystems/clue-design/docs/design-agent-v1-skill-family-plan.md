@@ -2323,3 +2323,85 @@ run was submitted before the user's request for the 16-hour status report.
 Evidence is frozen under ignored composition-revisions-20260915/, including
 observer-terminal-verification.json and independent-review/. Local fleet and
 design queues were idle after terminal capture. Keep the full goal active.
+
+## Next implementation proposal: repeatable variants and account-specific ads
+
+The September15 user question adds an explicit planning emphasis: repeatable
+imagery/creative generation and one-account ads with a relevant company, its
+logo and tailored messaging. The current four-brand tests treat Clue, AWS,
+Google Cloud and Conduit as four advertisers. They do not validate Clue as one
+advertiser personalizing ads to those companies as target accounts.
+
+Keep the current scene view and shared family; a knowledge view is an instruction
+bundle, not a visual output or a composition variant. Add account adaptation as
+a cross-cutting capability, not eighteen duplicate account-specific families.
+One design agent remains responsible for final copy, artwork, composition and
+review. Research/Head-of-ABM supplies scoped account references, persona, supported
+value narrative and campaign intent through the existing handoff; its separate
+agent implementation is outside this worktree's current design assignment.
+
+Proposed sequence, not implemented scaling functionality:
+
+1. Stabilize the shared repair/preservation behavior and deliver explicit saved
+   preferences to fresh runs through the scoped-memory seams. Keep full-family
+   qualification open while fixing these shared failures.
+2. Record an approved creative direction with selected source versions, palette,
+   typography, logo treatment, image relationships and editable layer roles.
+   Generate deliberate concept/composition alternatives from that direction;
+   retain inspected background/artwork variants with their actual generation
+   receipts. Reuse a suitable approved component, edit it, or generate a new
+   component as the concept requires. Do not regenerate logos/product screenshots
+   or duplicate a flattened full ad. This variation record guides choices rather
+   than imposing a fixed page template on every future creative.
+3. Separate advertiser identity from target-account context. Keep advertiser
+   brand-kit ownership stable. Target account ID/name/authentic logo, persona,
+   relevant claim references and value narrative are separate inputs. Target
+   logo presence is optional and must not imply a customer/partner relationship.
+   Tailor the argument and proof, not only the company-name string.
+4. Build one account-specific editable exemplar through the design agent. After
+   approval, pin the design revision and map stable versus variable text/image
+   roles onto the existing content-schema/slot-binding contract. Account IDs and
+   logos resolve deterministically; persuasive account copy is drafted from the
+   scoped evidence. Reflow within the contract, report overflow, and revise the
+   template when the design itself must change. Preserve source and version
+   lineage; no silent truncation or tiny-font rescue.
+5. Prove a small matrix: one advertiser, three evidence-ready target accounts and
+   three distinct concepts (nine derivatives), plus a long-name/missing-asset
+   case. Check correct identities, materially relevant messaging, editable
+   layers, visual variation and latency. Compare derivation latency separately
+   from first-concept image generation; neither hides repairs. Expand across
+   advertiser brands only after this account-adaptation path works.
+
+Doc S remains the content/slot authority. Current source inspection confirms core
+BindingAudience and derive_instance exist, while subsystems/content/clue_content
+is still a scaffold. The presence of content-exemplar guidance or an engine
+primitive does not prove an operational batch personalization product. Implement
+through those existing seams after reconciling the content-schema handoff; do
+not duplicate the content plane inside scene runtime or silently replace the
+platform's existing content-drafter role. No account-ad run or scaling job has
+been launched by this planning update.
+
+## Task 33: scoped repair verification
+
+The ordinary Clue color/readability correction finished at document v50. The
+updated `repair-design` skill was requested explicitly and its materialized hash
+matches the source. Dispatch-to-final metrics was 179.050 seconds, including
+15 model calls; the corrected preview arrived after 139.632 seconds. The earlier
+42.173-second preview metric describes the unchanged baseline, not the repair.
+
+Support and button fill now resolve to the headline's warm cream. Headline,
+background, logo and product nodes remain unchanged; the protected older Clue
+document remains exactly v19. Browser reload/reopen and native PNG/SVG export
+completion were observed. The current downloads have not yet been matched to
+the frozen preview bytes, so prior export-parity receipts do not certify v50.
+
+The provisional typography regression interpretation is corrected: raw support
+leading changed from 1.35 to 1.5, but its prior role already resolved to 1.5.
+The live combined edit preserved effective family, weight, leading and tracking.
+A separate real-helper replay test exposed a latent fill-only defect: detaching
+the role can expose authored fallback typography when operations are reapplied.
+That needs a shared checked-edit fix, not another brand-specific prompt rule.
+
+This is a conditioned repair, with no new image generation, not fresh creative
+qualification. Remaining copy/crop/hierarchy concerns and full-family coverage
+stay open. Evidence lives in ignored `scoped-palette-repair-20260915/`.

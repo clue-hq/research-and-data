@@ -1296,3 +1296,40 @@ Plan nowhascurrentstatus abovehistoricalentries, supersedingstale8/18andnotresta
 statements. Counts30available,27readrequests,13/18rendered,0qualified. Goaltool
 reported58460trackedseconds (~16h14m); exactdevelopmenttimeattributionunavailable.
 Task26 remains0calls/unapproved, fresh-runpreferenceassemblymissing, noprodpush.
+
+Continuation after16hreport classifiedprogress: Task32guidance/evidence/status
+committed4fb2438a; fuller55uniqueliverun/1893modelcallinventory changesnextaction.
+StartedTask33repair-designonly: compareactualresolvedtargetcolors, preserve
+bindings/unrelatedstylesduringpropertyrepairs, assessopticalgroup/feedtype.
+FrozenRpalettefailureandConduitcollateralsarebehavioralbaseline. Existingfamily
+materialization/regression suite22passed; no behavioralpassyet. Newignored
+scoped-palette-repair-20260915 freezes Cluev47/oldCluev19 and39assets/cacheunchanged,
+queuesidle158done/73success/5historicfailures; observerpreparednotstarted.
+Userthenaskednextimplementationplan forrepetitiveimages/1:1companyads; answered
+planningbeforedispatch. No newcreative submitted, no modelcall or restart.
+Repairskillcurrentlymodified, sourcehash frozen e3c703d20f33af19d213014db0f326197c0c3a6de4ba70b79339886249902990.
+
+Nextplanaddedtoexistingdocument: distinguish4advertiserbrandtestsfromClue→target
+accountpersonalization. Approveddirection/imageryvariants +cross-cuttingaccount
+adaptation, advertiserkitseparatefromtargetlogo/evidence/persona, oneexemplarthen
+contentschema↔slots/derivedinstances. CoreBindingAudience/derive_instanceexist;
+contentpackageREADME explicitlyscaffold, so no claimbatchscalingalreadyworks.
+DocSdescribescontent-drafter; currentone-design-agentproposaldoesnotauthorizeremoval
+ofplatformrole. Brand/ABMseparate. Proposed9derivatives=3concepts×3readyaccounts
+andmissingasset/longnamecase; notdispatched. PreferencesauditfindsMemoryWriteSeam
+andContextAssemblybutnoDesignLegmemoryinjection norpublicretry-safebodyresolver;
+smallreadseamextensionneeded, notrawmemorybodyinpersistentprompt.
+
+Task33 closing (2026-09-15): scoped Clue correction actually dispatched 07:41:55Z
+after the planning reply. Outer run_fa91d76f35985cc4a4d4a7222400840a completed v50;
+179.050s dispatch-to-metrics, 15 calls, corrected preview139.632s. Repair skill
+explicit read/materialization hash verified, headline/background/logo/product exact,
+protected old Clue v19 exact. Browser reload/reopen and PNG/SVG exported messages
+verified; fresh downloaded-byte parity pending, not inferred from old exports.
+Raw-leading regression claim retracted: previous role already resolved1.5; live S
+preserves effective typography except requested sizes. Separate actual-helper
+fill-only replay defect reproduced (preview1.5, authored replay1.35); shared Rust
+fix and minimal kit/mode transport plumbing now assigned to typography agent.
+Root22scene-family tests passed. No new image generation or family qualification.
+Prior planning turn primarily restated the roadmap; this continuation moves code
+and verifies evidence. Goal active; Task26 still0diagnostic calls/unapproved.
