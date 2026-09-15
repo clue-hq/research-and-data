@@ -56,6 +56,7 @@ def _first_page_id(tools: LumenDesignTools) -> Optional[str]:
 
 def initial_turn_state(tools: LumenDesignTools, prompt: str) -> dict:
     """The initial constitution values (§3), sourced from config/tools."""
+    review_profile = tools._native_copy_review_profile()
     return {
         "seeded": tools.seeded_from_initial_scene,
         "chip_target_node_ids": list(tools.config.turn_target_node_ids or []),
@@ -65,6 +66,7 @@ def initial_turn_state(tools: LumenDesignTools, prompt: str) -> dict:
         "current_round": 0,
         # RC: attachment-ordered reference ids (empty list when none rode this turn).
         "reference_asset_ids": [aid for (_i, aid, _e) in _reference_entries(tools)],
+        **({"native_copy_review_profile": review_profile} if review_profile is not None else {}),
         **(
             {"source_assets_path": to_virtual(
                 workspace_root(tools) / "source_assets.json", tools.config,
@@ -282,8 +284,23 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     rounds.mkdir(parents=True, exist_ok=True)
     previews.mkdir(parents=True, exist_ok=True)
 
+    state = initial_turn_state(tools, prompt)
     header = f"# Design turn brief — run {tools.run_id}\n\n"
-    (workspace / "brief.md").write_text(header + prompt, encoding="utf-8")
+    review_context = ""
+    if profile := state.get("native_copy_review_profile"):
+        # Expose the same delivered policy used by review in the first gather,
+        # before the agent chooses copy length, typography and composition.
+        review_context = (
+            "\n\n## Caller-selected native-copy review\n\n"
+            f"{json.dumps(profile)}\n\n"
+            "For whole-creative acceptance, every native text fragment must meet this "
+            "nominal em floor at the selected viewing width. Plan copy length, space and "
+            "type together before authoring: nominal em = resolved font size × display "
+            "width / canonical page width. This is an explicit internal evaluation "
+            "condition, not a platform specification or a readability guarantee. "
+            "Inspect the final preview for actual readability.\n"
+        )
+    (workspace / "brief.md").write_text(header + prompt + review_context, encoding="utf-8")
 
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
@@ -349,7 +366,7 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
         )
 
     (workspace / "state.json").write_text(
-        json.dumps(initial_turn_state(tools, prompt), indent=2), encoding="utf-8"
+        json.dumps(state, indent=2), encoding="utf-8"
     )
 
     # RC: references.md ONLY when references rode the turn. No references → this

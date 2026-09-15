@@ -1426,3 +1426,55 @@ views, knowledge reads, new artwork and saved scene/timing. Initial4roles allsol
 orchestrator. Home request setup timestamps are separate from generation dispatch;
 the intervening developer validation wait is not model generation time. No quality
 pass, imagery result, new family qualification or personalization pilot claimed yet.
+
+Task35 terminal: all four ordinary generations completed and were opened in their
+existing signed-in browser tabs. Runtime seconds: Clue629.974, AWS551.077,
+Google724.118, Conduit355.176. Three self-accepted; Google retained an unaccepted
+draft. All missed240s. Actual image receipts use original website/imported ad
+assets with matching digests, not previous generated artwork. Catalogs expose
+all ready ad references (Clue0/AWS11/Google10/Conduit12). Generated ancestry
+metadata fix committed6d6dc531. Final source/latency reports are in ignored
+repeatable-directions-20260915/. Parent visually inspected all four final PNGs;
+Conduit grouping improved but support remains tiny. Google retains a disconnected
+art rectangle and unsupported copy scope. No independent family qualification.
+Browser tab-retention marking was rejected by automatic review; no workaround
+attempted. Read-only browser verification succeeded. No artifact approval or
+source-state change was attempted by that tab-lifecycle call.
+
+Task36 start: user explicitly rejects the tiny supporting text in fresh Conduit
+and says it affects every creative. Resolved sizes at360px proxy: Clue8.33,
+AWS6.67, Google7.17, Conduit7.0. This is authored/effective sizing, not a new
+renderer defect. Existing compact-feed-v1 numeric floor is disabled locally and
+only8px when selected. Add explicit readable-feed-v1 at12px for scoped local feed
+tests, disclose it in initial context, retain empty defaults/legacy behavior.
+Shared component/review guidance now explains viewing-scale sizing and dependent
+reflow while preserving approved headline/artwork. Existing delivery tests50/50
+passed; profile boundary/delivery tests and four normal readability repairs next.
+Keep old protected documents and separate brand/ABM work unchanged. Account pilot
+and reusable variant product remain proposed, not implemented.
+
+Task36 closing (2026-09-15): four normal scoped repairs finished; inner seconds
+Clue207.331/AWS224.870/Google244.392/Conduit148.762. Independent scene comparison
+preserved all words, fills, source assets and entire headline/logo/artwork nodes.
+Agent support sizes42/40/43/42. Parent viewed all4finalPNGs. User rejectedConduit42
+as too large and manually approved32; native browser inspector verified32/400
+and preservedwords/color. Do not count42orusercorrected32 as autonomous success.
+Inspection-created targetchip cleared; no canvas edits made by us afterward.
+Shared guidance revised to balance legibility AND subordinate hierarchy against
+actual fonts/references/usercorrections; no universal32,size ratio or feedfloor.
+Proposedreadable-feed-v1/12pxfloor and12–14range withdrawn; originaloptional
+compact-feed-v1 unchanged/defaultblank. Initialselectedprofile delivery retained.
+Final258tests0skips23.95s pluschangedtestlint/diffcheckpassed. No new generation
+yettests latestguidance. Evidence/feed-readability-repair-20260915/ captures both
+frozenagentresults and subsequentusercorrection; qualificationstill0/18.
+Liveprofilegap: designjobs executeinlineinoldfleet workers, so API-onlyoverride
+neverreachedthem. All4receiptsprofileNone; no numericgateenforcementclaim. After
+readonlyidlecheck171fleetdone/82designsuccess/5historicfailed, restoredAPIblank
+withledger-ownedrestartsession24007/PID5969;4workersunchanged. Healthconfirmed
+28e1d9988ecd. SandboxedDB/curlblocked, scopedescalationssucceeded. Onepython
+commandwasabsent; correctedpython3. No productionorproviderdiagnosticcalls.
+Lateststatus/ABMsourceaudit:fetch_logoalreadyinsoloset, Brandfetch+websitevariant
+ladderandindependentplacementexist. Durableaccountbinderiswebpath; fullscene
+account handoff/contentbatchnotvalidated, contentpackageisscaffold. Recommend
+bounded1advertiserx3evidence-readyaccountsx3conceptsnextwithoutwaiting18families;
+source/accountbranchreviewbeforeintegration. Noaccountpilotlaunched. Goalactive.

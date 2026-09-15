@@ -37,6 +37,82 @@ def test_absent_profile_env_defaults_off(monkeypatch, tmp_path):
     assert runtime_config_module.AgentRuntimeConfig.from_env(tmp_path).scene_review_profile == ""
 
 
+@pytest.mark.parametrize(("size", "passes"), [(21, False), (23.999, False), (24, True), (32, True)])
+def test_selected_profile_checks_support_at_its_documented_floor(tools, size, passes):
+    enable_profile(tools)
+    deliver_profile(tools)
+    add_text(tools, "support", "Explore the possibilities", y=480)
+    assert json.loads(tools.compile_dsl_block(f"#support font_size({size})"))["compile"][
+        "status"
+    ] == "ok"
+    render(tools)
+    planned = direction()
+    planned["copy"].append({
+        "id": "support", "role": "support", "text": "Explore the possibilities",
+        "claim_kind": "positioning", "evidence_refs": [],
+    })
+    planned["layers"].append({
+        "id": "support", "kind": "native_text", "copy_id": "support",
+        "purpose": "A supporting invitation below the headline",
+        "placement": {"x": 0.1, "y": 0.45, "width": 0.8, "height": 0.1},
+    })
+    validated = validate(tools, planned)
+    body = review(validated)
+    supporting = copy.deepcopy(body["direction_review"]["copy_occurrences"][0])
+    supporting["copy_id"] = "support"
+    supporting["fragments"][0].update(node_id="support", text="Explore the possibilities")
+    body["direction_review"]["copy_occurrences"].append(supporting)
+
+    assert supporting["readability"]["status"] == "readable"
+    assert (submit(tools, body)["status"] == "ok") is passes
+    if passes:
+        result = json.loads(accept(tools))
+        assert result["status"] == "accepted"
+        assert result["acceptance_receipt"]["native_copy_review_profile"] == {
+            "id": "compact-feed-v1", "display_width_px": 360, "minimum_nominal_em_px": 8,
+        }
+    else:
+        assert accept(tools).startswith("REFUSED")
+
+
+def test_selected_profile_is_delivered_in_initial_workspace_gather(tools):
+    from lumen_agent.fs_backend import AgentWorkspaceBackend
+    from lumen_agent.workspace import scaffold_workspace
+
+    # Use the existing profile to isolate early delivery from adding a new profile.
+    enable_profile(tools)
+    descriptor = deliver_profile(tools)
+    manifest = json.loads(descriptor.read_text())
+    manifest["review_profiles"]["compact-feed-v1"]["minimum_nominal_em_px"] = 11
+    descriptor.write_text(json.dumps(manifest))
+    workspace = scaffold_workspace(tools, "Make a square ad")
+    backend = AgentWorkspaceBackend(tools.config.workspace_root, active_run_id=tools.run_id)
+    state, brief = backend.download_files([
+        f"/{tools.run_id}/workspace/state.json", f"/{tools.run_id}/workspace/brief.md",
+    ])
+    assert state.error is None and brief.error is None
+    assert json.loads(state.content)["native_copy_review_profile"] == {
+        "id": "compact-feed-v1", "display_width_px": 360, "minimum_nominal_em_px": 11,
+    }
+    # The first-gather brief must expose the selected delivered values too.
+    assert "compact-feed-v1" in brief.content.decode()
+    assert "360" in brief.content.decode() and "11" in brief.content.decode()
+    assert workspace == tools.trace_dir / "workspace"
+
+
+@pytest.mark.parametrize(("bundle", "profile"), [("candidate", ""), ("legacy", "unknown")])
+def test_initial_workspace_does_not_add_an_unselected_profile(tools, bundle, profile):
+    from lumen_agent.workspace import scaffold_workspace
+
+    object.__setattr__(tools.config, "scene_skill_bundle", bundle)
+    object.__setattr__(tools.config, "scene_review_profile", profile)
+    workspace = scaffold_workspace(tools, "Make a square ad")
+    assert "native_copy_review_profile" not in json.loads((workspace / "state.json").read_text())
+    assert (workspace / "brief.md").read_text() == (
+        f"# Design turn brief — run {tools.run_id}\n\nMake a square ad"
+    )
+
+
 def measure(scene, page_id="square", row=None, display_width=360):
     if row is None:
         row = native_copy.observe_native_text(scene, page_id)["occurrences"][0]

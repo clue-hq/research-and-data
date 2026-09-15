@@ -30,6 +30,33 @@ not become separate islands merely because each fits its own frame.
 
 Work through the actual copy and its dependent layout together:
 
+Size supporting copy with the approved headline, actual font and inspected brand
+reference before allocating the image region. A kit's body role may describe
+website text, not a scaled ad. Establish both the first read and a comfortable
+second read: tiny support fails legibility, but enlarging it until it competes
+with the headline fails hierarchy. Consider visible letter size, weight,
+contrast, copy length and grouping together; nominal font size alone cannot
+choose the right relationship across different faces or brands.
+
+When a user supplies a corrected composition, inspect its current resolved
+typography and keep that relationship for this design's repairs and requested
+variants. The saved scene is evidence of that local choice, not a global brand
+preference or proof that another run has learned it. For a fresh design, inspect
+the references and preference context actually available to that run. Do not
+transfer one brand's chosen size or type ratio to unrelated brands or formats.
+
+The diagnostic `resolved_font_size * viewing_width / page_width` explains how
+type scales; it is not a universal size target. If a caller explicitly selected
+a numeric review profile, satisfy it alongside visual hierarchy; report a
+conflict with an approved treatment rather than silently overriding that
+treatment. With no selected profile, do not invent a numeric acceptance floor.
+Preserve an approved headline and change support only as far as needed for the
+second read. Give it enough width and height to wrap comfortably; a natural
+single line is also valid. Use a supplied size token or checked explicit edit,
+then inspect the resolved size because a role may override an authored fallback.
+Reflow related spacing after type changes and compare the whole composition at
+the same viewing scale; stop when the explanation is readable and subordinate.
+
 1. Use brand tokens and the kit's available families/weights. Choose headline
    width from meaningful phrase breaks and the intended focal scale. Choose
    support width from its own words and available space; it need not match the

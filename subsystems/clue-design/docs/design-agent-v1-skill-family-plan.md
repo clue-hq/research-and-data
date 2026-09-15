@@ -17,7 +17,9 @@ status supersedes their older coverage counts and pending-restart statements.
 | Reference-driven generation | Selected originals, provider input/output custody, crops, generated components and independent scene layers exercised | Implemented; source relevance and treatment still inconsistent |
 | Native editing/export | Prior fresh four-brand batch passed editing, undo, save/reload and PNG/SVG export checks | Verified for that frozen batch; not automatically every subsequent revision |
 | Approved taste across fresh runs | Body-free selection and per-call scoped preference delivery are implemented and tested; production wiring is default-off pending output-history erasure and governed preference capture | Staged; no automatic taste learning claim |
-| Finished creative within 240 seconds | Latest four revisions took 464.247–635.172 seconds | 0/4 pass |
+| Finished creative within 240 seconds | Latest fresh four-brand generation took Clue 629.974s, AWS 551.077s, Google 724.118s, Conduit 355.176s | 0/4 pass; scoped repairs are a separate measure |
+| Supporting-copy balance | Four scoped repairs enlarged support; user rejected Conduit's 42px result and approved their own 32px correction | Shared guidance corrected; fresh autonomous validation pending |
+| One-to-one ABM | Existing scene agent exposes logo fetching and independent placement; complete account-to-scene handoff and account batch not validated | Ready for a bounded pilot, not full account workflow |
 | Production promotion | Candidate remains local on codex/design-agent-v1 | Not promoted or pushed |
 
 Selected/rendered families: type-led-positioning, authentic-product,
@@ -42,9 +44,10 @@ them was necessary, but successive diagnostic batches are not a clean causal
 comparison or proof that skill expansion improved the customer outcome. Model
 self-acceptance repeatedly disagreed with independent/user visual review.
 
-Next priority is a narrow measured repair of actual palette matching, readable
-copy grouping and preservation of approved styles; no more catalog expansion
-until that behavior is dependable. The separate 60-call Task26 diagnostic has
+Next priority is to preserve the user's approved typography and test one shared
+account-adaptation capability on a bounded pilot; do not wait for all 18 families
+or expand the catalog further first. Readability, hierarchy, brand treatment and
+grounded copy remain joint requirements. The separate 60-call Task26 diagnostic has
 made zero calls and remains unapproved. Brand Asset Intelligence, Head of ABM,
 website work and production release remain outside this implementation.
 
@@ -2473,3 +2476,58 @@ bytes were not located, so byte parity remains unproven. AWS still reports its
 missing Arial asset and deterministic Inter fallback. No new generation or
 family qualification occurred. Console echo suppression passed actual echo,
 reconfiguration, concurrency and inherited-context regression tests.
+
+## Tasks 35–36: fresh directions, text sizing and user calibration
+
+Four fresh ordinary requests used the solo design agent with real source images
+delivered to image generation. The selected input digests match original website
+or imported ad assets, not prior generated artwork. The candidate source catalog
+now discloses recorded generated ancestry, including derived crops; that is not
+independent advertiser authentication. The available ready ad counts were Clue
+0, AWS 11, Google 10 and Conduit 12. These field tests did not isolate every
+library variable and do not establish a causal improvement from the skills.
+
+All four fresh generations missed 240s. Three self-accepted; Google retained an
+unaccepted draft. Model-call spans consumed 77–86% of runtime; there were no exact
+duplicate file reads in this batch. Late image requests and review recovery also
+contributed. Conduit's treatment was closer to the reference but support was tiny;
+Google still had disconnected composition and a copy-support gap. The authoring
+receipts and visuals are in ignored `repeatable-directions-20260915/`.
+
+Four normal scoped size repairs completed in Clue 207.331s, AWS 224.870s, Google
+244.392s and Conduit 148.762s of inner design runtime. The parent independently
+compared the final scenes: every original word, fill, source asset and complete
+headline/logo/artwork node was preserved. Support became 42/40/43/42px respectively
+on 1080-wide pages. Those numbers describe what happened, not desired defaults.
+The user rejected Conduit's 42px size as too large and manually changed it to
+32px; native browser inspection confirmed 32, regular weight and the preserved
+words/color. The user approves that version. This is a human-corrected result,
+not an autonomous first-delivery quality pass.
+
+The proposed `readable-feed-v1` 12px-at-360 numeric floor and 12–14px working range
+were withdrawn because they would reject the user's approved treatment and
+encourage overcorrection. Shared composition/review instructions now evaluate
+legibility and subordinate hierarchy together using the actual font, brand
+references, same-scale before/after views and supplied user correction. They
+explicitly avoid a universal size, ratio or inherited cross-brand preference.
+The original optional `compact-feed-v1` is unchanged and defaults stay empty.
+Selected-profile delivery in initial state/brief is retained and tested.
+
+Live receipts caught a configuration gap: API-only restart did not change the
+inline design jobs' preexisting fleet-worker settings. All four scoped repairs
+ran with no numeric profile; they exercised shared instructions, not the proposed
+gate. After idle checks, the API's temporary override was removed; the workers
+were never changed. Health returned engine stamp `28e1d9988ecd`. The final focused
+suite passed 258 tests with no skips; test lint and diff checks passed. No fresh
+generation has yet validated the latest hierarchy correction. Full-family
+qualification and fresh downloaded export-byte parity remain open.
+
+Next: use an approved editable direction as the base for requested variations,
+then one advertiser with three evidence-ready accounts through three concepts.
+Reuse the existing `fetch_logo` tool and scene bindings; keep advertiser identity
+separate from target identity and do not imply a customer/partner relationship.
+Explicit account name/domain plus supplied verified context can support an
+isolated pilot before account-selector integration. The durable logo/account
+binder found today belongs to the web route; do not call that proof of the scene
+handoff. Content scaling remains scaffolded. Audit the account branch before
+pulling/integrating it; no such merge or one-to-one pilot has occurred here yet.

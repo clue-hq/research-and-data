@@ -1,6 +1,19 @@
 # Scene review
 
 Judge the actual current rendered scene at full view and final placement size.
+Read the supporting sentence in the compact placement preview without referring
+back to the larger image or the known copy. If it is only decipherable when
+enlarged, mark that occurrence unreadable and repair its resolved size, measure
+and contrast. A readable headline does not certify its smaller explanation.
+For a support-size repair, compare that occurrence before and after at the same
+viewing scale, and verify that the approved headline and artwork are unchanged.
+Then check the hierarchy in the whole composition: does the headline still lead,
+or has enlarged support or its CTA become a competing headline? A larger number
+does not establish an improvement. Compare against a supplied user correction
+when available and retain that design's successful size, measure and grouping;
+do not use it as a universal brand or platform rule. Reject both unreadably small
+copy and an overcorrection that weakens the intended reading order.
+Use `knowledge/scene/components.md` for sizing and dependent reflow.
 Check idea/copy, evidence and attribution, hierarchy, readable contrast, brand
 identity, authentic product crop, independent editable layers and reference
 treatment. Compare the reference's visual invariants against the actual rendered
