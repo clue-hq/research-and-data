@@ -68,7 +68,7 @@ Design note: `docs/superpowers/specs/2026-09-14-telemetry-and-cost-observability
 | 2 | `2026-09-15-lane3-slice2-roots.md` | tracing + Sentry installed at the platform API and fleet worker; run context bound at the roots; the trace rides the fleet payload; env parity | 1 (sequencing only) |
 | 3a | `2026-09-15-lane3-slice3a-langfuse-foundation.md` | Langfuse on the slice 2 provider; the LangChain handler + run registry in the turn tuple; receipt ids (migration); redaction; `make langfuse-check`; the streamed `answering_model` fix | 2 |
 | 3b | `2026-09-15-lane3-slice3b-langfuse-richness.md` | research agent + exit judge traces; gateway generations/embeddings; provider-caller observations with cost; governed-tool/retriever observations; guardrails and events | 3a |
-| 4 | (to write) | entity tags on traces | 3 |
+| 4 | `2026-09-15-lane3-slice4-entity-tags.md` | entity tags on traces: the job's subject/writes/members, the read tools' served entities; the erasure query | 3b |
 
 Held, high priority: the design subsystem (R12). Separate lane after 1–3: ARV2 erasure (R13).
 

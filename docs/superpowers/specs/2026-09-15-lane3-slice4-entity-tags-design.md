@@ -1,7 +1,7 @@
 # Lane 3 slice 4 — entity tags on traces — design
 
 **Status:** approved in chat 2026-09-15 (D1 tags plus metadata; D2 the job tags its subject and
-what it wrote). Parent: the telemetry and cost design note
+what it wrote); executed 2026-09-15. Parent: the telemetry and cost design note
 (`2026-09-14-telemetry-and-cost-observability-design.md`, §5.3 "Entity tagging", §6, §9 slice
 4). Rulings R5 (erasure reachability), R11 (legacy lane untouched), R13 (the erasure lane owns
 deletion). Builds on slice 3 (`2026-09-15-lane3-slice3-langfuse-design.md`).

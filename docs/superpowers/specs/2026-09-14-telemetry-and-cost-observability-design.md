@@ -269,6 +269,10 @@ not recorded anywhere, because nothing today needs to know which entities a turn
 **What lane 3 does.** The entity tagging in §5.3: the ARV2 job and the ARV2 read tools tag the
 current trace with the entity ids they wrote or returned. After that, "every trace that carried
 contact X" is one Langfuse query by metadata.
+Shipped 2026-09-15 (slice 4): the query is *traces with tag `entity:<id>`* (or metadata `entities`
+contains `<id>`); the job's trace carries its subject, every entity it wrote about and each
+committee member; a turn's trace carries every entity `read_account_research` / `read_claims`
+served.
 
 **What lane 3 does not do.** The erasure itself. ARV2 has no `erase` today; the only one in the
 tree is the old lane's `compliance/dsar.py`, which tombstones old-lane claim rows and is off limits
@@ -323,6 +327,7 @@ overlay pins them on.
 | Cost readers for the legacy resolvers | never: R11; they are visible as httpx spans with latency only |
 | **Design subsystem: root instrumentation, Langfuse on the design leg, ledger rows for its paid calls (§5.4)** | **HIGH PRIORITY.** The moment the co-founder's design agent-structure changes are finalised. Until then the pilot cost picture omits the design leg's image and ad-DNA spend (R12) |
 | ARV2 erasure endpoints (D10) + Langfuse trace deletion | second priority; its own lane after lane 3 slices 1–3 (R13) |
+| Non-graph gateway completions (value narrative, exit judge, Stage-0 extractor, judges) and the old lane's Sumble / Exa tier-3 provider calls on a Postgres ledger | founder ruling 2026-09-15: leave as is; they are visible in Langfuse with settled cost (gateway path) or as httpx spans (old-lane resolvers); the cost read does not see them |
 
 ## 9. Slices, in order
 
@@ -348,8 +353,10 @@ overlay pins them on.
    work-guard guardrail. Live proof owed (founder-triggered, after the keys are set and the stack
    restarted): one chat turn and one research job opened in Langfuse; the receipt's
    `langfuse_trace_id` and a ledger row's `extras_json.langfuse_trace_id` open those traces.
-4. **Entity tagging on traces** (§6): the ARV2 job and read tools tag traces with entity ids.
-   Small, ARV2-only. The Langfuse deletion step is handed to the erasure lane (R13).
+4. **Entity tagging on traces — DONE 2026-09-15** (design: `2026-09-15-lane3-slice4-entity-tags-design.md`):
+   `clue_obs.langfuse.tag_entities`; the job tags its subject, its writes and its committee
+   members; the two read tools tag what they served. The Langfuse deletion step is the erasure
+   lane's (R13).
 
 **Held, high priority (R12):** the design subsystem slice (§5.4: root instrumentation, Langfuse on
 the design leg, provider-caller seam moved to a shared package, image provider and ad-DNA call on
