@@ -22,6 +22,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_core import to_jsonable_python
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentFinalizeEnvelope,
@@ -253,11 +254,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cost_usd=cost_usd,
             cost_source=cost_source,
         )
-        # The provider served us: whatever it was refusing or failing at is over. The recorder
-        # swallows its own errors, so a closed incident can never break a turn that worked.
-        if self._incidents_conn_factory is not None:
-            async with self._incidents_conn_factory() as conn:
-                await record_success(conn, "openrouter", now=datetime.now(UTC))
+        # The provider served us: whatever it was refusing or failing at is over.
+        await self._with_incidents(
+            lambda conn: record_success(conn, "openrouter", now=datetime.now(UTC)),
+            what="close",
+        )
 
     async def on_llm_error(
         self,
@@ -285,15 +286,38 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         )
         # After the receipt, never before: the recorder counts this provider's recent failures
         # out of the ledgers, and this call's own row has to be one of them (ruling PI-4).
-        if failure is not None and self._incidents_conn_factory is not None:
-            async with self._incidents_conn_factory() as conn:
-                await record_failure(
+        if failure is not None:
+            await self._with_incidents(
+                lambda conn: record_failure(
                     conn,
                     failure,
                     surface="chat_turn",
                     workspace_id=self._request.constitution.workspace_id,
                     now=datetime.now(UTC),
-                )
+                ),
+                what="open",
+            )
+
+    async def _with_incidents(
+        self, action: Callable[[AsyncConnection], Awaitable[object]], *, what: str
+    ) -> None:
+        """Run one incident write, or none, and never raise into the callback that observes it.
+
+        The recorder swallows its own errors, but opening the connection is outside it: a
+        database that refuses a connection must not fail a model call that otherwise worked.
+        With no factory (the unit-test handler) there is nothing to write and nothing to say.
+        """
+        if self._incidents_conn_factory is None:
+            return
+        try:
+            async with self._incidents_conn_factory() as conn:
+                await action(conn)
+        except Exception:
+            log.exception(
+                "provider_incident.recorder_failed",
+                what=what,
+                turn_id=str(self._request.turn_id),
+            )
 
     async def _record(
         self,

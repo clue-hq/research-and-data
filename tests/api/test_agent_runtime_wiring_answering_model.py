@@ -243,3 +243,54 @@ def test_an_unclassified_failure_keeps_the_class_name_code(
     error_code, calls = _error_code_without_a_factory(monkeypatch, RuntimeError("boom"))
     assert error_code == "runtime_error"
     assert calls == []
+
+
+@asynccontextmanager
+async def _a_database_that_refuses() -> AsyncIterator[object]:
+    raise RuntimeError("db down")
+    yield object()  # pragma: no cover - unreachable, kept so the function is a generator
+
+
+def _handler_over_a_refusing_database(turns: _Turns) -> DurableAgentModelCallHandler:
+    return DurableAgentModelCallHandler(
+        request=_request(),  # type: ignore[arg-type]
+        requested_model="x-ai/grok-4.6",
+        initial_sequence=1,
+        artifacts=_Artifacts(),  # type: ignore[arg-type]
+        turns=turns,  # type: ignore[arg-type]
+        incidents_conn_factory=_a_database_that_refuses,  # type: ignore[arg-type]
+    )
+
+
+def test_a_database_that_refuses_a_connection_cannot_fail_the_model_callback() -> None:
+    # The incident is the observation, never the event. If the connection itself cannot be
+    # opened, the turn carries on and the receipt still says what the provider did.
+    turns = _Turns()
+    handler = _handler_over_a_refusing_database(turns)
+    failed_run = UUID("00000000-0000-0000-0000-00000000b55b")
+    served_run = UUID("00000000-0000-0000-0000-00000000b66b")
+
+    async def drive() -> None:
+        await handler.on_chat_model_start({}, [[HumanMessage(content="hi")]], run_id=failed_run)
+        await handler.on_llm_error(_Denied(), run_id=failed_run)
+        await handler.on_chat_model_start({}, [[HumanMessage(content="hi")]], run_id=served_run)
+        await handler.on_llm_end(
+            LLMResult(
+                generations=[
+                    [
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="ok",
+                                response_metadata={"clue_answering_model": "x-ai/grok-4.6"},
+                            )
+                        )
+                    ]
+                ]
+            ),
+            run_id=served_run,
+        )
+
+    asyncio.run(drive())
+    failed, served = turns.receipts
+    assert failed.error_code == "provider_refused:openrouter:key_limit"
+    assert served.answering_model == "x-ai/grok-4.6"
