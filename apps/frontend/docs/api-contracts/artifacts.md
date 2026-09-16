@@ -48,4 +48,5 @@ Account filter/group options come only from accounts on artifacts. Open editor c
 under the artifact's project titled with the artifact's title and navigates with `?open=` and
 `surface=web|ad`. Open source conversation → the origin thread. Copy link → the editor route
 `/projects/:id/artifacts/:artifactId`. Downloads: ads = real engine export (PNG 1x–4x, SVG, PDF);
-web pages = the thumbnail PNG only. Create in chat → `/`.
+web pages = Export, the design API's self-contained static-site zip
+(`GET /documents/{id}/web/export` through the design BFF). Create in chat → `/`.

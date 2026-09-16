@@ -35,8 +35,10 @@ import styles from "./artifact-library.module.css";
  * rather than deep-linking a thread the operator has not got.
  *
  * Downloads split by kind: an ad exports the *saved document* through the
- * design API (every format and scale the editor offers), while a web artifact
- * offers the one thing that genuinely exists for it — its preview PNG.
+ * design API (every format and scale the editor offers) and can also take its
+ * original image, while a web artifact has one Export — the design API's
+ * self-contained static-site zip (founder ruling 2026-09-16), the thing a
+ * marketer can actually publish, rather than a picture of the page.
  */
 export function ArtifactLibraryPreview({
   actions,
@@ -320,31 +322,31 @@ export function ArtifactLibraryPreview({
                   ) : null}
                 </div>
               ) : (
+                <Button
+                  size="md"
+                  variant="default"
+                  className={styles.fullWidthButton}
+                  disabled={actions.busy}
+                  onClick={() => actions.exportWeb(artifact)}
+                >
+                  <Download size={14} />
+                  Export
+                </Button>
+              )}
+              {artifact.kind === "ad" ? (
                 <a
                   className={buttonVariants({
                     size: "md",
-                    variant: "default",
-                    className: styles.fullWidthButton,
+                    variant: "transparent",
+                    className: styles.textAction,
                   })}
+                  href={imagePath}
                   download={exportFilename(artifact.title, "PNG")}
-                  href={artifact.imagePath}
                 >
                   <Download size={14} />
-                  Download preview (PNG)
+                  Original image
                 </a>
-              )}
-              <a
-                className={buttonVariants({
-                  size: "md",
-                  variant: "transparent",
-                  className: styles.textAction,
-                })}
-                href={imagePath}
-                download={exportFilename(artifact.title, "PNG")}
-              >
-                <Download size={14} />
-                Original image
-              </a>
+              ) : null}
               {/* The dummy's "Download table (.csv)" action is not lifted: a
                   library row is a design document (web or ad) and never carries
                   `tableContent`, so the block could not render, and the CSV

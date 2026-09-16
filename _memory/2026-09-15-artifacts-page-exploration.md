@@ -150,6 +150,7 @@ runbook ports are held by the san-salvador stack; stop it and run `./scripts/dev
 re-migrated the lane DB (synthetic residue only); seed two projects with design documents before the walk.
 
 **Deferred minors (ledger):** no index on `archived_at` / the workspace keyset path; the marks table's
-by_user index duplicates the PK prefix; for a web artifact "Download preview (PNG)" and "Original
-image" fetch the same file (dummy kept both); a refused header rename is console-only; the read's
-non-null `account_entity_id` path is untested; frontend_read CORS is GET/OPTIONS (writes ride the BFF).
+by_user index duplicates the PK prefix; web artifacts now Export the design API's static-site zip
+(ruling 2026-09-16); the editor share menu's own ZIP option is still unwired and could target the
+same route; a refused header rename is console-only; the read's non-null `account_entity_id` path
+is untested; frontend_read CORS is GET/OPTIONS (writes ride the BFF).

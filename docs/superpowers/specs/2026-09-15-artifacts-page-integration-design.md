@@ -29,7 +29,7 @@ Founder rulings from the 2026-09-15 discussion fix the scope:
 | Page-load model | The whole library is server-rendered by walking the cursor |
 | Project documents (plan, ICP, personas) | Not in the library |
 | Account attribution | Name and domain from the design account row, plus a link to the Accounts screen when the account-entity join exists (Option B); the account filter lists only accounts that appear on artifacts |
-| Download | Ads use the real engine export (PNG 1x–4x, SVG, PDF); web pages offer "Download preview (PNG)" only, the card's thumbnail, with no format menu |
+| Download | Ads use the real engine export (PNG 1x–4x, SVG, PDF); web pages offer one Export — the design API's self-contained static-site zip (`GET /documents/{id}/web/export` through the design BFF) — with no format menu (founder ruling 2026-09-16 supersedes the thumbnail-only ruling) |
 | CSV control | The dummy's conditional stays; no design artifact carries table rows, so it never renders |
 | Preview | The dummy's dialog, unchanged |
 | Open editor | Creates a new chat thread under the artifact's project and opens the artifact as an editor tab there, via a new read-once `?open=` param (ratified here; the forbidden `?artifact=` form is not revived) |
@@ -229,7 +229,7 @@ collections come from the server, never from local state.
 | Open source conversation | `projectChatHref(projectId, originThreadId)` |
 | Copy artifact link | `projectArtifactHref(projectId, id)` on the current origin |
 | Download (ad) | The existing export menu; `POST /documents/{id}/export` through the design BFF with the scene-export profile adapter; PNG 1x–4x, SVG, PDF |
-| Download preview (web) | The thumbnail URL with a download filename; no menu |
+| Export (web) | `GET /documents/{id}/web/export` through the design BFF; the self-contained static-site zip, named by the response's `content-disposition`; no menu |
 | Rename | `PUT /documents/{id}/title`; then refresh |
 | Save / Unsave | `PUT /frontend/v1/artifacts/{id}/saved` |
 | Archive / Restore | `PUT /documents/{id}/archived`; then refresh and close |
