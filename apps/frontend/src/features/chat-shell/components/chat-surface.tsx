@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
@@ -21,6 +21,7 @@ import type {
 } from "@/features/projects/model/project-workspace";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
+import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
 import {
@@ -38,6 +39,7 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
+import { openArtifactFromParam } from "../model/open-artifact-param";
 import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
@@ -305,6 +307,25 @@ export function ChatSurface({
     reloadSceneCanvas();
   }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
 
+  // The header's rename is a document write, so it goes through the design API
+  // and the tab takes the title the backend STORED. The rename advances the
+  // document version, so both canvases reload and the server-fetched feed is
+  // re-read — nothing is left holding the pre-rename document.
+  const setArtifactTitleFor = shell.setArtifactTitleFor;
+  const onArtifactRenamed = useCallback(
+    (artifactId: string, persisted: string) => {
+      setArtifactTitleFor(artifactId, persisted);
+      reloadWebCanvas();
+      reloadSceneCanvas();
+      router.refresh();
+    },
+    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+  );
+  const renameArtifact = useArtifactRename({
+    documentIds,
+    onRenamed: onArtifactRenamed,
+  });
+
   // Open a named design tab on each new/updated file from this chat. Baseline the
   // server-fetched feed at mount so replayed history cannot open old files.
   const knownArtifactIds = useRef<Set<string> | null>(null);
@@ -338,6 +359,16 @@ export function ChatSurface({
     if (opening === null) return;
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
+
+  // `?open=` (2026-09-15): land with one artifact tab open. Read once (the ref), resolved against
+  // the server-fetched feed, and stripped by the write-back below.
+  const openParamHandled = useRef(false);
+  useEffect(() => {
+    if (openParamHandled.current) return;
+    openParamHandled.current = true;
+    const opening = openArtifactFromParam({ openId: searchParams.get("open"), artifacts: feedArtifacts });
+    if (opening) openArtifact(opening);
+  }, [feedArtifacts, openArtifact, searchParams]);
 
   // The controller distinguishes live writes from late history replay using server cursors.
   // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
@@ -373,12 +404,15 @@ export function ChatSurface({
 
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
-    // future) survive; only the three pane keys are ours to rewrite.
+    // future) survive; only the pane keys are ours to rewrite.
     const query = new URLSearchParams(searchParams.toString());
     query.delete("surface");
     query.delete("edit");
     query.delete("selection");
     query.delete("document");
+    // `?open=` is read once at mount and never written back: stripping it here canonicalizes the
+    // URL to the ordinary `surface=web|ad` state the opened tab produces.
+    query.delete("open");
     if (surfaceParam === "plan" && selectedDocumentPath) query.set("document", selectedDocumentPath);
     if (surfaceParam) query.set("surface", surfaceParam);
     if (editParam) query.set("edit", editParam);
@@ -751,9 +785,11 @@ export function ChatSurface({
         }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
-            shell.setArtifactTitleFor(shell.activeArtifactId, title);
+            renameArtifact(shell.activeArtifactId, title);
           }
         }}
+        // The tab strip's rename of a NON-active tab is unchanged local state
+        // (it carries no document handle of its own here).
         onRenameArtifactFor={shell.setArtifactTitleFor}
         onToggleMaximized={shell.toggleArtifactMaximized}
         onTogglePanel={shell.toggleArtifactPanel}

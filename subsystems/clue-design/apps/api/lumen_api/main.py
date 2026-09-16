@@ -149,7 +149,9 @@ from .models import (
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
+    RenameDocumentRequest,
     SetAgentInstructionsRequest,
+    SetDocumentArchivedRequest,
     SetLayoutManagedEditingRequest,
     SetWebNoindexRequest,
     AttachBrandKitRequest,
@@ -2559,6 +2561,46 @@ def create_app(
             "document_id": document_id,
             "web_noindex": written["value"],
         }
+
+    @app.put("/documents/{document_id}/title")
+    def rename_document(
+        document_id: str,
+        payload: RenameDocumentRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Artifacts page (2026-09-15): rename from the library preview or the editor header."""
+        require_document(repo, document_id)
+        written = run_design_tool(
+            "design_rename_document",
+            {"document_id": document_id, "title": payload.title},
+            workspace_id=store_workspace_id(repo),
+            refusals={
+                **_document_refusals(document_id),
+                # A blank title is refused by the tool gate, BEFORE the DAL's own ValueError, so
+                # the caller gets this typed 422 rather than a 500 out of the store.
+                "design_document_title_blank": lambda message: HTTPException(
+                    status_code=422,
+                    detail={"code": "document.title_blank", "message": message},
+                ),
+            },
+        )
+        return {"schema_version": 1, "document_id": document_id, "title": written["value"]}
+
+    @app.put("/documents/{document_id}/archived")
+    def set_document_archived(
+        document_id: str,
+        payload: SetDocumentArchivedRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Artifacts page (2026-09-15): archive/restore; publish is independent by ruling."""
+        require_document(repo, document_id)
+        written = run_design_tool(
+            "design_set_document_archived",
+            {"document_id": document_id, "enabled": payload.archived},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        return {"schema_version": 1, "document_id": document_id, "archived_at": written["value"]}
 
     @app.put("/documents/{document_id}/scene")
     def replace_scene(

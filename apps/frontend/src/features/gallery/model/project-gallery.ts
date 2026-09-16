@@ -9,20 +9,24 @@ import { documentEditedLabel, type ProjectDocument } from "@/features/projects/m
 export type GalleryType = GalleryCollateralType | "documents";
 
 export type GalleryLayout = "grid" | "list";
-export type GalleryGroupBy = "none" | "account" | "type";
+export type GalleryGroupBy = "none" | "account" | "type" | "project";
 export type GalleryDateRange = "all" | "today" | "last-7-days" | "last-30-days";
 export type GallerySort =
   | "last-viewed"
   | "edited-desc"
   | "edited-asc"
   | "name-asc"
-  | "name-desc";
+  | "name-desc"
+  | "account-asc"
+  | "type-asc"
+  | "project-asc";
 export type GalleryMenu = "sort" | "group" | "filter" | null;
 
 export interface GalleryFilters {
   accountIds: string[];
   collateralTypes: GalleryType[];
   dateRange: GalleryDateRange;
+  projectIds?: string[];
   sizeCategories: GallerySizeCategory[];
 }
 
@@ -53,6 +57,8 @@ export interface GalleryArtifact {
   /** Absent for a leg-derived document — no generation run produced it. */
   originRunId?: string;
   originThreadId?: string;
+  /** The owning project — set by the library, absent in a project gallery. */
+  project?: { id: string; title: string };
   /** G-H: absent when the document records no page size — the card shows no
    * size rather than a measurement nobody took. */
   size?: {
@@ -148,6 +154,10 @@ function defaultSize(artifact: ProjectArtifact): GalleryArtifact["size"] {
 export function normalizeGalleryArtifact(artifact: ProjectArtifact): GalleryArtifact & { source: ProjectArtifact } {
   const collateralType = artifact.collateralType ?? defaultCollateralType(artifact);
   const updatedAt = artifact.updatedAt ?? "2026-08-16T12:00:00.000Z";
+  // The library hands its own `LibraryArtifact` rows through this same
+  // normalizer, so the owning project is read structurally: a project gallery's
+  // artifacts carry neither field and normalize to no project at all.
+  const library = artifact as ProjectArtifact & { projectId?: string; projectTitle?: string };
   return {
     account: defaultAccount(artifact),
     collateralType,
@@ -159,6 +169,9 @@ export function normalizeGalleryArtifact(artifact: ProjectArtifact): GalleryArti
     lastViewedAt: artifact.lastViewedAt ?? updatedAt,
     originRunId: artifact.originRunId,
     originThreadId: artifact.originThreadId,
+    project: library.projectId
+      ? { id: library.projectId, title: library.projectTitle ?? "Untitled project" }
+      : undefined,
     size: artifact.size ?? defaultSize(artifact),
     source: artifact,
     title: artifact.title,
@@ -208,6 +221,9 @@ export function filterGalleryArtifacts({
 }) {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return artifacts.filter((artifact) => {
+    if (filters.projectIds?.length && !filters.projectIds.includes(artifact.project?.id ?? "")) {
+      return false;
+    }
     if (
       filters.accountIds.length > 0 &&
       (!artifact.account || !filters.accountIds.includes(artifact.account.id))
@@ -235,6 +251,7 @@ export function filterGalleryArtifacts({
       artifact.account?.name ?? "",
       artifact.collateralTypeLabel,
       artifact.size?.label ?? "",
+      artifact.project?.title ?? "",
     ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery));
   });
 }
@@ -244,6 +261,12 @@ export function sortGalleryArtifacts(
   sort: GallerySort,
 ) {
   return [...artifacts].sort((left, right) => {
+    if (sort === "account-asc")
+      return (left.account?.name ?? "").localeCompare(right.account?.name ?? "") || left.title.localeCompare(right.title);
+    if (sort === "type-asc")
+      return left.collateralTypeLabel.localeCompare(right.collateralTypeLabel) || left.title.localeCompare(right.title);
+    if (sort === "project-asc")
+      return (left.project?.title ?? "").localeCompare(right.project?.title ?? "") || left.title.localeCompare(right.title);
     if (sort === "name-asc") return left.title.localeCompare(right.title);
     if (sort === "name-desc") return right.title.localeCompare(left.title);
     if (sort === "edited-asc") return left.updatedAt.localeCompare(right.updatedAt);
@@ -266,18 +289,22 @@ export function groupGalleryArtifacts(
     // rather than inventing vocabulary (pending a founder ruling on wording).
     // G-H: a document that records no channel groups in the same honest
     // bucket an unattributed one does — empty label, no invented vocabulary.
-    const id = groupBy === "account"
-      ? (artifact.account?.id ?? "unattributed")
-      : (artifact.collateralType ?? "untyped");
-    const label = groupBy === "account"
-      ? (artifact.account?.name ?? "")
-      : artifact.collateralType === undefined
-        ? ""
-        : artifact.collateralType === "microsite"
-          ? "Websites"
-          : artifact.collateralType.includes("ad")
-            ? "Ads"
-            : COLLATERAL_TYPE_LABELS[artifact.collateralType];
+    const id = groupBy === "project"
+      ? (artifact.project?.id ?? "unassigned")
+      : groupBy === "account"
+        ? (artifact.account?.id ?? "unattributed")
+        : (artifact.collateralType ?? "untyped");
+    const label = groupBy === "project"
+      ? (artifact.project?.title ?? "No project")
+      : groupBy === "account"
+        ? (artifact.account?.name ?? "")
+        : artifact.collateralType === undefined
+          ? ""
+          : artifact.collateralType === "microsite"
+            ? "Websites"
+            : artifact.collateralType.includes("ad")
+              ? "Ads"
+              : COLLATERAL_TYPE_LABELS[artifact.collateralType];
     const current = groups.get(id);
     if (current) {
       current.artifacts.push(artifact);
@@ -298,5 +325,6 @@ export function countActiveGalleryFilters(filters: GalleryFilters) {
   return filters.accountIds.length
     + filters.collateralTypes.length
     + filters.sizeCategories.length
+    + (filters.projectIds?.length ?? 0)
     + (filters.dateRange === "all" ? 0 : 1);
 }

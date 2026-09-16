@@ -867,8 +867,10 @@ async def erase_platform_user(
     """Erase mutable profile/provider values while preserving internal audit references.
 
     The Clue ``user_id`` and membership rows survive because domain receipts must remain
-    attributable. External subjects and accepted invitation addresses are replaced with stable,
-    non-personal tombstones; every authentication mapping and membership is revoked.
+    attributable. A row that is purely this human's own metadata — the artifacts library's
+    saved/last-viewed marks — is deleted outright instead, since nothing downstream cites it.
+    External subjects and accepted invitation addresses are replaced with stable, non-personal
+    tombstones; every authentication mapping and membership is revoked.
 
     ``workspace.name``/``brand.name`` deliberately survive even though self-serve provisioning
     copies the submitted company name into both: a workspace is a shared org object other
@@ -922,10 +924,18 @@ async def erase_platform_user(
         ),
         {"user_id": user_id},
     )
+    # The mark rows are this human's own metadata about documents (saved, last-viewed) and carry
+    # no audit value, so erasure deletes them outright rather than tombstoning: the document
+    # survives, the fact that this person saved it does not.
+    marks = await conn.execute(
+        text("DELETE FROM design_document_user_mark WHERE user_id = :user_id"),
+        {"user_id": user_id},
+    )
     return IdentityErasureResult(
         user_id=user_id,
         auth_identities_revoked=identities.rowcount,
         memberships_revoked=memberships.rowcount,
         invitation_addresses_erased=invitations.rowcount,
         provisioning_websites_erased=provisionings.rowcount,
+        artifact_marks_deleted=marks.rowcount,
     )

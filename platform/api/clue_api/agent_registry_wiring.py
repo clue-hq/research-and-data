@@ -289,6 +289,11 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # durable writes can the platform name?" stays a complete statement (the ad-assets
     # precedent below). Granting it later is a reviewed profile version bump.
     "design_set_web_noindex": (),
+    # Artifacts page (founder ruling 2026-09-15): the library's two curation writes — rename and
+    # archive — are human acts from the library or the editor header. Registered UNGRANTED and
+    # human-only like `design_set_web_noindex`; granting later is a reviewed profile bump.
+    "design_rename_document": (),
+    "design_set_document_archived": (),
     "design_start_agent_turn": (AgentRole.DESIGN,),
     "design_start_web_turn": (AgentRole.DESIGN,),
     "design_undo_document": (AgentRole.DESIGN,),
@@ -662,6 +667,11 @@ _HUMAN_ONLY_TOOLS = frozenset(
         # human act by founder ruling — the tool is registered ungranted, and this membership
         # makes the human-only claim structural rather than a fact about today's grant table.
         "design_set_web_noindex",
+        # Artifacts page (founder ruling 2026-09-15): renaming or archiving a document in the
+        # library is the person's act, from the library grid or the editor header. Same shape as
+        # the noindex stamp above — registered ungranted, and human-only structurally.
+        "design_rename_document",
+        "design_set_document_archived",
         "confirm_icp",
         "confirm_project_product",
         "confirm_account_research_directive",

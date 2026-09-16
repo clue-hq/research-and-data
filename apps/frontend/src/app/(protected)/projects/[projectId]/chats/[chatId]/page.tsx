@@ -14,6 +14,9 @@ interface ProjectChatPageProps {
   searchParams: Promise<{
     edit?: string;
     handoff?: string;
+    // `?open=<artifactId>` (ratified 2026-09-15): the artifacts library's hand-off. The chat
+    // surface reads it once from `useSearchParams` and strips it; the server passes nothing on.
+    open?: string;
     selection?: string;
     surface?: string;
   }>;

@@ -328,6 +328,8 @@ _MATRIX: dict[str, tuple[str, object]] = {
         ("design_runtime_not_configured",),
     ),
     "design_set_web_noindex": ("precondition", ("design_runtime_not_configured",)),
+    "design_rename_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_document_archived": ("precondition", ("design_runtime_not_configured",)),
     "design_start_agent_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_start_web_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_undo_document": ("precondition", ("design_runtime_not_configured",)),
@@ -754,6 +756,8 @@ def _bodies() -> dict[str, dict[str, object]]:
             "document_id": "doc_matrix",
             "enabled": True,
         },
+        "design_rename_document": {"document_id": "doc_matrix", "title": "Renamed"},
+        "design_set_document_archived": {"document_id": "doc_matrix", "enabled": True},
         "design_replace_scene": {
             "document_id": "doc_matrix",
             "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
@@ -1406,7 +1410,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # alias because it is the only version of itself, and granted to nobody until a reviewed
     # profile version pins it. The gallery read `read_artifact@1` is the next such name
     # (133 -> 134), composed on nothing but the ambient connection factory.
-    assert len(registry.names()) == 134
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    assert len(registry.names()) == 136
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1441,7 +1447,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
     # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
     # next (153 -> 154).
-    assert len(registry) == 154
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    assert len(registry) == 156
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1477,7 +1485,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # alias because it is the only version of itself, and granted to nobody until a reviewed
     # profile version pins it. The gallery read `read_artifact@1` is the next such name
     # (133 -> 134), composed on nothing but the ambient connection factory.
-    assert len(registry.names()) == 134
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    assert len(registry.names()) == 136
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1499,7 +1509,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
     # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
     # next (153 -> 154).
-    assert len(registry) == 154
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    assert len(registry) == 156
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

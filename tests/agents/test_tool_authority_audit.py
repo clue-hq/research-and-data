@@ -146,7 +146,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # rail's own row, plus the page JSON when asked for. Both registered ungranted and both are
     # GRANTED at `head-of-abm@v56`, the reviewed bump that pins their contracts and mints the
     # manual chapter that teaches them; stage0-interview v33 §7c is the procedure for all four.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 134
+    # Artifacts page (2026-09-15) adds the library's two curation writes, `design_rename_document`
+    # and `design_set_document_archived` (134 -> 136), both UNGRANTED and human-only: renaming or
+    # archiving a document is an act of the person at the library grid or the editor header.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 136
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
@@ -212,7 +215,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 54
+    assert len(design_grants) == 56
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a
@@ -232,9 +235,17 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # reason from the ad-assets lane's. That lane is machine-invoked and merely unplanned by any
     # model; this one is HUMAN-ONLY by ruling — clearing a published ABM page's robots meta is an
     # explicit act of the person, so no role may hold the tool that can do it.
-    HUMAN_ONLY_DESIGN = {"design_set_web_noindex"}
+    # Artifacts page (founder ruling 2026-09-15) puts the library's two curation writes on the
+    # same footing: rename and archive are human acts from the library or the editor header.
+    HUMAN_ONLY_DESIGN = {
+        "design_set_web_noindex",
+        "design_rename_document",
+        "design_set_document_archived",
+    }
     assert set(design_grants) >= HUMAN_ONLY_DESIGN
     assert all(design_grants[name] == () for name in HUMAN_ONLY_DESIGN)
+    assert C6_AGENT_TOOL_AUTHORITY["design_rename_document"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["design_set_document_archived"] == ()
     assert all(
         roles == (AgentRole.DESIGN,)
         for name, roles in design_grants.items()

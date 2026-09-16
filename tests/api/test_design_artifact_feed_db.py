@@ -262,6 +262,9 @@ def test_each_project_lists_only_the_documents_its_own_threads_worked_on(
                 "created_at",
                 "updated_at",
                 "origin_thread_id",
+                "artifact_type",
+                "width_px",
+                "height_px",
             }
             assert datetime.fromisoformat(item["created_at"]).tzinfo is not None
             assert datetime.fromisoformat(item["updated_at"]).tzinfo is not None
@@ -481,7 +484,8 @@ def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
                 ("doc_gallery_scene", "ad"),
                 ("doc_gallery_web", "web"),
             ]
-            # The wire shape is unchanged — ``doc_kind`` is read, never leaked.
+            # ``doc_kind`` is read, never leaked: the wire says ``kind``, and the rest
+            # is the G-H card set (artifact type and page size ride along).
             assert set(feed[0]) == {
                 "id",
                 "project_id",
@@ -493,6 +497,9 @@ def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
                 "created_at",
                 "updated_at",
                 "origin_thread_id",
+                "artifact_type",
+                "width_px",
+                "height_px",
             }
 
     run_async(scenario())
@@ -625,5 +632,41 @@ def test_a_forty_document_project_serves_its_whole_feed_in_order(
             assert [item["id"] for item in feed] == [
                 f"doc_gallery_bulk_{index:02d}" for index in range(40)
             ]
+
+    run_async(scenario())
+
+
+def test_an_archived_document_leaves_the_project_feed(require_chat_db: None) -> None:
+    """Artifacts-page spec §3.5: archive is a gallery state, so the feed drops the row."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-archived", name="Gallery")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            for document_id, title in (("doc_live", "Live"), ("doc_archived", "Archived")):
+                await _seed_design_document(
+                    conn, workspace_id=workspace_id, document_id=document_id, title=title
+                )
+                thread_id = await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_{document_id}",
+                )
+                await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    document_id=document_id,
+                )
+            await conn.execute(
+                text("UPDATE design_document SET archived_at = now() WHERE id = 'doc_archived'")
+            )
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [row["id"] for row in feed] == ["doc_live"]
 
     run_async(scenario())
