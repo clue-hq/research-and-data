@@ -114,3 +114,17 @@ shows the approved test invitee as a joined Member with the current joined date.
 send/receipt/signup/acceptance proof; the invitee's own selected workspace/redirect remains a
 separate unobserved check. Role/removal/re-admission live checks and Research fields/Pages work
 remain open as listed in the plan. No additional invitations, role changes or remote push.
+
+Research fields design review: user requested a preview before approving implementation. Created
+an interactive conversation preview, `research-fields-preview.html`, in this thread's authorized
+visualizations directory (2026/09/14/01a0a13b-d662-7fb3-b5d3-c1aef092523a). It demonstrates the
+Accounts/Contacts overview, field list, inline Create form and collision feedback, inline edits,
+and two-step retirement. Samples only; no application API calls or application source edits.
+Design review controls offer Admin/Member presentation and comfortable/compact row spacing.
+
+Browser verification passed for sample create, duplicate error, description edit/save, retirement,
+and 390px/1024px layouts. The standalone renderer blocks form submission by design, so preview
+Create uses a local button handler; this is not an application implementation decision. Initial
+serve needed sandbox escalation; one exact-label locator missed required-field text and was
+replaced with its observed input ID. Research fields visual approval and live integration remain
+pending. User-facing preview is inline; temporary browser/server used only for verification.
