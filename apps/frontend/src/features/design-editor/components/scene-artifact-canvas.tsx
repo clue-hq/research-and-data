@@ -14,7 +14,7 @@ import {
   type RefObject,
 } from "react";
 import type { CanvasKit, Surface, TypefaceFontProvider } from "canvaskit-wasm";
-import { AlertTriangleIcon } from "lucide-react";
+import { AlertTriangleIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { textareaCommitKey } from "@/features/chat-shell/components/inspector-field-draft";
 import { sceneEngineBanners } from "../adapter/scene-engine-banners";
 import { effectiveScenePageId, scenePagelessNotice } from "../adapter/scene-pageless";
@@ -2080,12 +2080,10 @@ function SceneDocumentCanvas({
  * and degraded text measurement is worse still, because the ad keeps rendering
  * while its geometry is approximate.
  *
- * The ruling was "as is from the MVP editor, no separate banner", so this is
- * the design subsystem's own `EngineDisabledBanner` / `HeuristicMeasurementBanner`
- * (`EditorChrome.tsx:200-288`) ported whole: same lucide alert glyph, same
- * copy (asserted against that file by `scene-engine-banners.test.ts`), same
- * geometry, and the read-only state gets the SAME treatment as the degraded one
- * rather than a canvas-specific variant.
+ * The diagnostic copy still comes from the MVP editor (asserted by the adapter
+ * tests). The platform presentation uses Clue product tokens. Advisory details
+ * can be expanded without obscuring the creative by default; critical failures
+ * start expanded and retain an assertive announcement.
  *
  * It lives here, inside the canvas stage, rather than in the shell: the stage
  * is the one surface both mounts share, so the artifact route and the chat
@@ -2116,13 +2114,20 @@ function SceneEngineBanners({
   onInsetChange: (inset: number) => void;
 }) {
   const layerRef = useRef<HTMLDivElement | null>(null);
+  const [dismissedSignature, setDismissedSignature] = useState<string | null>(null);
   const banners = sceneEngineBanners(
     engineStatus,
     measurementStatus,
     fontDiagnostics,
     derivation,
   );
-  const bannerCount = banners.length;
+  // Dismiss only this set of diagnostics. New issues must remain discoverable.
+  const signature = JSON.stringify(banners);
+  const bannerCount = dismissedSignature === signature ? 0 : banners.length;
+  const hasError = banners.some((banner) => banner.severity === "error");
+  const noticeLabel = hasError
+    ? "Canvas needs attention"
+    : `${bannerCount} rendering notice${bannerCount === 1 ? "" : "s"}`;
   useEffect(() => {
     const element = layerRef.current;
     if (bannerCount === 0 || !element) {
@@ -2153,40 +2158,49 @@ function SceneEngineBanners({
   }
   return (
     <div className={styles.bannerLayer} ref={layerRef}>
-      {banners.map((banner) => (
-        <div
-          className={styles.banner}
-          data-scene-banner={banner.kind}
-          key={banner.kind}
-          role="alert"
-        >
-          <AlertTriangleIcon
-            aria-hidden="true"
-            className={styles.bannerIcon}
-            size={18}
-          />
-          <div className={styles.bannerBody}>
-            <strong className={styles.bannerTitle}>{banner.title}</strong>
-            <span className={styles.bannerText}>{banner.body}</span>
-            {/* The chip ellipses (upstream's own `white-space: nowrap`), and
-                our command string is longer than upstream's, so the DETAIL —
-                the two engine hashes, the diagnosis — is what gets cut. The
-                title restores it in full on hover without touching the approved
-                visual; the console diagnostic still carries it too. */}
-            <code
-              className={styles.bannerCommand}
-              title={
-                banner.detail
-                  ? `${banner.command} · ${banner.detail}`
-                  : banner.command
-              }
-            >
-              <span className={styles.bannerCommandName}>{banner.command}</span>
-              {banner.detail ? ` · ${banner.detail}` : null}
-            </code>
+      <div
+        className={styles.banner}
+        data-severity={hasError ? "error" : "warning"}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+      >
+        <details className={styles.bannerDisclosure} key={signature} open={hasError}>
+          <summary className={styles.bannerSummary} aria-label={noticeLabel}>
+            <AlertTriangleIcon aria-hidden="true" className={styles.bannerIcon} size={14} />
+            <span role={hasError ? "alert" : "status"}>
+              {noticeLabel}
+            </span>
+            <ChevronDownIcon aria-hidden="true" className={styles.bannerChevron} size={14} />
+          </summary>
+          <div className={styles.bannerList}>
+            {banners.map((banner) => (
+              <div className={styles.bannerBody} data-scene-banner={banner.kind} key={banner.kind}>
+                <strong className={styles.bannerTitle}>{banner.title}</strong>
+                <p className={styles.bannerText}>{banner.body}</p>
+                <div className={styles.bannerGuidance}>
+                  {banner.kind === "engine-disabled" || (measurementStatus === "heuristic" && banner.kind === "heuristic-measurement") ? (
+                    <code className={styles.bannerCommand}>{banner.command}</code>
+                  ) : (
+                    <span className={styles.bannerCommandName}>{banner.command}</span>
+                  )}
+                  {banner.detail && <p className={styles.bannerText}>{banner.detail}</p>}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      ))}
+        </details>
+        <button
+          type="button"
+          className={styles.bannerDismiss}
+          aria-label="Dismiss rendering notices"
+          title="Dismiss rendering notices"
+          onClick={() => setDismissedSignature(signature)}
+        >
+          <XIcon aria-hidden="true" size={14} />
+        </button>
+      </div>
     </div>
   );
 }

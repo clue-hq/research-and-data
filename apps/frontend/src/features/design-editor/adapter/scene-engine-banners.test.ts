@@ -205,6 +205,28 @@ it("names unresolved layout even when the font shaper is available", () => {
   assert.match(banner.body, /could not confirm every text measurement/);
 });
 
+it("keeps blocking failures critical and advisory rendering issues as warnings", () => {
+  assert.equal(sceneEngineBanners(disabled("load_failed", null), "skia")[0].severity, "error");
+  assert.equal(sceneEngineBanners(ACTIVE, "heuristic")[0].severity, "warning");
+  assert.equal(sceneEngineBanners(ACTIVE, "unsettled")[0].severity, "warning");
+
+  for (const severity of ["warning", "error"] as const) {
+    const diagnostic = {
+      severity, phase: "brand" as const, code: "FONT_UNAVAILABLE",
+      message: "A font is unavailable.", subject: { kind: "document" as const }, hint: null,
+    };
+    assert.equal(sceneEngineBanners(ACTIVE, "skia", [diagnostic])[0].severity, severity);
+    assert.equal(sceneEngineBanners(ACTIVE, "skia", [], {
+      status: "ready", diagnostics: [diagnostic],
+    })[0].severity, severity);
+  }
+
+  // A blocked canvas remains critical even before a diagnostic arrives.
+  assert.equal(sceneEngineBanners(ACTIVE, "skia", [], {
+    status: "invalid", diagnostics: [],
+  })[0].severity, "error");
+});
+
 it("classifies blocked render context separately from fonts and does not claim a rendered fallback", () => {
   const banners = sceneEngineBanners(ACTIVE, "heuristic", [{
     severity: "warning", phase: "brand", code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",

@@ -1929,3 +1929,26 @@ five actual download proofs. All existing review tabs retained for continuation.
   Further live quality/speed qualification requires new provider authorization;
   do not restart generation under the consumed eleven-test approval or spin
   more status-only goal turns. Keep the original objective and completion bar.
+
+2026-09-15 Task51 closing: subtle, dismissible editor diagnostics
+- User requested Clue-themed errors, then quieter presentation and an X. Replaced
+  the literal pink/red floating cards with one 32px neutral notice disclosure in
+  the stage corner, using existing product surface/border/type/status/focus tokens.
+  Full diagnostic text wraps in a scrollable panel; only shell commands use mono.
+- Warnings start collapsed; critical failures start expanded. X dismisses the
+  current diagnostic signature for this mounted document; new diagnostics or a
+  reload can show it again. No underlying error is cleared. Stop pointer/click/
+  wheel bubbling so operating the notice does not manipulate the artwork.
+- Browser verified on AWS3022 product creative: collapsed/expanded states, full
+  hint visibility, named summary, keyboard Tab/Enter and mouse X dismissal, no
+  reappearance while opening/closing Export. Reload reopened the gallery, so the
+  existing artifact was reopened through its real gallery card. Left notices
+  dismissed and existing local workspace tabs retained. No generation or DB edits.
+- Checks: severity regression red then green; adapter12/12; design-system build;
+  full lint0errors2existingwarnings; final focused lint; production build including
+  TypeScript passed. Manual full tsc still reports55 diagnostics in existing test
+  files (same count previously recorded), not the edited files. tsx CLI IPC hit
+  sandbox EPERM; node --import tsx avoids the IPC wrapper. Initial CSS write used
+  the wrong cwd and made no edit; corrected path, verified live hot reload.
+- Original creative qualification goal stays blocked on the separate provider
+  approval; this UI task does not alter its status or authorize provider calls.
