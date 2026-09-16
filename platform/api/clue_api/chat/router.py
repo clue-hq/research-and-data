@@ -156,8 +156,8 @@ from clue_api.chat.schemas import (
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.design_leg_wiring import (
+    design_document_card_fields,
     design_legs_for_threads,
-    document_page_pixels,
     project_design_documents,
 )
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
@@ -264,22 +264,21 @@ def _design_artifact_list_item(
     rather than something false; its name is its identity.
     """
 
-    pixels = document_page_pixels(document.get("pages_json"))
-    artifact_type = document.get("artifact_type")
+    fields = design_document_card_fields(document)
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
         document_id=str(document["id"]),
-        kind="web" if document["doc_kind"] == "web" else "ad",
+        kind=fields["kind"],
         title=str(document["title"]),
         status=str(document["status"]),
         current_version_id=str(document["current_version"]),
         created_at=document["created_at"].isoformat(),
         updated_at=document["updated_at"].isoformat(),
         origin_thread_id=str(document["origin_thread_id"]),
-        artifact_type=str(artifact_type) if artifact_type else None,
-        width_px=pixels[0] if pixels else None,
-        height_px=pixels[1] if pixels else None,
+        artifact_type=fields["artifact_type"],
+        width_px=fields["width_px"],
+        height_px=fields["height_px"],
     )
 
 

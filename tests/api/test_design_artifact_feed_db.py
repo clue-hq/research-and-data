@@ -627,3 +627,39 @@ def test_a_forty_document_project_serves_its_whole_feed_in_order(
             ]
 
     run_async(scenario())
+
+
+def test_an_archived_document_leaves_the_project_feed(require_chat_db: None) -> None:
+    """Artifacts-page spec §3.5: archive is a gallery state, so the feed drops the row."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-archived", name="Gallery")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            for document_id, title in (("doc_live", "Live"), ("doc_archived", "Archived")):
+                await _seed_design_document(
+                    conn, workspace_id=workspace_id, document_id=document_id, title=title
+                )
+                thread_id = await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_{document_id}",
+                )
+                await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    document_id=document_id,
+                )
+            await conn.execute(
+                text("UPDATE design_document SET archived_at = now() WHERE id = 'doc_archived'")
+            )
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [row["id"] for row in feed] == ["doc_live"]
+
+    run_async(scenario())

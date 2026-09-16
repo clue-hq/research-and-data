@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -483,6 +484,9 @@ async def project_design_documents(
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    # Artifacts-page spec §3.5: archived documents leave the gallery, the
+                    # project library and the agent's listing in one place — here.
+                    " WHERE d.archived_at IS NULL"
                     " ORDER BY d.updated_at DESC, d.id"
                 ),
                 {"ws": workspace_id, "project": project_id},
@@ -541,6 +545,96 @@ def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
             return int(width), int(height)
     return None
+
+
+def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
+    """What a listed design document says about itself, for every artifact list.
+
+    One helper for the per-project feed (chat router) and the workspace-wide library
+    (frontend_read.artifacts) so the two cannot disagree on kind, channel or size. Absent
+    stays ``None`` — a card states nothing rather than inventing (G-H).
+    """
+
+    pixels = document_page_pixels(document.get("pages_json"))
+    artifact_type = document.get("artifact_type")
+    return {
+        "kind": "web" if document["doc_kind"] == "web" else "ad",
+        "artifact_type": str(artifact_type) if artifact_type else None,
+        "width_px": pixels[0] if pixels else None,
+        "height_px": pixels[1] if pixels else None,
+    }
+
+
+async def workspace_design_documents(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    limit: int,
+    cursor_updated_at: datetime | None = None,
+    cursor_id: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Every design document any thread in the workspace worked on — the artifacts library.
+
+    The workspace-wide form of :func:`project_design_documents`: the same leg derivation
+    (latest leg wins as origin, one row per document), joined to the origin project for its
+    title, left-joined to ``design_account`` for the page's account when it has one, and
+    left-joined to the CALLER's own marks. Archived rows are included (the library partitions
+    them); keyset-paged newest-updated first. Fail-closed on workspace at the leg, the
+    document, the project and the account.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
+                    " d.created_at, d.updated_at, d.archived_at,"
+                    " origin.thread_id AS origin_thread_id, origin.project_id,"
+                    " p.name AS project_title,"
+                    " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.current_scene_json #>> '{pages}' AS pages_json,"
+                    " a.account_id, a.name AS account_name, a.domain AS account_domain,"
+                    " a.account_entity_id,"
+                    " COALESCE(m.saved, false) AS saved, m.last_viewed_at"
+                    " FROM ("
+                    "   SELECT DISTINCT ON (leg.document_id)"
+                    "          leg.document_id, leg.thread_id, t.project_id"
+                    "   FROM design_leg leg"
+                    "   JOIN agent_thread t"
+                    "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
+                    "   WHERE leg.workspace_id = :ws"
+                    "     AND leg.document_id IS NOT NULL"
+                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    " ) origin"
+                    " JOIN design_document d"
+                    "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    " JOIN project p"
+                    "   ON p.project_id = origin.project_id AND p.workspace_id = :ws"
+                    " LEFT JOIN design_account a"
+                    "   ON a.account_id = d.account_id AND a.workspace_id = :ws"
+                    " LEFT JOIN design_document_user_mark m"
+                    "   ON m.document_id = d.id AND m.workspace_id = :ws AND m.user_id = :user"
+                    " WHERE ("
+                    "   CAST(:cursor_updated_at AS timestamptz) IS NULL"
+                    "   OR (d.updated_at, d.id) < (:cursor_updated_at, CAST(:cursor_id AS text))"
+                    " )"
+                    " ORDER BY d.updated_at DESC, d.id DESC"
+                    " LIMIT :limit"
+                ),
+                {
+                    "ws": workspace_id,
+                    "user": user_id,
+                    "cursor_updated_at": cursor_updated_at,
+                    "cursor_id": cursor_id,
+                    "limit": limit,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(dict(row) for row in rows)
 
 
 def _canonical_json(value: object) -> bytes:
