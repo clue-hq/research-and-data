@@ -425,6 +425,13 @@ from clue_core.primitives import (
     new_project_run_id,
     new_run_id,
 )
+from clue_core.provider_failures import (
+    ProviderFailure,
+    classify_exception,
+    classify_http,
+    failure_code,
+    parse_failure_code,
+)
 from clue_core.research_directive import (
     EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
     RESEARCH_DIRECTIVE_BODY_MAX_BYTES,
@@ -815,6 +822,12 @@ __all__ = [
     "new_product_context_version_id",
     "new_readiness_decision_id",
     "new_readiness_override_id",
+    # provider failures
+    "ProviderFailure",
+    "classify_exception",
+    "classify_http",
+    "failure_code",
+    "parse_failure_code",
     # enums
     "EntityType",
     "ExtractionMethod",
