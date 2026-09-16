@@ -5,15 +5,22 @@ on its trailing usage chunk, and LangChain's chunk merge concatenates equal stri
 merged generation's ``model_name`` reads ``x-ai/grok-4.6x-ai/grok-4.6``. The gateway's
 ``clue_answering_model`` stamp is the platform's own record of who answered; the receipt reads
 it first and falls back to ``model_name`` only when the stamp is absent.
+
+The same handler is where a chat turn meets the provider, so the provider-incident tests live
+here too: a refused call names the refusal on the receipt and opens an incident, a served call
+closes one, and a handler built without a database still names the refusal.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
@@ -43,9 +50,8 @@ class _Turns:
         self.receipts.append(receipt)
 
 
-def _record(response_metadata: dict[str, Any], llm_output: dict[str, Any] | None) -> str | None:
-    turns = _Turns()
-    request = SimpleNamespace(
+def _request() -> SimpleNamespace:
+    return SimpleNamespace(
         turn_id=uuid4(),
         constitution=SimpleNamespace(
             execution_id=ExecutionId(uuid4()),
@@ -53,8 +59,12 @@ def _record(response_metadata: dict[str, Any], llm_output: dict[str, Any] | None
             role=AgentRole.HEAD_OF_ABM,
         ),
     )
+
+
+def _record(response_metadata: dict[str, Any], llm_output: dict[str, Any] | None) -> str | None:
+    turns = _Turns()
     handler = DurableAgentModelCallHandler(
-        request=request,  # type: ignore[arg-type]
+        request=_request(),  # type: ignore[arg-type]
         requested_model="x-ai/grok-4.6",
         initial_sequence=1,
         artifacts=_Artifacts(),  # type: ignore[arg-type]
@@ -100,3 +110,136 @@ def test_the_receipt_falls_back_to_model_name_without_a_stamp() -> None:
     assert _record({"model_name": "openai/gpt-5-mini"}, None) == "openai/gpt-5-mini"
     assert _record({}, {"model_name": "answering/model"}) == "answering/model"
     assert _record({}, None) == "x-ai/grok-4.6"
+
+
+class _Denied(Exception):
+    """What the OpenAI-compatible SDK raises when OpenRouter refuses on a weekly key cap."""
+
+    status_code = 403
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Error code: 403 - {'error': {'message': 'Key limit exceeded (weekly limit)', "
+            "'code': 403}}"
+        )
+
+
+def _handler_with_incidents(turns: _Turns) -> DurableAgentModelCallHandler:
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[object]:
+        yield object()
+
+    return DurableAgentModelCallHandler(
+        request=_request(),  # type: ignore[arg-type]
+        requested_model="x-ai/grok-4.6",
+        initial_sequence=1,
+        artifacts=_Artifacts(),  # type: ignore[arg-type]
+        turns=turns,  # type: ignore[arg-type]
+        incidents_conn_factory=factory,  # type: ignore[arg-type]
+    )
+
+
+def _watch_the_recorder(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, object]]:
+    """Both recorder entry points, replaced by what they were asked to record."""
+    calls: list[tuple[str, object]] = []
+
+    async def fake_failure(
+        conn: object, failure: Any, *, surface: str, workspace_id: str | None, now: Any
+    ) -> None:
+        calls.append(("failed", (failure.reason, surface, workspace_id)))
+
+    async def fake_success(conn: object, provider: str, *, now: Any) -> None:
+        calls.append(("succeeded", provider))
+
+    monkeypatch.setattr("clue_api.agent_runtime_wiring.record_failure", fake_failure)
+    monkeypatch.setattr("clue_api.agent_runtime_wiring.record_success", fake_success)
+    return calls
+
+
+def test_a_refused_model_call_records_the_provider_code_and_an_incident(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _watch_the_recorder(monkeypatch)
+    turns = _Turns()
+    handler = _handler_with_incidents(turns)
+    run_id = UUID("00000000-0000-0000-0000-00000000b22b")
+
+    async def drive() -> None:
+        await handler.on_chat_model_start({}, [[HumanMessage(content="hi")]], run_id=run_id)
+        await handler.on_llm_error(_Denied(), run_id=run_id)
+
+    asyncio.run(drive())
+    (receipt,) = turns.receipts
+    assert receipt.error_code == "provider_refused:openrouter:key_limit"
+    assert calls == [("failed", ("key_limit", "chat_turn", "ws_test"))]
+
+
+def test_a_completed_model_call_closes_the_providers_incidents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = _watch_the_recorder(monkeypatch)
+    turns = _Turns()
+    handler = _handler_with_incidents(turns)
+    run_id = UUID("00000000-0000-0000-0000-00000000b33b")
+
+    async def drive() -> None:
+        await handler.on_chat_model_start({}, [[HumanMessage(content="hi")]], run_id=run_id)
+        await handler.on_llm_end(
+            LLMResult(
+                generations=[
+                    [
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="ok",
+                                response_metadata={"clue_answering_model": "x-ai/grok-4.6"},
+                            )
+                        )
+                    ]
+                ]
+            ),
+            run_id=run_id,
+        )
+
+    asyncio.run(drive())
+    assert calls == [("succeeded", "openrouter")]
+
+
+def _error_code_without_a_factory(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> tuple[str | None, list[tuple[str, object]]]:
+    calls = _watch_the_recorder(monkeypatch)
+    turns = _Turns()
+    handler = DurableAgentModelCallHandler(
+        request=_request(),  # type: ignore[arg-type]
+        requested_model="x-ai/grok-4.6",
+        initial_sequence=1,
+        artifacts=_Artifacts(),  # type: ignore[arg-type]
+        turns=turns,  # type: ignore[arg-type]
+    )
+    run_id = UUID("00000000-0000-0000-0000-00000000b44b")
+
+    async def drive() -> None:
+        await handler.on_chat_model_start({}, [[HumanMessage(content="hi")]], run_id=run_id)
+        await handler.on_llm_error(error, run_id=run_id)
+
+    asyncio.run(drive())
+    (receipt,) = turns.receipts
+    return receipt.error_code, calls
+
+
+def test_without_a_factory_the_handler_records_nothing_but_still_names_the_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Classification is the receipt's business and does not need a database; only the incident
+    # does. A handler built without a connection factory still tells the truth on the row.
+    error_code, calls = _error_code_without_a_factory(monkeypatch, _Denied())
+    assert error_code == "provider_refused:openrouter:key_limit"
+    assert calls == []
+
+
+def test_an_unclassified_failure_keeps_the_class_name_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error_code, calls = _error_code_without_a_factory(monkeypatch, RuntimeError("boom"))
+    assert error_code == "runtime_error"
+    assert calls == []

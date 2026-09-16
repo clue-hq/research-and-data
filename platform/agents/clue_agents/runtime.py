@@ -27,6 +27,7 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_core.provider_failures import classify_exception, failure_code
 from clue_obs import get_logger
 
 __all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
@@ -263,6 +264,11 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
 
 
 def _error_code(exc: BaseException) -> str:
+    # A provider that refused or failed is named for what it did, not for the SDK class that
+    # carried the news: the transcript, the turn row and the incident record read the same code.
+    failure = classify_exception("openrouter", exc)
+    if failure is not None:
+        return failure_code(failure)
     value = re.sub(r"(?<!^)(?=[A-Z])", "_", type(exc).__name__).lower()
     return value or "agent_turn_failed"
 

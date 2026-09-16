@@ -67,7 +67,9 @@ from clue_api.product_context_authority import (
     trusted_product_scope_fields,
 )
 from clue_api.product_knowledge_privacy import stream_product_tool_receipt
+from clue_api.provider_incidents import record_failure, record_success
 from clue_api.turn_binding import trusted_turn_fields
+from clue_core.provider_failures import classify_exception, failure_code
 from clue_db import ConnFactory, transaction
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
@@ -146,6 +148,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         artifacts: DurableAgentArtifactStore,
         turns: DbAgentTurnJournal,
         langfuse_ids: LangfuseRunRegistry | None = None,
+        incidents_conn_factory: ConnFactory | None = None,
     ) -> None:
         self._request = request
         self._requested_model = requested_model
@@ -153,6 +156,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         self._artifacts = artifacts
         self._turns = turns
         self._langfuse_ids = langfuse_ids
+        # None where no database is in reach (the unit-test handler): the receipt still names the
+        # refusal, only the durable incident is skipped.
+        self._incidents_conn_factory = incidents_conn_factory
         self._lock = asyncio.Lock()
         self._pending: dict[UUID, tuple[int, datetime, float, ArtifactRef]] = {}
 
@@ -247,6 +253,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cost_usd=cost_usd,
             cost_source=cost_source,
         )
+        # The provider served us: whatever it was refusing or failing at is over. The recorder
+        # swallows its own errors, so a closed incident can never break a turn that worked.
+        if self._incidents_conn_factory is not None:
+            async with self._incidents_conn_factory() as conn:
+                await record_success(conn, "openrouter", now=datetime.now(UTC))
 
     async def on_llm_error(
         self,
@@ -257,6 +268,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
     ) -> None:
         del kwargs
         pending = self._pending.pop(run_id)
+        # What the provider did, when it is the provider that did something: a refusal or a
+        # fault is named ``provider_refused|failed:<provider>:<reason>`` on the receipt, so the
+        # row, the turn's failure code and the incident all read the same sentence. Anything the
+        # provider did not cause keeps the class-name code it always had.
+        failure = classify_exception("openrouter", error)
         await self._record(
             run_id=run_id,
             pending=pending,
@@ -265,8 +281,19 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             # constitution role is the truthful attribution for a failed call.
             role=self._request.constitution.role,
             answering_model=None,
-            error_code=_stable_error_code(error),
+            error_code=failure_code(failure) if failure is not None else _stable_error_code(error),
         )
+        # After the receipt, never before: the recorder counts this provider's recent failures
+        # out of the ledgers, and this call's own row has to be one of them (ruling PI-4).
+        if failure is not None and self._incidents_conn_factory is not None:
+            async with self._incidents_conn_factory() as conn:
+                await record_failure(
+                    conn,
+                    failure,
+                    surface="chat_turn",
+                    workspace_id=self._request.constitution.workspace_id,
+                    now=datetime.now(UTC),
+                )
 
     async def _record(
         self,
@@ -1319,11 +1346,13 @@ class DurableDeepAgentTurnRunner:
         turns: DbAgentTurnJournal,
         artifacts: DurableAgentArtifactStore,
         before_work: Callable[[], Awaitable[None]] | None = None,
+        conn_factory: ConnFactory = transaction,
     ) -> None:
         self._before_work = before_work
         self._runtime = runtime
         self._turns = turns
         self._artifacts = artifacts
+        self._conn_factory = conn_factory
 
     async def run(
         self,
@@ -1351,6 +1380,7 @@ class DurableDeepAgentTurnRunner:
             artifacts=self._artifacts,
             turns=self._turns,
             langfuse_ids=langfuse.registry if langfuse is not None else None,
+            incidents_conn_factory=self._conn_factory,
         )
         # FI Lane D D3: attaching the stream handler is also what opts *this* turn into the model's
         # streaming path (the handler is structurally a LangChain streaming consumer). With no
