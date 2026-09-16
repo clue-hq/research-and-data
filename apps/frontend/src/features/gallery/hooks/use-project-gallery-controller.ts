@@ -42,6 +42,16 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[], docume
     );
     return [...index.values()];
   }, [normalizedArtifacts]);
+  // Only the library's artifacts carry a project, so a project gallery's
+  // controller offers no project options at all.
+  const projects = useMemo(() => {
+    const index = new Map(
+      normalizedArtifacts.flatMap((artifact) =>
+        artifact.project ? [[artifact.project.id, artifact.project] as const] : [],
+      ),
+    );
+    return [...index.values()];
+  }, [normalizedArtifacts]);
   const visibleArtifacts = useMemo(
     () => sortGalleryArtifacts(
       filterGalleryArtifacts({
@@ -75,6 +85,7 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[], docume
 
   return {
     accounts,
+    projects,
     typeOptions: galleryTypeOptions(normalizedArtifacts),
     activeFilterCount: countActiveGalleryFilters(filters),
     filters,
@@ -100,6 +111,14 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[], docume
     },
     toggleCollateralType(collateralType: GalleryFilters["collateralTypes"][number]) {
       toggleArrayFilter("collateralTypes", collateralType);
+    },
+    toggleProject(projectId: string) {
+      setFilters((current) => ({
+        ...current,
+        projectIds: current.projectIds?.includes(projectId)
+          ? current.projectIds.filter((id) => id !== projectId)
+          : [...(current.projectIds ?? []), projectId],
+      }));
     },
     toggleSizeCategory(sizeCategory: GalleryFilters["sizeCategories"][number]) {
       toggleArrayFilter("sizeCategories", sizeCategory);
