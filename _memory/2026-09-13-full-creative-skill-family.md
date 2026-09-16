@@ -1784,3 +1784,27 @@ latency, browserdownloadproof. No newproviderrequests this turn.
   immediate speed fix. Low-reasoning comparison is only a future hypothesis.
 - Goal unchanged:11 saved,0 fullyqualified,1 within240s. This turn made local
   diagnostic progress; do not mark complete or claim fresh creative improvement.
+
+2026-09-15 Task46 closing (02:20 UTC September16):
+- Verified6 actual native browser PNG downloads by preview-base64 SHA256:
+  four product ads and ABMConduit/AWS. All11 UI toasts said exported, but
+  four awareness and ABMGoogle have no verified matching file. Corrected the
+  preliminary all11-delivered statement immediately after filesystem check.
+- Clueawareness failed3 baseline attempts; temporary URL-revoke2000ms also
+  failed. Restored original0ms and exact sourceSHA; no frontend patch retained.
+  Ignored browser-download-proof-20260916.json and experiment receipt retained.
+- Read-only audit: AWSv3 Arial body/CTA came from cookie/chat controls, faces
+  empty; early brandcard did not expose binding absence. Visible retained
+  marketing DOM/CSS supports AmazonEmberDisplay400 body/500 heroCTA. Existing
+  ready official-font records, local digests and intrinsic names/weights checked.
+- Offline matched2scene font replay: kit-only change does not rewrite concrete
+  scene styles. CheckedDSL on copies removes3 Arial fallback warnings, no
+  preflight errors. Initial unchanged-node assertion exposed only tiny computed
+  line-coordinate serialization; authored-node equality remains enforced.
+  Visual review catches missing U+2192 CTA glyph, confirmed absent in both
+  Display cmaps. Diagnostic kit is not publishable (prose/derived roles remain).
+  Sourcekitv3 and frozen scene files unchanged; no DBwrite or model request.
+- No productionfix claimed. Next: provenance+early font/glyph availability,
+  safe arrow vector/glyph, actual new kit version and editor/export proof.
+  Typography5call approval remains pending; qualification0/11full,1/11time.
+  Existing review tabs preserved. No engine/model/runtime setting changed.

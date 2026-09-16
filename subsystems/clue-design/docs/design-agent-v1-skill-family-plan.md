@@ -3162,3 +3162,53 @@ ceiling below 38.645 seconds per image case before required work. It cannot
 alone establish four-minute delivery. A same-model reasoning-effort comparison
 is a future bounded hypothesis after quality calibration, not an implemented
 optimization or authorization to lower quality. No runtime setting changed.
+
+### Task 46 — verify download delivery and isolate AWS font provenance
+
+Browser export verification now distinguishes a success toast from a saved file.
+All eleven tabs reported `PNG exported`; six actual newly downloaded PNGs were
+found and their bytes matched the corresponding browser preview data URLs by
+SHA-256. These are the four product ads plus the Clue-to-Conduit and Clue-to-AWS
+account ads. The four awareness ads and Clue-to-Google account ad remain
+unverified at the filesystem boundary. Three baseline attempts on Clue awareness
+through both browser-control methods produced no matching download. A temporary
+0-to-2000ms object-URL revocation experiment also produced no matching file after
+reload. It was reverted, with the original source hash restored. The result
+does not establish a revocation race or a permanent frontend fix. Evidence:
+`qualified-delivery-20260915/browser-download-proof-20260916.json` and
+`download-lifetime-experiment.json`. No saved creative was modified.
+
+The AWS audit identified a specific source-data failure. Frozen kit v3's body
+and CTA guidance came from cookie-warning/modal and chat-widget selectors.
+Its Arial body asset contains no faces, while the agent card does not expose
+that absence before direction. The original runs used the provided role tokens;
+their first Arial-to-Inter warnings arrived after direction, and the agent
+accepted the fallback. This is not evidence that the agent invented Arial.
+
+Retained official-source DOM, CSS and screenshot establish a different visible
+marketing role: Amazon Ember Display 400 for the What's new card body, and
+Display 500 for the hero CTA. Their existing workspace records point to official
+AWS font URLs; both local binaries match recorded digests and intrinsic font
+names/weights. This supports those website roles, not every AWS campaign's type.
+
+Matched offline native comparisons were prepared under
+`qualified-delivery-20260915/aws-font-correction/`. A kit-only replay did not
+change already-resolved scene fonts, as expected. Checked DSL font operations
+on copies of the two AWS scenes then removed all three Arial fallback warnings
+without preflight errors. Copy, type sizes and authored unrelated nodes were
+preserved; a float serialization difference in computed line geometry was
+excluded from the authored-node equality check after inspecting its exact diff.
+Visual review caught a remaining failure: the Display 500 face lacks U+2192,
+and the awareness CTA's arrow becomes a missing-glyph box. Both new font cmaps
+confirm that absence. No corrected kit or scene was published. Other derived
+Arial roles and contradictory brief/audit prose still need scoped correction;
+the diagnostic override is explicitly not a publishable kit.
+
+Next work is concrete: correct representative-role provenance, expose declared
+face/glyph gaps before direction, and use a supported glyph or an independent
+native vector for the arrow. Then verify the resulting version through the
+editor/export path. Do not treat this font diagnosis as cross-brand creative
+success or expand the skill catalog to compensate for incorrect brand data.
+The five typography review calls remain prepared and unsubmitted pending the
+separate requested approval; this turn made zero model/provider calls. Overall
+qualification remains **0/11 fully passing, 1/11 within four minutes**.
