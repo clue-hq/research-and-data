@@ -113,11 +113,11 @@ gates + walk). Execution not started.**
    `tableContent` (target-accounts cards are not design artifacts here).
 7. Preview dialog's "Open editor" link shape (`?kind=&edit=1`) vs our route.
 
-## Closing entry — implementation landed 2026-09-16 (branch `artifacts-page`, 26 commits 5a6582b20..02c4886b5)
+## Closing entry — implementation landed 2026-09-16 (branch `artifacts-page`, rebased onto research-streaming 2b0c8b977 on 2026-09-16; commits 2dccfb8ab..0c92ec7e4)
 
 Executed via subagent-driven development: Opus implementers, every review/verification/ruling by the
 controller first-hand (ledger: `.superpowers/sdd/2026-09-15-artifacts-page-integration/progress.md`).
-Rebased onto the san-salvador worktree's `research-streaming` (440b6a7db) before execution.
+Rebased onto the san-salvador worktree's `research-streaming` (440b6a7db) before execution, and again onto 2b0c8b977 after (clean, no overlapping files; SHAs above are post-rebase).
 
 **Landed.** Migrations `5f2bd1b4b82d` (`design_document.archived_at`) and `323081354b51`
 (`design_document_user_mark`); `GET /frontend/v1/artifacts` (leg-derived, workspace-wide, keyset
