@@ -1911,3 +1911,21 @@ five actual download proofs. All existing review tabs retained for continuation.
 - Goal still active:0/11 fullyqualified,1/11 within240s. Delivery evidence is now
   complete; typography judgment, fresh account-relevance qualification and speed
   remain open. Further catalog expansion and the separate brand agent remain out.
+
+2026-09-15 Task50 closing (UTC September16): typography comparison validity
+- Previous turn was progress: all eleven actual PNG download proofs completed.
+  Checked the remaining calibration warning with matched native renders at
+  21/32/42px. Changing only support height from fixed to hug removes LUMV0903
+  from the 32/42 variants; all three hug variants pass native preflight.
+- All three PNGs are byte-identical to the original prepared comparison images,
+  also confirmed by decoded RGBA equality. The old boxes did not clip pixels.
+  No prepared provider input changed; protected Conduit v19 matches its saved
+  snapshot before/after. No database write, global size rule or model call.
+  Evidence: typography-calibration/box-height-comparison.json and native copies.
+- This closes the comparison-validity question, not model-judgment calibration.
+  The original eleven tests remain 0 fully qualified / 1 within four minutes.
+  The five review-only provider calls have been pending through Tasks48–50;
+  the user has not answered that separate request. No provider job is running.
+  Further live quality/speed qualification requires new provider authorization;
+  do not restart generation under the consumed eleven-test approval or spin
+  more status-only goal turns. Keep the original objective and completion bar.

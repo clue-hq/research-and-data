@@ -3338,3 +3338,24 @@ question remains pending. Export evidence does not improve the frozen visual or
 latency verdict: **0/11 fully qualified, 1/11 within four minutes**. The next work
 is typography calibration and fresh account-specific quality/speed qualification,
 not further skill-family expansion.
+
+### Task 50 — validate the typography comparison before provider review
+
+The prepared 32px and 42px comparisons inherited a fixed text-box height that
+native preflight correctly flags as too short. A matched local test changed only
+that box to content-hugging height, separately at 21px, 32px and 42px. All three
+then passed native preflight. Their rendered PNG bytes are identical to the
+original prepared images; decoded pixel equality also passes. The inherited
+box did not clip pixels, so it does not confound the visual comparison.
+
+The protected user-approved Conduit version 19 is unchanged, as are the five
+prepared review requests and their images. Native copies and the exact equality
+checks are retained in `typography-calibration/box-height-comparison.json`. This
+does not establish which hierarchy the model will prefer and introduces no
+global font-size requirement or production code change.
+
+No provider call is running. The separately requested five-review authorization
+remains unanswered after three consecutive goal turns with that dependency.
+The original eleven-generation approval is consumed. Additional model judgment
+and fresh quality/speed qualification therefore remain gated on explicit provider
+authorization; the full objective and its criteria remain unchanged.
