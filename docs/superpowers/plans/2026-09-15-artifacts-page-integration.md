@@ -21,6 +21,21 @@
 - Commit locally at each task's end, on this branch (`artifacts-page`). Never push. No AI attribution in commit messages.
 - Honest absence everywhere: no fixture data in HTTP mode, no invented account, size, or channel, never a fallback to fixtures on failure.
 
+### Telemetry, logging and tracing standard (applies to every task)
+
+Verified against the codebase on 2026-09-16 (`libs/clue-obs`, `platform/api/clue_api/production_tracing.py`, `platform/toolbelt/clue_toolbelt/invoker.py`, `_memory/2026-09-14-lane3-telemetry-rulings.md`). New code follows it exactly; nothing new is invented.
+
+- **Loggers.** Platform Python: `from clue_obs import get_logger` and `log = get_logger("clue_api.<module path>")` at module scope. Never `logging.getLogger` (`tests/clue_obs/test_logging_discipline.py` fails the build) and never `print` (ruff T20). Design API Python (`lumen_api`): `from py_lumen_obs import get_logger` / the module's existing `api_logger`, as its routes already do.
+- **Event names and fields.** Dotted, snake-case, `<module>.<what_happened>` (`project_documents.document_unreadable`, `design_leg.exit_judge_raised`, `tracing.installed`). Keyword fields are identifiers only: `workspace_id`, `project_id`, `document_id`, `user_id`, `artifact_id`, counts, and `error=str(error)`. Never a title, a payload, a claim value, a token or a blob; the redaction processor is a backstop, not a licence.
+- **When to log.** `warning` for a failure the code swallows or degrades on; `info` for composition-time facts. Routes do not log successful requests (the FastAPI instrumentor's span is the record), and typed 4xx refusals are not logged either (they are the response). DAL functions and pure query helpers are silent, like their siblings in `clue_design/documents.py` and `design_leg_wiring.project_design_documents`.
+- **Tracing.** FastAPI and httpx are instrumented at the roots (`install_production_tracing`), so every route already has a server span, and `bind_and_annotate(request_id=…)` runs per request. Multi-statement or hot steps get `with traced_step("<domain>.<step>", **ids)` from `clue_obs.otel`; attributes pass through `safe_attributes`, so only ids and small scalars go on them. The `/frontend/v1` tenant resolver does not yet stamp the workspace on the span the way the `/api/v1` header seam does; Task 5 adds that one line so the library's spans (and every other read-surface span) carry `workspace_id`.
+- **Run context.** Never bind run ids by hand inside a route; the seams do it. The marks routes read the principal (`principal_from_request`) exactly as the bulk actions do.
+- **Metrics.** Domain counters go through `get_metric_sink().add("<domain>.<metric>", 1, {"<attr>": "<low-cardinality string>"})` from `clue_obs.otel`, the way `value_narrative_tools._emit` does. Tests swap in `InMemorySink` via `set_metric_sink` and read `sink.counter(name, **attrs)`. This plan adds one counter per write (`artifacts.mark.written`, `design.document.renamed`, `design.document.archived`); reads add none.
+- **Langfuse.** Governed tools are observed automatically: `ToolInvoker.invoke` opens `governed.<name>@<version>` with the inputs the tool's `parameter_policy.safe_display_fields` allows. The two new design tools therefore need no Langfuse code; their `safe_display_fields` (`document_id`, `title` / `document_id`, `enabled`) ARE the observation contract. The design API root has no OTel, Sentry or Langfuse installed today (founder ruling 2026-09-14 §5, held), so the observation is a no-op there until that lane runs; nothing in this plan changes that.
+- **Sentry.** Installed at the roots with PII off; nothing per feature. Do not swallow exceptions without a `warning` log; let genuine errors propagate to the envelope middleware.
+- **Frontend.** There is no telemetry stack in `apps/frontend`. The one convention is `console.warn("[<feature>] <what was refused>:", error)` in a catch that degrades to a notice, tagged with the feature name as `brand-context` does; never `console.log`, never a console line on the happy path.
+- **Tests.** A log event is asserted with `from clue_obs import capture_events` → `with capture_events(mode="info") as cap: …; cap.events("<event>")`. A metric is asserted through `InMemorySink`.
+
 ---
 
 ## File map
@@ -902,6 +917,28 @@ def register_artifact_routes(router: APIRouter, *, conn_factory: ConnFactory) ->
 
 Check how the surface's error middleware shapes `HTTPException(detail={"code", "message"})` into `{"error": {"code", "message"}}` — `bulk_actions.py` raises exactly this shape, so the envelope is already handled.
 
+Telemetry (standard above): add `from clue_obs import get_logger` and `from clue_obs.otel import traced_step` to the module imports, `log = get_logger("clue_api.frontend_read.artifacts")` at module scope, and run the query inside a step span:
+
+```python
+        async with conn_factory() as conn:
+            with traced_step(
+                "artifacts.library_read",
+                workspace_id=workspace_id,
+                limit=limit,
+                paged=cursor is not None,
+            ):
+                rows = await workspace_design_documents(
+                    conn,
+                    workspace_id=workspace_id,
+                    user_id=_caller_user_id(request),
+                    limit=limit + 1,
+                    cursor_updated_at=cursor_updated_at,
+                    cursor_id=cursor_id,
+                )
+```
+
+The 422 on a bad cursor is a typed refusal and is not logged. Then stamp the workspace on the read surface's spans, which the `/api/v1` header seam already does and this surface never did — in `frontend_read/app.py::frontend_read_workspace_resolver`, before `return x_workspace_id`, add `bind_and_annotate(workspace_id=x_workspace_id)` with `from clue_obs.otel import bind_and_annotate` (mirror the comment at `projections_app.py:156-159`). Every `/frontend/v1` span now carries `workspace_id`.
+
 Register it in `app.py` after `register_project_document_routes(...)`:
 
 ```python
@@ -1153,6 +1190,21 @@ async def _require_document(conn: Any, *, workspace_id: str, document_id: str) -
 
 Check how the other frontend_read writers commit (the project-documents PUT); if the connection factory yields a transaction-managed connection that commits on exit, drop the explicit `await conn.commit()` calls to match.
 
+Telemetry: count each mark write. Add `from clue_obs.otel import get_metric_sink` and, after each successful upsert:
+
+```python
+        get_metric_sink().add("artifacts.mark.written", 1, {"kind": "saved", "value": "true" if body.saved else "false"})
+```
+and in the viewed route `{"kind": "viewed", "value": "true"}`. No success log (the span is the record); the 401 and 404 are typed refusals and are not logged.
+
+Extend the marks test to assert the counter: install a fresh sink at the top of the scenario —
+```python
+from clue_obs.otel.metrics import InMemorySink, set_metric_sink
+            sink = InMemorySink()
+            set_metric_sink(sink)
+```
+and after the writes: `assert sink.counter("artifacts.mark.written", kind="saved", value="true") == 2` and `assert sink.counter("artifacts.mark.written", kind="viewed", value="true") == 1`. Restore the previous sink in a `finally` (`set_metric_sink(InMemorySink())`).
+
 - [ ] **Step 4: Add the erasure step**
 
 In `models.py`, add to `IdentityErasureResult`:
@@ -1343,6 +1395,8 @@ async def set_document_archived(
     )
     return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
 ```
+
+Telemetry: none. The DAL is silent like every sibling in this module; the blank-title `ValueError` and `DesignNotFoundError` propagate to the tool gate and the route.
 
 - [ ] **Step 4: Run the tests**
 
@@ -1579,6 +1633,16 @@ class SetDocumentArchivedTool(DesignTool):
 ```
 
 Register: in `toolbelt/__init__.py` add `RenameDocumentInput, RenameDocumentTool, SetDocumentArchivedInput, SetDocumentArchivedTool` to the `.documents` import block and to `__all__` (alphabetical positions). In `toolbelt/factory.py` add `RenameDocumentTool, SetDocumentArchivedTool` to the `.documents` import and to `DESIGN_TOOL_TYPES` right after `SetWebNoindexTool` (registration order is the inventory order).
+
+Telemetry for the tools: the Langfuse observation is automatic (`ToolInvoker.invoke` opens `governed.design_rename_document@1` / `governed.design_set_document_archived@1`, showing exactly the `safe_display_fields` declared above — do not widen them). Add one domain counter at the end of each `run()`, before the `return`, with `from clue_obs.otel import get_metric_sink` at the module top (the design toolbelt already depends on `clue_toolbelt`, which depends on `clue_obs`):
+
+```python
+        get_metric_sink().add("design.document.renamed", 1, {"doc_kind": str(document.get("doc_kind", "scene"))})
+```
+```python
+        get_metric_sink().add("design.document.archived", 1, {"enabled": "true" if inputs.enabled else "false"})
+```
+No logging in the tools or the routes: a refused precondition is a typed 4xx/409 through `run_design_tool`'s refusal map, and nothing is swallowed.
 
 - [ ] **Step 5: Request models and routes**
 
@@ -2447,7 +2511,8 @@ export function useArtifactActions() {
       setNotice(await work());
       router.refresh();
       return true;
-    } catch {
+    } catch (error) {
+      console.warn("[artifacts] the change was refused:", error);
       setNotice(failure);
       return false;
     } finally {
@@ -2475,7 +2540,10 @@ export function useArtifactActions() {
         return "Artifact renamed.";
       }, "The new name couldn’t be saved. Please try again."),
     viewed: (artifact: LibraryArtifact) => {
-      void recordArtifactViewed(artifact.id).catch(() => setNotice("Preview opened. Last viewed couldn’t be saved."));
+      void recordArtifactViewed(artifact.id).catch((error: unknown) => {
+        console.warn("[artifacts] the viewed mark was refused:", error);
+        setNotice("Preview opened. Last viewed couldn’t be saved.");
+      });
     },
     openEditor: async (artifact: LibraryArtifact) => {
       setBusy(true);
@@ -2486,7 +2554,8 @@ export function useArtifactActions() {
           title: artifact.title,
         });
         router.push(projectChatHref(artifact.projectId, thread.id, { open: artifact.id, surface: artifact.kind }));
-      } catch {
+      } catch (error) {
+        console.warn("[artifacts] opening a new chat was refused:", error);
         setNotice("Couldn’t open a new chat for this artifact. Please try again.");
         setBusy(false);
       }
@@ -2687,8 +2756,9 @@ Replace the `onRenameArtifact` handler with:
               reloadSceneCanvas();
               router.refresh();
             })
-            .catch(() => {
+            .catch((error: unknown) => {
               // Local state stays as it was; the header shows the stored title again.
+              console.warn("[chat-shell] the rename was refused:", error);
             });
         }}
 ```
@@ -2725,6 +2795,7 @@ git commit -m "feat(chat-shell): the editor header rename persists through the d
 set -a; source .env; set +a
 uv run pytest tests/api/test_frontend_read_artifacts_db.py tests/api/test_design_artifact_feed_db.py tests/api/test_design_artifact_seam_db.py tests/design/test_document_marks_dal_db.py tests/auth/test_identity_substrate.py tests/agents/test_tool_authority_audit.py tests/api/test_toolbelt_wiring.py tests/api/test_frontend_read_app.py -q --ignore-glob='*_live.py'
 uv run ruff check platform tests && uv run mypy platform
+uv run pytest tests/clue_obs -q   # the logging-discipline guard (no logging.getLogger, no print)
 make db-smoke && uv run alembic heads
 cd subsystems/clue-design/apps/api && uv run pytest tests/test_document_title_and_archive.py tests/test_write_path_governance.py -q; cd -
 ```
@@ -2755,6 +2826,7 @@ Sign in per `DEV_STACK.md`, then verify on `http://localhost:3020/artifacts` wit
 10. Save and unsave; last-viewed ordering after opening previews.
 11. A fresh workspace shows the empty state with "Create in chat" → Home.
 12. With `CLUE_FRONTEND_READ_ENABLED=false` on the API, `/artifacts` renders `error.tsx`.
+13. Telemetry: with the lane's `CLUE_OTEL_TRACES_ENDPOINT` unset, spans are created and dropped (the root logs `tracing.installed exporting=false`), so the check here is the unit level: the marks test's counters, and one library read under `capture_events` producing no event (reads are silent by standard). If an OTLP endpoint is configured on the lane, open one library read's trace and confirm the server span carries `workspace_id` and a child `artifacts.library_read` span.
 
 Record every finding, including failures, in `_memory/2026-09-15-artifacts-page-exploration.md`.
 
@@ -2771,6 +2843,7 @@ git commit -m "docs(artifacts): close-out — gates, browser walk findings, owed
 
 ## Self-review
 
+- **Telemetry standard.** Every task names its logging, span, metric and Langfuse obligations against the standard in Global Constraints; reads are silent, writes count, governed tools are observed automatically, frontend catches warn with the feature tag.
 - **Spec coverage.** §3.1 read → Task 5; §3.2 marks → Task 6; §3.3 rename → Tasks 7–9; §3.4 archive → Tasks 2, 7–9; §3.5 readers → Task 4; §3.6 erasure → Task 6; §4 migrations → Tasks 2–3; §5.1 layout → Tasks 10, 13; §5.2 gallery → Task 11; §5.3 collections/marks → Task 13; §5.4 actions → Tasks 12–13; §5.5 `?open=` → Task 14; §5.6 header rename → Task 15; §6 lane → Task 1; §7 testing/walk → every task + Task 16; §9 order → task order.
 - **Placeholders.** Task 8 Step 1 asks the implementer to align the create/finalize bodies with the design API's actual routes and to copy the `client` fixture from a sibling suite. Everything else is concrete.
 - **Type consistency.** `workspace_design_documents` row keys (Task 4) match `_wire` (Task 5); `design_document_card_fields` keys match both consumers; `ToggleRef.value` accepts `str | None` for `archived_at`; `LibraryArtifact.documentId` feeds `renameArtifactDocument` / `setArtifactArchived` / `exportAdArtifact` (Tasks 12–13); `openArtifactFromParam` takes `{ openId, artifacts }` in test and use; `useImageExportController({ title, onExport })` matches the preview's call.
