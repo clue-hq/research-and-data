@@ -284,6 +284,18 @@ class SetWebNoindexRequest(BaseModel):
     noindex: bool
 
 
+class RenameDocumentRequest(BaseModel):
+    """Artifacts page (2026-09-15): the new title; blank is refused (422) by the tool gate."""
+
+    title: str
+
+
+class SetDocumentArchivedRequest(BaseModel):
+    """Artifacts page (2026-09-15): REQUIRED, no default — same rule as ``SetWebNoindexRequest``."""
+
+    archived: bool
+
+
 class FinalizeTemplateRequest(BaseModel):
     template_revision_id: Optional[str] = None
     snapshot_id: Optional[str] = None

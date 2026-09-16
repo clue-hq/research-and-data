@@ -96,6 +96,11 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     # per-document siblings above — the CLEAR direction is the only door in the system that can
     # take the robots meta off a published account page, so it may not be reachable off-toolbelt.
     "set_web_noindex": ("method", ("lumen_api/design_store.py",)),
+    # Artifacts page (2026-09-15): the library's two curation writes. The rename touches the row
+    # title AND the document JSON together and bumps the version; archiving is the gallery/library
+    # state. Both are caller-initiated document mutations, so neither may be reachable off-toolbelt.
+    "rename_document": ("method", ("lumen_api/design_store.py",)),
+    "set_document_archived": ("method", ("lumen_api/design_store.py",)),
     "create_snapshot": ("method", ("lumen_api/design_store.py",)),
     "create_template_revision": ("method", ("lumen_api/design_store.py",)),
     "store_diagnostics": ("method", ("lumen_api/design_store.py",)),
@@ -334,6 +339,10 @@ def test_design_tool_names_are_stable() -> None:
         # thing — one named value assigned to one document — and because the platform's C6
         # authority map mirrors this set, so a new tool has to be a deliberate line.
         "design_set_web_noindex",
+        # Artifacts page (2026-09-15): the library's two curation writes. Ungranted, human-only
+        # on the platform, like noindex.
+        "design_rename_document",
+        "design_set_document_archived",
         "design_replace_scene",
         "design_apply_operations",
         "design_apply_edits",
