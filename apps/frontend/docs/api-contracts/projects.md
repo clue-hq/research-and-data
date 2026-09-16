@@ -2251,6 +2251,34 @@ only when every job is terminal; Completed lingers 60 s). Frontend polls every 5
 is served and rotates the status line every 4 s (`model/research-progress-line.ts`). No chevron,
 no dismiss, no per-account detail (founder rulings 2026-09-12).
 
+**Provider incidents on the card (2026-09-16).** Spec
+`docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. The payload carries one more
+field:
+
+```
+incident: { provider_label, reason_label, since, affected, notified } | null
+```
+
+the open provider incident behind a `needs_attention` card, else `null`. `provider_label` and
+`reason_label` are served words, not codes (`"Model provider"`, `"key limit exceeded"` — the tables
+are `clue_api.provider_incidents.provider_display` / `reason_words`); `since` is the incident's
+`opened_at` as a `Z`-suffixed ISO timestamp; `affected` is its failure count; `notified` is true
+only when a Sentry event for the open actually left the box. The incident is looked up for the
+provider named by the most recently finished job whose `failure_code` parses, so a card without a
+provider-coded failure keeps `incident: null`. An `attention[].reason` may therefore be a **full
+sentence** ending `"Clue has been notified."` rather than the short phrase the card used before —
+only rows this incident wrote are rewritten, so the frontend must render `reason` as served and
+never parse it.
+
+**Failed-turn codes (2026-09-16).** A turn refused or broken by a provider fails with
+`provider_refused:<provider>:<reason>` (a decision no retry changes — credits exhausted, key limit,
+invalid key, suspended account) or `provider_failed:<provider>:<reason>` (a fault that usually
+passes — rate limited, server errors, timeouts). Both render as sentences through
+`designTurnFailureNotice` (`features/projects/model/design-leg.ts`), which mirrors the same two
+label tables; a provider or reason the tables do not know renders as itself. Turn rows written
+before this plan keep their old codes (`model_error`, `permission_denied_error`) and render exactly
+as they did.
+
 ### Project documents — the plan and the project's own knowledge (2026-09-12)
 
 Spec `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md` §4.3. A
