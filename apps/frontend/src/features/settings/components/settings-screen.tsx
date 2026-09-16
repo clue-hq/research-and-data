@@ -13,7 +13,7 @@ const titles = {
   members: "Members",
   integrations: "Integrations",
   pages: "Pages",
-  "data-model": "Data model",
+  "data-model": "Research fields",
   billing: "Billing",
 };
 export function SettingsScreen({
@@ -44,7 +44,7 @@ export function SettingsScreen({
                   prefetch={false}
                 >
                   <ChevronLeft size={13} strokeWidth={1.4} />
-                  Data model
+                  Research fields
                 </Link>
               ) : null}
               <h1>{nestedDataModel || titles[section]}</h1>

@@ -3,8 +3,10 @@ import { accountRecoveryFor } from "@/features/accounts/data/accounts-read-resul
 import { getSettingsProfile } from "./profile.repository";
 import { getSettingsWorkspace } from "./workspace.repository";
 import { getSettingsMembers } from "./members.repository";
+import { getSettingsResearchFields } from "./research-fields.repository";
+import type { ResearchEntity } from "../model/research-fields";
 
-export async function readSettingsSection(section: string) {
+export async function readSettingsSection(section: string, entity?: ResearchEntity) {
   try {
     switch (section) {
       case "profile":
@@ -13,6 +15,10 @@ export async function readSettingsSection(section: string) {
         return { section, data: await getSettingsWorkspace() } as const;
       case "members":
         return { section, data: await getSettingsMembers() } as const;
+      case "data-model":
+        return entity
+          ? { section: "research-fields", data: await getSettingsResearchFields(entity) } as const
+          : { section: "research-overview" } as const;
       default:
         return { section: "static" } as const;
     }

@@ -1,6 +1,6 @@
 # Settings integration completion plan — 2026-09-16
 
-**Status: implementation in progress; UI/Pages decisions and live acceptance remain open.**
+**Status: Research fields UI implemented after preview approval; Pages decisions and remaining live acceptance stay open.**
 Originally prepared against Irvine's
 `settings-page` at `5bd1a66c1`, after rebasing onto local `research-streaming` at `440b6a7db`.
 This plan concerns Settings and its actual consumers, not a rewrite of the platform.
@@ -15,19 +15,20 @@ records the current evidence; completed code does not by itself satisfy the live
 ## Implementation progress — 2026-09-16
 
 The founder authorized implementation of this plan. Recommendations D1–D8 and backend-first
-scheduling are applied. Research fields visual composition and Pages' remaining contract choices
-were asked asynchronously and have not yet been answered.
+scheduling are applied. The founder approved the Research fields preview and reuse of existing
+Settings primitives on 2026-09-16; the live management screen is now implemented. Pages' remaining
+contract choices are still unanswered.
 
 | Phase | Current state |
 | --- | --- |
-| 0 | Checkout/design pin preserved; D1–D8 recorded; UI and Pages decisions pending |
+| 0 | Checkout/design pin preserved; D1–D8 and Research fields visual approval recorded; Pages decisions pending |
 | 1 | Permission/profile/non-manager-role changes implemented; automated checks pass; browser acceptance in progress |
 | 2 | Registry and migration implemented; trigger, collision, isolation, concurrency and rollback tests pass |
 | 3 | All three catalog callers scoped; lenient retirement protection implemented; existing instructions reused |
 | 4 | API plus Zod/read/mutation repository implemented; lifecycle and four-role tests pass |
 | 5 | Account/contact values and scoped evidence implemented; retirement/subject/workspace tests pass |
-| 6 | Awaiting frames or explicit reuse of existing Settings primitives; current Data model remains dummy |
-| 7 | 496 backend / 2,283 frontend tests, migration smoke, lint/build/import gates pass; Irvine upgraded; Profile save/reload/shell verified; invitation send blocked by automatic review; research/full UI acceptance open |
+| 6 | Approved preview implemented with live reads/create/edit/retire, permissions, legacy redirects and responsive layout; 2,298 frontend tests and build pass |
+| 7 | 496 backend tests from prior checkpoint; 2,298 current frontend tests and build pass; Irvine upgraded; Profile and invitation acceptance verified; Research fields create/edit/reload verified; live retirement confirmation pending, generated research and remaining lifecycle walk open |
 | 8 | Pages defaults/snippets/fallback/form contract still awaiting review; no publisher changes made |
 
 These statuses report code and completed evidence separately. Unchecked acceptance items below
@@ -128,12 +129,9 @@ questions following the table are still open.
 | D7 | Use plain role text for non-managers if the spec's “hide management controls” rule is literal; retain a locked Admin control for owner rows viewed by managers | Resolves the remaining disabled-control presentation difference; small frontend correction after visual agreement |
 | D8 | Retain current key-order platform listing, including bookkeeping keys | This is the written §9 default. Optional R-1 filtering is not a build blocker and must not become another visibility registry |
 
-The Research fields table and Create form are still named as design gates in §9.7. Confirm whether
-the co-founder's two frames now exist; their current availability has not been checked here.
-The specification presently gates the whole Research fields build on the redraw. **Recommended
-schedule amendment:** allow phases 2–5 backend/contract work after these decisions are approved,
-while keeping phase 6 visual implementation gated on those frames or explicit approval to compose
-them from the existing Settings primitives. Do not silently waive that gate.
+The Research fields table and Create form visual gate was satisfied on 2026-09-16 when the
+founder approved the interactive preview. Phase 6 uses the existing Settings primitives with the
+approved inline form and table layout. Backend-first scheduling no longer blocks this screen.
 
 Pages decisions are listed in phase 8; the original spec does not define enough behavior to treat
 its dummy controls as a ready API contract.
@@ -316,30 +314,31 @@ are present in the payload; cross-workspace/cross-subject/erased evidence reques
 
 ## 10. Phase 6 — replace Data model with Research fields
 
-**Design gate:** use the two approved frames or the explicit primitive-reuse ruling in section 3.
+**Design gate satisfied, 2026-09-16:** founder approved the interactive Research fields preview
+and reuse of the existing Settings primitives. The screen now follows that preview.
 Before writing Next.js code, read the installed Next guides required by `apps/frontend/AGENTS.md`.
 
 **Files:** `features/settings/components/data-model-settings.tsx`, navigation, route model and
 catch-all loader; new `model/research-fields.ts`, `data/research-fields.repository.ts`, focused
 state hook; existing `settings.actions.ts`, primitives, confirmation card and CSS tokens.
 
-- [ ] Keep the Accounts/Contacts overview; replace fixture rows with server-loaded, Zod-validated
+- [x] Keep the Accounts/Contacts overview; replace fixture rows with server-loaded, Zod-validated
   rows. Rename the page/navigation to Research fields per the redraw.
-- [ ] Remove Type/Editable by/AI fill, Relationships/Display and Restore defaults from this live
+- [x] Remove Type/Editable by/AI fill, Relationships/Display and Restore defaults from this live
   surface. Remove unused fixture logic rather than leave a second seemingly functional editor.
-- [ ] Preserve `/settings/data-model/{accounts,contacts}` and existing `/fields` links. Recommended
+- [x] Preserve `/settings/data-model/{accounts,contacts}` and existing `/fields` links. Recommended
   compatibility behavior for old `/display` links: redirect to that entity's field list; record
   it in the route contract. Invalid entities/nesting still return 404.
-- [ ] Render Name, Description, origin/creator/time and permitted row actions. Platform rows have
+- [x] Render Name, Description, origin/creator/time and permitted row actions. Platform rows have
   no edit menu. Non-managers have neither Create nor row actions.
-- [ ] Implement Create with required Name/Description and inline KEY_TAKEN error. Prevent duplicate
+- [x] Implement Create with required Name/Description and inline KEY_TAKEN error. Prevent duplicate
   submissions; add the returned row in creation order; show “Field created”.
-- [ ] Reuse autosave for label/description; multiline descriptions save on blur or Cmd/Ctrl+Enter,
+- [x] Reuse autosave for label/description; multiline descriptions save on blur or Cmd/Ctrl+Enter,
   Escape restores. Handle focus order, pending state, failure rollback, scope changes and two
   independent edits without stale response overwrites. Show “Field updated”.
-- [ ] Implement in-place Retire → Confirm retire; no modal. Explain irreversibility/key reservation,
+- [x] Implement in-place Retire → Confirm retire; no modal. Explain irreversibility/key reservation,
   remove the row only on success and show “Field retired”.
-- [ ] Preserve typed recovery, no fixture fallback, token-based styling and accepted confirmation
+- [x] Preserve typed recovery, no fixture fallback, token-based styling and accepted confirmation
   behavior. Recheck the Members long-email layout at the same time as the final Settings walk.
 
 **Verification:** schema/action/hook tests for errors, autosave/revert and stale scope; browser walk
@@ -480,14 +479,16 @@ this plan without an explicit push instruction.
 
 ## 14. Dependencies, remaining follow-ups and honest completion
 
-**From the founder/co-founder:** confirm the proposed deltas, provide/identify the two Research
-fields frames or approve reuse of existing primitives, settle Pages defaults/fallback/snippet
-behavior, and complete the recipient side of the invitation walk. No replacement backend or
-Clerk credentials are known to be required merely to begin the implementation.
+**From the founder/co-founder:** settle Pages defaults/fallback/snippet behavior and approve the
+pending permanent retirement of the disposable browser-test field. Research fields visual approval
+and the recipient's invitation acceptance are complete. No replacement backend or Clerk credentials
+are known to be required.
 
-**From the implementation:** complete phases 1–6, establish the intended runtime/schema, run phase
-7, build phase 8 for V1, and record any failed gate with a concrete owner/next action. Existing
-provider access may need resolution for the live research case; verify the actual failure first.
+**From the implementation:** complete the remaining phase 7 live research and membership lifecycle
+checks, observe the invitee's selected workspace, and build phase 8 for V1 after its contract review.
+Research fields management is implemented and automated checks pass; generation into a sourced
+account column is still a separate live test. Existing provider access may need resolution for that
+case; verify the actual failure first.
 
 **Explicit follow-ups outside this completion slice:** broad workspace-local agent proposal
 registration (Track R), contact custom-field presentation frames, usage-only Billing with real

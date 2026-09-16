@@ -128,3 +128,29 @@ Create uses a local button handler; this is not an application implementation de
 serve needed sandbox escalation; one exact-label locator missed required-field text and was
 replaced with its observed input ID. Research fields visual approval and live integration remain
 pending. User-facing preview is inline; temporary browser/server used only for verification.
+
+Research fields implementation: founder approved the preview, satisfying the visual gate. Replaced
+the old Data model dummy/Display controls and fixture schema/data with the live entity registry,
+retained Accounts/Contacts overview and field routes, redirected legacy Display links, and renamed
+navigation to Research fields. Added the inline Create form, typed field errors, shared autosave
+name/description editors, two-step retire menu, origin/creator/date and responsive stacked cells.
+Reused existing tokens, Base UI menus, inputs/buttons and confirmation cards. Scope-keyed controller
+invalidates late responses, blocks duplicate submissions and merges only the submitted attribute.
+Shared autosave adds multiline semantics, unmount guards, Escape rollback and keyboard focus return.
+
+Verification: 2,298 frontend tests passed, including new lifecycle/concurrency/scope controller tests
+and actual server rendering for manager/member/platform/empty states. Design-system generation,
+lint (only two pre-existing design-editor warnings), production build/type checking passed. New
+test setup initially failed on top-level await/CommonJS and CSS modules, then corrected; first lint
+flagged ambiguous returned-ref naming, corrected by explicit Ref-suffixed destructuring. tsx needs
+escalation for its local IPC socket. No backend/schema/process changes or new dependencies.
+
+Real ChatGPT browser checks on Irvine :3147: list reads show the actual registry; created temporary
+`account.settings_acceptance_check_20260916`, edited description and label, verified reload persistence,
+Escape rollback, Enter/Ctrl+Enter saves/focus restoration, inline duplicate-name error, Accounts vs
+Contacts scope and legacy Display redirect. Mobile 390px and narrow desktop 739px are readable;
+Members still has no cell overlap. Viewport reset. No paid research started. The temporary field's
+label is now "Settings acceptance check 20260916 renamed"; Confirm retire is prepared in the browser.
+Requested at-action approval for irreversible retirement per the browser confirmation policy;
+final live retirement/reload awaits that answer. Generated research/evidence, the invitee's selected
+workspace, remaining member lifecycle checks and Pages remain separate open acceptance/contract work.

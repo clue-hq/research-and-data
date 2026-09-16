@@ -1,13 +1,13 @@
 # Settings section — frontend ⇄ backend integration design
 
 **Status (updated 2026-09-16):** implementation in progress. Profile/Workspace authority fixes,
-workspace Research fields registry/API, all research catalog callers, and custom-value/evidence
-projections are implemented. Data model still presents the dummy: its replacement screen awaits
-the approved frames or explicit reuse of Settings primitives. Pages/Billing remain dummy frontends;
-Pages V1 contracts and real invitation/research acceptance remain open. The founder's instruction
-to proceed with the [completion plan](../plans/2026-09-16-settings-integration-completion.md)
-authorizes recommendations D1–D8 and backend scheduling ahead of the redraw; it does not silently
-waive the explicit Research fields design gate or settle Pages' unanswered contract questions.
+workspace Research fields registry/API, all research catalog callers, custom-value/evidence
+projections, and the Research fields management UI are implemented. The founder approved the
+interactive preview and reuse of Settings primitives; the visual gate is satisfied. Pages/Billing
+remain dummy frontends. Pages V1 contracts and generated-research acceptance remain open. Real
+invitation email receipt and acceptance are confirmed; the invitee's selected workspace/redirect
+and remaining membership lifecycle walk still need direct observation. The
+[completion plan](../plans/2026-09-16-settings-integration-completion.md) tracks these separately.
 **Original design branch:** `research-streaming` (worktree `san-salvador`).
 **Implementation branch:** `settings-page` (worktree `irvine`). **Founder:** Aryan.
 **Discussion record:** `_memory/2026-09-14-settings-integration-exploration.md` (committed as `9c1e791f9`).
@@ -36,7 +36,7 @@ Founder rulings from the 2026-09-14 discussion fix the scope:
 | Connections, MCP server, Integrations | Lifted exactly as the dummy's inert "Coming soon" previews | Yes (static) |
 | Billing | Stays a dummy | Yes (static, see §8) |
 | Pages | Stays a dummy | Yes (static, see §8) |
-| Data model | Existing dummy remains accessible; re-scope to "Research fields" before backend integration | Dummy UI now; backend implemented; visual replacement gated per §9.7 |
+| Research fields | Approved preview replaces Data model; retain entity overview and old field links | Live management UI and backend implemented; generated-research acceptance pending |
 
 Two cross-cutting rulings apply to every editable field: **autosave on blur** with an ephemeral
 confirmation card, and **the sidebar shows the signed-in person's display name**, never a
@@ -47,7 +47,8 @@ Original assumptions and subsequent founder rulings:
 - **A1 — superseded by latest founder follow-up, 2026-09-15.** Billing and Pages show their existing
   dummy frontends without the "Coming soon" overlay. Pages is part of V1 and still awaits development;
   the earlier permission to retain its overlay is withdrawn. Data model also remains clickable with
-  its original dummy overview and Fields/Display views until the Research fields management UI is approved.
+  its original dummy until visual approval. That approval arrived on 2026-09-16; the live Research
+  fields screen replaces Fields, and old Display links redirect to Fields.
 - **A2.** The static "Clue workspace" caption under the person's name in the profile menu becomes
   the real workspace name (a data binding into an existing slot).
 
@@ -330,10 +331,10 @@ restore focus to the trigger, and dismiss the drawer when returning to the perma
 sidebar. Use the existing sidebar icon, dialog primitive and design tokens.
 
 The catch-all route parses the section, entity and view with the dummy's `SettingsRouteSchema`,
-loads only the section's data on the server (profile, workspace or members), and renders the
-lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing, Pages and Data model render
-from the placeholder module. Only Connections, MCP server and Integrations retain the overlay.
-Billing, Pages and Data model render directly in the standard Settings body per the latest A1 ruling.
+loads only the section's data on the server (profile, workspace, members or the selected entity's
+research fields), and renders `SettingsScreen`. Connections, MCP server, Integrations, Billing and
+Pages render from the placeholder module. Only Connections, MCP server and Integrations retain the
+overlay. Research fields uses the live registry with the approved management UI (§9).
 
 ### 6.3 Autosave
 
@@ -391,8 +392,8 @@ than creating rows that no email will ever follow.
 
 ## 8. Static sections
 
-Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing, Pages
-and Data model expose their dummy frontends directly using the placeholder module. Pages remains
+Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing and Pages
+expose their dummy frontends directly using the placeholder module. Pages remains
 in V1 scope; its backend integration is still pending. Re-scope notes recorded for when they become
 real:
 
@@ -406,13 +407,13 @@ real:
   brand kit rather than uploads; a fallback URL; head/body snippets with a security review; no
   custom domain, no indexing toggles, no llms.txt.
 
-## 9. Data model → Research fields: specification (visual build gated on the redraw)
+## 9. Data model → Research fields: specification (design approved 2026-09-16)
 
-Latest founder follow-up, 2026-09-15: keep Data model clickable and show the existing dummy frontend.
-The overview, Accounts/Contacts Fields and Display routes, and back navigation are available with
-static presentation data. This does not implement field creation, editing, retirement or display
-order persistence. Registry/API/catalog/evidence integration is now implemented; the management
-screen and live research acceptance below remain outstanding.
+The founder approved the interactive preview on 2026-09-16. The live Research fields screen now
+replaces the dummy Data model and connects creation, editing and retirement to the existing scoped
+API. Accounts/Contacts overview and `/fields` links remain; old `/display` links redirect. Live
+create/edit/reload checks pass; retirement confirmation and generated-research acceptance are
+tracked separately in the completion plan.
 
 ### 9.1 What the page is
 
@@ -427,8 +428,8 @@ are a different thing (fit criteria for one motion).
 Kept from the dummy: the two-entity list (Accounts, Contacts), the per-entity fields table, the
 Create field button, the per-row ellipsis. Dropped: the Type, Editable by and AI fill columns, the
 Relationships tab, the Display tab, and Restore defaults. Added: a Description column, a Create
-field form, and a two-item row menu. The redraw the co-founder owes is exactly that list; §9.7
-names the two frames that do not exist yet.
+field form, and a row menu for editing the name/instruction and retiring the field. The founder-approved preview
+in §9.7 supplies the two required frames.
 
 ### 9.2 Rows
 
@@ -591,8 +592,10 @@ and see the column disappear while the account's evidence stays readable.
 ### 9.7 Frames required before the visual build
 
 The 2026-09-16 scheduling amendment permits backend/contract implementation ahead of these
-frames. The management screen still requires the frames below or explicit approval to compose
-it with the existing Settings primitives; that choice remains pending.
+frames. The founder approved the interactive preview on 2026-09-16, authorizing composition with the
+existing Settings primitives. The approved design preserves the entity overview, renders origin/
+creator/date beneath Name, places Create inline above the table, uses in-place edits and retirement
+confirmation, and stacks field cells at narrow widths. The visual gate is satisfied.
 
 1. The **Research fields table** per entity: Name, Description, ellipsis; the Create field
    button in the existing toolbar position; the header without the Fields/Relationships/Display
@@ -652,6 +655,6 @@ retirement and evidence-access corrections discovered by tracing the current cod
    without the permission.
 4. Clerk invitation sending, the invite landing page, acceptance route, and the establish hook.
 5. Contract doc, `.env.example` parity, parity screenshots, live walk.
-6. **Gated on the two frames in §9.7:** the registry revision and `register_workspace_research_field`;
+6. **Visual gate satisfied by the approved preview (§9.7):** the registry revision and `register_workspace_research_field`;
    the two catalog readers taking `workspace_id`; the custom-column query; the four routes; the
    Research fields screen; the §9.6 live proof.

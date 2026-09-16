@@ -2,8 +2,9 @@
 
 Implemented on Irvine `settings-page`, 2026-09-15. Product decisions and the design pin are in
 [`2026-09-15-settings-integration-design.md`](../../../../docs/superpowers/specs/2026-09-15-settings-integration-design.md).
-This document records the implemented transport and state behavior. Real Clerk email acceptance
-on the founder's running stack remains a separate manual acceptance step.
+This document records the implemented transport and state behavior. The founder confirmed real
+Clerk email receipt and acceptance on 2026-09-16; the invitee's own selected-workspace redirect
+remains a separate observation.
 
 ## Ownership and routes
 
@@ -13,14 +14,15 @@ failures render the existing typed recovery screen with Settings copy. Transport
 `features/settings/data`; client state and actions live in `hooks`; components render those models.
 
 Connections, MCP server and Integrations are presentation previews beneath inert, `aria-hidden`
-frosted overlays. Per the founder's latest 2026-09-15 follow-up, Billing, Pages and Data model show
-their dummy frontends directly. Pages remains part of V1; its form edits are local placeholders.
-Data model opens the Accounts/Contacts overview and `/settings/data-model/{accounts,contacts}/{fields,display}`;
-entity-only routes default to Fields. Unknown entities, views and nesting on other sections return 404.
-Data model retains the pinned dummy fields/display data; creating fields, row actions and reordering
-are not connected. The Research fields management API and repository now exist (see below); replacing this dummy
-with its live management screen is still gated on approved frames or primitive reuse. Billing's
-plan/credit values and buttons have no live billing integration.
+frosted overlays. Billing and Pages retain their dummy frontends. Pages remains part of V1 and
+awaits its own contract; Billing has no live plan/credit integration.
+
+Research fields replaces the dummy Data model after the founder approved the interactive preview
+on 2026-09-16. `/settings/data-model` retains the Accounts/Contacts overview. Both entity-only
+routes and `/settings/data-model/{accounts,contacts}/fields` load the live registry. Legacy
+`/display` routes redirect to that entity's `/fields` route. Unknown entities, views and nesting
+on other sections return 404. Read failures preserve the exact nested retry URL and use the
+shared typed recovery screen; they never render fixture rows.
 
 All Settings endpoints use `/frontend/v1/settings`, behind `CLUE_FRONTEND_READ_ENABLED`, the existing
 authenticated principal, workspace dependency and error envelope. Browser writes use the existing
@@ -154,8 +156,8 @@ existing Clue names and explicit clears are never overwritten. DSAR erasure clea
 ## Research fields — 2026-09-16 implementation
 
 The founder authorized implementation of the completion plan. D1–D8 are applied to the backend
-and existing presentation seams. The Research fields table/Create redesign and Pages contract
-remain separate pending choices; this API's existence does not mean the dummy Data model is live.
+and existing presentation seams. The Research fields table/Create preview was approved and its management UI is now connected.
+The Pages contract remains a separate pending choice.
 
 | Method and suffix | Request | Response / authority |
 | --- | --- | --- |
@@ -202,4 +204,27 @@ confirmation card. The project-accounts refresh route uses the same Settings pro
 Migration `3a75cb367c2b` follows the rebased join `6d25b68bff68`. It preserves Client-KB constraints,
 permits only research text/version edits, and refuses downgrade when research definitions exist.
 Only a clean research slice may restore the old schema; never erase definitions to make rollback
-pass. Live email receive/accept and generated account/person research remain acceptance work.
+pass. Generated account/person research remains separate live acceptance work.
+
+
+### Research fields UI — approved preview, 2026-09-16
+
+The screen renders Name, Description, origin and creator/date; platform rows have no actions.
+Members without `workspace.manage_settings` have neither Create nor row menus. The server reads
+and validates the selected entity; the client controller is keyed by workspace, entity and
+permission. Unmount invalidates late mutation results and notifications.
+
+Create expands a form above the table. Name and Description are required (200/2,000 characters),
+trimmed on submission. The backend's `KEY_TAKEN`/`LABEL_INVALID` messages appear under Name.
+Duplicate submissions are blocked; only a successful response appends the new workspace row.
+Create and edit do not launch research: instructions apply to future job compositions.
+
+Edit name/description use the shared autosave behavior. Descriptions save on blur or Cmd/Ctrl+Enter;
+Enter inserts a newline. Escape restores the saved value; failed writes revert and show the server
+message. Keyboard completion restores focus to the row action. Pending cells are read-only;
+disjoint response merges update only the submitted attribute, preserving independent edits.
+
+Retire changes to Confirm retire inside the row menu with the final/key-reservation explanation.
+The row remains until the server accepts retirement; failure retains it. Successful create/edit/
+retire operations reuse the shared confirmation card. Narrow screens stack each field's cells
+without horizontal overflow and use the collapsible Settings sidebar.

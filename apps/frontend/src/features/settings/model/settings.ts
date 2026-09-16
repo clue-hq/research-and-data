@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ResearchEntitySchema } from "./research-fields";
 
 export const SettingsSectionSchema = z.enum([
   "profile",
@@ -14,19 +15,10 @@ export const SettingsSectionSchema = z.enum([
 
 export type SettingsSection = z.infer<typeof SettingsSectionSchema>;
 
-export const DataModelEntitySchema = z.enum(["accounts", "contacts"]);
+export const DataModelEntitySchema = ResearchEntitySchema;
 export const DataModelViewSchema = z.enum(["fields", "display"]);
 export type DataModelEntity = z.infer<typeof DataModelEntitySchema>;
 export type DataModelView = z.infer<typeof DataModelViewSchema>;
-
-const DataModelFieldSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.string(),
-  editableBy: z.string(),
-  aiFill: z.enum(["Auto", "None"]),
-  system: z.boolean(),
-});
 
 export const ConnectionSchema = z.object({
   id: z.string(),
@@ -44,16 +36,6 @@ export const StaticSettingsSchema = z.object({
     planDescription: z.string(),
     remainingCredits: z.number().int().nonnegative(),
     totalCredits: z.number().int().positive(),
-  }),
-  dataModel: z.object({
-    entities: z.array(
-      z.object({ id: DataModelEntitySchema, name: z.string() }),
-    ),
-    fields: z.array(DataModelFieldSchema),
-    display: z.object({
-      alwaysShown: z.array(z.string()),
-      collapsed: z.array(z.string()),
-    }),
   }),
   pages: z.object({
     customDomain: z.string(),

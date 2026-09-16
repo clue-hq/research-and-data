@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { SettingsRouteSchema } from "./settings";
 
-test("Settings defaults to Profile and accepts the Pages and Data model previews", () => {
+test("Settings defaults to Profile and preserves the Pages and Research fields routes", () => {
   assert.equal(SettingsRouteSchema.parse([]).section, "profile");
   assert.equal(SettingsRouteSchema.parse(["pages"]).section, "pages");
   assert.equal(SettingsRouteSchema.parse(["data-model"]).entity, undefined);
