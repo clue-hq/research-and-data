@@ -136,6 +136,16 @@ into the call it observes: the recorder catches and logs its own failures.
 
 ### 3.4 The two writers
 
+> **Amended by the plan (2026-09-16).** The gateway hook below is superseded: `libs/clue-gateway`
+> is not modified. The two writers are (1) the ARV2 provider caller, which classifies at settle
+> time and stamps `extras["provider_failure"]` on the failing ledger row, with
+> `drain_provider_calls` — the one function every ARV2 row passes through with a connection and a
+> `LedgerStamp` — recording the incident (the research agent's model rounds are ledger rows too and
+> get the same stamp from their exception); and (2) the chat turn's `DurableAgentModelCallHandler`,
+> which classifies in `on_llm_error` and records through a connection factory. See
+> `docs/superpowers/plans/2026-09-16-provider-incidents.md`, header.
+
+
 - **ProviderCaller** gets an optional `incidents: ProviderIncidentRecorder | None`. In `_settle`
   (the result row) it calls `classify_http(spec.provider, status, body)`; a `ProviderFailure` →
   `failed(…, surface=<label family>)`, `None` on a 2xx → `succeeded(provider)`. `ProviderHalted`
