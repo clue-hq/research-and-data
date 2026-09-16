@@ -3307,3 +3307,34 @@ verdict. Evidence is retained under `qualified-delivery-20260915/aws-font-correc
 No provider calls were made. Qualification remains **0/11 fully passing and 1/11
 within four minutes**; typography calibration, fresh ABM relevance, latency and
 five download-file proofs remain open.
+
+### Task 49 — verify all eleven native PNG downloads
+
+All eleven retained qualification creatives now have actual downloaded PNG files
+whose bytes match their complete browser preview payloads. This closes the five
+missing delivery proofs from Task 46: the four awareness ads and the Google Cloud
+account-specific ad. The original six-file record remains intact; the completed
+matrix is `qualified-delivery-20260915/browser-download-recovery-20260916.json`.
+
+The old Clue awareness tab still announced a successful export without saving a
+file. A previously successful product tab saved another matching file through the
+same application code. The browser tool's download-event listener timed out in
+both cases, so that listener was not a valid delivery signal. Opening the exact
+awareness document in a fresh temporary browser tab recovered the normal native
+Export PNG action. Reusing that fresh tab recovered the other four missing files.
+No frontend patch or direct API/file-copy workaround was used. This demonstrates
+tab-specific recovery, not a permanent explanation or fix for the older tab.
+
+Long preview data URLs must be read in bounded chunks for hashing: a single DOM
+string return was truncated near 200,000 characters. The incomplete digest was
+discarded; the complete Clue preview, read in 64,000-character slices, matched the
+previous recorded digest and the newly downloaded file. All eleven files were
+independently checked on disk. A read-only database comparison confirms all 83
+saved scene hashes, versions and brand-kit pins are unchanged after the exports.
+
+No model/provider calls were made. The actual approval history confirms that the
+eleven-generation allowance was consumed and the separate five-review typography
+question remains pending. Export evidence does not improve the frozen visual or
+latency verdict: **0/11 fully qualified, 1/11 within four minutes**. The next work
+is typography calibration and fresh account-specific quality/speed qualification,
+not further skill-family expansion.

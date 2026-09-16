@@ -1883,3 +1883,31 @@ five actual download proofs. All existing review tabs retained for continuation.
   aws-font-correction/curation-* files. No provider calls. Overall qualification
   remains0/11full,1/11time. Five review-only calibration calls remain prepared,
   awaiting the separate approval; fresh quality/speed qualification remains open.
+
+2026-09-15 Task49 closing (UTC September16): all11 native PNG deliveries verified
+- Previous turn was progress: local AWSv5 publication and browser verification.
+  Reproduced missing download on old Clue awareness tab7 with AX and Playwright
+  clicks. The successful product control tab16 still saved a new exact PNG.
+  Download-event waits timed out on BOTH, including the control with a real new
+  file; that tool event cannot establish delivery in this browser.
+- A fresh temporary tab24 loaded the identical awareness document and its normal
+  Export PNG control saved the expected file. Reused that fresh tab for the other
+  four missing exports. Now11/11 actual Downloads files match complete preview
+  base64 digests, including allfour awareness ads and ABMGoogle. No application
+  patch, direct API download, injected download action or synthetic file copy.
+- Direct long DOM-string returns truncate near200k characters. Discarded that
+  incomplete digest and hashed the Clue preview via bounded64k DOM slices; it
+  matches the original complete preview digest. Never hash a truncated return.
+- Evidence: browser-download-recovery-20260916.json in the existing ignored
+  qualification folder; earlier six-file receipt retained as historical evidence.
+  Fresh DB hash/version/pin check confirms all83 saved scenes unchanged.
+  Old-tab failure remains unexplained; fresh-tab recovery is not a permanent
+  browser fix. Native export's nominal status is not saved-file proof.
+- Verified the original approval boundary from actual task records: automatic
+  review refused unspecified provider transfer, then the user approved the11
+  planned tests. The later five-review typography question remains unanswered.
+  No new provider calls. Prepared sample32/42 preflight height diagnostics remain
+  disclosed; those are pixel-only comparison inputs, not valid deliverables.
+- Goal still active:0/11 fullyqualified,1/11 within240s. Delivery evidence is now
+  complete; typography judgment, fresh account-relevance qualification and speed
+  remain open. Further catalog expansion and the separate brand agent remain out.
