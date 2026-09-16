@@ -90,6 +90,7 @@ from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
+from clue_core.provider_failures import failure_code
 from clue_db import ConnFactory, transaction
 from clue_fleet import FleetTaskKind, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
@@ -925,7 +926,7 @@ class Arv2AccountResearchWorkHandler:
                 job_id=composition.job.job_id,
                 status=status,
                 finalization=finalization,
-                failure_code="model_error" if status == "needs_review" else None,
+                failure_code=_job_failure_code(outcome) if status == "needs_review" else None,
                 failure_message=outcome.error if status == "needs_review" else None,
                 model_rounds=outcome.model_rounds,
                 tool_calls=outcome.tool_calls,
@@ -1074,6 +1075,18 @@ def _failure_code(error: BaseException) -> str:
     if isinstance(error, ContactMissing):
         return CONTACT_MISSING
     return type(error).__name__
+
+
+def _job_failure_code(outcome: AgentOutcome) -> str:
+    """Why a job that ended in ``model_error`` failed, named as finely as it can be.
+
+    A provider that refused to serve or faulted is recorded as
+    ``provider_refused:<provider>:<reason>``, which the incident surfaces parse back; a fault
+    nobody can classify keeps the bare ``model_error`` it has always recorded.
+    """
+    if outcome.provider_failure is not None:
+        return failure_code(outcome.provider_failure)
+    return "model_error"
 
 
 def _receipt(

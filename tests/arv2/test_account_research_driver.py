@@ -752,6 +752,45 @@ def test_the_model_error_outcome_lands_needs_review_with_its_reason(
     assert landed["finalization"]["reason"] == "model_error"
 
 
+class _Denied(Exception):
+    """A refusal shaped the way the OpenAI-compatible SDKs raise one: a status and a repr body."""
+
+    status_code = 403
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Error code: 403 - {'error': {'message': 'Key limit exceeded (weekly limit)',"
+            " 'code': 403}}"
+        )
+
+
+def test_a_job_the_provider_refused_records_the_reason_rather_than_the_bare_model_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A key that hit its cap is not "the model errored" — the job row says which provider stopped
+    serving and why, so the reviewer reads a cause instead of a shrug."""
+
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+
+    def refuse(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        raise _Denied()
+
+    handler, _, _, _ = _handler(store, model=_ScriptedModel(refuse))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    landed = store.named("finish_job")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["failure_code"] == "provider_refused:openrouter:key_limit"
+
+
 def test_the_icp_hard_gates_key_the_receipt_and_an_unassessed_gate_is_filled_unclear(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

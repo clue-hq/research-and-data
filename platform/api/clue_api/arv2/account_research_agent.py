@@ -47,6 +47,7 @@ from clue_api.arv2.account_research_refusals import refusal_json
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.sinks import LedgerRow
 from clue_api.langfuse_callbacks import build_langfuse_callbacks
+from clue_core.provider_failures import ProviderFailure, classify_exception
 from clue_gateway.metadata import ANSWERING_MODEL_KEY, COST_SOURCE_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
 from clue_obs.langfuse import (
@@ -107,6 +108,10 @@ class AgentOutcome:
 
     ``reason`` is the whole vocabulary: the agent finalized, it ran out of rounds, it ran out of
     time, or the graph raised. There is no fifth ending, and none of them is an exception.
+
+    ``provider_failure`` is set only when the ending was a *provider's* doing — it refused to
+    serve, or it faulted — so the driver can record why on the job row instead of the bare
+    ``model_error``. A fault nobody can classify leaves it ``None``.
     """
 
     reason: AgentStopReason
@@ -114,6 +119,7 @@ class AgentOutcome:
     tool_calls: int
     error: str | None
     model_spend: ModelSpend = field(default_factory=ModelSpend)
+    provider_failure: ProviderFailure | None = None
 
 
 class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
@@ -148,6 +154,9 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
         self._langfuse_ids = langfuse_ids
         self.count = 0
         self._spend = ModelSpend()
+        #: The last round's classified provider verdict, so the loop's ``model_error`` ending can
+        #: name what the provider did rather than only which exception class reached it.
+        self.last_provider_failure: ProviderFailure | None = None
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         self.count += 1
@@ -156,11 +165,14 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
         try:
             response = await handler(request)
         except Exception as error:
+            failure = classify_exception("openrouter", error)
+            self.last_provider_failure = failure
             self._record(
                 round_number,
                 started=started,
                 message=None,
                 error_code=type(error).__name__,
+                provider_failure=failure,
             )
             raise
         self._record(round_number, started=started, message=_answer(response), error_code=None)
@@ -178,6 +190,7 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
         started: float,
         message: AIMessage | None,
         error_code: str | None,
+        provider_failure: ProviderFailure | None = None,
     ) -> None:
         metadata: Mapping[str, Any] = message.response_metadata if message is not None else {}
         usage: Mapping[str, Any] = (message.usage_metadata or {}) if message is not None else {}
@@ -198,6 +211,14 @@ class _ModelUsageRecorder(AgentMiddleware[Any, Any, Any]):
                 "cost_source": source,
             }
         )
+        # The drain reads this stamp to open one durable incident per (provider, reason): a round
+        # that a provider refused says so on its own row, not only in an exception class name.
+        if provider_failure is not None:
+            extras["provider_failure"] = {
+                "kind": provider_failure.kind,
+                "reason": provider_failure.reason,
+                "message": provider_failure.message,
+            }
         # The graph runs one model round at a time, so the registry's most recent entry is this
         # round's generation: the durable row and the Langfuse observation name each other.
         if message is not None and self._langfuse_ids is not None:
@@ -346,7 +367,14 @@ async def _graph_failed(
     await runtime.wait_for_inflight(timeout_s=_INFLIGHT_DRAIN_S)
     log.exception("arv2.account_agent_failed", model_rounds=rounds.count)
     detail = f"{type(error).__name__}: {error}"[:_ERROR_CHARS]
-    return AgentOutcome("model_error", rounds.count, runtime.tool_calls, detail, rounds.spend)
+    return AgentOutcome(
+        "model_error",
+        rounds.count,
+        runtime.tool_calls,
+        detail,
+        rounds.spend,
+        provider_failure=rounds.last_provider_failure,
+    )
 
 
 async def run_account_agent(
