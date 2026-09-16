@@ -208,6 +208,54 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
+def _asset_alpha_inspection_blocks(raw: bytes) -> list[dict]:
+    """Disambiguate transparent artwork from the vision client's implicit matte.
+
+    Inspection only: never register these composites or change source bytes.
+    Observe decoded preview alpha, not asset-kind labels or inferred source alpha.
+    """
+    from PIL import Image
+
+    with Image.open(io.BytesIO(raw)) as source:
+        source.seek(0)
+        rgba = source.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    counts = alpha.histogram()
+    if counts[255] == rgba.width * rgba.height:
+        return []
+    bounds = alpha.getbbox()
+    facts = {
+        "preview_alpha": {
+            "width_px": rgba.width, "height_px": rgba.height,
+            "transparent_pixels": counts[0], "opaque_pixels": counts[255],
+            "translucent_pixels": sum(counts[1:255]),
+            "visible_bounds_px": list(bounds) if bounds else None,
+        },
+        "inspection_only": (
+            "The next image shows the SAME source preview on two artificial surfaces: "
+            "LEFT white (#FFFFFF), RIGHT charcoal (#202020). These surfaces are not "
+            "baked into the source and are not placement assets. The preceding image "
+            "is the original preview. Transparent pixels may otherwise appear black "
+            "or white in a vision client. Compare actual ink and contrast here; place "
+            "the original asset ID. Alpha observations describe this decoded preview, "
+            "not proof about an unavailable original. Bounds are [left, top, right, "
+            "bottom], with right/bottom exclusive; no artwork means null bounds."
+        ),
+    }
+    side, inset = 512, 24
+    scale = (side - 2 * inset) / max(rgba.size)
+    size = (max(1, round(rgba.width * scale)), max(1, round(rgba.height * scale)))
+    artwork = rgba.resize(size, Image.Resampling.NEAREST if scale > 1 else Image.Resampling.LANCZOS)
+    comparison = Image.new("RGB", (side * 2, side))
+    for index, color in enumerate(((255, 255, 255, 255), (32, 32, 32, 255))):
+        panel = Image.new("RGBA", (side, side), color)
+        panel.alpha_composite(artwork, ((side - size[0]) // 2, (side - size[1]) // 2))
+        comparison.paste(panel.convert("RGB"), (index * side, 0))
+    buffer = io.BytesIO()
+    comparison.save(buffer, format="PNG")
+    return [_text_block(json.dumps(facts)), _image_bytes_block(buffer.getvalue())]
+
+
 def _preview_page_id(tools: LumenDesignTools, png: Path) -> str | None:
     """Associate these exact preview bytes with their validated artifact's page."""
     latest = tools.latest_preview_bundle or tools.latest_export_summary
@@ -592,6 +640,8 @@ def _view_content(
             ) + _original_gif_hint(tools, asset_id, record)),
             _image_block(path),
         ]
+        if getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate":
+            content.extend(_asset_alpha_inspection_blocks(path.read_bytes()))
         tools.record("agent", "view_called", input_summary=target, output_summary=f"blocks={len(content)}")
         return content
 

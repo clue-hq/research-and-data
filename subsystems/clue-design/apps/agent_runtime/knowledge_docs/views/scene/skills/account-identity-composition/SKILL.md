@@ -5,18 +5,24 @@ description: Use when a scene creative includes a target company logo, advertise
 
 # Account identity composition
 
-Compose with `account-adaptation` and the chosen playbook. Keep advertiser visual
-language while choosing identity for this brief:
+Compose with `account-adaptation` and the chosen playbook. For an ordinary
+one-to-one pitch, start with **advertiser × target**: two authentic independent
+marks and a native separator, composed as one identity group. The advertiser's
+references supply the visual language. Choose the treatment before allocating
+headline, artwork and whitespace:
 
-- **Advertiser × target:** independent authentic marks, native separator, optical
-  balance and clear space. Honor a requested top group.
-- **Target only:** integrate its identity with message/artwork; preserve advertiser
-  voice without forcing its logo back in.
-- **Account-name callout:** ordinary native copy in the message hierarchy, never a
-  typeset imitation wordmark.
+- **Advertiser × target** is the default when both identities are available. Place
+  the group near the start of the reading order, connected to the message. “Big”
+  means both identities are confidently recognizable within this group.
+- **Target only** follows an explicit target-only request or a deliberately chosen
+  reference-led account callout. Keep advertiser voice and account relevance;
+  record that choice rather than accidentally losing the advertiser.
+- **Account-name callout** uses ordinary native copy when explicitly requested or when
+  the brief permits a name instead of an unavailable suitable logo. Never imitate a wordmark with type.
 
-These are choices, not templates. A requested pairing needs no automatic
-disclaimer; customer, partner and endorsement claims still need evidence.
+These treatments do not fix the rest of the layout. An identity pair is an
+account-directed pitch, not evidence of a partnership, endorsement or customer
+relationship. Write the message accordingly; no automatic disclaimer is needed.
 
 ## Inspect candidates, then choose the surface
 
@@ -44,26 +50,39 @@ Inspect the advertiser as carefully as the target: a square social avatar with a
 baked-in tile is not a transparent wordmark. Fetch a suitable original when needed.
 Do not add a detached symbol beside a complete lockup that already includes it.
 
-## Build one visible group
+## Compose the pair, then the ad
 
-Judge visible ink rather than equal frames. Align optical centers or baselines,
-tune scale for dense versus slender marks, then clear space and separator weight.
-Connect identity and message through alignment, proximity or meaningful artwork.
-At feed size, identify who is speaking without consulting the brief. A target
-wordmark must not overwhelm the advertiser in a paired treatment. Compare visible
-ink and recognition, not just frame dimensions or nominal scale.
-Honor a large-target request through readable, prominent identity within the
-whole composition. A giant detached mark above a tiny advertiser is not a paired
-identity group. Keep both identities visually connected unless the brief asks
-for an explicitly separate target-only treatment.
+1. **Start from advertiser references.** Choose the group's location, surface and
+   approximate prominence from an appropriate ad. Establish one shared alignment
+   with the message. If the reference has a single advertiser mark, expand that
+   identity region into a pair; do not add a second unrelated logo panel.
+2. **Measure the artwork, not the file.** View both original assets and note the
+   visible wordmark bounds inside each image. Start with comparable visible letter
+   heights, preserving each aspect ratio. A wide name needs more width; a tall or
+   dense symbol needs less height to feel equally prominent. Source padding and
+   unequal aspect ratios make equal-size frames misleading.
+3. **Build a compact horizontal group.** Advertiser, native `×`, target each gets
+   its own node. Optically center the marks and separator on one line. Give both
+   marks their required clear space; make the separator quieter than either mark.
+   Size the whole group together until both names read at feed size. Prefer a
+   complete wordmark at a comfortable size over a giant icon. A constrained format
+   can use a deliberate stacked group with the same balance and close association.
+4. **Connect identity to the idea.** Place headline and readable supporting copy as
+   one message group; use the remaining field for relevant artwork or purposeful
+   whitespace. The pair identifies the pitch; the headline carries its value. A
+   single target mark filling the header while the advertiser sits elsewhere is a
+   different treatment, even when both logos technically exist.
+5. **Check the silhouette before detail.** View the full composition at feed size.
+   Can you read advertiser, separator and target as one phrase, then the message?
+   If one mark dominates, adjust its visible scale or choose another authentic
+   variant; if the group feels detached, fix alignment/proximity. Preserve source
+   pixels and brand clear space while changing layout, not the logos themselves.
 
-Try a suitable authentic variant on the intended field. A required contrasting
-field should connect identity and message through its extent, alignment and
-spacing. An isolated pill can look like an unrelated badge. Reconsider field and
-grouping before adding a plate; preserve source backgrounds and mark proportions.
-The target's available logo variant must not dictate the advertiser's entire
-palette. Try another authentic variant or a coherent identity region before
-turning the target into a dominant isolated capsule.
+Choose variant and field together. A contrasting region should include the group
+and connect to the message, not become an isolated pill around one mark. The target
+logo's available variant must not dictate the advertiser's entire palette. Keep
+images, vector motifs and textures relevant to the chosen playbook; the pair alone
+does not require extra decoration or a CTA.
 
 ## Keep identity editable and verify the result
 
@@ -75,8 +94,21 @@ grouping in layer `purpose`, `preserve` and `review_needs`. Direction changes re
 empty leaf frame/image node with
 `asset(action="place", asset_id=..., node_id=..., fit="contain")`.
 
-View the full feed preview: recognizable account, intended reading order, one
-coherent ad. Inspect logo detail for blur, padding, contrast and source fidelity.
-Authentic pixels and valid placement alone do not pass this judgment. Follow
-`knowledge/scene/review.md`; preserve unresolved gaps. Preflight inserts no
-advertiser logo, so review omissions against the brief.
+## Review against the request, not just the authored direction
+
+Compare the first rendered delivery with the original request and this treatment:
+- Paired intent: advertiser, separator and target read as one balanced group.
+- Identity fidelity: exact requested companies and suitable authentic variants;
+  no accidental parent/product/loyalty-program substitution or duplicate symbol.
+- Composition: clear reading order, readable supporting copy, connected identity
+  and message, intentional use of remaining space and advertiser palette.
+- Meaning: relevant account pitch backed by actual advertiser capabilities;
+  pairing does not introduce a relationship claim.
+
+View both the full feed preview and logo detail. Actual recognition, contrast,
+clearspace and source fidelity decide success; valid placement and authentic pixels
+alone do not. For paired intent, a direction that prescribed a giant isolated target block
+cannot self-approve that mismatch. Judge deliberate target-only and name-only
+treatments against their own request instead of converting them into a pair. Repair the direction and composition together through
+checked tools, then review again. Follow `knowledge/scene/review.md` and preserve
+unresolved gaps. Preflight inserts no advertiser logo or separator automatically.

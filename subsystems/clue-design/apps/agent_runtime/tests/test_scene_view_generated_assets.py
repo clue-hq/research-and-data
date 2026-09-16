@@ -194,3 +194,62 @@ def test_scene_asset_uses_existing_thumbnail_preference(tmp_path):
     tools = _tools(tmp_path, assets={"asset_primary": primary})
 
     _assert_pixels(_view(tools, "asset:asset_primary"), thumb_raw)
+
+
+@pytest.mark.parametrize("ink, opaque, translucent, on_light, on_dark", [
+    ((255, 255, 255, 255), 65536, 0, (255, 255, 255), (255, 255, 255)),
+    ((0, 0, 0, 255), 65536, 0, (0, 0, 0), (0, 0, 0)),
+    ((0, 0, 0, 128), 0, 65536, (127, 127, 127), (16, 16, 16)),
+])
+def test_transparent_asset_view_shows_controlled_surfaces_without_changing_source(
+    tmp_path, ink, opaque, translucent, on_light, on_dark,
+):
+    """A transparent wordmark must not look like a baked plate or vanish on white."""
+    import json
+    from PIL import ImageDraw
+
+    tools = _tools(tmp_path, scene_skill_bundle="candidate")
+    record, _ = _raster(tmp_path / "store", "logo", (1, 2, 3))
+    img = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+    ImageDraw.Draw(img).rectangle((128, 128, 383, 383), fill=ink)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    raw = buf.getvalue()
+    digest = hashlib.sha256(raw).hexdigest()
+    path = tmp_path / "store" / "sha256" / digest[:2] / digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(raw)
+    record["media"]["digest"]["value"] = digest
+    record["media"]["location"]["opaque_ref"] = f"workspace/design/{digest}"
+    tools.scene["assets"]["logo"] = record
+    before = copy.deepcopy(tools.scene)
+
+    blocks = _view(tools, "asset:logo")
+    images = [b for b in blocks if b["type"] == "image"]
+    assert len(images) == 2, "Source plus controlled light/dark inspection needed"
+    assert base64.b64decode(images[0]["data"]) == raw
+    facts = json.loads(blocks[2]["text"])["preview_alpha"]
+    assert facts["transparent_pixels"] == 196608
+    assert facts["opaque_pixels"] == opaque
+    assert facts["translucent_pixels"] == translucent
+    assert facts["visible_bounds_px"] == [128, 128, 384, 384]
+    comparison = Image.open(io.BytesIO(base64.b64decode(images[1]["data"])))
+    assert comparison.mode == "RGB"
+    w, h = comparison.size
+    # Left is white, right charcoal; both preserve the exact opaque source ink.
+    assert comparison.getpixel((0, 0)) == (255, 255, 255)
+    assert comparison.getpixel((w - 1, 0)) == (32, 32, 32)
+    assert comparison.getpixel((w // 4, h // 2)) == on_light
+    assert comparison.getpixel((3 * w // 4, h // 2)) == on_dark
+    assert path.read_bytes() == raw
+    assert tools.scene == before
+    from dataclasses import replace
+    tools.config = replace(tools.config, scene_skill_bundle="legacy")
+    _assert_pixels(_view(tools, "asset:logo"), raw)
+
+
+def test_candidate_opaque_asset_view_does_not_add_a_transparency_comparison(tmp_path):
+    tools = _tools(tmp_path, scene_skill_bundle="candidate")
+    record, raw = _raster(tmp_path / "store", "opaque", (21, 32, 43))
+    tools.scene["assets"]["opaque"] = record
+    _assert_pixels(_view(tools, "asset:opaque"), raw)
