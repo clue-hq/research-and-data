@@ -147,6 +147,8 @@ export function MembersSettings({
                           </Menu.Positioner>
                         </Menu.Portal>
                       </Menu.Root>
+                    ) : !canManage ? (
+                      <span>{memberRoleLabel(member.role_key)}</span>
                     ) : (
                       <button
                         className={styles.inlineRole}

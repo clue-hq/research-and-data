@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fetchMutation } from "@/features/accounts/data/frontend-mutation";
 import { ProfileSchema } from "../model/profile";
 import { WorkspaceSchema } from "../model/workspace";
+import { ResearchFieldSchema, type ResearchEntity, type ResearchFieldEdit } from "../model/research-fields";
 import {
   MembersSchema,
   InvitationOutcomesSchema,
@@ -19,6 +20,30 @@ export async function patchSettingsProfile(
       request,
     ),
   );
+}
+
+export async function createSettingsResearchField(
+  body: { entity: ResearchEntity; label: string; description: string },
+  request?: typeof fetch,
+) {
+  return ResearchFieldSchema.parse(await fetchMutation(
+    "/settings/research-fields", { method: "POST", body: JSON.stringify(body) }, request,
+  ));
+}
+
+export async function patchSettingsResearchField(
+  key: string, body: ResearchFieldEdit, request?: typeof fetch,
+) {
+  return ResearchFieldSchema.parse(await fetchMutation(
+    `/settings/research-fields/${encodeURIComponent(key)}`,
+    { method: "PATCH", body: JSON.stringify(body) }, request,
+  ));
+}
+
+export async function retireSettingsResearchField(key: string, request?: typeof fetch) {
+  return z.object({ ok: z.literal(true) }).parse(await fetchMutation(
+    `/settings/research-fields/${encodeURIComponent(key)}`, { method: "DELETE" }, request,
+  ));
 }
 export async function patchSettingsWorkspace(
   name: string,

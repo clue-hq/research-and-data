@@ -143,3 +143,34 @@ test("partial invitation outcomes and removed rows remain visible", async () => 
     "Removed",
   );
 });
+
+const researchField = {
+  key: "account.uses_crm", label: "Uses CRM", description: "Find their CRM.",
+  origin: "workspace", created_by: "Ada", created_at: "2026-09-16T12:00:00+00:00",
+};
+
+test("research field repositories validate scope and mutations preserve server keys", async () => {
+  const { getSettingsResearchFields } = await import("./research-fields.repository");
+  const { createSettingsResearchField, patchSettingsResearchField, retireSettingsResearchField } = await import("./settings.actions");
+  const fields = await getSettingsResearchFields("accounts", async (input) => {
+    assert.equal(input, "/frontend/v1/settings/research-fields?entity=accounts");
+    return Response.json({ entity: "accounts", rows: [researchField] });
+  });
+  assert.equal(fields.rows[0].key, researchField.key);
+  await assert.rejects(getSettingsResearchFields("contacts", async () => Response.json({ entity: "accounts", rows: [] })), /mismatch/);
+  await assert.rejects(getSettingsResearchFields("accounts", async () => Response.json({ entity: "accounts", rows: [{}] })), /Invalid/);
+  const seen: unknown[] = [];
+  const request: typeof fetch = async (input, init) => {
+    seen.push([input, init?.method, init?.body ? JSON.parse(String(init.body)) : null]);
+    return Response.json(init?.method === "DELETE" ? { ok: true } : researchField);
+  };
+  await createSettingsResearchField({ entity: "accounts", label: "Uses CRM", description: "Find their CRM." }, request);
+  await patchSettingsResearchField(researchField.key, { description: "Find cited CRM evidence." }, request);
+  await retireSettingsResearchField(researchField.key, request);
+  assert.deepEqual(seen, [
+    ["/api/clue/frontend/v1/settings/research-fields", "POST", { entity: "accounts", label: "Uses CRM", description: "Find their CRM." }],
+    ["/api/clue/frontend/v1/settings/research-fields/account.uses_crm", "PATCH", { description: "Find cited CRM evidence." }],
+    ["/api/clue/frontend/v1/settings/research-fields/account.uses_crm", "DELETE", null],
+  ]);
+  await assert.rejects(createSettingsResearchField({ entity: "accounts", label: "Uses CRM", description: "Find their CRM." }, async () => Response.json({ error: { code: "KEY_TAKEN", message: "This name is reserved" } }, { status: 409 })), /reserved/);
+});

@@ -26,6 +26,8 @@ export default async function SettingsPage({
   const canManage =
     session?.principal.permissions.includes("workspace.manage_members") ??
     false;
+  const canManageSettings =
+    session?.principal.permissions.includes("workspace.manage_settings") ?? false;
   const result = await readSettingsSection(section);
   let content;
   if (result.section === "recovery") {
@@ -50,7 +52,7 @@ export default async function SettingsPage({
           <WorkspaceSettings
             key={result.data.workspace_id}
             workspace={result.data}
-            canManage={canManage}
+            canManage={canManageSettings}
           />
         );
         break;
