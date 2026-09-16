@@ -1,10 +1,16 @@
 # Settings section — frontend ⇄ backend integration design
 
-**Status:** design for founder review, 2026-09-15. Nothing in this document is implemented.
-**Branch:** `research-streaming` (worktree `san-salvador`). **Founder:** Aryan.
+**Status (updated 2026-09-16):** partially implemented. Profile, Workspace, Members and the Settings
+shell exist on Irvine's `settings-page`; Research fields remains unimplemented, Pages/Billing are
+dummy frontends, and real invitation-email acceptance remains unverified. See the
+[completion plan](../plans/2026-09-16-settings-integration-completion.md) for the current code audit,
+proposed contract amendments, build sequence and acceptance gates. Proposed amendments in that plan
+are not ratified by this status update.
+**Original design branch:** `research-streaming` (worktree `san-salvador`).
+**Implementation branch:** `settings-page` (worktree `irvine`). **Founder:** Aryan.
 **Discussion record:** `_memory/2026-09-14-settings-integration-exploration.md` (committed as `9c1e791f9`).
-**Presentation truth:** the co-founder's dummy frontend, served at `http://localhost:3000/settings`,
-source at `/Users/aryankeshri/conductor/workspaces/clue-frontend/live-backend-v1` (branch
+**Presentation truth:** the co-founder's dummy frontend, originally served at `http://localhost:3000/settings`,
+historical source path `/Users/aryankeshri/conductor/workspaces/clue-frontend/live-backend-v1` (branch
 `integration/live-backend-v1`, commit `64232a0`, 2026-09-13). Its frontend-authored contract
 proposal is `docs/api-contracts/settings.md` in that checkout; Figma page `Settings-dev-ready`,
 node `1735:38951`.
@@ -12,10 +18,10 @@ node `1735:38951`.
 ## 1. What this integrates, and what it does not
 
 The dummy's Settings section has nine screens in two groups. Personal: Profile, Connections, MCP
-server. Admin: Workspace, Members, Integrations, Pages, Data model, Billing. This repo's
-`apps/frontend` has no settings feature, no `/settings` route, and no profile menu in the sidebar
-(`/settings` on the lane frontend is a 404). Every screen is lifted from the dummy verbatim and
-bound to real data at the repository seam, per `apps/frontend/docs/architecture/frontend.md` and
+server. Admin: Workspace, Members, Integrations, Pages, Data model, Billing. At the original
+exploration, `apps/frontend` had no Settings feature, route or profile menu; those now exist.
+The integration lifts screens from the dummy and binds the approved live sections to real data
+at the repository seam, per `apps/frontend/docs/architecture/frontend.md` and
 the presentation-truth rule: no invented screens, no raw backend strings in the UI.
 
 Founder rulings from the 2026-09-14 discussion fix the scope:
@@ -169,9 +175,11 @@ table shows:
 ] }
 ```
 
-- Members come from `workspace_membership` joined to `platform_user`; statuses `active` and
-  `suspended` render as `active`, `revoked` renders as `removed` (kept in the list so Re-admit has
-  something to act on), `invited` memberships (legacy state) render as `invited`. `joined_on` is
+- Members come from `workspace_membership` joined to `platform_user`; `active` renders as active.
+  **Founder ruling 2026-09-16:** `suspended` stays visibly Suspended and read-only, with no Re-admit
+  action. This supersedes the original active-state mapping. `revoked` renders as `removed` (kept
+  in the list so Re-admit has something to act on), `invited` memberships (legacy state) render as
+  `invited`. `joined_on` is
   `activated_at`'s date.
 - Pending invitations come from `workspace_invitation` with status `pending` and a future
   `expires_at`; `name` is null and the table shows the address. Accepted, revoked and expired
@@ -230,8 +238,9 @@ role and permissions.
 `public_metadata = { clue_invitation_id }`. Clerk sends the email from the Invitation template
 (branded in the Clerk dashboard under Customization, Emails). The Clerk invitation id is stored on
 our row so revocation can be mirrored. Limit: 100 creations per hour per instance; a `429` is
-surfaced as outcome `rate_limited` and the Clue row is still created (the admin can retry later;
-no automatic retry).
+surfaced as outcome `rate_limited` and the Clue row is still created. **Founder ruling 2026-09-16:**
+to retry a rate-limited or failed delivery, revoke the pending invitation and invite again. Keep
+that behavior; no automatic retry or resend action is required.
 
 **Landing.** Clerk sends the invitee to our redirect URL with its sign-up ticket appended. A new
 page `src/app/(auth)/invite/accept/page.tsx` runs Clerk's ticket sign-up through the existing
@@ -604,6 +613,10 @@ must show its confirmation card, and every failure must show the envelope messag
   own env.
 
 ## 12. Build order
+
+This is the original build order. The [2026-09-16 completion plan](../plans/2026-09-16-settings-integration-completion.md)
+records what already exists and the proposed remaining sequence, including concrete registry,
+retirement and evidence-access corrections discovered by tracing the current code.
 
 1. Migration and the email backfill path; profile read and PATCH; workspace read and rename.
 2. Frontend lift: feature, route, profile menu, confirmation card, autosave; Profile and Workspace

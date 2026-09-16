@@ -48,6 +48,7 @@ Member row: `{kind: "member"|"invitation", id, name: string|null, email: string|
 role_key: "owner"|"admin"|"operator"|"viewer", state: "active"|"invited"|"removed"|"suspended",
 joined_on: YYYY-MM-DD|null, is_self: boolean}`. `suspended` is an additive read-only state so
 pre-existing suspended access is not mislabeled Active or offered Re-admit.
+The founder explicitly accepted this suspended-state behavior on 2026-09-16.
 
 ## Profile, workspace and shell
 
@@ -90,6 +91,7 @@ and additive `delivery_failed`. The last state covers provider/network failures 
 them as successful email delivery. Provider refusals leave the pending Clue row intact. To retry a
 rate-limited/failed delivery, revoke that pending row and invite again; the UI message says this
 explicitly. Pending tokens are never silently rotated during concurrent requests.
+The founder explicitly accepted this revoke-and-invite-again retry behavior on 2026-09-16.
 
 Existing Clerk accounts receive no email under the agreed rule (`created_no_email`) and join on
 their next sign-in. A mixed batch produces one aggregated confirmation message so the single-card
