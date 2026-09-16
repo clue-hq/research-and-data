@@ -249,6 +249,12 @@ page `src/app/(auth)/invite/accept/page.tsx` runs Clerk's ticket sign-up through
 onboarding auth driver (extended with the ticket strategy), which auto-verifies the address, then
 redirects to `/session/establish?invite=<token>`.
 
+**Live acceptance correction, 2026-09-16.** The configured Clerk instance requires a password.
+The invitation form therefore collects first name, last name and password; the adapter calls
+`signUp.create({strategy: "ticket", ticket, firstName, lastName, password})`, because Clerk v7's
+`ticket()` helper does not accept the password. Errors preserve entered values, and incomplete
+sign-ups never activate a session. Credentials remain inside the browser-to-Clerk flow.
+
 **Establishing.** `session/establish` gains one step: it calls `POST /auth/v1/invitations/accept`
 (with the token when present, without it otherwise) **before** resolving the protected session,
 then sets the workspace cookie to the workspace just joined. Existing behaviour is unchanged when

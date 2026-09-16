@@ -1,4 +1,7 @@
-import type { OnboardingAuthResult } from "../model/onboarding";
+import type {
+  InvitationSignUpInput,
+  OnboardingAuthResult,
+} from "../model/onboarding";
 
 export const CLERK_CALL_TIMEOUT_MS = 15_000;
 
@@ -40,25 +43,52 @@ export interface ClerkSignUpDriver {
 
 export interface ClerkTicketDriver {
   readonly status: string | null;
-  ticket(params: {
-    ticket: string;
-    firstName: string;
-    lastName: string;
+  readonly missingFields: readonly string[];
+  readonly unverifiedFields: readonly string[];
+  create(params: InvitationSignUpInput & {
+    strategy: "ticket";
   }): Promise<ClerkCallResult>;
   finalize(): Promise<ClerkCallResult>;
 }
 
 export async function acceptInvitationTicket(
   signUp: ClerkTicketDriver,
-  params: { ticket: string; firstName: string; lastName: string },
+  params: InvitationSignUpInput,
   timeoutMs = CLERK_CALL_TIMEOUT_MS,
 ): Promise<OnboardingAuthResult> {
   if (signUp.status === "complete") return finalize(signUp, "sign-up");
-  const attempted = await runClerkStep(() => signUp.ticket(params), timeoutMs);
+  if (!params.password) {
+    return {
+      status: "error",
+      message: "Set a password to finish creating your account.",
+    };
+  }
+  // Clerk v7's ticket() helper does not accept a password. The underlying create()
+  // ticket strategy accepts all required fields together and verifies the invited email.
+  const attempted = await runClerkStep(
+    () => signUp.create({ ...params, strategy: "ticket" }),
+    timeoutMs,
+  );
   if (!attempted.ok) return attempted.result;
-  return signUp.status === "complete"
-    ? finalize(signUp, "sign-up")
-    : INCOMPLETE_RESULT;
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
+  if (signUp.missingFields.includes("password")) {
+    return {
+      status: "error",
+      message: "Set a password to finish creating your account.",
+    };
+  }
+  if (signUp.missingFields.length || signUp.unverifiedFields.length) {
+    return {
+      status: "error",
+      message:
+        "Your account has additional sign-up requirements that this invitation form does not support. Contact your workspace administrator.",
+    };
+  }
+  return {
+    status: "error",
+    message:
+      "Your account sign-up did not complete. Reopen the invitation from your email and try again.",
+  };
 }
 
 type ClerkStepResult =

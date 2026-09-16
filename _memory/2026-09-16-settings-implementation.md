@@ -75,3 +75,23 @@ Remaining user inputs: Research fields frames or approval to reuse Settings prim
 metadata/defaults, fallback and snippet/form contract; explicit Member invitation approval requested
 after automatic review refused the UI send. No email was sent. No paid research was launched.
 No remote push. Preserve the prepared Members tab for the next authorized action.
+
+Invitation follow-up: explicit Member-role approval was received; the browser successfully sent
+the approved invitation, and its pending Member row survived reload. The user confirmed email
+receipt, then reported acceptance stopping after first/last name with a generic verification error.
+Live read-only Clerk environment inspection confirmed password is required; names are optional,
+legal consent and MFA requirements are off. Our ticket-only form omitted the password entirely.
+
+Fixed invitation signup to collect the password and use Clerk v7
+`create({strategy: "ticket", ...})` (the `ticket()` helper does not accept a password). Inputs now
+survive errors via a normal client submit handler; only complete signup can finalize, and provider
+password-policy errors remain visible. Credentials stay browser-to-Clerk. No auth settings changed,
+no real ticket consumed, and no invitee password entered by the agent.
+
+Verification: 13 focused auth tests and all 2,287 frontend tests passed; design-system build,
+lint (two existing design-editor warnings) and production build passed. Initial npm test was
+blocked by sandbox IPC and passed after escalation. Public Clerk config read needed network
+escalation. Native Arc inspection stalled and returned an unrelated page; a separate form preview
+at the IPv4 loopback address was connection-refused. Neither establishes browser acceptance proof.
+User must refresh the original invitation page, choose a password and finish acceptance; final
+membership/redirect validation remains outstanding. No remote push.

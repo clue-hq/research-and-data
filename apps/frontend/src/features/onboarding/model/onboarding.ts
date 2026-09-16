@@ -97,6 +97,13 @@ export type OnboardingAuthResult =
     }
   | { status: "error"; message: string };
 
+export type InvitationSignUpInput = {
+  ticket: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+};
+
 export interface OnboardingAuthAdapter {
   mode: "clerk" | "fixture";
   /** The authenticated email once a session exists (null before sign-in / in fixture mode). */
@@ -111,11 +118,7 @@ export interface OnboardingAuthAdapter {
     email: string,
     password: string,
   ): Promise<OnboardingAuthResult>;
-  acceptInvitation?(params: {
-    ticket: string;
-    firstName: string;
-    lastName: string;
-  }): Promise<OnboardingAuthResult>;
+  acceptInvitation?(params: InvitationSignUpInput): Promise<OnboardingAuthResult>;
   verifyEmailCode(code: string): Promise<OnboardingAuthResult>;
   resendEmailCode(): Promise<OnboardingAuthResult>;
   signInWithGoogle(): Promise<OnboardingAuthResult>;

@@ -118,8 +118,12 @@ Errors include `409 ADDRESS_MISMATCH`, `410 INVITATION_UNAVAILABLE`,
 Both acceptance paths share the same locked transaction; an identity lock precedes invitation
 row locks. Tokens are idempotent only for the same active identity/membership.
 
-`/invite/accept?token=...&__clerk_ticket=...` uses the existing onboarding auth driver and Clerk v7's
-ticket method, then finalizes only a completed signup. It sends the browser to
+`/invite/accept?token=...&__clerk_ticket=...` collects first name, last name and password through
+the existing onboarding auth driver. Clerk requires a password for this application's sign-up.
+The adapter uses Clerk v7's `create({strategy: "ticket", ticket, firstName, lastName, password})`:
+the `ticket()` convenience method does not accept a password. Passwords go directly to Clerk,
+never through Clue's API or persistence. The form preserves inputs on error, displays Clerk's
+password-policy errors, and finalizes only a completed signup. It sends the browser to
 `/session/establish?invite=...`. That route accepts invitations **before** resolving the protected
 session, including on normal sign-ins without a token. A joined workspace cookie is set before
 membership resolution. Unconfigured acceptance preserves ordinary sign-in when no token was given.

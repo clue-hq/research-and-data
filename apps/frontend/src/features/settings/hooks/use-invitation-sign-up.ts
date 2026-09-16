@@ -21,6 +21,7 @@ export function useInvitationSignUp(ticket: string, token: string) {
         ticket,
         firstName: String(form.get("firstName") ?? "").trim(),
         lastName: String(form.get("lastName") ?? "").trim(),
+        password: String(form.get("password") ?? ""),
       });
       if (result.status === "complete") {
         window.location.assign(

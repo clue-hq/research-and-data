@@ -14,11 +14,14 @@ export function InvitationSignUp({
   return (
     <form
       className={`${styles.authCard} ${styles.authCardExpanded}`}
-      action={controller.submit}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void controller.submit(new FormData(event.currentTarget));
+      }}
     >
       <div className={styles.authHeading}>
         <h1>Join your workspace</h1>
-        <p>Create your account to accept this invitation.</p>
+        <p>Set up your name and password to accept this invitation.</p>
       </div>
       <label className={styles.authField}>
         <span>First name</span>
@@ -39,6 +42,18 @@ export function InvitationSignUp({
             name="lastName"
             autoComplete="family-name"
             maxLength={200}
+            required
+            disabled={controller.saving}
+          />
+        </span>
+      </label>
+      <label className={styles.authField}>
+        <span>Password</span>
+        <span className={styles.inputShell}>
+          <input
+            name="password"
+            type="password"
+            autoComplete="new-password"
             required
             disabled={controller.saving}
           />
