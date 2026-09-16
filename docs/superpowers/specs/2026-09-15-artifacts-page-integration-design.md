@@ -84,8 +84,8 @@ with no grant and listed in `_HUMAN_ONLY_TOOLS`; the design API's routes invoke 
 
 `GET /frontend/v1/artifacts?cursor=&limit=` → `{ data: { artifacts: [...] }, meta: { next_cursor } }`.
 Default limit 50, maximum 200. Keyset cursor over `(updated_at DESC, id)` using
-`clue_projections.pagination.encode_cursor` / `decode_cursor`; an unparseable cursor is `422
-INVALID_CURSOR`.
+`clue_projections.pagination.encode_cursor` / `decode_cursor`; an unparseable cursor is `400
+INVALID_CURSOR`, the accounts list's convention on this surface.
 
 The row set is the workspace-wide form of the per-project feed: the design documents named by the
 design legs of every thread in the workspace, one row per document with the latest leg's thread as
@@ -263,7 +263,7 @@ worktree has no `.env` yet, so one is created at full key parity with `.env.exam
 `tests/api/test_frontend_read_artifacts_db.py`: two projects with documents; a legless document
 excluded; another workspace's document excluded; the latest leg wins as origin; account present,
 absent, and present without the spine join; archived rows included with `archived_at`; the
-caller's marks joined and another user's marks not; stable paging across a cursor; 422 on a bad
+caller's marks joined and another user's marks not; stable paging across a cursor; 400 on a bad
 cursor; 404 with the flag off. Mark routes: upsert, convergence, 401 without a principal, 404 on a
 foreign document. Tool tests in the design API suite for rename (title and JSON updated together,
 version bumped, finalized refused, empty title refused) and archive (converges, no version bump).
