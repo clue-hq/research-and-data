@@ -262,6 +262,9 @@ def test_each_project_lists_only_the_documents_its_own_threads_worked_on(
                 "created_at",
                 "updated_at",
                 "origin_thread_id",
+                "artifact_type",
+                "width_px",
+                "height_px",
             }
             assert datetime.fromisoformat(item["created_at"]).tzinfo is not None
             assert datetime.fromisoformat(item["updated_at"]).tzinfo is not None
@@ -481,7 +484,8 @@ def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
                 ("doc_gallery_scene", "ad"),
                 ("doc_gallery_web", "web"),
             ]
-            # The wire shape is unchanged — ``doc_kind`` is read, never leaked.
+            # ``doc_kind`` is read, never leaked: the wire says ``kind``, and the rest
+            # is the G-H card set (artifact type and page size ride along).
             assert set(feed[0]) == {
                 "id",
                 "project_id",
@@ -493,6 +497,9 @@ def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
                 "created_at",
                 "updated_at",
                 "origin_thread_id",
+                "artifact_type",
+                "width_px",
+                "height_px",
             }
 
     run_async(scenario())
