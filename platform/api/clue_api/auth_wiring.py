@@ -471,7 +471,7 @@ def register_invitation_acceptance(
         request: Request,
         body: InvitationAcceptRequest,
     ) -> JSONResponse:
-        request_id = _request_id(request)
+        request_id = request_id_for(request)
 
         def error(status: int, code: str, message: str) -> JSONResponse:
             return JSONResponse(
