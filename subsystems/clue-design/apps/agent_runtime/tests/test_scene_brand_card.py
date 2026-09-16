@@ -132,9 +132,95 @@ def test_candidate_card_does_not_change_default_legacy_or_web_card(tmp_path, cor
         "token": "surface-page", "value": "#EEEEEE",
     }
     assert "type_sizes" not in default
+    assert "font_bindings" not in default
+    assert "font_asset" not in default["type_roles"]["type.body"]
     assert "bg-surface-brand" in default["color_roles"]["note"]
     scene_tools(tmp_path / "candidate", kit)
     assert kit == original
+
+
+def test_scene_context_exposes_unbound_font_before_any_design_work(tmp_path, kit):
+    """A declared system family must not look like a supplied kit face."""
+    kit["tokens"]["typography"]["type.body"]["value"]["default"].update(
+        font_family="Arial", font_asset="body",
+    )
+    kit["assets"]["fonts"]["body"] = {
+        "family": "Arial", "source": {"kind": "system", "family": "Arial"},
+        "faces": [],
+    }
+    original = copy.deepcopy(kit)
+    tools = scene_tools(tmp_path, kit)
+    workspace = scaffold_workspace(tools, "Make an ad")
+    card = json.loads((workspace / "brand_card.json").read_text())
+    assert card["type_roles"]["type.body"]["font_asset"] == "body"
+    body = card["font_bindings"]["assets"]["body"]
+    assert body["family"] == "Arial"
+    assert body["declared_face_count"] == 0
+    assert body["declared_faces"] == []
+    assert body["glyph_coverage"] == "not_established"
+    # No asset I/O or preview is needed to deliver the warning-bearing facts.
+    assert json.dumps(card, indent=2) in build_frame_payload(tools)
+    assert kit == original
+
+
+def test_declared_faces_and_glyph_gaps_do_not_claim_loaded_coverage(kit):
+    kit["tokens"]["typography"]["type.body"]["value"]["default"]["font_asset"] = "body"
+    kit["assets"]["fonts"]["body"] = {
+        "family": "Example Display",
+        "faces": [
+            {"asset_id": "regular", "weight": 400, "style": "normal"},
+            {"asset_id": "medium", "weight": 500, "style": "normal"},
+        ],
+        "metrics": {"missing_glyphs": ["→", "×"]},
+    }
+    # Font asset records are intentionally not in the image/logo manifest.
+    card = build_brand_card(kit, scene_dsl=True, asset_manifest={})
+    body = card["font_bindings"]["assets"]["body"]
+    assert body["declared_face_count"] == 2
+    assert body["declared_faces"] == [
+        {"asset_id": "regular", "weight": 400, "style": "normal"},
+        {"asset_id": "medium", "weight": 500, "style": "normal"},
+    ]
+    assert body["known_missing_glyphs"] == ["→", "×"]
+    assert body["glyph_coverage"] == "not_established"
+
+
+@pytest.mark.parametrize("metrics", [None, {}, {"x_height_ratio": 0.5}, {"missing_glyphs": []}])
+def test_absent_glyph_gaps_do_not_prove_complete_coverage(kit, metrics):
+    kit["tokens"]["typography"]["type.body"]["value"]["default"]["font_asset"] = "body"
+    kit["assets"]["fonts"]["body"] = {
+        "family": "Example Display", "faces": [], "metrics": metrics,
+    }
+    body = build_brand_card(kit, scene_dsl=True)["font_bindings"]["assets"]["body"]
+    assert body["glyph_coverage"] == "not_established"
+    assert "known_missing_glyphs" not in body
+
+
+@pytest.mark.parametrize("reference", ["absent", "token($font.body)"])
+def test_raw_font_reference_is_preserved_without_guessing_resolution(kit, reference):
+    kit["tokens"]["typography"]["type.body"]["value"]["default"]["font_asset"] = reference
+    kit["assets"]["fonts"]["body"] = {"family": "Example Display", "faces": []}
+    card = build_brand_card(kit, scene_dsl=True)
+    assert card["type_roles"]["type.body"]["font_asset"] == reference
+    assert reference not in card["font_bindings"]["assets"]
+    assert "body" in card["font_bindings"]["assets"]
+
+
+def test_font_binding_counts_only_faces_with_asset_handles_and_reports_caps(kit):
+    kit["tokens"]["typography"]["type.body"]["value"]["default"]["font_asset"] = "body"
+    kit["assets"]["fonts"]["body"] = {
+        "family": "Example Display",
+        "faces": [None, {}, {"asset_id": ""}, {"asset_id": 42}]
+        + [{"asset_id": f"face-{n}", "weight": 100 + n * 50, "style": "normal"}
+           for n in range(12)],
+        "metrics": {"missing_glyphs": list("ABCDEFGHIJKLMNOPQRST")},
+    }
+    body = build_brand_card(kit, scene_dsl=True)["font_bindings"]["assets"]["body"]
+    assert body["declared_face_count"] == 12
+    assert len(body["declared_faces"]) == 8
+    assert body["omitted_faces"] == 4
+    assert body["known_missing_glyphs"] == list("ABCDEFGHIJKLMNOP")
+    assert body["omitted_missing_glyphs"] == 4
 
 
 def test_candidate_can_read_and_use_color_outside_compact_roles(tmp_path, core, kit):

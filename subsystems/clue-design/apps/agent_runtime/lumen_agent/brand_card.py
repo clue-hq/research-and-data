@@ -169,7 +169,7 @@ def build_brand_card(
         # The taste-critical fact: the kit's most vivid brand color. CTAs and
         # emphasis reach for THIS (see brand-application.md), not ink.
         "accent": accent,
-        "type_roles": _type_roles(typography),
+        "type_roles": _type_roles(typography, include_font_asset=scene_dsl),
         "logos": _logo_inventory(assets.get("logos") or {}, manifest),
         "images": _image_inventory(assets.get("images") or {}, manifest),
     }
@@ -189,6 +189,7 @@ def build_brand_card(
         card["type_sizes"] = _scene_type_sizes(
             (brand_kit.get("tokens") or {}).get("numbers") or {}
         )
+        card["font_bindings"] = _scene_font_bindings(assets.get("fonts") or {})
     # Font honesty: subset webfaces silently lack glyphs (× / — …). Surface the
     # ingestion audit so the author chooses copy with open eyes. Omitted when no
     # face reports a gap, and tolerant of old kits that predate the audit field.
@@ -304,7 +305,62 @@ def _font_gaps(fonts: JsonObject) -> list[str]:
     return notes
 
 
-def _type_roles(typography: JsonObject) -> JsonObject:
+def _scene_font_bindings(fonts: JsonObject) -> JsonObject:
+    """Declared kit bindings, not a duplicate of the engine's font resolver.
+
+    The image/logo manifest deliberately excludes fonts. Neither its absence
+    nor an empty kit face list establishes actual runtime font availability.
+    Glyph metrics describe one representative face and a limited probe set.
+    """
+    entries = {
+        name: font for name, font in fonts.items() if isinstance(font, dict)
+    } if isinstance(fonts, dict) else {}
+    inventory: JsonObject = {}
+    for name, font in list(entries.items())[:MAX_LIST]:
+        faces = [
+            face for face in (font.get("faces") or [])
+            if isinstance(face, dict)
+            and isinstance(face.get("asset_id"), str)
+            and face["asset_id"].strip()
+        ]
+        row: JsonObject = {
+            "family": font.get("family"),
+            "declared_face_count": len(faces),
+            "declared_faces": [
+                {key: face.get(key) for key in ("asset_id", "weight", "style")}
+                for face in faces[:MAX_LIST]
+            ],
+            "glyph_coverage": "not_established",
+        }
+        if len(faces) > MAX_LIST:
+            row["omitted_faces"] = len(faces) - MAX_LIST
+        metrics = font.get("metrics")
+        missing = metrics.get("missing_glyphs") if isinstance(metrics, dict) else None
+        if isinstance(missing, list) and missing:
+            row["known_missing_glyphs"] = missing[:MAX_GLYPHS_IN_NOTE]
+            if len(missing) > MAX_GLYPHS_IN_NOTE:
+                row["omitted_missing_glyphs"] = len(missing) - MAX_GLYPHS_IN_NOTE
+        inventory[name] = row
+    result: JsonObject = {
+        "note": (
+            "Raw kit declarations, not loaded-font verification. The role's "
+            "font_asset is a raw reference; a resolved font slot can override "
+            "the role's family. Preflight resolves aliases, active modes, "
+            "actual font bytes and weight substitutions. Zero kit faces may "
+            "still be supplied by bundled/library fonts; declared faces may "
+            "fail to load. Known missing glyphs are a representative-face "
+            "audit, not coverage for every face or character. No recorded gap "
+            "does not prove coverage. Inspect the rendered copy; use a "
+            "separate native vector for an unsupported decorative symbol."
+        ),
+        "assets": inventory,
+    }
+    if len(entries) > MAX_LIST:
+        result["omitted_font_assets"] = len(entries) - MAX_LIST
+    return result
+
+
+def _type_roles(typography: JsonObject, *, include_font_asset: bool = False) -> JsonObject:
     roles: JsonObject = {}
     for role in CARD_TYPE_ROLES:
         value = (typography.get(role) or {}).get("value") or {}
@@ -315,6 +371,8 @@ def _type_roles(typography: JsonObject) -> JsonObject:
                 "size": default.get("font_size"),
                 "weight": default.get("font_weight"),
             }
+            if include_font_asset:
+                roles[role]["font_asset"] = default.get("font_asset")
     return roles
 
 

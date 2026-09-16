@@ -1808,3 +1808,34 @@ latency, browserdownloadproof. No newproviderrequests this turn.
   safe arrow vector/glyph, actual new kit version and editor/export proof.
   Typography5call approval remains pending; qualification0/11full,1/11time.
   Existing review tabs preserved. No engine/model/runtime setting changed.
+
+2026-09-15 Task47 in progress (UTC September16): candidate brand card now
+exposes declared font handles/weights and representative glyph gaps before
+direction, explicitly without claiming loaded availability or full coverage.
+Website/legacy unchanged. RED cases retained; corrected one test fixture that
+assumed a nonexistent default body slot. Focused38 passed; independent review
+clear. Ten brand_card Ruff findings exactly match HEAD; test file lint clean.
+Native arrow diagnosis confirmed TypefaceFontProvider does not implement
+character matching; initial focused101/full Rust workspace and helper build
+passed, but independent review caught false hard errors for rich spans and
+third-family editor/export divergence. Fix is being narrowed to primary/default
+fallback with actual styled-paragraph diagnostics. These initial gates are not
+final verification. WASM compile succeeded but bindgen cache permission failed;
+requires scoped retry. Dedicated empty font-gate DB created/migrated locally,
+isolated from all four workspaces. No new provider calls or saved-scene writes.
+
+Task47 final verification: actual styled paragraphs now supply glyph verdicts;
+warm SkParagraph cache omitted unresolved-codepoint metadata, so regression uses
+painted GID0/UTF8 starts instead. Sorted/deduped errors, primary/default chain,
+no third-family expansion. Synthetic bold fixture derived from bundled Inter.
+104 focused Rust tests; final full workspace1182passed; helper rebuild; WASM
+HANDSHAKE OK62c7de8b022e; runtime2579passed1skip86.85s; API2355passed6skip450.68s
+on dedicated clue_design_fontgate_20260915. Independent final review approved.
+One gate command refused a mistyped expected HEAD before tests; corrected from
+actual git output. Source hashes frozen in ignored font-fix-verified-source-hashes.
+AWS native comparison visibly fixes arrow; all11 retained exact-kit preflights
+have no errors and source hashes unchanged. NewhelperSHA e2a76510...9417651.
+No new provider calls, published kit, repin or user-creative edits. AWS font data
+override remains a diagnostic draft. Overall qualification still0/11full,1/11time;
+five review-only calibration calls remain pending separate approval. Localcommit
+and owned idle service reload next; no new global size rule or skill expansion.

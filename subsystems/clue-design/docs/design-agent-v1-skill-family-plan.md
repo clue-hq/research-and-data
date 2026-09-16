@@ -3212,3 +3212,46 @@ success or expand the skill catalog to compensate for incorrect brand data.
 The five typography review calls remain prepared and unsubmitted pending the
 separate requested approval; this turn made zero model/provider calls. Overall
 qualification remains **0/11 fully passing, 1/11 within four minutes**.
+
+### Task 47 — declared font context and faithful native glyph fallback
+
+Candidate scene cards now expose raw font-slot references, bounded face/weight
+declarations and recorded representative-face glyph gaps before direction.
+They distinguish declarations from actual loaded availability; no recorded gap
+does not establish full character coverage. Engine alias/mode resolution remains
+authoritative. Legacy and website cards are unchanged. The focused card suite
+passes 38 tests, and independent review found no blockers.
+
+The AWS arrow failure was a native rendering defect: enabling Skia fallback on
+a byte-backed TypefaceFontProvider did not supply its missing character matcher.
+The shared paragraph builder now explicitly lists the primary and default font,
+matching the existing CanvasKit fallback boundary. It does not select unrelated
+loaded brand families. Glyph diagnostics inspect the actual laid-out paragraph,
+including styled spans, using painted glyph IDs rather than a separate probe or
+Skia's cache-dependent unresolved-character list. Unrenderable visible glyphs
+produce LUMS0106 errors; supported fallback remains a reported substitution.
+
+Independent review caught and removed two initial regressions before deployment:
+a base-style probe could reject valid bold spans, and fallback through every
+loaded family could disagree with the editor/SVG. A repeated-render regression
+then exposed the cached missing-character reporting defect. The final 104-test
+focused suite includes actual glyph visitation, raster pixel equivalence, both
+span-coverage directions, repeated shaping and unsupported third-family behavior.
+The synthetic bold fixture is derived from bundled Inter, not AWS font bytes.
+
+Final native workspace gate: 1,182 passed. Release helper rebuilt; WASM handshake
+passes at unchanged core stamp `62c7de8b022e`. Full agent runtime: 2,579 passed,
+one live-provider test skipped. Full API gate: 2,355 passed and six skipped on a
+newly created, dedicated local database, with provider credentials blanked for
+the test process. Independent final review approved the implemented scope.
+An initial WASM attempt needed cache permissions; a guard also rejected a mistyped
+expected commit hash before running any tests. Both were corrected and retried.
+
+The rebuilt helper visibly replaces the AWS diagnostic copy's missing-character
+box with the intended arrow. All eleven retained scenes pass native preflight
+using their exact saved kit versions, with no source-scene writes. Evidence lives
+under `qualified-delivery-20260915/` in the `font-fallback-*` and `glyph-*` files.
+These are rendering/regression results, not new creative-quality qualification.
+The AWS font-kit override is still a diagnostic draft; it is not published and
+does not silently repin existing ads. Typography calibration, fresh account-copy
+qualification, end-to-end latency and the five unverified downloads remain open.
