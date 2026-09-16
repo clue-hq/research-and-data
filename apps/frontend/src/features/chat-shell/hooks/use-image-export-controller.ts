@@ -28,6 +28,18 @@ export function useImageExportController({
   const [scale, setScale] = useState<ImageExportScale>("1x");
   const [statusMessage, setStatusMessage] = useState("");
   const [exporting, setExporting] = useState(false);
+  /**
+   * Whether the LAST direct-leg attempt ended with no file. It exists so a
+   * caller can hand `ImageExportMenu` a `SceneExportStatus` and get a refusal
+   * rendered VISIBLY — the menu promotes its status line out of the `.srOnly`
+   * span only on `failed` (`image-export-menu.tsx`), and without this a direct
+   * -leg refusal was announced to screen readers alone, which is the exact
+   * defect `SceneExportStatus.failed` was introduced to prevent.
+   *
+   * The event-dispatch path never touches it: there the window listener owns
+   * the outcome and supplies its own status, so the editor is unchanged.
+   */
+  const [exportFailed, setExportFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -54,11 +66,14 @@ export function useImageExportController({
       if (exporting) return;
       setExporting(true);
       setStatusMessage("");
+      setExportFailed(false);
       try {
         await onExport({ format, scale });
         setStatusMessage(`${format} download started`);
+        setExportFailed(false);
       } catch (error) {
         setStatusMessage(error instanceof Error ? error.message : "Export failed. Please try again.");
+        setExportFailed(true);
       } finally {
         setExporting(false);
       }
@@ -85,6 +100,7 @@ export function useImageExportController({
   return {
     controller: {
       closeMenu,
+      exportFailed,
       exporting,
       format,
       menuOpen,

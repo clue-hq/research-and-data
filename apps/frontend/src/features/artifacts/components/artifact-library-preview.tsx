@@ -302,7 +302,21 @@ export function ArtifactLibraryPreview({
                     Download preview
                   </Button>
                   {exportController.menuOpen ? (
-                    <ImageExportMenu controller={exportController} />
+                    /* A refused export has to be SEEN, not just announced: the
+                       menu promotes its status line out of the screen-reader
+                       -only span only when the status says `failed`. There is
+                       no window listener on this page to supply one, so the
+                       controller's own direct-leg outcome becomes the status.
+                       A success stays `undefined`, which leaves the menu's
+                       optimistic line exactly as it renders in the editor. */
+                    <ImageExportMenu
+                      controller={exportController}
+                      exportStatus={
+                        exportController.exportFailed
+                          ? { failed: true, message: exportController.statusMessage }
+                          : undefined
+                      }
+                    />
                   ) : null}
                 </div>
               ) : (
