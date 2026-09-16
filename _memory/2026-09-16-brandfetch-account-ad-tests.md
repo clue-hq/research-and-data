@@ -52,3 +52,83 @@ in its separate worktree; no new ingestion agent in this task.
   redispatch or treat the earlier first-pass acceptance labels as qualification.
 - Probe initially failed DNS inside sandbox; authorized network retry succeeded.
   System `python` absent; use repository `.venv/bin/python` for runtime tooling.
+
+## Ordinary-request identity skill test (2026-09-16, in progress)
+
+- User clarified that one-to-one ads should compose advertiser × target as one
+  balanced group; fix the reusable skill rather than submit layout instructions.
+- Audited prior runs: both account skills were loaded, but authored directions
+  deliberately made target logos dominant. Prior assisted revisions are not proof
+  of ordinary-request autonomy. Original four deliveries failed this intent.
+- Replaced vague balancing with a positive reference-led procedure: select
+  treatment, compare visible wordmarks, build one optically balanced group,
+  connect it to the message, and review against the request as well as direction.
+  Explicit target-only/name-only requests remain supported; original assets only.
+- Frozen model planning probe: five no-identity-skill samples chose separate large
+  target blocks; five candidate samples chose paired groups. This is plan-only
+  evidence, not rendered-quality acceptance or statistical generalization.
+- 166 skill discovery/materialization/format checks passed. Independent review
+  found an over-broad pair-only rejection; qualified it before live dispatch.
+- Four fresh ordinary requests dispatched via browser at 08:03Z: Clue to Google,
+  AWS to Insight Health, Google Cloud to NVIDIA, Conduit to Hyatt. User messages
+  prescribe advertiser/target/audience/square LinkedIn format, not layout or copy.
+- Ignored evidence: evaluation/skill-family-v1/paired-identity-20260916. Exact source
+  frozen under live-guidance. Materialized identity SHA256
+  7d6992a2fb0a3ed5eaaaed66d40a72d2f157f156fa4317330366844a8e5d2579
+  matches snapshot; all four read the full skill (100 lines plus tail).
+- Head-of-ABM still requires a second generation confirmation. Clue and Conduit
+  retried failed evidence writes before handoff; a separate latency issue.
+- Do not alter live guidance during these runs. First-delivery and independent
+  visual review remain pending. A note-append command initially used the subsystem
+  cwd and failed before writing; rerun correctly at root, no data lost.
+
+- First ordinary-request batch completed: all four selected paired identity, but
+  only Clue and Conduit used complete wordmarks. AWS and Google Cloud misread
+  transparent logo previews as baked dark plates and selected inferior symbols.
+  All exceeded four minutes; runtime acceptance is not visual qualification.
+- Root cause reproduced in a frozen real-logo vision probe: 5/5 original previews
+  falsely described transparent wordmarks as opaque dark plates; 5/5 comparison
+  previews identified transparency and chose the light-surface full lockup.
+- Added candidate-scene-only asset inspection: decoded alpha counts/bounds plus
+  white/charcoal comparison, while keeping the original preview and placement
+  asset intact. No image/logo edits, no website or legacy changes. Regressions
+  first failed for white/black transparent art; now cover translucent/opaque art,
+  source bytes, scene immutability and legacy compatibility. 247 focused tests
+  passed. Independent review plus palette/all-transparent edge probes found no
+  actionable issue.
+- Reloaded idle local design API/workers at 08:23Z after checking all tasks
+  terminal. Four workspace frontends, auth, database and storage unchanged.
+  Second ordinary-request batch will test the tool fix with unchanged skill.
+
+## Closing verification for paired identity
+
+- Second batch finished with ordinary short requests and no layout/copy/asset
+  instructions. All four read the full updated identity skill; materialized SHA256
+  matches frozen guidance. Actual asset views include the new inspection blocks.
+- Independent rendered identity review: 4/4 pass. Clue × Google, AWS × Insight
+  Health (full wordmark), Google Cloud × NVIDIA (full wordmark), Conduit × corporate
+  HYATT. Separate original image/vector assets with contain fit and native text ×;
+  no generated logos. Hyatt source crop is pixel-identical to its recorded crop
+  from an authentic, nongenerated source. Brandfetch plus official-site fallback.
+- Overall ads are NOT fully qualified: Clue small CTA/product detail and generic
+  proof card; AWS small support and over-broad source wording; Google Cloud copy
+  infers train/ship/infrastructure benefit absent from cited Gemini Enterprise
+  evidence; Conduit product crop and routing implication remain weak. Three
+  runtime accepted, Conduit completed_with_warnings. Independent quality judgment
+  does not promote these acceptance labels to success.
+- Finished generation after confirmation: Clue 9.35 min, AWS 10.21 min,
+  Google Cloud 7.85 min, Conduit 11.12 min. None meets four minutes. Home handoff
+  latency is additional. Do not report this as speed qualification.
+- Frozen second-pass results and exact URLs live in ignored paired-identity-
+  20260916/second-pass/outcome-summary.json; first-terminal snapshots preserved.
+  This is a practical live comparison, not a causally isolated brand-library test;
+  later runs may reuse legitimate crops fetched in earlier runs.
+- Reloaded saved artifacts in authenticated four-port browser sessions. Existing
+  stale designing status and occasional gallery auto-open races remain UI issues;
+  source and live canvas exist. No auth changes, manual prompt repairs, changes
+  to old approved artifacts, website harness or separate brand-agent worktree.
+- Commit 2c2b5305 contains the skill/tool/regression fix; 247 focused tests passed
+  and independent code review found no defect. No Rust/engine changes. One earlier
+  pytest result was lost to output truncation; the focused run was repeated with a
+  saved log and exit 0. Two gallery clicks raced automatic opening; inspected
+  current state and continued without duplicate artifacts.
