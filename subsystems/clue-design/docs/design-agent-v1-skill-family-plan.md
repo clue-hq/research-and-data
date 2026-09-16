@@ -3269,3 +3269,41 @@ removed the font-unavailable warning, without changing or bypassing authenticati
 The same recovery was recorded in Task 22; the underlying request/retry defect
 remains open. No brand kit was published or saved creative altered. The overall
 qualification result remains **0/11 fully passing and 1/11 within four minutes**.
+
+### Task 48 — publish source-correct AWS typography for future local runs
+
+The AWS test workspace now uses approved brand-kit version 5 for new documents.
+It preserves the latest v4 logos, imagery and non-typography data, restores the
+verified Amazon Ember font slot, and binds the marketing text roles to the
+retained official Amazon Ember Display 400/500 binaries. Matching retained DOM
+elements to their CSS supports the inspected headline, subtitle, section title,
+body and CTA roles. This is evidence for those website elements, not every AWS
+advertising campaign. Unobserved roles and existing size defaults are explicitly
+labelled as derived; ad composition must still follow the selected reference.
+
+Cookie/chat-derived typography claims were removed from the brief and grammar
+audit. The curation caller explicitly preserves these advisory extensions after
+typed engine normalization and verifies that the scene agent card includes the
+corrected guidance. No global brand-specific rule or new skill was introduced.
+
+Both retained AWS ads were replayed as native copies using the corrected font
+bindings, preserving copy, authored positions, type sizes and imagery. Both had
+zero preflight errors, no Arial fallback warnings, and inspected PNG outputs.
+The arrow fallback renders correctly with the previously verified helper fix.
+These font comparisons do not qualify the existing small supporting text or
+prove that a fresh agent will choose a better composition.
+
+Publication used the canonical local tool path with version-4 concurrency checks.
+The first attempt supplied a descriptive value to the source enum and rolled back;
+the corrected source=manual retry and subsequent approval succeeded. A fresh
+read-only check verifies the v5 digest and latest-approved selection, all 83 saved
+documents unchanged, and all 13 earlier kit versions unchanged. Browser inspection
+on port 3022 confirms both loaded font samples and the corrected role descriptions.
+Saved ads keep their original version pins, including the protected Conduit edit.
+
+The existing product_ready metadata remains true, but PDF-subsetting and missing
+mode/asset-token warnings remain visible. That metadata is not a creative-quality
+verdict. Evidence is retained under `qualified-delivery-20260915/aws-font-correction/`.
+No provider calls were made. Qualification remains **0/11 fully passing and 1/11
+within four minutes**; typography calibration, fresh ABM relevance, latency and
+five download-file proofs remain open.

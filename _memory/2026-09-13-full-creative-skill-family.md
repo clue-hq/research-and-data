@@ -1856,3 +1856,30 @@ the visual claim. No new creative/model call, kit publication or saved-scene edi
 Qualification remains0/11full,1/11time. Outstanding: typography calibration,
 source-correct font kit, transient font/auth retry, fresh ABM quality and latency,
 five actual download proofs. All existing review tabs retained for continuation.
+
+2026-09-15 Task48 closing (UTC September16): AWS source-data typography correction
+- Published and approved AWS local kit v5 through the canonical journaled tools,
+  based on latest v4 so newer imagery/logos remain. Retained official marketing
+  DOM/CSS supports Display400 body/subtitle and Display500 heading/CTA roles;
+  stored official binaries match their recorded digests and intrinsic weights.
+  Restored the verified Ember300/400/700 slot. Removed cookie/chat-derived
+  typography guidance and labelled unobserved roles/sizes as derived defaults.
+- Engine normalization omits brief/grammar_audit extensions; the curation caller
+  preserved them explicitly and checked the resulting agent card. No engine,
+  global skill, ingestion-agent, website or model-configuration edit this turn.
+- Two native AWS scene copies render with corrected bindings and no preflight
+  errors or Arial fallback warnings; inspected both PNGs. This is a font replay,
+  not a new agent generation or typography-quality pass. Existing PDF subset and
+  product-readiness warnings remain; the stored product_ready flag is not proof
+  that those gaps or campaign styling are resolved.
+- First publish attempt used a non-enum source string and rolled back. Retried
+  with canonical source=manual and a distinct stable idempotency key; approval
+  and publication both succeeded as actor=agent. No duplicate kit version.
+- Fresh read-only verification confirms latest approved ref=v5 and published
+  digest matches; all83 saved documents and all13 earlier kit versions match
+  their before-state hashes/pins/statuses. Existing ads remain on saved versions.
+  Browser3022 typography shows both loaded font samples and corrected role notes.
+- Evidence retained in existing ignored qualified-delivery-20260915/
+  aws-font-correction/curation-* files. No provider calls. Overall qualification
+  remains0/11full,1/11time. Five review-only calibration calls remain prepared,
+  awaiting the separate approval; fresh quality/speed qualification remains open.
