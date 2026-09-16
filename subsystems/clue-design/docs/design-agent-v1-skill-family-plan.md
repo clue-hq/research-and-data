@@ -3359,3 +3359,110 @@ remains unanswered after three consecutive goal turns with that dependency.
 The original eleven-generation approval is consumed. Additional model judgment
 and fresh quality/speed qualification therefore remain gated on explicit provider
 authorization; the full objective and its criteria remain unchanged.
+
+
+### Task 52 — exact account logos and account composition (2026-09-15)
+
+Authorized scope: integrate the supplied Logo.dev credential privately, keep
+Brandfetch as a complementary source, strengthen account-ad skills, and produce
+one new square LinkedIn creative in each existing advertiser workspace.
+The separate brand-ingestion agent and account-list/template scaling stay separate.
+
+- `fetch_logo`: Logo.dev Brand API + Brandfetch + official-site retrieval feed the
+  existing measured-ink/completeness arbiter. No generated/recolored mark, parent
+  domain substitution, or monogram fallback. Original bytes remain separate layers.
+- Logo.dev exposes one optional wide brandmark and square logo, not an original
+  light/dark variant family. Missing variants remain gaps; compatible originals
+  from another source can fill them. Signed CDN queries are never persisted.
+- Provider metadata is checked before asset download. Cache keys preserve product
+  hosts; older pre-verification entries are misses; a changed requested company
+  name cannot reuse a differently scoped result. Mixed-source evidence remains
+  per-cell rather than certifying site pixels from another provider's metadata.
+- Added callable support skill `account-identity-composition`; account-adaptation
+  owns relevant message/evidence, the new skill owns authentic candidate selection
+  and optical grouping. Both support any creative family. Review starts from the
+  original request and whole feed preview, not only the agent's own plan.
+- Four matched ordinary requests: Clue → Conduit, AWS → Clue, Google Cloud → Clue,
+  Conduit → Casiola. No supplied asset ID, reference attachment, fixed headline,
+  skill name, or prescribed coordinates. Advertiser assets come from its workspace.
+- Record provider provenance, actual loaded skills, native editable layers, feed
+  quality and time to durable completion. Separate Home handoff time. Do not count
+  runtime acceptance as human quality or confuse these four examples with coverage
+  of every family. Existing protected ads remain untouched.
+
+Live provider preflight rejected Google/Amazon parent records from both vendors and
+Brandfetch's Clue/Vanilla mismatch. Verified original-site alternatives remained
+available. Logo.dev returned a usable Clue dark lockup, with absent/unverified
+variants honestly reported. Evidence and four exact-run observers are under the
+ignored `abm-logo-dev-20260916` evaluation directory.
+
+
+Four-workspace first-delivery results (2026-09-16 UTC): all four agents loaded
+`account-adaptation` and `account-identity-composition`, selected type-led positioning,
+viewed their workspace sources and fetched the exact target identity themselves.
+There were no attached reference images or handcrafted scene edits. All four
+runtime reviewers accepted, but independent review qualified **0/4**:
+
+| Advertiser → target | Design request to durable completion | Independent first-delivery failure |
+| --- | --- | --- |
+| Clue → Conduit | 443.19 s | Small kicker/CTA unreadable at feed scale; internal invitation wording |
+| AWS → Clue | 410.33 s | Tiny advertiser mark, target dominates; generic unsupported mechanism |
+| Google Cloud → Clue | 449.43 s | Target capsule dominates; small support/CTA and added compatibility meaning |
+| Conduit → Casiola | 438.24 s | Unsupported every-inquiry/after-hours promise despite accepted source review |
+
+Home handoff added 2:05–2:14; all first deliveries missed the four-minute target.
+These are four examples of one primary family, not qualification of every family.
+The app used its unchanged Grok 4.6 solo design runtime. Native logo assets and text
+remain separate scene nodes; runtime acceptance does not prove visual quality.
+
+A second stage used one identical, concise feedback request per existing draft:
+“Improve the logo balance and readability of the small text. Keep the advertiser’s
+identity clear, write natural account-relevant copy, and remove any promises the
+references don’t support.” These are assisted revisions. The original terminal
+scenes, source records, timestamps and traces are frozen separately from revisions.
+Guidance was tightened on sender recognition, authentic advertiser variants,
+natural copy, every small-text occurrence and added-meaning evidence. Materialized
+skill bytes matched current source. No universal type size or layout was added.
+
+Product friction observed separately: the Home capture path can fail on missing
+client identity while still opening Design; the completed editor can keep a stale
+“designing” overlay and ignore Send until reloaded; shared localhost auth required
+normal Google/Clerk session renewal. No authentication bypass was used.
+
+
+Task52 closing — bounded assisted revisions:
+
+| Advertiser | Revision time | Runtime status | Independent review |
+| --- | --- | --- | --- |
+| Clue | 537.59 s | edit_applied | Small kicker/CTA at feed scale; peach target plate and CTA differ from preferred cream. Improved mechanism and natural copy. |
+| AWS | 331.86 s | edit_applied | Improved identity scale but generic campaign slogan and audience label leave no useful advertiser mechanism. |
+| Google Cloud | 428.75 s | accepted | Improved sender hierarchy and supported copy, but CTA remains too small at feed scale. |
+| Conduit | 339.44 s | edit_applied | Requested corrections improved; support has an isolated final word and needs reflow. |
+
+All four revisions read both account support skills. None is counted as a fully
+qualified strong creative: three improve specific correction dimensions, while
+AWS still lacks a useful account argument. Three runtime statuses are scoped
+`edit_applied`; Google's whole-scene `accepted` is still not human qualification.
+Each retains two independent image nodes plus native text and geometry. Conduit's
+PNG exported through the actual product UI and the downloaded file was inspected.
+A full edit/save/reload/export cycle was not rerun across every brand.
+
+Final focused suite: **224 passed** (provider adapters, identity, arbitration,
+exact-host cache, dispatch, progressive skill routing, solo runtime and logo binding).
+Independent review found and fixed a provider-metadata token leak; 32 regressions
+were red first. An added paragraph pushed account-adaptation to101 lines, exposing
+the default100-line read boundary; instructions were condensed to98 without
+removing guidance, and the real progressive-loading regression passed again.
+New code Ruff and diff checks pass. No full repository or DB-backed migration suite
+was run; no schema or Rust changes were made. Logo credential is only in ignored
+local.env; 702 local receipt files and staged diff were scanned without exposure.
+The idle design API and four owned workers were reloaded with the final provider
+fix; frontend/DB/storage/workspaces were preserved. No generation remains active.
+
+Next bounded work: calibrate every meaningful text occurrence at placement size,
+preserve the approved brand palette in account identity surfaces, and require a
+supported advertiser mechanism before choosing AWS's account message. Investigate
+the repeatable stale editor state separately. Reducing sequential model/tool turns
+is necessary for the four-minute target; provider availability alone does not
+solve the latency. Account-picker/list scaling and template production remain
+outside this test; this is still a candidate skill, not a promoted quality result.

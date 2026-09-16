@@ -1952,3 +1952,51 @@ five actual download proofs. All existing review tabs retained for continuation.
   the wrong cwd and made no edit; corrected path, verified live hot reload.
 - Original creative qualification goal stays blocked on the separate provider
   approval; this UI task does not alter its status or authorize provider calls.
+
+2026-09-15 Task52 in progress: authorized Logo.dev and four-workspace ABM tests
+- User supplied Logo.dev secret; stored only in ignored root.env, never in receipts.
+  New adapter preserves originals, rejects parent-domain substitutions and monograms;
+  Brandfetch now validates returned identity before asset downloads.
+- Regression RED reproduced product-domain cache collision and stale company-name
+  cache bypass; exact-host versioned cache and name-sensitive hit checks implemented.
+- Live Logo.dev resolves AWS to Amazon and Google Cloud to Google: correctly refused.
+  Clue original dark lockup available. Conduit AI name qualifier requires fallback.
+  Combined service resolves all five tested brands via verified original sources;
+  Brandfetch Clue response falsely names Vanilla and is now rejected.
+- Added account-identity-composition support skill, strengthened relevance recipe
+  and independent preview judgment. Candidate registered; no fixed layouts introduced.
+  Existing quartet remains authenticated on ports3021-3024 with workspace isolation.
+  Four fresh tests authorized now; earlier diagnostic approvals remain unused.
+
+
+2026-09-15 Task52 closing (2026-09-16 UTC):
+- Logo.dev integration and exact-host/name cache guards committed locally fa20b6e1.
+  Final provider-metadata redaction fix rejects unsafe names, normalizes domains,
+  omits unsafe IDs; 32 regressions red→green. Secret stayed in ignored root.env.
+- Four fresh ordinary requests completed in the existing authenticated quartet.
+  All loaded the account skills and called fetch_logo themselves; no supplied
+  source IDs/layouts/headlines. Type-led selected in all4, not full family coverage.
+  Initial design times410–449s; Home handoff125–134s extra. Independent0/4 pass
+  despite runtime4/4 accepted. Sources/first terminal receipts frozen separately.
+- One assisted revision per draft: Clue537.59s, AWS331.86s, Google428.75s,
+  Conduit339.44s. All4 read the revised skills. Identity/readability/source limits
+  improved, but strict whole-creative0/4: Clue smallCTA/kicker and peach palette;
+  AWS no useful account mechanism; Google smallCTA; Conduit orphan final word.
+  Three edit_applied; Google accepted still fails independent feed review.
+- Native two logo image nodes in every draft; text/geometry remain independent.
+  Conduit exported via product PNG UI and downloaded pixels inspected. Browser
+  waitForEvent(download) timed out even though UI reported PNG exported and file
+  existed; do not classify export as failed. No universal type-size rule added.
+- Final224 focused tests pass, Ruff newcode and diff checks pass. First rerun
+  exposed101-line skill beyond100-line default; condensed to98, progressive-read
+  check and full suite passed. No fullrepo/DBintegration/Rust suite claimed.
+- UI issues observed: Home capture missingclientidentity, stale designing overlay
+  ignoring sends until reload, normalClerk session expiry/renewal affecting old
+  localhost tabs. Recovered originalowner via normalGoogle login, no authbypass.
+  All prior artifacts preserved; bounded revision prompts stayed in new testchats.
+- Final idle-only API/fourworker reload receipt runtime-reload-final.json; no
+  frontends/DB/storage changes. API /health was404(no route); checked OpenAPI.
+  Routine helper failures: systempython lacksdotenv(use.venv); glob missingpath;
+  native node kind is nestedobject; corrected bounded inspection. No secret output.
+- Evidence: ignored abm-logo-dev-20260916/{cases,revisions,assisted-review.json}.
+  Existing separate diagnostic approvals remain unused. No jobs left generating.

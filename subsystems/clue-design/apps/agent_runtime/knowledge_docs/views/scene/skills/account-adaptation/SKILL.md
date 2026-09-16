@@ -5,8 +5,9 @@ description: Use when scene creative addresses a named target company, adapts an
 
 # Account adaptation
 
-Compose this supporting skill with the selected communicative playbook; keep that
-family in `playbook`. Use `knowledge/scene/direction-contract.md` without new account fields or opaque IDs.
+Compose with the selected communicative playbook; keep that family in `playbook`. Use `knowledge/scene/direction-contract.md` without new account fields or opaque IDs.
+Read [account-identity-composition](/.deepagent/skills/account-identity-composition/SKILL.md)
+for asset selection and identity treatment. This skill owns the account argument.
 
 Separate the context before writing:
 
@@ -35,6 +36,40 @@ headline can stay if that complete argument serves the brief. Remove the company
 name and logo mentally: identify what audience/task makes the message relevant.
 If only the name changed, repair the argument or record the unmet request in
 `review_needs`. Keep missing required proof explicit; never invent it.
+An invitation is a scope of intent, not mandatory wording. Write natural useful
+copy; keep internal phrases such as "an invitation for [company] marketers" in
+assumptions unless this is an actual event invitation. Audit advertiser promises
+separately from target facts: imperatives still imply capabilities. Coverage,
+after-hours availability, compatibility and results need their own evidence;
+"positioning" or proposed-use phrasing cannot excuse unsupported added meaning.
+
+For a new account message, construct the argument before choosing a headline:
+
+1. Identify the reader and the task this invitation offers them. Keep the target
+   team distinct from its customers: a marketer reaching hotel operators is not
+   a hotel operator. Choose the reader from the brief and advertiser capability;
+   do not assign every advertiser the same marketing persona.
+2. Select one evidenced advertiser mechanism that helps with that task. Inspect
+   relevant product/source candidates for what the product actually does. A brand
+   slogan establishes voice, not a mechanism or a target's need.
+3. Write a concrete proposition connecting that mechanism to the proposed task,
+   then choose headline and support that express it together. Address the target
+   as an invitation when only its identity is known. Record inferred relevance
+   in `assumptions`; bind actual claims to `evidence_refs`. Keep unfulfilled proof
+   requests in `review_needs`, not hidden behind the word `positioning`.
+4. Choose what the reader should see as well as read: authentic product evidence,
+   a useful native diagram, separate artwork, or deliberate type-led emphasis.
+   A diagram can explain a supported selection, sequence or handoff with native
+   geometry and editable labels; its arrows must represent that real relationship.
+   A logo and decorative connector alone explain no product mechanism. Read the
+   selected communicative playbook for execution; imagery remains optional unless
+   requested. Judge whether the visible relationship makes this argument clearer.
+
+For the name-removal test, state the task and mechanism still present in the
+artwork/requested companion copy. An audience label alone supplies no mechanism.
+Different accounts may share a useful task; do not invent distinctions or force
+new wording merely to make variants look researched. Explicit exact-copy and
+identity-only requests retain their original message instead of this rewrite.
 
 When adapting approved creative, inspect its current scene with page/node/geometry
 queries and view its render. For variants, put the advertiser kit, effective type,
@@ -44,47 +79,10 @@ transfer it to another brand as a default. Recompose and
 remeasure for longer target names or different images without losing the intended
 reading order. Vary messaging only when evidence changes the argument.
 
-Choose the identity treatment from campaign intent, supplied direction and
-relevant examples. Two supported options are an advertiser × target group near
-the top, or a target logo/recognizable favicon integrated as a primary identity
-anchor. Make that identity belong to the message; a detached footer badge does
-not fulfill a requested prominent treatment. These are flexible choices, not
-mandatory templates or fixed coordinates. Balance visible logo ink optically,
-with authentic variants and clear space; equal boxes do not imply equal weight.
-Keep each logo independently placeable and replaceable, with a native text or
-geometry separator. Preserve the advertiser's voice, palette and visual system
-unless a deliberate departure is requested. A requested × group is allowed
-without a forced disclaimer or addressing caption. It does not support written
-customer, partner or endorsement claims. CTA presence follows the actual next
-step; an awareness ad need not have one.
-
-For a target logo, use `fetch_logo(domain, company_name)` after a page/artboard
-exists. On a pageless scene, first compile only explicit page/artboard dimensions
-as source preparation, then fetch and view before the first complete direction.
-Creative nodes and imagery spend wait for validated direction. Inspect identity,
-`cache_hit`, source evidence, missing cells and failures. Honor cached provenance; refresh only for
-the tool's wrong/outdated-logo condition. View the actual returned ID using
-`view(target="asset:<asset_id>")`. Choose the suitable complete `*_lockup` for
-the surface first; a recognizable returned mark/favicon can suit the deliberate
-target-anchor treatment, but cannot replace an explicitly required wordmark.
-Honor the tool's fit/availability rules. Never recolor, stretch, recreate or
-generate a company mark, or flatten both marks into a fabricated combined logo.
-
-Successful returned IDs are registered in the current scene's assets and are
-valid `source_roles` with `role="logo"`, bound to independent `authentic_image`
-layers. They are not newly added to the opening `source_assets.json` or numbered
-reference catalog. Use their returned IDs directly; invent no asset/reference IDs.
-Validate before composition; if a direction was already validated, revise it with
-a reason and validate again before using the added source.
-Use layer `purpose` and `preserve`/`vary` to describe the identity relationship;
-put its unresolved source/composition checks in `review_needs`. Candidate
-preflight does not add an advertiser logo: author and reviewer own that choice,
-including any deliberate omission. A missing required mark remains a gap.
-Place it in its own empty leaf frame/image node through
-`asset(action="place", asset_id=..., node_id=..., fit="contain")`; inspect the
-result. `needs_review` registers nothing. An unavailable or unsuitable logo permits
-a named text-only treatment when the request allows it; a required exact logo
-remains a gap needing a supplied asset.
+Preserve the advertiser's voice, palette and visual system unless a deliberate
+departure is requested. Choose the identity treatment through the supporting
+skill rather than treating a logo row as the creative concept. CTA presence
+follows the actual next step; an awareness ad need not have one.
 
 The direction's `copy` contains only native artwork text, including a separator.
 Keep requested companion channel copy out of the image and direction schema; label it separately in the existing

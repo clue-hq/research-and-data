@@ -73,9 +73,16 @@ def test_account_adaptation_routes_to_delivered_support_without_becoming_a_famil
     assert support.error is None
     source = materialize._PACKAGE_KNOWLEDGE_DOCS / "views/scene/skills/account-adaptation/SKILL.md"
     assert support.content == source.read_bytes()
+    identity_path = discovered["account-identity-composition"]["path"]
+    assert identity_path in support.content.decode()
+    identity = backend.download_files([identity_path])[0]
+    assert identity.error is None
+    identity_source = source.parent.parent / "account-identity-composition/SKILL.md"
+    assert identity.content == identity_source.read_bytes()
 
     descriptor = json.loads((config.workspace_root / ".deepagent/knowledge-view.json").read_text())
     assert "account-adaptation" not in descriptor["playbooks"]
+    assert "account-identity-composition" not in descriptor["playbooks"]
     catalog = backend.download_files(["/knowledge_docs/knowledge/scene/catalog.md"])[0]
     assert catalog.error is None
     family_paths = re.findall(
@@ -90,6 +97,7 @@ def test_account_adaptation_routes_to_delivered_support_without_becoming_a_famil
     materialize.materialize_agent_workspace(config)
     assert "account-adaptation" not in dict(harness._materialized_skill_index(config))
     assert backend.download_files([support_path])[0].error is not None
+    assert backend.download_files([identity_path])[0].error is not None
     expected = {
         p: b for p, b in files(materialize._PACKAGE_KNOWLEDGE_DOCS).items()
         if not p.startswith("views/")

@@ -86,6 +86,12 @@ Read the supporting sentence in the compact placement preview without referring
 back to the larger image or the known copy. If it is only decipherable when
 enlarged, mark that occurrence unreadable and repair its resolved size, measure
 and contrast. A readable headline does not certify its smaller explanation.
+Apply this to every meaningful occurrence, including a kicker, audience callout
+and CTA. Judge the compact preview, not the inspector zoom. Reflow into available
+space or remove optional copy before accepting text that only reads enlarged.
+For paired identities, check that the advertiser is recognizable as the sender;
+a target logo must not overpower a shrunken advertiser mark. An authentic asset
+can still be an unsuitable variant, scale or surface for this composition.
 For a support-size repair, compare that occurrence before and after at the same
 viewing scale, and verify that the approved headline and artwork are unchanged.
 Then check the hierarchy in the whole composition: does the headline still lead,
@@ -95,6 +101,11 @@ when available and retain that design's successful size, measure and grouping;
 do not use it as a universal brand or platform rule. Reject both unreadably small
 copy and an overcorrection that weakens the intended reading order.
 Use `knowledge/scene/components.md` for sizing and dependent reflow.
+Review target facts and advertiser capability promises separately. An imperative
+or invitation can still add an unsupported promise about coverage, availability,
+compatibility or results. Compare each such implication with the actual excerpt;
+if absent, record `added_meaning` and reject until sourced or removed. General
+positioning, a slogan or industry fit is not evidence for a specific capability.
 Check idea/copy, evidence and attribution, hierarchy, readable contrast, brand
 identity, authentic product crop, independent editable layers and reference
 treatment. Compare the reference's visual invariants against the actual rendered
@@ -130,12 +141,24 @@ groups and source treatments. A visual repair may require replacing the chosen
 concept or removing an optional element; adding decoration does not resolve a
 missing visual argument.
 
-For account adaptation, review advertiser ownership and target identity separately.
+For account adaptation, first read the original request and the complete current
+feed preview before using the direction's checks as a checklist. State what the
+viewer can identify and what useful proposition they can read; then compare that
+observed argument with the requested audience/task. A self-authored identity-only
+plan cannot narrow a request for account relevance. Matching that plan is not
+acceptance evidence for the original brief. Repair the plan and composition when
+the direction itself is the cause, using the existing revision/critique fields.
+
+Review advertiser ownership and target identity separately.
 Check a requested prominent top advertiser × target group or integrated target
 logo/recognizable favicon anchor in the actual reading order. A detached footer
 badge does not fulfill that request. Judge optical balance, clear space and the
-message relationship, not equal boxes or fixed coordinates. Each authentic logo
-and the native separator must remain independently editable; preserve advertiser
+message relationship, not equal boxes or fixed coordinates. Inspect source scale
+and baked-in backgrounds: a magnified favicon or isolated contrast pill may be
+authentic yet still weaken the composition. Compare relevant available variants
+and the whole identity/message grouping before accepting either treatment.
+Each authentic logo and the native separator must remain independently editable;
+preserve advertiser
 voice, type, palette and approved groups unless a departure was requested.
 Candidate preflight adds no advertiser overlay, so evaluate any deliberate
 omission against the direction and request; missing required identity is a gap.
@@ -149,6 +172,10 @@ cannot become facts. Identity-only is sufficient for an explicitly logo-only or
 exact-copy adaptation. For requested audience/use-case relevance, remove the name
 and logo mentally: the remaining artwork and requested companion copy must still
 connect a supported advertiser capability to the supplied audience or task.
+Name that task and mechanism in the review; a team label alone supplies neither
+a mechanism nor a reason to act. Keep the target reader distinct from the buyers
+that reader wants to reach. For explanatory geometry/artwork, identify the visible
+relationship it adds; logos connected by an arrow do not prove a useful workflow.
 Research gaps permit a hypothetical invitation, not silently reducing that request
 to identity-only. A shared headline is valid when the complete argument does this;
 otherwise record the unmet request and repair it, without inventing account facts.
@@ -156,7 +183,8 @@ Keep companion copy separately labeled as draft in the existing finalization
 summary, outside the image and native-copy inventory; verify its source limits
 and report any handoff/review gap without claiming publication. Missing required
 proof or ambiguous identity remains a named gap. Revisit `account-adaptation`
-for source handling. Check long names and the complete composition at placement
+for the account argument and `account-identity-composition` for source/composition
+handling. Check long names and the complete composition at placement
 size; neither a fixed logo row, mandatory CTA nor copy size establishes success.
 
 When expected text or artwork is absent, first locate it in
