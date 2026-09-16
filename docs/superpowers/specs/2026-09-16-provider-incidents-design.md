@@ -214,9 +214,11 @@ with its reasoning in a comment; a founder-tuned knob is not warranted until the
 - Live: flip `CLUE_SENTRY_DSN` to a real project on the lane, force one refusal with the lane's
   exhausted Exa Search key, see the open event; top up or swap the key, see the close event.
 
-## 5. Open questions for the founder
+## 5. Founder answers (2026-09-16)
 
-1. Sentry project: create one for the lane and put its DSN in `.env` (not the example). Until then
-   incidents are rows and warnings only.
-2. Should `rate_limited` (429) count toward the failure threshold, or be ignored as the caller's
-   retries usually absorb it? Default here: it counts.
+1. **Sentry is configured.** The lane `.env` already carries `CLUE_SENTRY_ENABLED=true`, a DSN
+   for the Clue Sentry project and `CLUE_SENTRY_ENVIRONMENT=lane-san-salvador`. The running API
+   and worker processes booted before the flag was turned on (their boot log says
+   `sentry.not_installed`), so the first restart after this lands is also the moment Sentry goes
+   live; the plan's live step restarts the stack.
+2. **A 429 counts as a failure** toward the 3-in-5-minutes threshold, like a 5xx or a timeout.
