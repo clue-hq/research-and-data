@@ -179,3 +179,23 @@ in its separate worktree; no new ingestion agent in this task.
 - Operational slips: an initial multi-file patch failed atomically on context, then
   was reapplied; one skill write used a subsystem-relative path from that subsystem
   and failed without modifying a file, then succeeded via the absolute path.
+
+
+### Runtime readiness and provider recheck (next goal turn)
+
+- Previous turn was progress: committed skill/profile implementation as4d0df34e,
+  with304 checks passing. Live creative acceptance remains unproven.
+- Second consecutive goal-turn provider check at23:28Z still returned HTTP403,
+  API key weekly limit exceeded. User's provider-restoration question remains
+  pending. No failed creative cases were dispatched or counted as completed tests.
+- Guarded runtime reload at23:29Z checked authoritative local DB:235 fleet tasks
+  done;118 design runs succeeded and5 failed; no active jobs. Reloaded only existing
+  design API and four workers with legible-feed-v1. New handles68912–68916 verified
+  live with expected commands; design API8010 and all four frontends3021–3024
+  returned HTTP200. This is availability proof, not authenticated creative proof.
+- Ignored receipt: balanced-account-20260916/runtime-reload-final.json and provider-
+  recheck-2.json. Database/storage, frontend sessions and prior user edits preserved.
+  If a different key is configured rather than its limit restored, reload idle
+  runtime again before live tests so long-lived processes receive that key.
+- Goal stays active. The same external blocker has now occurred in two consecutive
+  goal turns; do not claim success or silently replace the configured provider.
