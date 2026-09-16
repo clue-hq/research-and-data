@@ -58,6 +58,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_obs.otel import bind_and_annotate
 from clue_storage import StorageBackend
 
 if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
@@ -132,6 +133,13 @@ def frontend_read_workspace_resolver(
 
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    # ``bind_and_annotate`` (not a plain bind), mirroring
+    # ``projections_app.header_workspace_resolver``:
+    # the instrumentor's server span opened before any route dependency ran, so the span that is
+    # already open needs the workspace written onto it, not just bound for what comes after. In
+    # production the composition root overrides this resolver with the authenticated ``workspace``
+    # dependency, which stamps the same way — so both modes annotate identically.
+    bind_and_annotate(workspace_id=x_workspace_id)
     return x_workspace_id
 
 
@@ -237,6 +245,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.account_logo import register_account_logo_route
     from clue_api.frontend_read.account_workspace import register_account_workspace_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+    from clue_api.frontend_read.artifacts import register_artifact_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
@@ -296,6 +305,8 @@ def build_frontend_read_router(
         # The human's PUT refreshes the project library it just moved (2026-09-14).
         library=project_library,
     )
+    # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
+    register_artifact_routes(router, conn_factory=conn_factory)
     register_contact_routes(
         router,
         conn_factory=conn_factory,
