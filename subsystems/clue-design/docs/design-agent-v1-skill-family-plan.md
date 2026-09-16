@@ -2904,3 +2904,172 @@ No alternate provider submission was attempted; the separate sixty-call copy
 diagnostic remains unapproved and unused. Record Home/setup delay separately
 from generation-submission timing when testing resumes. No quality, speed, or
 new ABM-creative success is claimed at this checkpoint.
+
+### Eleven-case qualification result — September 15, 2026 (local time)
+
+The user explicitly approved the pending provider transfer. All eleven prepared
+cases then ran through the normal local platform flow, on the frozen runtime
+and existing provider configuration. The separate sixty-call copy diagnostic
+was not used. Four awareness requests, four product requests and three Clue
+account ads are saved; the goal remains **unqualified**, not complete.
+
+| Case | Finished delivery | Agent verdict | Independent finding |
+| --- | ---: | --- | --- |
+| Clue awareness | 9m49s | Accepted | Uneven text contrast and disconnected logo plate |
+| AWS awareness | 7m54s | Accepted | Support/action too small at feed scale |
+| Google Cloud awareness | 8m22s | Accepted | Small support and detached action |
+| Conduit awareness | 6m25s | Accepted | Small support and excessive headline/support gap |
+| Clue product | 8m12s | Accepted | Coherent authentic UI; small, peach support still misses the requested treatment |
+| AWS product | 6m26s | Accepted | Coherent comparison message; small support |
+| Google Cloud product | 7m24s | Accepted | Promising hierarchy and separate artwork; timing/export qualification incomplete |
+| Conduit product | 6m55s | Warning draft | Correctly rejected clipped meaningful product UI |
+| Clue → Conduit | 3m38s | Accepted | Requested authentic logo pair works; message remains generic |
+| Clue → AWS | 5m18s | Accepted | Target-only favicon and separate platform-copy draft work; account message remains generic |
+| Clue → Google Cloud | 5m35s | Accepted | Authentic logo pair works; account hypothesis is not verified account research |
+
+Delivery is generation submission to the matching durable turn commit, including
+queue/startup and final persistence. Home setup and operator/approval waits are
+recorded separately, not silently counted as model generation. Only **1/11**
+passes the 240-second timing requirement; mean delivery is 414.424 seconds.
+The eleven runs used 301 model calls and six image-generation calls. No critique
+schema failures occurred. Ten runtime acceptances are not ten human quality
+passes; no output has passed all completion criteria together.
+
+Twenty distinct skill files were read. Five primary creative families were
+selected: type-led positioning, educational guide, launch announcement, authentic
+product and comparison/alternatives. Account-adaptation was used in all three
+ABM runs. Other read skills do not count as independently exercised families or
+validated coverage. This batch does not promote any family to fully qualified.
+
+The image traces confirm autonomous source selection and inspection. All six
+new image calls used explicit, previously viewed references; asset IDs, ordered
+digests, MIME types and requested roles match the application receipts. Four
+awareness images, one AWS product image and one Google product image were newly
+generated. Clue product reused authentic UI; Conduit product used deterministic
+crops of original UI. ABM ads used native type and independently placed authentic
+logos, with no new image generation. This evidence establishes what the
+application sent, not which pixels the provider internally attended to. Clue's
+library remains website/reference material, not a harvested-ad corpus.
+
+The three ABM runs fetched real target logos and kept identity assets editable
+as independent image layers. Conduit used Clue × Conduit; AWS used its official
+favicon alone; Google Cloud used the two real logos with a native separator.
+AWS's separate companion-copy draft is present in the durable completion event.
+No explicit customer or partnership claim was found. However, all three reused
+“Build sharper ABM campaigns” from an inspected Clue reference. Target identity
+and audience invitations are not evidence of differentiated account research.
+
+Native text edit/save/reload was verified through the real editor in all four
+product documents, then each was restored to its exact first-terminal scene
+hash. Conduit awareness passed the same check. The protected user-approved
+Conduit document was excluded. The browser rendered a canonical PNG export
+preview; a saved download file and complete current-scene export qualification
+remain unverified. Intermittent chat-only sign-in messages and a stale
+“Agent is designing” accessibility status were observed despite terminal jobs;
+neither should be interpreted as a live generation or worked around with an
+authentication bypass.
+
+Two diagnoses must remain separate:
+
+- **Visual judgment:** the complete component guide was already inlined, and the
+  actual 360px preview plus resolved type measurements were delivered. Conduit
+  still accepted 21px support (7px at 360px display width) and an 82px message gap.
+  Other runs correctly rejected comparable failures. This is inconsistent
+  application of available guidance, not proof of missing skill delivery. A
+  mandatory extra read or identical preview would not address the evidence.
+- **Runtime ordering:** a round-two note write and repair compile can execute
+  concurrently. The compile sees the old directory-based round and refuses at
+  its cap before the note creates the new directory. Product Clue reproduced
+  the earlier R37 failure and spent two recovery calls (14.450s). The bounded
+  repair makes candidate-solo round authority runtime-owned, consumed by actual
+  construction after a registered rejection; metadata files cannot grant more
+  budget. Offline verification cannot claim a measured live speed improvement.
+
+Retained evidence: `.design-runs/evaluation/skill-family-v1/qualified-delivery-20260915/`
+contains the frozen inputs, all first-terminal snapshots, independent audit,
+native edit/restoration hashes, exact timestamps and source receipts. It is
+local evaluation evidence, not new production knowledge or brand assets.
+
+### Task 42: Runtime-owned candidate repair rounds
+
+The delayed round-note/compile schedule was reproduced through the real solo
+ToolNode with only the filesystem writer delayed. The first repair compile
+incorrectly hit round one's cap. The correction gives candidate-solo construction
+the round transition after a registered rejection. Notes are optional evidence,
+not budget authority. Compile transitions occur under the existing scene lock
+before the cap check; checked authoring changes and verified autofixes share the
+same lifecycle. Changed preflight resolution and final empty-page cleanup do not
+consume construction rounds. A seeded review with no construction uses the root
+critique path. Preview custody, budget advice and metrics use the same authority;
+legacy/delegated behavior remains unchanged.
+
+Independent review caught and corrected an initially overbroad common commit
+hook that counted verification/cleanup as construction. The parent reran the
+focused behavioral matrix: 277 passed. Full final-source runtime verification
+and final review are recorded at the closing checkpoint below. The eleven
+qualification outputs predate this correction, so they establish no live savings.
+
+### Task 43: Preserve requested account relevance
+
+Candidate-only account-adaptation, brief/copy and shared review instructions now
+distinguish explicit identity-only/exact-copy adaptations from requests for
+audience/use-case relevance. The latter require a supported advertiser capability
+joined to the supplied task; absent account research permits a proposed use or
+invitation, not a silent downgrade to a logo swap. A common campaign headline is
+still allowed when the complete artwork/requested companion copy carries the
+argument. Reference wording teaches voice and claim limits rather than becoming
+mandatory new-brief copy. There is no new schema, tool, judge or runtime agent.
+
+Five fresh-context application probes covered a hotel-operations invitation,
+an exact-copy logo swap, an unsupported 50% outcome, target-only artwork with
+relevance in requested companion copy, and a field-event use case. The revised
+guidance produced the intended scope in all five; the unsupported outcome stayed
+an explicit unfulfilled requirement. The account skill remains within the first
+100 lines, and the 23-test skill-routing/materialization suite passed. Independent
+instruction review found no actionable regression.
+
+These are fictional instruction-comprehension probes, not matched repetitions,
+a causal uplift estimate or rendered output from the platform's generating
+model. The revised skills require fresh platform qualification. Typography
+calibration remains unresolved; neither this change nor Task42 claims to fix
+the Conduit support-size/gap failure.
+
+### Closing checkpoint: verified fixes loaded locally
+
+Two reviewed changes are committed locally on `codex/design-agent-v1`:
+
+- `c26b25a7`: preserve requested account relevance in candidate copy skills.
+- `5f98b2b7`: make candidate repair rounds owned by runtime construction.
+
+After the final runtime edit and independent review resolution, the full agent
+runtime suite passed: **2,560 passed, 1 skipped in 93.69 seconds**, exit zero.
+The parent also independently ran the 277-test focused behavioral matrix.
+The full command set `LUMEN_AGENT_RUN_LIVE=0` and selected the existing release
+helper through `LUMEN_CORE_HELPER`; its SHA-256 matches the frozen baseline.
+An earlier partial run invoked Cargo's debug helper on each operation because
+that setting was absent. Its partial counts are not completion evidence. No
+engine rebuild, persistent configuration change or provider call was needed.
+
+At 2026-09-16 01:02:50 UTC, after read-only queue and process-ownership checks,
+only this checkout's design API and four fleet workers were reloaded onto
+`5f98b2b7`. The frontends, platform APIs, database, storage and brand workspaces
+were preserved. `/build-info` returned HTTP 200 and engine `62c7de8b022e`.
+Browser reloads on 3021–3024 showed the correct workspace identities and all
+four product artifacts reopened and visibly rendered. The existing AWS Arial
+fallback, PDF font diagnostics and intermittent Conduit chat-only sign-in alert
+remain recorded issues; opening a canvas does not clear them. No authentication
+bypass was introduced. The process receipt is retained beside the test evidence.
+
+The goal remains active. **The approved eleven-case batch is complete; the
+quality and four-minute delivery goal is not.** No further provider batch or
+optional sixty-call diagnostic was submitted. These source fixes postdate all
+eleven generated results, so this checkpoint claims neither a post-fix creative
+quality improvement nor measured latency savings.
+
+Next qualification should isolate the remaining failures: calibrate typography
+and grouping against the approved brand examples at actual feed size; verify
+account-relevant copy while preserving requested logo-only/exact-copy scope;
+measure a fresh finished delivery after the race fix; and prove that exported
+files are saved and match their scenes. Keep the same ordinary-request boundary
+and frozen references. Expand family coverage after those results, rather than
+counting additional instructions as successful creative coverage.

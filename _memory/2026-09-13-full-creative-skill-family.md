@@ -1606,3 +1606,129 @@ A chat-onlySignintoContinue alertappearedafterreload; designlocaledit/exportstil
 worked. Rechecksessionnormallybeforeapprovedgeneration, noauthbypass. Runtime
 idle177fleetdone/83designsucceeded5historicfailed; no newdesignruns. Goal remains
 active with firstcurrentapproval-blockturn; donotmarkcomplete orblockedearly.
+
+September15 continuation audit2: previous turn was progress (committed engine
+fix and native save/reload/restore evidence). Provider-transfer approval remains
+unanswered; automatic goal continuation is not approval. No Send/model retry.
+Revalidated HEAD522342d7 and performed standard UI Export PNG on restored pilot
+v56 at23:26:58Z: local API returned ok/one artifact/zero errors; UI said PNG
+exported; no new Downloads PNG/SVG and no download console error. File delivery
+remains unverified, with no evidence justifying a speculative export-code change.
+Existing prepared-case status corrected to awaiting explicit provider approval.
+This is the second consecutive goal turn with that blocker; goal stays active.
+
+2026-09-15 clarification and blocked audit 3: verified the current account-adaptation
+skill and candidate preflight against the user's two ABM treatments: prominent
+advertiser x target identity, or integrated target logo/favicon with relevance in
+artwork and/or separate platform-copy draft. Both are already implemented;
+no additional code change or new visual-quality claim is warranted. Qualification
+manifest still contains 11 cases and zero generation-dispatch records, awaiting
+explicit provider-transfer approval. This clarification is not that approval.
+The same required-approval blocker has now recurred for three consecutive goal
+turns; marked the goal blocked, preserving its full objective and prepared cases.
+No Send retry, provider call, auth change, service restart, or creative edit.
+
+Resumed goal audit 1, 2026-09-15: automatic continuation reactivated the goal;
+the prior clarification/status turn did not advance output qualification. The
+provider-transfer question remains unanswered, so this starts a fresh blocker
+audit and leaves the goal active. Read-only live queue: fleet 177 done; design
+83 succeeded and 5 historical failures, none active. Retained pilot still renders;
+its accessibility tree includes a designing status despite the idle queue, so
+that text is not evidence of a live job. Export source only acknowledges anchor
+click initiation, not OS file delivery. No new evidence warrants an export-code
+change or repeating failed download probes. Saved-file proof and all 11 fresh
+creative tests remain open. No model submission or creative mutation performed.
+
+Resumed goal audit 2, 2026-09-15: previous turn was no qualification progress,
+not a verified wait on a running generation. Current goal remains active;
+qualification manifest still has 11 cases and zero submitted timestamps. No
+direct provider-transfer approval has arrived. Same blocker, second consecutive
+resumed turn; no retries, substitute providers, service changes or extra tests.
+Retain the complete objective and prepared cases pending the existing question.
+
+Resumed goal audit 3, 2026-09-15: prior turn was no progress. Same required
+provider-transfer approval remains unanswered for three consecutive resumed
+turns. Rechecked qualification manifest: 11 cases, zero submitted timestamps,
+awaiting explicit provider approval. Marked goal blocked again with its full
+objective unchanged. No submission, replacement provider, service restart or
+artifact mutation; local edits and prepared sessions remain available to resume.
+
+2026-09-15 explicit approval and qualification dispatch: user replied "yes i
+approve" to the existing 11-test OpenRouter request. Approval covers internal
+skills, selected four-brand context/reference images including Conduit uploads,
+using existing Grok 4.6/GPT Image 2; excludes the optional 60-call diagnostic.
+Goal active again. Refreshed old prepared tabs onto the verified engine; blank
+new scenes correctly have no artboard before agent authoring. Normal UI Send
+started awareness Clue/AWS/Google/Conduit at 23:49:59.696Z, 23:49:59.987Z,
+23:50:03.705Z, 23:50:07.524Z. Exact IDs/timestamps retained in qualification-plan
+and immutable per-case manifests. Read-only observers sessions 38999/43874/79432/
+18060 bound unique new runs; no auth bypass or runtime/model change. Independent
+latency agent auditing source use and timings; four product Home tabs prepared
+without submission to avoid adding queue contention. First wave has autonomous
+reference inspection and explicit-reference image-generation calls; terminal
+delivery and visual qualification still pending. Do not request this same
+provider approval again within its unchanged 11-test scope.
+
+2026-09-15 approved qualification result (UTC traces extend into September16):
+all11 normal-platform cases terminal on frozen522342d7/62c7de8b022e baseline.
+Eightbrand creatives plus3Clue account ads saved. Ten runtimeaccepted, one
+Conduitproduct warningdraft correctlyrejects clippedoriginalUI; zero critique
+schemafailures. Independent source/timing audit at ignoredqualified-delivery-
+20260915/qualification-independent-audit.json. Twenty distinctskillfilesread,
+fiveprimaryfamilies selected plusaccount-adaptation. No family newlyqualified.
+Six GPTImage2calls allhadexplicitagent-selected/viewedreferences with matching
+digestreceipts;4awareness+AWS/Googleproduct. ClueproductreusedauthenticUI,
+ConduitproductcroppedUI;ABM usednative type andrealfetchedlogos/noimagegeneration.
+OnlyABMConduitmet240s:217.677;AWS318.012;Google335.039. Eightbrandcases385.472–
+588.944s;meanall11=414.424s;301modelcalls. Logos requestedtreatmentswork; all3
+reuseBuildsharperABMcampaigns. Identity/audiencehypothesesarenotaccountresearch.
+AWScompaniondraftisprovenindurablecompletionseq6866. Goal remainsactive:
+zerooutputsqualifiedacrossallcriteria, optional60diagnosticsunused.
+
+Correctiontodiagnosis:components.mdwasalreadyfullyinlinedandactual360pxproxy
+wasdelivered. Conduitselfaccepted21sourcepx/7projectedpx and82pxgap. Thisis
+inconsistentjudgment,notmissingguide/preview. Othercasescorrectlyrejected
+smallerCTAanddisconnectedgroups. Donotaddanothermandatoryreadasafix.
+NativeQA throughbrowsertextedit→save→reload→restore passedall4productcases;
+restoredversionsClue44,AWS17,Google30,Conduit38 exactlymatchfirstterminalhashes.
+Conduitawarenessrestoredv14 exacthash. ProtecteduserConduitexcluded. PNGexport
+previewvisiblyrenders;OSsaveddownloadcustodyunverified. Noauthbypass;intermittent
+chat-onlysigninmessageandstaledesigningAXstatusarenotactivejobproof.
+
+Task42inprogress:runtimeowns candidate-solorepairroundafterregisteredrejection,
+notparallelround-notewrite. RealToolNode delayed-writerRED reproducedR37and
+productClue race;baselineCluerecoverycost2modelcalls14.450s,notmeasuredfixsavings.
+Independentreviewcaughtpreflight/prunecommitschanginground;authoredcommitsnow
+optin,verification/finalcleanupstayexcluded. Parent277focusedgreen17.89s;final
+fullruntimeandlastreviewpending. Noenginerebuildrequired/runtimeunchangedlive.
+Task43candidateABMskillclarificationimplemented:identity-onlyonlyforappropriate
+requestscope;explicitrelevanceneedsadvertisercapability×suppliedtask,withhypotheses
+keptnonfactual. Exactcopy/sharedheadline/companioncopyremainvalid. Fivefresh
+fictionaltextprobeshandledexpectedscopes;23skillroutingtestsgreen. Independent
+skillreviewapproved. ThisisnotGrokorvisualqualification;typographyremainsopen.
+
+2026-09-15 closing verification (01:02 UTC September 16 reload):
+- Candidate account-copy clarification committed as c26b25a7. Runtime-owned
+  candidate construction/repair rounds committed as 5f98b2b7. Independent final
+  review approved both; no source changes followed the full-suite start.
+- Full runtime gate: 2,560 passed, 1 skipped in 93.69s, exit 0. Parent focused
+  gate: 277 passed in 17.89s. Skill-routing gate: 23 passed. Diff check clean.
+  Use LUMEN_AGENT_RUN_LIVE=0 plus the existing release LUMEN_CORE_HELPER for
+  this suite; absent helper selects cargo run/debug per operation and made a
+  partial run needlessly slow. No engine rebuild or persistent env edit.
+- Reloaded only the ownership-verified idle design API and four workers.
+  Supervisor session 46755; new PIDs 7565–7569; ledger remains
+  /tmp/clue_dev_stack-shashank-sept7.pids. Read-only idle counts before reload:
+  fleet 195 done, design 94 succeeded/5 historical failed. Runtime reload
+  receipt retained in qualified-delivery-20260915. API build-info is HTTP200,
+  engine 62c7de8b022e. Four frontends/platform APIs/DB/storage left intact.
+- Browser reload on 3021–3024 confirms the correct workspace and reopened,
+  visibly rendered product canvases. Existing AWS missing-Arial fallback,
+  PDF font diagnostics, stale designing AX status and intermittent Conduit
+  chat-only sign-in alert remain. No auth bypass or new provider generation.
+- Eleven approved tests are complete. Goal remains active/unqualified:
+  1/11 within 240s, 0/11 satisfy all criteria, inconsistent typography and
+  generic ABM copy remain. Fixes postdate the batch; offline checks and five
+  fictional probes do not establish improved live quality or delivery time.
+  Next: typography/grouping calibration, fresh account-copy/race qualification,
+  saved export-file proof. Optional sixty-call diagnostic remains unused.
