@@ -1839,3 +1839,20 @@ No new provider calls, published kit, repin or user-creative edits. AWS font dat
 override remains a diagnostic draft. Overall qualification still0/11full,1/11time;
 five review-only calibration calls remain pending separate approval. Localcommit
 and owned idle service reload next; no new global size rule or skill expansion.
+
+Task47 closing: source committed locally as ca7835b4, then the ownership/idle
+guard reloaded design API and four workers at 2026-09-16T02:59:41Z. PIDs
+58364–58368; supervisor session38143; build-info HTTP200/engine62c7de8b022e.
+Frontends, platform APIs, database, storage and brand workspaces unchanged.
+Visually inspected the four retained product canvases on3021–3024 after reload;
+each retains the correct workspace/brand. Existing PDF subset warnings remain,
+and AWS correctly reports its saved Arial declaration without supplied faces.
+Google initially reported a font401; normal reload then showed a transient
+chat signin error. Home/back/reopen recovered both chat and font warning without
+auth changes or bypass. Final Google screenshot has no font-unavailable banner.
+This repeats the known request/retry issue (Task22); it is not a permanent fix.
+Browser screenshot batch output was truncated, so repeated singly before making
+the visual claim. No new creative/model call, kit publication or saved-scene edit.
+Qualification remains0/11full,1/11time. Outstanding: typography calibration,
+source-correct font kit, transient font/auth retry, fresh ABM quality and latency,
+five actual download proofs. All existing review tabs retained for continuation.

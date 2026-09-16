@@ -3255,3 +3255,17 @@ These are rendering/regression results, not new creative-quality qualification.
 The AWS font-kit override is still a diagnostic draft; it is not published and
 does not silently repin existing ads. Typography calibration, fresh account-copy
 qualification, end-to-end latency and the five unverified downloads remain open.
+
+Deployment check: local commit `ca7835b4` was loaded into the idle, owned design
+API and four workers at `2026-09-16T02:59:41Z`; build-info returned HTTP 200 and
+engine stamp `62c7de8b022e`. The four existing product canvases were visually
+checked on ports 3021–3024 and retain their correct workspace and brand. This
+does not qualify their layouts or claim a fresh generation pass. Existing PDF
+font-subsetting warnings and AWS's saved missing-Arial declaration remain.
+
+The Google browser check reproduced an intermittent font HTTP 401 and then a
+chat sign-in error. Normal Home/back/reopen navigation recovered the chat and
+removed the font-unavailable warning, without changing or bypassing authentication.
+The same recovery was recorded in Task 22; the underlying request/retry defect
+remains open. No brand kit was published or saved creative altered. The overall
+qualification result remains **0/11 fully passing and 1/11 within four minutes**.
