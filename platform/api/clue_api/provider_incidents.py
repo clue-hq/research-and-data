@@ -41,7 +41,9 @@ log = get_logger("clue_api.provider_incidents")
 
 #: A failure (429, 5xx, timeout) opens an incident only when the provider has failed this many
 #: times inside the window — the caller's own retries absorb a single fault. Refusals open on the
-#: first sight; a refusal is a decision, not a fault.
+#: first sight; a refusal is a decision, not a fault. The count comes from the durable ledgers
+#: below and from nowhere else (ruling PI-4): every writer records its own row before it calls
+#: :func:`record_failure`, so the query already sees the failure being recorded.
 FAILURE_THRESHOLD = 3
 FAILURE_WINDOW = timedelta(minutes=5)
 
@@ -67,12 +69,6 @@ _SURFACE_WORDS = {
     "discovery": ("discovery call", "discovery calls"),
     "onboarding": ("onboarding call", "onboarding calls"),
 }
-
-#: What this process has seen itself, per ``(provider, reason)``, inside the window. The ledger
-#: query below is the cross-process view, but it only counts what a writer has already *drained*
-#: to the ledger — a burst of faults inside one worker reaches the threshold here first. Cleared
-#: for a provider the moment it serves us again, so a recovered provider starts from zero.
-_sightings: dict[tuple[str, str], list[datetime]] = {}
 
 
 def provider_display(provider: str) -> str:
@@ -225,19 +221,6 @@ def _duration(delta: timedelta) -> str:
     return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
 
 
-def _note_sighting(provider: str, reason: str, now: datetime) -> int:
-    """Remember this process's sighting and return how many it holds inside the window."""
-    seen = [at for at in _sightings.get((provider, reason), []) if at > now - FAILURE_WINDOW]
-    seen.append(now)
-    _sightings[(provider, reason)] = seen
-    return len(seen)
-
-
-def _forget_sightings(provider: str) -> None:
-    for key in [key for key in _sightings if key[0] == provider]:
-        del _sightings[key]
-
-
 def incident_sentence(
     *,
     provider: str,
@@ -284,14 +267,13 @@ async def record_failure(
         if incremented is not None:
             return _incident(incremented)
         if failure.kind == "failure":
-            here = _note_sighting(failure.provider, failure.reason, now)
-            drained = (
+            recent = (
                 await conn.execute(
                     _RECENT_FAILURES,
                     {"provider": failure.provider, "since": now - FAILURE_WINDOW},
                 )
             ).scalar_one()
-            if max(here, int(drained)) < FAILURE_THRESHOLD:
+            if int(recent) < FAILURE_THRESHOLD:
                 return None
         count = FAILURE_THRESHOLD if failure.kind == "failure" else 1
         inserted = (
@@ -359,7 +341,6 @@ async def record_success(
 ) -> tuple[OpenIncident, ...]:
     """One successful call: closes every open incident of the provider, one Sentry event each."""
     try:
-        _forget_sightings(provider)
         rows = (await conn.execute(_CLOSE, {"now": now, "provider": provider})).all()
         closed: list[OpenIncident] = []
         for row in rows:
