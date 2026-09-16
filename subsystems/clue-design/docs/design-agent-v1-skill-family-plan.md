@@ -3122,3 +3122,43 @@ and saved artifacts were preserved. Browser inspection of the Clue product
 export confirmed a fully decoded 1080×1080 PNG, and its actual returned image
 was inspected. The in-app browser does not support content-file export; final
 OS download custody remains unverified. No provider calls were made this turn.
+
+### Task 45 — isolate typography judgment before another generation batch
+
+Prepared three matched native renders from the protected, user-approved Conduit
+document v19. Only supporting font size varies: 21, 32, and 42. These are local
+experimental values for this composition, not new brand or platform defaults.
+The Rust helper produced full PNGs and the same 360px placement proxies used by
+the agent. The original database scene was read twice and remained identical.
+Visual inspection reproduces the user's distinction: tiny support, balanced
+support, and heavier two-line support competing with the headline.
+
+The saved source also retains a 39.843-point fixed support box. Its 32-point
+type measures a 48-point line; the 42-point variant measures two 63-point lines.
+Preflight correctly records LUMV0903 for those variants. These diagnostic
+renders retain the original box and all errors; they are not accepted exports.
+No production gate was relaxed and the user's document was not repaired or
+overwritten. The headline's existing 500-to-420 weight substitution and PDF
+font warnings remain recorded. This does not establish why fresh runs chose
+21-point type, and must not be presented as that root cause.
+
+Five blinded review-only requests are frozen in the ignored evaluation folder
+`qualified-delivery-20260915/typography-calibration/review-probe-input.json`.
+They use the current review/components guides, full renders plus compact
+proxies, and permuted labels. The user-preference answer key stays separate.
+The model configuration was checked: Grok 4.6, medium reasoning, candidate
+skills, solo mode. This is a narrow visual-judgment diagnostic, not a replay of
+the full harness or evidence of cross-brand quality. Additional provider
+approval was requested after preparation; no requests have been submitted.
+The original eleven-test approval is complete and the sixty-call diagnostic
+remains unused.
+
+Independent latency audit of the frozen eleven traces attributes 3,825.227 of
+4,558.667 aggregate seconds to 301 model calls (83.9%), and 624.168 seconds to
+six image generations (13.7%). Direction-writing/revision spans total 755.830
+seconds and critique-writing spans 572.632 seconds; these include reasoning,
+not just JSON serialization. Asynchronous image overlap has an optimistic
+ceiling below 38.645 seconds per image case before required work. It cannot
+alone establish four-minute delivery. A same-model reasoning-effort comparison
+is a future bounded hypothesis after quality calibration, not an implemented
+optimization or authorization to lower quality. No runtime setting changed.

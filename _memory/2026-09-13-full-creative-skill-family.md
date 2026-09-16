@@ -1765,3 +1765,22 @@ were visibly inspected through thebrowser. In-app content.export unsupported;
 savedOSdownloadcustodyremainsunverified. Nofrontendpatch or authchange.
 Remaining: calibrated typography judgment, post-fix ABM relevance/race results,
 latency, browserdownloadproof. No newproviderrequests this turn.
+
+2026-09-15 Task45 calibration preparation (01:44 UTC September16):
+- Read-only protected Conduit v19 snapshot remained byte-identical before/after.
+  Rust-helper local support21/32/42 variants and full/360px PNGs prepared under
+  ignored qualified-delivery-20260915/typography-calibration. No DB writes,
+  new model requests, service changes or global font-size rule.
+- Prep failures: incorrect kit_json query replaced with canonical kit reader;
+  export artifacts expose bytes, not data_url; preflight diagnostics are top-level.
+  Fixed source box39.843 causes LUMV0903 at32/42. Retained errors in diagnostic
+  renders rather than weakening production acceptance or editing the source.
+  Existing Season500→420 substitution and PDF font warnings retained.
+- Five blinded same-model review inputs prepared with current guides and image
+  bytes; separate answer key. New bounded provider approval pending. This is a
+  one-composition visual-judgment test, not full-harness or cross-brand proof.
+- Independent latency audit: model3825.227s/4558.667s (83.9%), image624.168s
+  (13.7%). Async-image optimistic overlap <38.645s/image case; no sufficient
+  immediate speed fix. Low-reasoning comparison is only a future hypothesis.
+- Goal unchanged:11 saved,0 fullyqualified,1 within240s. This turn made local
+  diagnostic progress; do not mark complete or claim fresh creative improvement.
