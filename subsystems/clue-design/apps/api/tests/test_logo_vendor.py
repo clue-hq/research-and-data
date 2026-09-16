@@ -326,6 +326,92 @@ def test_fetch_vendor_family_happy_path_builds_cells():
     assert [e.evidence["vendor_type"] for e in extras] == ["icon"]
 
 
+def test_vendor_rejects_parent_brand_identity_before_downloading_any_logo():
+    import httpx
+    import pytest
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        if request.url.path.startswith("/v2/brands/domain/"):
+            return httpx.Response(200, json={**BRAND_PAYLOAD, "domain": "acme.com"})
+        return httpx.Response(200, content=_mini_svg(), headers={"content-type": "image/svg+xml"})
+
+    with _vendor_transport(handler) as client, pytest.raises(VendorLookupFailed) as error:
+        fetch_vendor_family("cloud.acme.com", api_key="k", client=client)
+    assert error.value.code == "identity_mismatch"
+    assert len(seen) == 1, "conflicting identity must be rejected before asset downloads"
+
+
+def test_vendor_preserves_verified_identity_on_cells_and_extras():
+    import httpx
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    def handler(request):
+        if request.url.path.startswith("/v2/brands/domain/"):
+            return httpx.Response(200, json={**BRAND_PAYLOAD, "id": "id_acme", "name": "Acme Inc."})
+        if request.url.path.endswith(".svg"):
+            return httpx.Response(
+                200, content=_mini_svg(), headers={"content-type": "image/svg+xml"}
+            )
+        return httpx.Response(200, content=_mini_png(), headers={"content-type": "image/png"})
+
+    with _vendor_transport(handler) as client:
+        cells, extras, _ = fetch_vendor_family(
+            "https://www.acme.com./pricing",
+            company_name="Acme",
+            api_key="k",
+            client=client,
+        )
+    assert cells and extras
+    for candidate in [*cells.values(), *extras]:
+        identity = candidate.evidence["vendor_identity"]
+        assert identity["provider_id"] == "id_acme"
+        assert identity["provider_name"] == "Acme Inc."
+        assert identity["provider_domain"] == "acme.com"
+        assert identity["requested_domain"] == "acme.com"
+        assert identity["requested_company_name"] == "Acme"
+        assert identity["name_match"] == "normalized_exact"
+
+
+def test_vendor_rejects_parent_name_even_when_provider_echoes_product_host():
+    import httpx
+    import pytest
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, json={**BRAND_PAYLOAD, "domain": "cloud.acme.com"})
+
+    with _vendor_transport(handler) as client, pytest.raises(VendorLookupFailed) as error:
+        fetch_vendor_family(
+            "cloud.acme.com", company_name="Acme Cloud", api_key="k", client=client
+        )
+    assert error.value.code == "identity_mismatch"
+    assert len(seen) == 1
+
+
+def test_vendor_missing_identity_is_a_typed_gap_before_logo_downloads():
+    import httpx
+    import pytest
+    from lumen_ingestion.logo_vendor import VendorLookupFailed, fetch_vendor_family
+
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"logos": BRAND_PAYLOAD["logos"]})
+
+    with _vendor_transport(handler) as client, pytest.raises(VendorLookupFailed) as error:
+        fetch_vendor_family("acme.com", company_name="Acme", api_key="k", client=client)
+    assert error.value.code == "identity_unverified"
+    assert len(seen) == 1
+
+
 def test_fetch_vendor_family_404_is_an_answer_and_429_is_typed():
     import httpx
     import pytest as _pytest
@@ -366,7 +452,7 @@ def test_fetch_vendor_family_never_fetches_off_allowlist_hosts():
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.host)
         if request.url.path.startswith("/v2/brands/domain/"):
-            return httpx.Response(200, json={"logos": [
+            return httpx.Response(200, json={"name": "Acme", "domain": "acme.com", "logos": [
                 {"theme": "dark", "type": "logo", "tags": [], "formats": [
                     {"src": "https://evil.example/lockup.svg", "format": "svg",
                      "width": 100, "height": 40, "size": 1, "background": None}]}]})

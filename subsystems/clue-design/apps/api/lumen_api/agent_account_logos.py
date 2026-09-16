@@ -88,7 +88,7 @@ __all__ = [
 #: placeholder. Both are stamped by ``lumen_agent.tools.logo_fetch._assemble``.
 LADDER_PROVENANCE = "logo_ladder"
 VENDOR_PROVENANCE = "brandfetch"
-FETCHED_LOGO_PROVENANCES = frozenset({LADDER_PROVENANCE, VENDOR_PROVENANCE})
+FETCHED_LOGO_PROVENANCES = frozenset({LADDER_PROVENANCE, VENDOR_PROVENANCE, "logo_dev"})
 
 
 class AccountLogoRefused(Exception):

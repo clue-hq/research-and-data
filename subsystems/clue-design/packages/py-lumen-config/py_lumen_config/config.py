@@ -265,6 +265,11 @@ class Settings(BaseSettings):
     brandfetch_api_base_url: str = "https://api.brandfetch.io"
     brandfetch_timeout_s: float = 20.0
 
+    # Logo.dev Brand API (secret Bearer credential, never a published image token).
+    logo_dev_secret_key: str = ""
+    logo_dev_api_base_url: str = "https://api.logo.dev"
+    logo_dev_timeout_s: float = 20.0
+
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"

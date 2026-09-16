@@ -20,6 +20,7 @@ CELL_NAMES = ("light_lockup", "dark_lockup", "light_mark", "dark_mark")
 #: `FamilyCell.source` values. "ladder-materialized" is the ladder's
 #: observed-ink currentColor export (never synthesis -- see logo_ladder).
 SOURCE_BRANDFETCH = "brandfetch"
+SOURCE_LOGO_DEV = "logo_dev"
 SOURCE_LADDER = "ladder"
 SOURCE_LADDER_MATERIALIZED = "ladder-materialized"
 

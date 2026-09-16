@@ -1,6 +1,6 @@
 """The durable target-logo family cache (founder decision #4, 2026-08-31).
 
-Keyed `(workspace_id, registrable_domain)` -- domain, not account id, because
+Keyed `(workspace_id, exact_host)` -- product hosts remain distinct from parents,
 the tool receives a domain and the agent may fetch for companies that are not
 accounts (founder ruling 2026-09-02). Workspace-scoped by construction: the
 blob store carries the tenant (the `agent_account_logos` rule) and the row
@@ -47,9 +47,9 @@ class DurableLogoFamilyCache:
 
     @staticmethod
     def _key(site: str) -> str:
-        from lumen_ingestion.logo_ladder import host_of, registrable_domain
+        from lumen_ingestion.provider_identity import normalized_host
 
-        return registrable_domain(host_of(site)) or host_of(site)
+        return normalized_host(site)
 
     # -- seam --------------------------------------------------------------
 
@@ -104,6 +104,7 @@ class DurableLogoFamilyCache:
             for prepared in getattr(outcome, "alternatives", None) or []
         ]
         family = {
+            "identity_policy_version": 2,
             "site": outcome.site,
             "company": outcome.company,
             "lockup_completeness": outcome.lockup_completeness,
@@ -135,7 +136,16 @@ class DurableLogoFamilyCache:
         if row is None:
             return None
         family = row["family"]
+        # Old entries predate provider identity checks and used parent-domain keys.
+        # Treat them as misses without deleting the historic source evidence.
+        if (
+            family.get("identity_policy_version") != 2
+            or self._key(family.get("site", "")) != self._key(site)
+        ):
+            return None
         cells = family.get("cells") or {}
+        if not cells:
+            return None
         stored_alternatives = family.get("alternatives") or []
         # Cells AND alternatives: a missing alternative blob is a whole-family miss too,
         # because half a family is not the family the dispatch asked for.

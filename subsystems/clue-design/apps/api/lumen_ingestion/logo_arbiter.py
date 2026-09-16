@@ -50,7 +50,7 @@ PROVEN_VERDICTS = {
 COMPLETENESS_RANK = {"full_lockup": 3, "lockup": 2, "wordmark": 2, "symbol": 1, None: 0}
 
 #: The vendor wins exact ties: it answered identity in one keyed call.
-SOURCE_RANK = {"brandfetch": 1, "ladder": 0, "ladder-materialized": 0}
+SOURCE_RANK = {"logo_dev": 1, "brandfetch": 1, "ladder": 0, "ladder-materialized": 0}
 
 _FMT_FOR_CONTENT_TYPE = {
     "image/svg+xml": "svg",

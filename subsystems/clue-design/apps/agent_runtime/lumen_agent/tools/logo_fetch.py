@@ -3,11 +3,11 @@
 Both design substrates expose this as a `fetch_logo` tool. The lanes differ
 only in how a registered asset reaches their document — the WebDoc op key is
 ``record``, the scene's is ``asset`` — so everything up to that point lives
-here: normalize the input, run the two rungs, and shape one ingest call per
+here: normalize the input, run the provider and official-site rungs, and shape one ingest call per
 resolved cell of the 2x2 family.
 
-Two sources, one arbiter (founder decision 2026-09-02): the VENDOR (Brandfetch)
-and the in-house LADDER both propose candidates for every cell, and
+Logo.dev, Brandfetch and the in-house LADDER propose original candidates for
+every cell. Providers validate exact product identity before downloading, and
 `logo_arbiter.choose_cells` picks the best one per cell -- measured ink for the
 surface first, because a vendor theme label is a hint, never proof.
 
@@ -56,7 +56,7 @@ class PreparedLogo:
     """One resolved cell, shaped for `core.ingest_asset`."""
 
     cell: str
-    source: str  # "brandfetch" | "ladder" | "ladder-materialized"
+    source: str  # "logo_dev" | "brandfetch" | "ladder" | "ladder-materialized"
     asset_id: str
     label: str
     body: bytes
@@ -109,7 +109,17 @@ def _vendor_rung(site: str, company_name: Optional[str]):
     """Module-level indirection so tests (and future vendors) swap it whole."""
     from lumen_ingestion.logo_vendor import fetch_vendor_family
 
-    return fetch_vendor_family(site)
+    return fetch_vendor_family(site, company_name=company_name)
+
+
+def _logo_dev_rung(site: str, company_name: str | None):
+    from lumen_ingestion.logo_dev import fetch_logo_dev_family
+    from py_lumen_config import settings
+
+    return fetch_logo_dev_family(
+        site, company_name=company_name, secret_key=settings.logo_dev_secret_key,
+        base_url=settings.logo_dev_api_base_url, timeout_s=settings.logo_dev_timeout_s,
+    )
 
 
 def _ladder_rung(site: str, company_name: Optional[str]):
@@ -125,7 +135,7 @@ def fetch_logo_family(
     force_refresh: bool = False,
     cache=None,
 ) -> LogoFetchOutcome:
-    """Two-rung dispatch: cache -> Brandfetch + ladder -> arbiter.
+    """Cache -> Logo.dev + Brandfetch + official-site ladder -> arbiter.
 
     Both sources propose; the arbiter picks per cell.
 
@@ -143,7 +153,12 @@ def fetch_logo_family(
 
     if cache is not None and not force_refresh:
         hit = cache.get(site)
-        if hit is not None:
+        # An earlier host-only lookup cannot waive a later product/name constraint.
+        same_name = hit is not None and (
+            not company_name
+            or (hit.company or "").strip().casefold() == company_name.strip().casefold()
+        )
+        if same_name:
             hit.cache_hit = True
             return hit
 
@@ -152,8 +167,21 @@ def fetch_logo_family(
     vendor_extras: list = []
     notes: List[str] = []
     vendor_notes: List[str] = []
+    logo_dev_cells: dict = {}
     try:
-        vendor_cells, vendor_extras, vendor_notes = _vendor_rung(site, company_name)
+        logo_dev_cells, extras, provider_notes = _logo_dev_rung(site, company_name)
+        vendor_extras.extend(extras)
+        vendor_notes.extend(provider_notes)
+    except VendorCredentialsMissing:
+        notes.append("logo.dev rung disabled: no LOGO_DEV_SECRET_KEY configured")
+    except VendorLookupFailed as error:
+        notes.append(f"logo.dev rung degraded ({error.code}): {error.message}")
+    for name, cell in logo_dev_cells.items():
+        cells_by_source[name].append(cell)
+    try:
+        vendor_cells, extras, provider_notes = _vendor_rung(site, company_name)
+        vendor_extras.extend(extras)
+        vendor_notes.extend(provider_notes)
     except VendorCredentialsMissing:
         notes.append("vendor rung disabled: no BRANDFETCH_API_KEY configured")
     except VendorLookupFailed as error:
@@ -170,16 +198,18 @@ def fetch_logo_family(
         # A blocked or unreachable site cannot un-answer what the vendor already
         # served, so a vendor-only family stands. With no vendor candidate to
         # keep, that failure IS the answer -- re-raise.
-        if not vendor_cells:
+        if not vendor_cells and not logo_dev_cells:
             raise
         notes.append(
             f"ladder unavailable ({error.code}): {error.message}; vendor candidates only"
         )
         # The partial family caches as-is; its empty cells are retried only on a
         # later `force_refresh=True` call (the plan's eviction affordance).
-    if resolution is not None:
+    if resolution is not None and resolution.identity.get("passed") is True:
         for name, found in ladder_candidates(resolution).items():
             cells_by_source[name].extend(found)
+    elif resolution is not None:
+        notes.append("ladder candidates withheld: company identity did not pass")
 
     cells, losers, arbitration_notes = choose_cells(cells_by_source)
     notes.extend(arbitration_notes)
@@ -216,7 +246,7 @@ def _prepare(name, cell, resolution, label_base, *, label=None) -> PreparedLogo:
     # Content-addressed, so fetching the same brand twice in a run
     # re-registers the same id instead of duplicating the asset.
     digest = hashlib.sha256(cell.body).hexdigest()
-    created_by = "brandfetch" if cell.source == "brandfetch" else "logo_ladder"
+    created_by = cell.source if cell.source in {"brandfetch", "logo_dev"} else "logo_ladder"
     return PreparedLogo(
         cell=name,
         source=cell.source,
@@ -226,7 +256,7 @@ def _prepare(name, cell, resolution, label_base, *, label=None) -> PreparedLogo:
         content_type=cell.content_type,
         provenance={
             "created_by": created_by,
-            "source_label": "brandfetch" if created_by == "brandfetch" else "website",
+            "source_label": created_by if created_by != "logo_ladder" else "website",
             "confidence": (resolution.confidence if resolution else 0.9),
         },
         source_ref={
@@ -282,7 +312,7 @@ def _assemble(
         all_notes.extend(resolution.notes)
     if not prepared:
         all_notes.append(
-            "no cell cleared both rungs (the vendor had no attributable asset and "
+            "no cell cleared the available sources (the vendor had no attributable asset and "
             "the ladder found nothing it could stand behind; a variant is never "
             "synthesized), so nothing was ingested"
         )
@@ -292,10 +322,24 @@ def _assemble(
     # own. A ladder that hesitated (alternate lockups, a non-auto-accept rung) still
     # prepares its cells — the agent may place them — but the status carries the caveat,
     # exactly as it did before the vendor rung existed.
-    vendor_backed = any(p.source == "brandfetch" for p in prepared)
+    vendor_backed = any(p.source in {"brandfetch", "logo_dev"} for p in prepared)
     ladder_resolved = resolution is not None and resolution.status == "resolved"
     status = "ok" if prepared and (vendor_backed or ladder_resolved) else "needs_review"
 
+    has_site_winners = any(p.source.startswith("ladder") for p in prepared)
+    provider_evidence = [
+        p.evidence["vendor_identity"] for p in prepared if p.evidence.get("vendor_identity")
+    ]
+    site_evidence = (
+        resolution.identity.get("evidence", [])
+        if resolution is not None and has_site_winners else []
+    )
+    source_identities = [
+        {"cell": p.cell, "source": p.source,
+         "identity": p.evidence.get("vendor_identity")
+         or (resolution.identity if resolution is not None else {})}
+        for p in prepared
+    ]
     return LogoFetchOutcome(
         status=status,
         site=site,
@@ -304,6 +348,14 @@ def _assemble(
         cells={p.cell: p.source for p in prepared},
         alternatives=alternatives,
         identity=(
+            {
+                "passed": True,
+                "evidence": provider_evidence + site_evidence,
+                "reason": ("mixed provider and official-site evidence" if has_site_winners
+                           else "exact provider identity"),
+                "sources": source_identities,
+            }
+            if vendor_backed else
             {
                 "passed": resolution.identity.get("passed"),
                 "evidence": resolution.identity.get("evidence", [])[:3],

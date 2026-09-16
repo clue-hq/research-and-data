@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
+from .provider_identity import ProviderIdentityError, normalized_host, validate_vendor_identity
+
 JsonObject = dict[str, Any]
 
 VENDOR_NAME = "brandfetch"
@@ -60,11 +62,11 @@ class VendorCredentialsMissing(Exception):
 
 
 class VendorLookupFailed(Exception):
-    """The vendor was asked and could not answer (quota/auth/timeout/http/malformed).
+    """The vendor could not supply an eligible answer (lookup or identity failure).
     Distinct from a 404, which IS an answer (empty family)."""
 
     def __init__(self, code: str, message: str) -> None:
-        self.code = code  # "quota" | "auth" | "timeout" | "http" | "malformed"
+        self.code = code
         self.message = message
         super().__init__(f"{code}: {message}")
 
@@ -275,15 +277,12 @@ def _asset_host_allowed(host: str) -> bool:
 
 
 def _bare_domain(value: str) -> str:
-    text = (value or "").strip()
-    if not text:
-        return ""
-    candidate = text if "//" in text else f"//{text}"
-    host = (urlsplit(candidate).hostname or text).strip().lower()
-    return host[4:] if host.startswith("www.") else host
+    return normalized_host(value)
 
 
-def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, client=None):
+def fetch_vendor_family(
+    domain, *, company_name=None, api_key=None, base_url=None, timeout_s=None, client=None,
+):
     """One Brand API lookup + asset downloads -> (cells, extras, notes). The one
     impure entry point of this module. See the module docstring for the contract."""
     import httpx
@@ -335,6 +334,13 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         except ValueError as error:
             raise VendorLookupFailed("malformed", "brand response was not JSON") from error
 
+        try:
+            identity = validate_vendor_identity(
+                payload, requested_domain=host, company_name=company_name,
+            )
+        except ProviderIdentityError as error:
+            raise VendorLookupFailed(error.code, error.message) from error
+
         driver_notes: list[str] = []
 
         def download(src: str):
@@ -357,6 +363,8 @@ def fetch_vendor_family(domain, *, api_key=None, base_url=None, timeout_s=None, 
         cells, extras, notes = map_vendor_assets_to_cells(
             parse_brand_payload(payload), download
         )
+        for candidate in [*cells.values(), *extras]:
+            candidate.evidence["vendor_identity"] = dict(identity)
         return cells, extras, driver_notes + notes
 
     if client is not None:

@@ -35,6 +35,75 @@ def _vendor_rung_disabled(monkeypatch):
         raise VendorCredentialsMissing()
 
     monkeypatch.setattr(logo_fetch, "_vendor_rung", disabled)
+    monkeypatch.setattr(logo_fetch, "_logo_dev_rung", disabled, raising=False)
+
+
+def test_logo_dev_original_is_attributed_and_usable_when_site_is_blocked(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+    from lumen_ingestion.logo_family import FamilyCell
+
+    cell = FamilyCell(
+        cell="light_lockup", body=_svg(), content_type="image/svg+xml",
+        source="logo_dev", origin_url="https://img.logo.dev/acme.com",
+        evidence={"vendor_identity": {"domain": "acme.com", "name": "Acme", "passed": True}},
+    )
+    monkeypatch.setattr(
+        logo_fetch, "_logo_dev_rung", lambda site, company: ({"light_lockup": cell}, [], [])
+    )
+    def blocked(site, company):
+        raise CaptureError("blocked", "unavailable")
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
+    outcome = logo_fetch.fetch_logo_family("acme.com", company_name="Acme")
+    assert outcome.status == "ok"
+    assert outcome.prepared[0].provenance["created_by"] == "logo_dev"
+    assert outcome.prepared[0].body == cell.body
+    assert outcome.identity["passed"] is True
+
+
+def test_logo_dev_unavailable_still_uses_brandfetch(monkeypatch):
+    from lumen_ingestion.logo_vendor import VendorLookupFailed
+    def quota(site, company):
+        raise VendorLookupFailed("quota", "quota reached")
+    monkeypatch.setattr(logo_fetch, "_logo_dev_rung", quota)
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), [], []),
+    )
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
+    outcome = logo_fetch.fetch_logo_family("acme.com")
+    assert outcome.cells == {"light_lockup": "brandfetch"}
+    assert any("logo.dev" in note and "quota" in note for note in outcome.notes)
+
+
+def test_cached_host_cannot_bypass_changed_company_identity(monkeypatch):
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), [], []),
+    )
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
+    logo_fetch.fetch_logo_family("acme.com", company_name="Acme", cache=cache)
+    seen = []
+    def fresh(site, company):
+        seen.append(company)
+        return {}, [], []
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", fresh)
+    result = logo_fetch.fetch_logo_family("acme.com", company_name="Acme Cloud", cache=cache)
+    assert not result.cache_hit
+    assert seen == ["Acme Cloud"]
+
+
+def test_verified_vendor_does_not_certify_unrelated_ladder_logo(monkeypatch):
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), [], []),
+    )
+    ladder = _resolution({"dark": _slot(_svg("#fff"), lockup="full_lockup", variant="dark")})
+    ladder.identity = {"passed": False, "reason": "partner logo"}
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
+    result = logo_fetch.fetch_logo_family("acme.com")
+    assert result.cells == {"light_lockup": "brandfetch"}
+    assert all(p.source == "brandfetch" for p in result.prepared + result.alternatives)
 
 
 # --------------------------------------------------------------------------- #
@@ -718,6 +787,8 @@ def test_dispatch_a_vendor_cell_makes_a_mixed_family_ok(monkeypatch):
     assert outcome.status == "ok"
     assert outcome.cells == {"light_lockup": "brandfetch", "dark_lockup": "ladder"}
     assert "https://acme.com/" in cache.stored
+    assert outcome.identity["reason"] == "mixed provider and official-site evidence"
+    assert {s["source"] for s in outcome.identity["sources"]} == {"brandfetch", "ladder"}
 
 
 def test_dispatch_keeps_vendor_cells_when_the_ladder_is_blocked(monkeypatch):
