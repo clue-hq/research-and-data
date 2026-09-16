@@ -677,7 +677,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_account_catalog(conn)
+        catalog = await self._store.read_account_catalog(conn, workspace_id=run.workspace_id)
         established = await self._already_established(conn, job, run)
 
         bundle = load_account_resources(self._catalog_root)
@@ -754,7 +754,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_person_catalog(conn)
+        catalog = await self._store.read_person_catalog(conn, workspace_id=run.workspace_id)
 
         bundle = load_person_resources(self._person_catalog_root)
         if bundle.profile.sha256 != job.profile_sha256:

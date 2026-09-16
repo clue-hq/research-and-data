@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.onboarding_store import DocumentRow
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
+from clue_research.claimstore import list_research_fields
 
 __all__ = [
     "PERSON_EXTRA_FIELDS",
@@ -550,33 +551,15 @@ async def job_link_audit(conn: AsyncConnection, *, job_id: UUID) -> dict[str, in
     return {f"{row['verdict']}/{row['reason']}": int(row["n"]) for row in rows}
 
 
-async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The account-side field menu one job may write against: every registered ``account.*`` and
-    ``core.*`` field, exactly as the registry holds it.
-
-    The catalog is read from the registry rather than enumerated in code, because "open by
-    registration, not enumeration" is the whole point of the field registry: a pack that adds a
-    field is a row, and this menu grows with it without a code change.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'account.%' OR field_key LIKE 'core.%') "
-                    "ORDER BY field_key"
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_account_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The account menu from the effective registry, including this workspace's instructions."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="accounts")
     return FieldCatalog(
         account=tuple(
             FieldSpec(
-                key=str(row["field_key"]),
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
+                key=row.field_def.field_key,
+                description=row.description or "",
+                value_schema=row.value_schema,
             )
             for row in rows
         )
@@ -595,39 +578,12 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
 PERSON_EXTRA_FIELDS: tuple[str, ...] = ("core.work_email",)
 
 
-async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The person-side field menu one person job may write against.
-
-    Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
-    the facet section — plus :data:`PERSON_EXTRA_FIELDS`. Read from the registry for the same
-    reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
-    grows with it without a code change.
-
-    Each row also carries the field's declared ``use_class_hint``. The registry holds it in
-    ``field_definition.validation`` (``{"use_class_hint": …}``), and it is what a contact claim
-    written against that field is born with — so the difference between a professional fact and a
-    personal one is read off the field that declares it, never inferred from the key's spelling.
-    A field whose ``validation`` says nothing has no hint, and the claim path's default decides.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema, "
-                    " validation->>'use_class_hint' AS use_class_hint "
-                    "FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
-                    "ORDER BY field_key"
-                ),
-                {"extra": list(PERSON_EXTRA_FIELDS)},
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_person_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The person menu, preserving facets, work email and registered use-class hints."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="contacts")
     sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
     for row in rows:
-        key = str(row["field_key"])
+        key = row.field_def.field_key
         section = (
             "facet"
             if key.startswith("contact.facet.")
@@ -635,14 +591,14 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
             if key.startswith("contact.")
             else "account"
         )
+        validation = row.field_def.validation
+        hint = validation.get("use_class_hint") if isinstance(validation, dict) else None
         sections[section].append(
             FieldSpec(
                 key=key,
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
-                use_class_hint=(
-                    str(row["use_class_hint"]) if row["use_class_hint"] is not None else None
-                ),
+                description=row.description or "",
+                value_schema=row.value_schema,
+                use_class_hint=str(hint) if hint is not None else None,
             )
         )
     return FieldCatalog(
@@ -793,12 +749,6 @@ async def read_persona_documents(
         )
         for row in rows
     )
-
-
-def _schema(raw: Any) -> Mapping[str, Any] | None:
-    """A ``value_schema`` column as a mapping, or ``None`` when the field declares none."""
-    decoded = decode_jsonb(raw)
-    return decoded if isinstance(decoded, Mapping) else None
 
 
 def _dump_json(payload: Mapping[str, Any]) -> str:

@@ -595,7 +595,7 @@ def test_the_person_catalog_is_the_contact_menu_plus_the_work_email() -> None:
             await load_committee_pack(conn)  # contact.current_title / persona / location
             await load_arv2_pack(conn)  # contact.facet.hobby, with the personal hint
 
-            catalog = await store.read_person_catalog(conn)
+            catalog = await store.read_person_catalog(conn, workspace_id="catalog-test")
 
             keys = catalog.keys()
             assert {

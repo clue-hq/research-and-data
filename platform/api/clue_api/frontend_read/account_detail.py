@@ -17,8 +17,8 @@ Two disciplines are load-bearing here and are enforced, not merely intended:
   what the suite's statement-count guard exists to prevent.
 
 The second route in this module, ``GET /accounts/{id}/evidence/{claim_id}``, streams one retained
-evidence artifact. It authorises against what the **stored** overview page actually cites and
-nothing else, so an authorisation check can never write a page or schedule one.
+evidence artifact. It authorises stored overview citations and the account's scoped custom-field
+claims, including retired fields. Authorization never writes or schedules a page.
 """
 
 from __future__ import annotations
@@ -62,6 +62,7 @@ from clue_api.frontend_read.v1_shared import (
     account_logo_path,
     activity_for,
     arv2_research_status_for,
+    custom_field_evidence_for,
     custom_fields_for,
     employee_range_label,
     fit_band,
@@ -249,6 +250,11 @@ async def read_account_detail(
         ),
     )
 
+    field_evidence = await custom_field_evidence_for(
+        conn, workspace_id=workspace_id, subject_id=canonical
+    )
+    evidence = list({record.claim_id: record for record in [*evidence, *field_evidence]}.values())
+
     # ``canonical_name`` is NOT NULL on the spine, but a blank one would fail the contract's
     # ``min(1)``; the domain, then the id, keep the page honest and reachable.
     name = str(account.canonical_name or account.primary_domain or account_uuid)
@@ -375,9 +381,9 @@ def register_account_detail_routes(
         account_id: uuid.UUID,
         claim_id: uuid.UUID,
     ) -> Response:
-        """Stream retained evidence only when the account's own page actually cites it.
+        """Stream evidence for stored page citations or scoped custom-field values.
 
-        The authorising set is exactly what the **stored** overview page cites. ``generate=False``
+        The authorising set includes the **stored** overview and custom values. ``generate=False``
         is load-bearing: an authorisation check must never be a spend path, so this asks only what
         is already written and neither writes a section nor schedules a rewrite. The account id is
         resolved to its survivor first, so a merged-loser url authorises against the page the
@@ -416,7 +422,11 @@ def register_account_detail_routes(
                 page=OVERVIEW_PAGE,
                 generate=False,
             )
-            if str(claim_id) not in page.cited_claim_ids:
+            custom_evidence = await custom_field_evidence_for(
+                conn, workspace_id=workspace_id, subject_id=canonical
+            )
+            served_ids = {*page.cited_claim_ids, *(row.claim_id for row in custom_evidence)}
+            if str(claim_id) not in served_ids:
                 raise HTTPException(
                     status_code=404,
                     detail={

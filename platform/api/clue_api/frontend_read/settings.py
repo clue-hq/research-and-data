@@ -8,13 +8,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.auth_wiring import principal_from_request
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.frontend_read.research_fields import register_research_field_routes
+from clue_api.frontend_read.settings_authority import lock_manager, principal_for, refused
 from clue_auth.errors import LifecycleTransitionError, MembershipPermissionError
 from clue_auth.principal import RequestPrincipal
 from clue_auth.providers.clerk_api import ClerkApi, ClerkApiError
@@ -34,36 +35,6 @@ from clue_auth.store import (
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_spine import rename_workspace
-
-
-def refused(status: int, code: str, message: str) -> HTTPException:
-    return HTTPException(status_code=status, detail={"code": code, "message": message})
-
-
-def principal_for(request: Request, workspace_id: str, *, manage: bool = False) -> RequestPrincipal:
-    principal = principal_from_request(request)
-    if principal is None or principal.workspace_id != workspace_id:
-        raise refused(401, "UNAUTHORIZED", "Sign in to use Settings.")
-    if manage and "workspace.manage_members" not in principal.permissions:
-        raise refused(
-            403, "PERMISSION_REQUIRED", "Workspace administration permission is required."
-        )
-    return principal
-
-
-async def lock_manager(conn: AsyncConnection, principal: RequestPrincipal) -> None:
-    # Serialize management writes and recheck live authority inside the transaction.
-    await conn.execute(
-        text("SELECT workspace_id FROM workspace WHERE workspace_id = :ws FOR NO KEY UPDATE"),
-        {"ws": principal.workspace_id},
-    )
-    actor = await get_membership(
-        conn, workspace_id=principal.workspace_id, membership_id=principal.membership_id
-    )
-    if actor is None or actor.status != "active" or actor.role_key not in ("owner", "admin"):
-        raise refused(
-            403, "PERMISSION_REQUIRED", "Workspace administration permission is required."
-        )
 
 
 class ProfilePatch(BaseModel):
@@ -223,6 +194,8 @@ def register_settings_routes(
     secret = secrets.auth_clerk_secret_key if secrets else None
     clerk = clerk_api or (ClerkApi(secret.get_secret_value()) if secret else None)
 
+    register_research_field_routes(router, conn_factory=conn_factory)
+
     @router.get("/settings/profile")
     async def profile(request: Request, workspace_id: WorkspaceDep) -> dict[str, Any]:
         principal = principal_for(request, workspace_id)
@@ -283,13 +256,13 @@ def register_settings_routes(
         workspace_id: WorkspaceDep,
         body: dict[str, Any],
     ) -> dict[str, Any]:
-        principal = principal_for(request, workspace_id, manage=True)
+        principal = principal_for(request, workspace_id, permission="workspace.manage_settings")
         if "website" in body or "logo_url" in body:
             raise refused(400, "FIELD_READ_ONLY", "Website and logo are read-only.")
         if set(body) != {"name"} or not isinstance(body["name"], str):
             raise refused(422, "VALIDATION_ERROR", "Provide an organization name.")
         async with conn_factory() as conn:
-            await lock_manager(conn, principal)
+            await lock_manager(conn, principal, "workspace.manage_settings")
             try:
                 await rename_workspace(conn, workspace_id, body["name"])
             except ValueError:
@@ -314,7 +287,7 @@ def register_settings_routes(
         action: str,
         role: str = "operator",
     ) -> dict[str, bool]:
-        principal = principal_for(request, workspace_id, manage=True)
+        principal = principal_for(request, workspace_id, permission="workspace.manage_members")
         async with conn_factory() as conn:
             await lock_manager(conn, principal)
             target = await get_membership(
@@ -388,7 +361,7 @@ def register_settings_routes(
     async def invite(
         request: Request, workspace_id: WorkspaceDep, body: InvitationRequest
     ) -> dict[str, Any]:
-        principal = principal_for(request, workspace_id, manage=True)
+        principal = principal_for(request, workspace_id, permission="workspace.manage_members")
         if clerk is None:
             raise refused(503, "INVITATIONS_UNCONFIGURED", "Invitation delivery is not configured.")
         outcomes = []
@@ -466,7 +439,7 @@ def register_settings_routes(
     async def revoke_invitation(
         request: Request, workspace_id: WorkspaceDep, invitation_id: str
     ) -> dict[str, bool]:
-        principal = principal_for(request, workspace_id, manage=True)
+        principal = principal_for(request, workspace_id, permission="workspace.manage_members")
         async with conn_factory() as conn:
             await lock_manager(conn, principal)
             invitation = await lock_workspace_invitation(
