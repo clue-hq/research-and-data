@@ -1,5 +1,14 @@
 # Scene review
 
+Judge the current full and compact previews before completing the contract below.
+Name the first read, its comfortably readable explanation, and what the artwork
+adds. Recognizing known words or deciphering enlarged text is not comfortable
+reading. Judge paired-logo authenticity separately from palette, optical weight
+and grouping. A native button can be valid while detached from its message.
+Lost essential product content, unreadable support or a broken message group
+requires rejection and a coherent repair, not an advisory polish warning.
+The direction is a plan to assess; it cannot certify its own aesthetic choices.
+
 ## Candidate critique contract — read before writing
 
 Write `<active round_dir>/critique.json` as one `SceneVisualCritique` JSON object.
@@ -313,8 +322,12 @@ When direction validation or the native-copy inventory reports a caller-selected
 this run's contract. Check each fragment's `nominal_size_review` before accepting.
 An unavailable or below-minimum measurement blocks whole-creative acceptance;
 recompose, simplify, or remove optional copy through the checked tools and inspect
-the updated preview. The current compact-feed profile uses a conservative native
-size floor at its declared display width. This is an internal review condition,
+the updated preview. The compact-feed profile uses a conservative native size
+floor at its declared display width. The stricter `legible-feed-v1` profile uses
+10px nominal em at 360px display width (30 source px for a 1080px page). It rejects
+the formerly accepted 17–25px source labels without imposing one final type size:
+hierarchy, font appearance, contrast and wrapping still need judgment.
+This is an internal review condition,
 not a platform specification, a rendered glyph measurement, or proof that copy is
 readable above the floor. It does not measure words inside images. The caller
 selects the profile; changing page units, role names or the direction cannot waive

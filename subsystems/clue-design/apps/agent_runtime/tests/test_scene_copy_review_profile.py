@@ -37,9 +37,18 @@ def test_absent_profile_env_defaults_off(monkeypatch, tmp_path):
     assert runtime_config_module.AgentRuntimeConfig.from_env(tmp_path).scene_review_profile == ""
 
 
-@pytest.mark.parametrize(("size", "passes"), [(21, False), (23.999, False), (24, True), (32, True)])
-def test_selected_profile_checks_support_at_its_documented_floor(tools, size, passes):
-    enable_profile(tools)
+@pytest.mark.parametrize(("profile", "minimum", "size", "passes"), [
+    ("compact-feed-v1", 8, 21, False),
+    ("compact-feed-v1", 8, 23.999, False),
+    ("compact-feed-v1", 8, 24, True),
+    ("compact-feed-v1", 8, 32, True),
+    ("legible-feed-v1", 10, 25, False),
+    ("legible-feed-v1", 10, 29.999, False),
+    ("legible-feed-v1", 10, 30, True),
+    ("legible-feed-v1", 10, 32, True),
+])
+def test_selected_profile_checks_support_at_its_documented_floor(tools, profile, minimum, size, passes):
+    object.__setattr__(tools.config, "scene_review_profile", profile)
     deliver_profile(tools)
     add_text(tools, "support", "Explore the possibilities", y=480)
     assert json.loads(tools.compile_dsl_block(f"#support font_size({size})"))["compile"][
@@ -69,7 +78,7 @@ def test_selected_profile_checks_support_at_its_documented_floor(tools, size, pa
         result = json.loads(accept(tools))
         assert result["status"] == "accepted"
         assert result["acceptance_receipt"]["native_copy_review_profile"] == {
-            "id": "compact-feed-v1", "display_width_px": 360, "minimum_nominal_em_px": 8,
+            "id": profile, "display_width_px": 360, "minimum_nominal_em_px": minimum,
         }
     else:
         assert accept(tools).startswith("REFUSED")

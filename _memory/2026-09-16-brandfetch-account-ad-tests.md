@@ -132,3 +132,50 @@ in its separate worktree; no new ingestion agent in this task.
   pytest result was lost to output truncation; the focused run was repeated with a
   saved log and exit 0. Two gallery clicks raced automatic opening; inspected
   current state and continued without duplicate artifacts.
+
+
+## Balanced whole-ad goal (2026-09-16, implementation checkpoint)
+
+- User rejected the previous four paired drafts as whole creatives and explicitly
+  set an active goal: compatible original logo variants (white Google on Clue dark
+  treatment), optical balance, no unnecessary CTA, readable support, relevant fresh
+  imagery, whole-ad balance and prior editable/save/export/four-minute criteria.
+  Plan is two more rounds across Clue, AWS, Google Cloud and Conduit. Goal remains
+  active and is not achieved by the previous narrow identity-pair pass.
+- Current-run audit proved all four had native_copy_review_profile=null. Runtime
+  accepted native labels at 16–25 source px on 1080 pages; support was 6.67–8.33px
+  at a 360px view. The model described known words as readable despite that size.
+- Added optional legible-feed-v1, 10px nominal em at360 (30 source px at1080), using
+  the existing caller-owned gate. Preserves compact-feed-v1 and code default off.
+  Explicitly selected in local ignored env and documented matching examples for
+  these feed tests; running services have NOT been reloaded in this continuation.
+  It also covers native separators. This is a policy floor, not proof of legibility
+  or a platform specification; 32px source support remains permitted.
+- Boundary tests first failed for the absent profile, then passed at25/29.999
+  rejection and30/32 acceptance. All304 focused profile, review-delivery, logo,
+  skill discovery, solo-runtime and format-library tests passed (exit0); log
+  /tmp/balanced-account-tests.log. No Rust/core/website changes.
+- Drafted revised reusable identity procedure: original reversed-pair comparison,
+  visible wordmark letter heights with width for long names, no-CTA/awareness action
+  decision, meaningful imagery, and whole-ad judgment. Preserves target-only/name-
+  only requests, approved colored support, authentic variants on approved fields,
+  and faithful/background-only variation scope. Added a short review opening before
+  the JSON contract; its full rejected example still fits the first100-line read.
+- Independent review corrected an initial audit error: components.md WAS eagerly
+  pinned in the solo system prompt. No read_file event did not mean absent context.
+  Thus no redundant load was added. Three draft over-broad rules were corrected;
+  reviewer found no remaining structural blocker. This is NOT visual qualification.
+- Five control planning probes all failed before model execution. Minimal diagnostic
+  proved OpenRouter HTTP403: existing app key weekly limit exceeded. No behavioral
+  samples, no new live drafts, no provider/billing workaround. User was asked to
+  restore the existing key limit or configure an approved key; answer pending.
+- Ignored evidence root balanced-account-20260916 contains frozen candidate guidance,
+  exact ordinary requests/criteria for eight pending cases, original-output native
+  readability audit, and baseline latency. No old artifact or user edit mutated.
+- Baseline measured22–35 calls per creative, 7.85–11.12min after confirmation; model
+  calls account for most time. Latency remains unresolved. Final generated quality,
+  fresh-image diversity, save/reload/edit/export and four-minute delivery need live
+  verification after provider access is restored. Do not mark the goal complete.
+- Operational slips: an initial multi-file patch failed atomically on context, then
+  was reapplied; one skill write used a subsystem-relative path from that subsystem
+  and failed without modifying a file, then succeeded via the absolute path.
