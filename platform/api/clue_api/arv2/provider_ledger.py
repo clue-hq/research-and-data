@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -30,6 +30,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import ArtifactRef
+from clue_api.provider_incidents import record_failure, record_success
+from clue_core.provider_failures import ProviderFailure
 
 from .sinks import LedgerRow, RawRecord, sha256_hex
 
@@ -212,6 +214,8 @@ async def drain_provider_calls(
     for row in rows:
         await conn.execute(_INSERT_LEDGER, _ledger_params(row, stamp=stamp, keys=keys))
 
+    await _record_incidents(conn, rows, stamp=stamp)
+
     results = [row for row in rows if row.phase == "result"]
     return DrainReport(
         rows=len(rows),
@@ -220,6 +224,62 @@ async def drain_provider_calls(
         credits=sum((row.credits or Decimal(0) for row in results), Decimal(0)),
         media_seconds=sum(row.media_seconds or 0 for row in results),
     )
+
+
+def _surface_for(row: LedgerRow, stamp: LedgerStamp) -> str:
+    """Which product surface this spend was for — the word an incident's breakdown counts under."""
+    if stamp.job_id is not None:
+        return "research_job"
+    if row.operation == "chat/completions" and row.label.startswith("display-"):
+        return "display_section"
+    if stamp.project_run_id is not None:
+        return "discovery"
+    if row.label.startswith("onboarding"):
+        return "onboarding"
+    return row.operation
+
+
+def _stamped_failure(row: LedgerRow) -> ProviderFailure | None:
+    """The classification R1 stamped on a failing result row, or ``None`` when the row is fine."""
+    stamped = row.extras.get("provider_failure")
+    if not isinstance(stamped, Mapping):
+        return None
+    try:
+        return ProviderFailure(
+            row.provider,
+            stamped["kind"],
+            stamped["reason"],
+            str(stamped.get("message", "")),
+        )
+    except KeyError:
+        return None
+
+
+async def _record_incidents(
+    conn: AsyncConnection, rows: Sequence[LedgerRow], *, stamp: LedgerStamp
+) -> None:
+    """After the rows are in: every stamped failure lands on an incident, every provider with an
+    ``ok`` result closes its incidents. Successes are folded per provider so a batch of thirty
+    good rows costs one indexed UPDATE, and closes run AFTER failures so a batch that holds both
+    (a retry that finally worked) ends closed, which is what the provider's last word was."""
+    results = [row for row in rows if row.phase == "result"]
+    for row in results:
+        failure = _stamped_failure(row)
+        if failure is not None:
+            await record_failure(
+                conn,
+                failure,
+                surface=_surface_for(row, stamp),
+                workspace_id=stamp.workspace_id,
+                now=row.recorded_at,
+            )
+    recovered: dict[str, datetime] = {}
+    for row in results:
+        if row.outcome == "ok" and _stamped_failure(row) is None:
+            seen = recovered.get(row.provider, row.recorded_at)
+            recovered[row.provider] = max(seen, row.recorded_at)
+    for provider, at in recovered.items():
+        await record_success(conn, provider, now=at)
 
 
 def _ledger_params(

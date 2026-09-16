@@ -50,6 +50,7 @@ from clue_api.arv2.sinks import (
     sha256_hex,
 )
 from clue_api.arv2.transport import HttpRequest, HttpResponse, Transport, TransportFailure
+from clue_core.provider_failures import classify_http
 from clue_obs.langfuse import ObservationLike, ObservationType, guardrail, observation
 
 #: The statuses Appendix A law 2 retries with the ``12·(n+1)`` s (or ``Retry-After``) backoff.
@@ -251,6 +252,23 @@ def _observation_input(spec: CallSpec, *, over_ceiling: bool) -> dict[str, objec
     }
 
 
+def _failure_extras(
+    provider: str, status: int | None, body: bytes | str | None
+) -> dict[str, object]:
+    """The classified failure as JSON-safe extras for a failing result row; ``{}`` for a success."""
+    text_body = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
+    failure = classify_http(provider, status, text_body)
+    if failure is None:
+        return {}
+    return {
+        "provider_failure": {
+            "kind": failure.kind,
+            "reason": failure.reason,
+            "message": failure.message,
+        }
+    }
+
+
 def _usage_details(cost: CostReading, *, credits: Decimal, media_seconds: int) -> dict[str, int]:
     """Langfuse's usage map (ints only). Tokens when the reader reported them, else the unit the
     provider actually bills in — credits or media seconds — so a non-token call still shows usage.
@@ -393,7 +411,11 @@ class ProviderCaller:
                         attempts=attempts,
                         latency_ms=latency_ms,
                         error_code="transport_error",
-                        extras={"last_error": str(exc), **_langfuse_extras(current)},
+                        extras={
+                            "last_error": str(exc),
+                            **_failure_extras(spec.provider, None, str(exc)),
+                            **_langfuse_extras(current),
+                        },
                     )
                     current.update(
                         level="ERROR",
@@ -462,6 +484,7 @@ class ProviderCaller:
                     error_code=halt_reason,
                     raw_ref=raw_refs[-1] if raw_refs else None,
                     current=current,
+                    response_body=response.body,
                 )
                 raise ProviderHalted(
                     spec.provider,
@@ -481,6 +504,7 @@ class ProviderCaller:
                 error_code=error_code,
                 raw_ref=raw_refs[-1] if raw_refs else None,
                 current=current,
+                response_body=response.body,
             )
             return CallResult(
                 response=response,
@@ -678,6 +702,7 @@ class ProviderCaller:
         error_code: str | None,
         raw_ref: str | None,
         current: ObservationLike | None = None,
+        response_body: bytes | None = None,
     ) -> tuple[CallCost, bool]:
         """Update the running totals from the reading, then write the result row.
 
@@ -736,7 +761,12 @@ class ProviderCaller:
             provider_request_id=cost.provider_request_id,
             error_code=error_code,
             raw_ref=raw_ref,
-            extras={**cost.extras, "cost_source": source, **_langfuse_extras(current)},
+            extras={
+                **cost.extras,
+                **_failure_extras(spec.provider, status, response_body),
+                "cost_source": source,
+                **_langfuse_extras(current),
+            },
         )
         if current is not None:
             model = cost.extras.get("model")

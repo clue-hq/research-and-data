@@ -42,6 +42,8 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_api.composition",
     # D1: the wiring hook that appends the ARV2 pack (outside the lane by design)
     "clue_api.arv2_wiring",
+    # PI-2: platform incident recorder the lane reports into; no lane logic
+    "clue_api.provider_incidents",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.

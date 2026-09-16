@@ -622,3 +622,62 @@ def test_a_plain_client_error_is_recorded_and_returned() -> None:
     assert result.attempts == 1
     assert clock.sleeps == []
     assert ledger.rows[-1].outcome == "client_error"
+
+
+def test_a_refusal_row_carries_the_classified_provider_failure() -> None:
+    body = (
+        b"{'error': {'message': 'Key limit exceeded (weekly limit). "
+        b"Manage it using https://openrouter.ai/x', 'code': 403}}"
+    )
+    caller, _, _, ledger, _ = _caller([HttpResponse(403, {}, body)])
+    spec = _spec(
+        provider="openrouter",
+        operation="chat/completions",
+        label="display-overview-what-they-do",
+        max_attempts=1,
+    )
+    result = caller.call(spec)
+    assert result.response.status == 403
+    (row,) = [r for r in ledger.rows if r.phase == "result"]
+    assert row.extras["provider_failure"] == {
+        "kind": "refusal",
+        "reason": "key_limit",
+        "message": "Key limit exceeded (weekly limit). Manage it using https://openrouter.ai/x",
+    }
+
+
+def test_a_halt_row_carries_the_classification_too() -> None:
+    body = b'{"error":"payment_required"}'
+    caller, _, _, ledger, _ = _caller([HttpResponse(402, {}, body)])
+    spec = _spec(
+        provider="exa_websets",
+        operation="websets:create",
+        label="websets",
+        max_attempts=1,
+        halt_rule=lambda r: "payment_required" if r.status == 402 else None,
+    )
+    with pytest.raises(ProviderHalted):
+        caller.call(spec)
+    (row,) = [r for r in ledger.rows if r.phase == "result"]
+    assert row.outcome == "halted"
+    assert row.extras["provider_failure"] == {
+        "kind": "refusal",
+        "reason": "credits_exhausted",
+        "message": "payment_required",
+    }
+
+
+def test_a_transport_error_row_is_a_timeout_failure_and_a_success_row_carries_nothing() -> None:
+    caller, _, _, ledger, _ = _caller([TransportFailure("connection reset")])
+    with pytest.raises(ProviderTransportError):
+        caller.call(_spec(provider="live_http", max_attempts=1))
+    (row,) = [r for r in ledger.rows if r.phase == "result"]
+    assert row.extras["provider_failure"] == {
+        "kind": "failure",
+        "reason": "timeout",
+        "message": "connection reset",
+    }
+    caller, _, _, ledger, _ = _caller([HttpResponse(200, {}, b"{}")])
+    caller.call(_spec(max_attempts=1))
+    (ok,) = [r for r in ledger.rows if r.phase == "result"]
+    assert "provider_failure" not in ok.extras

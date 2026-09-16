@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,13 +12,9 @@ from sentry_sdk.transport import Transport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents.contracts import ArtifactRef
-from clue_api.arv2.provider_ledger import (
-    BufferedLedger,
-    BufferedRawSink,
-    LedgerStamp,
-    drain_provider_calls,
-)
+from clue_api.arv2.provider_ledger import _INSERT_LEDGER as INSERT_LEDGER
+from clue_api.arv2.provider_ledger import LedgerStamp
+from clue_api.arv2.provider_ledger import _ledger_params as ledger_params
 from clue_api.arv2.sinks import LedgerRow
 from clue_api.provider_incidents import _INSERT as INSERT_STATEMENT
 from clue_api.provider_incidents import (
@@ -50,56 +45,39 @@ KEY_LIMIT = ProviderFailure(
 FIVE_OH_THREE = ProviderFailure("exa", "failure", "server_error", "upstream unavailable")
 
 
-class FakeArtifacts:
-    """The artifact-sink shape the drain composes, without the storage backend behind it.
-
-    Copied from ``tests/arv2/test_provider_ledger_db.py``; nothing here persists a raw body (the
-    seeded rows carry no ``raw_ref``), but the drain's signature asks for a sink.
-    """
-
-    async def persist_body(self, *, workspace_id: str, data: bytes, media_type: str) -> ArtifactRef:
-        digest = hashlib.sha256(data).hexdigest()
-        return ArtifactRef(
-            workspace_id=workspace_id,
-            artifact_key=f"art/{digest}",
-            sha256=digest,
-            media_type=media_type,
-            byte_count=len(data),
-        )
-
-
 async def seed_failed_call(conn: AsyncConnection, *, provider: str, at: datetime) -> None:
     """Write what a writer writes before it tells the recorder: one classified-failure ``result``
-    row in ``provider_call_ledger``, through the real drain (Task 3's path)."""
-    ledger = BufferedLedger()
-    ledger.record(
-        LedgerRow(
-            row_id=str(uuid4()),
-            call_id=str(uuid4()),
-            phase="result",
-            provider=provider,
-            operation="answer",
-            label="discovery:x",
-            recorded_at=at,
-            http_status=503,
-            attempts=1,
-            outcome="client_error",
-            extras={
-                "provider_failure": {
-                    "kind": "failure",
-                    "reason": "server_error",
-                    "message": "503",
-                },
-                "cost_source": "estimate",
+    row in ``provider_call_ledger``.
+
+    The row goes in through the drain's own statement and parameter builder rather than through
+    :func:`drain_provider_calls` itself, because from Task 3 on the drain *is* a writer: it calls
+    the recorder for every stamped failure it lands. Seeding through it here would tell the
+    recorder twice per call and the threshold arithmetic below would be measuring the double.
+    That the drain records is Task 3's own test (``tests/arv2/test_provider_ledger_db.py``).
+    """
+    row = LedgerRow(
+        row_id=str(uuid4()),
+        call_id=str(uuid4()),
+        phase="result",
+        provider=provider,
+        operation="answer",
+        label="discovery:x",
+        recorded_at=at,
+        http_status=503,
+        attempts=1,
+        outcome="client_error",
+        extras={
+            "provider_failure": {
+                "kind": "failure",
+                "reason": "server_error",
+                "message": "503",
             },
-        )
+            "cost_source": "estimate",
+        },
     )
-    await drain_provider_calls(
-        conn,
-        raw=BufferedRawSink(),
-        ledger=ledger,
-        artifacts=FakeArtifacts(),
-        stamp=LedgerStamp(workspace_id="ws_incidents"),
+    await conn.execute(
+        INSERT_LEDGER,
+        ledger_params(row, stamp=LedgerStamp(workspace_id="ws_incidents"), keys={}),
     )
 
 
