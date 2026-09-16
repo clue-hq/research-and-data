@@ -2806,7 +2806,7 @@ Sign in per `DEV_STACK.md`, then verify on `http://localhost:3020/artifacts` wit
 4. Open editor: a new thread appears under the project titled with the artifact; the chat lands with the artifact tab open; the URL carries no `open=` after mount.
 5. Open source conversation lands on the origin thread.
 6. Copy link → the editor route opens the artifact.
-7. Ad download in PNG 2x, SVG and PDF; web "Download preview (PNG)".
+7. Ad download in PNG 2x, SVG and PDF; web "Export" (the static-site zip opens locally with styles, fonts and images).
 8. Rename from the preview: the library, the project gallery and the editor header agree; an editor open on that document reloads rather than reverting.
 9. Archive and restore: the row moves between All and Archived; the project gallery drops it; the editor route still opens it; a published page stays published.
 10. Save and unsave; last-viewed ordering after opening previews.

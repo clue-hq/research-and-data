@@ -278,7 +278,7 @@ resolution rule. The gate is `npm run design-system:build && npm run lint && npm
 
 **Browser walk on the lane stack.** Real documents from two projects: counts, search, group by
 project, the account filter, opening the editor in a new thread with the tab open on arrival,
-opening the source conversation, copy link, an ad export in each format, a web preview download,
+opening the source conversation, copy link, an ad export in each format, a web Export zip,
 rename reflected in the library and the gallery, archive and restore across collections, save and
 unsave, last-viewed ordering, the empty state on a fresh workspace, and the flag-off behaviour.
 
