@@ -145,7 +145,13 @@ A requested × treatment is allowed without a blanket disclaimer or addressing
 caption. Co-placement is not evidence for written customer, partner or endorsement
 claims. Read artwork and requested companion channel copy as one argument: a name
 swap alone does not establish account relevance, and assumed pains, tools or results
-cannot become facts. An honestly scoped identity-only invitation can be valid.
+cannot become facts. Identity-only is sufficient for an explicitly logo-only or
+exact-copy adaptation. For requested audience/use-case relevance, remove the name
+and logo mentally: the remaining artwork and requested companion copy must still
+connect a supported advertiser capability to the supplied audience or task.
+Research gaps permit a hypothetical invitation, not silently reducing that request
+to identity-only. A shared headline is valid when the complete argument does this;
+otherwise record the unmet request and repair it, without inventing account facts.
 Keep companion copy separately labeled as draft in the existing finalization
 summary, outside the image and native-copy inventory; verify its source limits
 and report any handoff/review gap without claiming publication. Missing required

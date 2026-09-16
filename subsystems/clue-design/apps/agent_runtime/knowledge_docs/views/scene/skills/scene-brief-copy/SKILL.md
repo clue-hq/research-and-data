@@ -24,8 +24,12 @@ communicative family.
 Infer brand voice from approved copy and inspected advertiser examples: directness,
 vocabulary, rhythm, specificity, degree of playfulness and how the brand addresses
 its audience. Describe the evidence in the direction; a font or color is not voice.
-Write original copy in that voice, with only the support the message needs.
-Prefer concrete product meaning to vague promises. Use provided claims accurately;
+Use reference copy to infer voice and claim limits. For a new brief, write from
+one evidenced advertiser capability and the supplied audience's task; existing
+reference wording is not automatically the answer to that brief. Preserve exact
+wording when requested. A shared campaign headline can remain when its support
+or requested companion copy carries the relevant argument. Keep only the support
+the message needs. Prefer concrete product meaning to vague promises. Use provided claims accurately;
 quotes, numbers and customer attributions need actual evidence. Keep source IDs
 with factual copy. Missing proof is a reason to narrow or qualify the message,
 or choose nonfactual positioning. Labeling a product promise `positioning` does
