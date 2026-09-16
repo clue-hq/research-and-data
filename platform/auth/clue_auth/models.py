@@ -118,3 +118,4 @@ class IdentityErasureResult(BaseModel):
     memberships_revoked: int
     invitation_addresses_erased: int
     provisioning_websites_erased: int = 0
+    artifact_marks_deleted: int = 0

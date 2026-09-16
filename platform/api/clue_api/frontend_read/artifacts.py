@@ -9,18 +9,19 @@ governed design tools on the design API, not routes here.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import text
 
 from clue_api.auth_wiring import principal_from_request
 from clue_api.design_leg_wiring import design_document_card_fields, workspace_design_documents
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_db import ConnFactory
 from clue_obs import get_logger
-from clue_obs.otel import traced_step
+from clue_obs.otel import get_metric_sink, traced_step
 from clue_projections.pagination import InvalidCursorError, decode_cursor, encode_cursor
 
 log = get_logger("clue_api.frontend_read.artifacts")
@@ -138,6 +139,52 @@ def _require_caller(request: Request) -> str:
     return user_id
 
 
+class ArtifactSavedUpdateV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    saved: bool
+
+
+class ArtifactSavedV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    saved: bool
+
+
+class ArtifactSavedResponseV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    data: ArtifactSavedV1
+
+
+class ArtifactViewedV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    last_viewed_at: str
+
+
+class ArtifactViewedResponseV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    data: ArtifactViewedV1
+
+
+async def _require_document(conn: Any, *, workspace_id: str, document_id: str) -> None:
+    """The mark is about a document of THIS workspace; anything else is absent, not refused."""
+
+    exists = (
+        await conn.execute(
+            text("SELECT 1 FROM design_document WHERE id = :d AND workspace_id = :w"),
+            {"d": document_id, "w": workspace_id},
+        )
+    ).first()
+    if exists is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "ARTIFACT_NOT_FOUND", "message": "no such artifact in this workspace"},
+        )
+
+
 def register_artifact_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
     @router.get("/artifacts", response_model=ArtifactListResponseV1)
     async def list_artifacts(
@@ -181,3 +228,48 @@ def register_artifact_routes(router: APIRouter, *, conn_factory: ConnFactory) ->
             data=ArtifactListV1(artifacts=[_wire(row) for row in page]),
             meta=ArtifactPageMetaV1(next_cursor=next_cursor),
         )
+
+    @router.put("/artifacts/{artifact_id}/saved", response_model=ArtifactSavedResponseV1)
+    async def set_saved(
+        artifact_id: str, body: ArtifactSavedUpdateV1, request: Request, workspace_id: WorkspaceDep
+    ) -> ArtifactSavedResponseV1:
+        user_id = _require_caller(request)
+        async with conn_factory() as conn:
+            await _require_document(conn, workspace_id=workspace_id, document_id=artifact_id)
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document_user_mark (workspace_id, user_id, document_id,"
+                    " saved)"
+                    " VALUES (:w, :u, :d, :s)"
+                    " ON CONFLICT (workspace_id, user_id, document_id)"
+                    " DO UPDATE SET saved = EXCLUDED.saved, updated_at = now()"
+                ),
+                {"w": workspace_id, "u": user_id, "d": artifact_id, "s": body.saved},
+            )
+        get_metric_sink().add(
+            "artifacts.mark.written",
+            1,
+            {"kind": "saved", "value": "true" if body.saved else "false"},
+        )
+        return ArtifactSavedResponseV1(data=ArtifactSavedV1(saved=body.saved))
+
+    @router.post("/artifacts/{artifact_id}/viewed", response_model=ArtifactViewedResponseV1)
+    async def record_viewed(
+        artifact_id: str, request: Request, workspace_id: WorkspaceDep
+    ) -> ArtifactViewedResponseV1:
+        user_id = _require_caller(request)
+        viewed_at = datetime.now(UTC)
+        async with conn_factory() as conn:
+            await _require_document(conn, workspace_id=workspace_id, document_id=artifact_id)
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document_user_mark (workspace_id, user_id, document_id,"
+                    " last_viewed_at)"
+                    " VALUES (:w, :u, :d, :at)"
+                    " ON CONFLICT (workspace_id, user_id, document_id)"
+                    " DO UPDATE SET last_viewed_at = EXCLUDED.last_viewed_at, updated_at = now()"
+                ),
+                {"w": workspace_id, "u": user_id, "d": artifact_id, "at": viewed_at},
+            )
+        get_metric_sink().add("artifacts.mark.written", 1, {"kind": "viewed", "value": "true"})
+        return ArtifactViewedResponseV1(data=ArtifactViewedV1(last_viewed_at=viewed_at.isoformat()))

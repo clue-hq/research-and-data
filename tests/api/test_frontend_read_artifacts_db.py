@@ -12,13 +12,17 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi import Request
 from httpx import ASGITransport
 from sqlalchemy import text
 
+from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.app import frontend_read_workspace_resolver
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
-from tests._identity import seed_principal
+from clue_obs.otel.metrics import InMemorySink, set_metric_sink
+from tests._identity import fixture_membership_id, seed_principal
 from tests._workspace import seed_project as _seed_project_row
 from tests.api.test_design_artifact_feed_db import (  # noqa: PLC2701
     USER_ID,
@@ -222,5 +226,109 @@ def test_is_absent_when_the_read_surface_flag_is_off() -> None:
             project = await _seed_project_row(conn, "ws-artifacts-off", name="Off")
             response = await _get(conn, workspace_id=project.workspace_id, enabled=False)
             assert response.status_code == 404
+
+    run_async(scenario())
+
+
+def _principal(workspace_id: str) -> RequestPrincipal:
+    return RequestPrincipal(
+        user_id=USER_ID,
+        membership_id=fixture_membership_id(workspace_id=workspace_id, user_id=USER_ID),
+        workspace_id=workspace_id,
+        role_key="owner",
+        permissions=CHAT_PERMISSIONS,
+        authenticated_at=datetime(2026, 9, 15, 9, 0, tzinfo=UTC),
+    )
+
+
+def _app_with_principal(conn: Any, workspace_id: str) -> Any:
+    """The read surface under a real principal, the way production reaches it: ``projections_app``
+    overrides ``frontend_read_workspace_resolver`` with the authenticated workspace dependency,
+    whose ``PrincipalDependency`` stores the principal on ``request.state.clue_principal``. The test
+    installs the same override with a resolver that stores the fixture principal.
+
+    ``Request`` and the resolver are imported at module scope deliberately: this module uses
+    postponed annotations, and FastAPI resolves an override's signature against its module
+    globals — a function-local ``Request`` import leaves the annotation unresolvable, and the
+    override's own ``request`` parameter is then read as a missing query parameter."""
+
+    app = _app(conn)
+
+    async def _resolver(request: Request) -> str:
+        request.state.clue_principal = _principal(workspace_id)
+        return workspace_id
+
+    app.dependency_overrides[frontend_read_workspace_resolver] = _resolver
+    return app
+
+
+def test_saved_and_viewed_marks_are_the_callers_own_and_converge() -> None:
+    async def scenario() -> None:
+        sink = InMemorySink()
+        set_metric_sink(sink)
+        try:
+            async with rollback_conn(seed_pack=False) as conn:
+                project = await _seed_project_row(conn, "ws-artifacts-marks", name="Marks")
+                ws = project.workspace_id
+                await seed_principal(conn, workspace_id=ws, user_id=USER_ID)
+                await _document_in_project(
+                    conn,
+                    workspace_id=ws,
+                    project_id=project.project_id,
+                    document_id="doc_m",
+                    title="Marked",
+                    updated_at=_T0,
+                )
+                app = _app_with_principal(conn, ws)
+                async with httpx.AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://t"
+                ) as client:
+                    headers = {"X-Workspace-Id": ws}
+                    saved = await client.put(
+                        f"{_BASE}/doc_m/saved", json={"saved": True}, headers=headers
+                    )
+                    assert saved.status_code == 200, saved.text
+                    assert saved.json()["data"] == {"saved": True}
+                    again = await client.put(
+                        f"{_BASE}/doc_m/saved", json={"saved": True}, headers=headers
+                    )
+                    assert again.json()["data"] == {"saved": True}
+                    viewed = await client.post(f"{_BASE}/doc_m/viewed", headers=headers)
+                    assert viewed.status_code == 200, viewed.text
+                    assert viewed.json()["data"]["last_viewed_at"]
+                    listed = await client.get(_BASE, headers=headers)
+                    row = listed.json()["data"]["artifacts"][0]
+                    assert row["saved"] is True and row["last_viewed_at"] is not None
+                    foreign = await client.put(
+                        f"{_BASE}/doc_missing/saved", json={"saved": True}, headers=headers
+                    )
+                    assert foreign.status_code == 404
+                    assert foreign.json()["error"]["code"] == "ARTIFACT_NOT_FOUND"
+                count = (
+                    await conn.execute(text("SELECT count(*) FROM design_document_user_mark"))
+                ).scalar_one()
+                assert count == 1
+                assert sink.counter("artifacts.mark.written", kind="saved", value="true") == 2
+                assert sink.counter("artifacts.mark.written", kind="viewed", value="true") == 1
+        finally:
+            set_metric_sink(InMemorySink())
+
+    run_async(scenario())
+
+
+def test_mark_writes_need_an_authenticated_principal() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-artifacts-anon", name="Anon")
+            ws = project.workspace_id
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=_app(conn)), base_url="http://t"
+            ) as client:
+                response = await client.put(
+                    f"{_BASE}/doc_x/saved",
+                    json={"saved": True},
+                    headers={"X-Workspace-Id": ws},
+                )
+            assert response.status_code == 401
 
     run_async(scenario())
