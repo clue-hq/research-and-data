@@ -265,12 +265,6 @@
   width: max-content;
   max-width: 90%;
 }
-.warning {
-  padding: 10px 28px;
-  background: var(--clue-ds-color-primitives-warning-alpha-100);
-  color: var(--clue-ds-color-content-utility-warning);
-  font-size: var(--clue-ds-typography-caption-font-size);
-}
 .previewDialog {
   --chat-shell-border: var(--clue-ds-color-border-neutral);
   --chat-shell-subtle-border: var(--clue-ds-color-border-subtle);

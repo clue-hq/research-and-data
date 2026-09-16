@@ -39,9 +39,7 @@ export function adExportRequestBody(format: ImageExportFormat, scale: ImageExpor
   return { format: profile.format, page_ids: [] as string[], profile, persist_preflight: false };
 }
 
-// Ruling (pre-flight scan): `downloadDataUrl` already exists, module-private, in
-// `design-editor/hooks/use-scene-export.ts`. Export it unchanged from there and import it here;
-// do not re-implement it.
+// `downloadDataUrl` is the scene export's own helper (imported above), never re-implemented here.
 
 export async function exportAdArtifact({
   documentId,

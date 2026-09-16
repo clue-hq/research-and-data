@@ -71,13 +71,7 @@ function utcInstant(timestamp: string): string {
   return parsed.toISOString();
 }
 
-// Ruling (pre-flight scan): the channel and size rules are the gallery adapter's, imported, never
-// re-implemented here. Task 10 first exports `collateralTypeFor` and `sizeFor` from
-// `design-editor/adapter/gallery.ts` (they are module-private today; export them unchanged, keep
-// their call sites) and imports them:
-// import { collateralTypeFor, editedLabelFor, sizeFor } from "@/features/design-editor/adapter/gallery";
-// The adapter's signatures take `string | undefined` / `number | undefined`; pass `row.artifact_type ?? undefined`
-// and `row.width_px ?? undefined`, `row.height_px ?? undefined`.
+// The channel and size rules are the gallery adapter's (imported above), never re-implemented here.
 
 export function toLibraryArtifact(row: ArtifactWire, now = new Date()): LibraryArtifact {
   const ad = row.kind === "ad";
