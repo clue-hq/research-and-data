@@ -142,7 +142,7 @@ is the schema-hard empty tuple; the library reads ONE workspace-wide endpoint in
 ## Reads (`/frontend/v1`, server, `fetchRead`)
 
 `GET /frontend/v1/artifacts?cursor=&limit=` → `{ "data": { "artifacts": [...] }, "meta": { "next_cursor": string|null } }`
-Default limit 50, max 200. Keyset cursor over `(updated_at DESC, id DESC)`; bad cursor → 422 `INVALID_CURSOR`.
+Default limit 50, max 200. Keyset cursor over `(updated_at DESC, id DESC)`; bad cursor → 400 `INVALID_CURSOR` (the accounts list's convention on this surface).
 Rows are the workspace-wide form of the per-project design-artifact feed (leg-derived; a document
 no leg names is not listed). Archived rows ARE included; the per-project feed excludes them.
 
@@ -686,7 +686,7 @@ def test_pages_stably_across_the_cursor_and_refuses_a_bad_one() -> None:
             assert [row["id"] for row in page_two["data"]["artifacts"]] == ["doc_0"]
             assert page_two["meta"]["next_cursor"] is None
             bad = await _get(conn, workspace_id=ws, query="?cursor=not-a-cursor")
-            assert bad.status_code == 422
+            assert bad.status_code == 400
             assert bad.json()["error"]["code"] == "INVALID_CURSOR"
 
     run_async(scenario())
@@ -892,7 +892,7 @@ def register_artifact_routes(router: APIRouter, *, conn_factory: ConnFactory) ->
                 cursor_updated_at = datetime.fromisoformat(position)
             except (InvalidCursorError, ValueError) as exc:
                 raise HTTPException(
-                    status_code=422, detail={"code": "INVALID_CURSOR", "message": str(exc)}
+                    status_code=400, detail={"code": "INVALID_CURSOR", "message": str(exc)}
                 ) from exc
         async with conn_factory() as conn:
             rows = await workspace_design_documents(
@@ -937,7 +937,7 @@ Telemetry (standard above): add `from clue_obs import get_logger` and `from clue
                 )
 ```
 
-The 422 on a bad cursor is a typed refusal and is not logged. Then stamp the workspace on the read surface's spans, which the `/api/v1` header seam already does and this surface never did — in `frontend_read/app.py::frontend_read_workspace_resolver`, before `return x_workspace_id`, add `bind_and_annotate(workspace_id=x_workspace_id)` with `from clue_obs.otel import bind_and_annotate` (mirror the comment at `projections_app.py:156-159`). Every `/frontend/v1` span now carries `workspace_id`.
+The 400 on a bad cursor is a typed refusal and is not logged. Then stamp the workspace on the read surface's spans, which the `/api/v1` header seam already does and this surface never did — in `frontend_read/app.py::frontend_read_workspace_resolver`, before `return x_workspace_id`, add `bind_and_annotate(workspace_id=x_workspace_id)` with `from clue_obs.otel import bind_and_annotate` (mirror the comment at `projections_app.py:156-159`). Every `/frontend/v1` span now carries `workspace_id`.
 
 Register it in `app.py` after `register_project_document_routes(...)`:
 
@@ -1792,6 +1792,7 @@ git commit -m "feat(platform): register design_rename_document and design_set_do
 
 **Files:**
 - Create: `apps/frontend/src/features/artifacts/model/artifact-library.ts`, `model/artifact-library.test.ts`
+- Modify: `apps/frontend/src/features/design-editor/adapter/gallery.ts` (export `collateralTypeFor` and `sizeFor`, unchanged)
 - Create: `apps/frontend/src/features/artifacts/data/artifact-library.repository.ts`, `data/artifact-marks.repository.ts`
 - Create: `apps/frontend/src/features/artifacts/data/artifact-library.repository.test.ts`
 
@@ -1873,7 +1874,7 @@ Create `model/artifact-library.ts`:
 
 ```ts
 import { z } from "zod";
-import { editedLabelFor } from "@/features/design-editor/adapter/gallery";
+import { collateralTypeFor, editedLabelFor, sizeFor } from "@/features/design-editor/adapter/gallery";
 import {
   ProjectArtifactSchema,
   type ProjectArtifact,
@@ -1945,27 +1946,18 @@ function utcInstant(timestamp: string): string {
   return parsed.toISOString();
 }
 
-/** The gallery adapter's channel rule, unchanged: only a recorded type names a channel. */
-function collateralTypeFor(artifactType: string | null) {
-  if (!artifactType) return undefined;
-  const value = artifactType.toLowerCase();
-  if (value.includes("linkedin")) return "linkedin-ad" as const;
-  if (value.includes("meta") || value.includes("facebook") || value.includes("instagram")) return "meta-ad" as const;
-  if (value.includes("direct_mail") || value.includes("direct-mail")) return "direct-mail" as const;
-  return undefined;
-}
-
-function sizeFor(widthPx: number | null, heightPx: number | null) {
-  if (!widthPx || !heightPx) return undefined;
-  const ratio = widthPx / heightPx;
-  const category = ratio > 1.05 ? ("landscape" as const) : ratio < 0.95 ? ("portrait" as const) : ("square" as const);
-  return { category, height: heightPx, label: `${widthPx} × ${heightPx}`, width: widthPx };
-}
+// Ruling (pre-flight scan): the channel and size rules are the gallery adapter's, imported, never
+// re-implemented here. Task 10 first exports `collateralTypeFor` and `sizeFor` from
+// `design-editor/adapter/gallery.ts` (they are module-private today; export them unchanged, keep
+// their call sites) and imports them:
+// import { collateralTypeFor, editedLabelFor, sizeFor } from "@/features/design-editor/adapter/gallery";
+// The adapter's signatures take `string | undefined` / `number | undefined`; pass `row.artifact_type ?? undefined`
+// and `row.width_px ?? undefined`, `row.height_px ?? undefined`.
 
 export function toLibraryArtifact(row: ArtifactWire, now = new Date()): LibraryArtifact {
   const ad = row.kind === "ad";
-  const collateralType = ad ? collateralTypeFor(row.artifact_type) : "microsite";
-  const size = ad ? sizeFor(row.width_px, row.height_px) : undefined;
+  const collateralType = ad ? collateralTypeFor(row.artifact_type ?? undefined) : "microsite";
+  const size = ad ? sizeFor(row.width_px ?? undefined, row.height_px ?? undefined) : undefined;
   const updatedAt = utcInstant(row.updated_at);
   const account: LibraryAccount | undefined = row.account
     ? {
@@ -2283,7 +2275,7 @@ git commit -m "feat(gallery): project on cards, project filter/group, three libr
 
 **Files:**
 - Modify: `apps/frontend/src/features/design-editor/engine/scene/documentStore.ts` (after `saveLayoutManagedEditing`, ~line 340)
-- Modify: `apps/frontend/src/features/design-editor/engine/scene/exportRunner.ts:256` (export `exportResultFromUnknown`)
+- Modify: `apps/frontend/src/features/design-editor/engine/scene/exportRunner.ts:256` (export `exportResultFromUnknown`); `apps/frontend/src/features/design-editor/hooks/use-scene-export.ts:36` (export `downloadDataUrl`)
 - Modify: `apps/frontend/src/features/chat-shell/hooks/use-image-export-controller.ts`
 - Create: `apps/frontend/src/features/artifacts/data/artifact-document.repository.ts`
 - Test: `apps/frontend/src/features/artifacts/data/artifact-document.repository.test.ts`
@@ -2368,6 +2360,7 @@ Create `data/artifact-document.repository.ts`:
 import { designBffConfig } from "@/features/design-editor/data/design-bff";
 import { sceneExportProfile, sceneExportScaleMultiplier, exportFilename, sceneExportResultMessage } from "@/features/design-editor/adapter/scene-export";
 import { exportResultFromUnknown } from "@/features/design-editor/engine/scene/exportRunner";
+import { downloadDataUrl } from "@/features/design-editor/hooks/use-scene-export";
 import { renameDocument, saveDocumentArchived } from "@/features/design-editor/engine/scene/documentStore";
 import type { ImageExportFormat, ImageExportScale } from "@/features/chat-shell/model/image-export";
 
@@ -2386,14 +2379,9 @@ export function adExportRequestBody(format: ImageExportFormat, scale: ImageExpor
   return { format: profile.format, page_ids: [] as string[], profile, persist_preflight: false };
 }
 
-function downloadDataUrl(dataUrl: string, filename: string) {
-  const anchor = document.createElement("a");
-  anchor.href = dataUrl;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-}
+// Ruling (pre-flight scan): `downloadDataUrl` already exists, module-private, in
+// `design-editor/hooks/use-scene-export.ts`. Export it unchanged from there and import it here;
+// do not re-implement it.
 
 export async function exportAdArtifact({ documentId, title, format, scale }: {
   documentId: string; title: string; format: ImageExportFormat; scale: ImageExportScale;
