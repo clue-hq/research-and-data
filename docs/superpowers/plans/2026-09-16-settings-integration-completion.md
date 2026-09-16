@@ -1,6 +1,7 @@
 # Settings integration completion plan — 2026-09-16
 
-**Status: proposed implementation plan, not implemented.** Prepared against Irvine's
+**Status: implementation in progress; UI/Pages decisions and live acceptance remain open.**
+Originally prepared against Irvine's
 `settings-page` at `5bd1a66c1`, after rebasing onto local `research-streaming` at `440b6a7db`.
 This plan concerns Settings and its actual consumers, not a rewrite of the platform.
 
@@ -8,9 +9,29 @@ This plan concerns Settings and its actual consumers, not a rewrite of the platf
 **Implemented API contract:** [Settings contract](../../../apps/frontend/docs/api-contracts/settings.md).
 **Original discussion:** [_memory exploration](../../../_memory/2026-09-14-settings-integration-exploration.md).
 
-The numbered phases below are unchecked work. Existing implementation, previous verification,
-proposed contract amendments, and outstanding live acceptance are deliberately recorded separately.
-Approving this plan should settle the proposed amendments in section 3 before their implementation.
+The numbered phases below track implementation and remaining acceptance. The progress table
+records the current evidence; completed code does not by itself satisfy the live exit gates.
+
+## Implementation progress — 2026-09-16
+
+The founder authorized implementation of this plan. Recommendations D1–D8 and backend-first
+scheduling are applied. Research fields visual composition and Pages' remaining contract choices
+were asked asynchronously and have not yet been answered.
+
+| Phase | Current state |
+| --- | --- |
+| 0 | Checkout/design pin preserved; D1–D8 recorded; UI and Pages decisions pending |
+| 1 | Permission/profile/non-manager-role changes implemented; automated checks pass; browser acceptance in progress |
+| 2 | Registry and migration implemented; trigger, collision, isolation, concurrency and rollback tests pass |
+| 3 | All three catalog callers scoped; lenient retirement protection implemented; existing instructions reused |
+| 4 | API plus Zod/read/mutation repository implemented; lifecycle and four-role tests pass |
+| 5 | Account/contact values and scoped evidence implemented; retirement/subject/workspace tests pass |
+| 6 | Awaiting frames or explicit reuse of existing Settings primitives; current Data model remains dummy |
+| 7 | 496 backend / 2,283 frontend tests, migration smoke, lint/build/import gates pass; Irvine upgraded; Profile save/reload/shell verified; invitation send blocked by automatic review; research/full UI acceptance open |
+| 8 | Pages defaults/snippets/fallback/form contract still awaiting review; no publisher changes made |
+
+These statuses report code and completed evidence separately. Unchecked acceptance items below
+remain work to complete, rather than a claim that all listed features are release-ready.
 
 ## 1. Outcome and scope
 
@@ -92,8 +113,9 @@ The latest founder decisions are binding:
 
 ## 3. Contract amendments to settle before implementation
 
-These are recommendations, not additional founder approvals. The two member rulings above are
-already approved and need no further decision.
+These recommendations were accepted for implementation by the founder’s request to proceed with
+this plan on 2026-09-16. The two member rulings above remain unchanged. The separate design/Pages
+questions following the table are still open.
 
 | ID | Recommendation | Why / dependency |
 | --- | --- | --- |
@@ -126,7 +148,9 @@ its dummy controls as a ready API contract.
   the rebased Settings changes and the backup branch; no additional rebase or remote push is needed.
 - [ ] Retain separate checklist columns for code complete, automated checks, live proof and release
   deployment. No passing build or fixture screenshot can close the live columns.
-- [ ] Identify the actual source checkout for design commit `64232a0` before parity captures.
+- [x] Identify the actual source checkout for design commit `64232a0` before parity captures.
+  Verified in `/Users/aryankeshri/conductor/workspaces/clue-frontend/port-of-spain`; the source
+  still has the old Data model screen. No Research fields redraw was found there.
   Do not assume the historical `live-backend-v1` path or an arbitrary server on port 3000 is it.
 
 **Exit:** approved delta ledger and a reviewable implementation sequence; no missing feature is
@@ -137,19 +161,19 @@ classified as complete merely because its dummy screen renders.
 **Files:** auth `policy.py`; Settings API; frontend session permission schema/consumers;
 Settings route; project accounts route and profile adapter; matching auth/frontend tests.
 
-- [ ] Introduce `workspace.manage_settings`, increment policy revision 2 → 3, grant it to owner
+- [x] Introduce `workspace.manage_settings`, increment policy revision 2 → 3, grant it to owner
   and admin. Preserve `workspace.manage_members` for membership actions.
-- [ ] Replace the Settings helper's boolean `manage` switch with an explicit required permission.
+- [x] Replace the Settings helper's boolean `manage` switch with an explicit required permission.
   Recheck current membership and that permission inside the write transaction; retain workspace
   serialization and owner/self protections for member management.
-- [ ] Bind workspace rename and Research fields controls to the new permission; avoid stale
+- [x] Bind workspace rename and Research fields API authorization to the new permission; avoid stale
   permission literals in frontend validation or UI capabilities.
-- [ ] Make `/api/projects/[projectId]/accounts` resolve the same authenticated Settings profile
+- [x] Make `/api/projects/[projectId]/accounts` resolve the same authenticated Settings profile
   as the protected layout. Reuse one mapping to `WorkspaceProfile`; retain fixture behavior only
   in the intentional accounts fixture path. Preserve authentication redirects and typed failures.
-- [ ] Search all remaining live `getWorkspaceProfile` consumers so a nested provider cannot
+- [x] Search all remaining live `getWorkspaceProfile` consumers so a nested provider cannot
   restore the user-ID placeholder after profile edits.
-- [ ] Apply D7's agreed read-only member presentation. Keep suspended rows and retry behavior as-is.
+- [x] Apply D7's agreed read-only member presentation. Keep suspended rows and retry behavior as-is.
 
 **Verification:** owner/admin allowed, operator/viewer denied for workspace changes, own-profile
 edits still allowed to active members, stale membership rejected. Profile display-name change
@@ -163,32 +187,32 @@ back to full name. Existing Members lifecycle tests remain green.
 **Files:** a new Alembic-generated revision off the then-current single head; registry module and
 public exports; `tests/claimstore/test_field_registry.py` and focused workspace-registry DB tests.
 
-- [ ] Widen namespace/role/pack CHECKs precisely, add nullable `label`, allow null proposal ID,
+- [x] Widen namespace/role/pack CHECKs precisely, add nullable `label`, allow null proposal ID,
   and **drop `pack` NOT NULL**. Preserve constraints on existing Client-KB rows and the proposal FK.
   Research rows must pair `account.*`/`contact.*` with the matching field class, null pack and
   `client_kb_role='research'`; do not permit arbitrary combinations through a broad OR.
-- [ ] Replace only the definition-table UPDATE trigger with the D1 guard. Permit label/description
+- [x] Replace only the definition-table UPDATE trigger with the D1 guard. Permit label/description
   changes plus `definition_version = OLD.definition_version + 1` for research rows; reject edits
   to key, owner, schema, scopes, promotion/creation metadata and all Client-KB definitions.
   Leave retirement/materialization/readiness append-only triggers intact.
-- [ ] Extend the resolved registry metadata with label, presentation and creation time as needed.
+- [x] Extend the resolved registry metadata with label, presentation and creation time as needed.
   Reuse `promoted_by`/`promoted_at` for creator/time; avoid a second competing definition table.
-- [ ] Implement `register_workspace_research_field` with the exact §9.4 forced shape: JSON value,
+- [x] Implement `register_workspace_research_field` with the exact §9.4 forced shape: JSON value,
   no schema constraint, deep pass, tenant-private, project-neutral, product forbidden, human
   creator, settings-v1 policy and text presentation. Keep `register_workspace_field` unchanged
   for its existing Client-KB callers.
-- [ ] Derive the key once in the registry. Trim/validate label and required description, preserve
+- [x] Derive the key once in the registry. Trim/validate label and required description, preserve
   the immutable derived key after a label edit, and return actionable collision errors. Define a
   shared label limit (recommended 200 characters, matching other Settings names) in the contract.
-- [ ] Check global collisions and same-workspace collisions including retired keys. Preserve the
+- [x] Check global collisions and same-workspace collisions including retired keys. Preserve the
   ability for two workspaces to independently own the same private key.
-- [ ] Implement update with partial-field semantics and a row lock. Disjoint label/description
+- [x] Implement update with partial-field semantics and a row lock. Disjoint label/description
   patches must not overwrite one another; concurrent changes to the same property use the last
   committed patch. No-op requests must not manufacture version changes.
-- [ ] Keep retirement append-only with `human:<user_id>` and reason `settings`. Serialize edit,
+- [x] Keep retirement append-only with `human:<user_id>` and reason `settings`. Serialize edit,
   retire and claim validation/insert so the post-retirement guarantee is transactional.
-- [ ] Reuse erasure refusal; test create, edit, retire, list and claim writes for erased scope.
-- [ ] Document rollback: old schema cannot represent populated research definitions. Downgrade
+- [x] Reuse erasure refusal; test create, edit, retire, list and claim writes for erased scope.
+- [x] Document rollback: old schema cannot represent populated research definitions. Downgrade
   must refuse with an actionable message if such rows exist, rather than erase user data. Restore
   original constraints/trigger on an empty research slice; prove clean-DB up/down/up.
 
@@ -204,28 +228,28 @@ using separate DB connections. Alembic must retain one head and both rebased mig
 **Files:** `account_research_store.py`, `account_research_driver.py`, `account_research_launch.py`,
 `claim_writer.py`, registry write gates; existing catalog/driver/launch/tools/writer tests.
 
-- [ ] Require a trusted `workspace_id` in both catalog readers. Merge global vocabulary with
+- [x] Require a trusted `workspace_id` in both catalog readers. Merge global vocabulary with
   active, unretired, non-erased research definitions from only that workspace using the registry
   seam. Keep account `core.*`/`account.*`, person `contact.*`/`core.work_email`, facet grouping,
   schemas and contact use-class hints intact.
-- [ ] Update all three production call sites and test doubles. The Settings listing and research
+- [x] Update all three production call sites and test doubles. The Settings listing and research
   readers must use the same selection semantics; avoid independently maintained field menus.
-- [ ] Verify key and description reach both the acquisition context and structuring prompt.
+- [x] Verify key and description reach both the acquisition context and structuring prompt.
   Preserve existing context construction and model configuration; no new agent, model or prompt
   version is needed solely to supply dynamic registry data.
-- [ ] Introduce a lifecycle refusal distinct from `UnknownFieldError` before fallback to a global
+- [x] Introduce a lifecycle refusal distinct from `UnknownFieldError` before fallback to a global
   row. Retired or erased local definitions cannot be resurrected by `_register_proposed_field`.
-- [ ] Apply D2 collision protection to global proposal registration too. Coordinate global and
+- [x] Apply D2 collision protection to global proposal registration too. Coordinate global and
   workspace registration for the same key; do not expose another workspace's label/description
   in a collision error. Test both orderings and simultaneous registration.
-- [ ] Hold the agreed field lock through validation and claim insertion; retirement takes the
+- [x] Hold the agreed field lock through validation and claim insertion; retirement takes the
   conflicting lock. A pre-retirement write may commit first; a write after retirement commits
   must refuse. Cover `validate_field=False` in the lenient writer rather than assuming the final
   insert repeats the registry gate.
-- [ ] Preserve the existing per-draft `write_each` failure receipts and successful sibling claims.
+- [x] Preserve the existing per-draft `write_each` failure receipts and successful sibling claims.
   Keep fetched artifacts under existing retention policy; a lifecycle refusal must not pretend
   the custom claim was stored. Exercise deterministic batch callers for unintended regressions.
-- [ ] Keep broad conversion of all agent-invented global proposals to workspace proposals as a
+- [x] Keep broad conversion of all agent-invented global proposals to workspace proposals as a
   separately reviewed Track R change. The narrow lifecycle/collision fix above is required here.
 
 **Verification:** two workspaces with the same key/different instructions; a third workspace sees
@@ -241,19 +265,20 @@ and retire while a stale catalog remains in memory; confirm no resurrection or c
 membership logic small; registry exports; `tests/auth/test_settings_integration.py` plus a focused
 Research fields API suite; frontend Settings contract.
 
-- [ ] Implement the four specified routes: GET list by entity, POST create, PATCH label/description,
+- [x] Implement the four specified routes: GET list by entity, POST create, PATCH label/description,
   DELETE retire. Active members may read; owner/admin with `workspace.manage_settings` may write.
-- [ ] Derive workspace and creator from the principal, never from request JSON. Recheck authority
+- [x] Derive workspace and creator from the principal, never from request JSON. Recheck authority
   in the transaction. Map platform writes to `409 PLATFORM_FIELD`, collisions to `409 KEY_TAKEN`
   and invalid labels to `400 LABEL_INVALID`; specify missing/retired-row and invalid-body envelopes.
-- [ ] Return the specified bare row/list objects. Derive platform labels with the existing account
+- [x] Return the specified bare row/list objects. Derive platform labels with the existing account
   label overrides; return registry descriptions verbatim. Sort platform rows by key, then workspace
   rows by creation time with a key tie-breaker. Resolve creator display name safely; erased/missing
   users must not break the list or expose their email.
-- [ ] Reuse existing request IDs, BFF routing, error envelope and disabled-feature behavior.
+- [x] Reuse existing request IDs, BFF routing, error envelope and disabled-feature behavior.
   Add no separate auth scheme, fixture fallback or visibility flag.
-- [ ] Prove immutable global vocabulary, entity filtering, strict extra-field rejection, permission
-  loss during a write, workspace isolation and expected post-retire responses through ASGI.
+- [x] Prove extra-field rejection, entity filtering, four-role authority, workspace isolation and
+  post-retire responses through ASGI. Inject membership revocation after principal resolution
+  and verify POST/PATCH/DELETE all refuse inside the write transaction.
 
 **Checkpoint:** reviewed API contract and working backend endpoints; frontend still honestly dummy
 until phase 6 switches it over.
@@ -263,23 +288,23 @@ until phase 6 switches it over.
 **Files:** `frontend_read/{v1_shared,contract_v1,account_detail,contacts}.py`; account/contact Zod
 models and parity tests; account column/evidence consumers where the approved contract requires it.
 
-- [ ] Expand `_CUSTOM_FIELDS_SQL` per D4, retaining workspace, erasure, active and retirement
+- [x] Expand `_CUSTOM_FIELDS_SQL` per D4, retaining workspace, erasure, active and retirement
   filtering, subject scoping, supersession handling and newest-claim selection. Use `label` for
   research fields with a key-derived fallback; preserve legacy Client-KB label behavior.
-- [ ] Keep empty definitions out of account columns until a claim exists, as the current read
+- [x] Keep empty definitions out of account columns until a claim exists, as the current read
   contract does. Keep existing variable-column ordering/visibility state compatible.
-- [ ] Extend the custom-field result with the selected claim reference under D5. Reuse existing
+- [x] Extend the custom-field result with the selected claim reference under D5. Reuse existing
   evidence types rather than duplicating source metadata on every column.
-- [ ] Make the detail evidence set and evidence-stream authorization use one consistent scoped
+- [x] Make the detail evidence set and evidence-stream authorization use one consistent scoped
   rule that includes relevant custom-field claims. A generated page need not cite a claim to
   make that field's evidence accessible. Enforce subject/workspace ownership and existing privacy
   policy; evidence reads must not trigger generation or paid work.
-- [ ] Ensure retirement removes active field values/columns but retains an authorized way to read
+- [x] Ensure retirement removes active field values/columns but retains an authorized way to read
   the historical evidence. Include retired declarations when resolving historical metadata;
   do not bypass erasure or return another entity's claims.
-- [ ] Define and serve contact custom research values and claim references in the contact detail
+- [x] Define and serve contact custom research values and claim references in the contact detail
   payload. Preserve contact-use policy. Do not add a new contact UI slot without a design.
-- [ ] Update frontend parsing and backend/Zod parity together. Reuse the existing drawer for the
+- [x] Update frontend parsing and backend/Zod parity together. Reuse the existing drawer for the
   agreed account affordance; test a custom field omitted from the generated overview, including
   its retired state, so evidence access is deterministic rather than dependent on model choices.
 

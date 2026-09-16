@@ -18,7 +18,8 @@ their dummy frontends directly. Pages remains part of V1; its form edits are loc
 Data model opens the Accounts/Contacts overview and `/settings/data-model/{accounts,contacts}/{fields,display}`;
 entity-only routes default to Fields. Unknown entities, views and nesting on other sections return 404.
 Data model retains the pinned dummy fields/display data; creating fields, row actions and reordering
-are not connected. The Research fields redesign and backend integration remain deferred. Billing's
+are not connected. The Research fields management API and repository now exist (see below); replacing this dummy
+with its live management screen is still gated on approved frames or primitive reuse. Billing's
 plan/credit values and buttons have no live billing integration.
 
 All Settings endpoints use `/frontend/v1/settings`, behind `CLUE_FRONTEND_READ_ENABLED`, the existing
@@ -31,7 +32,7 @@ Successful payloads below are **bare objects**, not `{data: ...}` wrappers.
 | GET `/profile` | — | Profile for the signed-in internal user |
 | PATCH `/profile` | `{full_name?, display_name?}` | Updated Profile; own user only |
 | GET `/workspace` | — | Workspace |
-| PATCH `/workspace` | `{name}` | Updated Workspace; `workspace.manage_members` |
+| PATCH `/workspace` | `{name}` | Updated Workspace; `workspace.manage_settings` |
 | GET `/members` | — | `{rows, invitations_configured}`; active members may read |
 | POST `/members/invitations` | `{emails: string[], role: "admin" \| "operator"}` | `{outcomes: [{email, outcome}]}`; manage permission |
 | DELETE `/members/invitations/{id}` | — | `{ok: true}`; manage permission |
@@ -144,3 +145,57 @@ existing Clue names and explicit clears are never overwritten. DSAR erasure clea
 - Browser component verification and pinned-design comparison captures are under local
   `.context/settings-acceptance/`; they use controlled test data and shared Irvine UI primitives.
   This is not a claim of live Clerk email acceptance or validation on the san-salvador runtime.
+
+
+## Research fields — 2026-09-16 implementation
+
+The founder authorized implementation of the completion plan. D1–D8 are applied to the backend
+and existing presentation seams. The Research fields table/Create redesign and Pages contract
+remain separate pending choices; this API's existence does not mean the dummy Data model is live.
+
+| Method and suffix | Request | Response / authority |
+| --- | --- | --- |
+| GET `/research-fields` | `?entity=accounts|contacts` | `{entity, rows}`; active membership |
+| POST `/research-fields` | `{entity, label, description}` | New row, 201; `workspace.manage_settings` |
+| PATCH `/research-fields/{key}` | `{label?, description?}` | Updated row; same permission |
+| DELETE `/research-fields/{key}` | — | `{ok:true}`; same permission |
+
+A row contains `key`, `label`, `description`, `origin: platform|workspace`, nullable creator display
+name `created_by`, and nullable ISO `created_at`. Platform rows are ordered by key; workspace rows
+follow in creation order. Creator erasure produces null. No extra client lookup is needed.
+
+Names trim to 1–200 characters; descriptions trim to 1–2000. The immutable key is derived once
+from the name's ASCII letters/digits and the selected entity namespace. Changing the label does
+not rename claims. Empty/non-ASCII-only derived keys return `400 LABEL_INVALID`. Collisions with
+platform keys or an existing/retired same-workspace key return `409 KEY_TAKEN`; private keys can
+be independently defined by different workspaces. Global registration also respects private-key
+reservations, serialized by a shared advisory transaction lock.
+
+Only label/description updates are permitted. Disjoint patches preserve each other under a row
+lock; changed text advances the definition version exactly once, while no-op patches do not.
+Platform changes return `409 PLATFORM_FIELD`; absent/retired fields return `404 FIELD_NOT_FOUND`.
+Erased workspace vocabulary refuses writes with `409 WORKSPACE_FIELDS_ERASED`. No restore or
+key reuse is exposed. Retirement is append-only and blocks later claim writes transactionally;
+the lenient writer cannot turn retired/erased keys into globally proposed fields.
+
+Both account and person research resolve the workspace catalog at job composition, including the
+direct person launcher. Label/instruction edits apply on subsequent compositions, not by rewriting
+an in-flight model context. Existing per-claim failure receipts isolate rejected batch entries.
+
+Account list/detail custom values preserve legacy Client-KB columns and add populated active
+account research fields. Contact fields are served only on contact payloads and pass the existing
+contact-display policy. Custom values include a nullable `claimId`; custom evidence includes an
+optional `researchFieldKey`. The account detail reuses the existing source chip. The existing
+Sources control keeps retired-field evidence accessible, including private records without a URL.
+The artifact routes authorize only scoped subject claims or stored page citations, and refuse
+cross-workspace, cross-subject and erased-field access without generating prose.
+
+`workspace.manage_settings` is policy revision 3, owner/admin only. Members continue to use
+`workspace.manage_members`; non-managers see plain role text, suspended rows remain read-only,
+and failed invitations retain revoke-then-invite retry. Invitation results use one aggregate
+confirmation card. The project-accounts refresh route uses the same Settings profile as the shell.
+
+Migration `3a75cb367c2b` follows the rebased join `6d25b68bff68`. It preserves Client-KB constraints,
+permits only research text/version edits, and refuses downgrade when research definitions exist.
+Only a clean research slice may restore the old schema; never erase definitions to make rollback
+pass. Live email receive/accept and generated account/person research remain acceptance work.

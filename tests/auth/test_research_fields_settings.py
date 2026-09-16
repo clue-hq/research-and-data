@@ -118,3 +118,115 @@ def test_research_field_permissions(role):
                 assert (await client.delete(f"{PATH}/{key}")).status_code == expected
 
     run_async(scenario())
+
+
+def test_research_field_payload_validation_and_authenticated_workspace_isolation():
+    from tests._workspace import seed_workspace
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            owner = await seed(conn)
+            ws = owner.workspace.workspace_id
+            other = await seed_workspace(conn, "research-fields-api-neighbor")
+            await create_workspace_membership(
+                conn, workspace_id=other, user_id=owner.user.user_id, role_key="admin"
+            )
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=build_app(conn, [])),
+                base_url="http://test",
+                headers=headers(ws),
+            ) as client:
+                body = {"entity": "accounts", "label": "Custom field", "description": "Find it."}
+                for extra in (
+                    {"workspace_id": other},
+                    {"created_by": "someone"},
+                    {"value_type": "string"},
+                ):
+                    assert (await client.post(PATH, json={**body, **extra})).status_code == 422
+                created = await client.post(PATH, json=body)
+                assert created.status_code == 201
+                key = created.json()["key"]
+                for patch in ({"key": "account.changed"}, {"label": None}, {"description": " "}):
+                    assert (await client.patch(f"{PATH}/{key}", json=patch)).status_code in (
+                        400,
+                        422,
+                    )
+                assert (await client.get(PATH, params={"entity": "projects"})).status_code == 422
+                neighbor = await client.get(
+                    PATH, params={"entity": "accounts"}, headers=headers(other)
+                )
+                assert neighbor.status_code == 200
+                assert all(row["key"] != key for row in neighbor.json()["rows"])
+                assert (
+                    await client.patch(
+                        f"{PATH}/{key}", json={"label": "Crossed"}, headers=headers(other)
+                    )
+                ).status_code == 404
+                assert (
+                    await client.delete(f"{PATH}/{key}", headers=headers(other))
+                ).status_code == 404
+                contacts = await client.get(PATH, params={"entity": "contacts"})
+                assert all(row["key"] != key for row in contacts.json()["rows"])
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("method", ["POST", "PATCH", "DELETE"])
+def test_research_writes_recheck_membership_after_principal_resolution(monkeypatch, method):
+    from sqlalchemy import text
+
+    from clue_api.frontend_read import research_fields
+
+    original = research_fields.lock_manager
+
+    async def remove_before_transaction_check(conn, principal, permission):
+        await conn.execute(
+            text(
+                "UPDATE workspace_membership SET status='revoked', revoked_at=now() "
+                "WHERE membership_id=:id"
+            ),
+            {"id": principal.membership_id},
+        )
+        await original(conn, principal, permission)
+
+    monkeypatch.setattr(research_fields, "lock_manager", remove_before_transaction_check)
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            owner = await seed(conn)
+            user = await create_platform_user(conn)
+            await link_auth_identity(
+                conn, user_id=user.user_id, provider_key="clerk", provider_subject="admin"
+            )
+            await create_workspace_membership(
+                conn,
+                workspace_id=owner.workspace.workspace_id,
+                user_id=user.user_id,
+                role_key="admin",
+            )
+            field = await register_workspace_research_field(
+                conn,
+                workspace_id=owner.workspace.workspace_id,
+                entity="accounts",
+                label="Field",
+                description="Find.",
+                created_by="human:test",
+            )
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=build_app(conn, [])),
+                base_url="http://test",
+                headers=headers(owner.workspace.workspace_id, "admin"),
+            ) as client:
+                path = PATH if method == "POST" else f"{PATH}/{field.field_def.field_key}"
+                body = (
+                    {"entity": "accounts", "label": "Other", "description": "Find."}
+                    if method == "POST"
+                    else {"label": "Edited"}
+                )
+                response = await client.request(
+                    method, path, **({"json": body} if method != "DELETE" else {})
+                )
+                assert response.status_code == 403, response.text
+                assert response.json()["error"]["code"] == "PERMISSION_REQUIRED"
+
+    run_async(scenario())

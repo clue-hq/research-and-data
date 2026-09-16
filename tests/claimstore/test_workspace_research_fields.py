@@ -149,21 +149,46 @@ def test_retirement_cannot_be_resurrected_by_the_lenient_writer():
     run_async(scenario())
 
 
-def test_erasure_refuses_new_research_definitions():
+def test_erasure_removes_research_vocabulary_and_blocks_all_resurrection_paths():
+    from clue_research.compliance.workspace_erasure import erase_workspace_dynamic_client_kb
+
     async def scenario():
         async with rollback_conn() as conn:
             ws = await seed_workspace(conn, "research-field-erasure")
-            await conn.execute(
-                text("""
-                INSERT INTO workspace_dynamic_client_kb_erasure
-                  (workspace_id, erased_by, reason_code, definition_count, proposal_count,
-                   materialization_count, readiness_policy_count, claim_count, artifact_count)
-                VALUES (:ws, 'human:test', 'workspace_dynamic_client_kb_erasure', 0, 0, 0, 0, 0, 0)
-            """),
-                {"ws": ws},
+            field = await create(conn, ws)
+            key = field.field_def.field_key
+            account = await insert_account_entity(
+                conn, canonical_name="Example", workspace_id=ws, primary_domain="example.com"
             )
+            draft = ClaimDraft(
+                entity_id=account,
+                entity_type=EntityType.ACCOUNT,
+                field_key=key,
+                value_json="An attributed observation",
+                workspace_id=ws,
+                run_id=new_run_id(),
+                research_mode=ResearchMode.ACCOUNT_PROFILING,
+                extraction_method=ExtractionMethod.API,
+                source_url="https://example.com",
+            )
+            writer = LenientClaimWriter(lenient=True)
+            await writer.write(conn, draft)
+            await erase_workspace_dynamic_client_kb(conn, workspace_id=ws, erased_by="human:test")
+            remaining_keys = (await read_account_catalog(conn, workspace_id=ws)).keys()
+            assert key not in remaining_keys
             with pytest.raises(WorkspaceDynamicClientKbErasedError):
                 await create(conn, ws)
+            with pytest.raises(WorkspaceDynamicClientKbErasedError):
+                await update_workspace_research_field(
+                    conn, workspace_id=ws, field_key=key, label="New"
+                )
+            with pytest.raises(WorkspaceDynamicClientKbErasedError):
+                await retire_workspace_field(
+                    conn, workspace_id=ws, field_key=key, retired_by="human:test", reason="settings"
+                )
+            with pytest.raises(WorkspaceDynamicClientKbErasedError):
+                await writer.write(conn, draft)
+            assert await get_field(conn, key) is None
 
     run_async(scenario())
 
