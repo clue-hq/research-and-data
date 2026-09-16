@@ -38,6 +38,17 @@ in its separate worktree; no new ingestion agent in this task.
 - Founder explicitly authorized committing and pushing all repository progress
   on this feature branch. Prior uncommitted September 8 experiment notes are now
   included; ignored credentials, local storage/DBs and evaluation artifacts remain
-  local. Remote branch did not yet exist when checked. Push verification pending.
+  local. All 131 accumulated commits through ae56be72 were pushed to
+  origin/codex/design-agent-v1. Local and remote hashes match; working tree clean.
+  An initial approval review rejected an unverified destination. Verified the
+  existing origin is the private clue-hq/research-and-data repo with ADMIN access;
+  the same push was then approved and succeeded. No main merge or deployment.
+- Last visual checkpoint: Clue assisted revision completed and independently
+  inspected: coherent Clue × Google row, charcoal/cream, enlarged support. AWS,
+  Google Cloud and Conduit revisions still running at 07:41 UTC; no claim of their
+  quality or completion. Conduit agent retrieved corporate identity from Hyatt's
+  investor site after main-site HTTP 429s; inspect its baked background carefully.
+  Resume exact revision evidence under the same ignored experiment root; do not
+  redispatch or treat the earlier first-pass acceptance labels as qualification.
 - Probe initially failed DNS inside sandbox; authorized network retry succeeded.
   System `python` absent; use repository `.venv/bin/python` for runtime tooling.
