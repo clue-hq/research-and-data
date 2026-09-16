@@ -227,15 +227,20 @@ async def drain_provider_calls(
 
 
 def _surface_for(row: LedgerRow, stamp: LedgerStamp) -> str:
-    """Which product surface this spend was for — the word an incident's breakdown counts under."""
+    """Which product surface this spend was for — the word an incident's breakdown counts under.
+
+    The label is read before the stamp, because an onboarding run stamps *its own id* as the job
+    (the ``LedgerStamp`` docstring's slice-1b note): asking ``job_id`` first would file every
+    onboarding call under ``research_job`` and the onboarding surface would never appear.
+    """
+    if row.label.startswith("onboarding"):
+        return "onboarding"
     if stamp.job_id is not None:
         return "research_job"
     if row.operation == "chat/completions" and row.label.startswith("display-"):
         return "display_section"
     if stamp.project_run_id is not None:
         return "discovery"
-    if row.label.startswith("onboarding"):
-        return "onboarding"
     return row.operation
 
 
@@ -258,14 +263,25 @@ def _stamped_failure(row: LedgerRow) -> ProviderFailure | None:
 async def _record_incidents(
     conn: AsyncConnection, rows: Sequence[LedgerRow], *, stamp: LedgerStamp
 ) -> None:
-    """After the rows are in: every stamped failure lands on an incident, every provider with an
-    ``ok`` result closes its incidents. Successes are folded per provider so a batch of thirty
-    good rows costs one indexed UPDATE, and closes run AFTER failures so a batch that holds both
-    (a retry that finally worked) ends closed, which is what the provider's last word was."""
+    """After the rows are in: every stamped failure lands on an incident, and a provider closes its
+    incidents only when its **last word in this batch** was a success.
+
+    A drain is not one call, it is a whole hop's worth — a discovery drain routinely holds two
+    hundred good rows and then the 402 that stopped it. Closing on the mere *presence* of an ``ok``
+    row would open that incident and shut it again inside the same drain, so the two are folded per
+    provider by time: ``last_ok_at`` has to exist and be later than ``last_failure_at`` before
+    :func:`record_success` is called at all. Failures are still recorded first and one at a time
+    (each one counts toward the threshold and names its own surface); the close is one indexed
+    UPDATE per provider, so thirty good rows still cost one statement.
+    """
     results = [row for row in rows if row.phase == "result"]
+    last_failure_at: dict[str, datetime] = {}
+    last_ok_at: dict[str, datetime] = {}
     for row in results:
         failure = _stamped_failure(row)
         if failure is not None:
+            seen = last_failure_at.get(row.provider, row.recorded_at)
+            last_failure_at[row.provider] = max(seen, row.recorded_at)
             await record_failure(
                 conn,
                 failure,
@@ -273,13 +289,13 @@ async def _record_incidents(
                 workspace_id=stamp.workspace_id,
                 now=row.recorded_at,
             )
-    recovered: dict[str, datetime] = {}
-    for row in results:
-        if row.outcome == "ok" and _stamped_failure(row) is None:
-            seen = recovered.get(row.provider, row.recorded_at)
-            recovered[row.provider] = max(seen, row.recorded_at)
-    for provider, at in recovered.items():
-        await record_success(conn, provider, now=at)
+        elif row.outcome == "ok":
+            seen = last_ok_at.get(row.provider, row.recorded_at)
+            last_ok_at[row.provider] = max(seen, row.recorded_at)
+    for provider, ok_at in last_ok_at.items():
+        failed_at = last_failure_at.get(provider)
+        if failed_at is None or ok_at > failed_at:
+            await record_success(conn, provider, now=ok_at)
 
 
 def _ledger_params(
