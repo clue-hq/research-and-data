@@ -803,6 +803,11 @@
 }
 
 .transcriptScroll {
+  /* The containing block for absolutely positioned descendants. Message parts carry `sr-only`
+     spans (position: absolute); without this they resolve against the chat pane, escape the
+     scroller's clipping, and inflate the pane's scrollable overflow to the transcript's full
+     height — which is what let a programmatic scroll move the whole pane (2026-09-16). */
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;

@@ -3,13 +3,43 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 const BOTTOM_THRESHOLD_PX = 40;
 const TOP_THRESHOLD_PX = 48;
 
+/** The two DOM reads the scroll arithmetic needs — narrow so the helpers stay testable without a DOM. */
+interface Measurable {
+  getBoundingClientRect(): { top: number };
+}
+interface ScrollContainer extends Measurable {
+  scrollTop: number;
+  scrollTo(options: { top: number; behavior: ScrollBehavior }): void;
+}
+
 /** Where an element sits inside a scroll container, independent of offset parents. */
-function offsetWithin(element: HTMLElement, container: HTMLElement): number {
+function offsetWithin(element: Measurable, container: ScrollContainer): number {
   return (
     element.getBoundingClientRect().top -
     container.getBoundingClientRect().top +
     container.scrollTop
   );
+}
+
+/**
+ * Bring `element` to the top of `container` by scrolling the CONTAINER, never the page.
+ *
+ * `element.scrollIntoView` walks every ancestor and scrolls whichever it needs to satisfy the
+ * request — and an ancestor with `overflow: hidden` is still scrollable programmatically. On
+ * the live chat (2026-09-16) the transcript could not put a fresh message at its top on its own,
+ * so the browser scrolled the chat pane itself: the header slid out of view and the composer
+ * rode up with every message until a refresh. Computing the target inside the container and
+ * calling its own `scrollTo` makes that impossible whatever the surrounding layout does.
+ */
+export function scrollMessageToTop(
+  container: ScrollContainer,
+  element: Measurable,
+  { paddingTop, behavior }: { paddingTop: number; behavior: ScrollBehavior },
+): void {
+  container.scrollTo({
+    top: Math.max(0, offsetWithin(element, container) - paddingTop),
+    behavior,
+  });
 }
 
 /**
@@ -151,14 +181,17 @@ export function useTranscriptAutoScroll({
     // project/thread headers.
     pinnedToBottomRef.current = false;
     const frame = window.requestAnimationFrame(() => {
-      transcript
-        .querySelector<HTMLElement>('[data-active-message="true"]')
-        ?.scrollIntoView({
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-            ? "auto"
-            : "smooth",
-          block: "start",
-        });
+      const message = transcript.querySelector<HTMLElement>('[data-active-message="true"]');
+      if (!message) return;
+      // The transcript's own scroll-padding (`scroll-padding-block`) is what `scrollIntoView`
+      // would have honoured; read it so the anchor lands where the stylesheet says.
+      const paddingTop = Number.parseFloat(getComputedStyle(transcript).scrollPaddingTop) || 0;
+      scrollMessageToTop(transcript, message, {
+        paddingTop,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [activeMessageRevision]);
