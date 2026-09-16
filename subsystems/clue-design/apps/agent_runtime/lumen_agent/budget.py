@@ -384,7 +384,7 @@ class RunBudget:
             f"{verdict}"
         )
 
-    def candidate_status_line(self, *, current_round: int) -> str:
+    def candidate_status_line(self, *, current_round: int, runtime_owned_rounds: bool = False) -> str:
         """Scene-candidate advice for one quality repair, not a new hard gate.
 
         The candidate's four-minute target equals the existing minimum repair
@@ -416,10 +416,16 @@ class RunBudget:
                 "workflow; this is not a repair-round decision."
             )
         elif current_round == 1:
+            repair = (
+                "after a registered rejected critique, the next construction tool "
+                "starts round_2 automatically. Round notes are optional; batch the repair. "
+                if runtime_owned_rounds else
+                "open round_2 with those defects and a single batched repair. "
+            )
             verdict = (
                 "If your current review identifies concrete defects, one focused repair "
-                "round is available: open round_2 with those defects and a single batched "
-                "repair. Do not open a round because headroom alone exists. If the current "
+                f"round is available: {repair}"
+                "Do not open a round because headroom alone exists. If the current "
                 "review passes all acceptance checks, finalize now."
             )
         else:

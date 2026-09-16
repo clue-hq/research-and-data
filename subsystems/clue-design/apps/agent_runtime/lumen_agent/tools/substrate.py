@@ -354,6 +354,10 @@ class LumenDesignTools:
         # attribute always exists (a config swapped mid-run must not AttributeError).
         self._fast_loop_round = 0
         self._fast_loop_round_compiles = 0
+        # Solo construction/review share this runtime. Notes may arrive later
+        # in a parallel tool batch, so they cannot own its repair allowance.
+        self._solo_construction_round = 0
+        self._solo_repair_pending = False
         self.trace_dir = config.trace_dir / self.run_id
         self.iterations_dir = self.trace_dir / "iterations"
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -541,15 +545,46 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     # --- fast loop §5.2: the per-round inner-iteration cap -------------------
-    def _fast_loop_round_number(self) -> int:
-        """The newest `rounds/round_N` directory number, or 0.
+    @property
+    def solo_rounds_executed(self) -> int | None:
+        """Executed candidate-solo rounds; None retains delegated file custody."""
+        if (
+            self.config.scene_solo
+            and self.config.scene_skill_bundle == "candidate"
+            and self.config.fast_loop
+        ):
+            return self._solo_construction_round
+        return None
 
-        Mirrors `tools.render.tools_current_round` deliberately rather than
-        importing it: `render` imports THIS module, so the import would be a
-        cycle. `workspace.workspace_root(tools)` is the canonical spelling of
-        the path below (`trace_dir / "workspace"`) and is likewise unimportable
-        here for the same reason.
+    def _begin_solo_construction(self) -> None:
+        """Called inside the scene transaction, before charging a compile.
+
+        A registered rejection arms one repair; actual construction consumes
+        it. Merely writing a note, reviewing or finalizing a draft does not.
+        Page-only source preparation before validated direction stays round 0.
         """
+        current = self.solo_rounds_executed
+        if current is None or self._validated_direction_digest is None:
+            return
+        if current == 0:
+            next_round = 1
+        elif current == 1 and self._solo_repair_pending:
+            next_round = 2
+        else:
+            return
+        path = self.trace_dir / "workspace" / "rounds" / f"round_{next_round}"
+        path.mkdir(parents=True, exist_ok=True)
+        self._solo_construction_round = next_round
+        self._solo_repair_pending = False
+        self.record(
+            "coordinator", "construction_round_started",
+            output_summary=f"round {next_round}", payload={"round": next_round},
+        )
+
+    def _fast_loop_round_number(self) -> int:
+        """Runtime round for solo; newest round directory for delegated runs."""
+        if self.solo_rounds_executed is not None:
+            return self.solo_rounds_executed
         rounds = self.trace_dir / "workspace" / "rounds"
         highest = 0
         try:
@@ -578,9 +613,8 @@ class LumenDesignTools:
         exception would take the turn down and lose the perfectly good scene the
         author already compiled. The cap does not roll back anything.
 
-        The count is per ROUND — a new `rounds/round_N` directory resets it — so
-        the orchestrator's one permitted repair round gets a full budget of its
-        own.
+        The count is per ROUND. Solo construction owns its transition; delegated
+        rounds retain filesystem custody. A repair gets its own fresh budget.
         """
         cap = int(getattr(self.config, "fast_loop_inner_iterations", 0) or 0)
         if cap <= 0:
@@ -602,8 +636,10 @@ class LumenDesignTools:
         recovery = (
             "write an HONEST critique.json naming every issue still standing "
             "(accepted:false if any blocker remains). The canonical file write "
-            "registers the review. Open at most the permitted repair round if "
-            "needed, or call finalize_run with an honest outcome; acceptance still "
+            "registers the review. After a registered round-1 rejection, the next "
+            "construction tool starts the one repair round automatically; note "
+            "files do not grant compile allowance. Otherwise call finalize_run "
+            "with an honest outcome; acceptance still "
             "requires a current preflight, preview and registered review. The "
             "runtime already journals the DSL and diagnostics. "
             if self.config.scene_solo else
@@ -630,6 +666,7 @@ class LumenDesignTools:
     @_scene_mutation
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
+        self._begin_solo_construction()
         # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
         # costs nothing: no iteration number, no metrics compile, no scene touch.
         # `fast_loop_inner_iterations` is only non-zero under the flag, so this is
@@ -817,7 +854,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(response, "apply_operations", operations)
+        self._replace_scene_from_core_response(response, "apply_operations", operations, construction=True)
         self.dsl_session = None
         diagnostics = diagnostics_from(response.get("diagnostics", []))
         summary = OperationApplicationSummary(
@@ -903,7 +940,7 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(
-            response, "apply_structured_edit", response.get("operations") or []
+            response, "apply_structured_edit", response.get("operations") or [], construction=True
         )
         if edit.get("kind") in {
             "delete",
@@ -1022,7 +1059,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(
-            apply_response, "generate_qr", [{"kind": "upsert_asset", "asset": record}]
+            apply_response, "generate_qr", [{"kind": "upsert_asset", "asset": record}], construction=True
         )
 
         diagnostics = diagnostics_from(response.get("diagnostics", []))
@@ -1163,7 +1200,7 @@ class LumenDesignTools:
                 operations = [{"kind": "upsert_asset", "asset": record}]
                 apply_response = self.core.apply_operations(self.scene, operations)
                 self._replace_scene_from_core_response(
-                    apply_response, "generate_image", operations
+                    apply_response, "generate_image", operations, construction=True
                 )
         except CoreError as error:
             payload = {
@@ -1445,7 +1482,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(
-            apply_response, "use_brand_asset", [{"kind": "upsert_asset", "asset": record}]
+            apply_response, "use_brand_asset", [{"kind": "upsert_asset", "asset": record}], construction=True
         )
         self.record(
             "coordinator",
@@ -2160,7 +2197,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(apply_response, kind, [operation])
+        self._replace_scene_from_core_response(apply_response, kind, [operation], construction=True)
         diagnostics = diagnostics_from(apply_response.get("diagnostics", []))
         payload = {
             "placement": {
@@ -2218,7 +2255,7 @@ class LumenDesignTools:
             response = self.core.apply_operations(self.scene, [operation])
         except CoreError:
             return
-        self._replace_scene_from_core_response(response, kind, [operation])
+        self._replace_scene_from_core_response(response, kind, [operation], construction=True)
         entry = self._library_asset_entry(asset_id) or {}
         self.record(
             "coordinator",
@@ -2357,7 +2394,7 @@ class LumenDesignTools:
             with self._scene_mutation_lock:
                 operations = [{"kind": "upsert_asset", "asset": derived}]
                 response = self.core.apply_operations(self.scene, operations)
-                self._replace_scene_from_core_response(response, "crop_image", operations)
+                self._replace_scene_from_core_response(response, "crop_image", operations, construction=True)
         except CoreError as error:
             return self._tool_error(error.code, error.message)
         payload = {
@@ -3469,6 +3506,7 @@ class LumenDesignTools:
             # the editor's Accept replays THAT list onto the document and never
             # sees this scene, so an unlogged autofix would silently vanish at
             # accept (the K2 defect `_log_scene_operations` exists to prevent).
+            self._begin_solo_construction()
             self.scene = result.scene
             self.scene_update_sources.append("autofix")
             self._log_scene_operations(
@@ -4047,6 +4085,7 @@ class LumenDesignTools:
         self._latest_visual_critique = None
         self._review_receipt = None
         self._review_iteration = None
+        self._solo_repair_pending = False
         try:
             if self.config.reference_assets or self._selected_reference_ids:
                 critique_json = json.dumps(stamp_reference_fidelity(json.loads(critique_json)))
@@ -4085,6 +4124,7 @@ class LumenDesignTools:
         self._latest_visual_critique = payload["critique"]
         self._review_receipt = self._review_receipt_for(self._current_preview_receipt())
         self._review_iteration = self.iteration
+        self._solo_repair_pending = self.solo_rounds_executed == 1 and not critique.accepted
         self._write_json(iteration_dir / "critique.json", payload)
         self.record(
             "visual-reviewer",
@@ -4097,6 +4137,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def observe_written_critique(self, path: Path, content: str) -> str | None:
         """Register the canonical self-review; return rejection to the file tool."""
         workspace = self.trace_dir / "workspace"
@@ -5741,7 +5782,7 @@ class LumenDesignTools:
     def _apply_scene_operations(self, source: str, operations: list[JsonObject]) -> JsonObject:
         """Register results after remote work without holding its transaction open."""
         response = self.core.apply_operations(self.scene, operations)
-        self._replace_scene_from_core_response(response, source, operations)
+        self._replace_scene_from_core_response(response, source, operations, construction=True)
         return response
 
     def _replace_scene_from_core_response(
@@ -5749,12 +5790,19 @@ class LumenDesignTools:
         response: JsonObject,
         source: str,
         operations: Optional[list[JsonObject]] = None,
+        *,
+        construction: bool = False,
     ) -> None:
         # The caller must hold _scene_mutation_lock from BEFORE reading the
         # scene passed to the helper through this replacement and ledger write.
         scene = response.get("scene")
         if not isinstance(scene, dict):
             raise CoreError("helper.scene_missing", f"{source} did not return a scene")
+        if construction and self.solo_rounds_executed is not None and scene != self.scene:
+            # Checked operations, crops and asset placement can repair without
+            # a DSL compile. Normalization and final cleanup never own a round,
+            # even when their helper response changes scene content.
+            self._begin_solo_construction()
         self.scene = scene
         self.scene_update_sources.append(source)
         if operations:

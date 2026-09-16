@@ -1326,8 +1326,13 @@ record. Retain its digest and indexed requirements. Later semantic changes
 require revision_reason and renewed review. A request for new imagery needs
 generated_image layers and actual generation; old assets or native flat fields
 alone do not fulfill it.
-4. Create {workspace}/rounds/round_N for the active round, starting with round_1.
-Keep a concise decision or repair delta there. Apply the loaded component guide;
+4. Create the composition. The runtime starts round_1 with construction after
+validated direction. After a registered round-1 rejection, the next construction
+starts the one repair round, round_2. Optional notes in {workspace}/rounds/round_N
+can record a concise decision or repair delta; files do not grant compile allowance.
+If a seeded scene only needs review with no construction, use
+{workspace}/critique.json; no construction round is consumed.
+Apply the loaded component guide;
 read reference guides and the checked DSL grammar when needed. Use compile_dsl_block
 to retain or establish page dimensions, then native text/geometry, authentic images
 and sized artwork reservations

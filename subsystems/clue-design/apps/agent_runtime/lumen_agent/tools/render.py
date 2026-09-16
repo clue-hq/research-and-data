@@ -254,7 +254,10 @@ def _render_preview_text(
         try:
             if checkpoint and getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate":
                 lines.append(
-                    budget.candidate_status_line(current_round=tools_current_round(tools))
+                    budget.candidate_status_line(
+                        current_round=tools_current_round(tools),
+                        runtime_owned_rounds=tools.solo_rounds_executed is not None,
+                    )
                 )
             else:
                 lines.append(budget.status_line())
@@ -263,20 +266,9 @@ def _render_preview_text(
     return "\n".join(lines)
 
 
-# The current round is resolved from the filesystem — the newest existing
-# rounds/round_N directory. Round paths in task descriptions are authoritative
-# (D8); this heuristic only picks where render_preview copies the PNG.
 def tools_current_round(tools: LumenDesignTools) -> int:
-    rounds = workspace_root(tools) / "rounds"
-    if not rounds.exists():
-        return 0
-    highest = 0
-    for child in rounds.iterdir():
-        if child.is_dir() and child.name.startswith("round_"):
-            suffix = child.name[len("round_"):]
-            if suffix.isdigit():
-                highest = max(highest, int(suffix))
-    return highest
+    # Use the same authority for compile allowance, review and preview custody.
+    return tools._fast_loop_round_number()
 
 
 def make_render_preview_tool(

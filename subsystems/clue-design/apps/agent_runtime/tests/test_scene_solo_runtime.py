@@ -280,7 +280,9 @@ def test_solo_compile_ceiling_preserves_scene_and_names_callable_recovery(tmp_pa
     assert "critique.json" in refusal["message"]
     assert "render_preview" in refusal["message"]
     (rounds / "round_2").mkdir()
-    assert "compile" in json.loads(tools.compile_dsl_block(source))
+    # A note directory alone is not executed repair work or a budget grant.
+    assert json.loads(tools.compile_dsl_block(source))["error_code"] == "compile.inner_iteration_cap"
+    assert json.dumps(tools.scene, sort_keys=True) == compiled_scene
 
 
 def test_solo_budget_backstop_finishes_without_calling_another_model(tmp_path, monkeypatch):
