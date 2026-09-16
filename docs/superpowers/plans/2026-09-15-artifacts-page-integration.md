@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Presentation truth is the dummy at `/Users/aryankeshri/conductor/workspaces/clue-frontend/port-of-spain` (commits `45892a6`, `93c6120`). Lift, do not invent. Our `Button` has no `primary` variant: the dummy's `variant: "primary"` becomes our `"default"`; `secondary`, `transparent`, `md`, `sm`, `icon-sm` exist on both.
-- Alembic: hash ids from `uv run alembic revision -m "<slug>"`, `down_revision` = current head (`d36bc7d32c9a` when this plan was written; re-check with `uv run alembic heads`), reversible `downgrade()`, exactly one head, `make db-smoke` on the lane's throwaway DB only.
+- Alembic: hash ids from `uv run alembic revision -m "<slug>"`, `down_revision` = current head (`b7193eb28363` after the 2026-09-16 rebase onto `research-streaming`; re-check with `uv run alembic heads`), reversible `downgrade()`, exactly one head, `make db-smoke` on the lane's throwaway DB only.
 - Every design document mutation is a toolbelt tool (`subsystems/clue-design/apps/api/tests/test_write_path_governance.py` refuses otherwise). New tools are registered ungranted and human-only.
 - No new env flags. `.env.example` is unchanged. The lane's `.env` keeps full key parity with `.env.example`.
 - Backend suites run on the lane DB only, never `make check` with real keys: `uv run pytest <file> --ignore-glob='*_live.py'`. Load env with `set -a; source .env; set +a` first.
@@ -70,6 +70,8 @@ cp .env.example .env
 # Edit ONLY these lines in .env (secrets stay placeholders unless you have them):
 #   CLUE_DATABASE_URL=postgresql+psycopg://<user>:<pass>@127.0.0.1:<port>/clue_melbourne
 # Copy the value from the san-salvador lane's .env for host/port/user and change the database name.
+#   CLUE_LANGFUSE_ENVIRONMENT=lane-melbourne
+# (Langfuse is enabled by default since research-streaming took lane 3; blank keys are a logged skip, never a crash.)
 ```
 
 Create the database and migrate:
@@ -530,7 +532,7 @@ git commit -m "feat(artifacts): workspace-wide design document query, shared car
 
 **Files:**
 - Create: `platform/api/clue_api/frontend_read/artifacts.py`
-- Modify: `platform/api/clue_api/frontend_read/app.py:244-300`
+- Modify: `platform/api/clue_api/frontend_read/app.py:233-310` (the `build_frontend_read_router` registration block)
 - Test: `tests/api/test_frontend_read_artifacts_db.py`
 
 **Interfaces:**
