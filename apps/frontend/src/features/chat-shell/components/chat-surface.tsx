@@ -38,6 +38,7 @@ import {
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
+import { openArtifactFromParam } from "../model/open-artifact-param";
 import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
@@ -339,6 +340,16 @@ export function ChatSurface({
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
+  // `?open=` (2026-09-15): land with one artifact tab open. Read once (the ref), resolved against
+  // the server-fetched feed, and stripped by the write-back below.
+  const openParamHandled = useRef(false);
+  useEffect(() => {
+    if (openParamHandled.current) return;
+    openParamHandled.current = true;
+    const opening = openArtifactFromParam({ openId: searchParams.get("open"), artifacts: feedArtifacts });
+    if (opening) openArtifact(opening);
+  }, [feedArtifacts, openArtifact, searchParams]);
+
   // The controller distinguishes live writes from late history replay using server cursors.
   // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
   // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only
@@ -373,12 +384,15 @@ export function ChatSurface({
 
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
-    // future) survive; only the three pane keys are ours to rewrite.
+    // future) survive; only the pane keys are ours to rewrite.
     const query = new URLSearchParams(searchParams.toString());
     query.delete("surface");
     query.delete("edit");
     query.delete("selection");
     query.delete("document");
+    // `?open=` is read once at mount and never written back: stripping it here canonicalizes the
+    // URL to the ordinary `surface=web|ad` state the opened tab produces.
+    query.delete("open");
     if (surfaceParam === "plan" && selectedDocumentPath) query.set("document", selectedDocumentPath);
     if (surfaceParam) query.set("surface", surfaceParam);
     if (editParam) query.set("edit", editParam);
