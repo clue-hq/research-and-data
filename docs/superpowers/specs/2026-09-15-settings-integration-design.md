@@ -556,6 +556,13 @@ registers an agent-invented key in the **global** table. With the overlay accept
 and `contact.*` rows, proposed fields should be filed per workspace instead. That is a Track R
 change with its own review because it alters what every workspace's menu contains.
 
+**2026-09-16: detailed follow-up plan requested.** Track R is now covered by
+[Workspace-local agent-proposed research fields](../plans/2026-09-16-workspace-agent-proposed-fields.md):
+trusted registration, manager controls, namespaces/facets, historical global-definition containment,
+concurrency/lifecycle tests and versioned agent documentation. This is planning only; automatic
+global registration is still current. The [agent guidance](../../agents/research-field-scope.md)
+separates that behavior from prepared replacement instructions and their activation gates.
+
 ### 9.5 Frontend
 
 - `components/data-model-settings.tsx` is lifted, then reduced to the redrawn shape: the entity

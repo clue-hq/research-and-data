@@ -491,7 +491,10 @@ account column is still a separate live test. Existing provider access may need 
 case; verify the actual failure first.
 
 **Explicit follow-ups outside this completion slice:** broad workspace-local agent proposal
-registration (Track R), contact custom-field presentation frames, usage-only Billing with real
+registration (Track R) now has a founder-requested
+[implementation plan](2026-09-16-workspace-agent-proposed-fields.md), prepared 2026-09-16;
+implementation/resource activation remain open. Other follow-ups: contact custom-field
+presentation frames, usage-only Billing with real
 plan/credit data, connections/MCP/integrations, website/rebuild flow, avatar upload and viewer-role
 UI. These stay visible in the ledger; none may be described as implemented by this work.
 
