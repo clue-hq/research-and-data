@@ -937,7 +937,7 @@ Telemetry (standard above): add `from clue_obs import get_logger` and `from clue
                 )
 ```
 
-The 400 on a bad cursor is a typed refusal and is not logged. Then stamp the workspace on the read surface's spans, which the `/api/v1` header seam already does and this surface never did — in `frontend_read/app.py::frontend_read_workspace_resolver`, before `return x_workspace_id`, add `bind_and_annotate(workspace_id=x_workspace_id)` with `from clue_obs.otel import bind_and_annotate` (mirror the comment at `projections_app.py:156-159`). Every `/frontend/v1` span now carries `workspace_id`.
+The 400 on a bad cursor is a typed refusal and is not logged. Then stamp the workspace on the read surface's spans in header (local) mode: in production `projections_app` overrides `frontend_read_workspace_resolver` with the authenticated `workspace` dependency, which already calls `bind_and_annotate(workspace_id=…)`; the header-mode resolver never did. In `frontend_read/app.py::frontend_read_workspace_resolver`, before `return x_workspace_id`, add `bind_and_annotate(workspace_id=x_workspace_id)` with `from clue_obs.otel import bind_and_annotate` (mirror the comment at `projections_app.py:156-159`), so both modes stamp the span the same way.
 
 Register it in `app.py` after `register_project_document_routes(...)`:
 
@@ -978,16 +978,12 @@ git commit -m "feat(artifacts): GET /frontend/v1/artifacts — the workspace-wid
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/api/test_frontend_read_artifacts_db.py`. The projections app resolves a principal only under the chat principal resolver; build the app with one, the way the feed suite does:
+Append to `tests/api/test_frontend_read_artifacts_db.py`. A principal reaches `/frontend/v1` only through the resolver override production installs; the test installs the same override:
 
 ```python
 from datetime import datetime as _dt
-from clue_api import build_tool_invoker
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
-from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import fixture_membership_id
-from tests.projections._helpers import build_surface
-from tests.api.test_design_artifact_feed_db import _MemoryStorage  # noqa: PLC2701
 
 
 def _principal(workspace_id: str) -> RequestPrincipal:
@@ -1001,20 +997,22 @@ def _principal(workspace_id: str) -> RequestPrincipal:
     )
 
 
-def _app_with_principal(conn: Any) -> Any:
-    cf = conn_session_factory(conn)
-    settings = load_settings(
-        _env_file=None, chat_enabled=True, frontend_read_enabled=True, arv2_display_generate_on_read=False
-    )
-    return create_projections_app(
-        surface=build_surface(conn),
-        tool_invoker=build_tool_invoker(
-            registry=ToolRegistry(), idempotency_store=DbIdempotencyStore(conn_factory=cf),
-            storage=_MemoryStorage(), settings=settings, conn_factory=cf,
-        ),
-        settings=settings, conn_factory=cf, manage_db_lifespan=False,
-        chat_principal_resolver=_principal,
-    )
+def _app_with_principal(conn: Any, workspace_id: str) -> Any:
+    """The read surface under a real principal, the way production reaches it: `projections_app`
+    overrides `frontend_read_workspace_resolver` with the authenticated workspace dependency, whose
+    `PrincipalDependency` stores the principal on `request.state.clue_principal`. The test installs
+    the same override with a resolver that stores the fixture principal."""
+    from fastapi import Request
+    from clue_api.frontend_read.app import frontend_read_workspace_resolver
+
+    app = _app(conn)
+
+    async def _resolver(request: Request) -> str:
+        request.state.clue_principal = _principal(workspace_id)
+        return workspace_id
+
+    app.dependency_overrides[frontend_read_workspace_resolver] = _resolver
+    return app
 
 
 def test_saved_and_viewed_marks_are_the_callers_own_and_converge() -> None:
@@ -1025,7 +1023,7 @@ def test_saved_and_viewed_marks_are_the_callers_own_and_converge() -> None:
             await seed_principal(conn, workspace_id=ws, user_id=USER_ID)
             await _document_in_project(conn, workspace_id=ws, project_id=project.project_id,
                                        document_id="doc_m", title="Marked", updated_at=_T0)
-            app = _app_with_principal(conn)
+            app = _app_with_principal(conn, ws)
             async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
                 headers = {"X-Workspace-Id": ws}
                 saved = await client.put(f"{_BASE}/doc_m/saved", json={"saved": True}, headers=headers)
