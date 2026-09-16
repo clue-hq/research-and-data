@@ -3114,3 +3114,11 @@ support from the approved local composition. Keep those examples local to
 their brand and composition; do not turn the approved 32px into a universal
 rule. Any new provider diagnostic or generation batch is separate from the
 completed eleven-case approval; the optional sixty-call diagnostic is unused.
+
+Loaded local commit `5fb38cd1` at 2026-09-16 01:28:39 UTC after ownership and
+idle-queue verification. The design API and four workers are running; the API
+reports HTTP 200 and unchanged engine stamp `62c7de8b022e`. Existing services
+and saved artifacts were preserved. Browser inspection of the Clue product
+export confirmed a fully decoded 1080×1080 PNG, and its actual returned image
+was inspected. The in-app browser does not support content-file export; final
+OS download custody remains unverified. No provider calls were made this turn.
