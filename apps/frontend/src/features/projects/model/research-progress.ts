@@ -17,6 +17,21 @@ export const ResearchProgressSchema = z.object({
     }),
   ),
   attention: z.array(z.object({ account_name: z.string(), reason: z.string() })),
+  /**
+   * The open provider incident behind the attention rows, when one is open. `.catch(null)` so a
+   * backend that predates the field still parses; `.nullable()` because the backend sends `null`
+   * whenever no provider is to blame.
+   */
+  incident: z
+    .object({
+      provider_label: z.string(),
+      reason_label: z.string(),
+      since: z.string(),
+      affected: z.number().int().nonnegative(),
+      notified: z.boolean(),
+    })
+    .nullable()
+    .catch(null),
 });
 
 export type ResearchProgress = z.infer<typeof ResearchProgressSchema>;

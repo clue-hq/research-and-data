@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { researchProgressHeadline, researchProgressLine } from "./research-progress-line";
-import type { ResearchProgress } from "./research-progress";
+import { ResearchProgressSchema, type ResearchProgress } from "./research-progress";
 
 const base: ResearchProgress = {
   requested_accounts: 10, queued: 3, running: 7, finished: 0, progress_pct: 40, pill: "running",
-  last_finished_at: null, attention: [],
+  last_finished_at: null, attention: [], incident: null,
   agents: [
     { account_name: "OpenAI", stage: "deep_research", subject: "account" },
     { account_name: "Anthropic", stage: "committee", subject: "account" },
@@ -33,4 +33,26 @@ test("completed and needs-attention have their own lines", () => {
     researchProgressLine({ ...base, pill: "needs_attention", attention: [{ account_name: "Cove", reason: "the model errored" }] }, 0),
     "Cove: the model errored",
   );
+});
+
+test("an attention reason is shown as the server's sentence, verbatim", () => {
+  const card = ResearchProgressSchema.parse({
+    requested_accounts: 10, queued: 0, running: 0, finished: 10, progress_pct: 100,
+    pill: "needs_attention", last_finished_at: null, agents: [],
+    attention: [{ account_name: "Borland Groover", reason: "Model provider refused: key limit exceeded. Since 16:01. Clue has been notified." }],
+    incident: { provider_label: "Model provider", reason_label: "key limit exceeded", since: "2026-09-16T10:31:23Z", affected: 45, notified: true },
+  });
+  assert.equal(card.incident?.affected, 45);
+  assert.equal(
+    researchProgressLine(card, 0),
+    "Borland Groover: Model provider refused: key limit exceeded. Since 16:01. Clue has been notified.",
+  );
+});
+
+test("a card from a backend that does not send an incident still parses", () => {
+  const card = ResearchProgressSchema.parse({
+    requested_accounts: 1, queued: 0, running: 1, finished: 0, progress_pct: 0,
+    pill: "running", last_finished_at: null, agents: [], attention: [],
+  });
+  assert.equal(card.incident, null);
 });

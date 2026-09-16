@@ -12,6 +12,7 @@ tenant's header never sees this project's run.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,8 @@ from sqlalchemy import text
 
 from clue_api.arv2.account_research_store import begin_job, list_jobs, set_job_stage
 from clue_api.frontend_read.app import FRONTEND_READ_PREFIX
+from clue_api.provider_incidents import record_failure
+from clue_core.provider_failures import ProviderFailure
 from clue_storage.fs import FsStorage
 from tests.arv2.icp_fixture import FakeQueue, seed_icp_fixture
 from tests.arv2.test_account_research_launch_db import _launch, _request
@@ -119,5 +122,75 @@ def test_null_then_running_then_needs_attention_then_aged_out(tmp_path: Any) -> 
             async with _client(_app(conn)) as client:
                 aged = await client.get(path, headers=headers)
             assert aged.status_code == 200 and aged.json()["data"] is None
+
+    run_async(scenario())
+
+
+def test_a_refused_job_shows_the_incident_and_the_card_names_the_provider(tmp_path: Any) -> None:
+    """A job killed by a provider refusal reads as the shared sentence, and the card carries the
+    open incident the operator can act on (design 2026-09-16 §3.3)."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            path = f"{FRONTEND_READ_PREFIX}/projects/{fixture.project_id}/research/progress"
+            headers = {"X-Workspace-Id": fixture.workspace_id}
+            receipt = await _launch(conn, storage, _request(fixture), FakeQueue())
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET status = 'needs_review', "
+                    "failure_code = 'provider_refused:openrouter:key_limit', "
+                    "failure_message = 'Key limit exceeded', finished_at = now() "
+                    "WHERE run_id = :run"
+                ),
+                {"run": receipt.run_id},
+            )
+            await record_failure(
+                conn,
+                ProviderFailure("openrouter", "refusal", "key_limit", "Key limit exceeded"),
+                surface="research_job",
+                workspace_id=fixture.workspace_id,
+                now=datetime.now(UTC),
+            )
+
+            async with _client(_app(conn)) as client:
+                body = (await client.get(path, headers=headers)).json()["data"]
+
+            assert body["pill"] == "needs_attention"
+            assert body["attention"][0]["reason"].startswith(
+                "Model provider refused: key limit exceeded. Since "
+            )
+            incident = body["incident"]
+            assert incident is not None
+            assert incident["provider_label"] == "Model provider"
+            assert incident["reason_label"] == "key limit exceeded"
+            assert incident["affected"] == 1
+            assert incident["notified"] is False
+            assert incident["since"]
+
+    run_async(scenario())
+
+
+def test_a_card_with_no_provider_incident_carries_none(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            path = f"{FRONTEND_READ_PREFIX}/projects/{fixture.project_id}/research/progress"
+            headers = {"X-Workspace-Id": fixture.workspace_id}
+            receipt = await _launch(conn, storage, _request(fixture), FakeQueue())
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET status = 'needs_review', "
+                    "failure_code = 'model_error', failure_message = 'the model errored', "
+                    "finished_at = now() WHERE run_id = :run"
+                ),
+                {"run": receipt.run_id},
+            )
+            async with _client(_app(conn)) as client:
+                body = (await client.get(path, headers=headers)).json()["data"]
+            assert body["attention"][0]["reason"] == "the model errored"
+            assert body["incident"] is None
 
     run_async(scenario())

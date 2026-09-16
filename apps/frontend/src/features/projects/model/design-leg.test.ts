@@ -167,3 +167,20 @@ test("a frame for another thread refreshes nothing", () => {
     { refetchFeed: false, reloadCanvas: false },
   );
 });
+
+test("a provider refusal on a turn reads as a sentence, not a code", () => {
+  assert.equal(
+    designTurnFailureNotice("provider_refused:openrouter:key_limit"),
+    "Model provider refused: key limit exceeded. Send another message once it is restored — Clue has been notified.",
+  );
+  assert.equal(
+    designTurnFailureNotice("provider_failed:openrouter:server_error"),
+    "Model provider failing: server errors. Send another message to try again — Clue has been notified.",
+  );
+  assert.equal(
+    designTurnFailureNotice("provider_refused:exa:credits_exhausted"),
+    "Discovery provider refused: credits exhausted. Send another message once it is restored — Clue has been notified.",
+  );
+  assert.equal(designTurnFailureNotice("permission_denied_error"), "permission_denied_error");
+  assert.equal(designTurnFailureNotice(null), null);
+});

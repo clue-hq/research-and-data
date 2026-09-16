@@ -662,3 +662,48 @@ def test_the_derived_role_markers_are_the_ones_the_loader_actually_writes() -> N
     assert DERIVED_ROLE_RATIONALE_PHRASE in answer_key_loader._DERIVED_ROLE_RATIONALE
     source = Path(answer_key_loader.__file__).read_text(encoding="utf-8")
     assert f'"{DERIVED_ROLE_MARKER}": persona.source_row_id' in source
+
+
+# -- (c2) a refused generation says WHY the sections are empty ----------------------------------
+
+
+def test_a_refused_generation_leaves_the_empty_sections_saying_why() -> None:
+    """The halt is classified once (Task 1) and every empty section carries the same sentence.
+
+    A 403 naming a key limit is a *refusal* — no retry changes it — so the page says so rather
+    than leaving a reader to guess why an account's overview is blank.
+    """
+
+    def _halted(raw: RawSink, ledger: LedgerSink) -> LunaSectionRunner:
+        raise ProviderHalted("openrouter", "Key limit exceeded (weekly limit)", http_status=403)
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            pages = _pages(conn, runner_factory=_halted)
+
+            read = await _contact_page(pages, conn, seeded)
+
+            assert read.degraded_reason == "ProviderHalted"
+            assert read.unavailable_message == (
+                "Not generated: model provider refused (key limit exceeded). Retries automatically."
+            )
+            empties = [section for section in _sections(read) if section["empty"]]
+            assert empties
+            assert all(section["emptyMessage"] == read.unavailable_message for section in empties)
+
+    run_async(_run())
+
+
+def test_a_healthy_page_says_nothing_about_a_provider() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            pages = _pages(conn, runner_factory=_factory(RoutingTransport()))
+
+            read = await _contact_page(pages, conn, seeded)
+
+            assert read.unavailable_message is None
+            assert all("emptyMessage" not in section for section in _sections(read))
+
+    run_async(_run())

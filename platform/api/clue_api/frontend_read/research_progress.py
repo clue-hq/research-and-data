@@ -29,11 +29,14 @@ from clue_api.arv2.research_progress import (
 )
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.v1_shared import iso_utc
+from clue_api.provider_incidents import open_incidents, provider_display, reason_words
+from clue_core.provider_failures import parse_failure_code
 from clue_db import ConnFactory
 
 __all__ = [
     "ResearchProgressAgentV1",
     "ResearchProgressAttentionV1",
+    "ResearchProgressIncidentV1",
     "ResearchProgressResponseV1",
     "ResearchProgressV1",
     "register_research_progress_route",
@@ -59,6 +62,22 @@ class ResearchProgressAttentionV1(BaseModel):
     reason: str
 
 
+class ResearchProgressIncidentV1(BaseModel):
+    """The open provider incident behind the card's attention rows, when there is one.
+
+    Read from ``provider_incident`` for the provider named by the most recent job whose
+    ``failure_code`` parses — the card says *why* the work stopped rather than only that it did.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider_label: str
+    reason_label: str
+    since: str
+    affected: int
+    notified: bool
+
+
 class ResearchProgressV1(BaseModel):
     """The pinned research progress card (spec 2026-09-12 §2)."""
 
@@ -73,6 +92,7 @@ class ResearchProgressV1(BaseModel):
     last_finished_at: str | None
     agents: list[ResearchProgressAgentV1]
     attention: list[ResearchProgressAttentionV1]
+    incident: ResearchProgressIncidentV1 | None = None
 
 
 class ResearchProgressResponseV1(BaseModel):
@@ -115,7 +135,7 @@ _JOBS = text(
     )
     SELECT j.run_id, runs.status AS run_status, j.job_id, j.account_entity_id,
            a.canonical_name, j.subject_type, j.status, j.stage, j.started_at, j.finished_at,
-           j.failure_message
+           j.failure_message, j.failure_code
     FROM arv2_research_job j
     JOIN runs ON runs.run_id = j.run_id
     JOIN account_entity a
@@ -123,6 +143,21 @@ _JOBS = text(
     ORDER BY j.started_at NULLS LAST, j.job_id
     """
 )
+
+
+def _notified(reason: str, incident: ResearchProgressIncidentV1 | None) -> str:
+    """The fold's sentence, with the "Clue has been notified." clause when Sentry was told.
+
+    The fold is pure and cannot know whether the incident carries a Sentry event id, so it never
+    claims we were told. Only a row the fold wrote from THIS incident is rewritten — it must start
+    with the incident's own provider label and end on the sentence's full stop — so a plain
+    failure message that happens to sit next to a provider incident is left alone.
+    """
+    if incident is None or not incident.notified:
+        return reason
+    if not reason.startswith(incident.provider_label) or not reason.endswith("."):
+        return reason
+    return reason + " Clue has been notified."
 
 
 def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFactory) -> None:
@@ -164,6 +199,7 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
                 started_at=row["started_at"],
                 finished_at=row["finished_at"],
                 failure_message=row["failure_message"],
+                failure_code=row["failure_code"],
             )
             for row in rows
         ]
@@ -173,6 +209,35 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
         )
         if card is None:
             return ResearchProgressResponseV1(data=None)
+        # The provider named by the most recently finished job whose code parses decides which
+        # incident the card shows; a second connection because the fold runs outside the first.
+        newest: datetime | None = None
+        provider: str | None = None
+        for job in jobs:
+            parsed = parse_failure_code(job.failure_code)
+            if parsed is None or job.finished_at is None:
+                continue
+            if newest is None or job.finished_at > newest:
+                newest, provider = job.finished_at, parsed[0]
+        incident: ResearchProgressIncidentV1 | None = None
+        if provider is not None:
+            async with conn_factory() as conn:
+                live = await open_incidents(conn, providers=[provider])
+            if live:
+                incident = ResearchProgressIncidentV1(
+                    provider_label=provider_display(live[0].provider),
+                    reason_label=reason_words(live[0].reason),
+                    since=iso_utc(live[0].opened_at),
+                    affected=live[0].failure_count,
+                    notified=live[0].notified,
+                )
+        attention = [
+            ResearchProgressAttentionV1(
+                account_name=item.account_name,
+                reason=_notified(item.reason, incident),
+            )
+            for item in card.attention
+        ]
         return ResearchProgressResponseV1(
             data=ResearchProgressV1(
                 requested_accounts=card.requested_accounts,
@@ -192,9 +257,7 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
                     )
                     for agent in card.agents
                 ],
-                attention=[
-                    ResearchProgressAttentionV1(account_name=item.account_name, reason=item.reason)
-                    for item in card.attention
-                ],
+                attention=attention,
+                incident=incident,
             )
         )

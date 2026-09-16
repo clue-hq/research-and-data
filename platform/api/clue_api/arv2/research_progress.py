@@ -14,6 +14,9 @@ from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
+from clue_api.provider_incidents import incident_sentence
+from clue_core.provider_failures import parse_failure_code
+
 __all__ = [
     "ATTENTION_LINGER_S",
     "FINISHED",
@@ -72,6 +75,9 @@ class ProgressJob:
     started_at: datetime | None
     finished_at: datetime | None
     failure_message: str | None
+    #: ``provider_refused:<provider>:<reason>`` / ``provider_failed:…`` when the job died on a
+    #: provider that stopped serving us; anything else (or ``None``) leaves the prose alone.
+    failure_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -143,8 +149,27 @@ def _clip(text: str, limit: int = _REASON_MAX) -> str:
 
 
 def _reason(job: ProgressJob) -> str:
+    """The one line the card shows for a job that wants a human.
+
+    A job killed by a provider that stopped serving us reads as the shared incident sentence
+    rather than the provider's raw prose. ``notified`` is always ``False`` here: the fold is pure
+    and cannot know whether Sentry was told — the read appends that clause when it finds the open
+    incident's event id.
+    """
     if job.status == "suspended":
         return "paused, waiting for a worker"
+    parsed = parse_failure_code(job.failure_code)
+    if parsed is not None and job.finished_at is not None:
+        provider, kind, reason = parsed
+        return incident_sentence(
+            provider=provider,
+            kind=kind,
+            reason=reason,
+            since=job.finished_at,
+            affected=None,
+            unit="jobs",
+            notified=False,
+        )
     return _clip(job.failure_message or "needs review")
 
 

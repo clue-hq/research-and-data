@@ -60,9 +60,11 @@ from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportErr
 from clue_api.arv2.provider_ledger import ArtifactSink
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
 from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts
+from clue_api.provider_incidents import open_incidents, provider_display, reason_words
 from clue_api.url_safety import safe_public_url
 from clue_config import Secrets, Settings
 from clue_core import Claim, EntityId
+from clue_core.provider_failures import ProviderFailure, classify_http
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
@@ -126,6 +128,12 @@ class PageRead:
     repaired in the background); ``degraded_reason`` is the exception class name when generation
     was attempted and failed, and ``None`` on every healthy read — including a read that never had
     a runner to begin with, because "not configured to generate" is not a degradation.
+
+    ``unavailable_message`` is the one sentence the empty sections carry when a provider stopped
+    serving us — the same words the research card and the failed chat turn use, so a reader meets
+    one explanation wherever the outage surfaces. It is ``None`` whenever the page is empty for any
+    other reason (nothing researched yet, a recipe that matched nothing): an empty section is a
+    correct answer, and only an outage gets an excuse.
     """
 
     display_block: dict[str, Any]
@@ -133,6 +141,7 @@ class PageRead:
     generated: tuple[str, ...]
     stale: tuple[str, ...]
     degraded_reason: str | None
+    unavailable_message: str | None = None
 
 
 #: The failures a read absorbs. ``Arv2Error`` covers the lane's own typed failures (a halted or
@@ -141,6 +150,38 @@ class PageRead:
 #: database error is deliberately *not* here — it is not a display failure, and swallowing it
 #: would serve a page composed from a transaction that is already broken.
 _DEGRADING = (Arv2Error, ProviderHalted, ProviderTransportError, OSError, ValueError)
+
+#: The provider that writes display sections. A page has exactly one generator, so an incident
+#: open against any other provider says nothing about why this page is blank.
+_GENERATION_PROVIDER = "openrouter"
+
+
+def _classify(exc: BaseException) -> ProviderFailure | None:
+    """A degrading failure as a provider verdict, or ``None`` when no provider is to blame.
+
+    A halt carries the provider, the status and the reason the wrapper read off the body, so the
+    same :func:`classify_http` that classified it on the spend path classifies it again here — a
+    latched halt has no status, and there is nothing honest to say from one, so it falls through
+    to the open incident instead of being guessed at as a timeout. A transport error never reached
+    HTTP at all, which :func:`classify_http` spells as ``status=None``: a timeout-class failure.
+    Everything else (a filesystem fault, an unusable reply) is ours, not the provider's.
+    """
+    if isinstance(exc, ProviderHalted):
+        if exc.http_status is None:
+            return None
+        return classify_http(exc.provider, exc.http_status, exc.reason_code)
+    if isinstance(exc, ProviderTransportError):
+        return classify_http(exc.provider, None, exc.last_error)
+    return None
+
+
+def _unavailable_sentence(provider: str, kind: str, reason: str) -> str:
+    """The shared outage sentence, in the empty section's voice."""
+    verb = "refused" if kind == "refusal" else "failing"
+    return (
+        f"Not generated: {provider_display(provider).lower()} {verb} "
+        f"({reason_words(reason)}). Retries automatically."
+    )
 
 
 class DisplayPages:
@@ -233,6 +274,7 @@ class DisplayPages:
 
         generated: tuple[str, ...] = ()
         degraded_reason: str | None = None
+        degrading_failure: ProviderFailure | None = None
         if generate and self.generates:
             assert self._runner_factory is not None and self._artifacts is not None
             try:
@@ -250,6 +292,7 @@ class DisplayPages:
                 )
             except _DEGRADING as exc:
                 degraded_reason = type(exc).__name__
+                degrading_failure = _classify(exc)
                 log.warning(
                     "frontend_read.display.generation_failed",
                     workspace_id=workspace_id,
@@ -287,12 +330,30 @@ class DisplayPages:
                 subject_id=subject_id,
                 page=page,
             )
+        display_block = compose_display_block(page, recipes, blocks)
+        # Why the empty sections are empty, when the answer is a provider and not the research.
+        # The classified halt speaks first (it is THIS read's own failure); otherwise an incident
+        # that is open right now explains a page a previous, already-degraded read left behind.
+        unavailable: str | None = None
+        if degrading_failure is not None:
+            unavailable = _unavailable_sentence(
+                degrading_failure.provider, degrading_failure.kind, degrading_failure.reason
+            )
+        else:
+            live = await open_incidents(conn, providers=[_GENERATION_PROVIDER])
+            if live:
+                unavailable = _unavailable_sentence(live[0].provider, live[0].kind, live[0].reason)
+        if unavailable is not None:
+            for section in display_block["sections"]:
+                if section["empty"] and section["key"] not in blocks:
+                    section["emptyMessage"] = unavailable
         return PageRead(
-            display_block=compose_display_block(page, recipes, blocks),
+            display_block=display_block,
             cited_claim_ids=_cited(recipes, blocks),
             generated=generated,
             stale=stale_keys,
             degraded_reason=degraded_reason,
+            unavailable_message=unavailable,
         )
 
     # -- background regeneration ---------------------------------------------------------------

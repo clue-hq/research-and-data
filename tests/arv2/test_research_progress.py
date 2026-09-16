@@ -26,6 +26,7 @@ def job(
     stage: str | None = "deep_research",
     finished_at: datetime | None = None,
     failure: str | None = None,
+    failure_code: str | None = None,
     account_id=None,  # noqa: ANN001
 ) -> ProgressJob:
     return ProgressJob(
@@ -39,6 +40,7 @@ def job(
         started_at=NOW - timedelta(minutes=5) if status != "not_started" else None,
         finished_at=finished_at,
         failure_message=failure,
+        failure_code=failure_code,
     )
 
 
@@ -332,3 +334,41 @@ def test_a_long_failure_message_is_clipped_to_one_line() -> None:
     reason = card.attention[0].reason
     assert len(reason) == 140
     assert reason.endswith("\u2026") and reason.startswith("x" * 139)
+
+
+def test_a_provider_refusal_reads_as_the_incident_sentence_on_the_card() -> None:
+    """A parsed ``failure_code`` replaces the provider's raw prose with the shared sentence.
+
+    ``notified`` is unknown to the pure fold — only the read knows whether the open incident
+    carries a Sentry id — so the fold's sentence never claims Clue has been told.
+    """
+    finished = datetime(2026, 9, 16, 10, 31, 29, tzinfo=UTC)
+    refused = job(
+        "Acme",
+        subject="person",
+        status="needs_review",
+        stage="synthesis",
+        finished_at=finished,
+        failure="PermissionDeniedError: Error code: 403 - key limit exceeded",
+        failure_code="provider_refused:openrouter:key_limit",
+    )
+    card = fold_progress(
+        [refused], run_statuses={RUN: "needs_review"}, now=finished + timedelta(minutes=1)
+    )
+    assert card is not None
+    assert card.attention[0].reason == "Model provider refused: key limit exceeded. Since 10:31."
+
+
+def test_an_unparsable_failure_code_still_shows_the_provider_prose() -> None:
+    finished = datetime(2026, 9, 16, 10, 31, 29, tzinfo=UTC)
+    bad = job(
+        "Acme",
+        status="needs_review",
+        stage="synthesis",
+        finished_at=finished,
+        failure="the model errored",
+        failure_code="permission_denied_error",
+    )
+    card = fold_progress([bad], run_statuses={RUN: "needs_review"}, now=finished)
+    assert card is not None
+    assert card.attention[0].reason == "the model errored"
