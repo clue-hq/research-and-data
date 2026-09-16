@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 
+from clue_core import provider_failures
 from clue_core.provider_failures import (
     ProviderFailure,
     classify_exception,
@@ -122,3 +125,10 @@ def test_failure_codes_round_trip() -> None:
     )
     assert parse_failure_code("model_error") is None
     assert parse_failure_code(None) is None
+
+
+def test_the_runtime_reason_set_is_exactly_the_type_alias() -> None:
+    # Ruling PI-3 forbids deriving the runtime set from the alias in the classifier itself; this
+    # is where the two are held to each other instead, so neither can grow a reason alone.
+    declared = frozenset(get_args(provider_failures.FailureReason))
+    assert declared == provider_failures._REASONS
