@@ -199,3 +199,16 @@ in its separate worktree; no new ingestion agent in this task.
   runtime again before live tests so long-lived processes receive that key.
 - Goal stays active. The same external blocker has now occurred in two consecutive
   goal turns; do not claim success or silently replace the configured provider.
+
+
+### Blocked goal checkpoint
+
+- Third consecutive goal-turn check at23:32Z returned the same provider HTTP403,
+  API key weekly limit exceeded (provider-recheck-3.json). No user response restored
+  access. Marked the goal blocked after the required three-turn audit, not complete.
+- Implementation and runtime readiness are preserved. Remaining work requires live
+  model calls: controlled skill probes, two four-brand generation rounds, independent
+  visual/source review, editable-save/export checks and240-second delivery.
+- Resume after the user restores the key limit or configures an approved replacement.
+  A replacement key needs an idle runtime reload. Do not repeat failed generation
+  batches, narrow the quality goal, or claim304 local tests establish ad quality.
