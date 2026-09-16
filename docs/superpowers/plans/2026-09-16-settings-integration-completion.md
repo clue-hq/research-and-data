@@ -370,15 +370,18 @@ desktop and narrow viewports against the approved frames; no table-cell overlap 
 
 - [ ] Sign in as owner/admin through the browser, edit/reload profile and workspace name, and verify
   browser → API → DB results. Restore temporary test names and check project accounts too.
-- [ ] Send one invitation to the already-authorized test recipient through Members. Avoid a
+- [x] Send one invitation to the already-authorized test recipient through Members. Avoid a
   separate provider user-lookup prerequisite. Keep the address in the session/application, not
   committed test fixtures or this document.
-- [ ] Record the backend outcome honestly: provider acceptance is not inbox delivery. If the
+- [x] Record the backend outcome honestly: provider acceptance is not inbox delivery. If the
   address already belongs to a Clerk user and returns `created_no_email`, that validates only
   the existing-user path; a genuinely new address is needed to prove the email path.
-- [ ] Have the recipient open the email and complete signup/acceptance. A localhost redirect must
+- [x] Have the recipient open the email and complete signup/acceptance. A localhost redirect must
   be opened on the machine running the app; for another device use an agreed reachable test
-  origin. Confirm an active Clue membership, correct role, selected workspace and joined date.
+  origin. The user confirmed receipt and successful acceptance on 2026-09-16 after the required
+  password fix; a fresh Members page shows the joined Member and today's joined date.
+- [ ] Independently verify the invitee's selected workspace and destination after acceptance in
+  their signed-in session. The inviting administrator's Members page does not establish this.
 - [ ] Walk role change, removal, blocked access, re-admission and revocation using the test member.
   Preserve owner/self guards. Observe failed-delivery guidance without adding resend behavior.
 - [ ] Cover expiry, wrong verified address, revoked token, replay, stale actor and provider failure

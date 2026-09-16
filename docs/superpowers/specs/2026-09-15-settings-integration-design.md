@@ -323,6 +323,12 @@ dummies by ruling, not a fallback for a failed read.
 
 ### 6.2 Page composition
 
+Responsive navigation ruling (2026-09-16): at widths up to 860px, collapse Settings navigation
+behind a sidebar icon beside the page heading. It opens the same vertical navigation in a left
+drawer; do not convert it into a horizontal top bar. Close on navigation, outside click or Escape,
+restore focus to the trigger, and dismiss the drawer when returning to the permanent desktop
+sidebar. Use the existing sidebar icon, dialog primitive and design tokens.
+
 The catch-all route parses the section, entity and view with the dummy's `SettingsRouteSchema`,
 loads only the section's data on the server (profile, workspace or members), and renders the
 lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing, Pages and Data model render

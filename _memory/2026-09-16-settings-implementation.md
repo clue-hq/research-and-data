@@ -95,3 +95,22 @@ escalation. Native Arc inspection stalled and returned an unrelated page; a sepa
 at the IPv4 loopback address was connection-refused. Neither establishes browser acceptance proof.
 User must refresh the original invitation page, choose a password and finish acceptance; final
 membership/redirect validation remains outstanding. No remote push.
+
+Responsive Settings follow-up: replaced the <=860px horizontal navigation with a sidebar icon
+beside the page heading and a vertical left drawer. Desktop and mobile share SettingsNavigation;
+Base UI Dialog owns focus trapping, Escape, outside-click dismissal and focus restoration. Picking
+a destination or resizing to desktop closes the drawer. Existing product tokens and sidebar icon
+are reused; coarse pointers get a 44px target and reduced-motion disables transitions.
+
+Verification through ChatGPT/CUA: checked 739x988 Members, 390x844 Profile and 1280x900 desktop;
+opening, keyboard focus wrap, Escape/return focus, route selection, outside click and open-drawer
+resize to desktop all passed. Temporary viewport override reset; original Members tab restored.
+Design-system build, lint and production Next build/type check passed. Lint retains only the two
+existing design-editor warnings. git diff --check passed. No new standalone tests for this small
+UI change; interactions were exercised in the real authenticated app.
+
+Invitation acceptance follow-up: the user confirmed acceptance now works. Fresh Members reload
+shows the approved test invitee as a joined Member with the current joined date. This closes the
+send/receipt/signup/acceptance proof; the invitee's own selected workspace/redirect remains a
+separate unobserved check. Role/removal/re-admission live checks and Research fields/Pages work
+remain open as listed in the plan. No additional invitations, role changes or remote push.
