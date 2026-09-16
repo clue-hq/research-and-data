@@ -144,6 +144,8 @@ the request id at the root; `tests/api/test_agent_registry_wiring.py::test_desig
 asserts `openai/gpt-5.6-terra` but resolves `openai/x-ai/grok-4.6` with and without `.env` (stale pin
 AND a doubled provider prefix worth a look).
 
+**PR:** https://github.com/clue-hq/research-and-data/pull/58 onto `research-streaming` (opened 2026-09-16 at the founder's request; the Conductor default target `integration/design-improvement` does not contain research-streaming and would have carried 290 foreign commits — founder chose research-streaming).
+
 **OWED — founder-triggered:** the twelve-point browser walk (plan Task 16 step 3) is parked: the
 runbook ports are held by the san-salvador stack; stop it and run `./scripts/dev_stack_melbourne.sh up`
 (login per DEV_STACK.md), or say the word and the controller runs the walk. `make db-smoke` wiped and
