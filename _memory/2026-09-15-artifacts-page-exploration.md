@@ -112,3 +112,44 @@ gates + walk). Execution not started.**
 6. Download: reuse the real scene export vs the dummy's thumbnail re-encode; CSV needs
    `tableContent` (target-accounts cards are not design artifacts here).
 7. Preview dialog's "Open editor" link shape (`?kind=&edit=1`) vs our route.
+
+## Closing entry — implementation landed 2026-09-16 (branch `artifacts-page`, 26 commits 5a6582b20..02c4886b5)
+
+Executed via subagent-driven development: Opus implementers, every review/verification/ruling by the
+controller first-hand (ledger: `.superpowers/sdd/2026-09-15-artifacts-page-integration/progress.md`).
+Rebased onto the san-salvador worktree's `research-streaming` (440b6a7db) before execution.
+
+**Landed.** Migrations `5f2bd1b4b82d` (`design_document.archived_at`) and `323081354b51`
+(`design_document_user_mark`); `GET /frontend/v1/artifacts` (leg-derived, workspace-wide, keyset
+cursor, 400 INVALID_CURSOR, `artifacts.library_read` span, the read-surface resolver now stamps
+`workspace_id` on the span in header mode); `PUT …/artifacts/{id}/saved`, `POST …/artifacts/{id}/viewed`
+(principal-gated, metric `artifacts.mark.written`); erasure deletes marks; design DAL
+`rename_document` (row + JSON title, version bump) / `set_document_archived`; governed tools
+`design_rename_document@1` / `design_set_document_archived@1` (ungranted, human-only; metrics
+`design.document.renamed` / `.archived`) behind `PUT /documents/{id}/title` and `/archived`;
+archived rows leave `project_design_documents`; frontend `src/features/artifacts/` (model, cursor-walking
+repository, marks + document-write repositories, the lifted library + preview + CSS, actions hook as
+the single catch site), route `/artifacts`, gallery library mode (project on cards, project
+filter/group, three sorts), `?open=` read-once param on the chats route, editor header rename
+persisted through a `use-artifact-rename` hook, contract doc `apps/frontend/docs/api-contracts/artifacts.md`,
+lane wrapper `scripts/dev_stack_melbourne.sh`, lane DB `clue_melbourne`.
+
+**Verified first-hand.** Backend named suites 113 passed (3 pre-existing reds, below); ruff + mypy clean;
+logging-discipline guard green; db-smoke clean on a fresh schema; one alembic head. Frontend gate
+(design-system build, lint, build) green; 2,282 unit tests pass; `ƒ /artifacts` in the route table.
+
+**Pre-existing reds on research-streaming (not this branch's):** `tests/api/test_frontend_read_app.py`
+two tests assert `X-Request-Id` is absent on out-of-prefix routes — lane 3 slice 2 (d702dac4b) binds
+the request id at the root; `tests/api/test_agent_registry_wiring.py::test_design_profile_resolves_with_the_full_granted_write_surface`
+asserts `openai/gpt-5.6-terra` but resolves `openai/x-ai/grok-4.6` with and without `.env` (stale pin
+AND a doubled provider prefix worth a look).
+
+**OWED — founder-triggered:** the twelve-point browser walk (plan Task 16 step 3) is parked: the
+runbook ports are held by the san-salvador stack; stop it and run `./scripts/dev_stack_melbourne.sh up`
+(login per DEV_STACK.md), or say the word and the controller runs the walk. `make db-smoke` wiped and
+re-migrated the lane DB (synthetic residue only); seed two projects with design documents before the walk.
+
+**Deferred minors (ledger):** no index on `archived_at` / the workspace keyset path; the marks table's
+by_user index duplicates the PK prefix; for a web artifact "Download preview (PNG)" and "Original
+image" fetch the same file (dummy kept both); a refused header rename is console-only; the read's
+non-null `account_entity_id` path is untested; frontend_read CORS is GET/OPTIONS (writes ride the BFF).
