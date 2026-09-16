@@ -45,7 +45,6 @@ from lumen_api.design_store import DesignBlobStore
 @pytest.fixture(autouse=True)
 def _brandfetch_vendor_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "brandfetch_api_key", "")
-    monkeypatch.setattr(settings, "logo_dev_secret_key", "")
 
 
 @pytest.fixture(autouse=True)

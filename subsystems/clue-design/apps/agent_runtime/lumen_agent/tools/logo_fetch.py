@@ -6,7 +6,7 @@ only in how a registered asset reaches their document — the WebDoc op key is
 here: normalize the input, run the provider and official-site rungs, and shape one ingest call per
 resolved cell of the 2x2 family.
 
-Logo.dev, Brandfetch and the in-house LADDER propose original candidates for
+Brandfetch and the in-house LADDER propose original candidates for
 every cell. Providers validate exact product identity before downloading, and
 `logo_arbiter.choose_cells` picks the best one per cell -- measured ink for the
 surface first, because a vendor theme label is a hint, never proof.
@@ -112,16 +112,6 @@ def _vendor_rung(site: str, company_name: Optional[str]):
     return fetch_vendor_family(site, company_name=company_name)
 
 
-def _logo_dev_rung(site: str, company_name: str | None):
-    from lumen_ingestion.logo_dev import fetch_logo_dev_family
-    from py_lumen_config import settings
-
-    return fetch_logo_dev_family(
-        site, company_name=company_name, secret_key=settings.logo_dev_secret_key,
-        base_url=settings.logo_dev_api_base_url, timeout_s=settings.logo_dev_timeout_s,
-    )
-
-
 def _ladder_rung(site: str, company_name: Optional[str]):
     from lumen_ingestion import logo_ladder
 
@@ -135,7 +125,7 @@ def fetch_logo_family(
     force_refresh: bool = False,
     cache=None,
 ) -> LogoFetchOutcome:
-    """Cache -> Logo.dev + Brandfetch + official-site ladder -> arbiter.
+    """Cache -> Brandfetch + official-site ladder -> arbiter.
 
     Both sources propose; the arbiter picks per cell.
 
@@ -158,7 +148,11 @@ def fetch_logo_family(
             not company_name
             or (hit.company or "").strip().casefold() == company_name.strip().casefold()
         )
-        if same_name:
+        supported_sources = hit is not None and all(
+            asset.source in {"brandfetch", "ladder", "ladder-materialized"}
+            for asset in [*hit.prepared, *hit.alternatives]
+        )
+        if same_name and supported_sources:
             hit.cache_hit = True
             return hit
 
@@ -167,17 +161,6 @@ def fetch_logo_family(
     vendor_extras: list = []
     notes: List[str] = []
     vendor_notes: List[str] = []
-    logo_dev_cells: dict = {}
-    try:
-        logo_dev_cells, extras, provider_notes = _logo_dev_rung(site, company_name)
-        vendor_extras.extend(extras)
-        vendor_notes.extend(provider_notes)
-    except VendorCredentialsMissing:
-        notes.append("logo.dev rung disabled: no LOGO_DEV_SECRET_KEY configured")
-    except VendorLookupFailed as error:
-        notes.append(f"logo.dev rung degraded ({error.code}): {error.message}")
-    for name, cell in logo_dev_cells.items():
-        cells_by_source[name].append(cell)
     try:
         vendor_cells, extras, provider_notes = _vendor_rung(site, company_name)
         vendor_extras.extend(extras)
@@ -198,7 +181,7 @@ def fetch_logo_family(
         # A blocked or unreachable site cannot un-answer what the vendor already
         # served, so a vendor-only family stands. With no vendor candidate to
         # keep, that failure IS the answer -- re-raise.
-        if not vendor_cells and not logo_dev_cells:
+        if not vendor_cells:
             raise
         notes.append(
             f"ladder unavailable ({error.code}): {error.message}; vendor candidates only"

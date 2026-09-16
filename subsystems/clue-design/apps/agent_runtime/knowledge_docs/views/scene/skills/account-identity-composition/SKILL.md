@@ -30,7 +30,8 @@ Inspect source provenance, `cache_hit`, missing cells and identity; refresh only
 under the tool's wrong/outdated-logo condition. View the suitable returned
 `*_lockup` first with `view(target="asset:<asset_id>")`. Compare relevant returned
 alternatives when that cell is unsuitable, recording why. The filename or cell
-label cannot prove that a parent-company logo identifies the requested product.
+label cannot prove the requested identity: parent, product, loyalty-program and
+corporate marks are not interchangeable. Verify the visible name against the brief.
 
 Choose variant and surface together. Inspect ink, transparency, baked-in background,
 aspect and resolution. A favicon can be a compact anchor under the tool's fallback
@@ -39,6 +40,9 @@ complete lockup. With only a compact mark, compose at its supported scale and le
 copy carry prominence. Use an allowed name callout when no suitable logo exists;
 a required exact mark remains a gap needing a supplied asset.
 `needs_review` registers nothing. Never redraw, recolor, stretch or generate marks.
+Inspect the advertiser as carefully as the target: a square social avatar with a
+baked-in tile is not a transparent wordmark. Fetch a suitable original when needed.
+Do not add a detached symbol beside a complete lockup that already includes it.
 
 ## Build one visible group
 
@@ -48,6 +52,10 @@ Connect identity and message through alignment, proximity or meaningful artwork.
 At feed size, identify who is speaking without consulting the brief. A target
 wordmark must not overwhelm the advertiser in a paired treatment. Compare visible
 ink and recognition, not just frame dimensions or nominal scale.
+Honor a large-target request through readable, prominent identity within the
+whole composition. A giant detached mark above a tiny advertiser is not a paired
+identity group. Keep both identities visually connected unless the brief asks
+for an explicitly separate target-only treatment.
 
 Try a suitable authentic variant on the intended field. A required contrasting
 field should connect identity and message through its extent, alignment and

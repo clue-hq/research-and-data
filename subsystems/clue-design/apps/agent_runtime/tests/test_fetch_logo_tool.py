@@ -38,33 +38,32 @@ def _vendor_rung_disabled(monkeypatch):
     monkeypatch.setattr(logo_fetch, "_logo_dev_rung", disabled, raising=False)
 
 
-def test_logo_dev_original_is_attributed_and_usable_when_site_is_blocked(monkeypatch):
+def test_brandfetch_original_is_attributed_and_usable_when_site_is_blocked(monkeypatch):
     from lumen_ingestion.capture.net import CaptureError
     from lumen_ingestion.logo_family import FamilyCell
 
     cell = FamilyCell(
         cell="light_lockup", body=_svg(), content_type="image/svg+xml",
-        source="logo_dev", origin_url="https://img.logo.dev/acme.com",
+        source="brandfetch", origin_url="https://asset.brandfetch.io/acme/logo.svg",
         evidence={"vendor_identity": {"domain": "acme.com", "name": "Acme", "passed": True}},
     )
     monkeypatch.setattr(
-        logo_fetch, "_logo_dev_rung", lambda site, company: ({"light_lockup": cell}, [], [])
+        logo_fetch, "_vendor_rung", lambda site, company: ({"light_lockup": cell}, [], [])
     )
     def blocked(site, company):
         raise CaptureError("blocked", "unavailable")
     monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
     outcome = logo_fetch.fetch_logo_family("acme.com", company_name="Acme")
     assert outcome.status == "ok"
-    assert outcome.prepared[0].provenance["created_by"] == "logo_dev"
+    assert outcome.prepared[0].provenance["created_by"] == "brandfetch"
     assert outcome.prepared[0].body == cell.body
     assert outcome.identity["passed"] is True
 
 
-def test_logo_dev_unavailable_still_uses_brandfetch(monkeypatch):
-    from lumen_ingestion.logo_vendor import VendorLookupFailed
-    def quota(site, company):
-        raise VendorLookupFailed("quota", "quota reached")
-    monkeypatch.setattr(logo_fetch, "_logo_dev_rung", quota)
+def test_retired_provider_is_never_contacted(monkeypatch):
+    def retired(site, company):
+        pytest.fail("Retired provider must not receive requests or credentials")
+    monkeypatch.setattr(logo_fetch, "_logo_dev_rung", retired, raising=False)
     monkeypatch.setattr(
         logo_fetch, "_vendor_rung",
         lambda site, company: (_vendor_cells("light_lockup"), [], []),
@@ -72,7 +71,21 @@ def test_logo_dev_unavailable_still_uses_brandfetch(monkeypatch):
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
     outcome = logo_fetch.fetch_logo_family("acme.com")
     assert outcome.cells == {"light_lockup": "brandfetch"}
-    assert any("logo.dev" in note and "quota" in note for note in outcome.notes)
+    assert outcome.prepared[0].provenance["created_by"] == "brandfetch"
+
+
+def test_retired_provider_cache_is_refetched(monkeypatch):
+    cache = _RecordingCache()
+    monkeypatch.setattr(
+        logo_fetch, "_vendor_rung",
+        lambda site, company: (_vendor_cells("light_lockup"), [], []),
+    )
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: _resolution({}))
+    previous = logo_fetch.fetch_logo_family("acme.com", company_name="Acme", cache=cache)
+    previous.prepared[0].source = "logo_dev"
+    result = logo_fetch.fetch_logo_family("acme.com", company_name="Acme", cache=cache)
+    assert not result.cache_hit
+    assert result.prepared[0].source == "brandfetch"
 
 
 def test_cached_host_cannot_bypass_changed_company_identity(monkeypatch):

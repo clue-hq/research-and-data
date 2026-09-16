@@ -51,7 +51,8 @@ For a new account message, construct the argument before choosing a headline:
    do not assign every advertiser the same marketing persona.
 2. Select one evidenced advertiser mechanism that helps with that task. Inspect
    relevant product/source candidates for what the product actually does. A brand
-   slogan establishes voice, not a mechanism or a target's need.
+   slogan establishes voice, not a mechanism or a target's need. Bind capabilities
+   to the exact named product; a brand's portfolio does not prove one model does it all.
 3. Write a concrete proposition connecting that mechanism to the proposed task,
    then choose headline and support that express it together. Address the target
    as an invitation when only its identity is known. Record inferred relevance
