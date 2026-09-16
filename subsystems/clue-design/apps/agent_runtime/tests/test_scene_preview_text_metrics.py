@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from agent_fixtures import runtime_config
+from lumen_agent.native_copy import observe_native_text
 from lumen_agent.tools.substrate import LumenDesignTools
 from lumen_agent.tools.view import _normalize_image_bytes, _preview_text_table
 from test_scene_preview_proxy import _decode, _view
@@ -215,3 +216,111 @@ def test_unresolved_opacity_does_not_certify_a_text_node_as_hidden():
     caption = _preview_text_table(scene, "page", 1080, 360, resolved=True)
     assert "| copy | Unknown opacity | unavailable (unresolved opacity) | unavailable |" in caption
     assert "0 zero-opacity" in caption
+
+
+def _line_scene():
+    # Measured vertical geometry from the failed Clue grouping review, with
+    # neutral copy. The allocated bottom is 320; the last painted line ends
+    # at 284.5. Treating 320 as the text edge understates the gap by 35.5pt.
+    return {
+        "pages": {"page": {
+            "size": {"width": 1080, "height": 1080, "unit": "pt"},
+            "children": ["support"],
+        }},
+        "nodes": {"support": {
+            "kind": {"kind": "text", "content": "Supporting message", "font_size": 21},
+            "computed": {
+                "layout_bounds": {"x": 64, "y": 252, "width": 820, "height": 68},
+                "text_lines": [{"x": 64, "y": 252.5, "width": 696.42, "height": 32}],
+            },
+        }},
+    }
+
+
+def test_review_evidence_distinguishes_painted_line_edges_from_allocated_box_slack():
+    scene = _line_scene()
+    row = observe_native_text(scene, "page")["occurrences"][0]
+    geometry = row.get("line_geometry")
+    assert geometry is not None, "copy review omits measured line-edge evidence"
+    assert geometry["status"] == "ok"
+    assert geometry["line_count"] == 1
+    assert geometry["line_top"] == 252.5
+    assert geometry["line_bottom"] == 284.5
+    assert geometry["allocated_bottom"] == 320
+    assert 344 - geometry["line_bottom"] == 59.5
+    caption = _preview_text_table(scene, "page", 1080, 360, resolved=True)
+    assert "| support | 1 | 252.50 | 284.50 | 252.00 | 320.00 |" in caption
+    assert "not pixel-tight glyph ink" in caption
+    assert "page-space pt" in caption
+
+
+def test_multiline_geometry_reports_full_measured_extent_not_allocated_height():
+    scene = _line_scene()
+    scene["nodes"]["support"]["computed"].update(
+        layout_bounds={"x": 72, "y": 168, "width": 936, "height": 142},
+        text_lines=[
+            {"x": 72, "y": 168.125, "width": 907.32, "height": 71},
+            {"x": 72, "y": 239.125, "width": 323.11, "height": 71},
+        ],
+    )
+    geometry = observe_native_text(scene, "page")["occurrences"][0].get("line_geometry")
+    assert geometry is not None
+    assert geometry["line_count"] == 2
+    assert geometry["line_bottom"] == 310.125
+    assert 391.5 - geometry["line_bottom"] == 81.375
+
+
+@pytest.mark.parametrize("invalid", [
+    None, [], [{"x": 0, "y": 252, "width": 20, "height": float("nan")}],
+    [{"x": 0, "y": 252, "width": 20, "height": -1}],
+])
+def test_missing_or_invalid_line_geometry_never_falls_back_to_allocated_box(invalid):
+    scene = _line_scene()
+    scene["nodes"]["support"]["computed"]["text_lines"] = invalid
+    geometry = observe_native_text(scene, "page")["occurrences"][0].get("line_geometry")
+    assert geometry is not None
+    assert geometry["status"] == "unavailable"
+    assert "line_bottom" not in geometry
+
+
+def test_live_preview_and_copy_inventory_share_current_line_geometry_without_more_calls(
+    scene_runtime, monkeypatch,
+):
+    tools, core = scene_runtime('''page square size(1080,1080,px)
+  support text "A short second read" p(64,252) s(820,68) font_size(21) line_height(1.5)
+''')
+    scene = copy.deepcopy(tools.scene)
+    receipt = copy.deepcopy(tools._preview_receipt)
+
+    def no_new_call(*args, **kwargs):
+        pytest.fail("line evidence must use the current preflight geometry")
+
+    monkeypatch.setattr(core, "_run", no_new_call)
+    row = json.loads(tools.inspect("copy_review"))["occurrences"][0]
+    geometry = row.get("line_geometry")
+    assert geometry is not None
+    assert geometry["status"] == "ok"
+    assert geometry["allocated_bottom"] == 320
+    assert 280 < geometry["line_bottom"] < 290
+    caption = _caption(_view(tools))
+    assert (
+        f"| support | 1 | {geometry['line_top']:.2f} | {geometry['line_bottom']:.2f} |"
+    ) in caption
+    assert tools.scene == scene and tools._preview_receipt == receipt
+
+
+@pytest.mark.parametrize("transform", [{"rotation": 15}, {"skew_y": 10}, {"flip_y": True}])
+def test_transformed_ancestor_does_not_report_unrotated_lines_as_visible_edges(transform):
+    scene = _line_scene()
+    scene["pages"]["page"]["children"] = ["parent"]
+    scene["nodes"]["parent"] = {
+        "kind": {"kind": "frame"}, "children": ["support"], "transform": transform,
+    }
+    geometry = observe_native_text(scene, "page")["occurrences"][0].get("line_geometry")
+    assert geometry is not None
+    assert geometry["status"] == "unavailable"
+    assert "transform" in geometry["reason"]
+    scene["nodes"]["support"]["position_mode"] = "absolute"
+    geometry = observe_native_text(scene, "page")["occurrences"][0]["line_geometry"]
+    assert geometry["status"] == "ok"
+    assert geometry["line_bottom"] == 284.5

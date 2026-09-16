@@ -23,6 +23,47 @@ def finite_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def _text_line_geometry(node: dict, issue: str | None) -> dict:
+    """Expose existing core line edges, never infer ink from an allocated box.
+
+    The caller owns current preflight/preview binding. These are unrotated
+    page-space line boxes, not pixel-tight ink or an optical-spacing verdict.
+    """
+    def unavailable(reason: str) -> dict:
+        return {"status": "unavailable", "reason": reason}
+
+    if issue:
+        return unavailable(issue)
+    computed = node.get("computed") or {}
+    lines = computed.get("text_lines")
+    box = computed.get("layout_bounds")
+    if not isinstance(lines, list) or not lines or not isinstance(box, dict):
+        return unavailable("measured text lines or allocated bounds are missing")
+
+    def valid_rect(rect: object) -> bool:
+        return isinstance(rect, dict) and all(
+            finite_number(rect.get(key)) for key in ("x", "y", "width", "height")
+        ) and rect["width"] >= 0 and rect["height"] >= 0
+
+    if not valid_rect(box) or any(not valid_rect(line) for line in lines):
+        return unavailable("invalid measured text lines or allocated bounds")
+    painted = [line for line in lines if line["width"] > 0 and line["height"] > 0]
+    if not painted:
+        return unavailable("no nonempty measured text lines")
+    edges = {
+        "line_top": min(line["y"] for line in painted),
+        "line_bottom": max(line["y"] + line["height"] for line in painted),
+        "allocated_top": box["y"],
+        "allocated_bottom": box["y"] + box["height"],
+    }
+    if not all(finite_number(value) for value in edges.values()):
+        return unavailable("unrepresentable line edges")
+    return {
+        "status": "ok", "coordinate_space": "page_unrotated_pt",
+        "line_count": len(painted), **edges,
+    }
+
+
 def observe_native_text(scene: dict, page_id: str) -> dict:
     """Inventory reachable nonempty text, retaining known hidden exclusions."""
     result = {"occurrences": [], "excluded": [], "unresolved": []}
@@ -34,9 +75,12 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
         return result
     nodes = scene.get("nodes") or {}
     visited: set[str] = set()
-    pending = [(node_id, False, None, None) for node_id in reversed(page.get("children") or [])]
+    pending = [
+        (node_id, False, None, None, None)
+        for node_id in reversed(page.get("children") or [])
+    ]
     while pending:
-        node_id, ancestor_hidden, ancestor_issue, binding_issue = pending.pop()
+        node_id, ancestor_hidden, ancestor_issue, binding_issue, geometry_issue = pending.pop()
         identity = {"page_id": page_id, "node_id": node_id}
         if node_id in visited:
             result["unresolved"].append({**identity, "reason": "ambiguous repeated reachability"})
@@ -49,7 +93,7 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
         # The renderer's pinned pass paints from page space, outside ancestor
         # opacity/transform. Still traverse hidden parents to find pinned text.
         if node.get("position_mode") == "absolute":
-            ancestor_hidden, ancestor_issue, binding_issue = False, None, None
+            ancestor_hidden, ancestor_issue, binding_issue, geometry_issue = False, None, None, None
         opacity = node.get("opacity", 1)
         issue = ancestor_issue
         opacity_resolved = node.get("opacity_token") is None and finite_number(opacity)
@@ -59,6 +103,8 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
         transform = node.get("transform") or {}
         if any(transform.get(key, 0) != 0 for key in ("rotation", "skew_x", "skew_y")):
             issue = "unsupported transform"
+        if transform.get("flip_x") or transform.get("flip_y"):
+            geometry_issue = "unsupported transform for line edges"
         kind = node.get("kind") or {}
         if kind.get("kind") == "instance" and not node_hidden:
             result["unresolved"].append(
@@ -66,7 +112,7 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
             )
         if kind.get("kind") in ("frame", "group", "auto_layout"):
             pending.extend(
-                (child, node_hidden, issue, binding_issue)
+                (child, node_hidden, issue, binding_issue, geometry_issue)
                 for child in reversed(node.get("children") or [])
             )
         if kind.get("kind") != "text" or not (kind.get("content") or "").strip():
@@ -88,12 +134,15 @@ def observe_native_text(scene: dict, page_id: str) -> dict:
         font_size = kind.get("font_size")
         if not finite_number(font_size) or font_size <= 0:
             issue = "invalid resolved font size"
+        if (page.get("size") or {}).get("unit") != "pt":
+            geometry_issue = "canonical page units are missing or unsupported"
         result["occurrences"].append(
             {
                 **row,
                 "font_size": font_size,
                 "observation_issue": issue,
                 "binding_issue": binding_issue,
+                "line_geometry": _text_line_geometry(node, issue or geometry_issue),
             }
         )
     return result

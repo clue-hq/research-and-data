@@ -254,6 +254,7 @@ def _preview_text_table(
 
     inventory = observe_native_text(scene, page_id)
     rows: list[str] = []
+    line_rows: list[str] = []
     hidden = len(inventory["excluded"])
     instances = sum("instance" in item["reason"] for item in inventory["unresolved"])
     omitted = 0
@@ -271,6 +272,17 @@ def _preview_text_table(
             if issue else f"{source_em:.2f} | {proxy_em:.2f}"
         )
         rows.append(f"| {cell(node_id)} | {cell(row['text'], 56)} | {values} |")
+        geometry = row["line_geometry"]
+        if geometry["status"] == "ok":
+            edges = " | ".join(
+                f"{geometry[key]:.2f}"
+                for key in ("line_top", "line_bottom", "allocated_top", "allocated_bottom")
+            )
+            line_rows.append(f"| {cell(node_id)} | {geometry['line_count']} | {edges} |")
+        else:
+            line_rows.append(
+                f"| {cell(node_id)} | unavailable ({cell(geometry['reason'])}) | — | — | — | — |"
+            )
 
     caption = (
         f"\n\nNative text on page {cell(page_id)}: resolved em size in source-preview pixels "
@@ -288,6 +300,16 @@ def _preview_text_table(
         + "\n\n| Node | Authored text sample | Source preview em px | 360px proxy em px |"
         + "\n| --- | --- | ---: | ---: |\n"
         + "\n".join(rows)
+        + "\n\nCore-measured vertical text edges in unrotated page-space pt (not proxy pixels). "
+        "Line boxes include font leading; they are not pixel-tight glyph ink. "
+        "Allocated boxes can include empty slack. For related text, subtract the upper "
+        "node's line bottom from the lower node's line top to inspect their line-box gap; "
+        "relationships and optical spacing still require the image. Font fallback or "
+        "heuristic measurement limits remain; this does not certify legibility."
+        + "\n\n| Node | Nonempty lines | Line top | Line bottom |"
+        " Allocated top | Allocated bottom |"
+        + "\n| --- | ---: | ---: | ---: | ---: | ---: |\n"
+        + "\n".join(line_rows)
     )
 
 

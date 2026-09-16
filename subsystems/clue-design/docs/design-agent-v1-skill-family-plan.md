@@ -3073,3 +3073,44 @@ measure a fresh finished delivery after the race fix; and prove that exported
 files are saved and match their scenes. Keep the same ordinary-request boundary
 and frozen references. Expand family coverage after those results, rather than
 counting additional instructions as successful creative coverage.
+
+### Task 44 — expose measured text edges; do not mistake evidence for taste
+
+Read-only trace review of the failed Conduit awareness and Clue product cases
+confirmed explicit `font_size($type.size.lg)` selection resolving to 21px.
+The component guide was fully delivered, the 360px proxy was viewed, and the
+agent nevertheless accepted 7px nominal proxy text as “decipherable.” This is
+not a renderer shrink or a missing skill load. Another mandatory guide read is
+not a supported fix. Reference analysis was qualitative; context growth is
+observable, but neither proves why the model chose that token.
+
+A separate grouping error is measurable. Clue's critique used the support
+box bottom at y=320 and product top at y=344 to claim a 24-point gap. The last
+measured support line ends at y=284.5: the line-box-to-product gap is 59.5.
+Conduit's last headline line to first support line is 81.375 points.
+
+The shared native-text observation now exposes core-measured line top/bottom
+and allocated top/bottom separately, in unrotated page-space points. The same
+evidence is included with the existing preview, using its current preflight
+and byte binding, without another core or provider call. Missing/invalid lines,
+unsupported transforms and unresolved observations remain unavailable; the
+engine's page-level pinned semantics are preserved. These are line boxes,
+not pixel-tight ink, and no automatic neighbor relationship or pass threshold
+is inferred. Existing acceptance and optional font policies are unchanged.
+
+Verification: ten new regressions failed before implementation; the focused
+matrix passed **160 tests**. After independent review, the complete runtime
+suite passed **2,570 tests, 1 skipped in 93.29s**, exit zero. A read-only replay
+of all eleven saved scenes produced observations for thirty native text nodes.
+Evidence is retained in `qualified-delivery-20260915/line-geometry-replay.json`
+and `line-geometry-runtime-tests.log`. The new native-copy code and test file
+pass Ruff; the view module retains pre-existing lint findings, with none added
+by this change. No engine, database, brand kit or saved creative was changed.
+
+This improves evidence quality, not yet creative quality. The approved batch
+remains 0/11 fully qualified and 1/11 inside four minutes. Next typography work
+must test whether review distinguishes the user's rejected small/oversized
+support from the approved local composition. Keep those examples local to
+their brand and composition; do not turn the approved 32px into a universal
+rule. Any new provider diagnostic or generation batch is separate from the
+completed eleven-case approval; the optional sixty-call diagnostic is unused.

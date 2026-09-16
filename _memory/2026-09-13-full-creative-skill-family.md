@@ -1732,3 +1732,24 @@ skillreviewapproved. ThisisnotGrokorvisualqualification;typographyremainsopen.
   fictional probes do not establish improved live quality or delivery time.
   Next: typography/grouping calibration, fresh account-copy/race qualification,
   saved export-file proof. Optional sixty-call diagnostic remains unused.
+
+2026-09-15 Task44: measured text edges in review evidence
+- Independent trace audit confirms explicit21px token choice and permissive
+  self-review (“decipherable” at7px nominal feed scale). Complete components
+  guide and actual360px proxy were delivered. Missing instructions, renderer
+  shrink, or context size as the causal explanation are not established.
+- Clue critique used allocated support bottom320; measured line bottom284.5
+  makes gap to product344 equal59.5, not24. Conduit headline→support line-box
+  gap81.375. Shared native observation and preview now expose measured and
+  allocated vertical edges separately from current core geometry. No inferred
+  layout rule, font floor, acceptance change or extra core/provider call.
+- Ten regressions RED before implementation; focused160green. Independent
+  read-only review approved. Fullruntime2570passed1skipped93.29s. Native-copy
+  and testfile Ruff pass; existing view lint debt unchanged. Read-only replay
+  of11scenes/30textnodes retained under qualified-delivery-20260915 alongside
+  fulltestlog. No saved creative, brand kit, DB or engine mutation.
+- Typography sizing remains unqualified; do not confuse evidence enhancement
+  with visual success. Need bounded calibration of review against the user's
+  rejected-small/rejected-oversized/approved-local compositions before another
+  ordinary-request qualification. Eleven authorized cases consumed; optional
+  sixty-call diagnostic remains unapproved/unused. Runtime reload pending.
