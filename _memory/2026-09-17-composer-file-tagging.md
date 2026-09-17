@@ -165,3 +165,5 @@ one `auth_identity` row was inserted on the lane DB so the dev login maps to the
 - Note: the platform API is not `--reload`; a backend change needs
   `./scripts/dev_stack_hangzhou.sh restart-api` (run it in the background — a foreground timeout
   kills the freshly started servers).
+
+- PR: https://github.com/clue-hq/research-and-data/pull/61 (`file-tagging` → `research-streaming`, opened 2026-09-17; 19 commits, 40 files). The workspace's configured target `integration/design-improvement` is an ancestor of `research-streaming` and was deliberately not used.
