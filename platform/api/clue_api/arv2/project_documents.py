@@ -76,6 +76,8 @@ __all__ = [
     "WrittenDocument",
     "current_document_version",
     "current_plan_version",
+    "get_project_document",
+    "latest_project_document_version",
     "list_project_documents",
     "lock_project",
     "plan_document_id",
@@ -798,6 +800,52 @@ async def list_project_documents(
         )
     ).mappings()
     return tuple(_row(row) for row in rows.all())
+
+
+async def get_project_document(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, document_id: UUID
+) -> ProjectDocumentRow | None:
+    """One servable document of this project by its row id, or ``None``.
+
+    The composer's ``project_document`` context ref is validated through this read: a row of
+    another project, another workspace, an unservable status, or one whose bytes were never
+    written is indistinguishable from absence.
+    """
+
+    row = await _document(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        document_id=document_id,
+        servable_only=True,
+    )
+    if row is None or row["artifact_key"] is None:
+        return None
+    return _row(row)
+
+
+async def latest_project_document_version(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, path: str
+) -> int | None:
+    """The highest servable version of one path in this project — what the Gallery lists."""
+
+    value = (
+        await conn.execute(
+            text(
+                "SELECT version FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                "  AND path = :path AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
+                "ORDER BY version DESC LIMIT 1"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "path": path,
+                "statuses": list(_SERVABLE_STATUSES),
+            },
+        )
+    ).scalar()
+    return None if value is None else int(value)
 
 
 async def _document(

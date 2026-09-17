@@ -613,6 +613,7 @@ async def _validated_submission_context(
     refs: tuple[Any, ...],
     design_leg_document_id: str | None = None,
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -630,6 +631,7 @@ async def _validated_submission_context(
             refs=requested,
             design_leg_document_id=design_leg_document_id,
             storage=storage,
+            project_id=project_id,
         )
     except ContextReferenceError as exc:
         if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
@@ -1310,6 +1312,7 @@ def build_chat_router(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=requested,
+                    project_id=project_id,
                 )
             except ContextReferenceError as exc:
                 raise _refuse(
@@ -2355,6 +2358,7 @@ def build_chat_router(
                         None if open_leg is None else open_leg.get("document_id")
                     ),
                     storage=storage,
+                    project_id=project_id,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
                 # approving a directive-confirmation gate atomically confirms AND launches via

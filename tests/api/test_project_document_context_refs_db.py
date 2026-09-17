@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents.contracts import DomainObjectRef
 from clue_api.agent_turn_submission import insert_submission, submission_context_refs
 from clue_api.arv2.project_documents import ProjectPlanWrite, write_project_plan
+from clue_api.chat.composer_context import ContextReferenceError, validated_context_refs
 from clue_db import db_lifespan
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
@@ -162,5 +163,70 @@ def test_context_ref_type_is_check_bounded(tmp_path: Path) -> None:
                     ),
                     **kwargs,
                 )
+
+    run_async(scenario())
+
+
+def test_validated_context_refs_project_document_semantics(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            storage = FsStorage(tmp_path)
+            seeds = await _seed(conn, storage)
+            plan = seeds["plan"]
+
+            def ref(object_id: str, version: int | None) -> DomainObjectRef:
+                return DomainObjectRef(
+                    workspace_id=seeds["ws"],
+                    object_type="project_document",
+                    object_id=object_id,
+                    version=version,
+                )
+
+            accepted = await validated_context_refs(
+                conn,
+                workspace_id=seeds["ws"],
+                refs=(ref(str(plan.document_id), plan.version),),
+                project_id=seeds["project_id"],
+            )
+            assert accepted[0].version == plan.version
+
+            other = await seed_project(conn, seeds["ws"], name="Another project")
+            with pytest.raises(ContextReferenceError) as foreign:
+                await validated_context_refs(
+                    conn,
+                    workspace_id=seeds["ws"],
+                    refs=(ref(str(plan.document_id), plan.version),),
+                    project_id=other.project_id,
+                )
+            assert foreign.value.code == "CONTEXT_REF_NOT_FOUND"
+
+            newer = await write_project_plan(
+                conn,
+                storage,
+                ProjectPlanWrite(
+                    workspace_id=seeds["ws"],
+                    brand_id=seeds["brand_id"],
+                    project_id=seeds["project_id"],
+                    turn_id=uuid4(),
+                    user_id="usr_pdref",
+                    body=PLAN_BODY + "\nMore.\n",
+                    expected_version=plan.version,
+                ),
+            )
+            assert newer.version == plan.version + 1
+            # A ``ready`` version the writer retires is *superseded*, and each version is its own
+            # row id — so the tag of the version the user saw names a row that is no longer
+            # servable, which this read reports as absence rather than staleness. The still-
+            # servable-but-no-longer-latest shape (a ``confirmed`` row, which a new version does
+            # not retire) is the one that comes back ``CONTEXT_REF_STALE``.
+            with pytest.raises(ContextReferenceError) as superseded:
+                await validated_context_refs(
+                    conn,
+                    workspace_id=seeds["ws"],
+                    refs=(ref(str(plan.document_id), plan.version),),
+                    project_id=seeds["project_id"],
+                )
+            assert superseded.value.code == "CONTEXT_REF_NOT_FOUND"
+            await txn.rollback()
 
     run_async(scenario())

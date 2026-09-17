@@ -362,3 +362,144 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
     assert prepared[0].version == 11
     assert prepared[1].label == "Exact Account"
     assert prepared[1].version == 8
+
+
+PLAN_DOCUMENT = UUID("00000000-0000-0000-0000-00000000d0c1")
+
+
+def _plan_row(version: int = 2):
+    return SimpleNamespace(
+        document_id=PLAN_DOCUMENT,
+        path="project/plan.md",
+        kind="project-plan",
+        version=version,
+        status="ready",
+        updated_at=None,
+        artifact_key="ws/abc",
+        artifact_sha256="a" * 64,
+        icp_key=None,
+    )
+
+
+def test_project_document_refs_require_a_project_and_pin_the_latest_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_project_document(*_args: object, **kwargs: object):
+        return _plan_row() if kwargs["document_id"] == PLAN_DOCUMENT else None
+
+    async def latest_project_document_version(*_args: object, **_kwargs: object):
+        return 2
+
+    monkeypatch.setattr(composer_context, "get_project_document", get_project_document)
+    monkeypatch.setattr(
+        composer_context, "latest_project_document_version", latest_project_document_version
+    )
+
+    pinned = (_ref("project_document", PLAN_DOCUMENT, version=2),)
+    assert (
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=pinned,
+                project_id="prj_1",
+            )
+        )
+        == pinned
+    )
+
+    with pytest.raises(ContextReferenceError) as no_project:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=pinned,
+            )
+        )
+    assert no_project.value.code == "CONTEXT_REF_RELATIONSHIP_MISMATCH"
+
+    with pytest.raises(ContextReferenceError) as unpinned:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=(_ref("project_document", PLAN_DOCUMENT),),
+                project_id="prj_1",
+            )
+        )
+    assert unpinned.value.code == "CONTEXT_REF_STALE"
+
+    with pytest.raises(ContextReferenceError) as missing:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=(_ref("project_document", ACCOUNT_A, version=2),),
+                project_id="prj_1",
+            )
+        )
+    assert missing.value.code == "CONTEXT_REF_NOT_FOUND"
+
+
+def test_project_document_refs_refuse_a_superseded_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_project_document(*_args: object, **_kwargs: object):
+        return _plan_row(version=2)
+
+    async def latest_project_document_version(*_args: object, **_kwargs: object):
+        return 3
+
+    monkeypatch.setattr(composer_context, "get_project_document", get_project_document)
+    monkeypatch.setattr(
+        composer_context, "latest_project_document_version", latest_project_document_version
+    )
+    with pytest.raises(ContextReferenceError) as stale:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=(_ref("project_document", PLAN_DOCUMENT, version=2),),
+                project_id="prj_1",
+            )
+        )
+    assert stale.value.code == "CONTEXT_REF_STALE"
+
+
+def test_design_document_mentions_must_belong_to_the_project(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_document(*_args: object, **_kwargs: object):
+        return {"id": "doc_site", "doc_kind": "web", "current_version": 4}
+
+    async def project_design_documents(*_args: object, **_kwargs: object):
+        return ({"id": "doc_other"},)
+
+    from clue_design import documents
+
+    monkeypatch.setattr(documents, "get_document", get_document)
+    monkeypatch.setattr(composer_context, "project_design_documents", project_design_documents)
+    with pytest.raises(ContextReferenceError) as foreign:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=(_design_ref("design_document", "doc_site", version=4),),
+                project_id="prj_1",
+            )
+        )
+    assert foreign.value.code == "CONTEXT_REF_NOT_FOUND"
+
+    async def containing(*_args: object, **_kwargs: object):
+        return ({"id": "doc_site"},)
+
+    monkeypatch.setattr(composer_context, "project_design_documents", containing)
+    accepted = asyncio.run(
+        validated_context_refs(
+            object(),  # type: ignore[arg-type]
+            workspace_id="ws-r8-context",
+            refs=(_design_ref("design_document", "doc_site", version=4),),
+            project_id="prj_1",
+        )
+    )
+    assert accepted[0].object_id == "doc_site"

@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
 from clue_api.arv2.display.gather import SubjectRef, committee_members
+from clue_api.arv2.project_documents import (
+    get_project_document,
+    latest_project_document_version,
+)
 from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.design_leg_wiring import project_design_documents
 from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.frontend_read.accounts_list import read_spine_page
 from clue_core import EntityId
@@ -139,8 +144,15 @@ async def validated_context_refs(
     refs: Sequence[DomainObjectRef],
     design_leg_document_id: str | None = None,
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
-    """Validate tenancy, exact revisions, and any selected contact/account relationship."""
+    """Validate tenancy, exact revisions, project containment, and contact/account relationship.
+
+    ``project_id`` is the project the composer belongs to. ``project_document`` refs require it
+    (a Gallery file is only addressable inside its project); ``design_document`` refs are
+    additionally contained to the project's own design documents when it is given. The Home
+    bootstrap has no project yet and passes ``None``.
+    """
 
     if any(ref.workspace_id != workspace_id for ref in refs):
         raise ContextReferenceError(
@@ -318,6 +330,7 @@ async def validated_context_refs(
         if has_entity_refs
         else None
     )
+    project_design_ids: frozenset[str] | None = None
     for ref in refs:
         if ref.object_type == "design_document":
             # P3.1 (master plan §2.4): design ids are strings, not entity UUIDs, and the
@@ -343,6 +356,19 @@ async def validated_context_refs(
                     "CONTEXT_REF_STALE",
                     "a design document context reference no longer names the current version",
                 )
+            if project_id is not None:
+                if project_design_ids is None:
+                    project_design_ids = frozenset(
+                        str(item["id"])
+                        for item in await project_design_documents(
+                            conn, workspace_id=workspace_id, project_id=project_id
+                        )
+                    )
+                if ref.object_id not in project_design_ids:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "a design document context reference is not in this project",
+                    )
             continue
         if ref.object_type == "design_node":
             # Validated as one document-scoped set above. A node id is not a
@@ -351,6 +377,44 @@ async def validated_context_refs(
         if ref.object_type == "design_asset":
             # Validated as one bounded, scene-leg-scoped set above. Asset ids are opaque design
             # ids, never platform entity UUIDs.
+            continue
+        if ref.object_type == "project_document":
+            # A Gallery file. Always version-pinned to the latest servable row of its path: the
+            # picker only offers the latest, and a tag that has since been superseded is refused
+            # rather than silently repointed.
+            if project_id is None:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                    "a project document can be referenced only inside its project",
+                )
+            try:
+                document_id = UUID(ref.object_id)
+            except ValueError as exc:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a project document context reference is not available in this project",
+                ) from exc
+            row = await get_project_document(
+                conn, workspace_id=workspace_id, project_id=project_id, document_id=document_id
+            )
+            if row is None:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a project document context reference is not available in this project",
+                )
+            if ref.version is None or ref.version != row.version:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_STALE",
+                    "a project document context reference must pin the document's version",
+                )
+            latest = await latest_project_document_version(
+                conn, workspace_id=workspace_id, project_id=project_id, path=row.path
+            )
+            if latest != row.version:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_STALE",
+                    "a project document context reference no longer names the latest version",
+                )
             continue
         try:
             entity_id = EntityId(UUID(ref.object_id))
@@ -415,6 +479,7 @@ async def prepare_composer_context_entities(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
+    project_id: str | None = None,
 ) -> tuple[ComposerContextEntity, ...]:
     """Validate and hydrate an exact draft set without relying on the bounded mention catalog.
 
@@ -427,12 +492,14 @@ async def prepare_composer_context_entities(
         conn,
         workspace_id=workspace_id,
         refs=refs,
+        project_id=project_id,
     )
     prepared: list[ComposerContextEntity] = []
     for ref in validated:
         if ref.object_type not in {"account", "contact"}:
-            # This endpoint hydrates mention-picker entities only. Design refs can be present on
-            # durable messages, but they are presented from their owning design read models.
+            # This endpoint hydrates mention-picker entities only. Design and project-document
+            # refs can be present on durable messages, but they are presented from their owning
+            # read models.
             continue
         entity_id = EntityId(UUID(ref.object_id))
         if ref.object_type == "account":
