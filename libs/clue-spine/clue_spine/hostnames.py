@@ -22,6 +22,7 @@ from collections.abc import Collection, Iterator
 from itertools import count
 from typing import Literal
 
+import tldextract
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -150,6 +151,70 @@ def is_valid_hostname(value: str) -> bool:
 def public_origin(hostname: str, *, scheme: str, port: int | None) -> str:
     """``https://acme.pages.cluehq.ai`` or, in dev, ``http://acme.pages.localhost:8040``."""
     return f"{scheme}://{hostname}" + (f":{port}" if port else "")
+
+
+# --- custom hostnames: validation (spec §7.3) --------------------------------
+_EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), fallback_to_snapshot=True)
+_LABEL_SHAPE = re.compile(rf"^[a-z0-9](?:[a-z0-9-]{{{LABEL_MIN - 2},{LABEL_MAX - 2}}}[a-z0-9])$")
+
+
+class HostnameRefused(ValueError):
+    """A hostname or label the control plane refuses, with its closed-set code (spec §7.3)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def registrable_domain(hostname: str) -> str:
+    """The public-suffix registrable domain (``acme.co.uk`` for ``go.acme.co.uk``). Offline: the
+    bundled snapshot only, never a network fetch. An unknown suffix falls back to the last two
+    labels."""
+    parts = _EXTRACT(hostname)
+    if parts.suffix and parts.domain:
+        return f"{parts.domain}.{parts.suffix}"
+    labels = hostname.split(".")
+    return ".".join(labels[-2:]) if len(labels) >= 2 else hostname
+
+
+def validate_custom_hostname(value: str, *, system_suffix: str) -> str:
+    """Normalise and refuse with the spec §7.3 codes. Returns the normalised hostname.
+
+    Order is invalid → reserved → apex. The spec enumerates the rules invalid → apex → reserved,
+    but our own zone apex (``cluehq.ai``) matches BOTH the apex rule and the reserved rule, and it
+    must report ``hostname_reserved`` — "this is ours", not "pick a subdomain", since no subdomain
+    of it can be connected either. Reserved is therefore the narrower rule and is tested first.
+    Every other input refuses identically under either order.
+    """
+    try:
+        hostname = normalize_hostname(value)
+    except ValueError as error:
+        raise HostnameRefused("hostname_invalid", f"{value!r} is not a valid hostname") from error
+    ours = registrable_domain(system_suffix)
+    if hostname == ours or hostname.endswith("." + ours):
+        raise HostnameRefused("hostname_reserved", f"Hostnames under {ours} cannot be connected.")
+    registrable = registrable_domain(hostname)
+    if hostname == registrable:
+        raise HostnameRefused(
+            "hostname_is_apex",
+            f"A dedicated subdomain such as go.{registrable} is required; the bare domain "
+            f"{registrable} cannot be connected.",
+        )
+    return hostname
+
+
+def validate_label(label: str) -> str:
+    """A Clue-address label an admin picks by hand (spec §4.1 A1): 3-40 of ``[a-z0-9-]``, no edge
+    hyphen, not reserved."""
+    if not _LABEL_SHAPE.fullmatch(label):
+        raise HostnameRefused(
+            "label_invalid",
+            "Use 3-40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
+        )
+    if label in RESERVED_LABELS:
+        raise HostnameRefused("label_reserved", f"{label!r} is reserved.")
+    return label
 
 
 # --- DAL --------------------------------------------------------------------
