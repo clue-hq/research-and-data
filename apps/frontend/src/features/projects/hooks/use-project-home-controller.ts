@@ -64,7 +64,7 @@ export function useProjectHomeController(data: ProjectHome) {
     brandId: data.defaultBrandId ?? data.brands[0]?.id ?? "",
     contextRefs: [] as {
       objectId: string;
-      objectType: "account" | "contact";
+      objectType: ProjectEntity["type"];
       version: number | null;
     }[],
     message: "",

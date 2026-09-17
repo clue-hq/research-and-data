@@ -108,7 +108,7 @@ function ComposerMention({
               element.entityType === "contact" ? styles.composerMentionAvatar : ""
             }
             height={16}
-            src={element.imagePath}
+            src={element.imagePath ?? "/logos/clue.svg"}
             width={16}
           />
           <span>{element.label}</span>

@@ -6,13 +6,29 @@ export const ProjectRenameResponseSchema = z.object({
 
 export type RenamedProject = z.infer<typeof ProjectRenameResponseSchema>;
 
+export const ProjectEntityTypeSchema = z.enum([
+  "account",
+  "contact",
+  "project_document",
+  "design_document",
+]);
+export const ProjectEntityCategorySchema = z.enum([
+  "accounts",
+  "files",
+  "microsites",
+]);
+export const ProjectEntityIconSchema = z.enum(["file-text", "image", "web"]);
+
 export const ProjectEntitySchema = z.object({
   accountName: z.string().optional(),
+  // Absent means the legacy account/contact catalog served by the backend.
+  category: ProjectEntityCategorySchema.optional(),
+  icon: ProjectEntityIconSchema.optional(),
   id: z.string().min(1),
-  imagePath: z.string().startsWith("/"),
+  imagePath: z.string().startsWith("/").optional(),
   label: z.string().min(1),
   secondaryLabel: z.string().min(1),
-  type: z.enum(["account", "contact"]),
+  type: ProjectEntityTypeSchema,
   version: z.number().int().positive().nullable().optional(),
 });
 
@@ -94,6 +110,9 @@ export const ProjectArtifactSchema = z.object({
   canvasPagePaths: z.array(z.string().startsWith("/")).optional(),
   collateralType: GalleryCollateralTypeSchema.optional(),
   createdAt: z.string().datetime().optional(),
+  // The design document behind a design artifact, and its current version — what a
+  // composer tag of this artifact sends. Absent on table/presentation cards.
+  documentId: z.string().min(1).optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
   // Design artifacts now carry a versioned BFF thumbnail URL, so this is
@@ -111,6 +130,7 @@ export const ProjectArtifactSchema = z.object({
   tableContent: ProjectTableContentSchema.optional(),
   type: z.enum(["table", "website", "canvas", "presentation"]),
   updatedAt: z.string().datetime().optional(),
+  version: z.number().int().positive().optional(),
   viewerTitle: z.string().min(1).optional(),
   websiteContent: ProjectWebsiteContentSchema.optional(),
 });
@@ -170,7 +190,7 @@ export const ProjectBootstrapRequestSchema = z.object({
   brandId: z.string().min(1).max(200),
   contextRefs: z.array(z.object({
     objectId: z.string().min(1).max(200),
-    objectType: z.enum(["account", "contact"]),
+    objectType: ProjectEntityTypeSchema,
     version: z.number().int().positive().nullable().default(null),
   }).strict()).default([]),
   message: ProjectBootstrapMessageSchema,

@@ -225,6 +225,7 @@ export interface MessageSubmissionAttempt {
 export type TurnContextObjectType =
   | "account"
   | "contact"
+  | "project_document"
   | "design_document"
   | "design_node"
   | "design_asset";

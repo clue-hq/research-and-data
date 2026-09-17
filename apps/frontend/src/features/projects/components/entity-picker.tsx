@@ -72,7 +72,7 @@ export function EntityPicker({
                       type === "contact" ? styles.entityAvatar : styles.entityLogo
                     }
                     height={24}
-                    src={entity.imagePath}
+                    src={entity.imagePath ?? "/logos/clue.svg"}
                     width={24}
                   />
                   <span>
