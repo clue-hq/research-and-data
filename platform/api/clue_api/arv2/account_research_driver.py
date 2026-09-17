@@ -176,7 +176,9 @@ def employment_history_lines(value: Any) -> tuple[str, ...]:
     for entry in value:
         if not isinstance(entry, Mapping):
             continue
-        dates = entry.get("date") if isinstance(entry.get("date"), Mapping) else entry
+        dates = entry.get("date")
+        if not isinstance(dates, Mapping):
+            dates = entry
         role = str(entry.get("role") or "").strip()
         org = str(entry.get("org") or "").strip()
         start = str(dates.get("start") or "").strip()

@@ -319,9 +319,7 @@ async def get_web_fragment(
     conn: AsyncConnection, *, workspace_id: str, fragment_id: str
 ) -> JsonObject:
     """One fragment row, or the fail-closed refusal (absent OR another tenant's)."""
-    row = await find_web_fragment(
-        conn, workspace_id=workspace_id, fragment_id=fragment_id
-    )
+    row = await find_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     if row is None:
         raise DesignNotFoundError("design_web_fragment", fragment_id)
     return row

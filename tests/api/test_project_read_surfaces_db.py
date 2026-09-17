@@ -358,8 +358,8 @@ def test_sidebar_serves_only_active_projects(require_chat_db: None) -> None:
             projects = {item["id"]: item for item in response.json()["data"]}
             assert set(projects) == {live.project_id}
             assert archived.project_id not in projects
-            assert [
-                item["id"] for item in projects[live.project_id]["conversations"]
-            ] == ["thr_o6_arch_0"]
+            assert [item["id"] for item in projects[live.project_id]["conversations"]] == [
+                "thr_o6_arch_0"
+            ]
 
     run_async(scenario())
