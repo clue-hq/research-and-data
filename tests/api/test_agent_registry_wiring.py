@@ -925,5 +925,5 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     assert available == {pin.address for pin in resolved.profile.tools}
 
     assert resolved.profile.delegation_roles == ()
-    assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+    assert resolved.profile.model.model_id == "x-ai/grok-4.6"
     assert resolved.profile.max_delegation_depth == 0
