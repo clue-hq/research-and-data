@@ -912,9 +912,8 @@ def test_persistent_5xx_is_retryable() -> None:
     run_async(scenario())
 ```
 
-The repo has no async test plugin: each test body above is an inner `async def scenario()` whose
-statements are indented one level deeper than shown, followed by `run_async(scenario())` as the
-test's last line (the `tests/db/conftest.py` pattern used everywhere in `tests/`).
+The repo has no async test plugin, hence the inner `async def scenario()` + `run_async(scenario())`
+shape (the `tests/db/conftest.py` pattern used everywhere in `tests/`).
 
 Run: `uv run pytest tests/api/test_cloudflare_custom_hostnames.py -q` → `ModuleNotFoundError`.
 
