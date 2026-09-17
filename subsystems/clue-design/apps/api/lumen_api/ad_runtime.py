@@ -413,9 +413,14 @@ def choose_style_group(brief: str, names: list[str]) -> Optional[str]:
         ],
     }
     try:
-        # A ``ProviderHalted`` is caught here like every other failure: this call's contract is
-        # "never fail a design turn", and the turn falls back to recency. The halt still latched
-        # the provider on the turn's caller, so the next paid call in the same scope refuses loud.
+        # ONE attempt: a design turn never waits on a retry backoff; the fallback is recency.
+        # This has always been a single bounded call, and the caller's law-2 backoff would put
+        # twelve seconds of dead air in the middle of a marketer's turn to re-ask a tie-break
+        # whose answer the turn is happy to do without.
+        #
+        # A ``ProviderHalted`` is caught below like every other failure: this call's contract is
+        # "never fail a design turn". The halt still latched the provider on the turn's caller,
+        # so the next paid call in the same scope refuses loud.
         response = spend.openrouter_call(
             operation="design.ad.style_group",
             body=body,
@@ -423,7 +428,7 @@ def choose_style_group(brief: str, names: list[str]) -> Optional[str]:
             timeout_s=SELECT_TIMEOUT_S,
             api_key=api_key,
             base_url=settings.openrouter_base_url,
-            max_attempts=2,
+            max_attempts=1,
         )
         if response.status >= 400:
             logger.warning("ad_style_group_call_failed", status=response.status)
