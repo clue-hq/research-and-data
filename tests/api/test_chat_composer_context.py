@@ -367,13 +367,13 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
 PLAN_DOCUMENT = UUID("00000000-0000-0000-0000-00000000d0c1")
 
 
-def _plan_row(version: int = 2):
+def _plan_row(version: int = 2, status: str = "ready"):
     return SimpleNamespace(
         document_id=PLAN_DOCUMENT,
         path="project/plan.md",
         kind="project-plan",
         version=version,
-        status="ready",
+        status=status,
         updated_at=None,
         artifact_key="ws/abc",
         artifact_sha256="a" * 64,
@@ -464,6 +464,23 @@ def test_project_document_refs_refuse_a_superseded_version(
             )
         )
     assert stale.value.code == "CONTEXT_REF_STALE"
+
+    # The common real shape: rewriting the document retired the version the user tagged. The
+    # retired row is still this project's row, so it is refused as stale, never as missing.
+    async def superseded_row(*_args: object, **_kwargs: object):
+        return _plan_row(version=2, status="superseded")
+
+    monkeypatch.setattr(composer_context, "get_project_document", superseded_row)
+    with pytest.raises(ContextReferenceError) as retired:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=(_ref("project_document", PLAN_DOCUMENT, version=2),),
+                project_id="prj_1",
+            )
+        )
+    assert retired.value.code == "CONTEXT_REF_STALE"
 
 
 def test_design_document_mentions_must_belong_to_the_project(

@@ -214,19 +214,15 @@ def test_validated_context_refs_project_document_semantics(tmp_path: Path) -> No
                 ),
             )
             assert newer.version == plan.version + 1
-            # A ``ready`` version the writer retires is *superseded*, and each version is its own
-            # row id — so the tag of the version the user saw names a row that is no longer
-            # servable, which this read reports as absence rather than staleness. The still-
-            # servable-but-no-longer-latest shape (a ``confirmed`` row, which a new version does
-            # not retire) is the one that comes back ``CONTEXT_REF_STALE``.
-            with pytest.raises(ContextReferenceError) as superseded:
+            # A retired version is still a row of this project, so it is stale, not absent.
+            with pytest.raises(ContextReferenceError) as stale:
                 await validated_context_refs(
                     conn,
                     workspace_id=seeds["ws"],
                     refs=(ref(str(plan.document_id), plan.version),),
                     project_id=seeds["project_id"],
                 )
-            assert superseded.value.code == "CONTEXT_REF_NOT_FOUND"
+            assert stale.value.code == "CONTEXT_REF_STALE"
             await txn.rollback()
 
     run_async(scenario())

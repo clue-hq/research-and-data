@@ -805,11 +805,14 @@ async def list_project_documents(
 async def get_project_document(
     conn: AsyncConnection, *, workspace_id: str, project_id: str, document_id: UUID
 ) -> ProjectDocumentRow | None:
-    """One servable document of this project by its row id, or ``None``.
+    """One document of this project by its row id, in any status, or ``None``.
 
-    The composer's ``project_document`` context ref is validated through this read: a row of
-    another project, another workspace, an unservable status, or one whose bytes were never
-    written is indistinguishable from absence.
+    Absence and staleness are different answers, and only the first is decided here. A row of
+    another project or another workspace, and a row whose bytes were never written, are absence —
+    indistinguishable from a document that never existed, so neither can be used to probe for what
+    another project owns. A superseded, archived, or otherwise unservable row of *this* project is a
+    real row and is returned: it is the version the user tagged, and the composer's validation is
+    what then refuses it as stale rather than as missing.
     """
 
     row = await _document(
@@ -817,7 +820,7 @@ async def get_project_document(
         workspace_id=workspace_id,
         project_id=project_id,
         document_id=document_id,
-        servable_only=True,
+        servable_only=False,
     )
     if row is None or row["artifact_key"] is None:
         return None
