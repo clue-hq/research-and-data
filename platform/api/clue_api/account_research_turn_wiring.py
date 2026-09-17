@@ -318,12 +318,15 @@ class DbCompiledContextCardReader:
                 front: dict[str, Any] = {}
                 text_body = ""
                 if self._storage is not None:
+                    # ``servable_only=False``: a replayed turn whose tagged version has since
+                    # been superseded still names the document the user tagged.
                     read = await read_project_document(
                         conn,
                         self._storage,
                         workspace_id=workspace_id,
                         project_id=str(row["project_id"]),
                         document_id=document_id,
+                        servable_only=False,
                     )
                     if read is not None:
                         _, front, text_body = read

@@ -284,6 +284,33 @@ def test_project_document_focus_card_names_the_mounted_path(tmp_path: Path) -> N
                 )
                 is None
             )
+
+            # A newer version retires the tagged one. Replaying that turn still names the
+            # document the user tagged, rather than falling back to the file name.
+            newer = await write_project_plan(
+                conn,
+                storage,
+                ProjectPlanWrite(
+                    workspace_id=seeds["ws"],
+                    brand_id=seeds["brand_id"],
+                    project_id=seeds["project_id"],
+                    turn_id=uuid4(),
+                    user_id="usr_pdref",
+                    body=PLAN_BODY + "\nMore.\n",
+                    expected_version=plan.version,
+                ),
+            )
+            assert newer.version == plan.version + 1
+            retired = await with_storage.read(
+                workspace_id=seeds["ws"],
+                object_type="project_document",
+                object_id=str(plan.document_id),
+            )
+            assert retired is not None
+            retired_body = json.loads(retired.body)
+            assert retired_body["title"] == "Q4 expansion plan"
+            assert retired_body["version"] == plan.version
+            assert retired_body["status"] == "superseded"
             await txn.rollback()
 
     run_async(scenario())
