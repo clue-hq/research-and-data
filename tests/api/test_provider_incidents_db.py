@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 import pytest
+import sentry_sdk
 from sentry_sdk.transport import Transport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -25,6 +27,7 @@ from clue_api.provider_incidents import (
     record_success,
 )
 from clue_core.provider_failures import ProviderFailure
+from clue_obs import sentry as sentry_state
 from clue_obs.sentry import install_sentry
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -93,7 +96,12 @@ class StubTransport(Transport):
 
 
 @pytest.fixture
-def sentry() -> StubTransport:
+def sentry(monkeypatch: pytest.MonkeyPatch) -> Iterator[StubTransport]:
+    # Installation changes process-global state. Restore both the SDK client and the wrapper's
+    # flag so later read-surface tests do not inherit a fake "Clue has been notified" result.
+    scope = sentry_sdk.get_global_scope()
+    previous_client = scope.client
+    monkeypatch.setattr(sentry_state, "_installed", sentry_state.sentry_is_installed())
     transport = StubTransport()
     assert install_sentry(
         dsn="https://k@o1.ingest.sentry.io/1",
@@ -102,7 +110,14 @@ def sentry() -> StubTransport:
         process_name="t",
         transport=transport,
     )
-    return transport
+    installed_client = scope.client
+    try:
+        yield transport
+    finally:
+        try:
+            installed_client.close()
+        finally:
+            scope.set_client(previous_client)
 
 
 def test_a_refusal_opens_once_counts_afterwards_and_closes_on_success(

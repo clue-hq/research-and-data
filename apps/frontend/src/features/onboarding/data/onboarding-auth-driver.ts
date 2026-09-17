@@ -1,4 +1,7 @@
-import type { OnboardingAuthResult } from "../model/onboarding";
+import type {
+  InvitationSignUpInput,
+  OnboardingAuthResult,
+} from "../model/onboarding";
 
 export const CLERK_CALL_TIMEOUT_MS = 15_000;
 
@@ -38,13 +41,64 @@ export interface ClerkSignUpDriver {
   };
 }
 
+export interface ClerkTicketDriver {
+  readonly status: string | null;
+  readonly missingFields: readonly string[];
+  readonly unverifiedFields: readonly string[];
+  create(params: InvitationSignUpInput & {
+    strategy: "ticket";
+  }): Promise<ClerkCallResult>;
+  finalize(): Promise<ClerkCallResult>;
+}
+
+export async function acceptInvitationTicket(
+  signUp: ClerkTicketDriver,
+  params: InvitationSignUpInput,
+  timeoutMs = CLERK_CALL_TIMEOUT_MS,
+): Promise<OnboardingAuthResult> {
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
+  if (!params.password) {
+    return {
+      status: "error",
+      message: "Set a password to finish creating your account.",
+    };
+  }
+  // Clerk v7's ticket() helper does not accept a password. The underlying create()
+  // ticket strategy accepts all required fields together and verifies the invited email.
+  const attempted = await runClerkStep(
+    () => signUp.create({ ...params, strategy: "ticket" }),
+    timeoutMs,
+  );
+  if (!attempted.ok) return attempted.result;
+  if (signUp.status === "complete") return finalize(signUp, "sign-up");
+  if (signUp.missingFields.includes("password")) {
+    return {
+      status: "error",
+      message: "Set a password to finish creating your account.",
+    };
+  }
+  if (signUp.missingFields.length || signUp.unverifiedFields.length) {
+    return {
+      status: "error",
+      message:
+        "Your account has additional sign-up requirements that this invitation form does not support. Contact your workspace administrator.",
+    };
+  }
+  return {
+    status: "error",
+    message:
+      "Your account sign-up did not complete. Reopen the invitation from your email and try again.",
+  };
+}
+
 type ClerkStepResult =
   | { ok: true }
   | { ok: false; result: OnboardingAuthResult };
 
 const TIMEOUT_RESULT: OnboardingAuthResult = {
   status: "error",
-  message: "The authentication service didn't respond. Check your connection and try again.",
+  message:
+    "The authentication service didn't respond. Check your connection and try again.",
 };
 
 const UNEXPECTED_RESULT: OnboardingAuthResult = {
@@ -122,7 +176,9 @@ function signInVerificationPurpose(
 }
 
 function supportsEmailCode(signIn: ClerkSignInDriver): boolean {
-  return signIn.supportedSecondFactors.some((factor) => factor.strategy === "email_code");
+  return signIn.supportedSecondFactors.some(
+    (factor) => factor.strategy === "email_code",
+  );
 }
 
 async function finalize(
@@ -152,7 +208,10 @@ export async function startPasswordSignIn(
   const purpose = signInVerificationPurpose(signIn.status);
   if (purpose) {
     if (!supportsEmailCode(signIn)) return UNSUPPORTED_FACTOR_RESULT;
-    const sent = await runClerkStep(() => signIn.mfa.sendEmailCode(), timeoutMs);
+    const sent = await runClerkStep(
+      () => signIn.mfa.sendEmailCode(),
+      timeoutMs,
+    );
     if (!sent.ok) return sent.result;
     return { status: "needs-verification", purpose };
   }
@@ -194,7 +253,9 @@ export async function verifyPendingEmailCode(
       timeoutMs,
     );
     if (!verified.ok) return verified.result;
-    return signIn.status === "complete" ? finalize(signIn, "sign-in") : INCOMPLETE_RESULT;
+    return signIn.status === "complete"
+      ? finalize(signIn, "sign-in")
+      : INCOMPLETE_RESULT;
   }
   if (signIn.status === "complete") return finalize(signIn, "sign-in");
 
@@ -212,7 +273,9 @@ export async function verifyPendingEmailCode(
     timeoutMs,
   );
   if (!verified.ok) return verified.result;
-  return signUp.status === "complete" ? finalize(signUp, "sign-up") : INCOMPLETE_RESULT;
+  return signUp.status === "complete"
+    ? finalize(signUp, "sign-up")
+    : INCOMPLETE_RESULT;
 }
 
 export async function resendPendingEmailCode(
@@ -223,7 +286,10 @@ export async function resendPendingEmailCode(
   const signInPurpose = signInVerificationPurpose(signIn.status);
   if (signInPurpose) {
     if (!supportsEmailCode(signIn)) return UNSUPPORTED_FACTOR_RESULT;
-    const sent = await runClerkStep(() => signIn.mfa.sendEmailCode(), timeoutMs);
+    const sent = await runClerkStep(
+      () => signIn.mfa.sendEmailCode(),
+      timeoutMs,
+    );
     return sent.ok
       ? { status: "needs-verification", purpose: signInPurpose }
       : sent.result;

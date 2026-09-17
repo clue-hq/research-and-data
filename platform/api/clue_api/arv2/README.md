@@ -302,6 +302,14 @@ leniency is a flag, not a fork. The URL rule itself moved from construction to p
 `clue_core.Claim` now admits a URL-less research claim and `can_be_promoted` refuses it, so such a
 row exists honestly and is never served as verified truth.
 
+**Workspace field follow-up (2026-09-16; planned, not implemented):** the unknown-key branch still
+registers a global definition, although its claim is private. Human Settings fields already use
+the workspace registry. The [implementation plan](../../../../docs/superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md)
+covers trusted agent registration, lifecycle/namespace rules, historical global reconciliation and
+platform-only manual snapshots. The [agent guidance](../../../../docs/agents/research-field-scope.md)
+specifies immutable manual/bundle updates and activation. Retired/erased local fields are already
+hard refusals today; they are not unknown proposals. Leniency does not bypass tenancy/lifecycle.
+
 **The answer key.** `answer_key.py` is pure mapping — it turns the two proof-of-concept JSON files
 (the Zafran one-account run, 174 rows; the ten-person depth run, 119 rows) into `ClaimDraft`s and a
 manifest, with no database in sight: the persona map (`executive_sponsor` → `economic_buyer`,

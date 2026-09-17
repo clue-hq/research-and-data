@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_auth.errors import IdentityConflictError, InvitationUnavailableError
+from clue_auth.errors import (
+    IdentityConflictError,
+    InvitationAddressMismatch,
+    InvitationUnavailableError,
+)
 from clue_auth.models import AuthIdentity, PlatformUser, WorkspaceInvitation, WorkspaceMembership
 from clue_auth.store import (
     activate_invited_membership,
@@ -22,7 +26,9 @@ from clue_auth.store import (
     link_auth_identity,
     list_user_memberships,
     lock_invitation_by_digest,
+    lock_workspace_invitation,
     mark_invitation_accepted,
+    update_platform_user_email,
     update_platform_user_profile,
 )
 from clue_spine import Brand, Workspace, create_brand, create_workspace, get_brand, get_workspace
@@ -80,6 +86,16 @@ async def _resolve_or_create_user(
     return user, identity
 
 
+async def _lock_accepting_identity(
+    conn: AsyncConnection, provider_key: str, provider_subject: str
+) -> None:
+    # Lock identity before invitation rows in both entrypoints to avoid lock-order cycles.
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
+        {"identity": f"{provider_key}:{provider_subject}"},
+    )
+
+
 async def accept_workspace_invitation(
     conn: AsyncConnection,
     *,
@@ -89,6 +105,8 @@ async def accept_workspace_invitation(
     provider_subject: str,
     display_name: str | None = None,
     now: datetime | None = None,
+    initial_first_name: str | None = None,
+    initial_last_name: str | None = None,
 ) -> ProvisionedIdentity:
     """Accept one invitation using a provider-verified delivery address.
 
@@ -96,11 +114,92 @@ async def accept_workspace_invitation(
     Retrying an already-accepted token is idempotent only for the same active mapped user.
     """
     at = now or datetime.now(UTC)
+    await _lock_accepting_identity(conn, provider_key, provider_subject)
     digest = hash_invitation_token(raw_token)
     invitation = await lock_invitation_by_digest(conn, digest)
     if invitation is None:
         raise InvitationUnavailableError("invitation does not exist")
 
+    return await _accept_locked_invitation(
+        conn,
+        invitation=invitation,
+        verified_address=verified_address,
+        provider_key=provider_key,
+        provider_subject=provider_subject,
+        display_name=display_name,
+        at=at,
+        initial_first_name=initial_first_name,
+        initial_last_name=initial_last_name,
+    )
+
+
+async def accept_pending_workspace_invitations(
+    conn: AsyncConnection,
+    *,
+    verified_address: str,
+    provider_key: str,
+    provider_subject: str,
+    now: datetime | None = None,
+    initial_first_name: str | None = None,
+    initial_last_name: str | None = None,
+) -> tuple[ProvisionedIdentity, ...]:
+    """Accept email-addressed invitations without reconstructing their bearer tokens."""
+    at = now or datetime.now(UTC)
+    await _lock_accepting_identity(conn, provider_key, provider_subject)
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT workspace_id, invitation_id FROM workspace_invitation "
+                    "WHERE lower(btrim(invited_address)) = :address AND status = 'pending' "
+                    "AND expires_at > :now ORDER BY created_at, invitation_id"
+                ),
+                {"address": verified_address.strip().casefold(), "now": at},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    accepted = []
+    for row in rows:
+        # A stale/removed membership must never regain access through a pending invite.
+        # A refusal in one workspace must not prevent joining unrelated workspaces.
+        try:
+            async with conn.begin_nested():
+                invitation = await lock_workspace_invitation(
+                    conn, workspace_id=row["workspace_id"], invitation_id=row["invitation_id"]
+                )
+                if invitation is not None:
+                    accepted.append(
+                        await _accept_locked_invitation(
+                            conn,
+                            invitation=invitation,
+                            verified_address=verified_address,
+                            provider_key=provider_key,
+                            provider_subject=provider_subject,
+                            display_name=None,
+                            at=at,
+                            initial_first_name=initial_first_name,
+                            initial_last_name=initial_last_name,
+                        )
+                    )
+        except InvitationUnavailableError:
+            continue
+    return tuple(accepted)
+
+
+async def _accept_locked_invitation(
+    conn: AsyncConnection,
+    *,
+    invitation: WorkspaceInvitation,
+    verified_address: str,
+    provider_key: str,
+    provider_subject: str,
+    display_name: str | None,
+    at: datetime,
+    initial_first_name: str | None,
+    initial_last_name: str | None,
+) -> ProvisionedIdentity:
     identity = await get_auth_identity(
         conn, provider_key=provider_key, provider_subject=provider_subject
     )
@@ -134,14 +233,25 @@ async def accept_workspace_invitation(
     invited = invitation.invited_address.strip().casefold().encode("utf-8")
     verified = verified_address.strip().casefold().encode("utf-8")
     if not hmac.compare_digest(invited, verified):
-        raise InvitationUnavailableError("verified address does not match invitation")
+        raise InvitationAddressMismatch("verified address does not match invitation")
 
+    created_user = identity is None
     user, identity = await _resolve_or_create_user(
         conn,
         provider_key=provider_key,
         provider_subject=provider_subject,
         display_name=display_name,
     )
+    if created_user and (initial_first_name or initial_last_name):
+        # Seed provider signup names only at identity creation, under the identity lock.
+        user = await update_platform_user_profile(
+            conn,
+            user.user_id,
+            first_name=initial_first_name,
+            last_name=initial_last_name,
+            display_name=display_name,
+            job_role=None,
+        )
     membership = await get_workspace_membership(
         conn, workspace_id=invitation.workspace_id, user_id=user.user_id
     )
@@ -167,6 +277,7 @@ async def accept_workspace_invitation(
     invitation = await mark_invitation_accepted(
         conn, invitation_id=invitation.invitation_id, user_id=user.user_id, now=at
     )
+    user = await update_platform_user_email(conn, user.user_id, verified_address)
     return ProvisionedIdentity(
         user=user,
         auth_identity=identity,

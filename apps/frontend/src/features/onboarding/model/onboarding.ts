@@ -97,14 +97,28 @@ export type OnboardingAuthResult =
     }
   | { status: "error"; message: string };
 
+export type InvitationSignUpInput = {
+  ticket: string;
+  firstName: string;
+  lastName: string;
+  password: string;
+};
+
 export interface OnboardingAuthAdapter {
   mode: "clerk" | "fixture";
   /** The authenticated email once a session exists (null before sign-in / in fixture mode). */
   email: string | null;
   /** The email of the in-progress sign-up attempt, if any (survives a page refresh). */
   pendingEmail: string | null;
-  signInWithPassword(email: string, password: string): Promise<OnboardingAuthResult>;
-  signUpWithPassword(email: string, password: string): Promise<OnboardingAuthResult>;
+  signInWithPassword(
+    email: string,
+    password: string,
+  ): Promise<OnboardingAuthResult>;
+  signUpWithPassword(
+    email: string,
+    password: string,
+  ): Promise<OnboardingAuthResult>;
+  acceptInvitation?(params: InvitationSignUpInput): Promise<OnboardingAuthResult>;
   verifyEmailCode(code: string): Promise<OnboardingAuthResult>;
   resendEmailCode(): Promise<OnboardingAuthResult>;
   signInWithGoogle(): Promise<OnboardingAuthResult>;
@@ -139,7 +153,9 @@ export const ProvisionedWorkspaceSchema = z.object({
   company_name_ignored: z.boolean().optional().default(false),
 });
 
-export type ProvisionWorkspaceInput = z.infer<typeof ProvisionWorkspaceInputSchema>;
+export type ProvisionWorkspaceInput = z.infer<
+  typeof ProvisionWorkspaceInputSchema
+>;
 export type ProvisionedWorkspace = z.infer<typeof ProvisionedWorkspaceSchema>;
 
 /** Profile-screen validation, extracted so it is unit-testable (review finding FE9). */

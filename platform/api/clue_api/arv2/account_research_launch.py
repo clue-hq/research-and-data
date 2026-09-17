@@ -777,7 +777,7 @@ async def launch_arv2_person_research(
         project_run_id=project_run_id,
     )
 
-    catalog = await read_person_catalog(conn)
+    catalog = await read_person_catalog(conn, workspace_id=request.workspace_id)
     writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
     job_ids: list[UUID] = []
     seated: list[UUID] = []

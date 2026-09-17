@@ -176,7 +176,9 @@ def employment_history_lines(value: Any) -> tuple[str, ...]:
     for entry in value:
         if not isinstance(entry, Mapping):
             continue
-        dates = entry.get("date") if isinstance(entry.get("date"), Mapping) else entry
+        dates = entry.get("date")
+        if not isinstance(dates, Mapping):
+            dates = entry
         role = str(entry.get("role") or "").strip()
         org = str(entry.get("org") or "").strip()
         start = str(dates.get("start") or "").strip()
@@ -677,7 +679,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_account_catalog(conn)
+        catalog = await self._store.read_account_catalog(conn, workspace_id=run.workspace_id)
         established = await self._already_established(conn, job, run)
 
         bundle = load_account_resources(self._catalog_root)
@@ -754,7 +756,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_person_catalog(conn)
+        catalog = await self._store.read_person_catalog(conn, workspace_id=run.workspace_id)
 
         bundle = load_person_resources(self._person_catalog_root)
         if bundle.profile.sha256 != job.profile_sha256:

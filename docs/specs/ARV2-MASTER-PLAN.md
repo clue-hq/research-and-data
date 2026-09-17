@@ -1,5 +1,14 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
+> **Scoped-field follow-up, 2026-09-16 (planning only).** The founder requested a detailed plan to
+> make agent-proposed research definitions workspace-local. The current lenient writer still
+> registers unknown definitions globally while keeping their claims private. The
+> [implementation plan](../superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md) covers
+> trusted registration, historical vocabulary containment and versioned deepagent/research
+> documentation. [Prepared agent guidance](../agents/research-field-scope.md) must activate with
+> the backend change. This amendment does not assert that the change is shipped or relax current
+> retirement, erasure, subject or privacy constraints under the “lenient” rule below.
+
 **This is the single authoritative plan. Version 1.6, 2026-09-07 (v1.6: the product-catalog child doc `ARV2-PRODUCT-CATALOG-CONTRACT.md` — Exa request shape, `ProductCatalogResearch@1` artifact, and rulings P1–P4: a project targets a **set** of products, versioned, one ICP per project over the whole set; v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this

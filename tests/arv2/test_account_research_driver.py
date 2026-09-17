@@ -201,12 +201,12 @@ class FakeStore:
             ),
         )
 
-    async def read_account_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_account_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_account_catalog", {}))
         return FieldCatalog(account=(FieldSpec("core.industry", "Industry."),))
 
-    async def read_person_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_person_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_person_catalog", {}))
         return FieldCatalog(

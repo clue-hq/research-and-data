@@ -950,9 +950,7 @@ def test_a_scene_leg_turn_freezes_the_ad_lane_at_offer_time(
             # Offer 1: flag OFF in the offering process — the frozen decision is "no lane".
             monkeypatch.delenv("LUMEN_BRAND_AD_ASSETS", raising=False)
             lane = _FakeLane(conn_factory=seeds["conn_factory"])
-            submission = await _submit_message(
-                conn, seeds, label="adlane", message="Sketch an ad."
-            )
+            submission = await _submit_message(conn, seeds, label="adlane", message="Sketch an ad.")
             await _run_turn(conn, seeds, registry, lane, submission)
             envelope = lane.envelopes[0]
             assert envelope.kind == "agent_turn"
@@ -970,9 +968,7 @@ def test_a_scene_leg_turn_freezes_the_ad_lane_at_offer_time(
 
             from clue_api import design_leg_wiring as wiring_module
 
-            monkeypatch.setattr(
-                wiring_module.design_ad_assets, "frozen_ad_lane", fake_frozen_lane
-            )
+            monkeypatch.setattr(wiring_module.design_ad_assets, "frozen_ad_lane", fake_frozen_lane)
             lane_on = _FakeLane(conn_factory=seeds["conn_factory"])
             submission_on = await _submit_message(
                 conn, seeds, label="adlane2", message="Sketch another ad."

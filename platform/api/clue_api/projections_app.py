@@ -936,22 +936,28 @@ def create_projections_app(
     # runner (the only thing under `/frontend/v1` that spends money). A deployment with no key —
     # every test app included — composes a seam that cannot generate, so the read surface stays a
     # pure projection instead of refusing to start.
+    runtime_secrets = Secrets()
     install_frontend_read_surface(
         app,
         settings=resolved,
         conn_factory=conn_factory,
         evidence_storage=ingestion_storage,
         contact_email_lookup=contact_email_lookup,
-        secrets=Secrets(),
+        secrets=runtime_secrets,
         project_library=project_library,
     )
     if auth_service is not None:
+        from clue_auth.providers.clerk_api import ClerkApi
+
+        clerk_secret = runtime_secrets.auth_clerk_secret_key
         # The provision route (workspace-creating write) mounts only behind its default-off
         # flag, matching the rollout discipline of every neighbouring surface.
         install_auth_wiring(
             app,
             service=auth_service,
-            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+            conn_factory=conn_factory,
+            provision_enabled=resolved.self_serve_provisioning_enabled,
+            clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
         )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)

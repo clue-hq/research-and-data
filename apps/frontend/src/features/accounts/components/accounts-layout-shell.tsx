@@ -2,7 +2,10 @@
 
 import { usePathname } from "next/navigation";
 import { ApplicationShell } from "@/components/shell/application-shell";
-import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
+import {
+  WorkspaceProfileProvider,
+  useWorkspaceProfile,
+} from "@/components/shell/workspace-profile-context";
 import type { WorkspaceProfile } from "../model/workspace-profile";
 import type { Account } from "../model/account";
 import type { AccountBulkCapabilities } from "../model/bulk-actions";
@@ -13,7 +16,7 @@ import motion from "./account-motion.module.css";
 export function AccountsLayoutShell({
   accounts,
   bulkCapabilities,
-  profile,
+  profile: fallbackProfile,
   children,
 }: {
   accounts: Account[];
@@ -22,7 +25,10 @@ export function AccountsLayoutShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const directoryVisible = pathname === "/accounts" || /^\/accounts\/[^/]+\/preview\/?$/.test(pathname);
+  const profile = useWorkspaceProfile() ?? fallbackProfile;
+  const directoryVisible =
+    pathname === "/accounts" ||
+    /^\/accounts\/[^/]+\/preview\/?$/.test(pathname);
 
   return (
     <WorkspaceProfileProvider profile={profile}>

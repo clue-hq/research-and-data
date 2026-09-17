@@ -253,6 +253,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
+    from clue_api.frontend_read.settings import register_settings_routes
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
@@ -270,6 +271,7 @@ def build_frontend_read_router(
             else DurableAgentArtifactStore(storage=evidence_storage, conn_factory=conn_factory)
         ),
     )
+    register_settings_routes(router, conn_factory=conn_factory, settings=settings, secrets=secrets)
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.

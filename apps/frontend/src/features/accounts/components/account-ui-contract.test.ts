@@ -285,9 +285,10 @@ test("§6.10 no claim-id prefix is admitted to Sources", () => {
 });
 
 test("§6.11 the favicon proxy runs on sourceDomain alone", () => {
-  assert.doesNotMatch(researchContent, /if \(evidence\.faviconUrl\)/);
+  const sourceChip = readFileSync(new URL("./source-chip.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(sourceChip, /if \(evidence\.faviconUrl\)/);
   assert.match(
-    researchContent,
+    sourceChip,
     /if \(evidence\.sourceDomain\) \{/,
   );
 });

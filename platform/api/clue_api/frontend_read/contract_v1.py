@@ -194,6 +194,7 @@ class AccountCustomField(V1Model):
     value: str
     presentation: Literal["text", "badge", "score"] = "text"
     primary: bool = False
+    claim_id: str | None = None
 
 
 # --- the research display layer ---------------------------------------------------------------
@@ -211,6 +212,7 @@ class ResearchEvidence(V1Model):
     """
 
     claim_id: str
+    research_field_key: str | None = _Absent
     source_url: HttpUrl | None
     source_domain: str | None
     favicon_url: HttpUrl | None
@@ -607,6 +609,7 @@ class AccountContactDetailV1(AccountContactSummaryV1):
     overview_paragraphs: tuple[str, ...] = ()
     evidence: tuple[ContactEvidence, ...]
     research_evidence: tuple[ResearchEvidence, ...] = ()
+    custom_fields: tuple[AccountCustomField, ...] = ()
     contact_display: ResearchDisplayBlock | None = _Absent
     last_modified_at: str
 

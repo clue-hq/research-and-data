@@ -80,6 +80,8 @@ from clue_api.frontend_read.v1_shared import (
     account_logo_path,
     contact_last_modified,
     current_position_start,
+    custom_field_evidence_for,
+    custom_fields_for,
     education_label,
     email_facts,
     iso_utc,
@@ -538,6 +540,22 @@ async def read_contact_profile(
         ),
     )
 
+    custom_fields = await custom_fields_for(
+        conn,
+        workspace_id=workspace_id,
+        account_ids=[canonical_contact],
+        entity_kind="contact",
+        policy=policy,
+    )
+    field_evidence = await custom_field_evidence_for(
+        conn,
+        workspace_id=workspace_id,
+        subject_id=canonical_contact,
+        entity_kind="contact",
+        policy=policy,
+    )
+    evidence = list({record.claim_id: record for record in [*evidence, *field_evidence]}.values())
+
     # The account's mark-type logo, if it carries one (founder ruling 2026-09-11) — one small
     # neutral read, served through the platform's logo route like the accounts list does.
     account_logo = await current_values(
@@ -590,6 +608,7 @@ async def read_contact_profile(
             overview_paragraphs=(),
             evidence=(),
             research_evidence=tuple(evidence),
+            custom_fields=tuple(custom_fields.get(canonical_contact, ())),
             # Always present, even when every section is empty: an all-empty block is still a
             # block, and the frontend renders the page grammar from it.
             contact_display=ResearchDisplayBlock.model_validate(page.display_block),
@@ -668,6 +687,16 @@ async def _served_claim_ids(
     # so an unrenderable location authorises nothing here either.
     if location_claim is not None and location_label(location_claim.value_json) is not None:
         served.add(str(location_claim.id))
+    served.update(
+        row.claim_id
+        for row in await custom_field_evidence_for(
+            conn,
+            workspace_id=workspace_id,
+            subject_id=contact_id,
+            entity_kind="contact",
+            policy=policy,
+        )
+    )
     return frozenset(served)
 
 

@@ -30,6 +30,7 @@ class PlatformUser(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     job_role: str | None = None
+    email: str | None = None
     status: UserStatus
     created_at: UtcDatetime
     suspended_at: UtcDatetime | None = None
@@ -71,6 +72,7 @@ class WorkspaceInvitation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     invitation_id: str
+    provider_invitation_id: str | None = None
     workspace_id: str
     invited_address: str
     role_key: RoleKey

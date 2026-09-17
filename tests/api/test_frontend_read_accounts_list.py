@@ -837,6 +837,7 @@ def test_the_scoring_fields_really_are_project_relative_in_the_registry() -> Non
         async with rollback_conn() as conn:
             from clue_api.frontend_read import accounts_list
 
+            await load_arv2_pack(conn)
             # Through ``resolve_research_scope``, never the raw column: a global registry row may
             # legitimately carry NULL and the key rule decides (slice-0 handoff).
             for field_key in accounts_list.SCORE_FIELD_KEYS:
@@ -1107,6 +1108,7 @@ def test_the_row_is_the_display_row_for_a_fully_populated_account() -> None:
             assert row["customFields"] == [
                 {
                     "id": "client.compliance_regime",
+                    "claimId": row["customFields"][0]["claimId"],
                     "label": "Compliance regime",
                     "value": "SOC 2",
                     "presentation": "badge",

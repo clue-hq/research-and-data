@@ -23,6 +23,10 @@ class InvitationUnavailableError(AuthIdentityError):
     """An invitation is absent, expired, revoked, accepted by another user, or mismatched."""
 
 
+class InvitationAddressMismatch(InvitationUnavailableError):
+    """The provider-verified address differs from the invitation delivery target."""
+
+
 class PrincipalError(AuthIdentityError):
     """Stable authentication/authorization failure safe to expose at an HTTP edge."""
 

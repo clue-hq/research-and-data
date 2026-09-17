@@ -41,6 +41,7 @@ export const AccountCustomFieldSchema = z.object({
   value: z.string().min(1),
   presentation: z.enum(["text", "badge", "score"]).default("text"),
   primary: z.boolean().default(false),
+  claimId: z.string().nullish(),
 });
 
 export const AccountSchema = z.object({

@@ -13,6 +13,7 @@ export const HttpUrlSchema = z
 
 export const ResearchEvidenceSchema = z.object({
   claimId: z.string().min(1),
+  researchFieldKey: z.string().nullish(),
   sourceUrl: HttpUrlSchema.nullable(),
   sourceDomain: z.string().min(1).nullable(),
   faviconUrl: HttpUrlSchema.nullable(),

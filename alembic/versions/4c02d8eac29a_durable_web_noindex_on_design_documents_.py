@@ -40,10 +40,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE design_document "
-        "ADD COLUMN web_noindex boolean NOT NULL DEFAULT false"
-    )
+    op.execute("ALTER TABLE design_document ADD COLUMN web_noindex boolean NOT NULL DEFAULT false")
 
 
 def downgrade() -> None:
