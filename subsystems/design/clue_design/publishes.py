@@ -38,6 +38,7 @@ exactly, with ISO-string timestamps.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from sqlalchemy import text
@@ -350,3 +351,51 @@ async def rollback_web_publish(
         {"w": workspace_id, "s": slug},
     )
     return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)
+
+
+# --- delivery constants shared by the page origin and the design API's publish package -------
+# Custom-domain publishing (design 2026-09-17 §5.2, §6.2). One home so the served header and the
+# embedded meta can never drift: the origin sends DELIVERY_CSP_HEADER; build_publish_package
+# embeds DELIVERY_CSP_META (frame-ancestors is ignored inside a meta CSP by spec).
+
+DELIVERY_CSP_META = (
+    "default-src 'none'; script-src 'self' 'unsafe-inline' data:; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
+    "connect-src 'none'; object-src 'none'; worker-src 'none'; frame-src 'self' data: blob:; "
+    "base-uri 'none'; form-action 'none'"
+)
+DELIVERY_CSP_HEADER = DELIVERY_CSP_META + "; frame-ancestors 'self'"
+
+
+def delivery_csp(*, meta: bool = False) -> str:
+    return DELIVERY_CSP_META if meta else DELIVERY_CSP_HEADER
+
+
+PUBLISH_ASSET_EXTENSIONS: tuple[str, ...] = ("js", "css", "html")
+PUBLISH_ASSET_MEDIA_TYPES: dict[str, str] = {
+    "js": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+}
+
+
+class PublishAssetMismatch(ValueError):
+    """The bytes behind a publish-asset URL do not match what the URL promises."""
+
+
+def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension: str) -> str:
+    """Integrity-check one immutable publish asset; returns the media type to serve.
+
+    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row, and
+    the bytes must hash to the digest in the URL — so ``/{digest}.css`` can never serve JavaScript.
+    Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
+    import ``lumen_api``) and the design API share one rule.
+    """
+    expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
+    if expected is None:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise PublishAssetMismatch("publish asset failed its integrity check")
+    if media_type != expected:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    return expected
