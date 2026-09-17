@@ -124,3 +124,19 @@ one `auth_identity` row was inserted on the lane DB so the dev login maps to the
   mypy clean on the 7 changed modules, one alembic head `9289d41e9a60`; frontend 2295/2295, lint 0
   errors, build green. The hangzhou stack was left running for the owed live proofs.
 - 2026-09-17 (later): founder ruling 'stick to grok-4.6 only' — the pre-existing red `test_home_read_is_real_scoped_and_capability_honest` was expectation drift; it now expects the Grok 4.6 profile (label/short_label/description/model_id `x-ai/grok-4.6`). Commit follows f71e33239.
+
+### Composer logos (2026-09-17, founder ask after the file-tagging walk)
+- Every account/contact row in the `@` picker showed a broken image: the backend never filled
+  `image_url` and the frontend fell back to `/logos/clue.svg`, which never existed in
+  `apps/frontend/public` (fallback dated 2026-08-13, pre-existing). Commit `ebd8f8713`: accounts
+  carry `account_logo_path(...)` (the platform's logo route for a stored LinkedIn mark, else
+  Brandfetch's Logo API for the domain) read once per catalog page through `_account_logo_urls`;
+  `settings` threaded from the chat router; the frontend accepts a rooted path or the
+  `https://cdn.brandfetch.io/` origin only (`composerEntityImagePath`), renders the building glyph
+  when there is none, and draws a contact's initials with the accounts feature's `ContactAvatar`
+  (picker + composer chip). Gates: composer-context unit + home-bootstrap DB suites green, ruff,
+  mypy; frontend 2295/2295, lint, build.
+- Finding: Brandfetch's CDN answers a `HeadlessChrome` user agent with a 302 to its hotlinking
+  guidelines (so gstack browse shows `naturalWidth 0` on every Brandfetch logo, on the accounts
+  list too); a real Chrome UA gets `200 image/webp`. Set `browse useragent "<Chrome UA>"` before
+  any logo check. The platform's own logo route (stored marks) renders in both.
