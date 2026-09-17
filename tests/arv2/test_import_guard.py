@@ -23,6 +23,9 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_config",
     "clue_obs",
     "clue_storage",
+    # lane 3 slice 5: the provider-caller seam itself — ARV2's calls/sinks/transport/errors and the
+    # drain are re-export shims over it now, so every lane module reaches it by this name.
+    "clue_spend",
     "clue_db",
     "clue_gateway",
     "clue_locks",
