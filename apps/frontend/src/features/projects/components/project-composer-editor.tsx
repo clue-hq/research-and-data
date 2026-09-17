@@ -27,6 +27,14 @@ import {
   useSelected,
   withReact,
 } from "slate-react";
+import {
+  COMPOSER_CATEGORIES,
+  detectMentionQuery,
+  entityCategory,
+  searchComposerCatalog,
+  shouldAutoCloseMention,
+  type ComposerCategory,
+} from "../model/composer-context-catalog";
 import type {
   ProjectComposerEditor as ProjectComposerEditorInstance,
   ProjectComposerMentionElement,
@@ -121,6 +129,7 @@ function ComposerMention({
 export const ProjectComposerEditor = forwardRef<
   ProjectComposerEditorHandle,
   {
+    categoriesEnabled?: boolean;
     disabled?: boolean;
     entities: ProjectEntity[];
     onContextChange: (entityIds: string[]) => void;
@@ -132,6 +141,7 @@ export const ProjectComposerEditor = forwardRef<
   }
 >(function ProjectComposerEditor(
   {
+    categoriesEnabled = true,
     disabled = false,
     entities,
     onContextChange,
@@ -156,6 +166,9 @@ export const ProjectComposerEditor = forwardRef<
   const [mentionIds, setMentionIds] = useState(selectedEntityIds);
   const [mentionTarget, setMentionTarget] = useState<SlateRange | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionCategory, setMentionCategory] = useState<ComposerCategory | null>(
+    null,
+  );
   const lastEmittedPrompt = useRef(prompt);
   const lastMentionIds = useRef(selectedEntityIds);
 
@@ -163,17 +176,33 @@ export const ProjectComposerEditor = forwardRef<
     setMentionTarget(null);
     setActiveIndex(0);
     setMentionQuery("");
+    setMentionCategory(null);
   }, []);
 
-  const visibleEntities = useMemo(() => {
-    const query = mentionQuery.trim().toLocaleLowerCase();
-    if (!query) return entities;
-    return entities.filter((entity) =>
-      `${entity.label} ${entity.secondaryLabel} ${entity.accountName ?? ""}`
-        .toLocaleLowerCase()
-        .includes(query),
-    );
-  }, [entities, mentionQuery]);
+  const resolveEntities = useCallback(
+    (rawQuery: string, category: ComposerCategory | null) => {
+      const trimmed = rawQuery.trim();
+      if (!categoriesEnabled) {
+        const accounts = entities.filter(
+          (entity) => entityCategory(entity) === "accounts",
+        );
+        return trimmed ? searchComposerCatalog(accounts, trimmed) : accounts;
+      }
+      if (trimmed) return searchComposerCatalog(entities, trimmed);
+      if (category) {
+        return entities.filter((entity) => entityCategory(entity) === category);
+      }
+      return [];
+    },
+    [categoriesEnabled, entities],
+  );
+
+  const query = mentionQuery.trim();
+  const visibleEntities = useMemo(
+    () => resolveEntities(mentionQuery, mentionCategory),
+    [mentionCategory, mentionQuery, resolveEntities],
+  );
+  const browsingCategories = categoriesEnabled && !query && mentionCategory === null;
 
   const replaceDraft = useCallback(
     (nextPrompt: string, nextEntities: readonly ProjectEntity[]) => {
@@ -224,14 +253,25 @@ export const ProjectComposerEditor = forwardRef<
     const paragraphStart = Editor.start(editor, paragraphPath);
     const beforeRange = Editor.range(editor, paragraphStart, caret);
     const beforeText = Editor.string(editor, beforeRange);
-    const mentionMatch = beforeText.match(/(?:^|\s)@([^\s@]*)$/);
-
-    if (!mentionMatch) {
+    const mentionQueryText = detectMentionQuery(beforeText);
+    if (mentionQueryText === null) {
       closeMentionPicker();
       return;
     }
 
-    const mentionText = `@${mentionMatch[1]}`;
+    // Prose recovers by itself: a query that matches nothing and just gained a
+    // space is no longer a mention.
+    if (
+      shouldAutoCloseMention(
+        mentionQueryText,
+        resolveEntities(mentionQueryText, mentionCategory).length,
+      )
+    ) {
+      closeMentionPicker();
+      return;
+    }
+
+    const mentionText = `@${mentionQueryText}`;
     const targetStart = Editor.before(editor, caret, {
       distance: mentionText.length,
       unit: "character",
@@ -243,8 +283,8 @@ export const ProjectComposerEditor = forwardRef<
 
     setMentionTarget(Editor.range(editor, targetStart, caret));
     setActiveIndex(0);
-    setMentionQuery(mentionMatch[1]);
-  }, [closeMentionPicker, editor]);
+    setMentionQuery(mentionQueryText);
+  }, [closeMentionPicker, editor, mentionCategory, resolveEntities]);
 
   const insertMention = useCallback(
     (entity: ProjectEntity) => {
@@ -387,6 +427,38 @@ export const ProjectComposerEditor = forwardRef<
             }
 
             if (mentionTarget) {
+              if (browsingCategories) {
+                const categories = COMPOSER_CATEGORIES;
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  const step = event.key === "ArrowDown" ? 1 : categories.length - 1;
+                  setActiveIndex((current) => (current + step) % categories.length);
+                  return;
+                }
+                if (
+                  event.key === "Enter" ||
+                  event.key === "Tab" ||
+                  event.key === "ArrowRight"
+                ) {
+                  event.preventDefault();
+                  setMentionCategory(categories[activeIndex]?.key ?? "files");
+                  setActiveIndex(0);
+                  return;
+                }
+              } else if (
+                mentionCategory &&
+                !query &&
+                (event.key === "ArrowLeft" || event.key === "Backspace")
+              ) {
+                event.preventDefault();
+                setMentionCategory(null);
+                setActiveIndex(
+                  COMPOSER_CATEGORIES.findIndex(
+                    (item) => item.key === mentionCategory,
+                  ),
+                );
+                return;
+              }
               if (event.key === "ArrowDown") {
                 event.preventDefault();
                 setActiveIndex((current) =>
@@ -439,21 +511,34 @@ export const ProjectComposerEditor = forwardRef<
       </Slate>
       {mentionTarget ? (
         <EntityPicker
-          activeId={visibleEntities[activeIndex]?.id}
-          entities={visibleEntities}
+          activeCategory={
+            browsingCategories ? COMPOSER_CATEGORIES[activeIndex]?.key : undefined
+          }
+          activeId={browsingCategories ? undefined : visibleEntities[activeIndex]?.id}
+          catalog={entities}
+          categoriesEnabled={categoriesEnabled}
+          category={mentionCategory}
           onActiveChange={(entityId) => {
             const index = visibleEntities.findIndex(
               (entity) => entity.id === entityId,
             );
             if (index >= 0) setActiveIndex(index);
           }}
+          onBack={() => {
+            setMentionCategory(null);
+            setActiveIndex(0);
+          }}
+          onOpenCategory={(category) => {
+            setMentionCategory(category);
+            setActiveIndex(0);
+          }}
           onSelect={(entityId) => {
             const entity = visibleEntities.find((item) => item.id === entityId);
             if (entity) insertMention(entity);
           }}
           query={mentionQuery}
+          results={visibleEntities}
           selectedIds={mentionIds}
-          showSearch={false}
         />
       ) : null}
     </div>

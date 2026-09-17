@@ -147,6 +147,7 @@ export function ProjectComposer({
           </p>
         ) : null}
         <ProjectComposerEditor
+          categoriesEnabled={variant !== "home"}
           disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
@@ -182,12 +183,12 @@ export function ProjectComposer({
           ) : null}
           {onEntitySelect ? (
             <button
-              aria-label="Add account or contact context"
+              aria-label="Add context"
               aria-haspopup="listbox"
               className={styles.contextButton}
               disabled={disabled}
               onClick={() => editorRef.current?.openMentionPicker()}
-              title="Add account or contact context"
+              title="Add context"
               type="button"
             >
               @
