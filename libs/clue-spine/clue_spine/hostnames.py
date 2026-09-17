@@ -23,11 +23,9 @@ from itertools import count
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
-
-# Used by the DAL appended in Task 4.
-from sqlalchemy import text  # noqa: F401
-from sqlalchemy.exc import IntegrityError  # noqa: F401
-from sqlalchemy.ext.asyncio import AsyncConnection  # noqa: F401
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
 
@@ -152,3 +150,107 @@ def is_valid_hostname(value: str) -> bool:
 def public_origin(hostname: str, *, scheme: str, port: int | None) -> str:
     """``https://acme.pages.cluehq.ai`` or, in dev, ``http://acme.pages.localhost:8040``."""
     return f"{scheme}://{hostname}" + (f":{port}" if port else "")
+
+
+# --- DAL --------------------------------------------------------------------
+_ROW = "hostname, workspace_id, kind, status, created_at, activated_at"
+
+
+async def _system_row(conn: AsyncConnection, workspace_id: str) -> WorkspaceHostname | None:
+    result = await conn.execute(
+        text(f"SELECT {_ROW} FROM workspace_hostname WHERE workspace_id = :w AND kind = 'system'"),
+        {"w": workspace_id},
+    )
+    row = result.mappings().first()
+    return WorkspaceHostname(**dict(row)) if row is not None else None
+
+
+async def ensure_system_hostname(
+    conn: AsyncConnection, *, workspace_id: str, name: str, suffix: str
+) -> WorkspaceHostname:
+    """The ONE allocator. Returns the workspace's system row, inserting it on first call.
+
+    Idempotent and race-safe: an existing row wins outright; a hostname collision moves to the
+    next candidate (``ON CONFLICT (hostname) DO NOTHING``); losing the one-system-per-workspace
+    race re-reads the winner. Each attempt runs in a savepoint so a conflict never poisons the
+    caller's transaction. Called by :func:`clue_spine.create_workspace`, the backfill command and
+    the design API's dev workspace scaffolding, so every creator gets a row without knowing about
+    it.
+    """
+    existing = await _system_row(conn, workspace_id)
+    if existing is not None:
+        return existing
+    for label in label_candidates(name, workspace_id):
+        hostname = f"{label}.{suffix}"
+        try:
+            async with conn.begin_nested():
+                result = await conn.execute(
+                    text(
+                        "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
+                        "activated_at) VALUES (:h, :w, 'system', 'active', now()) "
+                        f"ON CONFLICT (hostname) DO NOTHING RETURNING {_ROW}"
+                    ),
+                    {"h": hostname, "w": workspace_id},
+                )
+                row = result.mappings().first()
+        except IntegrityError:
+            winner = await _system_row(conn, workspace_id)
+            if winner is not None:
+                return winner
+            raise
+        if row is not None:
+            return WorkspaceHostname(**dict(row))
+    raise AssertionError("unreachable: label_candidates is infinite")
+
+
+async def system_hostname(conn: AsyncConnection, workspace_id: str) -> str | None:
+    row = await _system_row(conn, workspace_id)
+    return row.hostname if row is not None else None
+
+
+async def active_custom_hostname(conn: AsyncConnection, workspace_id: str) -> str | None:
+    result = await conn.execute(
+        text(
+            "SELECT hostname FROM workspace_hostname "
+            "WHERE workspace_id = :w AND kind = 'custom' AND status = 'active'"
+        ),
+        {"w": workspace_id},
+    )
+    row = result.first()
+    return str(row[0]) if row is not None else None
+
+
+async def resolve_active_hostname(conn: AsyncConnection, hostname: str) -> str | None:
+    """hostname → workspace_id, for ACTIVE rows only (a provisioning custom hostname is 404)."""
+    result = await conn.execute(
+        text(
+            "SELECT workspace_id FROM workspace_hostname WHERE hostname = :h AND status = 'active'"
+        ),
+        {"h": hostname},
+    )
+    row = result.first()
+    return str(row[0]) if row is not None else None
+
+
+async def workspaces_without_system_hostname(conn: AsyncConnection) -> list[tuple[str, str]]:
+    result = await conn.execute(
+        text(
+            "SELECT w.workspace_id, w.name FROM workspace w "
+            "WHERE NOT EXISTS (SELECT 1 FROM workspace_hostname h "
+            "WHERE h.workspace_id = w.workspace_id AND h.kind = 'system') "
+            "ORDER BY w.created_at, w.workspace_id"
+        )
+    )
+    return [(str(r[0]), str(r[1])) for r in result.all()]
+
+
+async def system_hostnames_off_suffix(conn: AsyncConnection, suffix: str) -> list[str]:
+    """System rows not ending in ``.<suffix>`` — a config error to warn about at startup."""
+    result = await conn.execute(
+        text(
+            "SELECT hostname FROM workspace_hostname WHERE kind = 'system' "
+            "AND hostname NOT LIKE :pattern ORDER BY hostname"
+        ),
+        {"pattern": f"%.{suffix}"},
+    )
+    return [str(r[0]) for r in result.all()]

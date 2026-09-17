@@ -37,6 +37,7 @@ from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
+from clue_spine import DEFAULT_PAGES_SYSTEM_SUFFIX
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
@@ -296,7 +297,10 @@ def build_principal_service(
 
 
 def build_auth_router(
-    *, service: PrincipalService, conn_factory: ConnFactory | None = None
+    *,
+    service: PrincipalService,
+    conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> APIRouter:
     router = APIRouter(prefix=AUTH_PREFIX, tags=["authentication"])
     session_dependency = SessionDependency(service)
@@ -361,6 +365,7 @@ def build_auth_router(
                         last_name=body.last_name,
                         job_role=body.job_role,
                         company_website=body.company_website,
+                        pages_system_suffix=pages_system_suffix,
                     )
             except IdentityConflictError as error:
                 log.info(
@@ -408,12 +413,19 @@ def build_auth_router(
 
 
 def install_auth_wiring(
-    app: FastAPI, *, service: PrincipalService, conn_factory: ConnFactory | None = None
+    app: FastAPI,
+    *,
+    service: PrincipalService,
+    conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> None:
     """Install the provider-free session routes and stable auth error envelope.
 
     ``conn_factory`` additionally enables ``POST /auth/v1/provision`` (FI-4 D-2 self-serve
-    onboarding); without it the router serves only the session/principal reads."""
+    onboarding); without it the router serves only the session/principal reads.
+    ``pages_system_suffix`` is the suffix a provisioned workspace's system hostname is allocated
+    under (custom-domain publishing §4.1) — the composition root passes
+    ``settings.pages_system_suffix``."""
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
@@ -454,7 +466,13 @@ def install_auth_wiring(
             headers={REQUEST_ID_HEADER: request_id},
         )
 
-    app.include_router(build_auth_router(service=service, conn_factory=conn_factory))
+    app.include_router(
+        build_auth_router(
+            service=service,
+            conn_factory=conn_factory,
+            pages_system_suffix=pages_system_suffix,
+        )
+    )
 
 
 __all__ = [

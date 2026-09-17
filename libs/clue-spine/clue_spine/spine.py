@@ -26,6 +26,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
+from clue_spine.hostnames import DEFAULT_PAGES_SYSTEM_SUFFIX, ensure_system_hostname
 
 WorkspaceStatus = Literal["active", "archived"]
 ProductStatus = Literal["active", "archived"]
@@ -103,9 +104,19 @@ class Project(BaseModel):
 
 # --- workspace --------------------------------------------------------------
 async def create_workspace(
-    conn: AsyncConnection, *, name: str, workspace_id: str | None = None
+    conn: AsyncConnection,
+    *,
+    name: str,
+    workspace_id: str | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> Workspace:
-    """Insert a workspace and return it (id minted unless a legacy one is supplied)."""
+    """Insert a workspace and return it (id minted unless a legacy one is supplied).
+
+    Also allocates the workspace's permanent system hostname (``<label>.<pages_system_suffix>``) in
+    the SAME transaction (custom-domain publishing §4.1), so every creator — owner provisioning,
+    self-serve provisioning, scripts, tests — gets one without knowing about it. Composition roots
+    pass ``settings.pages_system_suffix``; the default is the production suffix.
+    """
     result = await conn.execute(
         text(
             "INSERT INTO workspace (workspace_id, name) VALUES (:workspace_id, :name) "
@@ -113,7 +124,11 @@ async def create_workspace(
         ),
         {"workspace_id": workspace_id or new_workspace_id(), "name": name},
     )
-    return Workspace(**dict(result.mappings().one()))
+    workspace = Workspace(**dict(result.mappings().one()))
+    await ensure_system_hostname(
+        conn, workspace_id=workspace.workspace_id, name=name, suffix=pages_system_suffix
+    )
+    return workspace
 
 
 async def get_workspace(conn: AsyncConnection, workspace_id: str) -> Workspace | None:

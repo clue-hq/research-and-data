@@ -952,6 +952,7 @@ def create_projections_app(
             app,
             service=auth_service,
             conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+            pages_system_suffix=resolved.pages_system_suffix,
         )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)

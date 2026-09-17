@@ -307,3 +307,21 @@ def test_project_run_rejects_a_different_same_workspace_brand() -> None:
                 )
 
     run_async(scenario())
+
+
+def test_create_workspace_has_a_system_hostname_under_the_default_suffix() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = await create_workspace(conn, name="Hostname Default")
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT hostname FROM workspace_hostname "
+                        "WHERE workspace_id = :w AND kind = 'system'"
+                    ),
+                    {"w": ws.workspace_id},
+                )
+            ).first()
+            assert row is not None and row[0] == "hostname-default.pages.cluehq.ai"
+
+    run_async(scenario())
