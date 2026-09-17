@@ -21,7 +21,7 @@ import time
 import zipfile
 import contextlib
 from collections.abc import Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -7325,279 +7325,284 @@ def create_app(
         """Public Phase E provider-registry surface (lands with Phase G):
         run any registered generation provider and persist the normalized
         asset record."""
-        if not image_provider.is_image_model_provider(payload.provider) and any(
-            value is not None
-            for value in (payload.reference_roles, payload.reference_framing, payload.operation)
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "image_model.unsupported_reference_semantics",
-                    "message": (
-                        "reference roles, framing and operation labels require "
-                        "the image model provider"
-                    ),
-                    "diagnostics": [],
-                },
-            )
-        asset_id = f"asset_gen_{uuid4().hex[:12]}"
-        cache_key: Optional[str] = None
-        blobs = blob_store(repo)
-        cache_dir = request_cache_dir(repo)
-        if image_provider.is_image_model_provider(payload.provider):
-            # Phase 3b image EDIT: resolve the source asset's pixels up front.
-            # The edit keys the cache on the source digest (same instruction on
-            # a different image must never hit) and stamps the result's source
-            # as kind "edited" with the parent asset id, so provenance chains.
-            source_images: Optional[list] = None
-            source_digest: Optional[str] = None
-            if payload.source_asset_id:
-                source_stored = repo.require_asset_record(payload.source_asset_id)
-                source_media = (source_stored["asset"].get("media") or {})
-                source_digest = (source_media.get("digest") or {}).get("value")
-                # D4: a pure-Python read — go straight to durable storage. Routing it through
-                # the engine cache would mean materializing bytes no engine call will read.
-                source_bytes = read_asset_bytes(blobs, source_digest)
-                if source_bytes is None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "code": "asset.source_bytes_missing",
-                            "message": (
-                                f"source asset {payload.source_asset_id} has no stored"
-                                " bytes to edit"
-                            ),
-                            "diagnostics": [],
-                        },
-                    )
-                source_images = [
-                    (source_bytes, source_media.get("mime_type") or "image/png")
-                ]
-            # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
-            # request's reference_asset_ids into real bytes (the field was inert
-            # before) so the editor's generate flow conditions on attached style
-            # references. Only on the pure-generation path (an edit already rides
-            # its source pixels). Empty ids → None → byte-identical to today.
-            reference_images: Optional[list] = None
-            reference_digests: Optional[List[str]] = None
-            ref_ids = payload.reference_asset_ids
-            if source_images is None:
-                ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
-                if ref_ids:
-                    reference_images, reference_digests = (
-                        resolve_reference_images_for_generate(
-                            repo, blobs, cache_dir, ref_ids
-                        )
-                    )
-            # Generation cache: re-use the asset produced by an identical earlier
-            # request instead of re-paying the model (the byte-digest store dedup
-            # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
-            # provider; the cache lives in the same store the assets do.
-            cache_key = image_cache.generation_key(
-                prompt=payload.prompt,
-                model=image_provider.configured_model_id(),
-                width=payload.width,
-                height=payload.height,
-                brand_notes=payload.brand_notes,
-                aspect_ratio=payload.aspect_ratio,
-                image_size=payload.image_size,
-                transparent_background=payload.transparent_background,
-                reference_asset_ids=ref_ids,
-                reference_digests=reference_digests,
-                source_digest=source_digest,
-                operation=payload.operation,
-                reference_roles=payload.reference_roles,
-                reference_framing=payload.reference_framing,
-            )
-            # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
-            # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
-            # a tool — it is what AVOIDS the provider spend, and it has to run before it. The
-            # write that claims the key is governed (``design_register_generated_asset``) and
-            # re-checks the ledger inside its own transaction, so two requests that both reach
-            # here on a miss still converge on one asset.
-            cached = repo.get_generation_result(cache_key)
-            if cached:
-                cached_record = cached["asset"]
-                log_event(
-                    api_logger,
-                    logging.INFO,
-                    "asset_generation_completed",
-                    status="ok",
-                    provider=payload.provider,
-                    asset_id=cached_record.get("id"),
-                    deduplicated=True,
-                    cached=True,
+        # Lane 3 slice 5: this REQUEST is the unit of work — the image model call it makes
+        # runs through this scope's ProviderCaller and its rows land on provider_call_ledger
+        # before the response goes out. The route is a sync def (FastAPI runs it in the
+        # threadpool), so the drain owns its own loop.
+        with _request_spend_scope(store_workspace_id(repo)):
+            if not image_provider.is_image_model_provider(payload.provider) and any(
+                value is not None
+                for value in (payload.reference_roles, payload.reference_framing, payload.operation)
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "image_model.unsupported_reference_semantics",
+                        "message": (
+                            "reference roles, framing and operation labels require "
+                            "the image model provider"
+                        ),
+                        "diagnostics": [],
+                    },
                 )
-                return {
-                    "schema_version": 1,
-                    "asset": public_asset_record(cached_record),
-                    "provider": {"id": payload.provider},
-                    "deduplicated": True,
-                    "diagnostics": [],
-                    **image_provider.image_request_receipt_fields(cached_record),
+            asset_id = f"asset_gen_{uuid4().hex[:12]}"
+            cache_key: Optional[str] = None
+            blobs = blob_store(repo)
+            cache_dir = request_cache_dir(repo)
+            if image_provider.is_image_model_provider(payload.provider):
+                # Phase 3b image EDIT: resolve the source asset's pixels up front.
+                # The edit keys the cache on the source digest (same instruction on
+                # a different image must never hit) and stamps the result's source
+                # as kind "edited" with the parent asset id, so provenance chains.
+                source_images: Optional[list] = None
+                source_digest: Optional[str] = None
+                if payload.source_asset_id:
+                    source_stored = repo.require_asset_record(payload.source_asset_id)
+                    source_media = (source_stored["asset"].get("media") or {})
+                    source_digest = (source_media.get("digest") or {}).get("value")
+                    # D4: a pure-Python read — go straight to durable storage. Routing it through
+                    # the engine cache would mean materializing bytes no engine call will read.
+                    source_bytes = read_asset_bytes(blobs, source_digest)
+                    if source_bytes is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "code": "asset.source_bytes_missing",
+                                "message": (
+                                    f"source asset {payload.source_asset_id} has no stored"
+                                    " bytes to edit"
+                                ),
+                                "diagnostics": [],
+                            },
+                        )
+                    source_images = [
+                        (source_bytes, source_media.get("mime_type") or "image/png")
+                    ]
+                # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
+                # request's reference_asset_ids into real bytes (the field was inert
+                # before) so the editor's generate flow conditions on attached style
+                # references. Only on the pure-generation path (an edit already rides
+                # its source pixels). Empty ids → None → byte-identical to today.
+                reference_images: Optional[list] = None
+                reference_digests: Optional[List[str]] = None
+                ref_ids = payload.reference_asset_ids
+                if source_images is None:
+                    ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
+                    if ref_ids:
+                        reference_images, reference_digests = (
+                            resolve_reference_images_for_generate(
+                                repo, blobs, cache_dir, ref_ids
+                            )
+                        )
+                # Generation cache: re-use the asset produced by an identical earlier
+                # request instead of re-paying the model (the byte-digest store dedup
+                # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
+                # provider; the cache lives in the same store the assets do.
+                cache_key = image_cache.generation_key(
+                    prompt=payload.prompt,
+                    model=image_provider.configured_model_id(),
+                    width=payload.width,
+                    height=payload.height,
+                    brand_notes=payload.brand_notes,
+                    aspect_ratio=payload.aspect_ratio,
+                    image_size=payload.image_size,
+                    transparent_background=payload.transparent_background,
+                    reference_asset_ids=ref_ids,
+                    reference_digests=reference_digests,
+                    source_digest=source_digest,
+                    operation=payload.operation,
+                    reference_roles=payload.reference_roles,
+                    reference_framing=payload.reference_framing,
+                )
+                # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
+                # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
+                # a tool — it is what AVOIDS the provider spend, and it has to run before it. The
+                # write that claims the key is governed (``design_register_generated_asset``) and
+                # re-checks the ledger inside its own transaction, so two requests that both reach
+                # here on a miss still converge on one asset.
+                cached = repo.get_generation_result(cache_key)
+                if cached:
+                    cached_record = cached["asset"]
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "asset_generation_completed",
+                        status="ok",
+                        provider=payload.provider,
+                        asset_id=cached_record.get("id"),
+                        deduplicated=True,
+                        cached=True,
+                    )
+                    return {
+                        "schema_version": 1,
+                        "asset": public_asset_record(cached_record),
+                        "provider": {"id": payload.provider},
+                        "deduplicated": True,
+                        "diagnostics": [],
+                        **image_provider.image_request_receipt_fields(cached_record),
+                    }
+                # Real text-to-image generation runs here in the async-capable Python
+                # layer; the returned bytes are persisted through the SAME ingest
+                # pipeline as uploads, stamped with a `generated` source, so the rest
+                # of the stack (placement/render/export/validation) is unchanged.
+                try:
+                    if source_images is not None:
+                        generated = image_provider.edit(
+                            prompt=payload.prompt,
+                            source_images=source_images,
+                            brand_notes=payload.brand_notes,
+                            transparent_background=payload.transparent_background,
+                            request_id=asset_id,
+                            operation=payload.operation,
+                        )
+                    else:
+                        generated = image_provider.generate(
+                            prompt=payload.prompt,
+                            width=payload.width,
+                            height=payload.height,
+                            brand_notes=payload.brand_notes,
+                            aspect_ratio=payload.aspect_ratio,
+                            image_size=payload.image_size,
+                            transparent_background=payload.transparent_background,
+                            reference_asset_ids=ref_ids,
+                            reference_images=reference_images,
+                            request_id=asset_id,
+                            operation=payload.operation,
+                            reference_roles=payload.reference_roles,
+                            reference_framing=payload.reference_framing,
+                        )
+                except image_provider.ImageGenerationError as error:
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "asset_generation_completed",
+                        status="rejected",
+                        provider=payload.provider,
+                        error_code=error.code,
+                    )
+                    raise HTTPException(
+                        status_code=error.status_code,
+                        detail={"code": error.code, "message": str(error), "diagnostics": []},
+                    ) from error
+                try:
+                    result = app.state.core.ingest_asset(
+                        store_root=cache_dir,
+                        bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
+                        asset_id=asset_id,
+                        label=payload.label or (payload.prompt[:60].strip() or asset_id),
+                        declared_mime_type=generated.mime_type,
+                        kind=payload.output_kind,
+                        license=generated.license,
+                        provenance=generated.provenance,
+                        source=(
+                            {
+                                "kind": "edited",
+                                "request_id": asset_id,
+                                "model": generated.model,
+                                "source_asset_id": payload.source_asset_id,
+                            }
+                            if payload.source_asset_id
+                            else {
+                                "kind": "generated",
+                                "request_id": asset_id,
+                                "model": generated.model,
+                            }
+                        ),
+                        max_bytes=asset_max_bytes(),
+                        raise_on_error=False,
+                    )
+                except CoreError as error:
+                    raise core_http_error(error) from error
+            else:
+                request = {
+                    "request_id": asset_id,
+                    "prompt": payload.prompt,
+                    "output_kind": payload.output_kind,
+                    "target_node_id": None,
+                    "target_slot_id": None,
+                    "constraints": {
+                        "width": payload.width,
+                        "height": payload.height,
+                        "mime_type": payload.mime_type,
+                        "transparent_background": payload.transparent_background,
+                        "brand_notes": payload.brand_notes,
+                        "aspect_ratio": payload.aspect_ratio,
+                        "image_size": payload.image_size,
+                        "reference_asset_ids": payload.reference_asset_ids,
+                    },
                 }
-            # Real text-to-image generation runs here in the async-capable Python
-            # layer; the returned bytes are persisted through the SAME ingest
-            # pipeline as uploads, stamped with a `generated` source, so the rest
-            # of the stack (placement/render/export/validation) is unchanged.
-            try:
-                if source_images is not None:
-                    generated = image_provider.edit(
-                        prompt=payload.prompt,
-                        source_images=source_images,
-                        brand_notes=payload.brand_notes,
-                        transparent_background=payload.transparent_background,
-                        request_id=asset_id,
-                        operation=payload.operation,
+                try:
+                    result = app.state.core.generate_asset(
+                        store_root=cache_dir,
+                        provider=payload.provider,
+                        request=request,
+                        asset_id=asset_id,
+                        label=payload.label,
+                        raise_on_error=False,
                     )
-                else:
-                    generated = image_provider.generate(
-                        prompt=payload.prompt,
-                        width=payload.width,
-                        height=payload.height,
-                        brand_notes=payload.brand_notes,
-                        aspect_ratio=payload.aspect_ratio,
-                        image_size=payload.image_size,
-                        transparent_background=payload.transparent_background,
-                        reference_asset_ids=ref_ids,
-                        reference_images=reference_images,
-                        request_id=asset_id,
-                        operation=payload.operation,
-                        reference_roles=payload.reference_roles,
-                        reference_framing=payload.reference_framing,
-                    )
-            except image_provider.ImageGenerationError as error:
+                except CoreError as error:
+                    raise core_http_error(error) from error
+
+            diagnostics = result.get("diagnostics", [])
+            if not result.get("ok", False):
+                error = result.get("error") or {}
+                if not diagnostics:
+                    diagnostics = diagnostics_from_helper_error(error)
                 log_event(
                     api_logger,
                     logging.INFO,
                     "asset_generation_completed",
                     status="rejected",
                     provider=payload.provider,
-                    error_code=error.code,
+                    error_code=error.get("code"),
+                    **diagnostic_summary(diagnostics),
                 )
                 raise HTTPException(
-                    status_code=error.status_code,
-                    detail={"code": error.code, "message": str(error), "diagnostics": []},
-                ) from error
-            try:
-                result = app.state.core.ingest_asset(
-                    store_root=cache_dir,
-                    bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
-                    asset_id=asset_id,
-                    label=payload.label or (payload.prompt[:60].strip() or asset_id),
-                    declared_mime_type=generated.mime_type,
-                    kind=payload.output_kind,
-                    license=generated.license,
-                    provenance=generated.provenance,
-                    source=(
-                        {
-                            "kind": "edited",
-                            "request_id": asset_id,
-                            "model": generated.model,
-                            "source_asset_id": payload.source_asset_id,
-                        }
-                        if payload.source_asset_id
-                        else {
-                            "kind": "generated",
-                            "request_id": asset_id,
-                            "model": generated.model,
-                        }
-                    ),
-                    max_bytes=asset_max_bytes(),
-                    raise_on_error=False,
+                    status_code=400,
+                    detail={
+                        "code": error.get("code"),
+                        "message": error.get("message"),
+                        "diagnostics": diagnostics,
+                    },
                 )
-            except CoreError as error:
-                raise core_http_error(error) from error
-        else:
-            request = {
-                "request_id": asset_id,
-                "prompt": payload.prompt,
-                "output_kind": payload.output_kind,
-                "target_node_id": None,
-                "target_slot_id": None,
-                "constraints": {
-                    "width": payload.width,
-                    "height": payload.height,
-                    "mime_type": payload.mime_type,
-                    "transparent_background": payload.transparent_background,
-                    "brand_notes": payload.brand_notes,
-                    "aspect_ratio": payload.aspect_ratio,
-                    "image_size": payload.image_size,
-                    "reference_asset_ids": payload.reference_asset_ids,
-                },
-            }
-            try:
-                result = app.state.core.generate_asset(
-                    store_root=cache_dir,
-                    provider=payload.provider,
-                    request=request,
-                    asset_id=asset_id,
-                    label=payload.label,
-                    raise_on_error=False,
-                )
-            except CoreError as error:
-                raise core_http_error(error) from error
 
-        diagnostics = result.get("diagnostics", [])
-        if not result.get("ok", False):
-            error = result.get("error") or {}
-            if not diagnostics:
-                diagnostics = diagnostics_from_helper_error(error)
+            asset_payload = result.get("asset") or {}
+            record = asset_payload.get("record") or {}
+            # D4 write-back before the registry row (see POST /assets). Covers both branches: the
+            # Python image provider's bytes re-ingested through the engine, and a registered
+            # provider's `generate_asset`.
+            register_engine_write(
+                blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+            )
+            if cache_key is not None:
+                # One governed write: the registry row AND the ledger claim, in one transaction, so
+                # an identical repeat re-places this asset instead of re-paying the model.
+                ref = run_design_tool(
+                    "design_register_generated_asset",
+                    {"record": record, "generation_key": cache_key},
+                    workspace_id=store_workspace_id(repo),
+                )
+                stored = repo.require_asset_record(ref["asset_id"])
+            else:
+                stored = _register_asset_record(repo, record)
             log_event(
                 api_logger,
                 logging.INFO,
                 "asset_generation_completed",
-                status="rejected",
+                status="ok",
                 provider=payload.provider,
-                error_code=error.get("code"),
+                asset_id=record.get("id"),
+                deduplicated=asset_payload.get("deduplicated", False),
                 **diagnostic_summary(diagnostics),
             )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": error.get("code"),
-                    "message": error.get("message"),
-                    "diagnostics": diagnostics,
-                },
-            )
-
-        asset_payload = result.get("asset") or {}
-        record = asset_payload.get("record") or {}
-        # D4 write-back before the registry row (see POST /assets). Covers both branches: the
-        # Python image provider's bytes re-ingested through the engine, and a registered
-        # provider's `generate_asset`.
-        register_engine_write(
-            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
-        )
-        if cache_key is not None:
-            # One governed write: the registry row AND the ledger claim, in one transaction, so
-            # an identical repeat re-places this asset instead of re-paying the model.
-            ref = run_design_tool(
-                "design_register_generated_asset",
-                {"record": record, "generation_key": cache_key},
-                workspace_id=store_workspace_id(repo),
-            )
-            stored = repo.require_asset_record(ref["asset_id"])
-        else:
-            stored = _register_asset_record(repo, record)
-        log_event(
-            api_logger,
-            logging.INFO,
-            "asset_generation_completed",
-            status="ok",
-            provider=payload.provider,
-            asset_id=record.get("id"),
-            deduplicated=asset_payload.get("deduplicated", False),
-            **diagnostic_summary(diagnostics),
-        )
-        return {
-            "schema_version": 1,
-            "asset": public_asset_record(stored["asset"]),
-            "provider": asset_payload.get("provider") or {"id": payload.provider},
-            "deduplicated": asset_payload.get("deduplicated", False),
-            "diagnostics": diagnostics,
-            **image_provider.image_request_receipt_fields(stored["asset"]),
-        }
+            return {
+                "schema_version": 1,
+                "asset": public_asset_record(stored["asset"]),
+                "provider": asset_payload.get("provider") or {"id": payload.provider},
+                "deduplicated": asset_payload.get("deduplicated", False),
+                "diagnostics": diagnostics,
+                **image_provider.image_request_receipt_fields(stored["asset"]),
+            }
 
     @app.get("/assets")
     def list_assets(
@@ -10225,7 +10230,95 @@ def _empty_page_steering_note(scene: Any) -> Optional[str]:
     )
 
 
+
+# --- Lane 3 slice 5: one spend scope per unit of work -----------------------------------------
+
+
+def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
+    """The ledger stamp for one design turn.
+
+    ``DesignTurnEnvelope`` carries no project id (see ``clue_design.envelopes``), so a turn stamps
+    its workspace and its run — the run id in the ``job_id`` column, whose documented meaning is
+    "the job that spent". A run id that is not a UUID stamps the workspace alone rather than
+    failing the turn: an unstampable row is still a row, and losing the money trail to a parse
+    error would be the worse answer.
+    """
+    from clue_spend import LedgerStamp
+
+    try:
+        job_id = UUID(str(envelope.run_id))
+    except (TypeError, ValueError):
+        job_id = None
+    return LedgerStamp(workspace_id=envelope.workspace_id, job_id=job_id)
+
+
+@contextmanager
+def _request_spend_scope(workspace_id: str):
+    """One request's spend scope, drained on the way out. For a route that spends.
+
+    A request carries no project or run of its own, so the stamp is the workspace alone — the
+    shape ``LedgerStamp`` documents for "a display page or a chat-turn tool".
+    """
+    from clue_spend import LedgerStamp
+
+    from . import spend as _spend
+
+    with _spend.spend_scope(LedgerStamp(workspace_id=workspace_id)) as scope:
+        try:
+            yield scope
+        finally:
+            _drain_spend(scope)
+
+
+def _drain_spend(scope: Any) -> None:
+    """Land a finished unit of work's rows. LOUD on failure, never fatal.
+
+    A ledger failure must not turn a finished job into a failed one — the work really happened and
+    its result is really persisted — but it must not be silent either, because a swallowed drain is
+    money that left the building with no row behind it.
+    """
+    from . import spend as _spend
+
+    try:
+        _spend.drain_sync(scope)
+    except Exception as error:  # noqa: BLE001 - the ledger may never fail the work
+        api_logger.error("spend.drain_failed", error=str(error), exc_info=True)
+
+
 def execute_agent_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+    spend_drain: Any = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One scene-mode turn under its own spend scope — see :func:`_execute_agent_turn_job`.
+
+    Every paid call the turn makes (image generation, the ad style-group tie-break) runs through
+    this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
+    ``spend_drain`` is the injected drain (PRE-1b): the platform passes one that also records a
+    provider incident, so that bookkeeping lives once on its side.
+    """
+    from . import spend as _spend
+
+    with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
+        try:
+            return _execute_agent_turn_job(
+                envelope,
+                store=store,
+                host=host,
+                event_sink=event_sink,
+                checkpointer=checkpointer,
+                lease_generation=lease_generation,
+            )
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_agent_turn_job(
     envelope: Any,
     *,
     store: HybridRepository,
@@ -10853,6 +10946,33 @@ def execute_web_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    spend_drain: Any = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`."""
+    from . import spend as _spend
+
+    with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
+        try:
+            return _execute_web_turn_job(
+                envelope,
+                store=store,
+                host=host,
+                event_sink=event_sink,
+                checkpointer=checkpointer,
+                lease_generation=lease_generation,
+            )
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_web_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn, executed from its frozen envelope.
 
@@ -11084,6 +11204,39 @@ def execute_web_turn_job(
 
 
 def execute_ingestion_job(
+    envelope: Any,
+    *,
+    host: Any,
+    expected_generation: Optional[int] = None,
+    spend_drain: Any = None,
+) -> str:
+    """One brand-kit ingestion under its own spend scope — see :func:`_execute_ingestion_job`.
+
+    Every model call the pipeline makes (describe, assist, PDF vision, ad-DNA) and every vendor
+    credit it spends (the logo vendor, the ad-library vendor) runs through this scope's
+    ``ProviderCaller`` and lands
+    on ``provider_call_ledger`` stamped with this job's id. ``spend_drain`` is the injected drain
+    (PRE-1b).
+    """
+    from clue_spend import LedgerStamp
+
+    from . import spend as _spend
+
+    try:
+        job_id = UUID(str(envelope.job_id))
+    except (TypeError, ValueError):
+        job_id = None
+    stamp = LedgerStamp(workspace_id=envelope.workspace_id, job_id=job_id)
+    with _spend.spend_scope(stamp, drain_fn=spend_drain) as scope:
+        try:
+            return _execute_ingestion_job(
+                envelope, host=host, expected_generation=expected_generation
+            )
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_ingestion_job(
     envelope: Any,
     *,
     host: Any,

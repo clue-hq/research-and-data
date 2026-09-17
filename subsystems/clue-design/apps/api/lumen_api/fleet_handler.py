@@ -171,11 +171,16 @@ class DesignJobWorkHandler:
         *,
         host_provider: Any = None,
         checkpointer_factory: Any = None,
+        spend_drain: Any = None,
     ) -> None:
         # Callables, not values: the embedded worker's host reads ``app.state`` at execution
         # time, so a test that swaps ``app.state.agent_turn_runner`` between turns is honoured.
         self._host_provider = host_provider if host_provider is not None else DesignTurnHost
         self._checkpointer_factory = checkpointer_factory
+        # Lane 3 slice 5: the whole drain, injected. ``None`` is the bare library drain (rows and
+        # nothing else); the platform composes one that also records a provider incident, so that
+        # bookkeeping is written once on its side rather than once per design executor.
+        self._spend_drain = spend_drain
 
     @property
     def task_capabilities(self) -> "tuple[TaskCapability, ...]":
@@ -351,10 +356,20 @@ class DesignJobWorkHandler:
 
         if isinstance(envelope, DesignIngestionEnvelope):
             return str(execute_ingestion_job(
-                envelope, host=host, expected_generation=generation
+                envelope,
+                host=host,
+                expected_generation=generation,
+                spend_drain=self._spend_drain,
             ))
         store = HybridRepository(workspace_id=envelope.workspace_id, ensure_workspace=False)
-        return _execute_turn(envelope, store, generation, host, self._checkpointer_factory)
+        return _execute_turn(
+            envelope,
+            store,
+            generation,
+            host,
+            self._checkpointer_factory,
+            spend_drain=self._spend_drain,
+        )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
         try:
@@ -524,6 +539,8 @@ def _execute_turn(
     generation: int,
     host: DesignTurnHost,
     checkpointer_factory: Any,
+    *,
+    spend_drain: Any = None,
 ) -> str:
     """Run ONE design turn to a terminal result. Synchronous by nature; called via to_thread.
 
@@ -576,6 +593,7 @@ def _execute_turn(
             # D7: the turn's governed tool invocations reach the same stream, fenced by the same
             # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
             lease_generation=generation,
+            spend_drain=spend_drain,
         )
 
     try:
@@ -645,6 +663,7 @@ def build_design_job_handler(
     *,
     host_provider: Any = None,
     checkpointer_factory: Any = postgres_design_checkpointer,
+    spend_drain: Any = None,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
@@ -655,6 +674,7 @@ def build_design_job_handler(
     return DesignJobWorkHandler(
         host_provider=host_provider,
         checkpointer_factory=checkpointer_factory,
+        spend_drain=spend_drain,
     )
 
 

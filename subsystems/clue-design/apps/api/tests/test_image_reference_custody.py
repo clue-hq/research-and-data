@@ -134,8 +134,56 @@ def fake_transport(monkeypatch: pytest.MonkeyPatch):
         calls.append((url, json))
         return Response()
 
-    monkeypatch.setattr("httpx.post", post)
+    _patch_image_post(monkeypatch, post)
     return calls, output
+
+
+class _SpendPostTransport:
+    """Adapts the ``httpx.post``-shaped stub above onto ``clue_spend``'s transport seam.
+
+    Lane 3 slice 5 moved the image model's HTTP call behind the provider caller, so patching
+    ``httpx.post`` no longer intercepts it. The metering key the seam adds
+    (``usage: {"include": True}``) is stripped before the stub records the body, so every
+    "the request carried exactly these parts" assertion below keeps pinning what the IMAGE
+    PROVIDER built; that the seam adds the key is pinned in ``test_spend_scope``.
+    """
+
+    def __init__(self, post) -> None:
+        self._post = post
+
+    def send(self, request):
+        from clue_spend import HttpResponse
+
+        body = json.loads(request.body) if request.body else None
+        if isinstance(body, dict):
+            body.pop("usage", None)
+        response = self._post(
+            request.url,
+            json=body,
+            headers=dict(request.headers),
+            timeout=request.timeout_s,
+        )
+        return HttpResponse(
+            status=int(response.status_code),
+            body=json.dumps(response.json()).encode("utf-8"),
+        )
+
+
+def _patch_image_post(monkeypatch: pytest.MonkeyPatch, post) -> None:
+    """Point the process-wide UNSCOPED spend caller at ``post`` for one test.
+
+    These tests call ``image_provider.generate``/``edit`` directly, outside any request or job, so
+    no scope is open — which is what the unscoped fallback is for. ``monkeypatch`` owns the
+    restore; the warn flag is pre-set so the seam's one-time warning stays out of the test's logs.
+    """
+    from clue_spend import LedgerStamp
+    from lumen_api import spend
+
+    scope = spend._new_scope(
+        LedgerStamp(workspace_id="ws_image_custody"), _SpendPostTransport(post)
+    )
+    monkeypatch.setattr(spend, "_UNSCOPED", scope, raising=False)
+    monkeypatch.setattr(spend, "_UNSCOPED_WARNED", True, raising=False)
 
 
 @pytest.mark.parametrize("api_style", ["images", "chat"])

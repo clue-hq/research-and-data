@@ -221,7 +221,8 @@ class OpenRouterAdDnaDistiller:
         return card
 
     def _invoke(self, previews: list[CreativePreview]) -> Any:
-        import httpx  # lazy: only the real network path needs it
+        from clue_spend import ProviderHalted
+        from lumen_api import spend  # lazy: only the real network path needs it
 
         manifest = "\n".join(
             f"{index}. creative_id={preview.creative_id}"
@@ -261,30 +262,33 @@ class OpenRouterAdDnaDistiller:
                 "json_schema": {"name": "ad_dna_card", "strict": True, "schema": _CARD_SCHEMA},
             },
         }
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        url = self._base_url.rstrip("/") + "/chat/completions"
-        for attempt in range(2):
-            try:
-                response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-                if response.status_code >= 400:
-                    self.last_failure_reason = (
-                        f"HTTP {response.status_code} (attempt {attempt + 1}): "
-                        f"{response.text[:FAILURE_EXCERPT_MAX]}"
-                    )
-                    continue
-                raw = response.json()["choices"][0]["message"]["content"]
-                self.last_failure_reason = None
-                return json.loads(raw)
-            except Exception as error:  # noqa: BLE001 - a distillation failure is never fatal
-                self.last_failure_reason = (
-                    f"{type(error).__name__} (attempt {attempt + 1}): "
-                    f"{str(error)[:FAILURE_EXCERPT_MAX]}"
-                )
-                continue
-        return None
+        # Two attempts, now the provider caller's, with an estimate row before the wire and a
+        # priced result row after. ``ProviderHalted`` propagates: a distillation failure is never
+        # fatal, but a provider refusing to sell is not a distillation failure.
+        try:
+            response = spend.openrouter_call(
+                operation="design.ingestion.ad_dna",
+                body=body,
+                label=f"ad_dna:{len(previews)} creatives",
+                timeout_s=DEFAULT_TIMEOUT_S,
+                api_key=self._api_key,
+                base_url=self._base_url,
+                max_attempts=2,
+            )
+            if response.status >= 400:
+                excerpt = response.body.decode("utf-8", "replace")[:FAILURE_EXCERPT_MAX]
+                self.last_failure_reason = f"HTTP {response.status}: {excerpt}"
+                return None
+            raw = json.loads(response.body)["choices"][0]["message"]["content"]
+            self.last_failure_reason = None
+            return json.loads(raw)
+        except ProviderHalted:
+            raise
+        except Exception as error:  # noqa: BLE001 - a distillation failure is never fatal
+            self.last_failure_reason = (
+                f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}"
+            )
+            return None
 
 
 def previews_for(

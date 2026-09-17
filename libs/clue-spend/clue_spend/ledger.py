@@ -135,6 +135,18 @@ class BufferedLedger:
             self._buffered.append(row)
         return row.row_id
 
+    @property
+    def rows(self) -> tuple[LedgerRow, ...]:
+        """A non-destructive snapshot of what is buffered, under the same name
+        :class:`~clue_spend.sinks.MemoryLedger` uses.
+
+        A caller that has to *read* the row its own call just wrote — the design image provider
+        naming the ledger row on its generation receipt — cannot use :meth:`drain`, which empties
+        the buffer the unit of work still has to land.
+        """
+        with self._lock:
+            return tuple(self._buffered)
+
     def drain(self) -> list[LedgerRow]:
         with self._lock:
             drained = list(self._buffered)

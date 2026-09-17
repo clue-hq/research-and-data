@@ -688,7 +688,8 @@ class OpenRouterDescriber:
         return results
 
     def _invoke(self, items: list[DescribeItem]) -> list | None:
-        import httpx  # lazy: only the real network path needs it
+        from clue_spend import ProviderHalted
+        from lumen_api import spend  # lazy: only the real network path needs it
 
         content: list[dict] = [
             {
@@ -723,39 +724,41 @@ class OpenRouterDescriber:
                 },
             },
         }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        url = self.base_url.rstrip("/") + "/chat/completions"
-        for attempt in range(2):
-            try:
-                response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-                if response.status_code >= 400:
-                    excerpt = response.text[:FAILURE_EXCERPT_MAX]
-                    self.last_failure_reason = (
-                        f"HTTP {response.status_code} (attempt {attempt + 1}): {excerpt}"
-                    )
-                    continue
-                raw = response.json()["choices"][0]["message"]["content"]
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    parsed = parsed.get("descriptions") or parsed.get("items") or []
-                if isinstance(parsed, list):
-                    self.last_failure_reason = None
-                    return parsed
-                self.last_failure_reason = (
-                    f"malformed response (attempt {attempt + 1}): expected a JSON array, "
-                    f"got {type(parsed).__name__}"
-                )
-                continue
-            except Exception as error:  # noqa: BLE001
-                message = str(error)[:FAILURE_EXCERPT_MAX]
-                self.last_failure_reason = (
-                    f"{type(error).__name__} (attempt {attempt + 1}): {message}"
-                )
-                continue
-        return None
+        # The retry loop this used to hand-roll now lives in the provider caller: the same two
+        # attempts, on the retryable statuses, with the raw body and the money row recorded for
+        # every one of them. A ``ProviderHalted`` (OpenRouter refusing to sell) is NOT swallowed —
+        # the job must fail loud rather than report an empty description as a successful pass.
+        try:
+            response = spend.openrouter_call(
+                operation="design.ingestion.describe",
+                body=body,
+                label=f"describe:{len(items)} assets",
+                timeout_s=DEFAULT_TIMEOUT_S,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_attempts=2,
+            )
+            if response.status >= 400:
+                excerpt = response.body.decode("utf-8", "replace")[:FAILURE_EXCERPT_MAX]
+                self.last_failure_reason = f"HTTP {response.status}: {excerpt}"
+                return None
+            raw = json.loads(response.body)["choices"][0]["message"]["content"]
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                parsed = parsed.get("descriptions") or parsed.get("items") or []
+            if isinstance(parsed, list):
+                self.last_failure_reason = None
+                return parsed
+            self.last_failure_reason = (
+                f"malformed response: expected a JSON array, got {type(parsed).__name__}"
+            )
+            return None
+        except ProviderHalted:
+            raise
+        except Exception as error:  # noqa: BLE001
+            message = str(error)[:FAILURE_EXCERPT_MAX]
+            self.last_failure_reason = f"{type(error).__name__}: {message}"
+            return None
 
 
 def _items_manifest(items: list[DescribeItem]) -> str:
