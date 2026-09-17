@@ -13,6 +13,7 @@ from clue_design.errors import DesignNotFoundError
 from clue_design.publishes import get_web_publish
 from clue_design.storage import read_design_blob, read_public_design_blob
 from clue_spine.hostnames import resolve_active_hostname
+from clue_spine.pages_settings import get_pages_settings
 from clue_storage import StorageBackend
 
 
@@ -73,12 +74,20 @@ class DbPageReads:
         )
 
     async def fallback_url(self, workspace_id: str) -> str | None:
-        # S2 reads workspace_pages_settings.fallback_url here; S1 has no writer, so no fallback.
-        return None
+        async with self._conn_factory() as conn:
+            return (await get_pages_settings(conn, workspace_id)).fallback_url
 
     async def favicon(self, workspace_id: str) -> tuple[str, bytes] | None:
-        # S2 reads workspace_pages_settings.favicon_sha256 → read_design_blob here.
-        return None
+        async with self._conn_factory() as conn:
+            sha256 = (await get_pages_settings(conn, workspace_id)).favicon_sha256
+            if sha256 is None:
+                return None
+            try:
+                return await read_design_blob(
+                    conn, self._storage, workspace_id=workspace_id, sha256=sha256
+                )
+            except DesignNotFoundError:
+                return None
 
     async def publish_asset(self, workspace_id: str, sha256: str) -> tuple[str, bytes] | None:
         async with self._conn_factory() as conn:

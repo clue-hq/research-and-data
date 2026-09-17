@@ -32,6 +32,13 @@ from clue_spine.hostnames import (
     validate_label,
     workspaces_without_system_hostname,
 )
+from clue_spine.pages_settings import (
+    UNSET,
+    PagesSettings,
+    Unset,
+    get_pages_settings,
+    update_pages_settings,
+)
 from clue_spine.spine import (
     Brand,
     Product,
@@ -126,4 +133,9 @@ __all__ = [
     "set_custom_hostname_status",
     "delete_custom_hostname",
     "replace_system_label",
+    "PagesSettings",
+    "UNSET",
+    "Unset",
+    "get_pages_settings",
+    "update_pages_settings",
 ]
