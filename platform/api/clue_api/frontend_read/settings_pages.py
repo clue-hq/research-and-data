@@ -8,28 +8,39 @@ route-side so an unauthorised caller never reaches the DAL.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
 
 from clue_api.auth_wiring import principal_from_request
-from clue_api.cloudflare_custom_hostnames import CloudflareCustomHostnames
-from clue_api.dns_observe import DnsResolver, PublicDnsResolver
+from clue_api.cloudflare_custom_hostnames import CloudflareCustomHostnames, CloudflareError
+from clue_api.dns_observe import DnsResolver, PublicDnsResolver, observe_hostname
 from clue_api.frontend_read.accounts_list import WireModel
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.pages_hostname_status import ProviderState, derive_status
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_design.storage import register_design_bytes
 from clue_obs import get_logger
 from clue_spine.hostnames import (
     HostnameRefused,
+    HostnameStatus,
+    delete_custom_hostname,
     get_custom_hostname,
+    hostname_exists,
+    insert_custom_hostname,
     public_origin,
+    record_custom_hostname_check,
     replace_system_label,
+    set_custom_hostname_provider,
+    set_custom_hostname_status,
     system_hostname,
+    validate_custom_hostname,
 )
 from clue_spine.pages_settings import UNSET, Unset, get_pages_settings, update_pages_settings
 from clue_storage import StorageBackend, content_address
@@ -40,6 +51,9 @@ FAVICON_TYPES = {"image/png", "image/x-icon", "image/vnd.microsoft.icon", "image
 SOCIAL_TYPES = {"image/png", "image/jpeg"}
 FAVICON_MAX = 256 * 1024
 SOCIAL_MAX = 2 * 1024 * 1024
+# A custom hostname is re-derived at most once every 5 s per workspace: the screen polls while a
+# connection provisions, and each derivation costs two DNS lookups plus a Cloudflare GET.
+CHECK_INTERVAL_S = 5.0
 
 
 # --- wire (spec §7.2) ------------------------------------------------------
@@ -102,6 +116,12 @@ class LabelPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
+
+
+class ConnectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: str
 
 
 def _refusal(
@@ -274,6 +294,157 @@ class PagesSettingsService:
             ) from refused
         return await self.read(workspace_id)
 
+    # -- custom hostname (spec §7.3–7.6) --------------------------------------
+    async def connect(self, workspace_id: str, raw_hostname: str) -> PagesSettingsReadWire:
+        try:
+            hostname = validate_custom_hostname(
+                raw_hostname, system_suffix=self._settings.pages_system_suffix
+            )
+        except HostnameRefused as refused:
+            raise _refusal(422, refused.code, refused.message) from refused
+        if self._cloudflare is None:
+            raise _refusal(
+                503,
+                "PROVIDER_NOT_CONFIGURED",
+                "Custom domains are not configured on this deployment.",
+            )
+        async with self._conn_factory() as conn:
+            if await get_custom_hostname(conn, workspace_id) is not None:
+                raise _refusal(
+                    409,
+                    "custom_hostname_exists",
+                    "This workspace already has a custom hostname; remove it first.",
+                )
+            if await hostname_exists(conn, hostname):
+                raise _refusal(
+                    409, "hostname_taken", "This hostname is already connected to a workspace."
+                )
+            try:
+                async with conn.begin_nested():
+                    await insert_custom_hostname(
+                        conn,
+                        workspace_id=workspace_id,
+                        hostname=hostname,
+                        cname_target=self._settings.pages_cname_target,
+                    )
+            except IntegrityError as error:
+                raise _refusal(
+                    409, "hostname_taken", "This hostname is already connected to a workspace."
+                ) from error
+        # Committed. Now the provider; a refusal deletes the row again.
+        try:
+            record = await self._cloudflare.create(hostname)
+        except CloudflareError as error:
+            async with self._conn_factory() as conn:
+                await delete_custom_hostname(conn, hostname=hostname)
+            raise _refusal(502, "provider_error", error.message) from error
+        async with self._conn_factory() as conn:
+            await set_custom_hostname_provider(
+                conn,
+                hostname=hostname,
+                cf_custom_hostname_id=record.id,
+                ownership_txt_name=record.ownership_txt_name or f"_cf-custom-hostname.{hostname}",
+                ownership_txt_value=record.ownership_txt_value or "",
+            )
+        log.info("pages.custom_hostname.connected", workspace_id=workspace_id, hostname=hostname)
+        return await self.read(workspace_id)
+
+    async def _provider_state(self, row: Any) -> ProviderState | None:
+        if self._cloudflare is None or not row.cf_custom_hostname_id:
+            return None
+        record = await self._cloudflare.get(row.cf_custom_hostname_id)
+        if record is None:
+            return None
+        return ProviderState(
+            status=record.status,
+            ssl_status=record.ssl_status,
+            verification_errors=record.verification_errors,
+            ssl_validation_errors=record.ssl_validation_errors,
+        )
+
+    async def check(self, workspace_id: str, *, force: bool = True) -> PagesSettingsReadWire:
+        """Re-derive the custom hostname's status from DNS + the provider (spec §7.4).
+
+        ``force`` is what separates the explicit "Check now" button from the passive GET refresh:
+        only a forced check retries a stuck ``disconnecting`` delete (and so only a forced check
+        can answer 502). Both honour the ``CHECK_INTERVAL_S`` rate limit.
+        """
+        now = self._clock()
+        async with self._conn_factory() as conn:
+            row = await get_custom_hostname(conn, workspace_id)
+        if row is None:
+            return await self.read(workspace_id)
+        if (
+            row.last_checked_at is not None
+            and (now - row.last_checked_at).total_seconds() < CHECK_INTERVAL_S
+        ):
+            return await self.read(workspace_id)
+        if row.status == "disconnecting":
+            if force:
+                await self._finish_remove(row)
+            return await self.read(workspace_id)
+        resolver = self._resolver or PublicDnsResolver()
+        observation = await asyncio.to_thread(
+            observe_hostname, row.hostname, row.ownership_txt_name, resolver=resolver
+        )
+        try:
+            provider = await self._provider_state(row)
+        except CloudflareError as error:
+            provider = ProviderState(
+                status=row.status,
+                ssl_status=None,
+                verification_errors=(error.message,),
+                ssl_validation_errors=(),
+            )
+        decision = derive_status(
+            observation=observation,
+            provider=provider,
+            cname_target=row.cname_target,
+            expected_txt_value=row.ownership_txt_value,
+            connected_at=row.created_at,
+            now=now,
+        )
+        async with self._conn_factory() as conn:
+            await record_custom_hostname_check(
+                conn,
+                hostname=row.hostname,
+                status=cast(HostnameStatus, decision.status),
+                observed_cname=observation.cname,
+                observed_txt_present=row.ownership_txt_value in observation.txt_values,
+                last_error_code=decision.error_code,
+                last_error_detail=decision.error_detail,
+                checked_at=now,
+            )
+        return await self.read(workspace_id)
+
+    async def read_with_refresh(self, workspace_id: str) -> PagesSettingsReadWire:
+        """The GET: a cheap refresh when the custom row is non-active and stale (spec §7.1)."""
+        async with self._conn_factory() as conn:
+            row = await get_custom_hostname(conn, workspace_id)
+        if row is not None and row.status != "active":
+            return await self.check(workspace_id, force=False)
+        return await self.read(workspace_id)
+
+    async def _finish_remove(self, row: Any) -> None:
+        if self._cloudflare is not None and row.cf_custom_hostname_id:
+            try:
+                await self._cloudflare.delete(row.cf_custom_hostname_id)
+            except CloudflareError as error:
+                raise _refusal(
+                    502, "provider_error", error.message, extra={"retryable": True}
+                ) from error
+        async with self._conn_factory() as conn:
+            await delete_custom_hostname(conn, hostname=row.hostname)
+
+    async def remove(self, workspace_id: str) -> None:
+        async with self._conn_factory() as conn:
+            row = await get_custom_hostname(conn, workspace_id)
+            if row is None:
+                raise _refusal(404, "CUSTOM_HOSTNAME_NOT_FOUND", "No custom hostname is connected.")
+            await set_custom_hostname_status(conn, hostname=row.hostname, status="disconnecting")
+        await self._finish_remove(row)
+        log.info("pages.custom_hostname.removed", workspace_id=workspace_id, hostname=row.hostname)
+
 
 def build_cloudflare_client(
     settings: Settings, secrets: Secrets | None
@@ -332,7 +503,7 @@ def register_settings_pages_routes(
     async def read_pages_settings(
         request: Request, workspace_id: WorkspaceDep
     ) -> PagesSettingsReadWire:
-        return await _service(request).read(workspace_id)  # Task 8 switches to read_with_refresh
+        return await _service(request).read_with_refresh(workspace_id)
 
     @router.patch("/settings/pages", response_model=PagesSettingsReadWire)
     async def patch_pages_settings(
@@ -361,3 +532,25 @@ def register_settings_pages_routes(
     ) -> PagesSettingsReadWire:
         require_manage_settings(request, allow_local_mutations=allow_local_mutations)
         return await _service(request).change_label(workspace_id, body.label)
+
+    @router.post(
+        "/settings/pages/custom-hostname", response_model=PagesSettingsReadWire, status_code=201
+    )
+    async def connect_custom_hostname(
+        request: Request, workspace_id: WorkspaceDep, body: ConnectBody
+    ) -> PagesSettingsReadWire:
+        require_manage_settings(request, allow_local_mutations=allow_local_mutations)
+        return await _service(request).connect(workspace_id, body.hostname)
+
+    # "Check now" is a read of the world, not a change to it: membership is enough.
+    @router.post("/settings/pages/custom-hostname/check", response_model=PagesSettingsReadWire)
+    async def check_custom_hostname(
+        request: Request, workspace_id: WorkspaceDep
+    ) -> PagesSettingsReadWire:
+        return await _service(request).check(workspace_id)
+
+    @router.delete("/settings/pages/custom-hostname", status_code=204)
+    async def remove_custom_hostname(request: Request, workspace_id: WorkspaceDep) -> Response:
+        require_manage_settings(request, allow_local_mutations=allow_local_mutations)
+        await _service(request).remove(workspace_id)
+        return Response(status_code=204)

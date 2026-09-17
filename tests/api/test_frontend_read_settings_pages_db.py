@@ -16,6 +16,7 @@ from fastapi import Request
 from httpx import ASGITransport
 
 from clue_api.chat import RequestPrincipal
+from clue_api.cloudflare_custom_hostnames import CloudflareError, CustomHostnameRecord
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
 from clue_api.frontend_read.app import frontend_read_workspace_resolver
 from clue_api.projections_app import create_projections_app
@@ -106,10 +107,14 @@ def _app(
     return app
 
 
-async def _workspace(conn: Any) -> str:
-    ws = await create_workspace(conn, name="Acme " + uuid4().hex[:4], pages_system_suffix=SUFFIX)
+async def _workspace_named(conn: Any, name: str) -> str:
+    ws = await create_workspace(conn, name=f"{name} " + uuid4().hex[:4], pages_system_suffix=SUFFIX)
     await seed_principal(conn, workspace_id=ws.workspace_id, user_id=USER_ID)
     return ws.workspace_id
+
+
+async def _workspace(conn: Any) -> str:
+    return await _workspace_named(conn, "Acme")
 
 
 def test_read_defaults_and_the_system_hostname(tmp_path: Any) -> None:
@@ -235,5 +240,255 @@ def test_label_change_is_validated_and_atomic(tmp_path: Any) -> None:
                 )
                 assert reserved.status_code == 422
                 assert reserved.json()["error"]["code"] == "label_reserved"
+
+    run_async(scenario())
+
+
+class FakeCloudflare:
+    def __init__(self) -> None:
+        self.records: dict[str, Any] = {}
+        self.create_error: CloudflareError | None = None
+        self.delete_error: CloudflareError | None = None
+        self.calls: list[tuple[str, str]] = []
+
+    async def create(self, hostname: str):  # type: ignore[no-untyped-def]
+        self.calls.append(("create", hostname))
+        if self.create_error:
+            raise self.create_error
+        record = CustomHostnameRecord(
+            id=f"cf_{hostname}",
+            status="pending",
+            ssl_status="pending_validation",
+            ownership_txt_name=f"_cf-custom-hostname.{hostname}",
+            ownership_txt_value="tok-" + hostname,
+            verification_errors=(),
+            ssl_validation_errors=(),
+        )
+        self.records[record.id] = record
+        return record
+
+    async def get(self, custom_hostname_id: str):  # type: ignore[no-untyped-def]
+        self.calls.append(("get", custom_hostname_id))
+        return self.records.get(custom_hostname_id)
+
+    async def delete(self, custom_hostname_id: str) -> None:
+        self.calls.append(("delete", custom_hostname_id))
+        if self.delete_error:
+            raise self.delete_error
+        self.records.pop(custom_hostname_id, None)
+
+
+class FakeResolver:
+    def __init__(self) -> None:
+        self.cname: dict[str, str] = {}
+        self.txt: dict[str, list[str]] = {}
+
+    def resolve(self, name: str, rdtype: str) -> list[str]:
+        if rdtype == "CNAME":
+            return [self.cname[name]] if name in self.cname else []
+        return list(self.txt.get(name, []))
+
+
+def test_connect_refusals_in_spec_order(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            other = await _workspace_named(conn, "Other")
+            cf, dns = FakeCloudflare(), FakeResolver()
+            app = _app(conn, tmp_path, role="admin", cloudflare=cf, resolver=dns)
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                for hostname, code in [
+                    ("not a host", "hostname_invalid"),
+                    ("acme.com", "hostname_is_apex"),
+                    ("x.pages.test", "hostname_reserved"),
+                ]:
+                    r = await client.post(
+                        f"{BASE}/custom-hostname",
+                        json={"hostname": hostname},
+                        headers={"X-Workspace-Id": ws},
+                    )
+                    assert (r.status_code, r.json()["error"]["code"]) == (422, code), r.text
+                taken = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.acme.example"},
+                    headers={"X-Workspace-Id": other},
+                )
+                assert taken.status_code == 201
+                again = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.acme.example"},
+                    headers={"X-Workspace-Id": ws},
+                )
+                assert (again.status_code, again.json()["error"]["code"]) == (409, "hostname_taken")
+                assert "already connected to a workspace" in again.json()["error"]["message"]
+                first = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.mine.example"},
+                    headers={"X-Workspace-Id": ws},
+                )
+                assert first.status_code == 201
+                second = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go2.mine.example"},
+                    headers={"X-Workspace-Id": ws},
+                )
+                assert (second.status_code, second.json()["error"]["code"]) == (
+                    409,
+                    "custom_hostname_exists",
+                )
+            assert cf.calls.count(("create", "go.mine.example")) == 1
+
+    run_async(scenario())
+
+
+def test_provider_refusal_leaves_no_row(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            cf, dns = FakeCloudflare(), FakeResolver()
+            cf.create_error = CloudflareError(
+                "Duplicate custom hostname found.", status=409, retryable=False
+            )
+            app = _app(conn, tmp_path, role="admin", cloudflare=cf, resolver=dns)
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                r = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.dup.example"},
+                    headers={"X-Workspace-Id": ws},
+                )
+                assert (r.status_code, r.json()["error"]["code"]) == (502, "provider_error")
+                assert "Duplicate" in r.json()["error"]["message"]
+                read = await client.get(BASE, headers={"X-Workspace-Id": ws})
+                assert read.json()["customHostname"] is None
+
+    run_async(scenario())
+
+
+def test_check_walks_the_ladder_and_read_refreshes(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            cf, dns, clock = FakeCloudflare(), FakeResolver(), TickingClock()
+            app = _app(conn, tmp_path, role="admin", cloudflare=cf, resolver=dns, clock=clock)
+            headers = {"X-Workspace-Id": ws}
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                created = (
+                    await client.post(
+                        f"{BASE}/custom-hostname",
+                        json={"hostname": "go.walk.example"},
+                        headers=headers,
+                    )
+                ).json()["customHostname"]
+                assert created["status"] == "pending_dns"
+                assert [r["type"] for r in created["records"]] == ["CNAME", "TXT"]
+                assert created["records"][0]["required"] == "pages.test"
+                assert created["records"][1]["name"] == "_cf-custom-hostname.go.walk.example"
+                dns.cname["go.walk.example"] = "pages.test"
+                step1 = (
+                    await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                ).json()["customHostname"]
+                assert (
+                    step1["status"] == "verifying_ownership"
+                    and step1["records"][0]["ok"]
+                    and not step1["records"][1]["ok"]
+                )
+                dns.txt["_cf-custom-hostname.go.walk.example"] = ["tok-go.walk.example"]
+                step2 = (
+                    await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                ).json()["customHostname"]
+                assert step2["status"] == "issuing_certificate"
+                cf.records["cf_go.walk.example"] = CustomHostnameRecord(
+                    id="cf_go.walk.example",
+                    status="active",
+                    ssl_status="active",
+                    ownership_txt_name="_cf-custom-hostname.go.walk.example",
+                    ownership_txt_value="tok-go.walk.example",
+                    verification_errors=(),
+                    ssl_validation_errors=(),
+                )
+                step3 = (
+                    await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                ).json()["customHostname"]
+                assert (
+                    step3["status"] == "active"
+                    and step3["url"] == "https://go.walk.example"
+                    and step3["error"] is None
+                )
+                # rate limit: a second check inside 5 s returns the stored state without touching
+                # the provider
+                clock.frozen = True
+                calls_before = len(cf.calls)
+                await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                assert len(cf.calls) == calls_before
+
+    run_async(scenario())
+
+
+def test_remove_is_ordered_and_survives_a_provider_outage(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            cf, dns = FakeCloudflare(), FakeResolver()
+            app = _app(
+                conn, tmp_path, role="admin", cloudflare=cf, resolver=dns, clock=TickingClock()
+            )
+            headers = {"X-Workspace-Id": ws}
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.gone.example"},
+                    headers=headers,
+                )
+                cf.delete_error = CloudflareError("down", status=503, retryable=True)
+                failed = await client.delete(f"{BASE}/custom-hostname", headers=headers)
+                assert failed.status_code == 502 and failed.json()["error"]["code"] == (
+                    "provider_error"
+                )
+                assert failed.json()["error"]["retryable"] is True
+                stuck = (await client.get(BASE, headers=headers)).json()["customHostname"]
+                assert stuck["status"] == "disconnecting"
+                cf.delete_error = None
+                # check-now retries the delete
+                completed = await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                assert completed.json()["customHostname"] is None
+                assert cf.calls[-1] == ("delete", "cf_go.gone.example")
+                assert (
+                    await client.delete(f"{BASE}/custom-hostname", headers=headers)
+                ).status_code == 404
+                await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.gone2.example"},
+                    headers=headers,
+                )
+                assert (
+                    await client.delete(f"{BASE}/custom-hostname", headers=headers)
+                ).status_code == 204
+                assert (await client.get(BASE, headers=headers)).json()["customHostname"] is None
+
+    run_async(scenario())
+
+
+def test_connect_without_a_configured_provider_is_503(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            app = _app(conn, tmp_path, role="admin", cloudflare=None, resolver=FakeResolver())
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                r = await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.nocf.example"},
+                    headers={"X-Workspace-Id": ws},
+                )
+            assert (r.status_code, r.json()["error"]["code"]) == (503, "PROVIDER_NOT_CONFIGURED")
 
     run_async(scenario())
