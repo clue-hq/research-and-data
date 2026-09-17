@@ -979,7 +979,17 @@ Field rules:
   each `object_type`/`object_id`/optional positive `version`, and persists the
   same order with the accepted submission. When enabled, one entry is
   `{ "object_type": "account", "object_id": "acct_01J...", "version": null }`;
-  `object_type` is exactly `account | contact` for this composer.
+  `object_type` is one of `account | contact | project_document |
+  design_document` for this composer (`design_node`/`design_asset` ride the
+  design leg). `project_document` is a Gallery file: `object_id` is the
+  document's `id` from `GET /projects/{id}/documents` and `version` is required
+  and must equal that listing's `version` (the latest); otherwise `409
+  CONTEXT_REF_STALE`. A `project_document` ref on `POST /projects` (Home) is
+  refused with `409 CONTEXT_REF_RELATIONSHIP_MISMATCH`. `design_document`
+  mentions carry the artifact's `document_id` and `Number(current_version_id)`
+  and must belong to the project (`404 CONTEXT_REF_NOT_FOUND` otherwise). Tags
+  never open a design leg; the agent decides that by reasoning. (2026-09-17,
+  spec `docs/superpowers/specs/2026-09-17-composer-file-tagging-design.md`.)
 - `attachment_refs` is ordered and may contain only durable, workspace-scoped
   upload receipts: `artifact_key`, 64-character lowercase `sha256`,
   `media_type`, `byte_count`, and `filename`. Browser blob URLs and local paths
@@ -1186,6 +1196,11 @@ The scene-design exception above is represented only by typed `design_asset`
 `context_refs`; `attachment_refs` remains disabled. Its hard cap is four at both
 the composer and admission boundary, and the reference set is snapshotted before
 the request is queued.
+
+Echoed `context` refs of type `project_document` and `design_document` carry
+`label` (the document's own title) and `kind` (the document kind, or
+`web|ad`), resolved at read time; the frontend renders the chip from `label`
+and never from the id.
 
 The submissions-union read adds an explicit hydration opt-in so a queued user
 message survives a reload before the worker has materialized its canonical

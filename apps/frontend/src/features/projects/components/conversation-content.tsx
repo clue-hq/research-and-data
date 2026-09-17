@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type { ProjectEntity } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { useTurnInspector } from "../hooks/use-turn-inspector";
 import { ChatTranscript } from "./chat-transcript";
@@ -32,16 +32,17 @@ import styles from "./project-flow.module.css";
  */
 export function ConversationContent({
   chat,
+  contextEntities,
   contextHandoffError,
   onOpenPlan,
   projectId,
-  workspace,
 }: {
   chat: ProjectChatController;
+  /** The composer's whole catalog, so a chip resolves whatever was mentioned. */
+  contextEntities: ProjectEntity[];
   contextHandoffError: string | null;
   onOpenPlan?: (documentId: string) => void;
   projectId: string;
-  workspace: ProjectWorkspace;
 }) {
   // The dev-lens turn inspector. Its own controller, not part of `chat`: it
   // reads nothing the conversation needs and the conversation needs nothing
@@ -110,7 +111,7 @@ export function ConversationContent({
         <ChatTranscript
           activeUserMessageId={activeUserMessageId}
           actions={partActions}
-          contextEntities={workspace.entities}
+          contextEntities={contextEntities}
           gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
           onInspectTurn={turnInspector.available ? turnInspector.open : undefined}

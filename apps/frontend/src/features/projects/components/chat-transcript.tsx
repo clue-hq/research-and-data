@@ -113,11 +113,13 @@ export function ChatTranscript({
                         ? "Selected contact"
                         : ref.objectType === "account"
                           ? "Selected account"
-                          : ref.objectType === "design_node"
-                            ? "Selected design element"
-                            : ref.objectType === "design_document"
-                              ? "Design"
-                              : "Reference image";
+                          : ref.objectType === "project_document"
+                            ? "Selected file"
+                            : ref.objectType === "design_node"
+                              ? "Selected design element"
+                              : ref.objectType === "design_document"
+                                ? "Selected design"
+                                : "Reference image";
                     const label = entity?.label ?? ref.label ?? fallbackLabel;
                     return (
                       <span
@@ -139,7 +141,10 @@ export function ChatTranscript({
                             width={18}
                           />
                         ) : null}
-                        {ref.objectType === "account" || ref.objectType === "contact"
+                        {ref.objectType === "account" ||
+                        ref.objectType === "contact" ||
+                        ref.objectType === "project_document" ||
+                        ref.objectType === "design_document"
                           ? `@${label}`
                           : label}
                       </span>

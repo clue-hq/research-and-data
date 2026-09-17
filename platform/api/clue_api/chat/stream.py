@@ -64,6 +64,7 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.composer_context import context_ref_presentations
 from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_THREAD_READ,
@@ -313,6 +314,12 @@ def build_chat_stream_router(
                     workspace_id=who.workspace_id,
                     turn_ids=tuple(item.turn_id for item in pending),
                 )
+                presentations = await context_ref_presentations(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=tuple(ref for refs in context_by_turn.values() for ref in refs),
+                    storage=storage,
+                )
             for item in pending:
                 hydrated = bodies.get(item.message_artifact_key)
                 submission_messages[item.turn_id] = {
@@ -336,6 +343,7 @@ def build_chat_stream_router(
                             "object_id": ref.object_id,
                             "version": ref.version,
                             "ordinal": ordinal,
+                            **presentations.get((ref.object_type, ref.object_id), {}),
                         }
                         for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
                     ],

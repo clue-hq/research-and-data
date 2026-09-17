@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
 import {
   DESIGN_REFERENCE_ACCEPT,
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
@@ -40,6 +41,7 @@ import {
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
 import { openArtifactFromParam } from "../model/open-artifact-param";
+import { useProjectDocuments } from "@/features/projects/hooks/use-project-documents";
 import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
 import { ChatShellHeader } from "./chat-shell-header";
@@ -360,6 +362,27 @@ export function ChatSurface({
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
+  // The composer's Files and Microsites come from the same feeds the Gallery draws. The
+  // document list is fetched here unconditionally (the tabs hook fetches only while a
+  // panel is open) and re-read when this thread writes a document.
+  const composerDocuments = useProjectDocuments(projectId, {
+    active: true,
+    refreshToken: chat.planWriteRevision,
+  });
+  const composerCatalog = useMemo(
+    () =>
+      buildComposerCatalog({
+        documents: composerDocuments.documents,
+        artifacts: feedArtifacts,
+        entities: workspace.entities,
+      }),
+    [composerDocuments.documents, feedArtifacts, workspace.entities],
+  );
+  const { setCatalogEntities } = controller;
+  useEffect(() => {
+    setCatalogEntities(composerCatalog);
+  }, [composerCatalog, setCatalogEntities]);
+
   // `?open=` (2026-09-15): land with one artifact tab open. Read once (the ref), resolved against
   // the server-fetched feed, and stripped by the write-back below.
   const openParamHandled = useRef(false);
@@ -545,10 +568,10 @@ export function ChatSurface({
             >
               <ConversationContent
                 chat={chat}
+                contextEntities={controller.composerEntities}
                 contextHandoffError={controller.contextHandoffError}
                 onOpenPlan={(id) => void documentTabs.openById(id)}
                 projectId={projectId}
-                workspace={workspace}
               />
             </div>
           ) : null}

@@ -157,6 +157,8 @@ test("design asset context refs retain read-time filename and thumbnail metadata
     version: null,
     ordinal: 0,
     label: "inspiration.webp",
+    // A design asset carries no document kind; the wire omits it and it reads as null.
+    kind: null,
     mediaType: "image/webp",
     thumbnailDigest: "b".repeat(64),
   });

@@ -53,6 +53,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_storage import (
@@ -76,6 +77,8 @@ __all__ = [
     "WrittenDocument",
     "current_document_version",
     "current_plan_version",
+    "get_project_document",
+    "latest_project_document_version",
     "list_project_documents",
     "lock_project",
     "plan_document_id",
@@ -290,6 +293,19 @@ def workspace_path_of(path: str) -> str:
     """
 
     return _PROJECT_INPUT_PREFIX + path.removeprefix(_PROJECT_INPUT_PREFIX)
+
+
+def document_title(front: Mapping[str, Any], body: str, *, path: str) -> str:
+    """What this document is called on screen: front matter's title, first heading, else file name.
+
+    One rule for every surface that names a project document — the Gallery list, the transcript
+    chip, the agent's focus card — so the same file is never called two things.
+    """
+
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(".md"):
+        name = name[:-3]
+    return _titled_by_its_own_text(front, body, icp_key=name)
 
 
 def _icp_key_of(path: str) -> str | None:
@@ -798,6 +814,55 @@ async def list_project_documents(
         )
     ).mappings()
     return tuple(_row(row) for row in rows.all())
+
+
+async def get_project_document(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, document_id: UUID
+) -> ProjectDocumentRow | None:
+    """One document of this project by its row id, in any status, or ``None``.
+
+    Absence and staleness are different answers, and only the first is decided here. A row of
+    another project or another workspace, and a row whose bytes were never written, are absence —
+    indistinguishable from a document that never existed, so neither can be used to probe for what
+    another project owns. A superseded, archived, or otherwise unservable row of *this* project is a
+    real row and is returned: it is the version the user tagged, and the composer's validation is
+    what then refuses it as stale rather than as missing.
+    """
+
+    row = await _document(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        document_id=document_id,
+        servable_only=False,
+    )
+    if row is None or row["artifact_key"] is None:
+        return None
+    return _row(row)
+
+
+async def latest_project_document_version(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, path: str
+) -> int | None:
+    """The highest servable version of one path in this project — what the Gallery lists."""
+
+    value = (
+        await conn.execute(
+            text(
+                "SELECT version FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+                "  AND path = :path AND status = ANY(:statuses) AND artifact_key IS NOT NULL "
+                "ORDER BY version DESC LIMIT 1"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "path": path,
+                "statuses": list(_SERVABLE_STATUSES),
+            },
+        )
+    ).scalar()
+    return None if value is None else int(value)
 
 
 async def _document(

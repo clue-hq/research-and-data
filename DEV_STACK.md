@@ -35,6 +35,10 @@ ports against **its own** database without copying the script:
 | `DEV_STACK_WORKER_CONCURRENCY` | drain slots per process (`CLUE_FLEET_WORKER_CONCURRENCY`) | 1 |
 | `DEV_STACK_AGENT_WORKSPACE_ROOT` | `CLUE_AGENT_WORKSPACE_ROOT` | `/private/tmp/clue-agent-workspaces` |
 | `DEV_STACK_LOG_PREFIX` | log file prefix | `/tmp/browser` |
+| `DEV_STACK_FRONTEND_PORT` | Next.js app port (added 2026-09-17) | 3020 |
+| `DEV_STACK_DESIGN_PORT` | design API port | 8010 |
+| `DEV_STACK_PLATFORM_PORT` | platform API port | 8020 |
+| `DEV_STACK_PLATFORM2_PORT` | platform API twin's port | 8030 |
 
 A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
 **`scripts/dev_stack_san_salvador.sh`** (the ARV2 lane on branch `track-r4`): DB from that
@@ -44,6 +48,17 @@ can run at a time** — `down` the other first. Everything else in this file (lo
 prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must name 8020 / 8010 /
 `http://localhost:3020` like istanbul's, and its `.env` must carry
 `LUMEN_API_ORIGIN=http://127.0.0.1:8010` and 3020 in `LUMEN_API_CORS_ORIGINS`.
+
+**Different ports (added 2026-09-17).** The four port knobs let a lane run *beside* another lane's
+stack instead of stopping it. The first wrapper to use them is **`scripts/dev_stack_hangzhou.sh`**
+(the composer file-tagging lane on `research-streaming-v3`): frontend **3050**, platform API
+**8090**, design API **8091**, twin **8092**, DB `clue_hangzhou`, logs at `/tmp/hangzhou_*.log`.
+The knobs only move the processes; the three guards in the port map below still read `.env` and
+`apps/frontend/.env.local`, so a lane on other ports must name them there too
+(`CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, the frontend origin in `LUMEN_API_CORS_ORIGINS`
+and `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`; `CLUE_API_BASE_URL`, `LUMEN_API_BASE_URL`,
+`CLUE_APP_ORIGIN`). The hangzhou wrapper checks all of those before starting and refuses on a
+mismatch. Every other wrapper keeps the defaults, so it is unchanged.
 
 ## The port map (memorize the first one)
 

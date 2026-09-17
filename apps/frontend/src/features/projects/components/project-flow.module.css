@@ -435,6 +435,49 @@
   text-align: left;
 }
 
+.entityRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.entityRow[data-nested="true"] {
+  padding-left: 28px;
+}
+
+.entityRow > .entityOption {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entityExpand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.entityExpand:hover {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.entityExpandChevron {
+  display: inline-flex;
+  transition: transform var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-standard);
+}
+
+.entityExpand[aria-expanded="true"] .entityExpandChevron {
+  transform: rotate(90deg);
+}
+
 .entityPickerEmpty {
   margin: 0;
   padding: 20px 12px;
@@ -442,6 +485,65 @@
   font-size: 13px;
   line-height: 18px;
   text-align: center;
+}
+
+.pickerCategory {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.pickerCategory > span {
+  flex: 1 1 auto;
+}
+
+.pickerCategory > small {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+}
+
+.pickerCategory:hover,
+.pickerCategory[data-active="true"] {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.pickerBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* ProjectIcon renders an <img>, so the chevron is flipped by element, not by tag. */
+.pickerBack > * {
+  transform: rotate(180deg);
+}
+
+.entityIcon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .modelOption {

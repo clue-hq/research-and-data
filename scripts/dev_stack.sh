@@ -44,6 +44,19 @@
 #                                    (CLUE_FLEET_WORKER_CONCURRENCY, O6 task 9d)
 #   DEV_STACK_AGENT_WORKSPACE_ROOT   CLUE_AGENT_WORKSPACE_ROOT for the lane
 #   DEV_STACK_LOG_PREFIX             log file prefix (default /tmp/browser)
+# PORT KNOBS (added 2026-09-17 so a lane can run beside another lane's stack
+# instead of having to `down` it first — the hangzhou lane was the first to
+# need it, see scripts/dev_stack_hangzhou.sh). Defaults are THE PORT MAP above,
+# so every existing wrapper and the istanbul checkout are unchanged. A lane that
+# overrides them must ALSO name the same ports in its .env
+# (CLUE_DESIGN_API_BASE_URL, LUMEN_API_ORIGIN, the frontend origin in
+# LUMEN_API_CORS_ORIGINS and CLUE_AUTH_CLERK_AUTHORIZED_PARTIES) and in its
+# apps/frontend/.env.local (CLUE_API_BASE_URL, LUMEN_API_BASE_URL,
+# CLUE_APP_ORIGIN) — the three guards in the port map do not read these knobs.
+#   DEV_STACK_FRONTEND_PORT          Next.js app port            (default 3020)
+#   DEV_STACK_DESIGN_PORT            design API (lumen) port     (default 8010)
+#   DEV_STACK_PLATFORM_PORT          platform API port           (default 8020)
+#   DEV_STACK_PLATFORM2_PORT         platform API twin's port    (default 8030)
 # =============================================================================
 set -euo pipefail
 
@@ -53,10 +66,14 @@ WORKERS="${DEV_STACK_WORKERS:-1}"
 WORKER_CONCURRENCY="${DEV_STACK_WORKER_CONCURRENCY:-1}"
 AGENT_WORKSPACE_ROOT="${DEV_STACK_AGENT_WORKSPACE_ROOT:-/private/tmp/clue-agent-workspaces}"
 LOG="${DEV_STACK_LOG_PREFIX:-/tmp/browser}"
+FRONTEND_PORT="${DEV_STACK_FRONTEND_PORT:-3020}"
+DESIGN_PORT="${DEV_STACK_DESIGN_PORT:-8010}"
+PLATFORM_PORT="${DEV_STACK_PLATFORM_PORT:-8020}"
+PLATFORM2_PORT="${DEV_STACK_PLATFORM2_PORT:-8030}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"
   CLUE_DESIGN_RUNTIME_ENABLED=1
-  CLUE_DESIGN_API_BASE_URL=http://127.0.0.1:8010
+  CLUE_DESIGN_API_BASE_URL="http://127.0.0.1:${DESIGN_PORT}"
   CLUE_AGENT_WORKSPACE_ROOT="$AGENT_WORKSPACE_ROOT"
 )
 
@@ -68,11 +85,11 @@ worker_log() {  # worker 1 keeps the historical name; 2..N get a suffix
 
 start_platform_api() {  # both twins; a settings change (.env) needs both restarted
   ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8020 \
-      > "${LOG}_platform_api_8020.log" 2>&1 & )
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port "$PLATFORM_PORT" \
+      > "${LOG}_platform_api_${PLATFORM_PORT}.log" 2>&1 & )
 
   ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
-      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port 8030 \
+      "$ROOT/.venv/bin/python" -m uvicorn clue_api.projections_main:app --port "$PLATFORM2_PORT" \
       > "${LOG}_platform_api.log" 2>&1 & )
 }
 
@@ -84,7 +101,7 @@ restart_api() {
   load_env
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   for _ in $(seq 1 20); do
-    lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 || break
+    lsof -iTCP:"$PLATFORM_PORT" -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:"$PLATFORM2_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
   done
   start_platform_api
@@ -127,9 +144,9 @@ up() {
     env "${PLATFORM_ENV[@]}" \
         LUMEN_EMBEDDED_FLEET_WORKER=1 \
         LUMEN_CORE_HELPER="$ROOT/subsystems/clue-design/target/release/lumen-api-helper" \
-        LUMEN_API_CORS_ORIGINS="http://localhost:3020,http://127.0.0.1:3020,http://localhost:3000" \
+        LUMEN_API_CORS_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3000" \
         PYTHONPATH=.:apps/api:apps/agent_runtime \
-        "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port 8010 \
+        "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port "$DESIGN_PORT" \
         > "${LOG}_design_api.log" 2>&1 & )
 
   start_platform_api
@@ -144,12 +161,12 @@ up() {
   # 2026-08-30/31). A cold route compile costs seconds; a corrupted cache costs
   # a debugging session. Always start the frontend from a clean cache.
   rm -rf "$ROOT/apps/frontend/.next"
-  ( cd "$ROOT/apps/frontend" && npm run dev -- --port 3020 \
+  ( cd "$ROOT/apps/frontend" && npm run dev -- --port "$FRONTEND_PORT" \
       > "${LOG}_frontend.log" 2>&1 & )
 
   echo "starting…"; sleep 8; status
   echo
-  echo "app:   http://localhost:3020"
+  echo "app:   http://localhost:${FRONTEND_PORT}"
   echo "login: aryan+clerk_test_design@example.com / ClueDev2026!stripe / code 424242"
 }
 
@@ -157,12 +174,12 @@ down() {
   pkill -f "$ROOT/.venv/bin/python -m uvicorn lumen_api.main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
-  pkill -f "next dev.*3020" 2>/dev/null || true
+  pkill -f "next dev.*${FRONTEND_PORT}" 2>/dev/null || true
   echo "stack stopped"
 }
 
 status() {
-  for spec in "3020 frontend" "8010 design-api" "8020 platform-api" "8030 platform-api-2"; do
+  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"

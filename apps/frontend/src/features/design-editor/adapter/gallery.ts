@@ -67,6 +67,12 @@ function designThumbnailPath(item: DesignArtifactListItem): string {
   return `/api/clue/design/documents/${encodeURIComponent(item.documentId)}/thumbnail?v=${encodeURIComponent(item.currentVersionId)}`;
 }
 
+/** The tag a composer sends pins a numeric design version; anything else is no version. */
+function versionOf(currentVersionId: string): number | undefined {
+  const value = Number(currentVersionId);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
@@ -74,10 +80,13 @@ export function toProjectArtifact(
   const ad = item.kind === "ad";
   const collateralType = ad ? collateralTypeFor(item.artifactType) : "microsite";
   const size = ad ? sizeFor(item.widthPx, item.heightPx) : undefined;
+  const version = versionOf(item.currentVersionId);
   return ProjectArtifactSchema.parse({
     ...(collateralType ? { collateralType } : {}),
     ...(size ? { size } : {}),
     createdAt: utcInstant(item.createdAt),
+    documentId: item.documentId,
+    ...(version ? { version } : {}),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
     imagePath: designThumbnailPath(item),

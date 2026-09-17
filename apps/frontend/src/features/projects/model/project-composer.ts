@@ -1,6 +1,7 @@
 import type { BaseEditor, Descendant } from "slate";
 import type { HistoryEditor } from "slate-history";
 import type { ReactEditor } from "slate-react";
+import type { ProjectEntity } from "./project-workspace";
 
 export interface ProjectComposerAttachment {
   assetId?: string;
@@ -17,11 +18,13 @@ export interface ProjectComposerMentionElement {
   accountName?: string;
   children: [{ text: "" }];
   entityId: string;
-  entityType: "account" | "contact";
-  imagePath: string;
+  entityType: ProjectEntity["type"];
+  icon?: ProjectEntity["icon"];
+  imagePath?: string;
   label: string;
   secondaryLabel: string;
   type: "mention";
+  version?: number | null;
 }
 
 export interface ProjectComposerParagraphElement {

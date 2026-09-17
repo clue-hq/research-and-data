@@ -27,6 +27,16 @@ import {
   useSelected,
   withReact,
 } from "slate-react";
+import {
+  accountTreeRows,
+  COMPOSER_CATEGORIES,
+  contactCountsByAccount,
+  detectMentionQuery,
+  entityCategory,
+  searchComposerCatalog,
+  shouldAutoCloseMention,
+  type ComposerCategory,
+} from "../model/composer-context-catalog";
 import type {
   ProjectComposerEditor as ProjectComposerEditorInstance,
   ProjectComposerMentionElement,
@@ -42,6 +52,8 @@ import {
 } from "../model/project-composer-editor";
 import type { ProjectEntity } from "../model/project-workspace";
 import { EntityPicker } from "./entity-picker";
+import { ContactAvatar } from "@/features/accounts/components/contact-avatar";
+import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
 export interface ProjectComposerEditorHandle {
@@ -76,6 +88,18 @@ function withMentions(editor: ProjectComposerEditorInstance) {
   return editor;
 }
 
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
+
+const MENTION_TYPE_LABELS: Record<
+  ProjectComposerMentionElement["entityType"],
+  string
+> = {
+  account: "Account",
+  contact: "Contact",
+  design_document: "Design",
+  project_document: "File",
+};
+
 function ComposerMention({
   attributes,
   children,
@@ -87,7 +111,7 @@ function ComposerMention({
   return (
     <span
       {...attributes}
-      aria-label={`${element.entityType === "account" ? "Account" : "Contact"} context: ${element.label}`}
+      aria-label={`${MENTION_TYPE_LABELS[element.entityType]} context: ${element.label}`}
       className={[
         styles.composerMention,
         selected && focused ? styles.composerMentionSelected : "",
@@ -101,16 +125,25 @@ function ComposerMention({
       <div className={styles.composerMentionContent} contentEditable={false}>
         {children}
         <span className={styles.composerMentionVisual}>
-          <Image
-            alt=""
-            aria-hidden="true"
-            className={
-              element.entityType === "contact" ? styles.composerMentionAvatar : ""
-            }
-            height={16}
-            src={element.imagePath}
-            width={16}
-          />
+          {element.icon ? (
+            <ProjectIcon name={element.icon} size={14} />
+          ) : element.entityType === "contact" ? (
+            <ContactAvatar
+              className={styles.composerMentionAvatar}
+              name={element.label}
+              size={16}
+              src={element.imagePath}
+            />
+          ) : (
+            <Image
+              alt=""
+              aria-hidden="true"
+              height={16}
+              src={element.imagePath ?? ACCOUNT_GLYPH_PATH}
+              unoptimized={element.imagePath != null}
+              width={16}
+            />
+          )}
           <span>{element.label}</span>
         </span>
       </div>
@@ -121,6 +154,7 @@ function ComposerMention({
 export const ProjectComposerEditor = forwardRef<
   ProjectComposerEditorHandle,
   {
+    categoriesEnabled?: boolean;
     disabled?: boolean;
     entities: ProjectEntity[];
     onContextChange: (entityIds: string[]) => void;
@@ -132,6 +166,7 @@ export const ProjectComposerEditor = forwardRef<
   }
 >(function ProjectComposerEditor(
   {
+    categoriesEnabled = true,
     disabled = false,
     entities,
     onContextChange,
@@ -156,6 +191,14 @@ export const ProjectComposerEditor = forwardRef<
   const [mentionIds, setMentionIds] = useState(selectedEntityIds);
   const [mentionTarget, setMentionTarget] = useState<SlateRange | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionCategory, setMentionCategory] = useState<ComposerCategory | null>(
+    null,
+  );
+  // Accounts whose contacts are unfolded beneath them in the Accounts list. Tagging an account
+  // never depends on this: open or closed, Enter on the account row tags the account.
+  const [expandedAccountIds, setExpandedAccountIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const lastEmittedPrompt = useRef(prompt);
   const lastMentionIds = useRef(selectedEntityIds);
 
@@ -163,17 +206,58 @@ export const ProjectComposerEditor = forwardRef<
     setMentionTarget(null);
     setActiveIndex(0);
     setMentionQuery("");
+    setMentionCategory(null);
+    setExpandedAccountIds(new Set());
   }, []);
 
-  const visibleEntities = useMemo(() => {
-    const query = mentionQuery.trim().toLocaleLowerCase();
-    if (!query) return entities;
-    return entities.filter((entity) =>
-      `${entity.label} ${entity.secondaryLabel} ${entity.accountName ?? ""}`
-        .toLocaleLowerCase()
-        .includes(query),
-    );
-  }, [entities, mentionQuery]);
+  const toggleAccount = useCallback((accountId: string) => {
+    setExpandedAccountIds((current) => {
+      const next = new Set(current);
+      if (next.has(accountId)) next.delete(accountId);
+      else next.add(accountId);
+      return next;
+    });
+  }, []);
+
+  const resolveEntities = useCallback(
+    (
+      rawQuery: string,
+      category: ComposerCategory | null,
+      expanded: ReadonlySet<string>,
+    ) => {
+      const trimmed = rawQuery.trim();
+      if (!categoriesEnabled) {
+        const accounts = entities.filter(
+          (entity) => entityCategory(entity) === "accounts",
+        );
+        return trimmed
+          ? searchComposerCatalog(accounts, trimmed)
+          : accountTreeRows(accounts, expanded);
+      }
+      // Typing searches flat across every category; browsing the Accounts category shows
+      // the tree (accounts, each with its contacts unfolded on demand).
+      if (trimmed) return searchComposerCatalog(entities, trimmed);
+      if (category === "accounts") {
+        return accountTreeRows(
+          entities.filter((entity) => entityCategory(entity) === "accounts"),
+          expanded,
+        );
+      }
+      if (category) {
+        return entities.filter((entity) => entityCategory(entity) === category);
+      }
+      return [];
+    },
+    [categoriesEnabled, entities],
+  );
+
+  const query = mentionQuery.trim();
+  const visibleEntities = useMemo(
+    () => resolveEntities(mentionQuery, mentionCategory, expandedAccountIds),
+    [expandedAccountIds, mentionCategory, mentionQuery, resolveEntities],
+  );
+  const contactCounts = useMemo(() => contactCountsByAccount(entities), [entities]);
+  const browsingCategories = categoriesEnabled && !query && mentionCategory === null;
 
   const replaceDraft = useCallback(
     (nextPrompt: string, nextEntities: readonly ProjectEntity[]) => {
@@ -224,14 +308,25 @@ export const ProjectComposerEditor = forwardRef<
     const paragraphStart = Editor.start(editor, paragraphPath);
     const beforeRange = Editor.range(editor, paragraphStart, caret);
     const beforeText = Editor.string(editor, beforeRange);
-    const mentionMatch = beforeText.match(/(?:^|\s)@([^\s@]*)$/);
-
-    if (!mentionMatch) {
+    const mentionQueryText = detectMentionQuery(beforeText);
+    if (mentionQueryText === null) {
       closeMentionPicker();
       return;
     }
 
-    const mentionText = `@${mentionMatch[1]}`;
+    // Prose recovers by itself: a query that matches nothing and just gained a
+    // space is no longer a mention.
+    if (
+      shouldAutoCloseMention(
+        mentionQueryText,
+        resolveEntities(mentionQueryText, mentionCategory, expandedAccountIds).length,
+      )
+    ) {
+      closeMentionPicker();
+      return;
+    }
+
+    const mentionText = `@${mentionQueryText}`;
     const targetStart = Editor.before(editor, caret, {
       distance: mentionText.length,
       unit: "character",
@@ -243,8 +338,8 @@ export const ProjectComposerEditor = forwardRef<
 
     setMentionTarget(Editor.range(editor, targetStart, caret));
     setActiveIndex(0);
-    setMentionQuery(mentionMatch[1]);
-  }, [closeMentionPicker, editor]);
+    setMentionQuery(mentionQueryText);
+  }, [closeMentionPicker, editor, expandedAccountIds, mentionCategory, resolveEntities]);
 
   const insertMention = useCallback(
     (entity: ProjectEntity) => {
@@ -387,6 +482,72 @@ export const ProjectComposerEditor = forwardRef<
             }
 
             if (mentionTarget) {
+              if (browsingCategories) {
+                const categories = COMPOSER_CATEGORIES;
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  const step = event.key === "ArrowDown" ? 1 : categories.length - 1;
+                  setActiveIndex((current) => (current + step) % categories.length);
+                  return;
+                }
+                if (
+                  event.key === "Enter" ||
+                  event.key === "Tab" ||
+                  event.key === "ArrowRight"
+                ) {
+                  event.preventDefault();
+                  setMentionCategory(categories[activeIndex]?.key ?? "files");
+                  setActiveIndex(0);
+                  return;
+                }
+              } else if (!query) {
+                // Inside the Accounts tree: ArrowRight unfolds the highlighted account's
+                // contacts, ArrowLeft folds them (from the account or from one of its
+                // contacts, landing back on the account). Only then does ArrowLeft fall
+                // through to "back to the categories".
+                const active = visibleEntities[activeIndex];
+                if (
+                  event.key === "ArrowRight" &&
+                  active?.type === "account" &&
+                  (contactCounts.get(active.id) ?? 0) > 0 &&
+                  !expandedAccountIds.has(active.id)
+                ) {
+                  event.preventDefault();
+                  toggleAccount(active.id);
+                  return;
+                }
+                if (event.key === "ArrowLeft" && active) {
+                  const foldId =
+                    active.type === "contact" && active.accountId
+                      ? active.accountId
+                      : active.type === "account"
+                        ? active.id
+                        : undefined;
+                  if (foldId && expandedAccountIds.has(foldId)) {
+                    event.preventDefault();
+                    toggleAccount(foldId);
+                    const parentIndex = visibleEntities.findIndex(
+                      (entity) => entity.id === foldId,
+                    );
+                    if (parentIndex >= 0) setActiveIndex(parentIndex);
+                    return;
+                  }
+                }
+              }
+              if (
+                mentionCategory &&
+                !query &&
+                (event.key === "ArrowLeft" || event.key === "Backspace")
+              ) {
+                event.preventDefault();
+                setMentionCategory(null);
+                setActiveIndex(
+                  COMPOSER_CATEGORIES.findIndex(
+                    (item) => item.key === mentionCategory,
+                  ),
+                );
+                return;
+              }
               if (event.key === "ArrowDown") {
                 event.preventDefault();
                 setActiveIndex((current) =>
@@ -439,21 +600,37 @@ export const ProjectComposerEditor = forwardRef<
       </Slate>
       {mentionTarget ? (
         <EntityPicker
-          activeId={visibleEntities[activeIndex]?.id}
-          entities={visibleEntities}
+          activeCategory={
+            browsingCategories ? COMPOSER_CATEGORIES[activeIndex]?.key : undefined
+          }
+          activeId={browsingCategories ? undefined : visibleEntities[activeIndex]?.id}
+          catalog={entities}
+          categoriesEnabled={categoriesEnabled}
+          category={mentionCategory}
+          contactCounts={contactCounts}
+          expandedAccountIds={expandedAccountIds}
           onActiveChange={(entityId) => {
             const index = visibleEntities.findIndex(
               (entity) => entity.id === entityId,
             );
             if (index >= 0) setActiveIndex(index);
           }}
+          onBack={() => {
+            setMentionCategory(null);
+            setActiveIndex(0);
+          }}
+          onOpenCategory={(category) => {
+            setMentionCategory(category);
+            setActiveIndex(0);
+          }}
           onSelect={(entityId) => {
             const entity = visibleEntities.find((item) => item.id === entityId);
             if (entity) insertMention(entity);
           }}
+          onToggleAccount={toggleAccount}
           query={mentionQuery}
+          results={visibleEntities}
           selectedIds={mentionIds}
-          showSearch={false}
         />
       ) : null}
     </div>

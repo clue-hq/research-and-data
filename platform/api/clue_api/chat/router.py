@@ -69,11 +69,12 @@ from clue_api.arv2.icp_confirmation import (
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
+    PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -603,6 +604,8 @@ def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntity
         secondary_label=entity.secondary_label,
         image_url=entity.image_url,
         version=entity.version,
+        account_id=entity.account_id,
+        account_name=entity.account_name,
     )
 
 
@@ -613,6 +616,7 @@ async def _validated_submission_context(
     refs: tuple[Any, ...],
     design_leg_document_id: str | None = None,
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -630,6 +634,7 @@ async def _validated_submission_context(
             refs=requested,
             design_leg_document_id=design_leg_document_id,
             storage=storage,
+            project_id=project_id,
         )
     except ContextReferenceError as exc:
         if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
@@ -779,7 +784,7 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
+        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
         durable upload-receipt endpoint exists yet.
         """
 
@@ -788,6 +793,7 @@ def build_chat_router(
             brands = await list_brands_for_workspace(conn, who.workspace_id)
             context_entities = await list_composer_context_entities(
                 conn,
+                settings=settings,
                 workspace_id=who.workspace_id,
             )
         return HomeResponse(
@@ -1209,6 +1215,7 @@ def build_chat_router(
                 if project is None
                 else await list_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                 )
             )
@@ -1308,8 +1315,10 @@ def build_chat_router(
             try:
                 prepared = await prepare_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                     refs=requested,
+                    project_id=project_id,
                 )
             except ContextReferenceError as exc:
                 raise _refuse(
@@ -1497,14 +1506,15 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         all_refs = tuple(ref for item in page.items for ref in item.refs)
-        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
-        if include is None and not has_design_assets:
+        has_presented = any(ref.object_type in PRESENTED_REF_TYPES for ref in all_refs)
+        if include is None and not has_presented:
             return message_list_response(page, thread_id=thread_id)
         async with conn_factory() as conn:
-            presentations = await design_asset_ref_presentations(
+            presentations = await context_ref_presentations(
                 conn,
                 workspace_id=who.workspace_id,
                 refs=all_refs,
+                storage=storage,
             )
             bodies = None
             if include is not None:
@@ -2355,6 +2365,7 @@ def build_chat_router(
                         None if open_leg is None else open_leg.get("document_id")
                     ),
                     storage=storage,
+                    project_id=project_id,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
                 # approving a directive-confirmation gate atomically confirms AND launches via
