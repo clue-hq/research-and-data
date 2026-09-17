@@ -191,6 +191,12 @@ from .models import (
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
+from .public_pages import (
+    custom_public_origin,
+    custom_publish_url,
+    public_publish_url,
+    system_public_origin,
+)
 from lumen_ingestion.capture.uploads import sniff_mime
 from lumen_ingestion.describe import DescriptionStore
 from lumen_ingestion.jobs import IngestionJobStore
@@ -4304,7 +4310,6 @@ def create_app(
         document: JsonObject,
         *,
         slug: str,
-        public_base: str,
         idempotency_key: Optional[str] = None,
         noindex: bool = False,
     ) -> JsonObject:
@@ -4322,7 +4327,6 @@ def create_app(
                 "design_publish_web",
                 {
                     "document_id": document["id"],
-                    "public_base": public_base,
                     "slug": slug,
                     "noindex": noindex,
                 },
@@ -4360,7 +4364,6 @@ def create_app(
     def publish_web_document(
         document_id: str,
         payload: WebPublishRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
         idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
@@ -4373,7 +4376,6 @@ def create_app(
             repo,
             document,
             slug=slug,
-            public_base=str(request.base_url).rstrip("/"),
             idempotency_key=idempotency_key,
         )
         log_event(
@@ -4387,7 +4389,10 @@ def create_app(
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": public_publish_path(repo, slug),
+            "url": public_publish_url(repo, slug),
+            "custom_url": custom_publish_url(repo, slug),
+            "public_origin": system_public_origin(repo),
+            "custom_origin": custom_public_origin(repo),
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4405,12 +4410,20 @@ def create_app(
         require_web_document(document)
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
-            return {"schema_version": 1, "published": False}
+            return {
+                "schema_version": 1,
+                "published": False,
+                "public_origin": system_public_origin(repo),
+                "custom_origin": custom_public_origin(repo),
+            }
         return {
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": public_publish_path(repo, publish["slug"]),
+            "url": public_publish_url(repo, publish["slug"]),
+            "custom_url": custom_publish_url(repo, publish["slug"]),
+            "public_origin": system_public_origin(repo),
+            "custom_origin": custom_public_origin(repo),
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -5173,7 +5186,6 @@ def create_app(
         account_id: str,
         publish: bool,
         slug_base: str,
-        public_base: str,
     ) -> JsonObject:
         """Derive (and optionally publish) one account against `template`.
         Never raises: any failure is captured on the manifest row (status
@@ -5279,11 +5291,9 @@ def create_app(
                 # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
                 # the publish tool resolves the document itself, so it reads the row that
                 # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
-                _publish_web(
-                    repo, derived, slug=slug, public_base=public_base, noindex=abm
-                )
+                _publish_web(repo, derived, slug=slug, noindex=abm)
                 row["slug"] = slug
-                row["url"] = public_publish_path(repo, slug)
+                row["url"] = public_publish_url(repo, slug)
                 row["noindex"] = abm
                 row["status"] = "published"
             return row
@@ -5299,9 +5309,7 @@ def create_app(
             )
             return row
 
-    def _process_web_batch(
-        repo: HybridRepository, batch: JsonObject, public_base: str
-    ) -> JsonObject:
+    def _process_web_batch(repo: HybridRepository, batch: JsonObject) -> JsonObject:
         """Synchronous-chunked processing (chunk 5): the cursor persists after
         every chunk so an interrupted batch resumes exactly where it stopped.
         Status is "partial" mid-way and "completed" when the cursor reaches the
@@ -5354,7 +5362,6 @@ def create_app(
                         account_ids[index],
                         batch["publish"],
                         batch["slug_base"],
-                        public_base,
                     )
                 )
             status = "completed" if chunk_end >= total else "partial"
@@ -5372,7 +5379,6 @@ def create_app(
     def create_web_batch(
         document_id: str,
         payload: WebBatchRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
@@ -5421,7 +5427,6 @@ def create_app(
                     ),
                 },
             )
-        public_base = str(request.base_url).rstrip("/")
         batch_ref = run_design_tool(
             "design_create_web_batch",
             {
@@ -5439,9 +5444,7 @@ def create_app(
             },
             workspace_id=store_workspace_id(repo),
         )
-        batch = _process_web_batch(
-            repo, repo.require_web_batch(batch_ref["batch_id"]), public_base
-        )
+        batch = _process_web_batch(repo, repo.require_web_batch(batch_ref["batch_id"]))
         log_event(
             api_logger,
             logging.INFO,
@@ -5456,13 +5459,12 @@ def create_app(
 
     @app.post("/web/batches/{batch_id}/resume")
     def resume_web_batch(
-        batch_id: str, request: Request, repo: HybridRepository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
             return web_batch_response(batch)
-        public_base = str(request.base_url).rstrip("/")
-        batch = _process_web_batch(repo, batch, public_base)
+        batch = _process_web_batch(repo, batch)
         return web_batch_response(batch)
 
     @app.get("/web/batches/{batch_id}")
@@ -7382,16 +7384,6 @@ app = create_app()
 def store_workspace_id(repo: HybridRepository) -> str:
     """The workspace the store is bound to."""
     return repo.workspace_id
-
-
-def public_publish_path(repo: HybridRepository, slug: str) -> str:
-    """The ONE builder for a publish's public path — O6b interim scheme.
-
-    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
-    path. The workspace comes from the STORE the publish row lives in, never from the request
-    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
-    """
-    return f"/w/{store_workspace_id(repo)}/p/{slug}"
 
 
 def require_document(repo: HybridRepository, document_id: str) -> JsonObject:

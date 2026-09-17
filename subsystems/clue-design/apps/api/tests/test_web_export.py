@@ -582,7 +582,7 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    assert body["url"] == f"/w/{workspace_id}/p/{slug}"
+    assert body["url"].endswith(f"/{slug}") and body["url"].startswith("https://")
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
@@ -676,7 +676,13 @@ def test_unpublish_unknown_slug_is_404(client: TestClient) -> None:
 def test_get_publish_state_unpublished(client: TestClient) -> None:
     document = seed_document(client)
     state = client.get(f"/documents/{document['id']}/web/publish").json()
-    assert state == {"schema_version": 1, "published": False}
+    # Custom-domain publishing S1: even unpublished, the state names WHERE this document would
+    # publish — the workspace's always-live system origin, and its custom origin when it has one.
+    assert set(state) == {"schema_version", "published", "public_origin", "custom_origin"}
+    assert state["schema_version"] == 1
+    assert state["published"] is False
+    assert state["custom_origin"] is None
+    assert state["public_origin"].startswith("https://")
 
 
 # --- (g) scene documents are rejected on the new endpoints -------------------

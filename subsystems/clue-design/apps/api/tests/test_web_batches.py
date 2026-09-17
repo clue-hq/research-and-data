@@ -93,7 +93,7 @@ def test_batch_publishes_all_accounts(client: TestClient, workspace_id: str) -> 
     for row in manifest:
         assert row["status"] == "published"
         assert row["document_id"]
-        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
+        assert row["url"].endswith(f"/{row['slug']}")
         assert row["error"] is None
         slugs.add(row["slug"])
         # Each published page actually serves.

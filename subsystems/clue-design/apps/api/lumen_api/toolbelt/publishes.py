@@ -96,7 +96,6 @@ def publish_web_document(
     node_bin: str,
     document: dict[str, Any],
     slug: str,
-    public_base: str,
     noindex: bool = False,
 ) -> WebPublishRef:
     """Build, persist and point one publish at ``slug``. The ONE publish write path.
@@ -111,15 +110,17 @@ def publish_web_document(
 
     from .. import web_export
     from ..database import utc_now
+    from ..public_pages import system_public_origin
 
     noindex = bool(noindex) or bool(document.get("web_noindex"))
+    public_origin = system_public_origin(repository)
     package = web_export.build_publish_package(
         core,
         repository,
         document,
         blobs=blobs,
         slug=slug,
-        public_base=public_base,
+        public_origin=public_origin,
         workspace_id=repository.workspace_id,
         node_bin=node_bin,
         noindex=noindex,
@@ -174,15 +175,12 @@ def publish_web_document(
 
 class PublishWebDocumentInput(ToolInput):
     document_id: str
-    #: The public origin the published HTML embeds its absolute links against. It is part of the
-    #: rendered bytes, so it is part of the idempotency body — two origins are two publishes.
-    public_base: str
     slug: str
     #: Emit ``<meta name="robots" content="noindex">`` on this page (clone-fidelity F4.3, ruling
     #: R25-4). PER PAGE, defaulting off: CP2's ABM account pages are reachable by their explicit
     #: URL and by nothing else, so they ask for it; a homepage publish never does and stays
-    #: byte-identical. Like ``public_base`` it is part of the rendered bytes, so it belongs in
-    #: the idempotency body — an indexed and a de-indexed page are two publishes.
+    #: byte-identical. It is part of the rendered bytes, so it belongs in the idempotency body —
+    #: an indexed and a de-indexed page are two publishes.
     #:
     #: R-F1 added the page's OWN durable ``web_noindex``, and it deliberately does NOT appear
     #: here. It is a property of the document row, exactly like the scene the publish renders,
@@ -273,7 +271,6 @@ class PublishWebDocumentTool(DesignTool):
             node_bin=self.host.need("web_export_node_bin"),
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
-            public_base=inputs.public_base,
             noindex=inputs.noindex,
         )
 

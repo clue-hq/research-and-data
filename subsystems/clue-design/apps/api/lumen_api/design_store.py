@@ -97,7 +97,11 @@ from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
+from clue_config import Settings
 from clue_db import create_engine
+from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
+from clue_spine.hostnames import ensure_system_hostname
+from clue_spine.hostnames import system_hostname as _system_hostname
 from py_lumen_obs import get_logger
 from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
@@ -316,7 +320,12 @@ class DesignStoreBridge:
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
     """Dev-only scaffolding (dies at Part-IV auth): the dev workspace row must exist for the
-    tenancy FKs; ensured once per process per workspace, idempotently."""
+    tenancy FKs; ensured once per process per workspace, idempotently.
+
+    It also allocates the workspace's system hostname (custom-domain publishing §4.1), the same
+    allocator ``clue_spine.create_workspace`` uses — so a dev workspace scaffolded here has the
+    registry row every public page URL is minted from, exactly like a provisioned one.
+    """
     with _ensure_lock:
         already = workspace_id in _ensured_workspaces
     if already:
@@ -327,6 +336,9 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
             " ON CONFLICT (workspace_id) DO NOTHING"
         ),
         {"w": workspace_id},
+    )
+    await ensure_system_hostname(
+        conn, workspace_id=workspace_id, name=workspace_id, suffix=Settings().pages_system_suffix
     )
     with _ensure_lock:
         _ensured_workspaces.add(workspace_id)
@@ -1336,6 +1348,16 @@ class HybridRepository:
                 conn, workspace_id=self.workspace_id, slug=slug
             )
         )
+
+    def system_hostname(self) -> str | None:
+        """The workspace's permanent ``<label>.<suffix>`` hostname.
+
+        Custom-domain publishing §4.1.
+        """
+        return self._bridge._run(lambda conn: _system_hostname(conn, self.workspace_id))
+
+    def active_custom_hostname(self) -> str | None:
+        return self._bridge._run(lambda conn: _active_custom_hostname(conn, self.workspace_id))
 
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         return self._bridge._run(

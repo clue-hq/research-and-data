@@ -171,7 +171,7 @@ def test_the_batch_derives_and_publishes_one_page_per_account_and_says_which_car
         assert row["status"] == "published"
         assert row["document_id"]
         assert row["slug"].startswith("abm-")
-        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
+        assert row["url"].endswith(f"/{row['slug']}")
         assert row["noindex"] is True
         assert row["error"] is None
         assert client.get(row["url"]).status_code == 200
@@ -314,7 +314,7 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     kwargs = dict(
         blobs=blobs,
         slug="acme-home",
-        public_base="http://testserver",
+        public_origin="http://testserver",
         workspace_id=workspace_id,
         node_bin=app.state.web_export_node_bin,
     )
@@ -409,7 +409,6 @@ def test_the_toolbelt_publish_tool_honors_the_durable_flag_without_being_asked(
         "design_publish_web",
         {
             "document_id": derived,
-            "public_base": "http://testserver",
             "slug": "tool-published",
         },
         workspace_id=workspace_id,
