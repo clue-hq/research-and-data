@@ -8,10 +8,11 @@ entry points share one pipeline:
   extensioned image bytes (``assets/…``) + a statically compiled Tailwind
   ``site.css`` linked from the html + SEO metas + a ``manifest.json``.
 * ``build_publish_html`` — a single self-contained html for same-origin serving:
-  absolute ``/asset-store/{digest}`` asset + font urls (served by the digest
+  root-relative ``/asset-store/{digest}`` asset + font urls (served by the digest
   route with ``Access-Control-Allow-Origin: *``), the compiled css INLINED in a
-  ``<style>`` tag, SEO metas plus a canonical + og:url anchored at the public
-  base.
+  ``<style>`` tag, and SEO metas that name no host — the page is host-independent
+  so the same bytes serve from the system hostname and from any custom domain
+  (custom-domain publishing §6.1).
 
 The static Tailwind compile shells out to ``scripts/web_static_css.mjs`` (the
 editor app's own v4 toolchain) so an exported page styles identically to the
@@ -30,8 +31,13 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
-from urllib.parse import urlsplit
 
+from clue_design.publishes import (
+    PUBLISH_ASSET_MEDIA_TYPES,
+    PublishAssetMismatch,
+    check_publish_asset,
+    delivery_csp,
+)
 from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
 
 from .asset_custody import read_asset_bytes
@@ -63,16 +69,13 @@ STATIC_CSS_SCRIPT = "scripts/web_static_css.mjs"
 PUBLISH_ASSET_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 # The delivery-asset kinds a publish package can mint, and the ONE media type each one is
-# served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime).
-# Since D4 this table is the extension↔media-type contract the `{digest}.meta.json` sidecar
-# used to carry: `persist_publish_assets` refuses a record that disagrees with it, and
+# served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime), now
+# imported from `clue_design.publishes` — the page origin serves these same assets and may not
+# import `lumen_api`, so the extension↔media-type contract has ONE home (custom-domain
+# publishing §6.2). `persist_publish_assets` refuses a record that disagrees with it, and
 # `resolve_publish_asset` refuses to serve a blob whose recorded media type is not the one the
 # requested extension names.
-PUBLISH_ASSET_MEDIA_TYPES: Dict[str, str] = {
-    "js": "text/javascript; charset=utf-8",
-    "css": "text/css; charset=utf-8",
-    "html": "text/html; charset=utf-8",
-}
+#
 # Stored on a delivery asset the manifest does not describe: it is durable, but nothing can
 # name an extension for it, so no publish URL will ever serve it.
 UNSERVABLE_ASSET_MEDIA_TYPE = "application/octet-stream"
@@ -238,26 +241,22 @@ def persist_publish_assets(
 def resolve_publish_asset(
     blobs: DesignBlobStore, digest: str, extension: str
 ) -> Tuple[bytes, str]:
-    """Read and integrity-check one public immutable publish asset.
-
-    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row
-    (the sidecar's job before D4), so ``/{digest}.css`` can never serve a JavaScript bundle.
-    """
+    """Read and integrity-check one immutable publish asset (the check itself lives in
+    ``clue_design.publishes.check_publish_asset``, shared with the page origin)."""
 
     if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
         raise WebExportError("invalid publish asset digest")
-    expected_media_type = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
-    if expected_media_type is None:
-        raise WebExportError("publish asset media type does not match its URL")
     try:
         media_type, data = blobs.read_blob(digest)
     except (NotFoundError, ValueError) as error:
         raise WebExportError("publish asset is missing") from error
-    if _sha256(data) != digest:
-        raise WebExportError("publish asset failed its integrity check")
-    if media_type != expected_media_type:
-        raise WebExportError("publish asset media type does not match its URL")
-    return data, media_type
+    try:
+        served = check_publish_asset(
+            data=data, media_type=media_type, digest=digest, extension=extension
+        )
+    except PublishAssetMismatch as error:
+        raise WebExportError(str(error)) from error
+    return data, served
 
 
 @dataclass
@@ -1261,31 +1260,12 @@ def _font_manifest_entries(gate: _FontGate) -> JsonObject:
     }
 
 
-def _delivery_csp(public_base: Optional[str] = None, *, meta: bool = False) -> str:
-    """The published page's CSP. ``meta=True`` is the ``<meta http-equiv>`` shape.
-
-    The one difference: ``frame-ancestors`` is ignored inside a meta CSP by spec, and the
-    browser says so on the console — which was the published page's ONE console error at the
-    CP1 walk, and it was ours (walk criterion 4, final-review X7). The serving header keeps the
-    directive; the meta tag stops claiming it.
-    """
-    origin = ""
-    if public_base:
-        parsed = urlsplit(public_base)
-        if parsed.scheme in {"http", "https"} and parsed.netloc:
-            origin = f" {parsed.scheme}://{parsed.netloc}"
-    policy = (
-        "default-src 'none'; "
-        f"script-src 'unsafe-inline' data:{origin}; "
-        f"style-src 'unsafe-inline'{origin}; "
-        f"img-src data: blob:{origin}; "
-        f"font-src data:{origin}; "
-        "connect-src 'none'; object-src 'none'; worker-src 'none'; "
-        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
-    )
-    if meta:
-        return policy
-    return policy + "; frame-ancestors 'self'"
+def _delivery_csp(*, meta: bool = False) -> str:
+    """The published page's CSP — one home in ``clue_design.publishes`` (custom-domain publishing
+    §6.2), shared with the page origin's header. Assets are same-origin by construction now, so
+    there is no origin allow-list: ``'self'`` covers ``/p-assets`` and ``/asset-store`` on whichever
+    hostname served the page."""
+    return delivery_csp(meta=meta)
 
 
 def build_export_bundle(
@@ -1488,7 +1468,7 @@ def build_publish_package(
     *,
     blobs: DesignBlobStore,
     slug: str,
-    public_base: str,
+    public_origin: str,
     workspace_id: str,
     node_bin: str = "node",
     noindex: bool = False,
@@ -1500,12 +1480,12 @@ def build_publish_package(
     pinned by digest. Runtime asset URLs are immutable and never resolve
     ``latest`` registry state.
 
-    Every publish URL this package mints (canonical, og:url, the manifest link,
-    the per-asset runtime URLs) is workspace-scoped under ``/w/{workspace_id}``:
-    publish slugs became tenant-local at Part II D1 (O6), so a bare ``/p/{slug}``
-    is ambiguous. This is the interim O6b scheme — Part-IV item 5 replaces it.
-    The ``/asset-store`` URLs stay unprefixed: that route is not part of the
-    public publish surface and is unchanged by O6b.
+    Every URL this package mints is ROOT-RELATIVE — the published HTML names no
+    host, so the same immutable bytes serve correctly from the workspace's system
+    hostname and from any custom domain pointed at it. The one exception is
+    ``og:image``: unfurlers require an absolute URL, so it points at
+    ``public_origin``, the always-live system hostname (custom-domain publishing
+    §6.1), which stays reachable even after a custom domain is removed.
 
     ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
     ``<meta name="robots" content="noindex">``. It is a per-page option and it
@@ -1516,8 +1496,7 @@ def build_publish_package(
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, blobs)
     warnings: List[str] = []
-    base = public_base.rstrip("/")
-    public_prefix = f"{base}/w/{workspace_id}"
+    origin = public_origin.rstrip("/")
     deterministic_seed = (
         f"publish:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
@@ -1528,9 +1507,7 @@ def build_publish_package(
         document,
         blobs=blobs,
         asset_url_for=(
-            lambda digest, extension: (
-                f"{public_prefix}/p-assets/{digest}.{extension}"
-            )
+            lambda digest, extension: f"/p-assets/{digest}.{extension}"
         ),
         deterministic_seed=deterministic_seed,
         embed_runtime_assets=False,
@@ -1599,15 +1576,14 @@ def build_publish_package(
     # wash and not a cloned section's logo.
     og_source = next((image for image in images if image.origin == "image"), None)
     og_image = (
-        f"{base}/asset-store/{og_source.digest}" if og_source is not None else None
+        f"{origin}/asset-store/{og_source.digest}" if og_source is not None else None
     )
     head = _seo_snippet(
         title=document["title"],
         description=_seo_description(web_doc, document["title"]),
         og_image=og_image,
-        canonical=f"{public_prefix}/p/{slug}",
-        og_url=f"{public_prefix}/p/{slug}",
     )
+    head += '<link rel="icon" href="/favicon.ico">\n'
     if noindex:
         head += ROBOTS_NOINDEX_META + "\n"
         # F4 wave item 6 (the CP2 walk's F-1, the lite half): every off-page door on a
@@ -1633,7 +1609,7 @@ def build_publish_package(
         ),
         **_font_manifest_entries(font_gate),
         "slug": slug,
-        "canonical_url": f"{public_prefix}/p/{slug}",
+        "canonical_url": f"{origin}/{slug}",
         # Present ONLY when the page asked for it, so an ordinary publish's manifest — and
         # therefore its `manifest_digest`, and therefore its `package_digest` — is byte-identical
         # to what it was before the option existed.
@@ -1642,7 +1618,7 @@ def build_publish_package(
     manifest_digest = _sha256(_canonical_json(publish_manifest))
     head += (
         '<meta http-equiv="Content-Security-Policy" content="'
-        f'{_escape_attr(_delivery_csp(base, meta=True))}">\n'
+        f'{_escape_attr(_delivery_csp(meta=True))}">\n'
     )
     head += (
         '<meta name="lumen-publish-manifest-digest" content="'
@@ -1650,7 +1626,7 @@ def build_publish_package(
     )
     head += (
         '<link rel="lumen-publish-manifest" href="'
-        f'{_escape_attr(f"{public_prefix}/p/{slug}/manifest.json")}">\n'
+        f'{_escape_attr(f"/{slug}/manifest.json")}">\n'
     )
     html = _inject_before_head_close(html, head)
     html_digest = _sha256(html)
@@ -1682,7 +1658,7 @@ def build_publish_html(
     *,
     blobs: DesignBlobStore,
     slug: str,
-    public_base: str,
+    public_origin: str,
     workspace_id: str,
     node_bin: str = "node",
 ) -> Tuple[str, Optional[int], List[str]]:
@@ -1694,7 +1670,7 @@ def build_publish_html(
         document,
         blobs=blobs,
         slug=slug,
-        public_base=public_base,
+        public_origin=public_origin,
         workspace_id=workspace_id,
         node_bin=node_bin,
     )

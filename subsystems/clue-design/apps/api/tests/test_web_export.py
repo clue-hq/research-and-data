@@ -700,3 +700,46 @@ def test_web_export_endpoints_reject_scene_documents(
     )
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == "document.kind_unsupported"
+
+
+# --- (h) the publish package names no host (custom-domain publishing S1) -----
+
+
+def test_publish_package_is_host_independent(client: TestClient) -> None:
+    from lumen_api.design_store import HybridRepository
+    from lumen_api.web_export import build_publish_package
+
+    from conftest import make_blob_store
+
+    document = get_document(client, seed_document(client)["id"])
+    repo = HybridRepository()
+    package = build_publish_package(
+        client.app.state.core,
+        repo,
+        document,
+        blobs=make_blob_store(client.app),
+        slug="host-free",
+        public_origin="https://acme.pages.test",
+        workspace_id=repo.workspace_id,
+        node_bin=client.app.state.web_export_node_bin,
+    )
+    html = package.html
+    assert "/w/" not in html
+    assert '<link rel="canonical"' not in html
+    assert 'property="og:url"' not in html
+    assert '<link rel="icon" href="/favicon.ico">' in html
+    assert '<link rel="lumen-publish-manifest" href="/host-free/manifest.json">' in html
+    # The package mints URLs only in the <head>; author-written body anchors are the page's own
+    # content and must survive verbatim. The only absolute URL the head may carry is og:image,
+    # which unfurlers require absolute and which points at the always-live system origin.
+    import re
+    head = html[: html.index("</head>")]
+    absolute = re.findall(r'(?:href|src|content)="(https?://[^"]+)"', head)
+    assert all(url.startswith("https://acme.pages.test/asset-store/") for url in absolute), absolute
+    og_image = re.search(r'property="og:image" content="([^"]+)"', head)
+    assert og_image is None or og_image.group(1).startswith("https://acme.pages.test/asset-store/")
+    assert package.manifest["canonical_url"] == "https://acme.pages.test/host-free"
+    for asset_url in re.findall(r'"(/p-assets/[0-9a-f]{64}\.(?:js|css|html))"', html):
+        assert asset_url.startswith("/p-assets/")
+    csp = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', html)
+    assert csp is not None and "http" not in csp.group(1) and "frame-ancestors" not in csp.group(1)

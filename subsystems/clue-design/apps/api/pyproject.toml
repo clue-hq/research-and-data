@@ -51,6 +51,8 @@ dependencies = [
     # libs/clue-db's own entry, so the workspace keeps one asyncpg version story.
     "asyncpg",
     "clue-design",
+    "clue-spine",
+    "clue-config",
     # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
     "py-lumen-obs",
     "py-lumen-config",
@@ -65,5 +67,7 @@ packages = ["lumen_api", "lumen_ingestion"]
 
 [tool.uv.sources]
 clue-design = { workspace = true }
+clue-spine = { workspace = true }
+clue-config = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }

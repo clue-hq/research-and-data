@@ -2144,7 +2144,9 @@ version = "0.0.0"
 source = { editable = "subsystems/clue-design/apps/api" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "clue-config" },
     { name = "clue-design" },
+    { name = "clue-spine" },
     { name = "fastapi" },
     { name = "fonttools" },
     { name = "httpx" },
@@ -2166,7 +2168,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg" },
+    { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-design", editable = "subsystems/design" },
+    { name = "clue-spine", editable = "libs/clue-spine" },
     { name = "fastapi", specifier = ">=0.111,<1" },
     { name = "fonttools", specifier = ">=4.53,<5" },
     { name = "httpx", specifier = ">=0.27,<1" },
