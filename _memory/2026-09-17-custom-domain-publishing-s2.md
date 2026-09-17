@@ -156,3 +156,19 @@ Every `minor (deferred)` line is in the ledger. The ones worth carrying forward:
 - Still open from S1: reserved slugs are not refused at publish time; no `sniff_mime` fallback on the
   origin's `/asset-store/{digest}`; the design subsystem's own `webDocuments.ts` still types `url`
   as a path.
+
+## Addendum 2026-09-18 — whole-slice final review (Fable) + close-out
+- Final review found one Important in the Pages hook: a provider-failed removal (502) left the screen on
+  "active" with no polling while the backend row was already `disconnecting`. Fixed in `9f3c361ae`
+  (adopt `disconnecting` locally on a 502 → view flips to connecting → the 5 s forced-check poll
+  retries the delete to completion). npm test 2295/2295.
+- Rulings taken during S2 SDD (all reversible): Task 11 built the connection card + Clue-address row
+  from spec §8.2 with the lifted primitives pending the co-founder's frames (files carry the marker);
+  hostname validation order is invalid → reserved → apex (our own zone apex reports "reserved");
+  `check(force=)` — a passive GET never retries a failing provider delete, only Check now does; the
+  `disconnecting` retry runs above the 5 s DNS rate limit; the one-token `variant="primary"` →
+  `"default"` edit in the lifted `members-settings.tsx` (this repo's button has no `primary`).
+- Exit gate 2026-09-18: root 185 tests green; design API `test_public_pages` + `test_web_export`
+  green; ruff/mypy (4 baseline)/lint-imports (28) clean; npm test 2295, lint 0 errors.
+  Still owed: `npm run build` (port 3020 busy with a founder stack), the dev-stack walk of
+  Settings → Pages, the live Cloudflare acceptance (spec §10), the frames re-lift.
