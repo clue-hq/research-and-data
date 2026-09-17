@@ -782,7 +782,7 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
+        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
         durable upload-receipt endpoint exists yet.
         """
 

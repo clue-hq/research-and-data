@@ -197,10 +197,10 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     "agent_profiles": [
                         {
                             "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                            "label": "GPT-5.6 Terra",
-                            "short_label": "GPT-5.6 Terra",
-                            "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
-                            "model_id": "openai/gpt-5.6-terra",
+                            "label": "Grok 4.6",
+                            "short_label": "Grok 4.6",
+                            "description": "Clue's governed Grok 4.6 conversation profile",
+                            "model_id": "x-ai/grok-4.6",
                         }
                     ],
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
