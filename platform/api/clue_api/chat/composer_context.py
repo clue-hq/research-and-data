@@ -10,18 +10,21 @@ set the contacts table lists), and versions come from the identity store.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
 from clue_api.arv2.display.gather import SubjectRef, committee_members
 from clue_api.arv2.project_documents import (
+    document_title,
     get_project_document,
     latest_project_document_version,
+    read_project_document,
 )
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.design_leg_wiring import project_design_documents
@@ -37,7 +40,8 @@ __all__ = [
     "MAX_DESIGN_REFERENCE_ASSETS",
     "ComposerContextEntity",
     "ContextReferenceError",
-    "design_asset_ref_presentations",
+    "PRESENTED_REF_TYPES",
+    "context_ref_presentations",
     "list_composer_context_entities",
     "prepare_composer_context_entities",
     "validated_context_refs",
@@ -544,43 +548,128 @@ async def prepare_composer_context_entities(
     return tuple(prepared)
 
 
-async def design_asset_ref_presentations(
+PRESENTED_REF_TYPES = frozenset({"design_asset", "design_document", "project_document"})
+"""The ref types whose read-time presentation the transcript joins."""
+
+
+async def _project_document_rows(
+    conn: AsyncConnection, *, workspace_id: str, document_ids: Sequence[UUID]
+) -> dict[str, Any]:
+    """This workspace's project-scoped file rows by id — the join behind a file's label."""
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT document_id, project_id, path, kind FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id "
+                "  AND document_id = ANY(CAST(:ids AS uuid[])) AND project_id IS NOT NULL"
+            ),
+            {"workspace_id": workspace_id, "ids": [str(value) for value in document_ids]},
+        )
+    ).all()
+    return {str(row.document_id): row for row in rows}
+
+
+async def _design_document_rows(
+    conn: AsyncConnection, *, workspace_id: str, document_ids: Sequence[str]
+) -> dict[str, Any]:
+    """This workspace's design documents by id — the join behind a design document's label."""
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT id, title, doc_kind FROM design_document "
+                "WHERE workspace_id = :workspace_id AND id = ANY(:ids)"
+            ),
+            {"workspace_id": workspace_id, "ids": list(document_ids)},
+        )
+    ).mappings()
+    return {str(row["id"]): row for row in rows}
+
+
+async def context_ref_presentations(
     conn: AsyncConnection,
     *,
     workspace_id: str,
     refs: Sequence[Any],
+    storage: StorageBackend | None = None,
 ) -> dict[tuple[str, str], dict[str, str]]:
-    """Resolve durable design-asset refs to read-time labels and thumbnail digests.
+    """Resolve durable refs to read-time labels: asset filenames, file titles, design titles.
 
-    The append-only submission row remains the source of *which* asset was submitted. Mutable
-    presentation metadata stays in the design asset library and is joined only while reading the
-    transcript, so filenames and thumbnails are not denormalized into the durable turn receipt.
+    The append-only submission row remains the source of *which* object was submitted. Mutable
+    presentation metadata (a filename, a document's own title) is joined only while reading the
+    transcript, so nothing user-facing is denormalized into the durable turn receipt — and no
+    path or id is ever the label.
     """
+
+    result: dict[tuple[str, str], dict[str, str]] = {}
 
     asset_ids = tuple(
         dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "design_asset")
     )
-    if not asset_ids:
-        return {}
-    from clue_design.assets import get_asset_records
+    if asset_ids:
+        from clue_design.assets import get_asset_records
 
-    records = await get_asset_records(
-        conn,
-        workspace_id=workspace_id,
-        asset_ids=asset_ids,
+        records = await get_asset_records(
+            conn,
+            workspace_id=workspace_id,
+            asset_ids=asset_ids,
+        )
+        for asset_id, wrapped in records.items():
+            asset = wrapped.get("asset") or {}
+            media = asset.get("media") or {}
+            thumbnail = media.get("thumbnail") or {}
+            thumbnail_digest = thumbnail.get("digest") or media.get("digest") or {}
+            presentation = {
+                "label": str(media.get("filename") or asset.get("label") or "Reference image"),
+                "media_type": str(media.get("mime_type") or ""),
+            }
+            digest_value = thumbnail_digest.get("value")
+            if thumbnail_digest.get("algorithm") == "sha256" and digest_value:
+                presentation["thumbnail_digest"] = str(digest_value)
+            result[("design_asset", asset_id)] = presentation
+
+    document_ids: list[UUID] = []
+    for ref in refs:
+        if ref.object_type != "project_document":
+            continue
+        try:
+            document_ids.append(UUID(str(ref.object_id)))
+        except ValueError:
+            continue
+    if document_ids:
+        rows = await _project_document_rows(
+            conn, workspace_id=workspace_id, document_ids=tuple(dict.fromkeys(document_ids))
+        )
+        for document_id, row in rows.items():
+            front: Mapping[str, Any] = {}
+            body = ""
+            if storage is not None:
+                # ``servable_only=False``: a transcript read of an older turn whose tagged
+                # version has since been superseded still names the document the user tagged.
+                read = await read_project_document(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    project_id=str(row.project_id),
+                    document_id=UUID(document_id),
+                    servable_only=False,
+                )
+                if read is not None:
+                    _, front, body = read
+            result[("project_document", document_id)] = {
+                "label": document_title(front, body, path=str(row.path)),
+                "kind": str(row.kind),
+            }
+
+    design_ids = tuple(
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "design_document")
     )
-    result: dict[tuple[str, str], dict[str, str]] = {}
-    for asset_id, wrapped in records.items():
-        asset = wrapped.get("asset") or {}
-        media = asset.get("media") or {}
-        thumbnail = media.get("thumbnail") or {}
-        thumbnail_digest = thumbnail.get("digest") or media.get("digest") or {}
-        presentation = {
-            "label": str(media.get("filename") or asset.get("label") or "Reference image"),
-            "media_type": str(media.get("mime_type") or ""),
-        }
-        digest_value = thumbnail_digest.get("value")
-        if thumbnail_digest.get("algorithm") == "sha256" and digest_value:
-            presentation["thumbnail_digest"] = str(digest_value)
-        result[("design_asset", asset_id)] = presentation
+    if design_ids:
+        rows = await _design_document_rows(conn, workspace_id=workspace_id, document_ids=design_ids)
+        for design_id, row in rows.items():
+            result[("design_document", design_id)] = {
+                "label": str(row["title"] or "Design"),
+                "kind": "web" if row["doc_kind"] == "web" else "ad",
+            }
     return result

@@ -69,11 +69,12 @@ from clue_api.arv2.icp_confirmation import (
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
+    PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -1500,14 +1501,15 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         all_refs = tuple(ref for item in page.items for ref in item.refs)
-        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
-        if include is None and not has_design_assets:
+        has_presented = any(ref.object_type in PRESENTED_REF_TYPES for ref in all_refs)
+        if include is None and not has_presented:
             return message_list_response(page, thread_id=thread_id)
         async with conn_factory() as conn:
-            presentations = await design_asset_ref_presentations(
+            presentations = await context_ref_presentations(
                 conn,
                 workspace_id=who.workspace_id,
                 refs=all_refs,
+                storage=storage,
             )
             bodies = None
             if include is not None:

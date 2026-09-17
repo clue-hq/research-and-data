@@ -520,3 +520,61 @@ def test_design_document_mentions_must_belong_to_the_project(
         )
     )
     assert accepted[0].object_id == "doc_site"
+
+
+def test_context_ref_presentations_label_files_and_design_documents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from clue_api.chat.composer_context import context_ref_presentations
+
+    async def project_document_rows(*_args: object, **_kwargs: object):
+        return {
+            str(PLAN_DOCUMENT): SimpleNamespace(
+                document_id=PLAN_DOCUMENT,
+                project_id="prj_1",
+                path="project/plan.md",
+                kind="project-plan",
+            )
+        }
+
+    async def design_document_rows(*_args: object, **_kwargs: object):
+        return {"doc_site": {"id": "doc_site", "title": "Spring launch page", "doc_kind": "web"}}
+
+    async def read_project_document(*_args: object, **_kwargs: object):
+        return (None, {"title": "Q4 expansion plan"}, "# ignored\n")
+
+    monkeypatch.setattr(composer_context, "_project_document_rows", project_document_rows)
+    monkeypatch.setattr(composer_context, "_design_document_rows", design_document_rows)
+    monkeypatch.setattr(composer_context, "read_project_document", read_project_document)
+
+    refs = (
+        _ref("project_document", PLAN_DOCUMENT, version=2),
+        _design_ref("design_document", "doc_site", version=4),
+        _ref("account", ACCOUNT_A),
+    )
+    presentations = asyncio.run(
+        context_ref_presentations(
+            object(),  # type: ignore[arg-type]
+            workspace_id="ws-r8-context",
+            refs=refs,
+            storage=object(),  # type: ignore[arg-type]
+        )
+    )
+    assert presentations[("project_document", str(PLAN_DOCUMENT))] == {
+        "label": "Q4 expansion plan",
+        "kind": "project-plan",
+    }
+    assert presentations[("design_document", "doc_site")] == {
+        "label": "Spring launch page",
+        "kind": "web",
+    }
+    assert ("account", str(ACCOUNT_A)) not in presentations
+
+    no_storage = asyncio.run(
+        context_ref_presentations(
+            object(),  # type: ignore[arg-type]
+            workspace_id="ws-r8-context",
+            refs=refs[:1],
+        )
+    )
+    assert no_storage[("project_document", str(PLAN_DOCUMENT))]["label"] == "plan"

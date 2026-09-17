@@ -11,7 +11,7 @@ from clue_agents import DomainObjectRef
 from clue_api.chat.composer_context import (
     MAX_DESIGN_REFERENCE_ASSETS,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     validated_context_refs,
 )
 from clue_api.chat.schemas import SubmitTurnRequest
@@ -207,7 +207,7 @@ def test_durable_reference_history_joins_filename_and_thumbnail(
     monkeypatch.setattr(assets, "get_asset_records", get_asset_records)
 
     presentations = asyncio.run(
-        design_asset_ref_presentations(
+        context_ref_presentations(
             object(),  # type: ignore[arg-type]
             workspace_id=WORKSPACE_ID,
             refs=(SimpleNamespace(object_type="design_asset", object_id="asset_one"),),
