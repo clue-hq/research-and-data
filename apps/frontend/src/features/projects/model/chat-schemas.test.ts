@@ -157,6 +157,8 @@ test("design asset context refs retain read-time filename and thumbnail metadata
     version: null,
     ordinal: 0,
     label: "inspiration.webp",
+    // A design asset carries no document kind; the wire omits it and it reads as null.
+    kind: null,
     mediaType: "image/webp",
     thumbnailDigest: "b".repeat(64),
   });
@@ -210,6 +212,28 @@ test("a physically missing historical artifact gives actionable recovery copy", 
         expected_subject_sha256: "b".repeat(64),
         expected_estimated_cost_cents: null,
         selected_product_id: "prd_phone",
+      },
+    },
+  );
+  // The set-valued gate sends the whole chosen list, never a single id.
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-product-set",
+        decision: "approved",
+        expectedSubjectSha256: "c".repeat(64),
+        expectedEstimatedCostCents: null,
+        selectedProductIds: ["prd_phone", "prd_intake"],
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-product-set",
+        decision: "approved",
+        expected_subject_sha256: "c".repeat(64),
+        expected_estimated_cost_cents: null,
+        selected_product_ids: ["prd_phone", "prd_intake"],
       },
     },
   );

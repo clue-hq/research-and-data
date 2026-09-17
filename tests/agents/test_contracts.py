@@ -409,34 +409,53 @@ def test_frozen_contract_json_schema_digests() -> None:
     # Contract revision P3.1 (PD-part3 §3 delta 1, ratified 2026-08-14): AgentRole gains
     # 'design' — the composite design deepagent's platform-facing role. Every digest that
     # moved embeds the role enum; the DB CHECKs widened in the same commit (549de68ae3b9).
-    #
+    # Contract revision ARV2-O4 (ONBOARDING-PLAN §5, this lane): AgentRole gains
+    # 'onboarding_synthesis' — the brand-scoped synthesis agent's role. Exactly the same class of
+    # delta as P3.1 above, and exactly the same five digests move (the ones whose schema embeds the
+    # role enum: AgentProfile, AgentConstitution, AgentTurnRequest, AgentPlan, DelegationRequest);
+    # the other six are byte-identical to the values frozen before this lane. Proven by recomputing
+    # the digests with the new member removed — every one then matches the pre-lane value. The DB
+    # CHECKs widened in the same lane (migrations 000b9d8bb17b + dfb9fa040b13). The digests were
+    # not updated when the role landed, so this is that commit's missed ritual, performed here.
+    # Contract revision "the versioned project root" (plan 4 Task 7, commit f2b3667f0):
+    # ``DomainObjectRef`` gains ``title`` — what the referenced object calls itself, so a surface
+    # can name the card it draws without reading the object back — and the class docstring that
+    # explains it. Pydantic puts a model's docstring in its schema ``description``, so BOTH edits
+    # move a digest, and every frozen type whose schema embeds ``DomainObjectRef`` moved: ten of
+    # the eleven, all but ``ValidatedPlan``. Proven by recomputing each digest with the field
+    # removed and the old one-line docstring restored — every one then matches the value frozen
+    # above it. The field is optional and defaulted, so a finalization recorded before it existed
+    # still validates on replay. The ritual is performed here, in the `head-of-abm@v56` mint,
+    # because Task 7 landed the delta without it.
     # Contract revision 2026-09-04 (web-editor annotations): ``DomainObjectRef`` gains an
     # optional, bounded ``note`` — the marketer's own words about that one reference, written
     # onto an element in the web editor. Every digest below except ``ValidatedPlan`` moved,
     # because every one of these shapes embeds a domain ref somewhere; ``ValidatedPlan`` does
     # not. The durable column landed in the same change (migration 4cbfa56e52a8), and the
     # default keeps every existing construction valid.
+    # Merge 2026-09-17 (codex/design-agent-v1 into research-streaming): both ``note`` and
+    # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
     assert actual == {
-        "AgentProfile": "543503ce552e07acbb29388c4360140842c3d1b80eefd18abad7c04b5771a71f",
-        "SkillBundle": "780905e2a251717a8c9238acc2f1a37c75e1ef473e3f9080414a8fd6c8feb1cf",
+        "AgentProfile": "163055da1d4ea52c1627ce9beb845d8786e165a0c0d973654aa581a4160423f2",
+        "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("fda063dc99af994fe9cfd256aca35dd4d5ef450f5a46b485ad52ac570f416713"),
-        "AgentTurnRequest": ("036ae9400636f8b524f582d1ab95ba3d783bb60d91624b3dc72fba35335f4407"),
-        "AgentPlan": "1542f4084f2f05474e6081499235e6638f7a5da507bfb42d2584659285cc7d78",
+        "AgentConstitution": ("2f8f8f77d7c9e19d58f900824383d18f681a7fd273f785a3d9ea29f0399a4e92"),
+        "AgentTurnRequest": ("ad4400829caad0526206e81cafbe57582951934ad5fe347d9ec3d1f8883ee1d1"),
+        "AgentPlan": "d9b94061c8d49d073ac055293b1e3dc095975cb20cadcd0327a42177f6ffed62",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("466d7c616c6f3dd17761e7cc87836afb74de4b5bd0cd141ce14911bc5719779a"),
-        "DelegationResult": ("547ff492af95fa814e932a4fc97468eb8e8608f0163bd3bdced2c3c39375cee2"),
+        "DelegationRequest": ("f5ae983ec69fe98f1fb1ebe7d551d6a88d7018e546f48d31aa22c3de9a3216d2"),
+        "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
         "SpecialistTaskEnvelope": (
-            "45f3b4a9e6189e21b36f8d5bc609a876fcfca71cf66eab711fdbce244af252f8"
+            "44f25aed2767854897c76f30aff7e002032880379ea77dc404fbc8156d3d3e05"
         ),
         "ContextBundleManifest": (
-            "223223c2b9fd34021cc3d6a468a3892dc771ec581e31b25e36d1b829da296635"
+            "3d4bcf33bedda5d6d88a90b4c86917561d27c7d542c2b9c953b4991b739ca0ea"
         ),
         "AgentFinalizeEnvelope": (
-            "077dabb1f34347c808298caf9e9f1b26ae8042f3f71978b8b9a20b5c7c1c58ac"
+            "9c946fd10396d7dd002acc638a2e27f8729b62bd3b52a5bf188babe787c8dabe"
         ),
     }

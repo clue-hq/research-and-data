@@ -598,27 +598,66 @@ def test_a_text_value_never_reaches_the_judge_and_lands_exactly_as_before() -> N
     run_async(_run())
 
 
-def test_an_unwired_judge_refuses_a_typed_value_and_writes_nothing() -> None:
-    """The port is optional; an unwired port is today's behaviour, never worse."""
+def test_typed_value_without_a_judge_is_admitted_unjudged_r0() -> None:
+    """R0 ruling (ARV2-R0-foundations-plan Part 3C fix 1): no judge composed != refusal.
+
+    This test held the opposite until 2026-09-01, and that was the kill-switch inversion: with
+    `CLUE_VERIFICATION_ENABLED=false` no entailment judge is composed, so every boolean/number/
+    list/object Client-KB fact was refused outright and the interview could only accept the
+    client's own words. An unwired judge now admits the typed value UNJUDGED, exactly like the
+    substring path admits a string — the claim lands under the plain `client_interview` source key
+    and is born UNVERIFIED, which is the durable record that no judge ran. A judge that IS wired
+    but cannot be reached stays a retryable refusal (an outage is transient, not a posture) — that
+    is `test_a_judge_that_cannot_be_reached_is_reported_as_unavailable_not_as_disbelief`.
+    """
 
     async def _run() -> None:
         async with rollback_conn(workspace_id=_WORKSPACE) as conn:
             turn = await _capture(conn, BULLETED_ANSWER)
+            result = await _route(
+                conn,
+                turn,
+                InterviewStatement(
+                    route=InterviewRoute.CLAIM,
+                    route_key=BOOL_FIELD,
+                    quote=HIPAA_QUOTE,
+                    entity_type=EntityType.ACCOUNT,
+                    field_key=BOOL_FIELD,
+                    value=True,
+                ),
+            )
+            (claim_id,) = result.claim_refs  # type: ignore[attr-defined]
+            claim = (
+                await claims_by_ids(
+                    conn,
+                    (ClaimId(claim_id),),
+                    scope=WorkspaceScope.private_for_workspace(_WORKSPACE),
+                )
+            )[ClaimId(claim_id)]
+            assert claim.value_json is True
+            assert claim.evidence_span == HIPAA_QUOTE
+            # Not judge-admitted, so it must NOT carry the judged provenance key.
+            assert claim.source_key == SOURCE_CLIENT_INTERVIEW
+            assert claim.source_key != SOURCE_CLIENT_INTERVIEW_JUDGED
+            # The statement was durably recorded rather than discarded by a refusal.
+            assert [row["route_key"] for row in await _statement_rows(conn)] == [BOOL_FIELD]
+
+            # Unchanged behaviour pin: the string substring rule still refuses a non-substring
+            # string with no judge in play. Dropping the judge relaxes the typed path only.
             with pytest.raises(InterviewEvidenceRefused) as refused:
                 await _route(
                     conn,
                     turn,
                     InterviewStatement(
                         route=InterviewRoute.CLAIM,
-                        route_key=BOOL_FIELD,
+                        route_key="paraphrase",
                         quote=HIPAA_QUOTE,
                         entity_type=EntityType.ACCOUNT,
-                        field_key=BOOL_FIELD,
-                        value=True,
+                        field_key=CLIENT_VALUE_PROP,
+                        value="a paraphrase nobody said",
                     ),
                 )
-            assert refused.value.reason_code == "claim_value_judge_unavailable"
-            assert await _statement_rows(conn) == []
+            assert refused.value.reason_code == "claim_value_not_entailed"
 
     run_async(_run())
 

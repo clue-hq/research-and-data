@@ -140,9 +140,10 @@ def _row_to_contact(row: Mapping[str, object]) -> ContactEntity:
 _INSERT_ACCOUNT = text(
     """
     INSERT INTO account_entity (canonical_name, primary_domain, aliases, hq_geo, registry_ids,
-                                status, workspace_id)
+                                status, workspace_id, owner_user_id, created_by_user_id)
     VALUES (:canonical_name, :primary_domain, :aliases, CAST(:hq_geo AS jsonb),
-            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status), :workspace_id)
+            CAST(:registry_ids AS jsonb), CAST(:status AS entity_status), :workspace_id,
+            :owner_user_id, :created_by_user_id)
     RETURNING id
     """
 ).bindparams(bindparam("aliases", type_=ARRAY(String())))
@@ -158,8 +159,16 @@ async def insert_account_entity(
     registry_ids: Mapping[str, str] | None = None,
     status: AccountStatus = AccountStatus.CANDIDATE,
     workspace_id: str,
+    owner_user_id: str | None = None,
+    created_by_user_id: str | None = None,
 ) -> EntityId:
     """Insert a canonical account entity, normalizing its strong keys + match index; return its id.
+
+    ``created_by_user_id`` is the human whose action made the account exist (the requester of a
+    discovery run, the actor of a manual create); ``owner_user_id`` is who owns it on the accounts
+    table. Founder ruling 2026-09-11: **the creator is the owner by default** — callers pass the
+    same id for both until an ownership mechanism exists. Both stay ``None`` for machine-made rows
+    with no human behind them (fixtures, loaders).
 
     ``primary_domain`` is folded to its registrable form; ``registry_ids`` keys/values are
     canonicalized; ``aliases`` is stored as the normalized match index (see :func:`_match_keys`).
@@ -182,6 +191,8 @@ async def insert_account_entity(
             "registry_ids": serialize_value_json(_registry_map(registry_ids)),
             "status": status.value,
             "workspace_id": workspace_id,
+            "owner_user_id": owner_user_id,
+            "created_by_user_id": created_by_user_id,
         },
     )
     return EntityId(result.scalar_one())
@@ -665,7 +676,7 @@ async def surviving_ids(
 
 
 async def contact_ids_for_account(
-    conn: AsyncConnection, account_entity_id: EntityId
+    conn: AsyncConnection, account_entity_id: EntityId, *, include_merged: bool = False
 ) -> tuple[EntityId, ...]:
     """The **live** (non-merged) contact entity ids under an account — the committee membership the
     VERIFICATION pass and the M12 handoff assembler iterate.
@@ -673,16 +684,22 @@ async def contact_ids_for_account(
     Merged-loser contacts are excluded (``status = 'merged'``): a merge re-keys the loser's claims
     onto the survivor, which is itself returned, so the survivor's claims are covered exactly once.
     Read-only; ordered by ``id`` for deterministic iteration. Entities are not tenant-scoped (claims
-    carry tenancy), so this takes no scope — like :func:`get_contact`."""
+    carry tenancy), so this takes no scope — like :func:`get_contact`.
+
+    ``include_merged=True`` returns the losers too, for a caller that reads *claims* off these rows
+    and redirects them itself (``surviving_ids``). A merge does not rewrite the loser's immutable
+    claims, so a reader that skipped the loser row would lose every fact the survivor inherited."""
+    merged_clause = "" if include_merged else "AND status <> CAST(:merged AS entity_status) "
     rows = (
         (
             await conn.execute(
                 text(
                     "SELECT id FROM contact_entity "
-                    "WHERE account_entity_id = :acct AND status <> CAST(:merged AS entity_status) "
+                    f"WHERE account_entity_id = :acct {merged_clause}"
                     "ORDER BY id"
                 ),
-                {"acct": account_entity_id, "merged": AccountStatus.MERGED.value},
+                {"acct": account_entity_id}
+                | ({} if include_merged else {"merged": AccountStatus.MERGED.value}),
             )
         )
         .scalars()

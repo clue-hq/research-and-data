@@ -379,14 +379,24 @@ def _env_model_policy(role: AgentRole, policy: ModelPolicy) -> ModelPolicy:
     reviewed profile; the environment names the model, not the envelope. The per-role
     reasoning effort (``<ROLE>_AGENT_MODEL_EFFORT``) is read at the gateway, not here,
     because effort shapes the provider request rather than the profile contract.
+
+    One envelope field is deployment-wide as well (founder ruling 2026-09-08, superseding
+    "the environment names the model, not the envelope" for this field only):
+    ``CLUE_AGENT_MODEL_TIMEOUT_S`` overrides every role's per-call ``timeout_s``, so raising
+    the platform's per-call patience is one setting rather than a re-mint of every active
+    profile. The gateway ceiling (``CLUE_GATEWAY_TIMEOUT_S``) still bounds it: the model
+    builder refuses a value above the ceiling. Blank or unset keeps the profile pin.
     """
 
-    override = os.environ.get(f"{role.value.upper()}_AGENT_MODEL", "").strip()
-    if not override or override == policy.model_id:
+    model_override = os.environ.get(f"{role.value.upper()}_AGENT_MODEL", "").strip()
+    timeout_override = os.environ.get("CLUE_AGENT_MODEL_TIMEOUT_S", "").strip()
+    model_id = model_override or policy.model_id
+    timeout_s = float(timeout_override) if timeout_override else policy.timeout_s
+    if model_id == policy.model_id and timeout_s == policy.timeout_s:
         return policy
     return ModelPolicy(
-        model_id=override,
-        timeout_s=policy.timeout_s,
+        model_id=model_id,
+        timeout_s=timeout_s,
         max_retries=policy.max_retries,
         max_output_tokens=policy.max_output_tokens,
         temperature=policy.temperature,

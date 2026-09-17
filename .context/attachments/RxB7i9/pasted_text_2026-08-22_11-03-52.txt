@@ -1,0 +1,149 @@
+.env root - location is project root folder
+
+# Clue-HQ Research & Data subsystem — environment variables (M0.4 / ENG-120).
+#
+# Copy to `.env` and fill in real values for LOCAL DEV ONLY. `.env` is git-ignored
+# (see .gitignore) and MUST NEVER be committed. This file documents the variable NAMES
+# with placeholders ONLY — it holds no real secrets.
+#
+# All secret values are read once via `clue_research.config.Secrets` (pydantic-settings BaseSettings,
+# env_prefix=CLUE_) and injected; nothing reads os.environ ad hoc. Non-secret deploy knobs (e.g.
+# CLUE_SYNTHESIS_MODEL) are read via `clue_research.config.Settings` / `load_settings()`.
+# pydantic SecretStr and redacted by `clue_research.config.redact` before any log/trace.
+
+# --- Database (shared seam) -------------------------------------------------
+# The Postgres DSN. OWNED/documented by M0.4 (config/); the db/ package (M0.3) reads the SAME
+# variable. This is the one spelling of the DB DSN env var across the whole subsystem.
+# Format: postgresql+asyncpg://USER:<REDACTED>@HOST:PORT/DBNAME
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:<REDACTED>@localhost:55040/clue
+
+# --- Redis (in-flight locks + rate-limit coordination — M2.4) ---------------
+# The Redis DSN. The shared seam read by clue_research.locks (NOT a source of truth — Postgres is;
+# Redis holds ephemeral lock/rate-limit state only, conventions §6). The lock tests skip gracefully
+# when this is unset / unreachable. Format: redis://[:PASSWORD@]HOST:PORT/DB
+CLUE_REDIS_URL=redis://localhost:6379/0
+
+# --- Provider API keys (resolvers — M4) -------------------------------------
+# Each provider is "just a resolver" behind the Resolver protocol; the key is read here, not in
+# the caller, so a Clay -> direct-API swap changes which key is read, not any downstream code.
+# Leave any unused provider unset (the field defaults to None; M0 ships no live integration).
+CLUE_CLAY_API_KEY=
+CLUE_APOLLO_API_KEY=
+CLUE_ZOOMINFO_API_KEY=
+CLUE_BUILTWITH_API_KEY=
+CLUE_DUNS_API_KEY=
+CLUE_EXA_API_KEY=<REDACTED-EXA-KEY>
+CLUE_EXA_WEBSETS_WEBHOOK_SECRET=
+CLUE_EXA_WEBSETS_LIFECYCLE_ENABLED=true
+CLUE_EXA_WEBSETS_ACQUISITION_ENABLED=true
+CLUE_EXA_TARGETED_ENRICHMENT_ENABLED=true
+# M8C C6: selected-contact Exa Search is independently authorized from account profiling.
+CLUE_EXA_CONTACT_DEEP_ACQUISITION_ENABLED=true
+# C5 channel acquisition additionally requires an accepted validator-backed production binding.
+CLUE_CONTACT_CHANNEL_ENRICHMENT_ENABLED=true
+# Provider-neutral re-offer cadence for committee/contact external waits.
+CLUE_EXTERNAL_RESEARCH_WAKE_WORKER_INTERVAL_S=1
+CLUE_EXA_WEBSETS_POLL_WORKER_INTERVAL_S=1
+CLUE_SUMBLE_API_KEY=<REDACTED>
+CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED=true
+CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED=true
+CLUE_SUMBLE_CENTS_PER_CREDIT=0
+CLUE_PARALLEL_API_KEY=
+CLUE_FIRECRAWL_API_KEY=<REDACTED>
+CLUE_CRM_API_KEY=
+
+# --- LLM gateway (direct model calls — M0.4 / conventions §2,§4) ------------
+# OpenRouter is the SINGLE egress for all *direct* LLM calls (faithfulness judge M9.3, eval rubric
+# scorers M9.6, query-planning M6.1, ICP synthesis M5.2, committee role-inference M8.3, value-narrative
+# positioning M12.1). OpenAI-compatible; the model id is config per call site, not code. The Exa/Parallel
+# keys above are research-product resolvers (M11), NOT gateway calls (conventions §2 carve-out).
+# Leave unset in CI — the gateway runs in deterministic stub mode (no live LLM calls).
+CLUE_OPENROUTER_API_KEY=<REDACTED-OPENROUTER-KEY>
+
+# --- Deploy-time model ids (non-secret — `clue_research.config.Settings`) -----------------
+# OpenRouter model id for ICP synthesis (M5.2). Also the default for `GatewayConfig.synthesis_model`
+# and other grounded-synthesis call sites that reuse that config field. Unset → openai/gpt-5.6-terra.
+CLUE_SYNTHESIS_MODEL=openai/gpt-5.6-terra
+
+# OpenRouter model id for every LLM-as-judge call site: the M9.3 faithfulness judge, and through it
+# PC-C8 §6c-b's typed-interview-value entailment. Unset → the code default in
+# `GatewayConfig.judge_model`, which is a stale id (`anthropic/claude-3.5-sonnet` is no longer
+# served by OpenRouter), so a deployment that judges anything should set this.
+CLUE_JUDGE_MODEL=openai/gpt-5.6-terra
+
+# Temporary M9 runtime-verification switch. False skips deterministic corroboration and prevents
+# M9.3 faithfulness-judge calls in the verification phase, reverse profiling, and toolbelt
+# entailment paths. It does not promote unverified claims or disable pre-spend, contact identity
+# binding, freshness/retention, or the separate M10 use gate.
+CLUE_VERIFICATION_ENABLED=true
+
+# --- Local Sumble-only Clue Trial (founder acceptance canary) --------------
+# This surface is default-off and binds to loopback. It requires canonical C7 reads in the same
+# process. Do not enable it on a public interface; it is not the production authentication surface.
+CLUE_TRIAL_ENABLED=false
+CLUE_TRIAL_HOST=127.0.0.1
+CLUE_TRIAL_PORT=8010
+CLUE_TRIAL_ROOT=.context/sumble-trials
+CLUE_C7_RESEARCH_VIEW_READ_ENABLED=false
+
+# --- Authenticated principal edge (Lane B B5 prepared; deployment flip waits for Lane D D5) ---
+# Clerk authenticates only. FastAPI verifies the short-lived session JWT, then resolves the
+# provider subject to Clue-owned platform_user/workspace_membership rows. Authorized parties may
+# be a JSON array or comma-separated origins. Never place real keys in this example or `_memory/`.
+CLUE_AUTH_ENABLED=true
+CLUE_AUTH_ENVIRONMENT=local     # or production while testing
+CLUE_AUTH_MODE=clerk
+CLUE_AUTH_CLERK_JWKS_URL=https://precise-lamb-56.clerk.accounts.dev/.well-known/jwks.json
+CLUE_AUTH_CLERK_ISSUER=https://precise-lamb-56.clerk.accounts.dev
+CLUE_AUTH_CLERK_AUDIENCE=clue-api
+CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=http://localhost:3000
+# Production must set AUTH_ENABLED=true, AUTH_ENVIRONMENT=production, AUTH_MODE=clerk, and use
+# authenticated_principal. Construction refuses local_header or a missing principal service.
+# local_header is local/test only and is never a production rollback mode.
+CLUE_PROJECTIONS_AUTH_MODE=authenticated_principal
+
+# --- Platform deepagent workspace (C6.1; non-secret) ------------------------
+# Dedicated ephemeral execution root. Must be an absolute canonical path outside and unrelated to
+# both the deployed source worktree and the service user's home. Do not point this at the repo,
+# `$HOME`, artifact storage, or a shared temp directory. The service creates only the final root
+# component and requires its parent to exist.
+CLUE_AGENT_WORKSPACE_ROOT=
+# Default-off production ownership routing. The master switch dominates both surface switches.
+# Existing route receipts are immutable: changing these values affects only a subject with no
+# prior route. The allowlist is a JSON array; percentage is deterministic per
+# workspace+surface (0–100).
+CLUE_AGENT_RUNTIME_ROUTING_ENABLED=true
+CLUE_AGENT_STAGE0_ROUTING_ENABLED=true
+CLUE_AGENT_ACCOUNT_ROUTING_ENABLED=true
+CLUE_AGENT_WORKSPACE_ALLOWLIST=[]
+CLUE_AGENT_CANARY_PERCENT=0
+CLUE_CHAT_REASONING_TRACE_MODE=raw
+# Hard ceiling for one account agent's validated C5 plan; the durable account envelope clamps it
+# further at runtime.
+CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS=1000000
+# Terminal execution roots remain locally inspectable for this many seconds, then the fleet
+# cleanup loop removes them after their outputs and finalization are durable. Non-positive cleanup
+# cadence disables only the scheduler.
+CLUE_AGENT_WORKSPACE_RETENTION_S=86400
+CLUE_AGENT_CLEANUP_INTERVAL_S=3600
+
+# --- Lane D vars added by preflight check ---
+CLUE_CHAT_ENABLED=true
+CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED=true
+CLUE_CHAT_DEV_INSPECTOR_ENABLED=true
+CLUE_CHAT_DEV_INSPECTOR_BUDGET_BYTES=512000
+
+CLUE_VALUE_NARRATIVE_SYNTHESIS_ENABLED=true
+CLUE_BUDGET_CONTROLS_ENABLED=false
+
+
+# Design runtime (chat-driven website generation, slice 0 2026-08-19):
+# gates the 49 design tools + open/finish_design_leg on the platform API, and the
+# design_job lane on clue_api.fleet_main. Off => open_design_leg refuses
+# (design_leg_runtime_not_configured) before any DB touch.
+CLUE_DESIGN_RUNTIME_ENABLED=1
+
+# Founder ruling 2026-08-19: design deepagent models — terra authors/orchestrates, luna reviews
+LUMEN_AGENT_MODEL=openai:openai/gpt-5.6-terra
+LUMEN_AGENT_MODEL_REVIEWER=openai:openai/gpt-5.6-luna
+

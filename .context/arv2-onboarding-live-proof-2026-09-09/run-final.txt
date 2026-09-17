@@ -1,0 +1,5 @@
+  status   | total_s | cost_usd 
+-----------+---------+----------
+ completed |     734 | 2.782000
+(1 row)
+

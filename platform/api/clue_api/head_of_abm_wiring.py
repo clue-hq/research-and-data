@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from clue_agents import (
     AgentModelProvider,
     AgentPlanPolicy,
@@ -14,6 +16,7 @@ from clue_agents import (
     DeepAgentTurnRuntime,
     WorkspaceSeedFile,
 )
+from clue_agents.ports import SpillSink
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
@@ -30,6 +33,7 @@ from clue_api.agent_runtime_wiring import (
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
+from clue_api.chat.turn_controls import stop_requested
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.stage0_recipe import Stage0StepPinProvider
 from clue_api.turn_binding import CapturedTurnBinder, RequestCapturedTurn
@@ -69,6 +73,7 @@ def build_head_of_abm_stage0_execution(
     max_parallelism: int = 4,
     captured_turns: CapturedTurnBinder | None = None,
     surface: str | None = None,
+    spill_sink: SpillSink | None = None,
     crash_hook: AgentExecutionCrashHook = _no_crash,
     conn_factory: ConnFactory = transaction,
 ) -> C5AgentExecutionAdapter:
@@ -126,6 +131,10 @@ def build_head_of_abm_stage0_execution(
             or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
             request=request,
         ),
+        # A result too large for its receipt spills into this turn's own thread workspace, so
+        # only a caller holding the workspace lease can supply the sink; without one an oversized
+        # result keeps the old behaviour and is refused at the bound.
+        spill_sink=spill_sink,
         crash_hook=crash_hook,
         conn_factory=conn_factory,
     )
@@ -172,6 +181,7 @@ class HeadOfAbmStage0Runtime:
         execution: C5AgentExecutionAdapter,
         completion_guard: CompletionGuard | None = None,
         stream: TurnStreamEmitter | None = None,
+        input_seeds: tuple[WorkspaceSeedFile, ...] = (),
     ) -> AgentTurnOutcome:
         """Run one Stage-0 turn.
 
@@ -183,6 +193,14 @@ class HeadOfAbmStage0Runtime:
         absent for one reason: attaching it is what makes *this* turn take the model's streaming
         path, so a surface that does not want a turn stream — the dev trial, every specialist and
         fleet turn — keeps byte-for-byte the behaviour it had before D3.
+
+        ``input_seeds`` (ARV2 onboarding O6) are read-only workspace files the *surface* pins for
+        this turn, materialized alongside the assembler's own context materializations and verified
+        with them, so a reclaimed turn re-proves its input bytes rather than trusting the directory.
+        The production conversation turn supplies none since 2026-09-14 — it mounts the brand and
+        project libraries instead of copying them into the thread — so today this is the onboarding
+        synthesis surface's seeds under ``inputs/brand/knowledge/``, and the collision check below
+        guards the canonical context paths against them.
         """
 
         resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
@@ -202,19 +220,34 @@ class HeadOfAbmStage0Runtime:
             raise ValueError("turn constitution crosses the isolated workspace lease")
         if context.manifest.execution_id != constitution.execution_id:
             raise ValueError("assembled context belongs to another execution")
-        if not lease.resources_frozen:
+        context_seeds = tuple(
+            WorkspaceSeedFile(
+                path=item.path,
+                content=item.data,
+                sha256=item.sha256,
+                media_type=item.media_type,
+            )
+            for item in context.materializations
+        )
+        # The canonical context paths are the assembler's; a surface input that lands on one of
+        # them would silently replace a context file with a knowledge document. Refuse loudly.
+        seed_paths = {*(item.path for item in context_seeds), *(item.path for item in input_seeds)}
+        if len(seed_paths) != len(context_seeds) + len(input_seeds):
+            raise ValueError("a knowledge-document input collided with a canonical context path")
+        seed_files = (*context_seeds, *input_seeds)
+        if lease.resources_frozen:
+            # A reclaimed turn re-verifies every immutable byte before the model resumes: the
+            # frozen tree is evidence, not an assumption.
+            self._materializer.verify_materialized(
+                lease=lease,
+                snapshot=resolved.resource_snapshot,
+                seed_files=seed_files,
+            )
+        else:
             self._materializer.materialize(
                 lease=lease,
                 snapshot=resolved.resource_snapshot,
-                seed_files=tuple(
-                    WorkspaceSeedFile(
-                        path=item.path,
-                        content=item.data,
-                        sha256=item.sha256,
-                        media_type=item.media_type,
-                    )
-                    for item in context.materializations
-                ),
+                seed_files=seed_files,
             )
         await self._turns.create(request=request, profile=resolved.profile)
         execution.bind_delegation_runtime(
@@ -233,6 +266,15 @@ class HeadOfAbmStage0Runtime:
             conn_factory=self._conn_factory,
         )
         execution.bind_finalization_authority(finalization)
+
+        async def before_work() -> None:
+            async with self._conn_factory() as conn:
+                stopped = await stop_requested(
+                    conn, workspace_id=request.constitution.workspace_id, turn_id=request.turn_id
+                )
+            if stopped:
+                raise asyncio.CancelledError("chat turn stopped before admitting more work")
+
         governed_tools = GovernedAgentToolFactory(
             request=request,
             resolved_profile=resolved,
@@ -240,6 +282,7 @@ class HeadOfAbmStage0Runtime:
             execution=execution,
             lease=lease,
             artifacts=self._artifacts,
+            before_work=before_work,
             completion_guard=completion_guard,
             stream=stream,
         ).build()
@@ -250,6 +293,7 @@ class HeadOfAbmStage0Runtime:
             max_rounds=self._max_rounds,
         )
         return await DurableDeepAgentTurnRunner(
+            before_work=before_work,
             runtime=runtime,
             turns=self._turns,
             artifacts=self._artifacts,

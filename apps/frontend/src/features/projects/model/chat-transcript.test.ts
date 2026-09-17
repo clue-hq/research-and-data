@@ -9,11 +9,13 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
+  mergeThreadMessages,
   seedDesignLeg,
   turnsAwaitingRehydration,
   type TranscriptMessage,
   type TranscriptState,
 } from "./chat-transcript";
+import type { ChatMessage } from "./chat-message";
 import type { ChatTextPart } from "./chat-parts";
 import {
   fixtureLaunchEvents,
@@ -1145,4 +1147,104 @@ test("an op batch writes no transcript line and moves no turn state", () => {
   assert.equal(turn.parts.length, 0);
   assert.equal(turn.legNotices.size, 0);
   assert.equal(state.designLeg.open, false);
+});
+
+// --- C5: newest-first pages merging backward ------------------------------------------------
+
+function durablePageMessage(
+  sequence: number,
+  role: "user" | "assistant",
+  turnId: string,
+): ChatMessage {
+  return {
+    id: `m${sequence}`,
+    turnId,
+    threadId: "t1",
+    sequence,
+    role,
+    bodyArtifactKey: `k${sequence}`,
+    bodySha256: `s${sequence}`,
+    body: `message ${sequence}`,
+    bodyUnavailableReason: null,
+    createdAt: "2026-08-09T00:00:00Z",
+    refs: [],
+  };
+}
+
+test("the newest page hydrates the transcript with the latest user message", () => {
+  // The audited defect: a >50-message thread reloaded to its OLDEST page, so the
+  // user's latest prompts were durably stored yet invisible. The newest-first
+  // page is what initial load merges now.
+  const newestPage = [
+    durablePageMessage(119, "user", "turn-119"),
+    durablePageMessage(120, "assistant", "turn-119"),
+  ];
+  const merged = mergeThreadMessages([], newestPage);
+  const transcript = composeTranscript({
+    messages: merged,
+    turns: [],
+    stream: emptyTranscriptState(),
+  });
+  const users = transcript.filter((message) => message.role === "user");
+  assert.equal(users.length, 1);
+  assert.equal(users[0].body, "message 119");
+});
+
+test("prepending an older page keeps ascending order and never reorders what is loaded", () => {
+  const newest = [
+    durablePageMessage(3, "user", "turn-3"),
+    durablePageMessage(4, "assistant", "turn-3"),
+  ];
+  const older = [
+    durablePageMessage(1, "user", "turn-1"),
+    durablePageMessage(2, "assistant", "turn-1"),
+  ];
+  const merged = mergeThreadMessages(newest, older);
+  assert.deepEqual(
+    merged.map((message) => message.sequence),
+    [1, 2, 3, 4],
+  );
+  // The already-loaded entries survive by identity — a prepend is not a rebuild.
+  assert.equal(merged[2], newest[0]);
+  assert.equal(merged[3], newest[1]);
+});
+
+test("an overlapping refetch never duplicates a message", () => {
+  const loaded = [
+    durablePageMessage(2, "user", "turn-2"),
+    durablePageMessage(3, "assistant", "turn-2"),
+  ];
+  const overlapping = [
+    durablePageMessage(1, "assistant", "turn-1"),
+    durablePageMessage(2, "user", "turn-2"),
+  ];
+  const merged = mergeThreadMessages(loaded, overlapping);
+  assert.deepEqual(
+    merged.map((message) => message.id),
+    ["m1", "m2", "m3"],
+  );
+});
+
+test("a prepended older page retires its own optimistic and streamed stand-ins", () => {
+  // The reducer's identity guards are the merge seam: a durable user message
+  // retires the optimistic stand-in for its turn, and a durable assistant
+  // message for a projected turn composes as one entry, not two.
+  const streamed = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started", attempt_ordinal: 1 }),
+    frame({ type: "text.start", part_id: "text:a", part_kind: "text" }),
+    frame({ type: "text.delta", part_id: "text:a", delta_index: 0, delta: "message 2" }),
+  ]);
+  const olderPage = [
+    durablePageMessage(1, "user", TURN),
+    durablePageMessage(2, "assistant", TURN),
+  ];
+  const transcript = composeTranscript({
+    messages: mergeThreadMessages([], olderPage),
+    turns: [],
+    stream: streamed,
+    optimistic: [{ turnId: TURN, text: "message 1", requestedAt: "2026-08-09T00:00:00Z" }],
+  });
+  assert.equal(transcript.filter((message) => message.role === "user").length, 1);
+  assert.equal(transcript.filter((message) => message.role === "assistant").length, 1);
+  assert.equal(transcript[0].optimistic, false, "the durable user message won");
 });

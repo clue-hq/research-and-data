@@ -733,6 +733,23 @@ class HybridRepository:
             )
         )
 
+    def rename_document(self, document_id: str, title: str) -> JsonObject:
+        """Artifacts page (2026-09-15): governed (``design_rename_document``) — the row title and
+        the document JSON's title together, with a version bump (see the DAL docstring)."""
+        return self._bridge._run(
+            lambda conn: design_documents.rename_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id, title=title
+            )
+        )
+
+    def set_document_archived(self, document_id: str, enabled: bool) -> JsonObject:
+        """Artifacts page (2026-09-15): governed (``design_set_document_archived``); converges."""
+        return self._bridge._run(
+            lambda conn: design_documents.set_document_archived(
+                conn, workspace_id=self.workspace_id, document_id=document_id, enabled=enabled
+            )
+        )
+
     def create_web_template(
         self,
         web_doc: JsonObject,

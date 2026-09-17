@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
@@ -22,9 +23,11 @@ from clue_agents.account_entity_research import (
     AccountExistingClaimProjection,
     AccountResearchStateProjection,
     AssessAccountCoverageInput,
+    CommitteeRoleInference,
     FinalizeAccountResearchInput,
     InspectAccountEvidenceInput,
     ReadAccountResearchStateInput,
+    RecordCommitteeRoleInferencesInput,
 )
 from clue_agents.entity_research_contracts import (
     EntityResearchRuntimeContext,
@@ -40,11 +43,32 @@ from clue_agents.entity_research_runtime import (
     EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
+from clue_api.account_field_derivation import (
+    DERIVED_ACCOUNT_FIELD_SOURCES,
+    AccountFieldDerivation,
+    derive_account_fields,
+)
+from clue_api.comprehensive_research_contract import (
+    COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
+    source_can_request,
+)
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     convert_engine_authority_rejections,
     semantic_validation_error,
 )
-from clue_core import EntityId, ProjectRunId, ResearchScope, serialize_value_json
+from clue_core import (
+    Claim,
+    ClaimId,
+    EntityId,
+    ExtractionMethod,
+    IdentityBinding,
+    ProjectRunId,
+    ResearchScope,
+    RunId,
+    SourceTier,
+    serialize_value_json,
+)
 from clue_core.entity_research import (
     EntityResearchJobAuthorization,
     FinalizationVerification,
@@ -58,9 +82,21 @@ from clue_core.entity_research import (
 # the lens that renders the resulting claims, so the species read is imported rather than restated
 # (it resolves through `core.resolve_research_scope` over the *effective* registry, retired
 # declarations included — see its docstring).
-from clue_research.claimstore import WorkspaceScope, current_values, field_species
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    claims_for_entities,
+    current_values,
+    field_species,
+)
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import find_account_runs_for_entity
+from clue_research.profiling.committee import (
+    CURRENT_TITLE,
+    PERSONA,
+    ROLE_ON_COMMITTEE,
+    write_committee_claim,
+)
 
 ConnFactory = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
@@ -73,10 +109,425 @@ _CONTACT_TOOL_PREFIXES = (
     "reveal_contact",
     "validate_contact",
 )
+#: Account tools that buy nothing: they read durable state this job already owns. Two of them in
+#: one model round is neither duplicated provider work nor a widened scope — it is the agent
+#: reading two persisted results at once. Live, a round holding two ``read_research_result`` calls
+#: was refused as "duplicate account provider work" and suspended the whole job.
+_READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "read_account_research_state",
+        "inspect_account_evidence",
+        "read_research_result",
+        "read_evidence",
+    }
+)
+
+
+def pending_provider_operations_sql(job_expression: str) -> str:
+    """The one definition of "provider work this job is still waiting on".
+
+    Spec §5.4 makes assessment and finalization re-derive the same invariant independently, so
+    both must read *this* predicate and can never drift apart: ``_pending_refs`` selects the refs,
+    the finalization guard counts them, and the body below is written once.
+
+    An observation is pending unless one of three things is true.
+
+    1. Its operation produced a result in this job.
+    2. Its operation carries a settlement fold with no result — a real provider exchange that
+       terminally refused or could not be settled (the live Sumble 402 livelock). A fold means
+       settlement and nothing else; it is never written for work the provider never received.
+       The fold releases the operation **whichever job filed it**: a fold is a property of the
+       operation ("the provider is done with this"), not of the asker, and the observation join
+       above already scopes the release to operations *this* job observed. Operations are
+       content-keyed and deliberately reused across jobs, so a later job re-derives the same ref
+       and only replays it; the fold is inserted once, ON CONFLICT DO NOTHING, under whoever
+       settled it first. Demanding one's own job id wedged the live 2026-08-19 Millennium jobs
+       forever on ``sumble-account-operation:89f64be2`` (HTTP 402, folded under an earlier job):
+       every ``assess_account_coverage`` and ``finalize_account_research`` refused with pending
+       work, and no retry could repair it because the replay hits the terminal rejection and the
+       first job's fold survives. Spend attribution stays job-scoped — the replaying job paid
+       nothing — and a result must still be *this* job's, because a cross-job result is repairable
+       by a zero-spend replay that writes a result row under this job's own tool request.
+    3. Its operation was **never dispatched** and the batch member that caused it is durably
+       ``failed`` — a sibling failure, a lost lease or a crash. Nothing was sent, so nothing will
+       arrive; the operation stops blocking. This is a pending-release only: the row keeps
+       ``dispatched_at IS NULL``, so ``read_account_research_execution_completeness`` still
+       refuses to count it as an attempt and the member's fields go back to outstanding for the
+       agent to research again. A member that *did* dispatch is deliberately excluded — that
+       outcome belongs to the provider's own attempt ledger and its unknown-spend machinery.
+    """
+
+    return f"""
+        SELECT observation.provider_operation_ref
+        FROM entity_research_provider_observation observation
+        JOIN entity_research_tool_request request_row
+          ON request_row.tool_request_id=observation.tool_request_id
+        WHERE request_row.job_id={job_expression}
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_research_result result
+              JOIN entity_research_tool_request result_request
+                ON result_request.tool_request_id=result.tool_request_id
+              WHERE result.provider_operation_ref=observation.provider_operation_ref
+                AND result_request.job_id=request_row.job_id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM entity_research_provider_settlement_fold fold
+              WHERE fold.provider_operation_ref=observation.provider_operation_ref
+                AND NOT EXISTS (
+                    SELECT 1 FROM entity_research_result settled
+                    WHERE settled.provider_operation_ref=fold.provider_operation_ref
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM entity_research_provider_operation operation
+              JOIN entity_research_tool_batch batch
+                ON batch.agent_turn_id=request_row.agent_turn_id
+              JOIN entity_research_tool_batch_member member
+                ON member.batch_id=batch.batch_id
+               AND member.raw_tool_call_id=request_row.raw_tool_call_id
+              JOIN entity_research_tool_batch_event event
+                ON event.batch_id=member.batch_id
+               AND event.raw_tool_call_id=member.raw_tool_call_id
+              WHERE operation.operation_ref=observation.provider_operation_ref
+                AND operation.dispatched_at IS NULL
+                AND event.event_kind='failed'
+          )
+    """
 
 
 class AccountResearchAuthorityError(EntityResearchGovernedToolRefusal):
     """Model-repairable account guard/engine refusal (returned to the agent, never fatal)."""
+
+
+class AccountResearchExecutionCompleteness(BaseModel):
+    """Durably re-derived proof that every authorized Account action reached a disposition."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    satisfied_field_keys: tuple[str, ...]
+    terminal_field_source_pairs: tuple[tuple[str, str], ...]
+    outstanding_field_source_pairs: tuple[tuple[str, str], ...]
+    outstanding_non_acquisition_fields: tuple[str, ...]
+    terminal_committee_source_keys: tuple[str, ...]
+    outstanding_committee_source_keys: tuple[str, ...]
+
+    @property
+    def complete(self) -> bool:
+        return not (
+            self.outstanding_field_source_pairs
+            or self.outstanding_non_acquisition_fields
+            or self.outstanding_committee_source_keys
+        )
+
+    def outstanding_summary(self) -> str:
+        parts = [
+            *(
+                f"{field_key}@{source_key}"
+                for field_key, source_key in self.outstanding_field_source_pairs
+            ),
+            *(
+                f"{field_key}@reuse-or-derive"
+                for field_key in self.outstanding_non_acquisition_fields
+            ),
+            *(f"committee@{source_key}" for source_key in self.outstanding_committee_source_keys),
+        ]
+        return ", ".join(parts)
+
+
+async def committee_axis_unavailable_source_keys(
+    conn: AsyncConnection, *, job_id: UUID
+) -> frozenset[str]:
+    """The committee sources this job durably attempted and found the provider cannot serve.
+
+    The committee twin of a settlement fold, for the one case that has no operation to fold: the
+    provider's organization index carries no exact match for the account (live ``dc86340f``,
+    "Greater Chicago Specialty Physicians LLC"), or no organization response for it exists at all.
+    Both refusals happen *before* any reservation, so nothing was dispatched and nothing charged —
+    there is no operation row and never will be. The engine records the refused tool call instead
+    (``entity_research_account_committee_unavailable``, one row per journalled call), and that row
+    is what makes the axis terminal here.
+
+    This is an attempt in exactly the sense the settlement contract means: the agent really called
+    the tool, under this job's authority, and the engine really established from durable state
+    that the provider cannot be asked. It is never a *result* — a successful committee call still
+    takes precedence — and it never counts toward a field/source pair (a committee operation
+    carries no field keys).
+    """
+
+    return frozenset(
+        str(value)
+        for value in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT DISTINCT unnest(source_keys) FROM "
+                        "entity_research_account_committee_unavailable WHERE job_id=:job_id"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    )
+
+
+async def committee_axis_unavailable_reasons(
+    conn: AsyncConnection, *, job_id: UUID
+) -> tuple[str, ...]:
+    """The distinct world-fact reason codes behind this job's terminal committee attempts."""
+
+    return tuple(
+        str(value)
+        for value in (
+            (
+                await conn.execute(
+                    text(
+                        "SELECT DISTINCT reason_code FROM "
+                        "entity_research_account_committee_unavailable "
+                        "WHERE job_id=:job_id ORDER BY 1"
+                    ),
+                    {"job_id": job_id},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    )
+
+
+async def read_account_research_execution_completeness(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> AccountResearchExecutionCompleteness:
+    """Compute execution completeness from claims plus dispatched, terminal provider ledgers.
+
+    A tool request or reservation is not an attempt. A field/source pair counts only when its
+    provider operation was durably **dispatched** and then produced either a persisted result or
+    an idempotent terminal settlement fold. The dispatch stamp is load-bearing and deliberately
+    not relaxed for a fold: a settlement written over an operation the provider never received
+    (a sibling-cancelled or crashed member) releases that operation's pending-ness, but it is not
+    evidence that anything was researched, and the ratified contract refuses to let a cancellation
+    settle a field. Every fold that *does* represent a real provider exchange stamps the true
+    dispatch time from the provider's own attempt ledger first, so it counts. Successful evidence
+    may stop a field's waterfall.
+    """
+
+    acquisition_fields = tuple(authorization.selection.admitted_field_keys)
+    non_acquisition_fields = await non_acquisition_account_profile_fields(
+        conn, authorization=authorization
+    )
+    profile_fields = tuple(dict.fromkeys((*acquisition_fields, *non_acquisition_fields)))
+    result_evidence_fields = frozenset(
+        str(value)
+        for value in (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT result_field.field_key
+                    FROM entity_research_result_field result_field
+                    JOIN entity_research_result result
+                      ON result.result_id=result_field.result_id
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=result.tool_request_id
+                    JOIN entity_research_result_evidence evidence
+                      ON evidence.result_id=result_field.result_id
+                     AND evidence.field_ordinal=result_field.ordinal
+                    WHERE request_row.job_id=:job_id
+                      AND result_field.subject_type='account'
+                      AND result_field.target_entity_id=:account_id
+                      AND result_field.outcome='found'
+                    """
+                ),
+                {
+                    "job_id": authorization.job_id,
+                    "account_id": authorization.subject_entity_id,
+                },
+            )
+        ).scalars()
+    )
+    current = (
+        {}
+        if not profile_fields
+        else await current_values(
+            conn,
+            [EntityId(authorization.subject_entity_id)],
+            profile_fields,
+            scope=WorkspaceScope.for_workspace(str(authorization.workspace_id)),
+        )
+    )
+    species = (
+        {}
+        if not profile_fields
+        else await field_species(
+            conn,
+            workspace_id=str(authorization.workspace_id),
+            field_keys=profile_fields,
+        )
+    )
+    reusable_fields = {
+        field_key
+        for (_entity_id, field_key), value in current.items()
+        # ``evidence_backed`` is the one shared satisfaction test (fresh, unconflicted, spanned);
+        # species is applied beside it because reusability across projects is a field property.
+        if value.evidence_backed
+        and species.get(field_key, ResearchScope.PROJECT_RELATIVE) is ResearchScope.PROJECT_NEUTRAL
+    }
+    satisfied_fields = frozenset(result_evidence_fields | reusable_fields)
+
+    terminal_rows = (
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT operation.source_key, operation.field_keys,
+                           request_row.tool_name
+                    FROM entity_research_provider_operation operation
+                    JOIN entity_research_provider_observation observation
+                      ON observation.provider_operation_ref=operation.operation_ref
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=observation.tool_request_id
+                    WHERE request_row.job_id=:job_id
+                      AND operation.dispatched_at IS NOT NULL
+                      AND (
+                          EXISTS (
+                              SELECT 1 FROM entity_research_result result
+                              JOIN entity_research_tool_request result_request
+                                ON result_request.tool_request_id=result.tool_request_id
+                              WHERE result.provider_operation_ref=operation.operation_ref
+                                AND result_request.job_id=:job_id
+                          )
+                          OR EXISTS (
+                              -- A fold belongs to the operation, not to whoever filed it: it is
+                              -- written once, ON CONFLICT DO NOTHING, under the first job to
+                              -- settle it, while content-keyed operations are deliberately reused
+                              -- across jobs. The join above already requires *this* job to have
+                              -- observed the operation and the operation to have dispatched, so
+                              -- "this job attempted it and the provider is terminally done" is an
+                              -- honest attempt for this job too (spec §5.2). Demanding one's own
+                              -- job id left a replaying job with no attempt and no pending work it
+                              -- could ever clear — the live 2026-08-19 Millennium wedge.
+                              SELECT 1 FROM entity_research_provider_settlement_fold fold
+                              WHERE fold.provider_operation_ref=operation.operation_ref
+                          )
+                      )
+                    ORDER BY operation.source_key, request_row.tool_name
+                    """
+                ),
+                {"job_id": authorization.job_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    terminal_pairs = frozenset(
+        (str(field_key), str(row["source_key"]))
+        for row in terminal_rows
+        for field_key in row["field_keys"]
+    )
+    authority = {
+        # Requestability is intersected here for exactly the reason the launcher intersects it
+        # into a new selection's authority (``source_can_request``): an already-durable selection
+        # minted before that intersection existed still names pairs whose pinned provider action
+        # structurally cannot ask for the field. The tool refuses such a request as ineligible and
+        # coverage refuses to close while it is outstanding, so the agent loops between the two
+        # until the graph recursion cap kills the job — observed live on
+        # ``account.recent_funding@sumble_organizations``. An unrequestable pair is exhausted by
+        # construction: never outstanding, never terminal, reported as an honest gap. This does not
+        # relax the no-work rule — a pair no dispatch can carry was never work.
+        item.field_key: tuple(
+            source_key
+            for source_key in item.source_keys
+            if source_can_request(source_key, item.field_key)
+        )
+        for item in authorization.effective_field_source_authority
+    }
+    outstanding_pairs = tuple(
+        (field_key, source_key)
+        for field_key in acquisition_fields
+        if field_key not in satisfied_fields
+        for source_key in authority[field_key]
+        if (field_key, source_key) not in terminal_pairs
+    )
+    exhausted_acquisition_fields = {
+        field_key
+        for field_key in acquisition_fields
+        if field_key in satisfied_fields
+        or all((field_key, source_key) in terminal_pairs for source_key in authority[field_key])
+    }
+    outstanding_non_acquisition = []
+    for field_key in non_acquisition_fields:
+        if field_key in satisfied_fields:
+            continue
+        source_field = DERIVED_ACCOUNT_FIELD_SOURCES.get(field_key)
+        if source_field is None:
+            # A row that is neither acquired nor derived (``core.account_name`` is the only one)
+            # has no provider action and no source field, so nothing can ever exhaust it. Holding
+            # it outstanding blocked both assessment and finalization forever whenever its
+            # identity claim was absent, stale, conflicted or span-less; the honest disposition is
+            # a gap the coverage ledger reports, which is what the canonical-identity review flag
+            # already exists to say.
+            continue
+        if source_field not in authority:
+            # A narrow historical/non-comprehensive directive may request a derived display row
+            # without authorizing acquisition of its numeric source. There is then no applicable
+            # provider action to attempt; the derived row may close as an honest gap.
+            continue
+        if source_field in exhausted_acquisition_fields:
+            continue
+        outstanding_non_acquisition.append(field_key)
+
+    terminal_committee_sources = frozenset(
+        str(row["source_key"])
+        for row in terminal_rows
+        if str(row["tool_name"]) == "discover_buying_committee"
+    ) | await committee_axis_unavailable_source_keys(conn, job_id=authorization.job_id)
+    committee_result_exists = bool(
+        (
+            await conn.execute(
+                text(
+                    """
+                    SELECT 1 FROM entity_research_result result
+                    JOIN entity_research_tool_request request_row
+                      ON request_row.tool_request_id=result.tool_request_id
+                    WHERE request_row.job_id=:job_id
+                      AND request_row.tool_name='discover_buying_committee'
+                    LIMIT 1
+                    """
+                ),
+                {"job_id": authorization.job_id},
+            )
+        ).scalar_one_or_none()
+    )
+    committee_sources = tuple(authorization.selection.committee_source_keys)
+    outstanding_committee = (
+        ()
+        if committee_result_exists
+        else tuple(
+            source_key
+            for source_key in committee_sources
+            if source_key not in terminal_committee_sources
+        )
+    )
+    return AccountResearchExecutionCompleteness(
+        satisfied_field_keys=tuple(
+            field_key for field_key in profile_fields if field_key in satisfied_fields
+        ),
+        terminal_field_source_pairs=tuple(
+            (field_key, source_key)
+            for field_key in acquisition_fields
+            for source_key in authority[field_key]
+            if (field_key, source_key) in terminal_pairs
+        ),
+        outstanding_field_source_pairs=outstanding_pairs,
+        outstanding_non_acquisition_fields=tuple(outstanding_non_acquisition),
+        terminal_committee_source_keys=tuple(
+            source_key
+            for source_key in committee_sources
+            if source_key in terminal_committee_sources
+        ),
+        outstanding_committee_source_keys=outstanding_committee,
+    )
 
 
 async def existing_account_claims(
@@ -151,6 +602,84 @@ async def born_complete_account_field_keys(
     )
 
 
+async def pinned_account_research_directive(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> Any:
+    """The effective directive this job's account run pinned, or ``None`` when it pinned none.
+
+    One read for every consumer of the job's *confirmed direction* (the committee plan below and
+    the derive-only profile axis), so they can never disagree about which directive governs.  A job
+    whose account run carries no directive pin is the historical/static R5 seam: it has no
+    confirmed direction to project, which is different from having an empty one.
+    """
+
+    runs = await find_account_runs_for_entity(
+        conn,
+        project_run_id=ProjectRunId(authorization.project_run_id),
+        entity_id=EntityId(authorization.subject_entity_id),
+        directive_ref=authorization.selection.directive_ref,
+    )
+    pinned = tuple(run for run in runs if run.research_directive is not None)
+    if not pinned:
+        return None
+    if len(pinned) != 1:
+        raise AccountResearchAuthorityError(
+            "multiple account runs pin the job's exact authorized directive"
+        )
+    pin = pinned[0].research_directive
+    assert pin is not None
+    if pin.directive_ref != authorization.selection.directive_ref:
+        raise AccountResearchAuthorityError(
+            "account run pins a directive the job selection did not authorize"
+        )
+    return await effective_account_research_directive(
+        conn,
+        workspace_id=authorization.workspace_id,
+        directive_id=pin.directive_id,
+        account_id=EntityId(authorization.subject_entity_id),
+        expected_pin=pin,
+    )
+
+
+async def derivable_account_profile_fields(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> tuple[str, ...]:
+    """The derive-only §3.1 rows (5 and 8) this job's confirmed directive actually asked for.
+
+    They are deliberately absent from ``selection.admitted_field_keys``: a field with no
+    acquisition source cannot be bought, estimated, or authorized against a source, so the launcher
+    partitions it out of the paid selection.  It is still part of the profile the directive
+    confirmed, so coverage answers for it — this is the exact set the coverage ledger adds to the
+    admitted axis, read from the same durable authority by the assessor and by the finalization
+    engine that verifies the assessor.
+    """
+
+    directive = await pinned_account_research_directive(conn, authorization=authorization)
+    if directive is None:
+        return ()
+    return tuple(
+        str(field_key)
+        for field_key in directive.field_keys
+        if str(field_key) in DERIVED_ACCOUNT_FIELD_SOURCES
+    )
+
+
+async def non_acquisition_account_profile_fields(
+    conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
+) -> tuple[str, ...]:
+    """Confirmed profile rows that are reused/derived and therefore absent from paid authority."""
+
+    directive = await pinned_account_research_directive(conn, authorization=authorization)
+    if directive is None:
+        return ()
+    return tuple(
+        str(field_key)
+        for field_key in directive.field_keys
+        if str(field_key) in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES
+        and not COMPREHENSIVE_ACCOUNT_FIELD_SOURCES[str(field_key)]
+    )
+
+
 async def read_account_committee_plan(
     conn: AsyncConnection, *, authorization: EntityResearchJobAuthorization
 ) -> AccountCommitteePlanProjection | None:
@@ -163,30 +692,12 @@ async def read_account_committee_plan(
     rather than invented.
     """
 
-    runs = await find_account_runs_for_entity(
-        conn,
-        project_run_id=ProjectRunId(authorization.project_run_id),
-        entity_id=EntityId(authorization.subject_entity_id),
-    )
-    pinned = tuple(run for run in runs if run.research_directive is not None)
-    if len(pinned) != 1:
+    effective = await pinned_account_research_directive(conn, authorization=authorization)
+    if effective is None:
         return None
-    pin = pinned[0].research_directive
-    assert pin is not None
-    if pin.directive_ref != authorization.selection.directive_ref:
-        raise AccountResearchAuthorityError(
-            "account run pins a directive the job selection did not authorize"
-        )
-    effective = await effective_account_research_directive(
-        conn,
-        workspace_id=authorization.workspace_id,
-        directive_id=pin.directive_id,
-        account_id=EntityId(authorization.subject_entity_id),
-        expected_pin=pin,
-    )
     plan = effective.committee_plan
     return AccountCommitteePlanProjection(
-        directive_ref=pin.directive_ref,
+        directive_ref=effective.pin.directive_ref,
         functions=tuple(str(value) for value in plan.functions),
         levels=tuple(str(value) for value in plan.levels),
         teams=tuple(str(value) for value in plan.teams),
@@ -304,6 +815,30 @@ class AccountResearchStateStore:
             committee_plan=committee_plan,
         )
 
+    async def _derive_profile_fields(
+        self, authorization: EntityResearchJobAuthorization
+    ) -> tuple[AccountFieldDerivation, ...]:
+        """Settle the confirmed directive's derive-only §3.1 rows (contract rows 5 and 8).
+
+        One transaction: the derivation reads the governed employee-count / annual-revenue claims
+        and writes the band claims it can justify. It is deliberately *before* the state read, so
+        a band derived in this assessment is already the account's current truth when coverage
+        cites it.
+        """
+
+        async with self._conn_factory() as conn:
+            field_keys = await derivable_account_profile_fields(conn, authorization=authorization)
+            if not field_keys:
+                return ()
+            return await derive_account_fields(
+                conn,
+                workspace_id=str(authorization.workspace_id),
+                project_id=str(authorization.project_id),
+                project_run_id=ProjectRunId(authorization.project_run_id),
+                account_entity_id=EntityId(authorization.subject_entity_id),
+                field_keys=field_keys,
+            )
+
     @staticmethod
     async def _existing_claims(
         conn: AsyncConnection,
@@ -365,9 +900,175 @@ class AccountResearchStateStore:
             "current_state_sha256": state.current_state_sha256,
         }
 
-    async def assess(self, inputs: AssessAccountCoverageInput) -> AccountCoverageProjection:
+    async def record_committee_role_inferences(
+        self, inputs: RecordCommitteeRoleInferencesInput
+    ) -> dict[str, JsonValue]:
+        """Persist job-local, evidence-cited agent judgments for discovered committee members.
+
+        Membership and admissible evidence are reconstructed from this account job's persisted
+        committee result fields. All inputs are validated before either half of a role/persona pair
+        is written, so an outsider or cross-contact citation cannot partially mutate the batch.
+        Omitted discovered members remain honestly roleless.
+        """
+
         active = self._active_account()
         authorization = active.context.authorization
+        contact_ids = [item.contact_entity_id for item in inputs.inferences]
+        if len(contact_ids) != len(set(contact_ids)):
+            raise AccountResearchAuthorityError("committee role inference batch repeats a contact")
+
+        scope = WorkspaceScope.for_workspace(authorization.workspace_id)
+        async with self._conn_factory() as conn:
+            member_claim_ids = await self._committee_member_claim_ids(
+                conn,
+                job_id=authorization.job_id,
+                account_entity_id=authorization.subject_entity_id,
+            )
+            outsiders = [value for value in contact_ids if value not in member_claim_ids]
+            if outsiders:
+                raise AccountResearchAuthorityError(
+                    "committee role inference contact is outside this account job's discovered "
+                    "members"
+                )
+
+            all_member_claim_ids = {
+                claim_id for values in member_claim_ids.values() for claim_id in values
+            }
+            member_claims = await claims_by_ids(
+                conn,
+                all_member_claim_ids,
+                scope=scope,
+            )
+
+            prepared: list[tuple[CommitteeRoleInference, str, str, RunId]] = []
+            for inference in inputs.inferences:
+                allowed = member_claim_ids[inference.contact_entity_id]
+                cited_ids = {ClaimId(value) for value in inference.evidence_claim_ids}
+                if not cited_ids <= allowed:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence is not one of this contact's own "
+                        "claims from this account research job"
+                    )
+                if not cited_ids <= set(member_claims):
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence is absent, superseded, expired, or "
+                        "out of scope"
+                    )
+                cited = [member_claims[ClaimId(value)] for value in inference.evidence_claim_ids]
+                if any(claim.entity_id != EntityId(inference.contact_entity_id) for claim in cited):
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence belongs to another contact"
+                    )
+                run_ids = {claim.run_id for claim in cited}
+                if len(run_ids) != 1:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference evidence crosses committee runs"
+                    )
+
+                primary = cited[0]
+                title_claim = next(
+                    (
+                        claim
+                        for claim_id in sorted(allowed, key=str)
+                        if claim_id in member_claims
+                        if (claim := member_claims[claim_id]).field_key
+                        in {CURRENT_TITLE, "contact.profile.title"}
+                        and isinstance(claim.value_json, str)
+                        and claim.value_json.strip()
+                    ),
+                    None,
+                )
+                source_url: str | None
+                evidence_span: str | None
+                if primary.source_url and primary.evidence_span:
+                    source_url = primary.source_url
+                    evidence_span = primary.evidence_span
+                else:
+                    source_url = title_claim.source_url if title_claim is not None else None
+                    evidence_span = (
+                        f"title: {title_claim.value_json}" if title_claim is not None else None
+                    )
+                if not source_url or not evidence_span:
+                    raise AccountResearchAuthorityError(
+                        "committee role inference requires a cited source URL and evidence span "
+                        "(or the discovered member's grounded title span)"
+                    )
+                prepared.append((inference, source_url, evidence_span, next(iter(run_ids))))
+
+            recorded: list[dict[str, JsonValue]] = []
+            for inference, source_url, evidence_span, run_id in prepared:
+                role_claim_id = await write_committee_claim(
+                    conn,
+                    EntityId(inference.contact_entity_id),
+                    ROLE_ON_COMMITTEE,
+                    {
+                        "role": inference.role.value,
+                        "confidence": inference.confidence,
+                        "plausible": True,
+                        "rationale": inference.reasoning,
+                    },
+                    confidence=inference.confidence,
+                    method=ExtractionMethod.LLM_SYNTHESIS,
+                    tier=SourceTier(4),
+                    source_url=source_url,
+                    evidence_span=evidence_span,
+                    run_id=run_id,
+                    workspace_id=authorization.workspace_id,
+                    identity_binding=IdentityBinding.STRONG,
+                    product_id=authorization.product_id,
+                )
+                persona_claim_id = await write_committee_claim(
+                    conn,
+                    EntityId(inference.contact_entity_id),
+                    PERSONA,
+                    inference.role.value,
+                    confidence=inference.confidence,
+                    method=ExtractionMethod.LLM_SYNTHESIS,
+                    tier=SourceTier(4),
+                    source_url=source_url,
+                    evidence_span=evidence_span,
+                    run_id=run_id,
+                    workspace_id=authorization.workspace_id,
+                    identity_binding=IdentityBinding.STRONG,
+                    product_id=authorization.product_id,
+                )
+                recorded.append(
+                    {
+                        "contact_entity_id": str(inference.contact_entity_id),
+                        "role_claim_ref": f"claim:{role_claim_id}",
+                        "persona_claim_ref": f"claim:{persona_claim_id}",
+                    }
+                )
+
+            role_claims = await self._committee_role_claims(
+                conn,
+                member_claim_ids=member_claim_ids,
+                scope=scope,
+            )
+
+        inferred_member_count = len(self._inferred_committee_member_ids(role_claims))
+        member_count = len(member_claim_ids)
+        needs_review = member_count - inferred_member_count
+        return {
+            "recorded_inferences": cast(Any, recorded),
+            "committee_member_count": member_count,
+            "inferred_member_count": inferred_member_count,
+            "needs_review": needs_review,
+            "committee_status": "complete" if needs_review == 0 else "needs_review",
+        }
+
+    async def assess(
+        self,
+        inputs: AssessAccountCoverageInput,
+        active: ActiveEntityResearchToolExecution | None = None,
+    ) -> AccountCoverageProjection:
+        active = active or self._active_account()
+        authorization = active.context.authorization
+        # Contract §3.1 rows 5 and 8 settle here, before the coverage row is written, so a run that
+        # acquired ``core.employee_count`` closes with its ``core.employee_range`` derived in the
+        # same run. Nothing is bought: the deriver only restates governed evidence already on file
+        # (or leaves the row honestly unresolved), and it is idempotent on (entity, field, run).
+        derivation = await self._derive_profile_fields(authorization)
         state = await self.state(active)
         if set(inputs.result_refs) != set(state.result_refs):
             raise AccountResearchAuthorityError(
@@ -379,6 +1080,38 @@ class AccountResearchStateStore:
             raise AccountResearchAuthorityError(
                 "account coverage observed forbidden contact research"
             )
+        async with self._conn_factory() as conn:
+            execution = await read_account_research_execution_completeness(
+                conn, authorization=authorization
+            )
+            non_acquisition_fields = await non_acquisition_account_profile_fields(
+                conn, authorization=authorization
+            )
+            non_acquisition_existing = await existing_account_claims(
+                conn,
+                workspace_id=str(authorization.workspace_id),
+                account_entity_id=authorization.subject_entity_id,
+                field_keys=non_acquisition_fields,
+            )
+        if not execution.complete:
+            # Name the exact next call, not just the gap. Observed live (jobs 5d9dfe7b and
+            # 16e846d6): a model refused here for an unattempted committee source ping-ponged
+            # read_account_research_state <-> assess_account_coverage to the recursion cap
+            # without once calling discover_buying_committee - it knew what was missing but not
+            # what to do. The committee call for this authorization has zero planning freedom
+            # (sources and plan are confirmed), so the refusal spells it out literally.
+            detail = (
+                "coverage cannot close before every authorized field/source and committee "
+                f"attempt is terminal: {execution.outstanding_summary()}"
+            )
+            if execution.outstanding_committee_source_keys:
+                sources_json = json.dumps(list(execution.outstanding_committee_source_keys))
+                detail += (
+                    "; to attempt the committee now, call discover_buying_committee with "
+                    f'arguments {{"source_keys": {sources_json}}} and no questions - do not '
+                    "read state again first"
+                )
+            raise AccountResearchAuthorityError(detail)
         # A zero-result close is legal exactly once (FI-2 §6.1): when the account was researched by
         # spending nothing, i.e. every completed field is borrowed from a claim already on file.
         # The set-equality above already refuses an agent that omits results it produced; this
@@ -422,17 +1155,62 @@ class AccountResearchStateStore:
                 else:
                     reason = "existing_claim_missing_evidence"
                 unresolved_reasons.append(f"{field_key}:{reason}")
+            # §3.1 rows 5 and 8 join the axis here. They are not admitted (they own no acquisition
+            # source, so the launcher partitions them out of the paid selection) but the confirmed
+            # directive asked for them, so the ledger answers for them: settled with the derived or
+            # reused claim as its evidence, or unresolved with the exact derivation reason.
+            derived_completed = tuple(item.field_key for item in derivation if item.settled)
+            derived_unresolved = tuple(item.field_key for item in derivation if not item.settled)
+            unresolved_reasons.extend(
+                f"{item.field_key}:{item.reason}" for item in derivation if not item.settled
+            )
+            non_derived_zero = tuple(
+                item
+                for item in non_acquisition_existing
+                if item.field_key not in DERIVED_ACCOUNT_FIELD_SOURCES
+            )
+            zero_completed = tuple(
+                item.field_key for item in non_derived_zero if item.born_complete
+            )
+            zero_unresolved = tuple(
+                item.field_key for item in non_derived_zero if not item.born_complete
+            )
+            unresolved_reasons.extend(
+                f"{item.field_key}:canonical_identity_missing_evidence"
+                for item in non_derived_zero
+                if not item.born_complete
+            )
+            completed_field_keys = (
+                *state.completed_field_keys,
+                *zero_completed,
+                *derived_completed,
+            )
+            unresolved_field_keys = (
+                *state.unresolved_field_keys,
+                *zero_unresolved,
+                *derived_unresolved,
+            )
             # "Skipped" means the money was never spent, so *any* result row for the field
             # disqualifies it — a failed or empty attempt cost just as much as a successful one,
             # and reporting it as never-spent would misstate the spend trail.
             completed = set(state.completed_field_keys)
             researched = set(latest_account)
-            skipped_field_reasons = tuple(
-                f"{item.field_key}:existing_claim_fresh"
-                for item in state.existing_claims
-                if item.born_complete
-                and item.field_key in completed
-                and item.field_key not in researched
+            skipped_field_reasons = (
+                *(
+                    f"{item.field_key}:existing_claim_fresh"
+                    for item in state.existing_claims
+                    if item.born_complete
+                    and item.field_key in completed
+                    and item.field_key not in researched
+                ),
+                # A derived row costs nothing either, and its reason says which of the two §3.1
+                # dispositions ("reuse **or** derive") answered it.
+                *(f"{item.field_key}:{item.reason}" for item in derivation if item.settled),
+                *(
+                    f"{item.field_key}:existing_claim_fresh"
+                    for item in non_derived_zero
+                    if item.born_complete
+                ),
             )
 
             scope_count = int(
@@ -492,9 +1270,30 @@ class AccountResearchStateStore:
                 scope_count=scope_count,
                 ambiguous_count=ambiguous_count,
                 confirmed_empty_count=confirmed_empty_count,
+                provider_unavailable_reasons=await committee_axis_unavailable_reasons(
+                    conn, job_id=authorization.job_id
+                ),
+            )
+            member_claim_ids = await self._committee_member_claim_ids(
+                conn,
+                job_id=authorization.job_id,
+                account_entity_id=authorization.subject_entity_id,
+            )
+            committee_role_claims = await self._committee_role_claims(
+                conn,
+                member_claim_ids=member_claim_ids,
+                scope=WorkspaceScope.for_workspace(authorization.workspace_id),
+            )
+            committee_needs_review = max(
+                0,
+                len(state.committee_member_ids)
+                - len(self._inferred_committee_member_ids(committee_role_claims)),
             )
             review_flags = list(committee_flags)
-            if state.unresolved_field_keys:
+            if committee_needs_review:
+                committee_status = "needs_review"
+                review_flags.append("committee_roles_uninferred")
+            if unresolved_field_keys:
                 review_flags.append("account_fields_unresolved")
 
             result_ids = [UUID(ref.removeprefix("research-result:")) for ref in state.result_refs]
@@ -536,21 +1335,35 @@ class AccountResearchStateStore:
             # the finalization engine can verify it (FI-2 §6.1, the contact runtime's mechanism).
             existing_claim_ids = tuple(
                 item.claim_ref.removeprefix("claim:")
-                for item in state.existing_claims
-                if item.born_complete and item.field_key in set(state.completed_field_keys)
+                for item in (*state.existing_claims, *non_acquisition_existing)
+                if item.born_complete and item.field_key in set(completed_field_keys)
             )
-            claim_ids = tuple(dict.fromkeys((*claim_ids, *existing_claim_ids)))
+            derived_claim_ids = tuple(
+                str(item.claim_id) for item in derivation if item.claim_id is not None
+            )
+            committee_role_claim_ids = tuple(str(claim.id) for claim in committee_role_claims)
+            claim_ids = tuple(
+                dict.fromkeys(
+                    (
+                        *claim_ids,
+                        *existing_claim_ids,
+                        *derived_claim_ids,
+                        *committee_role_claim_ids,
+                    )
+                )
+            )
             projection = AccountCoverageProjection(
                 coverage_id=coverage_id,
                 coverage_ledger_ref=f"account-coverage:{coverage_id}",
                 current_state_sha256=state.current_state_sha256,
-                completed_field_keys=state.completed_field_keys,
-                unresolved_field_keys=state.unresolved_field_keys,
+                completed_field_keys=completed_field_keys,
+                unresolved_field_keys=unresolved_field_keys,
                 unresolved_reasons=tuple(unresolved_reasons),
                 skipped_field_reasons=skipped_field_reasons,
                 committee_result_refs=state.committee_result_refs,
                 committee_member_ids=state.committee_member_ids,
                 committee_status=cast(Any, committee_status),
+                committee_needs_review=committee_needs_review,
                 claim_refs=tuple(f"claim:{value}" for value in claim_ids),
                 evidence_refs=tuple(f"research-evidence:{value}" for value in evidence_ids),
                 review_flags=tuple(dict.fromkeys(review_flags)),
@@ -580,8 +1393,8 @@ class AccountResearchStateStore:
                     "workspace_id": authorization.workspace_id,
                     "account_id": authorization.subject_entity_id,
                     "result_refs": list(state.result_refs),
-                    "completed": list(state.completed_field_keys),
-                    "unresolved": list(state.unresolved_field_keys),
+                    "completed": list(completed_field_keys),
+                    "unresolved": list(unresolved_field_keys),
                     "reasons": unresolved_reasons,
                     "committee_refs": list(state.committee_result_refs),
                     "member_ids": list(state.committee_member_ids),
@@ -679,10 +1492,12 @@ class AccountResearchStateStore:
                 if review_flags or unresolved or str(row["committee_status"]) != "complete"
                 else ResearchFinalizationOutcome.COMPLETED
             )
-            if inputs.requested_outcome is not expected_outcome:
-                raise AccountResearchAuthorityError(
-                    f"requested outcome must be {expected_outcome.value} for persisted coverage"
-                )
+            # The outcome is engine-derived from the persisted coverage; the model's requested
+            # value never reaches the proposal. Refusing a mismatch here only quizzed the model on
+            # a fact it does not own — observed live: an agent asked for `completed`, was refused,
+            # and went back to re-buying terminally-unproductive fields to "earn" it, looping until
+            # the graph recursion cap suspended the job. The engine disposes: the proposal carries
+            # the honest derived outcome and the tool result is the correction the model reads.
             proposal_id = uuid5(
                 _PROPOSAL_NAMESPACE,
                 f"{authorization.job_id}:{coverage_id}:{state_sha}:{expected_outcome.value}",
@@ -848,6 +1663,91 @@ class AccountResearchStateStore:
         return digest
 
     @staticmethod
+    async def _committee_member_claim_ids(
+        conn: AsyncConnection,
+        *,
+        job_id: UUID,
+        account_entity_id: UUID,
+    ) -> dict[UUID, frozenset[ClaimId]]:
+        """Exact discovered-member -> own professional-claim authority for one account job."""
+
+        rows = (
+            (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT field.target_entity_id, field.claim_refs
+                        FROM entity_research_result_field field
+                        JOIN entity_research_result result ON result.result_id=field.result_id
+                        JOIN entity_research_tool_request request_row
+                          ON request_row.tool_request_id=result.tool_request_id
+                        WHERE request_row.job_id=:job_id
+                          AND request_row.tool_name='discover_buying_committee'
+                          AND field.subject_type='contact'
+                          AND field.parent_account_id=:account_id
+                        ORDER BY result.created_at, result.result_id, field.ordinal
+                        """
+                    ),
+                    {"job_id": job_id, "account_id": account_entity_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        grouped: dict[UUID, set[ClaimId]] = {}
+        for row in rows:
+            grouped.setdefault(UUID(str(row["target_entity_id"])), set()).update(
+                ClaimId(UUID(str(value))) for value in row["claim_refs"]
+            )
+        return {contact_id: frozenset(values) for contact_id, values in grouped.items()}
+
+    @staticmethod
+    async def _committee_role_claims(
+        conn: AsyncConnection,
+        *,
+        member_claim_ids: Mapping[UUID, frozenset[ClaimId]],
+        scope: WorkspaceScope,
+    ) -> tuple[Claim, ...]:
+        """Current role/persona claims in the same run as this job's discovered-member evidence."""
+
+        if not member_claim_ids:
+            return ()
+        evidence = await claims_by_ids(
+            conn,
+            {claim_id for values in member_claim_ids.values() for claim_id in values},
+            scope=scope,
+        )
+        allowed_runs = {
+            EntityId(contact_id): {
+                evidence[claim_id].run_id for claim_id in claim_ids if claim_id in evidence
+            }
+            for contact_id, claim_ids in member_claim_ids.items()
+        }
+        claims = await claims_for_entities(
+            conn,
+            [EntityId(value) for value in member_claim_ids],
+            (ROLE_ON_COMMITTEE, PERSONA),
+            scope=scope,
+        )
+        return tuple(
+            claim for claim in claims if claim.run_id in allowed_runs.get(claim.entity_id, set())
+        )
+
+    @staticmethod
+    def _inferred_committee_member_ids(claims: Sequence[Claim]) -> frozenset[UUID]:
+        """Members carrying the complete role/persona pair; either half stays reviewable."""
+
+        role_members = {
+            UUID(str(claim.entity_id))
+            for claim in claims
+            if str(claim.field_key) == ROLE_ON_COMMITTEE
+        }
+        persona_members = {
+            UUID(str(claim.entity_id)) for claim in claims if str(claim.field_key) == PERSONA
+        }
+        return frozenset(role_members & persona_members)
+
+    @staticmethod
     async def _result_rows(conn: AsyncConnection, job_id: UUID) -> Sequence[RowMapping]:
         return (
             (
@@ -880,10 +1780,17 @@ class AccountResearchStateStore:
         scope_count: int,
         ambiguous_count: int,
         confirmed_empty_count: int,
+        provider_unavailable_reasons: tuple[str, ...] = (),
     ) -> tuple[str, tuple[str, ...]]:
         if not committee_requested:
             return "complete", ()
         if result_count == 0:
+            # ``committee_not_researched`` is true but mute. When the axis went terminal because
+            # the provider cannot serve this account at all, the ledger says which world fact it
+            # was, so the review surface shows a reviewer the difference between "nobody tried"
+            # and "the provider has no such organization".
+            if provider_unavailable_reasons:
+                return "needs_review", provider_unavailable_reasons
             return "needs_review", ("committee_not_researched",)
         if scope_count != result_count:
             return "needs_review", ("committee_scope_missing_or_ambiguous",)
@@ -922,41 +1829,17 @@ class AccountResearchStateStore:
 
     @staticmethod
     async def _pending_refs(conn: AsyncConnection, job_id: UUID) -> Sequence[str]:
+        # Shares one body with the finalization guard's ``pending_operations`` count; see
+        # ``pending_provider_operations_sql``.
         return tuple(
             str(value)
             for value in (
                 (
                     await conn.execute(
                         text(
-                            """
-                            SELECT DISTINCT observation.provider_operation_ref
-                            FROM entity_research_provider_observation observation
-                            JOIN entity_research_tool_request request_row
-                              ON request_row.tool_request_id=observation.tool_request_id
-                            WHERE request_row.job_id=:job_id AND NOT EXISTS (
-                                SELECT 1 FROM entity_research_result result
-                                JOIN entity_research_tool_request result_request
-                                  ON result_request.tool_request_id=result.tool_request_id
-                                WHERE result.provider_operation_ref=
-                                      observation.provider_operation_ref
-                                  AND result_request.job_id=request_row.job_id
-                            ) AND NOT EXISTS (
-                                -- A settled operation without a result is a deterministic
-                                -- terminal rejection (zero-cost fold): it can never produce a
-                                -- result and must not block coverage or an honest NEEDS_REVIEW
-                                -- finalization (live Sumble 402 livelock).
-                                SELECT 1 FROM entity_research_provider_settlement_fold fold
-                                WHERE fold.provider_operation_ref=
-                                      observation.provider_operation_ref
-                                  AND fold.job_id=request_row.job_id
-                                  AND NOT EXISTS (
-                                      SELECT 1 FROM entity_research_result settled
-                                      WHERE settled.provider_operation_ref=
-                                            fold.provider_operation_ref
-                                  )
-                            )
-                            ORDER BY observation.provider_operation_ref
-                            """
+                            "SELECT DISTINCT provider_operation_ref FROM ("
+                            f"{pending_provider_operations_sql(':job_id')}"
+                            ") pending ORDER BY provider_operation_ref"
                         ),
                         {"job_id": job_id},
                     )
@@ -998,8 +1881,27 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.ACCOUNT:
             raise AccountResearchAuthorityError("account guard received another subject type")
         names = [call.tool_name for call in calls]
-        if len(names) != len(set(names)):
-            raise AccountResearchAuthorityError("one model round cannot duplicate an account tool")
+        duplicates = {
+            name for name in names if names.count(name) > 1 and name not in _READ_ONLY_TOOL_NAMES
+        }
+        if duplicates:
+            if duplicates != {"enrich_account"}:
+                raise AccountResearchAuthorityError(
+                    "one model round cannot duplicate account provider work"
+                )
+            source_sets = [
+                set(cast(Sequence[str], call.arguments.get("source_keys", ())))
+                for call in calls
+                if call.tool_name == "enrich_account"
+            ]
+            if any(not source_keys for source_keys in source_sets) or any(
+                left & right
+                for index, left in enumerate(source_sets)
+                for right in source_sets[index + 1 :]
+            ):
+                raise AccountResearchAuthorityError(
+                    "parallel account enrichment calls require disjoint structured sources"
+                )
         if "assess_account_coverage" in names and len(names) > 1:
             raise AccountResearchAuthorityError("coverage must follow settled provider results")
         if "finalize_account_research" in names and len(names) > 1:
@@ -1116,11 +2018,24 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             raise AccountResearchAuthorityError("structured enrichment is independent of Exa Deep")
         elif call.tool_name == "discover_buying_committee":
             scope = call.arguments.get("buying_unit_scope")
-            if not isinstance(scope, dict) or str(scope.get("account_entity_id")) != str(
+            if scope is not None and not isinstance(scope, dict):
+                raise AccountResearchAuthorityError(
+                    "committee discovery's buying_unit_scope must be an object, or omitted "
+                    "entirely so the engine composes it"
+                )
+            declared = scope.get("account_entity_id") if isinstance(scope, dict) else None
+            # An omitted account is now the *engine's* to fill (founder ruling 2026-08-20): the job
+            # is bound to exactly one account, so restating it was ceremony. A declared account is
+            # still an assertion, and a foreign one is still refused here and again at the
+            # provider action's account/people/scope authority check.
+            if declared is not None and str(declared) != str(
                 context.authorization.subject_entity_id
             ):
                 raise AccountResearchAuthorityError(
-                    "committee discovery requires the exact account buying-unit scope"
+                    "committee discovery requires the exact account buying-unit scope: "
+                    "buying_unit_scope.account_entity_id must be "
+                    f"{context.authorization.subject_entity_id} (this job's account, as "
+                    "read_account_research_state reports it), or omitted so the engine fills it"
                 )
         elif call.tool_name in {"assess_account_coverage", "finalize_account_research"}:
             async with self._conn_factory() as conn:
@@ -1145,9 +2060,10 @@ class AccountResearchExecutionGuard(EntityResearchExecutionGuard):
             "research_account_deep",
             "enrich_account",
             "discover_buying_committee",
+            "record_committee_role_inferences",
         }:
             raise AccountResearchAuthorityError(
-                "provider research cannot resume after coverage close"
+                "account research cannot resume after coverage close"
             )
 
     async def observe_tool_result(
@@ -1202,32 +2118,13 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                                    (SELECT count(*) FROM entity_research_tool_request request_row
                                     WHERE request_row.research_run_id=intent.research_run_id
                                       AND request_row.subject_type='contact') AS contact_requests,
-                                   (SELECT count(*)
-                                    FROM entity_research_provider_observation observation
-                                    JOIN entity_research_tool_request request_row
-                                      ON request_row.tool_request_id=observation.tool_request_id
-                                    WHERE request_row.job_id=intent.job_id
-                                      AND NOT EXISTS (
-                                          SELECT 1 FROM entity_research_result result
-                                          JOIN entity_research_tool_request result_request
-                                            ON result_request.tool_request_id=
-                                               result.tool_request_id
-                                          WHERE result.provider_operation_ref=
-                                                observation.provider_operation_ref
-                                            AND result_request.job_id=request_row.job_id
-                                      )
-                                      AND NOT EXISTS (
-                                          SELECT 1 FROM
-                                          entity_research_provider_settlement_fold fold
-                                          WHERE fold.provider_operation_ref=
-                                                observation.provider_operation_ref
-                                            AND fold.job_id=request_row.job_id
-                                            AND NOT EXISTS (
-                                                SELECT 1 FROM entity_research_result settled
-                                                WHERE settled.provider_operation_ref=
-                                                      fold.provider_operation_ref
-                                            )
-                                      )) AS pending_operations
+                                   -- Shares one body with ``_pending_refs``; see
+                                   -- ``pending_provider_operations_sql``.
+                                   (SELECT count(*) FROM (
+                                    """
+                            + pending_provider_operations_sql("intent.job_id")
+                            + """
+                                   ) pending) AS pending_operations
                                    ,ARRAY(SELECT DISTINCT result_field.field_key
                                      FROM entity_research_result_field result_field
                                      JOIN entity_research_result result
@@ -1327,6 +2224,15 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
                     field_keys=sorted(existing_completed),
                 )
             )
+            # The coverage axis is the admitted (paid) field set plus every confirmed
+            # zero-acquisition §3.1 row (canonical name and both derived bands). The engine
+            # re-reads that durable authority itself rather than trusting the coverage row.
+            non_acquisition_axis = frozenset(
+                await non_acquisition_account_profile_fields(conn, authorization=authorization)
+            )
+            execution = await read_account_research_execution_completeness(
+                conn, authorization=authorization
+            )
         if (
             row is None
             or ResearchFinalizationProposal.model_validate(row["proposal_json"]) != proposal
@@ -1357,9 +2263,11 @@ class AccountResearchFinalizationEngine(EntityResearchFinalizationEngine):
             == proposal.current_state_sha256
             == str(row["current_state_sha256"])
         )
-        coverage_matches = set(
-            proposal.completed_field_keys + proposal.unresolved_field_keys
-        ) == set(authorization.selection.admitted_field_keys)
+        coverage_matches = (
+            set(proposal.completed_field_keys + proposal.unresolved_field_keys)
+            == set(authorization.selection.admitted_field_keys) | non_acquisition_axis
+            and execution.complete
+        )
         review_shape = (
             proposal.outcome is ResearchFinalizationOutcome.NEEDS_REVIEW
             and int(row["open_reviews"]) > 0
@@ -1424,6 +2332,13 @@ def account_engine_tool_bindings(
                 # is bound to the same handler below). Either way it is a model mistake the agent
                 # can repair — never an uncaught exception that kills a live research job.
                 raise ToolException(semantic_validation_error(error)) from error
+            except EntityResearchGovernedRejection as rejection:
+                # Already the repairable species (e.g. a model-typed reference of the wrong
+                # type) — but the engine-tool path has no downstream converter, so without this
+                # it escaped raw and suspended the job (live: run 1d39023a, read_research_result
+                # handed a sumble-account-operation ref). Render it as the error tool message the
+                # species promises.
+                raise ToolException(rejection.render()) from rejection
 
         return guarded
 
@@ -1440,6 +2355,11 @@ def account_engine_tool_bindings(
     async def assess(**values: object) -> dict[str, JsonValue]:
         coverage = await store.assess(AssessAccountCoverageInput.model_validate(values))
         return cast(dict[str, JsonValue], coverage.model_dump(mode="json"))
+
+    async def record_inferences(**values: object) -> dict[str, JsonValue]:
+        return await store.record_committee_role_inferences(
+            RecordCommitteeRoleInferencesInput.model_validate(values)
+        )
 
     async def finalize(**values: object) -> dict[str, JsonValue]:
         proposal = await store.propose(FinalizeAccountResearchInput.model_validate(values))
@@ -1461,6 +2381,17 @@ def account_engine_tool_bindings(
             name="inspect_account_evidence",
             description="Inspect the complete evidence index for exact persisted account results.",
             args_schema=InspectAccountEvidenceInput,
+            handle_validation_error=semantic_validation_error,
+            handle_tool_error=True,
+        ),
+        "record_committee_role_inferences": StructuredTool.from_function(
+            coroutine=repairable(record_inferences),
+            name="record_committee_role_inferences",
+            description=(
+                "Record evidence-cited role judgments for exact members discovered by this "
+                "account job; omit any member whose role cannot be supported."
+            ),
+            args_schema=RecordCommitteeRoleInferencesInput,
             handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
@@ -1490,11 +2421,18 @@ def account_engine_tool_bindings(
 
 __all__ = [
     "AccountResearchAuthorityError",
+    "AccountResearchExecutionCompleteness",
     "AccountResearchExecutionGuard",
     "AccountResearchFinalizationEngine",
     "AccountResearchStateStore",
     "account_engine_tool_bindings",
     "born_complete_account_field_keys",
+    "committee_axis_unavailable_reasons",
+    "committee_axis_unavailable_source_keys",
+    "derivable_account_profile_fields",
     "existing_account_claims",
+    "non_acquisition_account_profile_fields",
+    "pinned_account_research_directive",
     "read_account_committee_plan",
+    "read_account_research_execution_completeness",
 ]

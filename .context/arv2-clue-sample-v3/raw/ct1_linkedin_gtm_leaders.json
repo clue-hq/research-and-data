@@ -1,0 +1,1442 @@
+{
+  "requestId": "e97878f59c8986845f7f3c55c9a45c14",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/0vth071yw99",
+      "title": "Kate Blumberg",
+      "url": "https://www.linkedin.com/in/kibrady12",
+      "publishedDate": "2026-06-26T00:00:00.000Z",
+      "text": "# Kate Blumberg\n\nGrowth @ Probook\n\nNew York, New York, United States (US)\n\n500 connections \u2022 1,896 followers\n\n## About\n\nGrowth @ Probook\n\nTotal Experience: 14 years\n\n## Experience\n\n### Director of Growth - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nJun 2026 - Present (2 months) in New York, United States\n\nDepartment: General Management \u2022 Level: Director\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### Director of Demand Generation - [BuildOps](https://www.linkedin.com/company/buildops)\n\nJun 2024 - Apr 2026 (1 year and 10 months)\n\nDepartment: Marketing \u2022 Level: Director\n\nBuildOps is a Software Development company. BuildOps is a commercial contractor management software that provides AI-powered solutions for service management, project management, financials, sales & CRM, and more. BuildOps has 400-500 employees (+30% YoY) and has annual revenue in the $60M-$70M range, founded in 2018. Headquartered in santa monica, California, United States. Its workforce is distributed across 11 countries (including United States, Canada, Philippines, Brazil, and Romania). Has $225.8M in total funding, with 4 prior funding rounds.\n\n### Head of Growth - [Middesk](https://www.linkedin.com/company/middesk)\n\nJan 2023 - Jun 2024 (1 year and 5 months) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: Head\n\nMiddesk is a Software Development company. Middesk is a business intelligence platform that provides verification, fraud, and credit risk solutions for businesses. It offers onboarding services from application to ongoing monitoring. Middesk has 100-150 employees (+20% YoY) and has annual revenue in the $1M-$10M range, founded in 2019. Headquartered in San Francisco, California, United States, wi",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/0vth071yw99",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Kate Blumberg",
+            "firstName": "Kate",
+            "lastName": "Blumberg",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Director of Growth",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2026-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Director of Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2024-06-01",
+                  "to": "2026-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kvpdghjp2p6",
+                  "name": "BuildOps"
+                }
+              },
+              {
+                "title": "Head of Growth",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-01-01",
+                  "to": "2024-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6lhct7gd6pl",
+                  "name": "Middesk"
+                }
+              },
+              {
+                "title": "Director of Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2022-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/m6yrjjf2j88",
+                  "name": "SafeGraph"
+                }
+              },
+              {
+                "title": "Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2020-01-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/m6yrjjf2j88",
+                  "name": "SafeGraph"
+                }
+              },
+              {
+                "title": "Head of Demand Generation",
+                "location": "San Francisco, California",
+                "dates": {
+                  "from": "2018-07-01",
+                  "to": "2020-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s5l75ssr5mm",
+                  "name": "Survata"
+                }
+              },
+              {
+                "title": "Sales Development Team Lead",
+                "location": "Palo Alto, California",
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "ABM Manager",
+                "location": "Palo Alto, CA",
+                "dates": {
+                  "from": "2017-07-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "Global Events Manager",
+                "location": null,
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2015-11-01",
+                  "to": "2017-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch Metrics"
+                }
+              },
+              {
+                "title": "Event Coordinator",
+                "location": "Baltimore, Maryland",
+                "dates": {
+                  "from": "2014-03-01",
+                  "to": "2015-11-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Meeting Solutions Inc."
+                }
+              },
+              {
+                "title": "Marketing Intern",
+                "location": "Rockville, Maryland",
+                "dates": {
+                  "from": "2013-05-01",
+                  "to": "2013-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dsm9y0zyr3m",
+                  "name": "Federal Realty Investment Trust"
+                }
+              },
+              {
+                "title": "PR, Markerting and Events Intern",
+                "location": null,
+                "dates": {
+                  "from": "2012-09-01",
+                  "to": "2013-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1d7flgym456",
+                  "name": "BrandLinkDC"
+                }
+              },
+              {
+                "title": "Citizen Outreach Staff",
+                "location": null,
+                "dates": {
+                  "from": "2011-05-01",
+                  "to": "2011-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6lcyd9wgs15",
+                  "name": "Fund for the Public Interest"
+                }
+              },
+              {
+                "title": "Marketing Intern National Walk Now",
+                "location": null,
+                "dates": {
+                  "from": "2010-05-01",
+                  "to": "2010-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yg53y37mr4f",
+                  "name": "Autism Speaks"
+                }
+              },
+              {
+                "title": "Congressional Page",
+                "location": null,
+                "dates": {
+                  "from": "2007-06-01",
+                  "to": "2007-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1rtq208ctj1",
+                  "name": "U.S. House of Representatives"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) Religion/Religious Studies",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/886m1m4mx1h",
+                  "name": "The College of Wooster"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+      "title": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization. | Kate Blumberg",
+      "url": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Kate Blumberg",
+      "text": "# I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization. | Kate Blumberg \u00b7 LinkedIn \u00b7 2026-06-23\n\n**Kate Blumberg**: Director of Growth at Probook for 2 months with 14 years of total professional experience. Previous roles include Director of Demand Generation at BuildOps, Head of Growth at Middesk, and Director of Demand Generation at SafeGraph. Based in New York, New York, United States [US].\n\n---\n\nI\u2019m excited to share that I\u2019ve joined [Probook](https://linkedin.com/company/probook-ai) to lead growth and build out the marketing organization.\n\nOver the last few years, I\u2019ve found myself increasingly drawn to people who share a particular belief: that the trades are worth building a life around.\n\nI\u2019ve seen it in contractors who spend decades building great businesses. I\u2019ve seen it in advocates like [Greg Crumpton](https://linkedin.com/in/crumptonskilledtrades) who work tirelessly to elevate the industry. And I\u2019ve seen it in founders who could apply their talents anywhere but choose to invest them back into the trades.\n\nThat\u2019s what stood out to me about [Probook](https://linkedin.com/company/probook-ai). Two of the founders grew up in the trades. They went on to become exceptional technologists, but instead of moving on from the industry, they chose to build for it.\n\nThe more time I spend around the trades, the more convinced I become that something special happens when talented people continue reinvesting their skills, experience, and ambition back into the industry that shaped them.\n\nToday, [Probook](https://linkedin.com/company/probook-ai) is announcing $40M in funding led by Andreessen Horowitz and Sequoia. To me, the announcement isn\u2019t just about the capital. It\u2019s another signal that some of the most ambitious founders, operators, technologists, and investors see what so many people in the industry already know: the trades are full of opportunity.\n\nI\u2019m incredibly excited to join the team and help build what\u2019s next.\n"
+    },
+    {
+      "id": "https://exa.ai/library/person/qt8xcdkc327",
+      "title": "Mark Hoffman",
+      "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "publishedDate": "2026-08-07T00:00:00.000Z",
+      "text": "# Mark Hoffman\n\nChief Revenue Officer (CRO)\n\nNew York City Metropolitan Area (US)\n\n500 connections \u2022 3,473 followers\n\n## About\n\nChief Revenue Officer (CRO)\n\nTotal Experience: 14 years\n\n## Experience\n\n### Chief Revenue Officer - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nFeb 2026 - Present (6 months) in New York City Metropolitan Area\n\nDepartment: Sales \u2022 Level: C-Level\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### Chief Sales Officer (CSO) - [Tennr](https://www.linkedin.com/company/tennrai)\n\nDec 2024 - Feb 2026 (1 year and 2 months) in New York City Metropolitan Area\n\nDepartment: Sales \u2022 Level: C-Level\n\nTennr is a Software Development company. Tennr is an agentic patient orchestration platform built for policy-grade decisioning and patient flow at scale. tennr helps providers navigate patients through complex payer requirements, countless engagements, and every step in between. Tennr has 200-300 employees (+130% YoY) and has annual revenue in the $1M-$10M range, founded in 2021. Headquartered in New York, New York, United States. Its workforce is distributed across United States, India, and Philippines. Has $161.3M in total funding, with 6 prior funding rounds.\n\n### [VTS](https://www.linkedin.com/company/we-are-vts)\n\n#### Senior Vice President of Sales\n\nAug 2021 - Dec 2024 (3 years and 4 months) in New York City Metropolitan Area\n\nDepartment: Sales \u2022 Level: President/Vice President\n\n#### Vice President of Sales\n\nJul 2019 - Aug 2021 (2 years and 1 month)\n\nDepartment: Sales\n\n#### Director of Sales\n\nJan 2017 - Jul 2019 (2 years and 6 months) in Greater New York City Area\n\nVTS is a SaaS platform that enables commercial real estate owners/operators/investors/brokers to measurably increase revenue",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQH7Fl9b5KNjUw/profile-displayphoto-scale_200_200/B4EZxr22YYIMAY-/0/1771336071800?e=2147483647&v=beta&t=yveZeG1e__briLIywfWVUa-fuLVfNmpl_3IeHhRzd9Y",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/qt8xcdkc327",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mark Hoffman",
+            "firstName": "Mark",
+            "lastName": "Hoffman",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Chief Revenue Officer",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Chief Sales Officer (CSO)",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2024-12-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngpxw8vzzyd",
+                  "name": "Tennr"
+                }
+              },
+              {
+                "title": "Senior Vice President of Sales",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2024-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Vice President of Sales",
+                "location": null,
+                "dates": {
+                  "from": "2019-07-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2019-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Inside Sales",
+                "location": null,
+                "dates": {
+                  "from": "2016-06-01",
+                  "to": "2016-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wztvqrvj0h5",
+                  "name": "Hightower Inc."
+                }
+              },
+              {
+                "title": "Inside Sales Manager",
+                "location": null,
+                "dates": {
+                  "from": "2014-05-01",
+                  "to": "2016-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Senior Sales Executive",
+                "location": null,
+                "dates": {
+                  "from": "2014-02-01",
+                  "to": "2014-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Inside Sales Executive",
+                "location": "New York",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2014-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Business Origination Associate",
+                "location": null,
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BA Political Science",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qsyjywp56l3",
+                  "name": "Binghamton University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/p04c3lhkl37",
+      "title": "Aaron Churba",
+      "url": "https://www.linkedin.com/in/aaronloganchurba",
+      "publishedDate": "2026-08-07T00:00:00.000Z",
+      "text": "# Aaron Churba\n\nDirector of Sales & Development at Probook\n\nNew York City Metropolitan Area (US)\n\n500 connections \u2022 3,800 followers\n\n## About\n\nSales leader with a demonstrated history of working in the information technology and services industry; a sales professional pursuing a Master of Science - MS focused in Law from Nova Southeastern University Shepard Broad College of Law.\n\nTotal Experience: 10 years and 2 months\n\n## Experience\n\n### Director of Sales & Development - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nFeb 2026 - Present (5 months) in New York, New York, United States\n\nThe AI Operating System for Home Services. Backed by Sequoia and a16z. Dispatch makes or breaks the customer experience, Probook is the only AI platform built around it. America's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA. Currently leading a team of 5 sellers and counting. DM me if you're interested in joining Probook!\n\nDepartment: Sales \u2022 Level: Director\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### [Bite](https://www.linkedin.com/company/bitekiosk)\n\nNew York, NY\n\n#### Advisor\n\nAug 2025 - Feb 2026 (6 months) in New York, New York, United States\n\nDepartment: Consulting \u2022 Level: Specialist\n\n#### Director of Sales\n\nMay 2024 - Aug 2025 (1 year and 3 months) in New York, New York, United States\n\nOverseeing the sales team at Bite\n- focused on driving sales, nurturing client relationships, and achieving high growth revenue numbers. Bite develops digital ordering technology that elevates hospitality by personalizing each guest interaction.\n\nDepartment: Sales \u2022 Level: Director\n\nBite is a Software Development company. Bite is a lead",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFIADvgdH-qOA/profile-displayphoto-scale_200_200/B4EZ70kBAKIwAg-/0/1782219548150?e=2147483647&v=beta&t=weNYL3IOuWTXFlroC5QAPpfm6dBR35zU3HLFKvf82Mk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/p04c3lhkl37",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Aaron Churba",
+            "firstName": "Aaron",
+            "lastName": "Churba",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Director of Sales & Development",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Advisor",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": null,
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2024-05-01",
+                  "to": "2025-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": "Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fzsnq8ft964",
+                  "name": "Techvera"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": "2024-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/930gtqgxgtw",
+                  "name": "Zip Security"
+                }
+              },
+              {
+                "title": "Advisor",
+                "location": null,
+                "dates": {
+                  "from": "2022-09-01",
+                  "to": "2023-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/930gtqgxgtw",
+                  "name": "Zip Security"
+                }
+              },
+              {
+                "title": "Manager, Sales",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2023-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Senior Account Executive",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Account Executive",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Business Development",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2017-08-01",
+                  "to": "2019-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS, Inc."
+                }
+              },
+              {
+                "title": "Senior Business Analyst",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2016-05-01",
+                  "to": "2017-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kcwwfl54lkt",
+                  "name": "SinglePlatform"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor\u2019s Degree Telecommunications",
+                "dates": {
+                  "from": "2012",
+                  "to": "2016"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/2t7pc9hxmhp",
+                  "name": "Penn State University"
+                }
+              },
+              {
+                "degree": "Master of Science - MS Law",
+                "dates": {
+                  "from": "2018",
+                  "to": "2022"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qcxxvbbfmrn",
+                  "name": "Nova Southeastern University Shepard Broad College of Law"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+      "title": "Probook",
+      "url": "https://www.linkedin.com/company/probook-ai",
+      "text": "# Probook\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook employs 36 people (+1120.0% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n## About\n\nDispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nProbook unifies intake, data cleaning, chat, outbound, and dispatch. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America are on Probook. Learn more at probook.ai. \n\n## Company Details\n- Industry: Software Development\n- Type: Privately Held\n- Headquarters: New York, United States\n- Founded Year: 2024\n- Homepage: probook.ai\n- Status: active\n- Aliases: probook\n- LinkedIn: linkedin.com/company/probook-ai\n- Linkedin Followers: 4,585 (Monthly: +34.9%, Yearly: +407.5%)\n- Emails: info@probook.ai\n- Phone: +1 845-542-5751\n\n## Workforce\n- Employees: 36\n  - Monthly Growth: +103.3%\n  - Yearly Growth: +1120.0%\n- Key Executives:\n  - Sean Weinhouse: Chief Customer Officer\n  - Marie Cuvillier: Founding Builder\n  - Aaron Churba: Director of Sales & Development\n  - Christian Yongwhan Lim: Chief Architect\n  - Alex Kahn: Founding Solutions Consultant\n  - Adam Robinson: Founding GTM\n  - Kate Blumberg: Director of Growth\n  - Zachary Pulichino: Founding FDE\n  - George Eliadis: Co-Founder & CEO\n  - Lewis Z.: Co-Founder CTO\n- Breakdown:\n  - By Country: United States: 36 (59%)\n  - By Department: Other Department: 14 (23%), General Management: 6 (10%), Technical: 6 (10%), Consulting: 3 (5%), Hr: 3 (5%), Sales: 2 (3%), Customer Service: 1 (2%), Marketing: 1 (2%)\n  - By Seniority: Other Management: 17 (28%), Founder: 9 (15%), Specialist: 7 (11%), C-Level: 2 (3%), Head: 1 (2%)\n- Talent Sources: Unframe (1), Meta (2), McKinsey & Compan",
+      "image": "https://media.licdn.com/dms/image/v2/D4E0BAQHR6vIRGmC8oA/company-logo_200_200/B4EZ718TnoJkAE-/0/1782242687683/probook_ai_logo?e=2147483647&v=beta&t=uXnbQ-6wUP3pOSlTWyli5kWYNovnStDdNTaOwK94uIQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Probook",
+            "foundedYear": 2024,
+            "description": "Dispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nProbook unifies intake, data cleaning, chat, outbound, and dispatch. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America are on Probook. Learn more at probook.ai. ",
+            "workforce": {
+              "total": 36
+            },
+            "headquarters": {
+              "address": "New York, NY 10022, US",
+              "city": "New York",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 6208,
+              "countryRank": 845739,
+              "avgDurationSeconds": 64,
+              "history": [
+                {
+                  "value": 8273,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 12156,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 12961,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10365,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10906,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 6208,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/sbmzm0rw1r7",
+      "title": "Adam Robinson",
+      "url": "https://www.linkedin.com/in/adam-robinson-913305184",
+      "publishedDate": "2026-07-08T00:00:00.000Z",
+      "text": "# Adam Robinson\n\nAccount Executive\n\nNew York City Metropolitan Area (US)\n\n500 connections \u2022 2,877 followers\n\n## About\n\nCurrently working as the Operations Manager of Globx Parcel Logistics LLC. I am a recent graduate of Sacramento State with a degree in international business and a minor in economics. I have a passion for connecting with people and learning. When I am not at work you can find me exercising, being with family or friends, and reading.\n\nTotal Experience: 6 years and 5 months\n\n## Experience\n\n### Founding GTM - [Probook](https://www.linkedin.com/company/probook-ai)\n\nNov 2025 - May 2026 (6 months) in New York, NY\n\n- $770,000 ARR closed\n- Closed first non-founder led deal in company history\n- Built tech stack, process, and handbook Probook is a Sequoia/a16z-backed AI dispatch platform for home services (HVAC, plumbing, electrical)\n\nDepartment: General Management \u2022 Level: Founder\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### [EliseAI (formerly MeetElise)](https://www.linkedin.com/company/eliseai)\n\n#### Enterprise Account Executive\n\nDec 2023 - May 2025 (1 year and 5 months) in New York, NY\n\nEliseAI\u2019s first Internal promotion from SDR > AE Longest tenured sales team member at EliseAI\n- 2024 Presidents Club Winner (#1 AE across both Ent/MM teams)\n- 343% 2024 Quota\n- $4.8M ARR closed\n\nDepartment: Sales \u2022 Level: Specialist\n\n#### Mid-Market Account Executive\n\nAug 2022 - Dec 2023 (1 year and 4 months) in New York, NY\n\n- 137.5% 2023 Quota\n- 195% 2022 Q4 Quota\n- 125% 2022 Q3 Quota(Ramp)\n\nDepartment: Sales\n\n#### SDR Manager Associate AE\n\nMar 2022 - Aug 2022 (5 months) in New York, NY\n\n- Recruited, managed, and developed multiple top-performing SDRs while simultaneously closing\u00a0\n- Built company's first comprehensive",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQEhOpKhR8Rmrw/profile-displayphoto-scale_200_200/B56Zh11FhLG4Ak-/0/1754323507686?e=2147483647&v=beta&t=xcXfMZVlnliNQOa-IRFuQCZyNDkNMo2R7__yVlWTb8I",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/sbmzm0rw1r7",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Adam Robinson",
+            "firstName": "Adam",
+            "lastName": "Robinson",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Founding GTM",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": "2026-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Enterprise Account Executive",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2023-12-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6tn9w1m920p",
+                  "name": "EliseAI (formerly MeetElise)"
+                }
+              },
+              {
+                "title": "Mid-Market Account Executive",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2022-08-01",
+                  "to": "2023-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6tn9w1m920p",
+                  "name": "EliseAI (formerly MeetElise)"
+                }
+              },
+              {
+                "title": "SDR Manager Associate AE",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2022-03-01",
+                  "to": "2022-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6tn9w1m920p",
+                  "name": "EliseAI (formerly MeetElise)"
+                }
+              },
+              {
+                "title": "Sales Development Representative",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2021-10-01",
+                  "to": "2022-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6tn9w1m920p",
+                  "name": "EliseAI (formerly MeetElise)"
+                }
+              },
+              {
+                "title": "Accounts Sales Development Associate",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2021-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/053l9rtxlpf",
+                  "name": "Better"
+                }
+              },
+              {
+                "title": "Accounts CEA",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/053l9rtxlpf",
+                  "name": "Better"
+                }
+              },
+              {
+                "title": "Director of Operations",
+                "location": "San Jose, California, United States",
+                "dates": {
+                  "from": "2020-05-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnxb0pg31d9",
+                  "name": "GlobX Parcel Logistics LLC"
+                }
+              },
+              {
+                "title": "Content Marketing Intern",
+                "location": "Sacramento, California Area",
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": "2020-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tld49d17b1x",
+                  "name": "Visit California"
+                }
+              },
+              {
+                "title": "Accounting Intern",
+                "location": "Los Altos California",
+                "dates": {
+                  "from": "2018-05-01",
+                  "to": "2018-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Green Lanai"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "B.S. Business Administration  International Business",
+                "dates": {
+                  "from": "2015",
+                  "to": "2020"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Sacramento State College of Business"
+                }
+              },
+              {
+                "degree": "Minor Economics",
+                "dates": {
+                  "from": "2015",
+                  "to": "2020"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "California State University-Sacramento"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_when-i-joined-probook-a-lot-of-people-in-activity-7475223794408898561-UET0",
+      "title": "When I joined Probook, a lot of people in my network asked me the same question: why? Why leave a comfortable seat to bet on a company in an industry most people \u2026 | Aaron Churba",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_when-i-joined-probook-a-lot-of-people-in-activity-7475223794408898561-UET0",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Aaron Churba",
+      "text": "# When I joined Probook, a lot of people in my network asked me the same question: why? Why leave a comfortable seat to bet on a company in an industry most people \u2026 | Aaron Churba \u00b7 LinkedIn \u00b7 2026-06-23\n\n**Aaron Churba**: Director of Sales & Development at Probook for 5 months with 10 years 2 months of total professional experience. Previous roles include Advisor at Bite, Director of Sales at Bite, and Sales at Techvera. Based in New York City Metropolitan Area [US].\n\n---\n\nWhen I joined [Probook](https://linkedin.com/company/probook-ai), a lot of people in my network asked me the same question: why? Why leave a comfortable seat to bet on a company in an industry most people overlook? So let me actually answer that.\n\nThe product was flying off the shelves. I'm not exaggerating. The fit was there from day one. It was the kind of product market fit you spend a whole career hoping to feel just once. The home services industry had never seen anything like this. These are the people who fix our homes and show up when something breaks; unsung heroes. And for the first time, they had software built like they actually mattered. The results spoke for themselves: a 29% average revenue lift per office FTE, more than 58,000 customer interactions handled autonomously every single day, and 82% of those interactions handled end to end.\n\nThat being said, excited to announce that [Probook](https://linkedin.com/company/probook-ai) has raised $40m, led by [Andreessen Horowitz](https://linkedin.com/company/a16z) & [Sequoia Capital](https://linkedin.com/company/sequoia).\n\nBut here's the part I'm proudest of, and it has nothing to do with a number on a term sheet.\n\nIt's the team. We've nearly tripled our GTM function since I came on board, and every single person we've added has raised the bar for everyone around them. I've watched people get promoted. I've watched a group of individuals become an actual machine, one that wins together and picks each other up on the hard days. You can r"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6",
+      "title": "After 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO. | George Eliadis",
+      "url": "https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6",
+      "publishedDate": "2026-03-20T00:00:00.000Z",
+      "author": "George Eliadis",
+      "text": "After 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO. Mark is an absolute killer. He spent 8 years at VTS\u2014 a commercial real\u2026 | George Eliadis | 12 comments\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# George Eliadis\u2019 Post\n\nCo-Founder & CEO at Probook\n\n5mo\n\nAfter 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO. Mark is an absolute killer. He spent 8 years at VTS\u2014 a commercial real estate SaaS platform, working his way from Director of Sales to SVP. And before joining us, he was Chief Sales Officer at Tennr. He's exceptional at building teams from the ground up and driving outcomes. With how fast we've been scaling, it's the exact experience we need. I want to be involved in our sales process forever, but only in places where I'm truly high-leverage. Now I have someone who can give our team what I couldn't\u2014real leadership, real development, and a real process. Welcome, Mark. We're stoked to have you.\n\nCo-Founder & CEO at Probook\n\n5mo\n\nCould not be more excited about this!\n\nReply 1 Reaction 2 Reactions\n\nCo-Founder at Probook\n\n5mo\n\nAnd he's even better than advertised \ud83d\ude80\n\nReply 5 Reactions 6 Reactions\n\nGrowth @ Sandstone | Early Stage Angel Investor\n\n5mo\n\nLet's gooooo!! Major W.\n\nReply 2 Reactions 3 Reactions\n\nI help companies accelerate by building high performing sales development teams and guide SDRs to their sales breakthroughs\n\n5mo\n\nExciting times George Eliadis! Best of luck in the new role Michael!\n\nReply 2 Reactions 3 Reactions\n\nWill be a great addition to the team! Mark Hoffman\n\nReply 1 Reaction 2 Reactions\n\nAI Deployment Strategy | USAF Air Battle Manager | CMU-Tepper MBA\n\n5mo\n\nExcited to have you on the team! Mark Hoffman\n\nReply 1 Reaction 2 Reactions\n\nTransactional Attorney @gotliblaw\n\n5mo\n\nMark Hoffman is a superstar. Hav",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFWN30R7haFNA/feedshare-image-high-res/B4EZ0LlLX_JAAU-/0/1774015789597?e=2147483647&v=beta&t=Vm90aZy31nxs1EGrWXMPV4_HGQJsK9xEmGHCZ6gS7_U",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/jobs/view/head-of-sales-at-probook-4431770595",
+      "title": "Probook hiring Head of Sales in Manhattan, NY",
+      "url": "https://www.linkedin.com/jobs/view/head-of-sales-at-probook-4431770595",
+      "publishedDate": "2026-06-11T00:00:00.000Z",
+      "text": "Probook hiring Head of Sales in Manhattan, NY | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n### Head of Sales\n\nProbook Manhattan, NY\n\n# Head of Sales\n\n#### Probook Manhattan, NY 2 weeks ago 38 applicants See who Probook has hired for this role\n\n- Report this job\n\nAbout ProbookProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate.Our impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation.The RoleThis is not a sit-back leadership role. The Head of Sales will be in the trenches, leading from the front, jumping into deals, and helping shape the playbook as Probook AI scales. You will oversee a team of Account Executives across mid-market and enterprise accounts while building the structure, rigor, and momentum needed to accelerate growth.The ideal candidate is a true player-coach: someone who thrives in fast-paced environments, loves winning deals, and knows how to turn a strong team into a high-performing, scalable sales organization.What You Will Do\n\n- Own and drive revenue performance across Commercial and Enterprise segments\n- Lead, coach, and scale a team of Account Executives\n- Support and close complex, high-value deals directly\n- Lead deal strategy, multi-threading, negotiation, and execution\n- Run disciplined deal reviews, pipeline inspections, and forecasting cadences\n- Elevate team performance through hands-on coaching and accountability\n- Improve outbound motion and pipeline generation in a scal",
+      "image": "https://static.licdn.com/aero-v1/sc/h/xlk678jv0tjp79pv10kglzkf"
+    },
+    {
+      "id": "https://exa.ai/library/person/r7n4zw9krjb",
+      "title": "Bradley Levine",
+      "url": "https://www.linkedin.com/in/bradley-levine-2b9bb820a",
+      "publishedDate": "2026-07-08T00:00:00.000Z",
+      "text": "# Bradley Levine\n\nFounding GTM @ Probook\n\nUnited States (US)\n\n500 connections \u2022 1,866 followers\n\n## About\n\nI am currently a Senior at Syracuse University. I am a Double Major studying Economics as well as Environmental, Sustainability, and Policy (ESP). I am currently looking to broaden my professional connections and experience.\n\nTotal Experience: 4 years and 10 months\n\n## Experience\n\n### Founding GTM - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nFeb 2026 - Present (6 months) in New York, United States\n\nThe AI Operating System for Home Services. Backed by Sequoia and a16z. Dispatch makes or breaks the customer experience, Probook is the only AI platform built around it. America's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA.\n\nDepartment: General Management \u2022 Level: Founder\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### [Traba](https://www.linkedin.com/company/traba-work)\n\n#### Account Executive\n\nSep 2025 - Feb 2026 (5 months)\n\nLed new market launch; achieved ~400% of quota while ramping\n\nDepartment: Sales \u2022 Level: Specialist\n\n#### Business Development Representative\n\nMar 2025 - Sep 2025 (6 months) in United States\n\nBacked by Founders Fund, Khosla Ventures, and General Catalyst Aggregate Attainment 194% Revenue Attainment on quota 250% Q3 Analyst of the Quarter\n\nDepartment: Sales \u2022 Level: Specialist\n\nTraba is a Technology, Information and Internet company. Traba is an AI operating layer for the industrial supply chain, providing the labor to power warehouses, distribution centers, and production plants, and the intelligence to optimize them. Traba has 100-150 employees (+20% YoY) and has annual revenue in ",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFASJppuVVvwQ/profile-displayphoto-scale_200_200/B4EaARqLZ6J4Ac-/0/1787002668114?e=2147483647&v=beta&t=PT3cYXgh48EpwW3HEoCcMJgYxAK1likJJ3KY58sJEcg",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/r7n4zw9krjb",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Bradley Levine",
+            "firstName": "Bradley",
+            "lastName": "Levine",
+            "location": "United States",
+            "workHistory": [
+              {
+                "title": "Founding GTM",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Account Executive",
+                "location": null,
+                "dates": {
+                  "from": "2025-09-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rxd75qk1jmk",
+                  "name": "Traba"
+                }
+              },
+              {
+                "title": "Business Development Representative",
+                "location": "United States",
+                "dates": {
+                  "from": "2025-03-01",
+                  "to": "2025-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rxd75qk1jmk",
+                  "name": "Traba"
+                }
+              },
+              {
+                "title": "Business Development Representative, Business Development (Hedge Funds & Private Equity)",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2023-11-01",
+                  "to": "2025-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/t35wkl3kwwb",
+                  "name": "Guidepoint"
+                }
+              },
+              {
+                "title": "Lockerbie Legacy Foundation Data Analyst",
+                "location": "Syracuse, New York, United States",
+                "dates": {
+                  "from": "2022-09-01",
+                  "to": "2023-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nsvzm9v7ls5",
+                  "name": "Syracuse University"
+                }
+              },
+              {
+                "title": "Barnes Center Employee and Supervisor, Syracuse University, Recreation",
+                "location": "Syracuse, New York, United States",
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2023-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nsvzm9v7ls5",
+                  "name": "Syracuse University"
+                }
+              },
+              {
+                "title": "Investment Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2022-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Lee & Associates NYC"
+                }
+              },
+              {
+                "title": "Onsite Project Manager",
+                "location": "Mamaroneck, New York, United States",
+                "dates": {
+                  "from": "2021-06-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "AWRE Real Estate Development"
+                }
+              },
+              {
+                "title": "Assistant Project Manager",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2020-05-01",
+                  "to": "2020-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/87ys5kl0xbn",
+                  "name": "Intelligent Energy Group"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Double Major: Economics and (ESP) Environmental Sustainability Policy",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/nsvzm9v7ls5",
+                  "name": "Syracuse University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "title": "Ten years ago, our CRO, Mark Hoffman, hired Aaron Churba for his first job out of college. | Probook",
+      "url": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "publishedDate": "2026-06-16T00:00:00.000Z",
+      "author": "Probook",
+      "text": "Ten years ago, our CRO, Mark Hoffman, hired Aaron Churba for his first job out of college. Now they're on the same team again. We\u2019re excited to welcome Aaron to Probook as our Director of Sales &\u2026 | Probook\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Probook\u2019s Post\n\n5,581 followers\n\n1mo\n\nEdited\n\nTen years ago, our CRO, Mark Hoffman, hired Aaron Churba for his first job out of college. Now they're on the same team again. We\u2019re excited to welcome Aaron to Probook as our Director of Sales & Development. It's not often you get the chance to work with someone again a decade later. When you do, it's a strong signal of how strongly the pair works together. Aaron lives and breathes the stage of company we\u2019re at: customers getting measurable value, strong momentum, and a lot of opportunity ahead. Now it\u2019s time to get more businesses to discover Probook, making sure we're communicating our value clearly, and giving our growing GTM team the support and coaching they need to succeed. Aaron will play a big role in all three. Welcome, Churba!\n\nTalent & People @ Probook - We\u2019re hiring!\n\n1mo\n\nProbook-U is in session.\n\nGTM at Probook\n\n1mo\n\nVery strong, welcome Aaron Churba!\n\nGTM @ Hex | AI, Analytics, & Data |\n\n1mo\n\nTo view or add a comment, sign in\n\n5,581 followers\n\n## Explore content categories\n\nShow more Show less",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFBYclyTHwqvw/feedshare-image-high-res/B4EZ7RYdhyKwAU-/0/1781629312479?e=2147483647&v=beta&t=5p16n1ZkYjkYgqQ48Z6Th6L_cPNuMhZ3fUWKKwU0Mh8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://exa.ai/library/person/6nfzp5wfcy1",
+      "title": "Grant Miller",
+      "url": "https://www.linkedin.com/in/grant-miller-8338a6110",
+      "publishedDate": "2026-08-07T00:00:00.000Z",
+      "text": "# Grant Miller\n\nGTM at Probook\n\nNew York, New York, United States (US)\n\n500 connections \u2022 2,080 followers\n\n## About\n\nGTM at Probook\n\nTotal Experience: 9 years and 1 month\n\n## Experience\n\n### GTM - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nMar 2026 - Present (5 months) in New york\n\nDepartment: Other\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### Account Executive - [Procore Technologies](https://www.linkedin.com/company/procore-technologies) (Current)\n\nJun 2025 - Present (1 year and 1 month) in New York, New York, United States\n\n- Quickly made a measurable impact on the sales organization at Procore Technologies.\n- Achieved 125% of quarterly quota in my first quarter, currently pacing ahead of annual target.\n- Leveraged prior industry experience to effectively sell Procore\u2019s full product suite with deep construction-tech knowledge.\n\nDepartment: Sales \u2022 Level: Specialist\n\nProcore Technologies (PCOR) is a Software Development company. Procore provides an all-in-one construction management software that helps in finishing quality projects safely, on time, and within budget. They offer purpose-built solutions for owners, main contractors, and subcontractors that simplify work from tendering to close out. Procore Technologies has 3,000-4,000 employees (+2-3% YoY) and has annual revenue in the $1B-$2B range, founded in 2003. Headquartered in carpinteria, california, United States, operates in 6 countries (including United Kingdom, Egypt, France, Ireland, and Australia). Its workforce is distributed across 29 countries (including United States, India, Egypt, Canada, and Australia). Has a market cap in the $9B-$10B range. IPO 2021.\n\n### [Aurora Solar](https://www.linkedin.com/company/aurora-solar)\n\n#",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFLBsSMv8vUbg/profile-displayphoto-scale_200_200/B4EZ71Xo.AJIAc-/0/1782233080740?e=2147483647&v=beta&t=EdLUb_-HNtgumkAM7qR31CPCw39IWsvwDz9Vup1cYoI",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/6nfzp5wfcy1",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Grant Miller",
+            "firstName": "Grant",
+            "lastName": "Miller",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "GTM",
+                "location": "New york",
+                "dates": {
+                  "from": "2026-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Account Executive",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2025-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ssq3sd682l9",
+                  "name": "Procore Technologies"
+                }
+              },
+              {
+                "title": "Enterprise Account Executive",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2025-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3zz53h2hbw2",
+                  "name": "Aurora Solar"
+                }
+              },
+              {
+                "title": "Business Development Representative",
+                "location": null,
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3zz53h2hbw2",
+                  "name": "Aurora Solar"
+                }
+              },
+              {
+                "title": "Business Development Representative",
+                "location": "Marina Del Rey, CA",
+                "dates": {
+                  "from": "2020-11-01",
+                  "to": "2021-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1wm817vfs5w",
+                  "name": "CREXi"
+                }
+              },
+              {
+                "title": "Commercial Real Estate Intern",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-06-01",
+                  "to": "2018-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/vz1dtdqsl0t",
+                  "name": "NAI Northern California"
+                }
+              },
+              {
+                "title": "Swim Instructor",
+                "location": "Castro Valley",
+                "dates": {
+                  "from": "2014-05-01",
+                  "to": "2016-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/537k5z77xf8",
+                  "name": "patti's Swim School"
+                }
+              },
+              {
+                "title": "Manager",
+                "location": "Castro Valley",
+                "dates": {
+                  "from": "2013-05-01",
+                  "to": "2016-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/537k5z77xf8",
+                  "name": "patti's Swim School"
+                }
+              },
+              {
+                "title": "Teachers Assistant",
+                "location": "Oxford, MS",
+                "dates": {
+                  "from": "2015-09-01",
+                  "to": "2016-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/mwntfs7bk84",
+                  "name": "University of Mississippi"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2015",
+                  "to": "2019"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/mwntfs7bk84",
+                  "name": "University of Mississippi"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/6v3940xh90b",
+      "title": "Caroline Simon",
+      "url": "https://www.linkedin.com/in/caroline-simon-4541b4154",
+      "publishedDate": "2026-08-07T00:00:00.000Z",
+      "text": "# Caroline Simon\n\nGTM at Probook\n\nNew York, New York, United States (US)\n\n500 connections \u2022 1,259 followers\n\n## About\n\nGTM at Probook\n\nTotal Experience: 5 years and 6 months\n\n## Experience\n\n### GTM - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nMay 2026 - Present (3 months) in New York, NY\n\nThe AI Operating System for Home Services. Backed by Sequoia and a16z. Dispatch makes or breaks the customer experience, Probook is the only AI platform built around it. America's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA.\n\nDepartment: Other\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### [Runwise](https://www.linkedin.com/company/wearerunwise)\n\n#### Account Executive\n\nJan 2026 - May 2026 (4 months) in New York, United States\n\nDepartment: Sales \u2022 Level: Specialist\n\n#### Senior Business Development Representative\n\nApr 2025 - Jan 2026 (9 months)\n\nDepartment: Sales \u2022 Level: Specialist\n\n#### Business Development Representative\n\nDec 2023 - Apr 2025 (1 year and 4 months) in New York, New York, United States\n\nDepartment: Sales \u2022 Level: Specialist\n\nRunwise is a Real Estate company. Runwise is a company that provides smart controls for building control. They offer wireless installation in one day or less, allowing building owners to save 23% on heating, cooling, and water bills. Runwise has 100-150 employees (+30% YoY) and has annual revenue in the $10M-$20M range, founded in 2010. Headquartered in New York, New York, United States. Its workforce is distributed across 5 countries (including United States, Philippines, Spain, Georgia, and Portugal). Has $161.4M in total funding, with 8 prior funding rounds.\n\n### [NBCUniversal](h",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQEIuf_BqmeucQ/profile-displayphoto-scale_200_200/B4EZ70lvxHHAAg-/0/1782220001302?e=2147483647&v=beta&t=wH0xXQJOeoANXWwgsa-2WDXbNLbOBqTdw-f1y3HpBnQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/6v3940xh90b",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Caroline Simon",
+            "firstName": "Caroline",
+            "lastName": "Simon",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "GTM",
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2026-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Account Executive",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2026-01-01",
+                  "to": "2026-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/56y2qvc5t73",
+                  "name": "Runwise"
+                }
+              },
+              {
+                "title": "Senior Business Development Representative",
+                "location": null,
+                "dates": {
+                  "from": "2025-04-01",
+                  "to": "2026-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/56y2qvc5t73",
+                  "name": "Runwise"
+                }
+              },
+              {
+                "title": "Business Development Representative",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-12-01",
+                  "to": "2025-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/56y2qvc5t73",
+                  "name": "Runwise"
+                }
+              },
+              {
+                "title": "Sales Planner",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2022-11-01",
+                  "to": "2023-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g1pwrvpfsb6",
+                  "name": "NBCUniversal"
+                }
+              },
+              {
+                "title": "Account Services Representative",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": "2022-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g1pwrvpfsb6",
+                  "name": "NBCUniversal"
+                }
+              },
+              {
+                "title": "Summer Analyst Intern",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2021-06-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n4370bnx9lj",
+                  "name": "Kobre & Kim"
+                }
+              },
+              {
+                "title": "Development Intern",
+                "location": "Bridgeport, Connecticut, United States",
+                "dates": {
+                  "from": "2020-03-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/f4knqhz8sdz",
+                  "name": "The Center for Family Justice"
+                }
+              },
+              {
+                "title": "Construction Management Intern",
+                "location": "New York CIty",
+                "dates": {
+                  "from": "2018-05-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/d972lqkst7x",
+                  "name": "Cocozza Group, LLC"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor's degree Religion",
+                "dates": {
+                  "from": "2017",
+                  "to": "2021"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/wtqp3y0ypzs",
+                  "name": "Colgate University"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2019",
+                  "to": "2019"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/sj67z99cr2v",
+                  "name": "Uniwersytet Dolno\u015bl\u0105ski DSW"
+                }
+              },
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2013",
+                  "to": "2017"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/yt6czj3qvb2",
+                  "name": "Hopkins School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/caroline-simon-4541b4154_last-month-i-joined-probooks-quickly-growing-activity-7475201070143774720-aBHu",
+      "title": "Last month, I joined Probook's quickly growing go-to-market team. I saw the problems in the trades that George Eliadis and the team were solving, and knew I wanted to be part of \u2026 | Caroline Simon",
+      "url": "https://www.linkedin.com/posts/caroline-simon-4541b4154_last-month-i-joined-probooks-quickly-growing-activity-7475201070143774720-aBHu",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Caroline Simon",
+      "text": "# Last month, I joined Probook's quickly growing go-to-market team. I saw the problems in the trades that George Eliadis and the team were solving, and knew I wanted to be part of \u2026 | Caroline Simon \u00b7 LinkedIn \u00b7 2026-06-23\n\n**Caroline Simon**: GTM at Probook for 3 months with 5 years 6 months of total professional experience. Previous roles include Account Executive at Runwise, Senior Business Development Representative at Runwise, and Business Development Representative at Runwise. Based in New York, New York, United States [US].\n\n---\n\nLast month, I joined [Probook](https://linkedin.com/company/probook-ai)'s quickly growing go-to-market team. I saw the problems in the trades that [George Eliadis](https://linkedin.com/in/george-eliadis) and the team were solving, and knew I wanted to be part of the solution.\n\nToday, we\u2019re announcing a $40m round from Sequoia and Andreessen Horowitz.\n\nThis unlocks an exciting next chapter for us. I\u2019m proud to be here delivering top-tier outcomes for our customers and helping the company grow.\n\n![Last month, I joined Probook's quickly growing go-to-market team. I saw the problems in the trades that George Eliadis and the team were solving, and knew I wanted to be part of \u2026 | Caroline Simon image](https://media.licdn.com/dms/image/v2/D4E22AQHa-jEiPc48Mw/feedshare-shrink_800/B4EZ70_wneIwAc-/0/1782226816533?e=2147483647&v=beta&t=PeIJpmYINtQdjPcIOFWdyPmUbsyI4Rw8INQDKW7jezk)\n\n## Comments\n\n**[Kieran Jha](https://linkedin.com/in/kieran-jha)** \u00b7 2026-06-23 \u00b7 6 reactions\n> Congrats Caroline!! Love to see it\n\n**[Zachary Stack](https://linkedin.com/in/zachary-stack-)** \u00b7 2026-06-23 \u00b7 6 reactions\n> Outcome driver. Excited for the wins!\n\n**[Aaron Churba](https://linkedin.com/in/aaronloganchurba)** \u00b7 2026-06-23 \u00b7 8 reactions\n> the best!!!!\n\n**[Saunghee Ko](https://linkedin.com/in/saungheeko)** \u00b7 2026-06-23 \u00b7 5 reactions\n> Let's go !! \n> Pipeline's about to be busy!!!\n\n**[Katy Junior](https://linkedin.com/in/katy-junior)** \u00b7 2026-06-23 \u00b7 5 reactions",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQHa-jEiPc48Mw/feedshare-shrink_800/B4EZ70_wneIwAc-/0/1782226816533?e=2147483647&v=beta&t=PeIJpmYINtQdjPcIOFWdyPmUbsyI4Rw8INQDKW7jezk"
+    },
+    {
+      "id": "https://exa.ai/library/person/040zpvpjnsl",
+      "title": "Jason Jimenez",
+      "url": "https://www.linkedin.com/in/jasonjimenezpulido",
+      "publishedDate": "2026-08-10T00:00:00.000Z",
+      "text": "# Jason Jimenez\n\nGrowth @ Probook\n\nNew York City Metropolitan Area (US)\n\n500 connections \u2022 1,540 followers\n\n## About\n\nGrowth @ Probook\n\nTotal Experience: 3 years and 4 months\n\n## Experience\n\n### Founding GTM - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n\nMar 2026 - Present (5 months) in New York City Metropolitan Area\n\nThe AI Operating System for Home Services. Backed by Sequoia and a16z. Dispatch makes or breaks the customer experience, Probook is the only AI platform built around it. America's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA.\n\nDepartment: General Management \u2022 Level: Founder\n\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n\n### Sales Development Representative - [Ocrolus](https://www.linkedin.com/company/ocrolus)\n\nFeb 2025 - Dec 2025 (10 months) in New York City Metropolitan Area\n\nDepartment: Sales \u2022 Level: Specialist\n\nOcrolus is a Financial Services company. Ocrolus' advanced Document AI platform is designed to accelerate financial decision-making. Leverage the power of AI to transform unstructured documents into actionable insights, facilitating faster and more precise analysis for enhanced efficiency and accuracy. Ocrolus has 400-500 employees and has annual revenue in the $1M-$10M range, founded in 2014. Headquartered in New York, New York, United States. Its workforce is distributed across 5 countries (including India, United States, United Arab Emirates, Canada, and United Kingdom). Has $140.7M in total funding, with 7 prior funding rounds.\n\n### [JPMorgan Chase & Co.](https://www.linkedin.com/company/jpmorganchase)\n\n#### Commercial & Investment Banking Analyst\n\nJun 2023 - Feb 2025 (1 year and 8",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQG_-8ZvCbhtiA/profile-displayphoto-scale_200_200/B4EZ70l0vOJ0Ag-/0/1782220019266?e=2147483647&v=beta&t=6_-DTXAsWo-fybPqdxxAIsVtvp64HN6nIipunA9f_xU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/040zpvpjnsl",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Jason Jimenez",
+            "firstName": "Jason",
+            "lastName": "Jimenez",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Founding GTM",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2026-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Sales Development Representative",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2025-02-01",
+                  "to": "2025-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dfwmk030stb",
+                  "name": "Ocrolus"
+                }
+              },
+              {
+                "title": "Commercial & Investment Banking Analyst",
+                "location": "Charlotte, North Carolina, United States",
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": "2025-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nx0jfwj38sx",
+                  "name": "JPMorgan Chase & Co."
+                }
+              },
+              {
+                "title": "Middle Market & Specialized Industries Analyst",
+                "location": "Charlotte, NC",
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2022-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nx0jfwj38sx",
+                  "name": "JPMorgan Chase & Co."
+                }
+              },
+              {
+                "title": "Sales Representative",
+                "location": "Pittsburgh, Pennsylvania, United States",
+                "dates": {
+                  "from": "2021-06-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/sth3w47ddv0r9z4tf8jkxx",
+                  "name": "Aptive Environmental"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Science - BS Economics",
+                "dates": {
+                  "from": "2019",
+                  "to": "2023"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9gpfz52lzpb",
+                  "name": "University of North Carolina at Chapel Hill"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1475.8,
+  "costDollars": {
+    "total": 0.012,
+    "search": {
+      "neural": 0.012
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.0,
+  "_request": {
+    "query": "Director of Growth / go-to-market and sales leadership at Probook, the AI operating system for home services in New York",
+    "type": "auto",
+    "numResults": 15,
+    "includeDomains": [
+      "linkedin.com"
+    ],
+    "includeText": [
+      "Probook"
+    ],
+    "contents": {
+      "text": {
+        "maxCharacters": 2000
+      }
+    }
+  }
+}

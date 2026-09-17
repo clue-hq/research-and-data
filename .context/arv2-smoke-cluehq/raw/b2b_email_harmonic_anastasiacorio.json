@@ -1,0 +1,770 @@
+{
+  "id": "07556376-02aa-baa1-aea2-1ea1a803cee3",
+  "identifier": "anastasiacorio",
+  "profile": {
+    "first_name": "Ana",
+    "middle_name": null,
+    "last_name": "Corio",
+    "full_name": "Ana Corio",
+    "headline": "AI Security | Growth and Demand Gen @ Harmonic Security",
+    "title": "Director of Demand Generation",
+    "picture": {
+      "source": "https://images.ai-ark.com/IkDuLl0OEdUXGM38l9Af0875Rfss39tlmHYu_-bGATs/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/07556376-02aa-baa1-aea2-1ea1a803cee3.jpg"
+    },
+    "background": {
+      "source": "https://media.licdn.com/dms/image/v2/D5616AQHBeD2Hvoo8MQ/profile-displaybackgroundimage-shrink_350_1400/B56ZxyHxuEGoAY-/0/1771441167750?e=1786579200&v=beta&t=eGxX4E8JdVNZFPU_3Yyd5Qz1uGPanISxhalOMuhNMTg"
+    },
+    "birth_date": "1600-05-31",
+    "summary": "Growth and demand gen marketing nerd in the B2B cybersecurity space, based in SF. Sometimes a bit wacky when it comes to new customer acquisition ideas. \ud83e\udd37\u200d\u2640\ufe0f \ud83d\ude80\n\nCurrently working in AI Security / AI Governance and enjoying the constant experimentation with demand capture and creation. Hungry to learn. \ud83e\udd13"
+  },
+  "link": {
+    "linkedin": "https://www.linkedin.com/in/anastasiacorio",
+    "twitter": null,
+    "github": null,
+    "facebook": null
+  },
+  "location": {
+    "default": "San Francisco, California, United States, North America",
+    "short": "San Francisco, California",
+    "country": "United States",
+    "state": "California",
+    "city": "San Francisco",
+    "position": null
+  },
+  "languages": {
+    "primary_locale": {
+      "country": "US",
+      "language": "en"
+    },
+    "supported_locales": [
+      {
+        "country": "US",
+        "language": "en"
+      }
+    ],
+    "profile_languages": [
+      {
+        "name": "Spanish",
+        "proficiency": null
+      }
+    ]
+  },
+  "industry": "Computer & Network Security",
+  "educations": [
+    {
+      "school": {
+        "id": "9937a42e-5e1e-8878-6f6e-5c3a053a3398",
+        "name": "Santa Clara University Leavey School of Business",
+        "logo": "https://images.ai-ark.com/tqWkiB1bdG1OIc3HbbxuyguIZBEJFarXl2Ol9wepckQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/9937a42e-5e1e-8878-6f6e-5c3a053a3398.jpg",
+        "url": "https://www.linkedin.com/school/santa-clara-university-leavey-school-of-business"
+      },
+      "degree_name": "Bachelors",
+      "field_of_study": "Marketing",
+      "grade": null,
+      "date": {
+        "start": "2010-01-01",
+        "end": "2014-12-31"
+      }
+    },
+    {
+      "school": {
+        "id": null,
+        "name": "Reforge Growth Series",
+        "logo": null,
+        "url": null
+      },
+      "degree_name": null,
+      "field_of_study": null,
+      "grade": null,
+      "date": {
+        "start": "2019-01-01",
+        "end": "2019-12-31"
+      }
+    },
+    {
+      "school": {
+        "id": null,
+        "name": "International Institute, Madrid, Spain",
+        "logo": null,
+        "url": null
+      },
+      "degree_name": null,
+      "field_of_study": null,
+      "grade": null,
+      "date": {
+        "start": "2012-01-01",
+        "end": "2012-12-31"
+      }
+    },
+    {
+      "school": {
+        "id": null,
+        "name": "Palos Verdes High School",
+        "logo": null,
+        "url": null
+      },
+      "degree_name": null,
+      "field_of_study": null,
+      "grade": null,
+      "date": {
+        "start": "2006-01-01",
+        "end": "2010-12-31"
+      }
+    }
+  ],
+  "awards": [
+    {
+      "title": "High Tech Career Preparation Package",
+      "description": null,
+      "issuer": "Santa Clara University",
+      "date": "2013-01-01"
+    },
+    {
+      "title": "Leavey School of Business Scholar",
+      "description": null,
+      "issuer": "Santa Clara University",
+      "date": "2011-09-01"
+    },
+    {
+      "title": "Dean's List",
+      "description": null,
+      "issuer": "Santa Clara University",
+      "date": "2011-06-01"
+    }
+  ],
+  "organizations": [
+    {
+      "name": "Undergraduate Marketing Network",
+      "position": null,
+      "date": {
+        "start": "2012-01-01",
+        "end": null
+      }
+    },
+    {
+      "name": "Operations, Management, Information Systems Student Network",
+      "position": null,
+      "date": {
+        "start": "2011-09-01",
+        "end": null
+      }
+    },
+    {
+      "name": "SCU Dance Team",
+      "position": null,
+      "date": {
+        "start": "2011-09-01",
+        "end": null
+      }
+    }
+  ],
+  "courses": [
+    {
+      "name": "Business-to-Business Marketing",
+      "number": "188"
+    },
+    {
+      "name": "Customer Behavior",
+      "number": "183"
+    },
+    {
+      "name": "Innovation & New Product Marketing",
+      "number": "187"
+    },
+    {
+      "name": "Internet Marketing",
+      "number": "175"
+    },
+    {
+      "name": "Marketing Analysis",
+      "number": "182"
+    },
+    {
+      "name": "Principles of Marketing",
+      "number": "181"
+    }
+  ],
+  "position_groups": [
+    {
+      "company": {
+        "id": "72f1cccc-34d1-56ba-f10c-6f28212048f9",
+        "name": "Harmonic Security",
+        "logo": "https://images.ai-ark.com/JN8L2s_asPbq0x7EFh7Ysq7VHiQNAEd_3YHV6mStI80/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/72f1cccc-34d1-56ba-f10c-6f28212048f9.jpg",
+        "url": "https://www.linkedin.com/company/harmonic-security",
+        "employees": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "date": {
+        "start": "2024-09-01",
+        "end": null
+      },
+      "profile_positions": [
+        {
+          "company": "Harmonic Security",
+          "description": "Running demand generation and growth marketing at Harmonic Security, the control you need to unlock AI across your company.",
+          "title": "Director of Demand Generation",
+          "employment_type": "Full-time",
+          "location": null,
+          "date": {
+            "start": "2024-09-01",
+            "end": null
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "4ac50453-58ae-330c-8c0b-a704dbd7eefb",
+        "name": "Material Security",
+        "logo": "https://images.ai-ark.com/zH_UUjGBdPjOxc6D7_XjS5s_ick_5sZ2BdH1jRJneCs/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4ac50453-58ae-330c-8c0b-a704dbd7eefb.jpg",
+        "url": "https://www.linkedin.com/company/materialsecurity",
+        "employees": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "date": {
+        "start": "2021-07-01",
+        "end": "2024-09-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Material Security",
+          "description": "First marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team. \n\n- Built out all early stage functions including content strategy & an inbound motion, paid advertising, analyst relations, search, events, gifting, review sites, and more.\n- Inbound: Ran a variety of security community sponsorships (podcasts, newsletters, interviews) and paid social activities (LinkedIn, Reddit, Twitter) to drive site traffic and sales pipeline.\n- Outbound: Worked closely with SDR team to understand their motion and enable them with intent data and warm leads. Also built out an automated outbound program that included building account and contact lists, strategizing personalization approaches, working with MarketingOps on workflows and automation, writing outreach messaging, and launching campaigns. Utilized tools such as 6sense, Clearbit, Warmly, and Clay.",
+          "title": "Director of Demand Generation",
+          "employment_type": "Full-time",
+          "location": "San Francisco Bay Area",
+          "date": {
+            "start": "2021-07-01",
+            "end": "2024-09-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "10af6883-65aa-3057-ca90-ac1c8d73e16f",
+        "name": "CrowdStrike",
+        "logo": "https://images.ai-ark.com/E9nljk9-VxtUJEwoc_rPNICkMmXCtjvbJu9UGP7kbgI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/10af6883-65aa-3057-ca90-ac1c8d73e16f.jpg",
+        "url": "https://www.linkedin.com/company/crowdstrike",
+        "employees": {
+          "start": 5001,
+          "end": 10000
+        }
+      },
+      "date": {
+        "start": "2020-07-01",
+        "end": "2021-07-31"
+      },
+      "profile_positions": [
+        {
+          "company": "CrowdStrike",
+          "description": "- Helped build eCommerce for CrowdStrike\n- Ran content strategy for eCommerce group\n- Launched in-app messaging platform for improving UX and Trial Conversions \n- Led strategy & execution for third party review sites to help voice of customer initiative & lead generation (G2, TrustRadius, Capterra, IT Central Station)\n- Managed other new growth channels (i.e. sponsored newsletter program with Hustle and Morning Brew)\n- Ran optimization testing around Free Trial program's landing page",
+          "title": "Growth Marketing Strategist",
+          "employment_type": "Full-time",
+          "location": null,
+          "date": {
+            "start": "2020-07-01",
+            "end": "2021-07-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": null,
+        "name": "Digital Shadows (Acquired by Reliaquest)",
+        "logo": null,
+        "url": null
+      },
+      "date": {
+        "start": "2015-12-01",
+        "end": "2020-06-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Digital Shadows (Acquired by Reliaquest)",
+          "description": "\u2022   Manage all digital marketing and content strategy efforts including website optimization and maintenance, content scheduling and production, organic and paid social, paid search, SEO, online advertising, Drift chatbot, and more\n\u2022   Focus on website strategy: Increase website traffic (+780% in monthly visitors) + Engage and Convert users (+790% in monthly web form fills) + Practice Product-Led Growth Tactics\n\u2022   Run Content Strategy and Team to drive site traffic, generate demand, and build brand awareness\n\u2022   Project manager for website launches, research report and other content launches, and other product announcements\n\u2022   Tools: Drift, Salesforce, Marketo, Uberflip, Wordpress, Google Ads, Google Analytics, Google Search Console, Rollworks ABM Platform, Twitter, Facebook, LinkedIn, Instagram, Youtube\n\nOther Projects include: Project Manager for all Design/Branding projects, Managed Black Hat 2017 show in its entirety",
+          "title": "Senior Content Marketing & Digital Strategy Manager",
+          "employment_type": "Full-time",
+          "location": "San Francisco",
+          "date": {
+            "start": "2015-12-01",
+            "end": "2020-06-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "97d34705-5685-6b5c-cb43-5180cdf18870",
+        "name": "Cisco",
+        "logo": "https://images.ai-ark.com/WDigUZAhMqqAqAFSxt_NuxJfDiWAdmDVcSKWk9SyVi0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/97d34705-5685-6b5c-cb43-5180cdf18870.jpg",
+        "url": "https://www.linkedin.com/company/cisco",
+        "employees": {
+          "start": 10001,
+          "end": null
+        }
+      },
+      "date": {
+        "start": "2013-06-01",
+        "end": "2015-12-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Cisco",
+          "description": "\u00b7 Manage the Cisco security social channels including Twitter (307k followers), Facebook (275k fans), LinkedIn (20k followers), YouTube, Blog, and SlideShare\n\u00b7 Create social media plans for product and solution launches and industry events to drive web and booth traffic, promote a variety of content, and track success\n\u00b7 Analyze social media efforts using Sprinklr, Radian6, Tableau, SiteCatalyst & SimplyMeasured \n\u00b7 Strategize paid social and demand generation efforts\n\u00b7 Participate in social listening to discover opportunities for social media engagement with current and potential customers and influencers \u2013 increased engagement by 500%+\n\u00b7 Increased security's social media presence (reach +3100%, clicks +1450%, eng/post +107%) \n\u00b7 Manage the Security Awards Program and Security Speaking Program",
+          "title": "Security Marketing Project Specialist and Social Media Channel Manager",
+          "employment_type": null,
+          "location": "San Jose, CA",
+          "date": {
+            "start": "2013-06-01",
+            "end": "2015-12-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "c051bbdc-67e5-45eb-fa3b-cd7b224b591a",
+        "name": "Malwarebytes",
+        "logo": "https://images.ai-ark.com/yeqrJyIuSt86ffXGM9PoVo6SZyBObnuEkhjs3KQb0NE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c051bbdc-67e5-45eb-fa3b-cd7b224b591a.jpg",
+        "url": "https://www.linkedin.com/company/malwarebytes",
+        "employees": {
+          "start": 501,
+          "end": 1000
+        }
+      },
+      "date": {
+        "start": "2012-06-01",
+        "end": "2013-06-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Malwarebytes",
+          "description": "\u2022  Designed web pages, executed A/B and multivariate testing, and analyzed the market using Google Analytics\n\u2022  Promoted the company via social media, Search Engine Optimization (SEO), and inbound marketing tactics\n\u2022  Collaborated with Marketing Department to make critical decisions upon current and future products \n\u2022  Completed Customer Relationship Management (CRM) system and E-commerce tasks",
+          "title": "Marketing Intern",
+          "employment_type": null,
+          "location": "San Jose, CA",
+          "date": {
+            "start": "2012-06-01",
+            "end": "2013-06-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": null,
+        "name": "First Allied Securities",
+        "logo": null,
+        "url": null
+      },
+      "date": {
+        "start": "2011-08-01",
+        "end": "2011-08-31"
+      },
+      "profile_positions": [
+        {
+          "company": "First Allied Securities",
+          "description": "\u2022  Participated in meetings with Hotel/Conference Center team, assisted with registration and concierge services  to attendees, organized and worked at exhibits and breakout sessions, and prepared the final celebration event \n\u2022  Collaborated with corporate event planning leadership at National Sales Conference and other First Allied corporate employees",
+          "title": "Event Planning Intern",
+          "employment_type": null,
+          "location": "San Diego",
+          "date": {
+            "start": "2011-08-01",
+            "end": "2011-08-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "bb8f00e3-495f-1965-2141-76938c2638f2",
+        "name": "Choura",
+        "logo": "https://images.ai-ark.com/qgzRAUZrjeK20_0OC8wjBF6bgb-ylcN5o2nbIuarrTY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/bb8f00e3-495f-1965-2141-76938c2638f2.jpg",
+        "url": "https://www.linkedin.com/company/choura",
+        "employees": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "date": {
+        "start": "2011-07-01",
+        "end": "2011-07-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Choura Events",
+          "description": "\u2022  Managed over 20 restaurants in the fundraising event for Walk With Sally, a non-profit organization\n\u2022  Designed event layout/exhibitor placement and solved arising issues with restaurant vendors",
+          "title": "Event Planning Intern",
+          "employment_type": null,
+          "location": "Redondo Beach, CA",
+          "date": {
+            "start": "2011-07-01",
+            "end": "2011-07-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": null,
+        "name": "Santa Clara University Activities Programming Board",
+        "logo": null,
+        "url": null
+      },
+      "date": {
+        "start": "2010-09-01",
+        "end": "2011-06-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Santa Clara University Activities Programming Board",
+          "description": "\u2022  Planned, promoted, and executed student events on campus \n\u2022  Collaborated with team members to create a spring social event through budgeting, ordering supplies, and marketing the event to all Santa Clara University students",
+          "title": "Promo Team Member",
+          "employment_type": null,
+          "location": "Santa Clara",
+          "date": {
+            "start": "2010-09-01",
+            "end": "2011-06-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": null,
+        "name": "Palos Verdes High School Associated Student Body",
+        "logo": null,
+        "url": null
+      },
+      "date": {
+        "start": "2009-09-01",
+        "end": "2010-06-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Palos Verdes High School Associated Student Body",
+          "description": "\u2022  Planned and executed all formal events by choosing a theme, managing ticket sales, collaborating with ASB leaders, and marketing the event via Facebook, school bulletins, and daily announcements, as well as distributed marketing materials throughout campus",
+          "title": "Special Events Coordinator",
+          "employment_type": null,
+          "location": "Palos Verdes",
+          "date": {
+            "start": "2009-09-01",
+            "end": "2010-06-30"
+          }
+        }
+      ]
+    }
+  ],
+  "skills": [
+    "Generative AI for Marketing",
+    "Inbound Marketing",
+    "Online Advertising",
+    "Outbound Marketing",
+    "Growth Marketing",
+    "Account Marketing",
+    "Social Media Marketing",
+    "Project Management",
+    "Content Marketing",
+    "Digital Engagement",
+    "Event Planning",
+    "Social Media",
+    "Marketing",
+    "Leadership",
+    "Digital Marketing",
+    "Content Management",
+    "Facebook",
+    "Sprinklr",
+    "PowerPoint",
+    "WordPress",
+    "Twitter"
+  ],
+  "member_badges": {
+    "premium": true,
+    "creator": false,
+    "open_to_work": false,
+    "hiring": false,
+    "verified": true,
+    "influencer": false
+  },
+  "statistics": {
+    "network": {
+      "influencer": false,
+      "followable": null,
+      "followers_count": 2332,
+      "connections_count": 2206
+    },
+    "experience": {
+      "prev_job_titles": null,
+      "tenure": {
+        "company": "2024-09-01",
+        "start": "2010-08-03",
+        "title": "2021-07-01"
+      }
+    }
+  },
+  "company": {
+    "id": "72f1cccc-34d1-56ba-f10c-6f28212048f9",
+    "summary": {
+      "name": "Harmonic Security",
+      "legal_name": "Harmonic Security Inc.",
+      "description": "Harmonic Security gives you the control to unlock safe, fast AI adoption. We provide granular visibility across browser, MCP, and desktop. You can detect sensitive data, trigger custom guardrails, and automate user-led resolutions. \n\nRequest to join our AI Security Community at https://forms.gle/NuwfEQBqsC9wWqgz5",
+      "overview": "As every employee adopts AI in their work, organizations need control and visibility. Harmonic delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.",
+      "seo": "Accelerate secure AI adoption without risking the security and privacy of your data.",
+      "founded_year": 2023,
+      "type": "PRIVATELY_HELD",
+      "industry": "software development",
+      "staff": {
+        "total": 68,
+        "range": {
+          "start": 51,
+          "end": 200
+        }
+      },
+      "logo": {
+        "source": "https://images.ai-ark.com/JN8L2s_asPbq0x7EFh7Ysq7VHiQNAEd_3YHV6mStI80/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/72f1cccc-34d1-56ba-f10c-6f28212048f9.jpg"
+      }
+    },
+    "link": {
+      "website": "https://www.harmonic.security",
+      "domain": "harmonic.security",
+      "domain_ltd": "harmonic.security",
+      "linkedin": "https://www.linkedin.com/company/harmonic-security",
+      "twitter": "https://x.com/harmonicsec",
+      "crunchbase": "https://www.crunchbase.com/organization/harmonic-security"
+    },
+    "financial": {
+      "revenue": {
+        "annual": {
+          "start": 1000000,
+          "end": 5000000,
+          "amount": "1000000-5000000"
+        }
+      },
+      "funding": {
+        "type": "SERIES_A",
+        "total_amount": 24500000,
+        "last_amount": 17500000,
+        "num_investor": 10,
+        "num_funding_rounds": 3,
+        "rounds": [
+          {
+            "announced_at": "2024-10-02",
+            "raised_amount": 17500000,
+            "type": "SERIES_A",
+            "investors": [
+              "Claroty",
+              "Sysdig",
+              "N47",
+              "Ten Eleven Ventures"
+            ]
+          },
+          {
+            "announced_at": "2024-05-01",
+            "type": "SEED_ROUND",
+            "investors": [
+              "IQT"
+            ]
+          },
+          {
+            "announced_at": "2023-10-19",
+            "raised_amount": 7000000,
+            "type": "SEED_ROUND",
+            "investors": [
+              "Daniel Bernard",
+              "Nicholas Warner",
+              "Storm Ventures",
+              "Eileen Burbidge",
+              "Jerry Perullo"
+            ]
+          }
+        ],
+        "date": "2024-10-02"
+      },
+      "aberdeen": {
+        "it_spend": 1556594
+      }
+    },
+    "location": {
+      "headquarter": {
+        "continent": "North America",
+        "country": "United States",
+        "state": "California",
+        "city": "San Francisco",
+        "street": "1390 Market Street, Suite 200",
+        "postal_code": "94102",
+        "raw_address": "1390 Market Street, Suite 200, San Francisco, California, United States, North America",
+        "position": {
+          "lng": -122.042,
+          "lat": 37.39271
+        }
+      },
+      "locations": [
+        {
+          "continent": "North America",
+          "country": "United States",
+          "state": "California",
+          "city": "San Francisco",
+          "street": "1390 Market Street, Suite 200",
+          "postal_code": "94102",
+          "raw_address": "1390 Market Street, Suite 200, San Francisco, California, United States, North America",
+          "position": {
+            "lng": -122.042,
+            "lat": 37.39271
+          }
+        }
+      ]
+    },
+    "technologies": [
+      {
+        "name": "viewport meta",
+        "category": "mobile"
+      },
+      {
+        "name": "iphone / mobile compatible",
+        "category": "mobile"
+      },
+      {
+        "name": "hsts",
+        "category": "ssl"
+      },
+      {
+        "name": "apple mobile web clips icon",
+        "category": "mobile"
+      },
+      {
+        "name": "google tag manager",
+        "category": "widgets"
+      },
+      {
+        "name": "google font api",
+        "category": "widgets"
+      },
+      {
+        "name": "content delivery network",
+        "category": "cdn"
+      },
+      {
+        "name": "cloudflare cdn",
+        "category": "cdn"
+      },
+      {
+        "name": "cloudflare",
+        "category": "cdn"
+      },
+      {
+        "name": "organization schema",
+        "category": "framework"
+      },
+      {
+        "name": "AI",
+        "category": "Other"
+      },
+      {
+        "name": "Amazon AWS",
+        "category": "Hosting"
+      },
+      {
+        "name": "Gmail",
+        "category": "Email Providers"
+      },
+      {
+        "name": "Google Apps",
+        "category": "Other"
+      },
+      {
+        "name": "Google Font API",
+        "category": "Fonts"
+      },
+      {
+        "name": "Hubspot",
+        "category": "Marketing Automation"
+      },
+      {
+        "name": "Microsoft Office 365",
+        "category": "Other"
+      },
+      {
+        "name": "Mobile Friendly",
+        "category": "Other"
+      },
+      {
+        "name": "Route 53",
+        "category": "Domain Name Services"
+      },
+      {
+        "name": "Webflow",
+        "category": "CMS"
+      }
+    ],
+    "industries": [
+      "enterprise software",
+      "security",
+      "software development",
+      "cyber security",
+      "generative ai",
+      "network security",
+      "internet"
+    ],
+    "keywords": [
+      "data protection",
+      "genai dlp",
+      "ai data protection",
+      "ai governance",
+      "ai usage control",
+      "shadow ai"
+    ],
+    "languages": [
+      "english"
+    ],
+    "naics": [
+      "541511",
+      "541519",
+      "449210"
+    ],
+    "last_updated": "2026-08-22"
+  },
+  "department": {
+    "departments": [
+      "marketing"
+    ],
+    "sub_departments": [
+      "demand_generation"
+    ],
+    "functions": [
+      "marketing"
+    ],
+    "seniority": "director"
+  },
+  "email": {
+    "state": "DONE",
+    "output": [
+      {
+        "address": "ana@harmonic.security",
+        "mx": {
+          "record": "aspmx.l.google.com",
+          "google": false,
+          "found": true,
+          "provider": "g-suite"
+        },
+        "domainType": "SMTP",
+        "status": "VALID",
+        "subStatus": "EMPTY",
+        "date": "2026-08-29T23:34:09.000652",
+        "free": false,
+        "generic": false,
+        "found": true
+      }
+    ]
+  },
+  "last_updated": "2026-08-22",
+  "_http_status": 200,
+  "_elapsed_s": 0.84,
+  "_request": {
+    "url": "https://www.linkedin.com/in/anastasiacorio"
+  }
+}

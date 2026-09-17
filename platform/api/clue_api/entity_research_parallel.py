@@ -24,9 +24,11 @@ from clue_agents.entity_research_contracts import (
 )
 from clue_agents.entity_research_runtime import (
     EntityResearchExternalWait,
+    EntityResearchGovernedToolRefusal,
     EntityResearchToolBatchCoordinator,
     EntityResearchToolReplay,
 )
+from clue_api.entity_research_tools import field_key_on_subject_axis
 from clue_core import serialize_value_json
 from clue_core.entity_research import ResearchJobState
 from clue_db import ConnFactory, transaction
@@ -46,6 +48,26 @@ _WAIT_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r9:batch-wait")
 
 class EntityResearchParallelAdmissionError(RuntimeError):
     """A batch cannot safely execute under its exact dependencies, limits, or budget."""
+
+
+class EntityResearchParallelRoundShapeRefusal(
+    EntityResearchParallelAdmissionError, EntityResearchGovernedToolRefusal
+):
+    """The model's *wave shape* is inadmissible — repairable, and never a dead job.
+
+    ``_validate_batch`` runs before any row is written, any budget is reserved and any provider is
+    touched: it only reads the calls the model just proposed. Refusing one is therefore the same
+    species as any other guard refusal (R10) — the model re-plans its round — while every other
+    admission failure (budget, provider concurrency, replayed identity, missing member) remains an
+    ordinary suspending error because those are facts about durable state, not about the wave.
+    Kept a subclass of the admission error so existing callers and tests that catch the family are
+    unaffected.
+    """
+
+    def __init__(self, detail: str) -> None:
+        EntityResearchGovernedToolRefusal.__init__(
+            self, detail, code="parallel_round_shape_rejected"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,17 +518,37 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         async with self._conn_factory() as conn:
             member = await self._member(conn, context=context, call=call)
             batch_id = UUID(str(member["batch_id"]))
-            event_id = await self._insert_event(
-                conn,
-                batch_id=batch_id,
-                call=call,
-                event_kind="failed",
-                disposition="handler_failed",
-                error={
-                    "error_type": type(error).__name__,
-                    "message": str(error)[:2000],
-                },
-            )
+            prior_failure_id = (
+                await conn.execute(
+                    text(
+                        "SELECT event_id FROM entity_research_tool_batch_event "
+                        "WHERE batch_id=:batch_id AND raw_tool_call_id=:call_id "
+                        "AND event_kind='failed'"
+                    ),
+                    {"batch_id": batch_id, "call_id": call.tool_call_id},
+                )
+            ).scalar_one_or_none()
+            if prior_failure_id is None:
+                event_id = await self._insert_event(
+                    conn,
+                    batch_id=batch_id,
+                    call=call,
+                    event_kind="failed",
+                    disposition="handler_failed",
+                    error={
+                        "error_type": type(error).__name__,
+                        "message": str(error)[:2000],
+                    },
+                )
+            else:
+                # A checkpoint retry can re-enter the same admitted tool call after its first
+                # handler failure. The batch ledger intentionally has one immutable ``failed``
+                # marker per member; retry-specific errors remain append-only in the agent-event
+                # journal, and a later ``completed`` event supersedes this marker for settlement.
+                # Requiring a later exception to equal the first one masks the real retry error
+                # as "tool batch event replay changed" and prevents safe retained-response
+                # recovery from ever reaching completion.
+                event_id = UUID(str(prior_failure_id))
             await self._release_permit(
                 conn,
                 batch_id=batch_id,
@@ -532,27 +574,29 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         context: EntityResearchRuntimeContext,
         calls: Sequence[EntityResearchToolCall],
     ) -> None:
-        if not calls or len(calls) > context.stop_policy.max_parallel_tools:
+        if not calls:
             raise EntityResearchParallelAdmissionError("tool batch exceeds its concurrency cap")
+        if len(calls) > context.stop_policy.max_parallel_tools:
+            raise EntityResearchParallelRoundShapeRefusal("tool batch exceeds its concurrency cap")
         identities = [call.tool_call_id for call in calls]
         if len(identities) != len(set(identities)):
-            raise EntityResearchParallelAdmissionError("tool batch call ids must be unique")
+            raise EntityResearchParallelRoundShapeRefusal("tool batch call ids must be unique")
         if len(calls) > 1 and any(
             call.arguments.get("parent_operation_ref") is not None for call in calls
         ):
-            raise EntityResearchParallelAdmissionError(
+            raise EntityResearchParallelRoundShapeRefusal(
                 "additive follow-up is dependent and cannot share a parallel batch"
             )
         fields: dict[str, str] = {}
         for call in calls:
             for field_key in _field_values(call):
-                if not field_key.startswith(f"{context.authorization.subject_type.value}."):
-                    raise EntityResearchParallelAdmissionError(
+                if not field_key_on_subject_axis(context.authorization.subject_type, field_key):
+                    raise EntityResearchParallelRoundShapeRefusal(
                         "parallel tool call contains a cross-axis field"
                     )
                 previous = fields.setdefault(field_key, call.tool_call_id)
                 if previous != call.tool_call_id:
-                    raise EntityResearchParallelAdmissionError(
+                    raise EntityResearchParallelRoundShapeRefusal(
                         "parallel field overlap lacks explicit corroboration authority"
                     )
         grouped: dict[str, list[EntityResearchToolCall]] = {}
@@ -561,15 +605,35 @@ class DbEntityResearchToolBatchCoordinator(EntityResearchToolBatchCoordinator):
         for name, duplicates in grouped.items():
             if len(duplicates) < 2:
                 continue
+            if all(
+                call.provider_family is None
+                and not _source_values(call)
+                and not _field_values(call)
+                for call in duplicates
+            ):
+                # Not provider work at all: a repeated read tool buys nothing, reserves nothing and
+                # partitions nothing. It has no source keys either, so the disjoint-partition test
+                # below would refuse it as "duplicate provider work" — which is how a live round
+                # holding two persisted-result reads suspended its job. All three conditions are
+                # required together so an unbound provider call can never slip through this door.
+                continue
             facets = {_facet_value(call) for call in duplicates}
             if (
-                name not in {"delegate_account_facet", "delegate_contact_facet"}
-                or None in facets
-                or len(facets) != len(duplicates)
+                name in {"delegate_account_facet", "delegate_contact_facet"}
+                and None not in facets
+                and len(facets) == len(duplicates)
             ):
-                raise EntityResearchParallelAdmissionError(
-                    "duplicate parallel provider work is not independently partitioned"
-                )
+                continue
+            source_sets = [set(_source_values(call)) for call in duplicates]
+            if all(source_sets) and not any(
+                left & right
+                for index, left in enumerate(source_sets)
+                for right in source_sets[index + 1 :]
+            ):
+                continue
+            raise EntityResearchParallelRoundShapeRefusal(
+                "duplicate parallel provider work is not independently partitioned"
+            )
 
     @staticmethod
     async def _lock_scope(
@@ -1486,5 +1550,6 @@ __all__ = [
     "DbEntityResearchToolBatchCoordinator",
     "EntityResearchBatchWakeService",
     "EntityResearchParallelAdmissionError",
+    "EntityResearchParallelRoundShapeRefusal",
     "R9EntityResearchJobStore",
 ]

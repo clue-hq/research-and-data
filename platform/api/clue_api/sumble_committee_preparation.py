@@ -42,6 +42,7 @@ from clue_core import (
     RunId,
     SourceTier,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
 from clue_db import ConnFactory, transaction
 from clue_research.durable import (
     get_account_run,
@@ -62,6 +63,7 @@ class SumbleCommitteePreparationInputs(BaseModel):
     preflight: SumbleCommitteePreflight
     authorization: CommitteeExecutionAuthorization
     committee_plan: ResearchCommitteePlan
+    discovery_receipt: SealedDiscoveryLaunchReceipt | None = None
     """The confirmed plan the request's ``committee_plan_ref`` addresses.
 
     Carried typed so the engine can validate an agent-authored buying-unit scope against the
@@ -84,6 +86,36 @@ class SumbleCommitteeInputResolver(Protocol):
 
 class SumbleCommitteePreparationError(RuntimeError):
     pass
+
+
+#: The reason codes a world-fact committee refusal may carry. Kept in lockstep with the
+#: ``entity_research_committee_unavailable_reason`` CHECK (migration ``612428f3731f``).
+COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED = "committee_provider_organization_unmatched"
+COMMITTEE_PROVIDER_IDENTITY_ABSENT = "committee_provider_identity_absent"
+
+
+class SumbleCommitteeProviderIdentityUnavailable(SumbleCommitteePreparationError):
+    """The provider's organization index cannot serve this exact account — a world fact.
+
+    Distinct from every other preparation failure on this path, all of which are authority or
+    integrity species (a scope that crosses accounts, an unconfirmed directive, a tampered
+    authorization) and must keep suspending the job. This one is a fact about the provider's data:
+    Sumble has no exact matched organization for the account, or no Organizations response for it
+    exists anywhere in durable state. Nothing the model can say changes either, and no money or
+    truth is at stake — so the M8D committee tool converts *this class only* into a recoverable
+    governed rejection and records the committee axis as terminally attempted.
+
+    Live: run ``dc86340f``, "Greater Chicago Specialty Physicians LLC", 2026-08-20 21:36:47 IST —
+    the unmatched-organization case escaped raw as ``execution_failed`` and requeued the job.
+
+    Being a subclass keeps every existing ``except SumbleCommitteePreparationError`` caller —
+    notably the DEEP-path :class:`SumbleCommitteePreparer` — byte-identical in behaviour.
+    """
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
 
 
 class SumbleCommitteePreparer:
@@ -335,9 +367,12 @@ def build_production_sumble_committee_preparer(
 
 
 __all__ = [
+    "COMMITTEE_PROVIDER_IDENTITY_ABSENT",
+    "COMMITTEE_PROVIDER_ORGANIZATION_UNMATCHED",
     "SumbleCommitteeInputResolver",
     "SumbleCommitteePreparationError",
     "SumbleCommitteePreparationInputs",
     "SumbleCommitteePreparer",
+    "SumbleCommitteeProviderIdentityUnavailable",
     "build_production_sumble_committee_preparer",
 ]

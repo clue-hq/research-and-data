@@ -1,0 +1,601 @@
+{
+  "content": [
+    {
+      "id": "63054427-8309-9cbf-e8d2-aee2e4ad5f22",
+      "identifier": "alexander-semien",
+      "profile": {
+        "first_name": "Alexander",
+        "middle_name": null,
+        "last_name": "Semien",
+        "full_name": "Alexander Semien",
+        "headline": "Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps",
+        "title": "Head of Growth",
+        "picture": {
+          "source": "https://images.ai-ark.com/30nGpwqUmCSez71HOtqfz2K117EE85djF04kBjfVTUo/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/63054427-8309-9cbf-e8d2-aee2e4ad5f22.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D4E16AQFdAOTXQzfRxw/profile-displaybackgroundimage-shrink_350_1400/B4EZ.BY3AuH8AY-/0/1784582205740?e=1786579200&v=beta&t=fFi3t60B4jF1RLT8e_ExfAdU_bk_-DhF7u7bKfFrCOo"
+        },
+        "birth_date": null,
+        "summary": "Hey \ud83d\udc4b  I\u2019m Alex. \n\nI like the early stages; no playbook, just a vision and a lot to figure out.\n\nI\u2019m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters.\n\nMost of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I\u2019ve done the work\u2014positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/alexander-semien",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "New York, New York, United States, North America",
+        "short": "New York, New York",
+        "country": "United States",
+        "state": "New York",
+        "city": "New York",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": [
+          {
+            "name": "Danish",
+            "proficiency": "ELEMENTARY"
+          },
+          {
+            "name": "English",
+            "proficiency": "NATIVE_OR_BILINGUAL"
+          },
+          {
+            "name": "Spanish",
+            "proficiency": "LIMITED_WORKING"
+          }
+        ]
+      },
+      "industry": "Internet",
+      "educations": [
+        {
+          "school": {
+            "id": "ff23c24d-c48a-7392-6b17-7ff94e7b9d11",
+            "name": "Duke University",
+            "logo": "https://images.ai-ark.com/rcGhvi54woLNUIgCc-B9spf3nrZhAcsENHPUHAnw6dI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/ff23c24d-c48a-7392-6b17-7ff94e7b9d11.jpg",
+            "url": "https://www.linkedin.com/school/duke-university"
+          },
+          "degree_name": "Bachelor of Arts (B.A.)",
+          "field_of_study": "Public Policy Analysis, Psychology",
+          "grade": null,
+          "date": null
+        }
+      ],
+      "awards": [
+        {
+          "title": "Native American Political Leadership Program Scholarship",
+          "description": null,
+          "issuer": "AT&T Foundation",
+          "date": null
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1e3456b4-99bb-3193-78d7-dfb5828a1022",
+            "name": "Cogent",
+            "logo": "https://images.ai-ark.com/3TeLCMzS6a04x7vX2IshfMlZYb6Px37rMF0v4DJM4vk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1e3456b4-99bb-3193-78d7-dfb5828a1022.jpg",
+            "url": "https://www.linkedin.com/company/cogentsecurity",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2025-08-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "Cogent Security",
+              "description": null,
+              "title": "Head of Growth",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2025-08-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "d150d48e-42c9-e17e-9e9b-1a3fdf936a1d",
+            "name": "Sevco Security",
+            "logo": "https://images.ai-ark.com/rS6zYjfyJkTbywaEgptx6j1iTCysGHEecGV9UYCrcuE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d150d48e-42c9-e17e-9e9b-1a3fdf936a1d.jpg",
+            "url": "https://www.linkedin.com/company/sevcosecurity",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2023-08-01",
+            "end": "2025-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Sevco Security",
+              "description": null,
+              "title": "VP, Product Marketing",
+              "employment_type": null,
+              "location": "New York, New York, United States",
+              "date": {
+                "start": "2023-08-01",
+                "end": "2025-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "bbde58d2-fbb3-a90a-8543-03cfe1a3a686",
+            "name": "Abnormal AI",
+            "logo": "https://images.ai-ark.com/51TaHuRUmRTzIHfsGjCXQh5iNh45bHB266aV7XHXDSg/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/bbde58d2-fbb3-a90a-8543-03cfe1a3a686.jpg",
+            "url": "https://www.linkedin.com/company/abnormal-ai",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2020-08-01",
+            "end": "2023-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Abnormal Security",
+              "description": null,
+              "title": "Director, Strategy & Analytics",
+              "employment_type": null,
+              "location": "New York, New York, United States",
+              "date": {
+                "start": "2020-08-01",
+                "end": "2023-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "2063deda-2024-13da-9c6d-c5315db4df9e",
+            "name": "Zyper (Acquired by Discord)",
+            "logo": "https://images.ai-ark.com/YssSrAgP59RhhtecubdAJpuR1jWUMul6IRZJYRjehBI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/2063deda-2024-13da-9c6d-c5315db4df9e.jpg",
+            "url": "https://www.linkedin.com/company/zyper.",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2019-11-01",
+            "end": "2020-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Zyper (Acquired by Discord)",
+              "description": null,
+              "title": "Manager, Finance & Operations",
+              "employment_type": null,
+              "location": "San Francisco, California, United States",
+              "date": {
+                "start": "2019-11-01",
+                "end": "2020-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "bf9adbcc-a760-9631-2821-91a51beaa24b",
+            "name": "Forward",
+            "logo": "https://images.ai-ark.com/lLVKcUDozqqAQa8nXkXJoL1J5J8EtZtF8p5UKOeMzeU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/bf9adbcc-a760-9631-2821-91a51beaa24b.jpg",
+            "url": "https://www.linkedin.com/company/forwardinc",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2018-11-01",
+            "end": "2019-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Forward",
+              "description": null,
+              "title": "Associate",
+              "employment_type": null,
+              "location": "San Francisco, California, United States",
+              "date": {
+                "start": "2018-11-01",
+                "end": "2019-10-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "368f42c8-8416-9c33-a666-6ae48cc25eda",
+            "name": "Accenture",
+            "logo": "https://images.ai-ark.com/Wft2Qsp2NyC6IIPsZBRDDdsBs7OQxpw1vhmYMY-HuyE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/368f42c8-8416-9c33-a666-6ae48cc25eda.jpg",
+            "url": "https://www.linkedin.com/company/accenture",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2016-07-01",
+            "end": "2018-11-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Accenture",
+              "description": null,
+              "title": "Senior Analyst",
+              "employment_type": null,
+              "location": "Washington, District of Columbia, United States",
+              "date": {
+                "start": "2017-12-01",
+                "end": "2018-11-30"
+              }
+            },
+            {
+              "company": "Accenture",
+              "description": null,
+              "title": "Analyst",
+              "employment_type": null,
+              "location": "Washington, District of Columbia, United States",
+              "date": {
+                "start": "2016-07-01",
+                "end": "2017-12-31"
+              }
+            }
+          ]
+        }
+      ],
+      "volunteer_experiences": [
+        {
+          "role": "LGBTQ+ Network Board Member / Co-Chair of Regional Programming Committee ",
+          "company": {
+            "id": "ff23c24d-c48a-7392-6b17-7ff94e7b9d11",
+            "name": "Duke University",
+            "logo": "https://images.ai-ark.com/rcGhvi54woLNUIgCc-B9spf3nrZhAcsENHPUHAnw6dI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/ff23c24d-c48a-7392-6b17-7ff94e7b9d11.jpg",
+            "url": "https://www.linkedin.com/school/duke-university"
+          },
+          "cause": "EDUCATION",
+          "description": null,
+          "date": {
+            "start": "2020-09-01",
+            "end": null
+          }
+        },
+        {
+          "role": "Ambassador",
+          "company": {
+            "id": "9eacd0fb-1f84-54c2-a984-50fefcdef7fc",
+            "name": "Out in Tech",
+            "logo": "https://images.ai-ark.com/AsJiByhQjWuzqHChH54xm-QJwge5Uqgs_ySTscvR2UE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/9eacd0fb-1f84-54c2-a984-50fefcdef7fc.jpg",
+            "url": "https://www.linkedin.com/company/outintech"
+          },
+          "cause": null,
+          "description": null,
+          "date": {
+            "start": "2019-08-01",
+            "end": null
+          }
+        },
+        {
+          "role": "Director of Sponsorship",
+          "company": {
+            "id": "6bfabaef-de53-0a3f-5576-29b33c55653b",
+            "name": "Out for Undergrad",
+            "logo": "https://images.ai-ark.com/N7sA6CR-3E6JscyhyZ-bNxg-7A1w7-CC7p9DckMXtNo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/6bfabaef-de53-0a3f-5576-29b33c55653b.jpg",
+            "url": "https://www.linkedin.com/company/out-for-undergrad"
+          },
+          "cause": null,
+          "description": null,
+          "date": {
+            "start": "2018-10-01",
+            "end": "2019-06-30"
+          }
+        },
+        {
+          "role": "Director Of Admissions",
+          "company": {
+            "id": "6bfabaef-de53-0a3f-5576-29b33c55653b",
+            "name": "Out for Undergrad",
+            "logo": "https://images.ai-ark.com/N7sA6CR-3E6JscyhyZ-bNxg-7A1w7-CC7p9DckMXtNo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/6bfabaef-de53-0a3f-5576-29b33c55653b.jpg",
+            "url": "https://www.linkedin.com/company/out-for-undergrad"
+          },
+          "cause": null,
+          "description": null,
+          "date": {
+            "start": "2018-01-01",
+            "end": "2018-10-31"
+          }
+        }
+      ],
+      "skills": [
+        "Management Consulting",
+        "Social Media Marketing",
+        "Public Speaking",
+        "Financial Analysis",
+        "Social Media",
+        "Trading",
+        "Business Development",
+        "Digital Strategy",
+        "Artificial Intelligence",
+        "IT Strategy",
+        "Project Management",
+        "Agile Methodologies",
+        "Cloud Applications",
+        "Design Thinking",
+        "Robotic Process Automation",
+        "Blue Prism",
+        "Business Process Design",
+        "Process Design",
+        "Business Process",
+        "Operating Models"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": false,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 2760,
+          "connections_count": 2693
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2025-08-01",
+            "start": "2016-07-01",
+            "title": "2025-08-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1e3456b4-99bb-3193-78d7-dfb5828a1022",
+        "summary": {
+          "name": "Cogent Security",
+          "legal_name": "Cogent Security, Inc.",
+          "description": "Cogent is an applied AI lab building AI systems for enterprise cybersecurity teams. We focus on cybersecurity because it affects everyone\u2014the reliability of the services we use, the privacy of our data, and the safety of the organizations we depend on. Our mission is to prevent breaches using autonomous AI systems that continuously secure systems against AI-armed adversaries operating at machine speed. Founded by researchers and operators from Google DeepMind, Abnormal Security, and Coinbase. Backed by Greylock Partners.",
+          "overview": "Cogent Security provides an AI-driven platform that automates vulnerability management by continuously ingesting context, prioritizing risks, and coordinating remediation actions with minimal manual effort from security teams. Its technology uses autonomous agents to highlight key vulnerabilities, suggest high-impact fixes, and generate program-level reporting to help organizations respond to security threats more effectively. The platform integrates with existing security and IT tools to contextualize assets and feeds, supporting end-to-end vulnerability lifecycle workflows. Cogent Security\u2019s solution is designed to reduce the time and manual work associated with identifying, triaging, and addressing vulnerabilities while aligning actions with business risk priorities. The company\u2019s approach aims to shift traditional vulnerability practices toward more dynamic risk-aware operations.",
+          "founded_year": 2024,
+          "type": "PRIVATELY_HELD",
+          "industry": "computer and network security",
+          "staff": {
+            "total": 42,
+            "range": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/3TeLCMzS6a04x7vX2IshfMlZYb6Px37rMF0v4DJM4vk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1e3456b4-99bb-3193-78d7-dfb5828a1022.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.cogent.com",
+          "domain": "cogent.com",
+          "linkedin": "https://www.linkedin.com/company/cogentsecurity",
+          "twitter": "https://x.com/cogent_security",
+          "crunchbase": "https://www.crunchbase.com/organization/cogent-security"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 1000000,
+              "end": 5000000,
+              "amount": "1000000-5000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_A",
+            "total_amount": 53000000,
+            "last_amount": 42000000,
+            "num_investor": 4,
+            "num_funding_rounds": 2,
+            "rounds": [
+              {
+                "announced_at": "2026-02-18",
+                "raised_amount": 42000000,
+                "type": "SERIES_A",
+                "investors": [
+                  "Greylock",
+                  "Definition",
+                  "Bain Capital Ventures"
+                ]
+              },
+              {
+                "announced_at": "2025-07-15",
+                "raised_amount": 11000000,
+                "type": "SEED_ROUND",
+                "investors": [
+                  "Lockstep",
+                  "Greylock"
+                ]
+              }
+            ],
+            "date": "2026-02-18"
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "California",
+            "city": "San Francisco",
+            "postal_code": "94105",
+            "raw_address": "San Francisco, California, United States, North America",
+            "position": {
+              "lng": -122.042,
+              "lat": 37.39271
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "California",
+              "city": "San Francisco",
+              "postal_code": "94105",
+              "raw_address": "San Francisco, California, United States, North America",
+              "position": {
+                "lng": -122.042,
+                "lat": 37.39271
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "euro",
+            "category": "payment"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "ipv6",
+            "category": "server"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "commoncrawl top 10m",
+            "category": "widgets"
+          },
+          {
+            "name": "cloudflare hosting",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon virginia region",
+            "category": "hosting"
+          }
+        ],
+        "industries": [
+          "computer",
+          "cyber security",
+          "network security",
+          "software",
+          "artificial intelligence (ai)",
+          "computer and network security"
+        ],
+        "keywords": [
+          "vulnerability management",
+          "artificial intelligence"
+        ],
+        "languages": [
+          "english"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "marketing"
+        ],
+        "sub_departments": [
+          "growth_marketing"
+        ],
+        "functions": [
+          "business_development"
+        ],
+        "seniority": "head"
+      },
+      "last_updated": "2026-08-22"
+    }
+  ],
+  "size": 3,
+  "totalElements": 1,
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 3,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "offset": 0,
+    "paged": true,
+    "unpaged": false
+  },
+  "last": true,
+  "totalPages": 1,
+  "sort": {
+    "sorted": true,
+    "empty": false,
+    "unsorted": false
+  },
+  "numberOfElements": 1,
+  "trackId": "adc8f6af-b66d-45c1-9fde-3ce73ae3cefd",
+  "first": true,
+  "number": 0,
+  "empty": false,
+  "_http_status": 200,
+  "_elapsed_s": 0.67,
+  "_request": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "SMART",
+            "content": [
+              "Alexander Semien"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "cogent.com"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  }
+}

@@ -487,6 +487,11 @@ _PRUNE_SQL = text(
     WHERE turn_id IN (
         SELECT turn_id
         FROM agent_turn_event_stream
+        WHERE NOT EXISTS (
+            SELECT 1 FROM agent_turn_control_request c
+            WHERE c.turn_id=agent_turn_event_stream.turn_id AND c.kind='stop'
+              AND NOT EXISTS (SELECT 1 FROM agent_turn_stop_ack a WHERE a.control_id=c.control_id)
+        )
         GROUP BY turn_id
         HAVING bool_or(event_type IN ('turn.completed', 'turn.failed', 'turn.cancelled',
                                       'turn.awaiting_input'))

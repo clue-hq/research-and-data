@@ -41,6 +41,7 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.deep import ProfileAccountFn
+from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig
@@ -451,6 +452,15 @@ def build_agent_platform_components(
         from lumen_api.runtime_privacy import build_runtime_workspace_purger
 
         design_run_purger = build_runtime_workspace_purger()
+    # A DSAR erasure takes an interview quote out of the project library's ``decisions.md`` — a
+    # compiled rendering beside the threads, which no tombstone reaches — so the privacy service
+    # rewrites the library of every project it touched once the erasure has committed.
+    library = ProjectLibraryRefresher(
+        storage=storage,
+        artifacts=artifacts,
+        workspaces=workspaces,
+        conn_factory=conn_factory,
+    )
     return AgentPlatformComponents(
         profiles=profiles,
         models=build_agent_model_provider(config=gateway_config, secrets=secrets),
@@ -464,6 +474,7 @@ def build_agent_platform_components(
             workspaces=workspaces,
             conn_factory=conn_factory,
             design_run_purger=design_run_purger,
+            library=library,
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
     )

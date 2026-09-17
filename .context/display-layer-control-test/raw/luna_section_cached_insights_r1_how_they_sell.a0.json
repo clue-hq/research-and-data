@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504834-LHWHv4rEuJz1lK5CcbVe",
+ "object": "chat.completion",
+ "created": 1788504834,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"how_they_sell\",\"empty\":false,\"items\":[{\"h2\":\"7 claimed customer logos show enterprise security traction\",\"body\":[{\"text\":\"Zafran lists Kraft Heinz, Chipotle, Netskope, Ashland, an unnamed Fortune 25 Healthcare Enterprise, OpenAI, and Sallie Mae among its claimed customer logos.\",\"claimIds\":[\"zaf-172\"]},{\"text\":\"What it means for us: Position Clue around helping Zafran scale account-specific outreach across recognizable enterprise security accounts.\",\"claimIds\":[\"zaf-172\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"99%, 90%, and 87% are the headline claimed outcomes\",\"body\":[{\"text\":\"Zafran claims that 99% of critical vulnerabilities are not exploitable, 90% of critical vulnerabilities can be de-risked overnight, and remediation time per vulnerability can be reduced by 87%.\",\"claimIds\":[\"zaf-174\"]},{\"text\":\"What it means for us: Use Zafran's quantified exposure and remediation outcomes as the anchor for personalised campaign messaging.\",\"claimIds\":[\"zaf-174\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"The offer is packaged as one core platform plus two add-ons\",\"body\":[{\"text\":\"Zafran packages its Agentic Exposure Management offer as the core platform plus Zafran Discover and Zafran Autonomous Workflows.\",\"claimIds\":[\"zaf-173\"]},{\"text\":\"Its positioning focuses on normalizing and de-duplicating fragmented scanner findings while using existing security controls and ticketing integrations.\",\"claimIds\":[\"zaf-136\",\"zaf-147\"]},{\"text\":\"What it means for us: Build messaging around clearer prioritization and practical remediation without asking buyers to replace every tool they already use.\",\"claimIds\":[\"zaf-136\",\"zaf-147\"]}],\"contactRefs\":[],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmsJ3oxotLgjAN3jJyjnWqGLw0fgnRmBgypIKixU7hJiH1eXAysRFCVDhv9_rhiOm7rePyoQ5fZaIECYhpZjueywPBGY6zYp_twgPz2b4_5vGy1ekpW21-ijzYx7BaYfdC9ocJJ0d8Wt-t1KQKqzobFfmtmZCS0-f9MehBrMaN60E4e8UIxWi3tQT8v2iW97SmI4c6K12pO0ZD_Dyq2m2LieY3IdBU4TEZbIBX_A9uhr-ugVuw3PWVzFI4Kd89y-YMRvg_fXVkUhdJ6wqHSAtguFlRB4kNgaPv1KUw-fmER_-BBwqUOt6oQATeDgT-O0DHE__-mbRed63HOhTNRrVhhFFxzN2hq8yoHC_bq-JXCCfmAPSy9-KpeUohjNyfoQqGu1C-OoFETTDw3aYU3FgiHxaukmMi71GAT9MnSE0grzB8lY6DyK_vQZaut8tgPu0D4qXbNeeRCwnZnC9RqaA8D9hB14r2O3rr970OzIlNV5IuWn42yWQUKzVsi2G_-jorFQXNw5IP2MIde79V-TffTOVgV4bjZgRCLpAd2DGBNK49PZfbj4kPo2zN1kgXXkLlfVy5SGRCC_tE9Pp7k1Wg1LwDSPuxXcYFiRf5cmclx5GP8CJdO6qXrDfS_WXv9mwqP0x3AEggF1l9ooNGO3SFTSzGWdfE-LM0LJLx6w3-S6Xnkm31BQN7WK4OeEZoC1UdoSLxdvNXPZRCdHdEphQO7OPuR7TO-v9HEQLy9LF6J4ZVplIcsFkso_aGbFzojp0w3abCN1nuzaRaxKCu-tlqS5YHjsgwlxS2A5nvsGZ9jx9Le2irrm2sB-DD8jrgyS7QoNZVdbuCIrrUdUNvNDq02gO4UPfQ3VpTTxyRhk8ITvpiif3RPNA78V2h3v4vs3QkicY0xJufHW8bQfhAMKG4R1_6JGIWphxLIYK4sqKt7f-tV7bb-EXwuzptXbcCgHZL-2N-ZDxlyQAbCEOsKHvmNdIZnNDdYtF6VG22ZoJt8Vqz_xLMP7WgiNSxr0M_r03GOpa7BefQZQyD26CEO4H8X4-NXOepwgi7x0Ijwpc-KJP_hWQMQjKvqbH2aU4JUGQG0fI5Jw2c8QJWYDW_vb-4vgk09IXPMgUPtWv14s94tK6nbEE58sjh3Cv8WQvFUg2PW9tToFu8faQuHlOSrhXZrSGOfsaSYEdPRAG92Ex80pQbqetllkq1ekxsHPURfc7atTGggZA6TqdfeUILDLufRWrYL3osDRUeDZrWb9tBkQCt9pwqxgP1RQddeWktGtn1ndB5d7pu0-_0QTzET_CkWahRaC-x7OGR0iNY_kKEa9Ga3ObROAuYi8y4ou2ruyhQfhiOGi6nhqaFYaLfuWLK-qg3YSswEVDrc0ry0kAIHPjlYqbzLaclnz1lL-PcyDEpjHfAu2LwZ87_HL8zkMy31eA0jDg48D2ooCCPyX_tAAc3G59IAWHeOvzw2pQClE6P_LfhSL_6xcwigLkmXM4rxEPF2YEoU-XuSS5K2_W7QSp5NnFCeZOxf4eGzrKQ44BEzCYiOgUQW-ro66nV63g3N46PSN_2sJn2iV5apV7X2XKiUDvZafkQWF12wHlYcDXEdBu8MII4lga2EhZxpW7RwlTN9Co8jDnuEgqNzUxdYdrI4ZT6zAJVKqkeWaVfzao6ISI5-RWvfs_4YuJTy5yxVQI6UmjKmAae9Ew5kzIWUgs8ZDlOZT0zHut01Ao6-Jtqeg_bk_kALYQZga2R9XADRvAHKwC8W8q0_14sO1fTRPK1SwS9B1xW_MH01XJHVW0w-N9r0vkNwr6q44KtZoNaHZSVaHvc5SGek8Qq2SmHN47qrQG2OcMFMAsHA7SJjR0d4lkSpKwDKimCkw76wEP71hrROi9YlYEnKsc5_UySR4zMFM1Pm1nvW4UPDC-uHqFjdV8Izzi4w5wpf-gp2uNmENVvYz2ekMTcT1txM3MwhAT6wrxRtn2vREX3DtdPnrvIZ6peWZU_avIK3MF7HK90ZRkgOe0LoIXLDhl_AlLSLgn4eYKo7NLepdDxmleBSSycsfuDh5RG632k95bvD2d9fshOOy0R4LbGbAUndGdX_6eE7qVGceFd4XcpcKczIhFVq36uS5KIwaqsbmkOw_VFvfkp7sGSdyPlpn0j-lCowsILURhx0dvdevT8nF0iLdK4SzU8hqpoL6ApaK9B3HCqlblOCYAu-31qbRX0yE6YJjm4jNYLUVBdKYUTzdeHj9lvk1zblBIdCmi7HxPHg-sDjyA3IgygT2CvpICxfNa8NNS90yiuWJ9A2l7z6Fs9883jYSXXTr4FPw7LUWfrtpj2i9UgDcrbOwB7jTBOXLgJ6owZ7Wr7r6DHqNJzrXNdcUQ87wCBqARU_m9UY5ZkXXi995STRrM6qOIkhEe_dlE6CwOlDFHnDXphrp_QBELU3eQ7MHDbz6R8DQBBO5koHbW4dO0HE0IhPDSZ_K-DRhaBGCGLkLB6_xfUWiSlQ2_Nuu4vQ_mpYO6mtUyGTfi-pc0blgLqnDYiDMf027rM9HFHYK0SuxGiNSyFTaN45lx5_TtY59mZZy2RIykO8gbircWjWmXSBnaVJCSLcmc_GwxF5jtFJViFTz2mMRomCdH1S6TwGgBljAMfdhujtfcxeLtxQkHtXXbYCV4cSldbHptWVY1rYinNSoMiEIofYCqVPqRuCICWb9AvJjBBro1CAwP6v8B7PoDg17nd4Ejd2yNsC2ydXolFF194WkFIBHWJn5PpdxguPVFdON8zcp3CTkQ0_f97l9b_kV54y8ocrIRNrS5NHKGMsv6SW_RBecBpbIggH8xspI-od7yxLqvsynvdKqyxVU2Ynmu6aLTTJtgaoR3azOYcB7Mjl0C8tNP4ZjPIB5OB3AeoXCpkAdMIbFeVG-4JfN3Fbx_lMI7-OEMU1plFfav5LN7W4oOjmWI2lLeEgRGTLiDKzuUwR4o8fvdDnldjUD0UqPovoMX2VpVp_mWKZKBU0QKLCALsz51km9aVAG0ko_497T1ZhzDma-9T9bq6mF0jp710zewXSPljkhg3CwtakM72PKGvbrgcBmlEHLF6BWEpTC1VcvDMInNx3wm0hinP8WrRkUE3tnRoCQTS5rgmd5jnnFMgY-0kbDJxdUaXLLh19b13nkoGVXIb1QVBref-NSQyfXcZj7IosaWj4zMGu7O1BSEcvkDzb1-mIq_MWv_bMs35hxGASt9vOLnJyxUDOrMd9VMP_t2r3qfF_-dH9tEgt6zWOCHozUFe1N8YCWo8--q-rWsV0mb5td-9hvzeoAaNgVUnH9alBzdVFs85ViSieU0N2InhsyFbjrp2LJokFoFwpjU3Rxoiq9wN-8jr7g2cDO-RETiCjOhUerc9lnhUYJnEhUL7HEAt5Eeu0xhia5tN1yKny_tSalowM8RppLwWZN3VniayNiDi80EwDDKpeOgroabR4xViJW5tDpcOjfiIOS5xega8KxKlDFprCBsOywuJydmaPbFAfa-jgH59Y3qxxn_epbuIn0vWbdUeMTzlIyffs_WGj_T_gM7nrU_lwBe_HwV_1mpm1ividtY8F_PePy8uvQEgpvBDHYDyLiCvjz69WCXdkvRn8v8bRXFA62NgOPaPFU1Ukabcrcdts8loZ8OEfKUA8jEtKA-x-2_3s5J9VYqpRyWUk1YGg4_3h1kfjWE_sq-7Fv9s0YG6sq282Zr0UB5jbODUDfPKN6-alkCWi7sfnicwytJDMQ1VWTA80yywpdDaFSCDE3sAj3_zood9cVgir1RgoUuK7zfUOHwVm1a9cWw1KOONC1jcI0sPUigAau241EYDlUu0EToiYuBSVWXia4K8HOZHU4dK8hrW0bUrthWcJNykSYVGwDcc8AePJucutQcfUhdbZPQr6B-oUYvBM45yprRrcrD2xoKcYAu1-GnjjoMnyaOFdLTm57ONB9OZqcSk8gVb-xeYtFJfqA68pYae1m5EbNd3DsCpyonsgzO5BmebTbycZrPZSWvsxrwNBY8yx8QJH_S-Nh6UOdSwPdrA2NHEsbp1iMngM10cjCAX8Y6iVWIVCD9hv8umpLujzwX--B_9R4j7llNxtTQG7WJo4oOJZEugVmD7ysxSH13DIBZ_UmL5jBAix216shA5C2aE2oI303KH3EHUlPITyiIuG2uf9E_jhyV8oSuCIzPcDBZdbk2o76xt0E9nytCilx9l7ASJz29_YQgiq0ZhS-WMWZuYRj3JNFFGKok1hBgevM2qH5u0kcB7hoWA73yNXPyV6s-N_kUAJEbSLhn6NMPJlt8qJaz63cAdVB38FRSEI50zhv7ZRJpBB7Hl2gWCV9xdxqRomCFv4ISDS-Lvb5.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_09a9445af61ca7d3016a9a6b050b5487d094a6bf14b60254f1",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25261,
+  "completion_tokens": 916,
+  "total_tokens": 26177,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 25258,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0074143,
+   "upstream_inference_prompt_cost": 0.0063151,
+   "upstream_inference_completions_cost": 0.0010992
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 514,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 16.96,
+ "_attempt": 0
+}

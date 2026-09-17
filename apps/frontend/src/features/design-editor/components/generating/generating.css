@@ -16,19 +16,19 @@
    ============================================================================= */
 
 :root {
-  --clue-gen-olive: var(--clue-ds-color-primitives-brand-800, #44483F);
-  --clue-gen-olive-deep: var(--clue-ds-color-primitives-brand-950, #33372E);
-  --clue-gen-sage: var(--clue-ds-color-primitives-brand-500, #BCC4B3);
-  --clue-gen-sage-600: var(--clue-ds-color-primitives-brand-600, #A6AD9D);
-  --clue-gen-sage-soft: var(--clue-ds-color-primitives-brand-200, #E4EADC);
-  --clue-gen-cream: #F8F5DC;
-  --clue-gen-white: #FFFFFF;
-  --clue-gen-teal: var(--clue-ds-color-primitives-accent-700, #5C7A82);
-  --clue-gen-teal-mid: color-mix(in srgb, var(--clue-gen-teal) 70%, white);
-  --clue-gen-teal-light: color-mix(in srgb, var(--clue-gen-teal) 42%, white);
-  --clue-gen-muted: #7A7F75;
-  --clue-gen-font: var(--font-sans, "Satoshi", Arial, sans-serif);
-  --clue-gen-ease: cubic-bezier(.2, .7, .2, 1);
+  --gen-olive: var(--clue-ds-color-primitives-brand-800, #44483F);
+  --gen-olive-deep: var(--clue-ds-color-primitives-brand-950, #33372E);
+  --gen-sage: var(--clue-ds-color-primitives-brand-500, #BCC4B3);
+  --gen-sage-600: var(--clue-ds-color-primitives-brand-600, #A6AD9D);
+  --gen-sage-soft: var(--clue-ds-color-primitives-brand-200, #E4EADC);
+  --gen-cream: #F8F5DC;
+  --gen-white: #FFFFFF;
+  --gen-teal: var(--clue-ds-color-primitives-accent-700, #5C7A82);
+  --gen-teal-mid: color-mix(in srgb, var(--gen-teal) 70%, white);
+  --gen-teal-light: color-mix(in srgb, var(--gen-teal) 42%, white);
+  --gen-muted: #7A7F75;
+  --gen-font: var(--font-sans, "Satoshi", Arial, sans-serif);
+  --gen-ease: cubic-bezier(.2, .7, .2, 1);
 }
 
 /* Host helper: give the output pane a positioning context and a stacking root. */
@@ -41,37 +41,37 @@
       slate-teal) travel the perimeter. The sweep animates a registered custom
       property so the gradient stops hug the rectangle. Never intercepts input.
    --------------------------------------------------------------------------- */
-@property --clue-gen-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --gen-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 
 .clue-gen-glow {
   position: absolute; inset: 0; z-index: 42; /* above the canvas's banners (40) and caret textarea (41) */
   pointer-events: none; overflow: hidden; border-radius: inherit;
-  opacity: 0; transition: opacity .7s var(--clue-gen-ease);
-  --clue-gen-base: rgba(166, 173, 157, .35); /* resting tint of the line between the bands */
+  opacity: 0; transition: opacity .7s var(--gen-ease);
+  --gen-base: rgba(166, 173, 157, .35); /* resting tint of the line between the bands */
 }
 .clue-gen-glow[data-active="true"] { opacity: 1; }
 .clue-gen-glow > i {
   position: absolute; inset: 0; display: block; pointer-events: none;
   /* declared on the layer, not the parent: --reach is per layer and a custom
      property resolves where it is declared (on the parent the mask silently drops) */
-  --clue-gen-edge-mask:
+  --gen-edge-mask:
     linear-gradient(to right,  #000, transparent var(--reach), transparent calc(100% - var(--reach)), #000),
     linear-gradient(to bottom, #000, transparent var(--reach), transparent calc(100% - var(--reach)), #000);
-  background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
-    var(--clue-gen-base) 0deg, var(--clue-gen-sage-600) 26deg, var(--clue-gen-cream) 48deg, var(--clue-gen-white) 56deg, var(--clue-gen-teal-mid) 74deg, var(--clue-gen-base) 116deg,
-    var(--clue-gen-base) 180deg, var(--clue-gen-sage-600) 206deg, var(--clue-gen-cream) 228deg, var(--clue-gen-white) 236deg, var(--clue-gen-teal-mid) 254deg, var(--clue-gen-base) 296deg, var(--clue-gen-base) 360deg);
+  background: conic-gradient(from var(--gen-angle) at 50% 50%,
+    var(--gen-base) 0deg, var(--gen-sage-600) 26deg, var(--gen-cream) 48deg, var(--gen-white) 56deg, var(--gen-teal-mid) 74deg, var(--gen-base) 116deg,
+    var(--gen-base) 180deg, var(--gen-sage-600) 206deg, var(--gen-cream) 228deg, var(--gen-white) 236deg, var(--gen-teal-mid) 254deg, var(--gen-base) 296deg, var(--gen-base) 360deg);
 }
 .clue-gen-glow__haze  { --reach: 5.5%; inset: -1%; filter: blur(18px); opacity: .5;
-  -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
+  -webkit-mask: var(--gen-edge-mask); mask: var(--gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
 .clue-gen-glow__bloom { --reach: 2.2%; filter: blur(6px) saturate(1.15); opacity: .9;
-  -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
+  -webkit-mask: var(--gen-edge-mask); mask: var(--gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
 .clue-gen-glow__line  { padding: 2px;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude; }
 .clue-gen-glow > .clue-gen-glow__rim { background: none; box-shadow: inset 0 0 0 1px rgba(68, 72, 63, .10); } /* child selector so it outranks the layer rule above */
 .clue-gen-glow[data-active="true"] > i { animation: clue-gen-sweep 11s linear infinite; }
 .clue-gen-glow[data-active="true"] > .clue-gen-glow__rim { animation: none; }
-@keyframes clue-gen-sweep { from { --clue-gen-angle: 0deg; } to { --clue-gen-angle: 360deg; } }
+@keyframes clue-gen-sweep { from { --gen-angle: 0deg; } to { --gen-angle: 360deg; } }
 
 /* ---------------------------------------------------------------------------
    2. Website veil — the page can't stream, so the pane blurs until it exists.
@@ -83,7 +83,7 @@
   display: grid; place-items: center; overflow: hidden;
   background: rgba(255, 255, 255, .58);
   -webkit-backdrop-filter: blur(18px) saturate(.7); backdrop-filter: blur(18px) saturate(.7);
-  opacity: 0; pointer-events: none; transition: opacity .6s var(--clue-gen-ease);
+  opacity: 0; pointer-events: none; transition: opacity .6s var(--gen-ease);
 }
 .clue-gen-veil[data-active="true"] { opacity: 1; pointer-events: auto; cursor: progress; }
 .clue-gen-veil::before {
@@ -98,7 +98,7 @@
 @keyframes clue-gen-drift { from { transform: translate(-4%, -3%) rotate(0deg); } to { transform: translate(4%, 3%) rotate(8deg); } }
 
 .clue-gen-veil__stage { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
-.clue-gen-mark { width: 96px; height: auto; color: var(--clue-gen-olive); overflow: visible; }
+.clue-gen-mark { width: 96px; height: auto; color: var(--gen-olive); overflow: visible; }
 .clue-gen-mark path { fill: currentColor; transform-box: fill-box; transform-origin: center; }
 .clue-gen-veil[data-active="true"] .clue-gen-mark path { animation: 6s cubic-bezier(.6, 0, .2, 1) infinite; }
 .clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(1) { animation-name: clue-gen-p1; }
@@ -110,13 +110,13 @@
 @keyframes clue-gen-p3 { 0% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(2px,3px); } 58% { transform: none; } 78% { transform: translate(16px,22px) rotate(4deg); opacity: 1; } 92% { transform: translate(16px,22px) rotate(4deg); opacity: 0; } 100% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } }
 
 .clue-gen-title {
-  margin-top: 26px; font: 500 14px/1.4 var(--clue-gen-font);
-  color: var(--clue-gen-olive-deep);
-  background: linear-gradient(90deg, var(--clue-gen-olive-deep) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-olive-deep) 60% 100%);
+  margin-top: 26px; font: 500 14px/1.4 var(--gen-font);
+  color: var(--gen-olive-deep);
+  background: linear-gradient(90deg, var(--gen-olive-deep) 0 40%, var(--gen-sage) 50%, var(--gen-olive-deep) 60% 100%);
   background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   animation: clue-gen-shimmer 2.4s linear infinite;
 }
-.clue-gen-hint { margin-top: 6px; font: 400 12px/1.4 var(--clue-gen-font); color: var(--clue-gen-muted); }
+.clue-gen-hint { margin-top: 6px; font: 400 12px/1.4 var(--gen-font); color: var(--gen-muted); }
 @keyframes clue-gen-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
 /* ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@
    --------------------------------------------------------------------------- */
 .clue-gen-lock {
   position: absolute; inset: 0; z-index: 43; /* the chip over the glow, both over every canvas overlay */
-  opacity: 0; pointer-events: none; transition: opacity .45s var(--clue-gen-ease);
+  opacity: 0; pointer-events: none; transition: opacity .45s var(--gen-ease);
 }
 .clue-gen-lock[data-active="true"] { opacity: 1; pointer-events: auto; cursor: progress; }
 .clue-gen-lock__chip {
@@ -136,23 +136,23 @@
   padding: 7px 12px 7px 9px; border-radius: var(--radius-lg, 8px);
   background: rgba(255, 255, 255, .84);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  border: 1px solid var(--clue-gen-sage-soft);
+  border: 1px solid var(--gen-sage-soft);
   box-shadow: 0 4px 18px rgba(51, 55, 46, .10);
-  font: 500 13px/1.2 var(--clue-gen-font); white-space: nowrap;
-  transform: translateY(-6px); transition: transform .45s var(--clue-gen-ease);
+  font: 500 13px/1.2 var(--gen-font); white-space: nowrap;
+  transform: translateY(-6px); transition: transform .45s var(--gen-ease);
 }
 .clue-gen-lock[data-active="true"] .clue-gen-lock__chip { transform: none; }
 .clue-gen-lock[data-placement="top-center"] .clue-gen-lock__chip { left: 50%; transform: translate(-50%, -6px); }
 .clue-gen-lock[data-placement="top-center"][data-active="true"] .clue-gen-lock__chip { transform: translate(-50%, 0); }
-.clue-gen-spinner { width: 18px; height: auto; color: var(--clue-gen-olive); flex: none; }
+.clue-gen-spinner { width: 18px; height: auto; color: var(--gen-olive); flex: none; }
 .clue-gen-spinner path { fill: currentColor; opacity: .25; }
 .clue-gen-lock[data-active="true"] .clue-gen-spinner path { animation: clue-gen-seg 1.5s ease-in-out infinite; }
 .clue-gen-spinner path:nth-child(2) { animation-delay: .5s; }
 .clue-gen-spinner path:nth-child(3) { animation-delay: 1s; }
 @keyframes clue-gen-seg { 0%, 60%, 100% { opacity: .25; } 20% { opacity: 1; } }
 .clue-gen-lock__text {
-  color: var(--clue-gen-olive-deep);
-  background: linear-gradient(90deg, var(--clue-gen-olive-deep) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-olive-deep) 60% 100%);
+  color: var(--gen-olive-deep);
+  background: linear-gradient(90deg, var(--gen-olive-deep) 0 40%, var(--gen-sage) 50%, var(--gen-olive-deep) 60% 100%);
   background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   animation: clue-gen-shimmer 2.4s linear infinite;
 }

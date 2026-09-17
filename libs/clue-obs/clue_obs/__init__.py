@@ -37,7 +37,20 @@ from clue_obs.context import (
     clear_context,
     unbind_context,
 )
+from clue_obs.langfuse import (
+    current_ids,
+    guardrail,
+    install_langfuse,
+    langfuse_is_installed,
+    observation,
+    propagate_trace,
+    shutdown_langfuse,
+)
+from clue_obs.langfuse import (
+    event as langfuse_event,
+)
 from clue_obs.redact import is_claim_value_key, is_secret_key, mask_blob, redact_value
+from clue_obs.sentry import capture, install_sentry, sentry_is_installed
 from clue_obs.spans import log_span
 from clue_obs.testing import LogCapture, capture_events
 
@@ -54,14 +67,25 @@ __all__ = [
     "bind_run_id",
     "bind_workspace",
     "bound_context",
+    "capture",
     "capture_events",
     "clear_context",
+    "current_ids",
     "get_logger",
+    "guardrail",
+    "install_langfuse",
+    "install_sentry",
     "is_claim_value_key",
     "is_secret_key",
+    "langfuse_event",
+    "langfuse_is_installed",
     "log_span",
     "mask_blob",
+    "observation",
+    "propagate_trace",
     "redact_value",
+    "sentry_is_installed",
     "setup",
+    "shutdown_langfuse",
     "unbind_context",
 ]

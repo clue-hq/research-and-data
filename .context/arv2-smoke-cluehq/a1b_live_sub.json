@@ -1,0 +1,50 @@
+{
+  "https://www.cluehq.ai/privacy": {
+    "http": 404,
+    "elapsed_s": 0.14,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  },
+  "https://www.cluehq.ai/terms": {
+    "http": 404,
+    "elapsed_s": 0.18,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  },
+  "https://www.cluehq.ai/product": {
+    "http": 404,
+    "elapsed_s": 0.18,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  },
+  "https://www.cluehq.ai/how-it-works": {
+    "http": 404,
+    "elapsed_s": 0.12,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  },
+  "https://www.cluehq.ai/pricing": {
+    "http": 404,
+    "elapsed_s": 0.14,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  },
+  "https://www.cluehq.ai/about": {
+    "http": 404,
+    "elapsed_s": 0.18,
+    "bytes": 9,
+    "server": "cloudflare",
+    "cf_ray": null,
+    "title_snippet": "Not Found"
+  }
+}

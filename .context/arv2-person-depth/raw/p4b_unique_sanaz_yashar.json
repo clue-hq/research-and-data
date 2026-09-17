@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330099-8p3UdYFtW0uYC51c2fRh",
+  "object": "chat.completion",
+  "created": 1788330099,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Sanaz Yashar spent 15 years working for Israel's elite cyber intelligence agency Unit 8200 and was promoted to officer in 2004 \u2014 a substantive intelligence-agency background that predates her private-sector cyber roles.\",\n    \"evidence_quote\": \"Sanaz Yashar, CEO of Zafran, spent 15 years working for elite cyber intelligence agency Unit 8200, promoted to officer in 2004.\",\n    \"source_url\": \"https://www.forbes.com/sites/thomasbrewster/2024/03/28/she-fled-iran-and-became-an-israeli-spy-now-shes-raised-30-million-for-a-cyber-startup/\",\n    \"why_generic_tools_miss_it\": \"Most enrichment tools surface job titles and companies but don\u2019t capture multi-year service and a promotion at a specific elite intelligence unit described in narrative profiles.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.hobby|contact.facet.stated_interests\",\n      \"value\": [\n        \"Thai Boxing\",\n        \"Breaking Bad (TV series)\"\n      ],\n      \"evidence_quote\": \"Favorite Hobby: Thai Boxing\",\n      \"source_url\": \"https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000721382470&l=zh-Hant-TW\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.hooks|contact.facet.recent_post\",\n      \"value\": \"Finay we branded my two first loves #chemistry and #breaking bad series with cyber exposure.\",\n      \"evidence_quote\": \"Finay we branded my two first loves #chemistry and #breaking bad series with cyber exposure.\",\n      \"source_url\": \"https://www.linkedin.com/posts/sanaz-yashar_chills-nyc-simple-activity-7269798600858095616-Hs7v\",\n      \"charter_category\": \"voice\",\n      \"priority\": \"P3\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8B0Ch5b-XDmZteiCtcjWLTccWOtdZC3mLDEL6IRxOz9TTu_d3rM2q_s1MWEK-Wpz9Tn-63n9ZMEStmuPTg7zTluB4K1BRKvxsAHpXkqXYO2oxgfev6XajnDctOccVdLnQXoJR_W01edssEalDe9IpZAK7NyOP2sI00iAgtMwZsvRdN90Dpur9ZWMq0gH5aMlS5zInaRnMbgES6i0enCcAOX2pPj7V0Czg9fKQj95CfIWQUTm62Uknb4WJrVh-hZwTW-9N1aixJ8MrOBj7j5s8MRuWWU3MLuippPlbQ6KedA-kYsWltq4qLBIu6r1ABoPRkeQuFt1hyxlUGiP_kWHZEKqkI5snS8zT2rPA0QO2McGGvHwF1vSUz3E1v-Z1b6irOYezJKw5QXGL8u07S2Cs9E3rOTYtiCRPYkM3pRVMiOdmEMYdZlrLsuoRSbHY6VtAKnGfCph7n1YDvTYEmMva5qbsqsc2WXtaQJOdMoEz75Zg-nUa0JqsbiqgufpMdmask4uh6oMEZqHo4dVxkdCU-zcTm9lFh7Z3PcyAHfHpHjneJnVug9475OSOEUCISTRM0RUuuwHMXtWuNxatV5x70nT3iErKgpQL6UpgM6lwuTYi63eIGXgc5IAT3QJEyPKHu3de0TueEix-d_sWZm6aAYGkYwXYNPV2FQh55CNvvbzB_ofE8bbN99UCD3FxXyvnDFspiXgFuXtdwj4vQMQLLo1EVgVKEy9Le22LpEzq7y95NMYudD2FNMF66Se4Do38DsqQaNRa7sLDdjwZZjpi7A69NkPKNuEfh6NwW9CbFqlKWw-KTd3_OmRZ3HqzZrbhGWKnIZpWc_oB1sPIKmptp9WqvLBz6o1JG6acgXMV2OZugEhaFWQ4Dc9s0Q6jTRjC353Vzcl6JGAWheye1E4kY0Agu0ntbUT7QGYgtQ9BIRhHeI-S4wdTKyWo_n5VTsuefTyyFtfNPfeJ4hWet5V3mnBzwAJABMGDo_Xs2EylAodKiPRbhlwJkLSXDmFMsRQZG3hYnwfNylPnkEOT6QVyH3-D6sq6HzJ4gvbad1r8fAZVkujOsk7zpPKspde6KBaSNyis5mrurvzTJUmFWV_0MEhXNI2ykgwBSk2ci72cmsSKcacu7i5MAGmBj83vY5VRSBotaOYh0N_tFTw_gsT46gW8gEgby7TyhsJPW4dteSEve-NpN7L3X3Cf8uj0TKxQuJc6i-Gnizf_vJ_h-D2BRLS1rWXasmIHUMdleU5HTlIk-qjCe5fG4qf1UMoJkunccUKc-LYuCYvOtQV3Xb4bafyfPKGpCIA6aAX8oc93Ou9i1TzEnOB0c1NzSb6Sp0rwr99Wm3nPpqURLItUqQVOpG8VN_wzCsnKu512ulgYuMl1t973lZG_I_yrLC-15rnTHGvGsI0fnTWrDOGiqNUrszVw==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0a0ed0af54ab9af2016a97c0748d4087d08a82f2ca7c4e5877",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3553,
+    "completion_tokens": 537,
+    "total_tokens": 4090,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00196225,
+      "upstream_inference_prompt_cost": 0.00088825,
+      "upstream_inference_completions_cost": 0.001074
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 4.61
+}

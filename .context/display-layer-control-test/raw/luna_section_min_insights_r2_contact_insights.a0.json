@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788505092-4yQSCmctjbwREkslAW6i",
+ "object": "chat.completion",
+ "created": 1788505092,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"contact_insights\",\"empty\":false,\"items\":[{\"h2\":\"ABM certifications and demand-generation leadership make Vari a growth-marketing contact\",\"body\":[{\"text\":\"Vari Kaur is Head of Growth Marketing and holds Account-Based Go-to-Market, ABM Advanced, and Fundamentals of Next-Gen Marketing certifications.\",\"claimIds\":[\"zaf-024\",\"zaf-031\",\"zaf-033\"]},{\"text\":\"What it means for us:\",\"claimIds\":[\"zaf-031\",\"zaf-033\"]}],\"contactRefs\":[{\"name\":\"Vari Kaur\"}],\"priority\":1},{\"h2\":\"Nick publicly frames Zafran around reducing unnecessary patching\",\"body\":[{\"text\":\"Nick Fisher’s LinkedIn article says, \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\"\",\"claimIds\":[\"zaf-159\"]},{\"text\":\"What it means for us:\",\"claimIds\":[\"zaf-159\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Sanaz focuses on operator capacity and self-healing security\",\"body\":[{\"text\":\"Sanaz Yashar said, \\\"And the biggest pain of cybersecurity when you come from the offensive war to the defensive war, the biggest pain is we don't have enough operators to operate all the different vulnerabilities.\\\"\",\"claimIds\":[\"zaf-095\"]},{\"text\":\"What it means for us:\",\"claimIds\":[\"zaf-095\",\"zaf-155\"]}],\"contactRefs\":[{\"name\":\"Sanaz Yashar\"}],\"priority\":1},{\"h2\":\"Ben combines Zafran CTO leadership with prior research leadership at Armis\",\"body\":[{\"text\":\"Ben Seri is Co-Founder & CTO at Zafran Security and previously served as VP of Research at Armis.\",\"claimIds\":[\"zaf-063\",\"zaf-069\"]},{\"text\":\"What it means for us:\",\"claimIds\":[\"zaf-063\",\"zaf-069\"]}],\"contactRefs\":[{\"name\":\"Ben Seri\"}],\"priority\":2},{\"h2\":\"Tom brings enterprise-sales experience from Okta to global sales leadership\",\"body\":[{\"text\":\"Tom Anthony is SVP, Global Sales and previously held four enterprise and corporate sales roles at Okta.\",\"claimIds\":[\"zaf-072\",\"zaf-078\"]},{\"text\":\"What it means for us:\",\"claimIds\":[\"zaf-072\",\"zaf-078\"]}],\"contactRefs\":[{\"name\":\"Tom Anthony\"}],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmwJVHhJ4YroVV9WsDpJE6_7HaUEIj8YZcNg-MYPUXyqaHL5UgcsN6Wi8QEtHiFXhzzp3ix8Isu9jLSTTOJSXu_-dpK70p6wM3hUuM_UARvtbmcF6j-DI1vg9lDyDS3njQFcKJRb68eF7QjyUCq-vUuU2z-cfSRnSDsDK7GHKCyhUs3YZZuD08SII0lcdzS74CCTUQaAeimHTTQw_J4U7WtGRrG7hIdhnZefxnNDbzdWL2_cbuDBKNpFKKhbN2o-g2ebXLFks2xMpwQ9zMuAhAd-xFOtGL19xz0Q5tCAuIqmpbRx3MLtvqhzYf3VEltMU-ZvoSu7oRy9IFKZntf-Rh6MYXrRYzbuVuDALN8KA2e07UhATwO0VMsnI-9mhdepipD6T0AWoqmbnsRx0Oqnwm1zDoavOn_i5sgeI4rYqkglp-KmL4h9_SeshDl-rr1XqX00waEASRbY0bQoHHraIB0wcqHHz2fADdgG8t6zCRVTsexyzPZdGqS510VtLcO-eiSybg0XHXDHhbM9h_LuroYyNPxsm0srdEl0CTEibPyzfem6idnP28BwMRYe4jxxXqQeOENx-feAmtyb1n8eKyc5EKOGvnllbrHRx6_VN36gMrhQGmPzvPddJLwYq4gJ-Q4ojNJ8q03kWDcaXCa796ZmYFTHGL0_ygszsJj3xZl4HwB9kZaczaEFE7v7u7oUML3PJEi_yR2TETvaupbO4LAxrwg-CZO-HbKQR0V__Eup80tQy5ngwPsZZEFQi-n_c62_5apdpUKMq10NdVTI43ZAhGrs4IgvhOG8b1n2ry9YIkheSxjVPusdSp705gjh9nNqlzRubsYPABo3fTW16DTnXw5H9xNw_xrLVsHsfdmEOW4cETTnn7vpt25WuW8X1DtW5Q4tDR381_Crg7Jc-7FWYr9DZ0U9TUWpxfDgQS888JXKJnWMFjBaZ4HqgNTGWJy7HpsWI8A1E_5rNRC3nVKqudXWPwbaWWetAJnEecrQ6rkqHaDuf31YbJQoMOHnG2dKIS8jQ3nlYQh9MRE38qvGx8wU4ym_3yZxhF9jLwFqvxldveCaa2RjKzdkx6kqFHkB0r4a5n6oKVLfT2sqJ6aUj8Uj5PhlRLzsVJr3_7f7s3NUmt6WRMU9SWPlWSNnoFw9I3TmY1aB_sOwIjcR9kqYVrQftZxWwv5N9kBTUagtAULlhOUDUmloN8rw6BpKtE2N-1FUgvKyCebUutVK7LpvWTvKZjSMrPnKMkVXgsaS7lAcUWq0UXZ_qWmoATJFqymzpe--DEA9cx0GavhQ7KCuZGylwexCL5BdzBW_LGkP0uTCYXTqMW1_ZQbRv9BahFIRoESB30SRkSAf5QM_tmBo9A2FYYwuvbuKvNuWr6tDYmU9aGq_pVR-JRl9BVT68rMXcwUxmVNMrLdsV9e_uA7XxVSrW-mA1Csbh2cNDI7GNO_rK_RLdQF4njRQrm6aoh845NX_CyLrm228Rkk_yMop5NSfON2ciiAbbDvMv7WHzZNk74HgAzNu9IxVpzFxZlwC_Vi55DnerHqvdWmcbtusXojcUqIw9G7HFnbsXdM722SGkM7qGNV5MC1b1sYaFO_8GMcjwZYV6stLNjjOuOx7sbi-EjfP0vRhBC9c2YFJXXbhR_eTR6fzxwGPFSOIW32YUycLVMsFLYDk1Ufk8O3Tsajcw1ON-BH2qhmLaj9I25_wo1oMbUOUvtn_gkn9hRTV9cnNb0e0S89KSgEKe-gZTaH_9713OC9VWvnUpJnTriQg1qQb5V5v5OCYCsCQLsFd9UKjFAX1li_B0ps_Z6gLzxy2skuS8-woi7VsS1o_JLyUD5uUaoBjakapQRBOorCpOrp7H5P7FLb5QXkD6i0Ngs_Zlivp4xHmBKLZFdB_pSFj01bzf7MWsLtfa9E1Bxk0els2WvTPb6xC1Y-nZcfERNeuxUq2mIgbrg2oPTFinvpaNtAQJl_1vCaAOdoPQvfwjszISX5bAiXVYzRXSOsLiXHP1Wp5WuYbuite9POe_shAZRPEvR5i0aHJA9-3Rvo5UbVsT7j6KzlDBFEwzE9zoD9CWr6MSd6piG57o10zRIa3O5FOibe8jojvlWXxiiFIAwH_6JxZDI_qhiji0IRgsOqjIuYUsZrZe__v2yveWGUpljAyTg4NqkgoEXG_UUjh41jp8XmG66tY5W6AgH-RbGecO8XpoxjJYO7NYRfc2himGaax45WyWVXOZ0JplMeIRNLZZ_j57X6WwqRSJrOG_cMNdsBlRG2mwaDc1Hq2vJtNhzN87xUyNVb95AK3tcx3nDD4Z-lolVryc2fkHWcwjMLAqJMb3WeDgD29ojLmTY4A6Z0MtDFFkhf2jsN1H76_8lICrs3y5jm_OWqGRo1YYJcUdj-V-ldUseCOuDbbO0Mf3D8E8mVg-6Q6vjbQCmIvPTsKCAoTTQGIIuet-qZnE6wXFBXxACKkJ3CKrBjSHJMhwqw_qVZpOsL1f_C_qPA0vZscjOifPuSN4Bhf-WJN3_QWDqj1up3jooVTNFEII43MA7nKEmU9i5MBote7lei00AuH5zBDUGQ6rVfauSDltdUggNH6Pg0TxfOY6sdRUUycICl-ES1xuQ_wSefBMDXgOFkAkU83_VPGgNj5gB-EQnvcbHRDVmrdU3Yj0cx4usci0aHu67xvvPVHrBdvcsyQHpaVK_4qtyM-fwUhoMvMjq9tDEC1dsjmeuUKbxkeWtzaBkG7xUrirzfRR7_OsgJ05i7-2bDmBo-Ku46spv8ORdKmLk1Tbwx-rNUWa5Af1ObkjOuOf_AuxgMyokjQEtCVyiToRWU-TNRu_UflwNts0oLBS0msIzh2Up5ZqQ-USyU1IfJV2SyGI4GD_gajaCohdEyeyBqRwDjwkZTkVvsibOrA-r0z5hpFALl9TJSkJzTYC-SpUDxJd9KelmjAQQReFunuIg3oe00SB6INaB-aZckao8fBIBMST5x7IJ9iUMhDx7Dbz_NO1ztnkgZwXvwZj27tSg8SvdvcQA08CTDLPOwdoyNiwj0wOk0PHLkLRsf-9UerzhV0WfHapTSQhaRJEdEFWQk1iMWVj3eWgwNMuWyV_T_-fCt60lblsXc4K4qUoBqX5GAE6amKeZPqulZQEB0pU2lUPRyt_wwCXneWZkBDOoBfameNBLWvMtTEO7CaxlUxM6i5wNZK_WBDV3BdzoqCcpEXfF2V8ze7di8ElnnC-PWezNX3R_m1AH8SfVwlcvxedwEgo3Qhax_sAeCzXEyFBVVCHT15cfbdWoPgNhWk9l77pUgpCzHGlsJ50onAEN6PPBC9BWSkdUlz3WeDvX7WpGQrlqsXOjm1t4p1mzRl78i7DKQFmat7ff8TgTYcbJyfznQy-sN3zcvjfbu9ntEzTksZI1sIjlqJhbSdPyMnheWq6nL42FDYjTQHkWuCg9e3Ymq9uk9wpVBqgTRxkHV0eG8b5rkxg1qXBkSELQwqX72Drh1AzeMsDBdr_vEj7G8bZSdiuWuHgYvHfNgv1VAeTHM23_spSX2FMqgU2O2nivBCIU7NcDX9dnKq68CotFS7g0dqoWjnCuyXCQW-oA_iHzzqxs5n6jHp3KmMm2S_y-0HIXrjE-Aw2I6dtsy37uOxJIh0wyxDjhxy743qTauHxj3geZLQqfQJLsFsfdcr9RTuknP4ovefj2SLLBUSRJ5vIf2mbqMiQTDMZDXVfYaDMXRsllmt3nYoXs-329OfdxTxc_xllVceKx2QtHv7NLzZ4k7ijS9uE5ITSDpOX_kPSoS79rqam_uKB0hWDc3P8V-x34zFHnxU6M1pcRuOCsJSDMG5-uyoxttk1SPkC2qoxhCQKrF_OJ7joDEmggdQ0uVZAhZnPKNjHitxaTVJ4dVdgloBw3hLZ_qZLhAzKkRtlR1x5ZRRh98fN6YLwXiIbXlZPlmYa32Yq3hCdbvSjuTHZZJMx7DDA5HgZdlTyS-m_MkvAI8b4OVx7-QgIT9MYM9qb2x0lXGi0Dc_MUkorQufP9org9JiVwEQlEk0ekAHY1OhOZaYrGURIyRyq4DODjLUyX7HoJN5_1xZ5R83r41JiE3bGKkyz2xiFUuvqx6HZpTqoE7pGDS5LoFvAyQyyuTTkr6pzaOVdxejN-GITzjTPr2SryGG1gDbC09fjjvg3mb5PogXs1PhhioSa1iN6WW6CzOItbrGIbDK_VNcu-q_TY2Ev2BMQObeJK8ODD-OMvUYvXSGYEVNa4mdHtEB_61ag1ET49fBZI53FMpQ-gxG8lnHGfjBgDZjeoHgpGtcfocrF-RXSeHtM3Fg_QY-oDzCaFExsr6rKhspLC2bogqA2puzDXOm6qUA77MROYDkVE7q61YEh0H4LD71mpKndk1BmpyB6jmCzXsrBTHJ9VgDkVshZu4Zy8whEFY__xnrJZnQb5Jid8JpbtIqxg==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0d51709a584fed1b016a9a6c0537c087d080933a4e5a7959bb",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 8361,
+  "completion_tokens": 1054,
+  "total_tokens": 9415,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 8358,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00143256,
+   "upstream_inference_prompt_cost": 0.00016776,
+   "upstream_inference_completions_cost": 0.0012648
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.34,
+ "_attempt": 0
+}

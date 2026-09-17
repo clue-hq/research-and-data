@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788505125-bs2fx3DCN9uufFSSM3fK",
+ "object": "chat.completion",
+ "created": 1788505125,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"money_momentum\",\"empty\":false,\"items\":[{\"h2\":\"$60M Series C announced December 2, 2025\",\"body\":[{\"text\":\"On December 2, 2025, Zafran Security announced a $60M Series C led by Menlo Ventures, with the round bringing total funding to $130 million.\",\"claimIds\":[\"zaf-125\",\"zaf-124\"]},{\"text\":\"What it means for us: We should position Clue as a way to support the account-based growth and global expansion associated with this new capital.\",\"claimIds\":[\"zaf-125\",\"zaf-144\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"$130.5M raised across 4 funding rounds\",\"body\":[{\"text\":\"Zafran Security has raised $130.5 million across 4 rounds from 9 investors.\",\"claimIds\":[\"zaf-017\"]},{\"text\":\"What it means for us: A conversation about scaling personalised account research and activation is timely for a company with this level of reported funding.\",\"claimIds\":[\"zaf-017\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"167 employees and $10M–$25M estimated annual revenue as of August 22, 2026\",\"body\":[{\"text\":\"Zafran Security has 167 employees, and a provider estimate dated August 22, 2026 places annual revenue between $10 million and $25 million.\",\"claimIds\":[\"zaf-005\",\"zaf-015\"]},{\"text\":\"What it means for us: We should keep the outreach concrete and focused on helping a 167-person team execute personalised campaigns efficiently.\",\"claimIds\":[\"zaf-005\"]}],\"contactRefs\":[],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmwq3XgWshSeTTqFRt8a9Ck9f5OJddL4IzmkYFI-BiedIBr6rQtn_ro3doKrr4lkwmuWGpGCrF3LkkiDswrKNBm6VnsjIn6LpZsBxTJ1ay8B1uGMGn_S6g0wPyzGhLuY9Brni2U5K2o1mAoDbVcxQM0LY1mfbw8DBC6gP7iTXnLAzU-wVmCR3eyVte2i8p0hB8GWi59dyDkOKzP-H7UEKNymwDVjdoMBKncpa-SFyh-FtcTtCr0SacgO2Zt6rkBFz297GuDlkPOF7ZfXv-LuSUQVwRCCDScXotLz4gl6T45ExkHlq05AjQL7gJch2jFO4aaibexinjfZDtPHjjz_PTY4vreWUwcXjrbjI1w9X12dfgxGh6pNRv9Qrj1hD7QlESDoCL5XKBaZCdx5gKQcDU4c3fB-mSi7PmsaKArTua5zm7ehash8vwF0X-TSfz4qYIuqVo95NdSWidNinjKJAenMGDStKxwvoOPGqCIlaCSEOzb5XIy2n_7Z6z7M5lXmuu_EncFHdsmLvI06jCBUVxceyUEF-UvL_pemlyIF3ZTdvlwlu0JIl_n3ipYeFGmtlY1cufWD5494h5Xuf5vRsOX0KoaQ5Fcp_fvv-Xq_M85U-kavJzuEows-b5xSi9Y_MXIArPF0r97Zsoj3K-3m-OZwRqElEuLd0S2iixAvZK8fCqMOaSPNKUwUKb3iYrWztIDIopXs2Yu-JvOpRkqwI6y0WevfsutQ1aiGIfFtVxPuFcQPCN4VNUPgx6R80x5-mjNIoTvDWCTumcvAz53vlPPabKRUh5CJd43u0HPsqKgoMrCKyX4XT7XLpw5i6NElbcmKRjo_vaMl30tudMgVcjnC8vvMgYz47JzRKrwh1Mg1o7knP5b_6xQyKPzxy6zmkRO-85ECDDq4WjXULg0A8Yl1-MSvX1jf4pZZU3OP_5EDOQIck-pNUjS6RRO8PikUHeMxJizOkAgvso7HATLprmib5TxHJzqG0thBXXvH1O1gIVC8BuH3Vj_SImi3-OK9ZzXRx4K2J0ec7rLtRrJRcxotf9AEZVCgnJhtSlfmDkov_FDUgFtG27EmxNzyYQfHVYzq_brLOWHysEE-TfY_pm3Q-fNNPie5xQYtcVZb8NgzDj867mvgYzRKxsSjV2dgEh5lPzmimcIbZUs-wC6113hfZYvVR1qrvaKqLZaeYsTX_foy40btgxxPS6tk7AcUvSFiSTq26YFxirQxtTs_tFZwJKkxp-kpav7bWE_T9cD0TA-w5lVq54vcp2awfkyrPgTMqaxuoiPUvxOreA2vWlUxSGCFS1gH7ZJnGf7S4pnyyxuUBXeHbT4yRG9pu_C546zbWidfWXEsoAus8ut0cqP6uBsS4Qa7UuKCVWr_ex70LQ4q-ql_rwyy_Lyxh98hIn2qrGlt8h0svXJq4fq0n_478lF2UtZ8tg9PqrmKhCQ7c_t8tbilJjBAvycv4x4TW73J2CHQrVXELO3r9Dp9lzjReHDUeMRyV-_FtNE4XazvszBitCMU3jGJbgTvbgEZ_eMJ28CiU4OztXjqmcFWHDfR0F3anK3j4C-qZkWYC2K0j5XTFUyHvWJNtCmKXsCpcMqIbRLj8kFfeUxmN9neDnHsTRAqSwISZNxl4osQijxiH30qR82XYgKX9MtM_PuLje4T1XClgn6VQLMmpHvNFRm5Vh0vP6pJd5FUMBMEF4zTmG8fLcSvQmsCeZAYV8BZuclFOeZM05IrQoRtpvXb9iD9JnZaXluFU22iAQS9b4lmX9bEksHq6kUKiEjoYBF3KJRpCnpA8V8lbobOxy3fwzC4DJgitNOvrlVVTA3LCuIcw3QmFnxrLcs304oK4enDZ4nb2DeKyrA_oFPpNdc-_28IesvmCMBq9hrhT_-pb8fCiPpF1ain0RW2qps2OfuUjRscwkLeu6_T4RG3eEdwBCRrC7shxxSgXNK1x3XuBlPeCSLpXXMIyqXADj-C5sg5p42vCARRxLKGxVCBSkHJl3RwTtvroAK9k8YAN62pXXS9lnpzeI-hc2vRHRbiGALIv2hC1UN-3wYQ4IhJljhMaq7G8KfwAxVah5grXKwB4sp6QQ8piKHsz-EaZrmpAoYrXDebkWz_fc7fDnlrFcDq__2DKPdFsrB3rQIRL9aho_J3Q76_c9MAofd9XxjFwgi97K_tpCW8K5CLJRai3pkg7fB6lCooZ4FKr901LR27ladQWZoF0yKA8_NTI1vjqIN-Zn2hyuCHKGAs5Qj0qwZ_TGxDVaw1oUTJxvJ3Ad1cpFk_9CFbTb0zhtPlsnd_fqrWRddOzCaoydp7uE4Z0zFfiSQR_dkBaqgIxvr75lsVG5PnXv-kNk2KyJKIQXCHk4SgxnnMEmdh-zunXpLZdMl4CLjpcMjYjGIPSJXEUxFkbbeWw66gu3LU1BDwy1Cwpghr-UW8wdkX3XAaf-Z0czbQcd5op6RlO7kRlTu0SzEDkf8aPnOCuVCT79EapoZrpYEk1oPrsm8ya-MWJf89OSWXi7Fj9sJeHjJ6y5Vx5lYxmUpt1R9RiqVpSWOaZmw8rUurcPqQcJmmMS23Nr5SPQLpfOtXu4Jqm3fc_PPTveqn1Or3vpaVqQY8O2d928mWEw50zL3WjS3YGxp3KkLFm-4y7jeqiwSUgfhvo-M80DMrfgOdlYlawrvoolRxyWF6ZmIea3nGkLTsPLdEYwwyX5r07u3r01fFoCNV2kG3rkAB9bkvPmxNoK2Vv3w5umwfbPlifsGt7bFTd0cXJ6NxPOERvQYrzM7VOazblAnE1tFDouj9gpiJe9H2dtIn8GzUFwGLiY8jO4-h-MzvYQFV2vUcrlOcJHgbEvMdhZDzKJLfc7h8QnNwE309taFUYYmT73tEUZ0ibkiHy0V4gOUd52dpKReK8Ejh8Nism0AH8xqFemTmWpUKqY_fAyVl_NXbJiXU3qF0meWlwostAdqR6AekiNpCAK9u8dLxvsRkiZoSw_MGiarAp12b_CTzfXqv8mzeajrZLoiSMVWwedumL34IQhBoZHqnMF8BQr7OpGynN-cb-LsqQCXXXsXKyEh21A5ri13TBtNDmdQSAXendcQNfaPrW_-7b-y1Oh2Y47XY8SpXujNrmkVSjGNg6VvC5974S5_m2UbP8taUKGtoCn6F2GxfIsyUEgS313dSnXGjJXQVmncdUImpGTS5MqNP-6RTcDsYEWdaXX_D0o8Tx2TjV4DtGLBCQAtwyfsSDdYJu4srHINUbpWkvCxD404Mu2lQsOqzQ68cPltRs_UAoKAgTS2SL1Y0oDrZkFZCYa3C0ekLiCaHSR60eMsuZ2oHoVzEQmuzzvEJogHMgIAknXfkRv_sf8gP0P39Jp3jI3HySN8g6XLAWot3Vr5nt81mJD-rCSqSuNS72A4OV7mWU_Qp_dSD3btnHzktNGsHRf4oKdMK_lqNdhDshbI0AtbWqBsStj1e5O-EogVdlOSERrlEWxWAf80DQh2B9IYZD2BMdJKVLUqCWIYd_i4nWd70TyKJnlieo4kH8iPTRMkd8AOx5JzgJr4kOJi2x8T82cbdquoeKdyzqmGZM_6VaAcywX3G59w2f1jNk6mmB_hsouJ6weRiQLfKEg-mLrLMFadLSHjbJFDPRdhe2l3r96rSNM1R7J-qGYzzhbzQUGfZXVkDwJQf0gMjNzChmDJFo2uCY1Gh5ZZbJQfDSVImGPwNGU7f25PlKEQM_LkWQJGIFe-AFEQbJoEEJ73PjyMf703hb--HjpRhzn5rxSsWoFDMAFML408TJMqghWem388FrHRjDaZ8ENUi_9og1aK_EML95zVvD2BZkfAClkqghRrsLR5krlvfy20-dhQWnleSAN4-R-W8th8EBGAIBnNVg4OXDsR6xTUxcDSCoaYdXJD3MxhzBuvIOEIUOnnMgCPgJgea7Slh_VqjJ2n9iV3suf_eNzyAu87b5-EF_uBPioshXai_qi-wJhn6cJaXStTaLbczmK-pQVBIwn9dgMu2TBNX5M8bo3dQq8UzPha1EvSaI5COwXNCniCNkyHuDxxav-LsugswLHyzlb4rKLSGdwF1ZMsjNQokkKzPHnr6MDlK76kPC3VRfwXMcy3ud4QnIeBDOF3roZNNjCHJHQ0e4yUL0d7fdIlSjRGnKyWZ6TAjOxnDw5aQUiNwkV0iSCFJu4u7sHwsIV7BxE0KECrBU0anQlyEWM0dCWVWMBteb_fXG0xFzK1wuWwctPnBAEjxLqnTZsVQOLb6IVHqyBo8h7eVstOyb86kDNFx-U7Y4FeqxnMwbE78kGmjwIvYSaBypK9hpOosJlVQUw5rcODVubdSVpJI0LYkHy9ZRQuoLmzCYZoh-zvc5ChwOfM7sBuH8FghVzeYSkRC7YAHnUobG-VxeSDT8Wod81gvBEHaAFsoFcwVWMq_.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_043c2b43e0e76b34016a9a6c26324c87d0b7fdd17bb0399550",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25232,
+  "completion_tokens": 891,
+  "total_tokens": 26123,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 25229,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00157438,
+   "upstream_inference_prompt_cost": 0.00050518,
+   "upstream_inference_completions_cost": 0.0010692
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 7.07,
+ "_attempt": 0
+}

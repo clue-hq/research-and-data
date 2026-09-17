@@ -79,12 +79,12 @@ Keys whose values are machine-specific (audit them all; the rest of the file tra
 | Key | What it must say on YOUR machine |
 |---|---|
 | `CLUE_DATABASE_URL` | your Postgres, your database name (the sender's names their worktree's DB, e.g. `clue_colombo` on port 55040 in Docker) |
-| `CLUE_DEV_DB_URL` | the same database, `postgresql+psycopg://` form, for `scripts/dev_stack.sh` |
+| `DEV_STACK_DB_URL` | the same database, `postgresql+psycopg://` form, for `scripts/dev_stack.sh` |
 | `CLUE_REDIS_URL` | your Redis (`redis://localhost:6379/<n>`) |
 | `CLUE_STORAGE_FS_ROOT` | the **absolute** path to this checkout's `.artifacts` |
 | `LUMEN_CORE_HELPER` | the absolute path to `subsystems/clue-design/target/release/lumen-api-helper` **in this checkout** (built in §3) |
 | `CLUE_AGENT_WORKSPACE_ROOT` | a scratch dir you own, e.g. `/private/tmp/clue-agent-workspaces` |
-| `CLUE_DEV_FRONTEND_PORT`, `CLUE_DEV_DESIGN_PORT`, `CLUE_DEV_PLATFORM_PORT`, `CLUE_DEV_PLATFORM_PORT_2`, `CLUE_DEV_LOG_SUFFIX` | your port map (the defaults 3020/8010/8020/8030 are fine on a machine running one stack) |
+| `DEV_STACK_FRONTEND_PORT`, `DEV_STACK_DESIGN_PORT`, `DEV_STACK_PLATFORM_PORT`, `DEV_STACK_PLATFORM2_PORT`, `DEV_STACK_LOG_PREFIX` | your port map (the defaults 3020/8010/8020/8030 are fine on a machine running one stack) |
 | `CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN` | `http://127.0.0.1:<your design port>` |
 | `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`, `LUMEN_API_CORS_ORIGINS` | must include `http://localhost:<your frontend port>` |
 
@@ -97,13 +97,13 @@ Then the remaining flags to check in the root `.env`:
 
 | Key | Set to |
 |---|---|
-| `CLUE_DEV_DB_URL` | `postgresql+psycopg://<your-macos-username>@localhost/clue_istanbul_dev` |
+| `DEV_STACK_DB_URL` | `postgresql+psycopg://<your-macos-username>@localhost/clue_istanbul_dev` |
 | `CLUE_STORAGE_FS_ROOT` | the **absolute** path to this checkout's `.artifacts` |
 | `LUMEN_CORE_HELPER` | the absolute path to `subsystems/clue-design/target/release/lumen-api-helper` in this checkout |
 | `CLUE_SELF_SERVE_PROVISIONING_ENABLED` | `1` — **the flag that gates onboarding** (see §5); defaults to off. It must be IN the file: exported by hand it vanishes on the next restart (2026-09-08 incident: every new account got "Provisioning failed with status 404") |
 | `CLUE_DESIGN_API_BASE_URL` | `http://127.0.0.1:<your design port>` — the setup screen enqueues the brand-kit fetch through it; empty means no kit is ever born |
-| `CLUE_DEV_FLEET_WORKERS` | `4` — worker **processes** `dev_stack.sh up` starts (founder ruling 2026-09-08: at least four) |
-| `CLUE_FLEET_MAX_CONCURRENCY` | `4` — tasks each process supervises at once, so a second chat's turn never queues behind a first chat's design turn |
+| `DEV_STACK_WORKERS` | `4` — worker **processes** `dev_stack.sh up` starts (founder ruling 2026-09-08: at least four) |
+| `CLUE_FLEET_WORKER_CONCURRENCY` | `4` — tasks each process drains at once, so a second chat's turn never queues behind a first chat's design turn |
 | `LUMEN_BRAND_AD_ASSETS` | `1` — mounts the ad-library routes (see §5b) |
 | `LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS` / `LUMEN_AGENT_WEB_SOLO` | `1` / `1` — the design agent's transport and the solo web loop; both ride in the copied file |
 
@@ -193,10 +193,10 @@ has no ads. Keep retries bounded with `max_pages` and `max_creatives`.
 ## 6. Run and verify
 
 ```bash
-./scripts/dev_stack.sh up          # frontend, design API, two platform APIs, CLUE_DEV_FLEET_WORKERS workers
+./scripts/dev_stack.sh up          # frontend, design API, two platform APIs, DEV_STACK_WORKERS workers
 ./scripts/dev_stack.sh status      # every port UP and "fleet-workers: UP (4/4 processes × ... slots)"
 grep -m1 fs_root /tmp/browser_fleet_worker.log   # must print THIS checkout's .artifacts
-grep -m1 '"event": "worker.start"' /tmp/browser_fleet_worker.log   # must show "max_concurrency": 4
+grep -m1 '"event": "worker.start"' /tmp/browser_fleet_worker.log   # must show "concurrency": 4
 ```
 
 Open http://localhost:3020. For a plain smoke test, sign in with the dev account in
@@ -216,7 +216,7 @@ worktree's stack).
 | Design runs die in ~1s | `LUMEN_AGENT_API_KEY` / `LUMEN_AGENT_BASE_URL` unset (the OpenRouter key alone is not enough) |
 | "Clone blobs missing", agent composes instead of cloning | `CLUE_STORAGE_FS_ROOT` relative or wrong |
 | Setting-up screen sits on "Preparing…" for 4–6 minutes | expected: recon and the brand-kit fetch run on the workers; the page releases you when the fast lane completes |
-| Second chat's message does nothing until the first chat finishes | `CLUE_FLEET_MAX_CONCURRENCY` is 1 or `CLUE_DEV_FLEET_WORKERS` is 1 |
+| Second chat's message does nothing until the first chat finishes | `CLUE_FLEET_WORKER_CONCURRENCY` is 1 or `DEV_STACK_WORKERS` is 1 |
 | Brand context shows the kit but the ad library is empty | expected until §5b has been run for that workspace |
 | New account: "Provisioning failed with status 404" | `CLUE_SELF_SERVE_PROVISIONING_ENABLED` not set in the `.env` the platform API was started from |
 | Brand kit never appears | the design API was down when setup fired; it self-heals on the next replay of the setup screen |

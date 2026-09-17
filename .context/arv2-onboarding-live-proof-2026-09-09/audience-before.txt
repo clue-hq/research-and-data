@@ -1,0 +1,6 @@
+audience/icp-athenahealth-specialty-organizations.md|2|proposed
+audience/icp-hospital-affiliated-clinics.md|2|proposed
+audience/icp-independent-specialty-groups.md|2|proposed
+audience/persona-athenahealth-specialty-organizations.md|2|ready
+audience/persona-hospital-affiliated-clinics.md|2|ready
+audience/persona-independent-specialty-groups.md|2|ready

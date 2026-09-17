@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330110-wZOUlcdawYr51xBTNwHZ",
+  "object": "chat.completion",
+  "created": 1788330110,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Cameron Coles publicly framed his move to Cogent Security as an opportunity to 'define a new category' in vulnerability management and emphasized that security teams are 'drowning in alerts' \u2014 positioning him as a category-builder focused on transforming vulnerability prioritization rather than a conventional product marketer.\",\n    \"evidence_quote\": \"\\\"Security teams are drowning in alerts and struggling to prioritize what actually matters. Vulnerability management is overdue for that transformation.\\\"\",\n    \"source_url\": \"https://www.linkedin.com/posts/cameroncoles_im-thrilled-to-announce-that-im-joining-activity-7396260224229081088-AXVZ\",\n    \"why_generic_tools_miss_it\": \"This is a personal positioning statement about category-creation and a diagnostic metaphor from his own LinkedIn post, not a r\u00e9sum\u00e9 item or formal job attribute.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": []\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8B-iK76tSu8vKSAx4Kgo5osvVRBmuaSehaZWvG9VfreRaLa7fkuw6QWQIsFJM0TcQf8vHckY5ZD-1j9TtC5q6r04tynMJCw1ozF46GoVh0o-QfWppbX5xp9CpvORHwxdhr8qx9hze2LbGpUQCPyoy3lvYLhadx2pJTHTeiqnoi0dF3l5e6JJ3GV7wYUUwcV-F2fQUVJM1cnfAa7Nu4qiKULvHIc31k_lkBZbdwFOIWYKcocjlUziR2J-zKIE7TyT7ATvEAvOGnDEAMpvX522BufZICB5lqK4y-V-XiNmTWtK2dRw6ndC3vxSBojt5M7u-mvv5NmQMlI9KSzYt8dcY8ntJ5hC28toVwb6vukijEf0C6CNjdj6W9zXBQ8daOrKMTRs_vFiOfuMl7VJnx23_uN0pUiFsgtlJbytVMSN2D7HTXxddepLiJJ6xYera5vm-WZI5nH3BQe6TFoxFEfUt-CNyPz6Xfx2cja9iQ9kSmhdtmNh4tpMhoYcKdX648l1-zwtJSqS_p3oK-C3WPOYw6WD2Dy2hKqINbH0F11TwK2O16tS5QPYjsM4g3eUj7WfCxr4T-pOAnxpm2YC6RO3wR1pDuHYbkigA3pXYApTEbLBK9SRuHaX1Cop1fN1iVdzc_mqXfgCFkYYh_U45Nv0MaEVys3MrhBYfCEo3e5VjwSIK9iuMKSpXdfeLRzyhQZ-rEVrLkbMagd-SDTva9tEHCtnk40Yseov9pNA6LkuIswzfv7EmtsExSojr2srpGU0YlXvOi48kMAwMhUzb0B5k7_LJysKEkPV9_ppVzMj8Zp4Da54jf62FIsqK0i7r28rNjD0oQFkt23u-38e-Fbr5W3sK7DileuQx2T7Ka6Mt7r7ESq2V15TkxmvQhSSNpXMjpOTqAMkyDm7U9LT9XXCJ6XedN4RW1wr1K2322gq5vSY9vhMR3kVnRXtBQkwvx_OPULJaE6FHmQb1mlG6lUuX-Ea_SMTK-DO-iDTix2hRqTFchudhVOGqaSiykZXZD5SVLK47RSkjmeg76GhqhWGRrmbzKe6A1dc4eRsXebpqV_g0mlxejn7yIwVi4quqn1Jl-glfHVpIqSNnIGkB0IUa2QUr1zc4Sj-3wL0VGdpMVCyuw2nSaAQZTzuPWySOGwzH8DUwgob8n-BUlujL9qCbjbLfxgy-_lgqPwKbY3oUMeYgrxiCMhov0eFc0EjJ1OUPdRvKhpG9N6tIGi_3h3CR_kM7pp4KC4HuJJO-4kayWJIDpwuJoBsJNIZVpxbX5PE2C3oJdcCqPi0_ztP___wLGmyRJ_PswucfeNLBOjWFjlilqNZwK7GGZhJRA-udYZrrmWPJnW8rSZQb5FEjAL0-XqJSYoXfNdPQ41dBHj7HkDXVo5FnGVKTuFlEsCxGkaMADb-gAga8lHcP3TEyTbls4JPw==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0a5e849434a8f8db016a97c07ec8e887d08770c1ab1809d9ef",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4965,
+    "completion_tokens": 223,
+    "total_tokens": 5188,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00168725,
+      "upstream_inference_prompt_cost": 0.00124125,
+      "upstream_inference_completions_cost": 0.000446
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.84
+}

@@ -38,6 +38,7 @@ import {
   applyChatStreamEvent,
   composeTranscript,
   emptyTranscriptState,
+  mergeThreadMessages,
   seedDesignLeg,
   type OptimisticTurn,
   type TranscriptMessage,
@@ -68,6 +69,7 @@ import {
   type SceneStreamFrame,
   type SceneStreamState,
 } from "@/features/design-editor/adapter/scene-stream-cursor";
+import { ProjectPlanWriteTracker } from "../model/plan-write-signal";
 import {
   deriveThreadStatus,
   threadLabel,
@@ -77,8 +79,14 @@ import {
   type ThreadStatus,
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
+import { withPolledResearchTasks } from "../model/research-task";
+import {
+  streamTaskWakeSignature,
+  useResearchTaskPoller,
+} from "./use-research-task-poller";
 import {
   applyTurnStateOverrides,
+  EMPTY_QUEUE_CONTROL,
   isTerminalTurnState,
   isTurnLive,
   MessageSubmissionGuard,
@@ -88,6 +96,7 @@ import {
   type ChatTurn,
   type TurnContextReference,
   type TurnState,
+  type QueueControl,
 } from "../model/chat-turn";
 
 /**
@@ -142,6 +151,9 @@ export interface ProjectChatController {
    * refresh, a canvas reload nonce) belongs to whoever renders them.
    */
   designRefresh: DesignRefreshCounters;
+  /** New project Plan writes observed after this thread visit's initial server cursors. */
+  planWriteRevision: number;
+  writtenProjectDocumentId?: string;
   /** True when the thread is known to hold an open design leg — observed on the
    * stream, or seeded from the durable thread read. */
   designLegOpen: boolean;
@@ -208,6 +220,10 @@ export interface ProjectChatController {
     turnId: string | null,
   ) => void;
   submitting: boolean;
+  /** True while older transcript pages remain below the loaded window (C5). */
+  hasOlderMessages: boolean;
+  /** Fetch and prepend the preceding page. No-op when exhausted or in flight. */
+  loadOlderMessages(): Promise<void>;
   gateFor(part: ChatGatePart): GateCardModel | null;
   gateAnswerForTurn(turnId: string): GateAnswerDisplay | null;
   submitMessage(
@@ -223,6 +239,10 @@ export interface ProjectChatController {
   ): Promise<void>;
   recoverGate(card: GateCardModel): Promise<void>;
   stopActiveTurn(): Promise<void>;
+  stopPending: boolean;
+  queueControl: QueueControl;
+  resumingQueue: boolean;
+  resumeQueuedTurns(): Promise<void>;
   retryTurn(turnId: string): Promise<void>;
   selectThread(threadId: string): void;
   createThread(title?: string): Promise<ChatThread | null>;
@@ -263,7 +283,20 @@ export function useProjectChatController({
   // (single-mechanism rule, Phase R).
   const [activeThreadId] = useState<string | null>(initialThreadId ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // C5 backward pagination: the durable read serves the *newest* page first and
+  // `olderCursor` names the preceding page. Seeded once per mount (a thread
+  // change is a remount), because later `loadConversation` reloads re-fetch the
+  // newest window and must not reset a scrollback boundary the user has moved.
+  const [olderCursor, setOlderCursor] = useState<string | null>(null);
+  const olderCursorSeeded = useRef(false);
+  const loadingOlder = useRef(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [queueControl, setQueueControl] = useState<QueueControl>(EMPTY_QUEUE_CONTROL);
+  const [localStopTarget, setLocalStopTarget] = useState<string | null>(null);
+  const stopRequestRef = useRef<{ turnId: string; settled: boolean } | null>(null);
+  const [resumingQueue, setResumingQueue] = useState(false);
+  const resumeRequestRef = useRef(false);
+  const conversationReadVersion = useRef(0);
   const [turnStateOverrides, setTurnStateOverrides] = useState<
     ReadonlyMap<string, TurnState>
   >(new Map());
@@ -277,6 +310,9 @@ export function useProjectChatController({
     ReadonlyMap<string, GateAuthorityFailure>
   >(new Map());
   const [stream, setStream] = useState<TranscriptState>(emptyTranscriptState);
+  const [planWriteRevision, setPlanWriteRevision] = useState(0);
+  const [writtenProjectDocumentId, setWrittenProjectDocumentId] = useState<string>();
+  const [planWrites] = useState(() => new ProjectPlanWriteTracker());
   const [designRefresh, setDesignRefresh] = useState<DesignRefreshCounters>({
     feedRevision: 0,
     canvasRevision: 0,
@@ -510,15 +546,32 @@ export function useProjectChatController({
 
   const loadConversation = useCallback(
     async (threadId: string) => {
+      const readVersion = ++conversationReadVersion.current;
       const [messagePage, turnPage] = await Promise.all([
         repositories.messages.list({ projectId, threadId, includeBodies: true }),
         repositories.turns.list({ projectId, threadId }),
         loadGates(threadId),
       ]);
-      if (!mounted.current) return;
-      setMessages(messagePage.messages);
+      if (!mounted.current || readVersion !== conversationReadVersion.current) return;
+      planWrites.seedHistory(turnPage.turns);
+      // Merge, never replace: the read serves the newest page, and replacing
+      // would throw away older pages the user has already scrolled in.
+      setMessages((current) => mergeThreadMessages(current, messagePage.messages));
+      if (!olderCursorSeeded.current) {
+        olderCursorSeeded.current = true;
+        setOlderCursor(messagePage.nextCursor);
+      }
       turnsRef.current = turnPage.turns;
       setTurns(turnPage.turns);
+      setQueueControl(turnPage.queueControl);
+      const pending = stopRequestRef.current;
+      if (pending?.settled) {
+        const target = turnPage.turns.find((turn) => turn.turnId === pending.turnId);
+        if (target && (target.state === "cancelled" || !target.stopRequest?.pending)) {
+          stopRequestRef.current = null;
+          setLocalStopTarget(null);
+        }
+      }
       setTurnStateOverrides((current) =>
         reconcileTurnStateOverrides(current, turnPage.turns),
       );
@@ -535,8 +588,29 @@ export function useProjectChatController({
       );
       return turnPage.turns;
     },
-    [loadGates, projectId, repositories],
+    [loadGates, planWrites, projectId, repositories],
   );
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeThreadId || olderCursor === null || loadingOlder.current) return;
+    loadingOlder.current = true;
+    try {
+      const page = await repositories.messages.list({
+        projectId,
+        threadId: activeThreadId,
+        cursor: olderCursor,
+        includeBodies: true,
+      });
+      if (!mounted.current) return;
+      setMessages((current) => mergeThreadMessages(current, page.messages));
+      // The walk's own cursor moves; `null` means history is exhausted.
+      setOlderCursor(page.nextCursor);
+    } catch (failure) {
+      report(failure);
+    } finally {
+      loadingOlder.current = false;
+    }
+  }, [activeThreadId, olderCursor, projectId, repositories, report]);
 
   useEffect(() => {
     let cancelled = false;
@@ -599,6 +673,9 @@ export function useProjectChatController({
     (threadId: string, turnId: string) => {
       if (attachments.current.has(turnId) || attached.current.has(turnId)) return;
       attached.current.add(turnId);
+      // A newly submitted turn may attach before its first listing. Its entire stream
+      // belongs to this visit; existing turns already have their cold-load cursor.
+      planWrites.seedHistory([{ turnId, lastEventId: null }]);
       const handle = repositories.stream.attach({
         projectId,
         threadId,
@@ -682,6 +759,10 @@ export function useProjectChatController({
                 }
               }
             }
+          }
+          if (planWrites.observe(event)) {
+            if (event.part?.kind === "plan") setWrittenProjectDocumentId(event.part.planRef.objectId ?? undefined);
+            setPlanWriteRevision((revision) => revision + 1);
           }
           // Genweb slice 3 (founder requirements 1 + 6): the gallery and any
           // open canvas refresh exactly when a durable design-leg transition
@@ -812,6 +893,7 @@ export function useProjectChatController({
       invalidateProjectCatalog,
       loadConversation,
       loadThreads,
+      planWrites,
       projectId,
       repositories,
       report,
@@ -846,12 +928,12 @@ export function useProjectChatController({
         agentProfileId?: string | null;
       } = {},
     ) => {
-      const trimmed = text.trim();
+      const trimmed = text.replace(/[\u200B\uFEFF]/g, "").trim();
       const contextRefs = options.contextRefs ?? [];
-      const hasDesignReferences = contextRefs.some(
-        (reference) => reference.objectType === "design_asset",
-      );
-      if ((!trimmed && !hasDesignReferences) || !activeThreadId) {
+      if (stopRequestRef.current || turnsRef.current.some((turn) => turn.stopRequest?.pending && turn.state !== "cancelled")) {
+        return { status: "not_submitted" } as const;
+      }
+      if ((!trimmed && !contextRefs.length) || !activeThreadId) {
         return { status: "not_submitted" } as const;
       }
       const agentProfileId = options.agentProfileId ?? null;
@@ -993,27 +1075,50 @@ export function useProjectChatController({
   );
 
   const queue = useMemo(() => selectTurnQueueState(effectiveTurns), [effectiveTurns]);
+  const stopPending = localStopTarget !== null || effectiveTurns.some(
+    (turn) => turn.stopRequest?.pending && turn.state !== "cancelled",
+  );
+
+  useEffect(() => {
+    if (!activeThreadId || (!stopPending && !queueControl.paused)) return;
+    const timer = window.setInterval(() => {
+      void loadConversation(activeThreadId).catch(report);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activeThreadId, loadConversation, queueControl.paused, report, stopPending]);
 
   const stopActiveTurn = useCallback(async () => {
-    if (!activeThreadId || !queue.runningTurn) return;
+    if (!activeThreadId || !queue.runningTurn || stopRequestRef.current || stopPending) return;
+    const turnId = queue.runningTurn.turnId;
+    stopRequestRef.current = { turnId, settled: false };
+    setLocalStopTarget(turnId);
     try {
-      await repositories.turns.stop({
-        projectId,
-        threadId: activeThreadId,
-        turnId: queue.runningTurn.turnId,
-      });
+      await repositories.turns.stop({ projectId, threadId: activeThreadId, turnId });
+    } catch (failure) {
+      report(failure);
+    } finally {
+      if (stopRequestRef.current?.turnId === turnId) stopRequestRef.current.settled = true;
+      // A transport failure is not acknowledgement. A fresh canonical read resolves it.
+      await loadConversation(activeThreadId).catch(report);
+    }
+  }, [activeThreadId, loadConversation, projectId, queue.runningTurn, repositories, report, stopPending]);
+
+  const resumeQueuedTurns = useCallback(async () => {
+    const holdControlId = queueControl.holdControlId;
+    if (!activeThreadId || !holdControlId || stopPending || resumeRequestRef.current) return;
+    resumeRequestRef.current = true;
+    setResumingQueue(true);
+    try {
+      const receipt = await repositories.turns.resume({ projectId, threadId: activeThreadId, holdControlId });
+      if (receipt.dispatchedTurnId) attach(activeThreadId, receipt.dispatchedTurnId);
       await loadConversation(activeThreadId);
     } catch (failure) {
       report(failure);
+    } finally {
+      resumeRequestRef.current = false;
+      if (mounted.current) setResumingQueue(false);
     }
-  }, [
-    activeThreadId,
-    loadConversation,
-    projectId,
-    queue.runningTurn,
-    repositories,
-    report,
-  ]);
+  }, [activeThreadId, attach, loadConversation, projectId, queueControl.holdControlId, repositories, report, stopPending]);
 
   const retryTurn = useCallback(
     async (turnId: string) => {
@@ -1053,13 +1158,20 @@ export function useProjectChatController({
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
       try {
-        await repositories.threads.update({ projectId, threadId, title });
-        await loadThreads();
+        const saved = await repositories.threads.update({
+          projectId, threadId, title,
+        });
+        if (mounted.current) {
+          setThreads((current) => current.map((thread) =>
+            thread.id === saved.id ? saved : thread,
+          ));
+        }
+        invalidateProjectCatalog();
       } catch (failure) {
         report(failure);
       }
     },
-    [loadThreads, projectId, repositories, report],
+    [invalidateProjectCatalog, projectId, repositories, report],
   );
 
   const setThreadPinned = useCallback(
@@ -1086,11 +1198,30 @@ export function useProjectChatController({
     [loadThreads, projectId, repositories, report],
   );
 
+  // --- the durable research-task poll -------------------------------------
+
+  // Polls while any launched run is unsettled: on thread load (which also
+  // restores cards for turns past the stream-rehydration window) and whenever
+  // the stream projects a task part it has not seen. Polled snapshots merge
+  // into the same transcript the stream parts feed, so the card component is
+  // untouched.
+  const taskWake = useMemo(() => streamTaskWakeSignature(stream), [stream]);
+  const polledTasks = useResearchTaskPoller({
+    projectId,
+    threadId: activeThreadId,
+    enabled: !loading && access === null && route === null,
+    wake: taskWake,
+  });
+
   // --- derived -----------------------------------------------------------
 
   const transcript = useMemo(
-    () => composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
-    [effectiveTurns, messages, optimistic, stream],
+    () =>
+      withPolledResearchTasks(
+        composeTranscript({ messages, turns: effectiveTurns, stream, optimistic }),
+        polledTasks,
+      ),
+    [effectiveTurns, messages, optimistic, polledTasks, stream],
   );
 
   const gatesById = useMemo(() => {
@@ -1176,6 +1307,8 @@ export function useProjectChatController({
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
     designRefresh,
+    planWriteRevision,
+    writtenProjectDocumentId,
     designLegOpen: stream.designLeg.open,
     designLeg,
     agentRunLock,
@@ -1183,12 +1316,18 @@ export function useProjectChatController({
     publishSceneRevealHealth,
     seedSceneStream,
     submitting,
+    hasOlderMessages: olderCursor !== null,
+    loadOlderMessages,
     gateFor,
     gateAnswerForTurn,
     submitMessage,
     answerGate,
     recoverGate,
     stopActiveTurn,
+    stopPending,
+    queueControl,
+    resumingQueue,
+    resumeQueuedTurns,
     retryTurn,
     selectThread(threadId) {
       if (threadId === activeThreadId) return;

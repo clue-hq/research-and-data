@@ -1,5 +1,6 @@
 import type { AccountTableDensity } from "../model/account-table-view";
 import readability from "./account-readability.module.css";
+import components from "./account-components.module.css";
 
 const densityOptions: Array<{
   label: string;
@@ -20,7 +21,7 @@ export function TableDensitySelector({
   return (
     <div
       aria-label="Table row density"
-      className="grid grid-cols-3 gap-0.5 rounded-lg bg-[var(--clue-background-page)] p-0.5"
+      className={components.segmentedControl}
       role="group"
     >
       {densityOptions.map((option) => {
@@ -29,11 +30,7 @@ export function TableDensitySelector({
         return (
           <button
             aria-pressed={selected}
-            className={`${readability.actionMedium} flex h-7 items-center justify-center rounded-md px-2 outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#cdd5c4] ${
-              selected
-                ? "bg-white text-[var(--clue-content-neutral)] shadow-[var(--clue-shadow-low)]"
-                : "text-[var(--clue-content-subtle)] hover:bg-white/70"
-            }`}
+            className={`${readability.actionMedium} ${components.segmentedItem} ${selected ? components.segmentedItemActive : ""}`}
             key={option.value}
             onClick={() => onChange(option.value)}
             type="button"

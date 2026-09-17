@@ -1,0 +1,65 @@
+{
+  "id": "gen-1787808960-ZVTelDBtaSUZnwM1bePU",
+  "object": "chat.completion",
+  "created": 1787808960,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"account_claims\": [\n    {\n      \"field_key\": \"core.account_name\",\n      \"value_json\": \"Probook\",\n      \"evidence_span\": \"Operating name: Probook. The company\u2019s own site calls it \u201cProbook \u00b7 The AI Operating System for Home Services.\u201d\",\n      \"source_url\": \"https://www.probook.ai/\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.primary_domain\",\n      \"value_json\": \"probook.ai\",\n      \"evidence_span\": \"Domains: probook.ai and www.probook.ai are the company web properties found.\",\n      \"source_url\": \"https://www.probook.ai/\",\n      \"confidence\": 0.95,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_linkedin_url\",\n      \"value_json\": \"https://linkedin.com/company/probook-ai\",\n      \"evidence_span\": \"The company LinkedIn URL is https://linkedin.com/company/probook-ai.\",\n      \"source_url\": \"https://linkedin.com/company/probook-ai\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.hq_location\",\n      \"value_json\": {\n        \"raw\": \"New York, NY\",\n        \"city\": \"New York\",\n        \"region\": \"NY\",\n        \"country\": \"US\",\n        \"country_code\": \"US\"\n      },\n      \"evidence_span\": \"Headquarters: New York, NY. The funding release datelines the announcement \u201cNew York, NY,\u201d and an indexed company record gives \u201cNew York, NY 10022, US.\u201d\",\n      \"source_url\": \"https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_about\",\n      \"value_json\": \"The AI Operating System for home services; built around dispatch to unify intake, data cleaning, chat, outbound, and dispatch so operators can run customer experience as one connected system.\",\n      \"evidence_span\": \"Probook describes itself as \u201cthe AI Operating System for home services,\u201d \u201cbuilt around dispatch.\u201d\",\n      \"source_url\": \"https://www.probook.ai/letter\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.industry\",\n      \"value_json\": \"Home services software (HVAC, plumbing, electrical)\",\n      \"evidence_span\": \"Exact vertical sold into: US home-service contractors/businesses\u2014specifically HVAC, plumbing, and electrical.\",\n      \"source_url\": \"https://www.probook.ai/letter\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"value_json\": {\n        \"amount_usd\": 34000000,\n        \"round\": \"Series A\"\n      },\n      \"evidence_span\": \"a16z is leading Probook\u2019s $34 million Series A\",\n      \"source_url\": \"https://a16z.com/announcement/investing-in-probook/\",\n      \"confidence\": 0.95,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.total_funding\",\n      \"value_json\": {\n        \"amount_usd\": 40000000,\n        \"estimate_kind\": \"reported\"\n      },\n      \"evidence_span\": \"Probook raised $40M from Andreessen Horowitz and Sequoia Capital.\",\n      \"source_url\": \"https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html\",\n      \"confidence\": 0.95,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"core.primary_tech_stack\",\n      \"value_json\": [\n        \"ServiceTitan\"\n      ],\n      \"evidence_span\": \"Integrations: ServiceTitan is explicitly named.\",\n      \"source_url\": \"https://yespress.io/probook\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.employee_range\",\n      \"value_json\": {\n        \"label\": \"14 open positions listed\",\n        \"min\": 14,\n        \"max\": 14\n      },\n      \"evidence_span\": \"Open Positions (14)\",\n      \"source_url\": \"https://jobs.ashbyhq.com/probook\",\n      \"confidence\": 0.6,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.hiring_velocity_eng\",\n      \"value_json\": 3,\n      \"evidence_span\": \"Engineering (3)\",\n      \"source_url\": \"https://jobs.ashbyhq.com/probook\",\n      \"confidence\": 0.7,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.strategic_moves\",\n      \"value_json\": \"Scale go-to-market team against surging demand; grow engineering and customer success\",\n      \"evidence_span\": \"Probook says it will \\\"scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\\\"\",\n      \"source_url\": \"https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html\",\n      \"confidence\": 0.95,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.resonance.culture\",\n      \"value_json\": \"Built by people from the trades; small team with diverse backgrounds; deploys in person and configures alongside customers.\",\n      \"evidence_span\": \"Built by the Trades.For the Trades. ... We deploy in person, configure alongside your team, and stay on the hook for the outcomes we sell.\",\n      \"source_url\": \"https://www.probook.ai/\",\n      \"confidence\": 0.85,\n      \"priority\": 3\n    },\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"value_json\": {\n        \"amount_usd\": 6000000,\n        \"round\": \"Seed\"\n      },\n      \"evidence_span\": \"a $6 million Seed round led by Sequoia Capital.\",\n      \"source_url\": \"https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html\",\n      \"confidence\": 0.9,\n      \"priority\": 1\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"core.founding_year\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"int\",\n      \"value_schema\": {\n        \"type\": \"integer\"\n      },\n      \"description\": \"Founding year when available (not in provided catalog).\",\n      \"reuse_scope\": \"account\",\n      \"hypothesis\": \"Founding year helps qualify company maturity for ABM ICPs and affects go-to-market strategies; younger startups may prioritize hiring and GTM expansion post-funding.\",\n      \"example_value\": 2024,\n      \"example_evidence_span\": \"Founding year: 2024. A third-party company profile states \u201cFounded: 2024\u201d\",\n      \"example_source_url\": \"https://yespress.io/probook\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.named_customers\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"list\",\n      \"value_schema\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"string\"\n        }\n      },\n      \"description\": \"List of named customers mentioned in sources (not in catalog).\",\n      \"reuse_scope\": \"account\",\n      \"hypothesis\": \"Named customers help identify referenceability, buyer similarity, and credibility signals for ABM targeting and sales plays.\",\n      \"example_value\": [\n        \"Del-Air\",\n        \"Peterman Brothers\",\n        \"Summers Plumbing, Heating & Cooling\"\n      ],\n      \"example_evidence_span\": \"Named customers additionally visible in company materials: Lion Home Service, Del-Air, Peterman Brothers, Cardinal, Summers Plumbing, Anthony Plumbing, and TR Miller.\",\n      \"example_source_url\": \"https://www.probook.ai/customer-outcomes\",\n      \"priority\": 2\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqj8zBV4Vb6AsTj1VQ0mLztA-jWYq3qHlgnAXwOSLSp4Fb0_Pd35mTmH4CPLuHuh4hKMw_8pqQIr_rMBooX99pcV8iy-56n8o4rNzN2VN4EGjpcfFnn3QVBMXZGFRkBuNGo9LR66C1eu6ZId5ThQ9x_3vlOHcF6I8xunypdbS_7dg1cgu9RZtEemqILcX9TjfDISOuE56MPvLuzlG7xqBUhkbm4ZnuUX-eVhW72VYzAVoYXfmYRHwsvIFUPLIK38fmE18axBj_vvwttZOPvRCFBW-LcAvqYOOnsMVsVBOgt0kwLaKUvzy13JO0O5G4Nt7V6XGaZVbvpTn2HMyMrRya-2yvz4dO0GIsvuiKEM0Vb_T1qDH-Jzob9saAbmEtCah7duyj2ifjqPu1WfujGCJKNXQe0X9v8Smv7wXZ1qNaIXIKVKBbpCYIDidaGNSyEPMvir3udV0JCuaskjbesDeuxkOEIPpm6jlnXHcf0nJh-2gDXACCdOU4nq_oTCRGnS4UFgHx1-lUGq3c9j5acNEb4xkxIhQTA5TlJAP3Pd9ScTJzVkbne8MiucKdzs8bt9y0MbPxJnUjGtc16VKStju5R6UMmLIDYWisdK655PI9CE-dhwUfb0npA7WnTmzPxs02qhLT7nd_dfAAbLS1fMf_6dWCzoI8Ibs8PzpCKjWpeVHbse3uGQxkLPJG_rQpnytGMflkA35OqIaXkcguv_le25bYcxqwRI-lHcyn4ZjhTe134go21dpWkGHLiJJp5jtPH468eyhDiWLD8szD0OSrwX1PZgLxYyJ_KaRfOtVh_FbDF44aFw1_lZ4K-NREZSAhVAKPw-wSn-ShVcvgrxFIEIdwrs0yXtjLEEF9lPNfDns5x5q_rGwqwMGD99-rT_06CcFS4aOU_d4Ljh_zZrlZ3H3c_O1fbmJI9Xq-0jv5F9jOqkk4e99SB1ATyuxZdiElBk8rLarZK6pn7ABZDuyWHXWPusuNVw3rJYh3FYdFulD-QWezWkH_dN5DtkC8XcoSoOCFFrxdTsOPBCziCDuzruqJi3jS_qwtMdKGgBf6hsS0jpzcCX8izudwNgZqlQskrkFO9th5j7igGVmBvlTOZGULdTCa7-e_vT6Gl9byJOqrdLy__PVm8B8DhYN6HO5Fe0kzo_kHPkvgPi4iVtbttmGpxC7mk55WdV8lB3YfEc2Er3_5sg1-W4yFIMlSiBR0n4xXhG_Hrs8H9oQu87H5RE76JJnUMRubYMIW5GB0SbazdKqcS6sw_o1x61VdzmZDhBJEbBmsqTfvUqSNvzxcJKsAFgSJheupzsg9t1GPXB7Cg_vI_7H-B7rey-gDWAQCsSmZGu7FQRnj5ziLy0ayLU91kq2fQfZAC_KBdNrXvPox5HVSnU95nGixWJAM7G3pOkNs.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_024827572e71c205016a8fccc198d087d0b462844a983d986c",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 17659,
+    "completion_tokens": 1947,
+    "total_tokens": 19606,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 17536,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00436315,
+      "upstream_inference_prompt_cost": 0.00046915,
+      "upstream_inference_completions_cost": 0.003894
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 32.0,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 79370,
+    "response_format": {
+      "type": "json_object"
+    }
+  }
+}

@@ -1,0 +1,227 @@
+SUBJECT (identity already locked, do not re-derive):
+  name: Tyler Chonoles
+  title: Growth and Demand Gen Marketing Manager
+  company: Harmonic Security (harmonic.security)
+  linkedin: https://www.linkedin.com/in/tyler-chonoles-106405a0
+
+CLOSED FIELD-KEY LIST — use ONLY these:
+  contact.facet.career_history
+  contact.facet.alma_mater
+  contact.facet.stated_interests
+  contact.facet.communication_style
+  contact.facet.public_appearances
+  contact.facet.publications
+  contact.facet.recent_post
+  contact.facet.nickname
+  contact.facet.hobby
+  contact.facet.recent_award
+  contact.facet.conference_talk
+  contact.facet.causes
+  contact.facet.hooks   [PROPOSED — new field]
+  contact.facet.openers   [PROPOSED — new field]
+  contact.facet.voice_quote   [PROPOSED — new field]
+
+CHARTER CATEGORIES for `charter_category`: background, life_outside_work, voice, professional_identity, unique_insight, opener
+
+Return STRICT JSON, no prose, shaped exactly:
+{
+  "claims": [
+    {"field_key": "<one of the closed list>",
+      "value": <string, or array of strings, or object — whatever suits the field>,
+      "evidence_quote": "<VERBATIM, copied exactly from the material below>",
+      "source_url": "<a URL that appears in the material>",
+      "source_timestamp": "<MM:SS or null>",
+      "source_type": "<linkedin_profile|linkedin_post|youtube_transcript|podcast_transcript|podcast_shownotes|press|company_site|university|blog|directory|other>",
+      "charter_category": "<one of the charter categories>",
+      "priority": "P1|P2|P3",
+      "use_class": "professional-public|personal-public-non-sensitive",
+      "identity_binding": "STRONG",
+      "outreach_safe": true,
+      "note": "<optional short caveat, or empty>"}
+  ],
+  "unique_insight": {"text": "<one paragraph, or 'NOT FOUND — thin public footprint'>",
+                      "evidence_quote": "<verbatim or empty>", "source_url": "<or empty>"},
+  "not_found": ["<charter category or sub-item that came back empty>", "..."],
+  "same_name_contamination": ["<url — why it was ruled out>", "..."]
+}
+
+=== MATERIAL 1: DEEP-RESEARCH DOSSIER (Exa deep-reasoning, personal charter) ===
+1. BACKGROUND - Hometown / where they grew up: NOT FOUND. The Bowdoin roster identifies him as “New York, N.Y.” and lists Friends Seminary, but does not state where he grew up: https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896
+- Alma mater(s): Bowdoin College. The indexed LinkedIn profile states “Mathematics, Physics at Bowdoin College” and “2015 - 2019”; URL: https://www.linkedin.com/in/tyler-chonoles-106405a0. Degree wording beyond “Mathematics, Physics,” a more specific subject breakdown, and graduation date: NOT FOUND in the reviewed sources.
+- High school: The Bowdoin biography says “Graduated from Friends Seminary high school”; URL: https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896. The indexed LinkedIn profile states “High School” at Friends Seminary, “2011 - 2015”; URL: https://www.linkedin.com/in/tyler-chonoles-106405a0.
+- Student activities, societies, sports teams, awards: Bowdoin’s biography says “2015 ISAL Champions,” “Tyler also played basketball in school,” and the page is his “2017 Men’s Golf” roster entry; URL: https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896. Bowdoin’s 2017 report says “Tyler Chonoles 78” at the CBB Championship; URL: https://athletics.bowdoin.edu/news/2017/10/14/10_14_2017_1789.aspx. The 2017 Bowdoin Invitational report says “Tyler Chonoles and Eric Giesler in a tie for 42nd (172)” and identifies him as “Freshman ’19”; URL: https://athletics.bowdoin.edu/news/2017/9/10/9_10_2017_1784.aspx. Other societies, activities, and awards: NOT FOUND.
+- Early career / first jobs / how they entered marketing: The indexed LinkedIn profile lists, in chronological order, “Intern” at HGK Asset Management, Inc. (2017), “Summer Analyst” at Mizuho (2018), and “Analyst” at Mizuho (2019); URL: https://www.linkedin.com/in/tyler-chonoles-106405a0. It subsequently lists “Employee” at Snowbird, “Analyst, Data Analytics” and “Senior Analyst, Data Analytics” at Horizon Media, “Business Intelligence Architect” at GRAIN Group, and “Programmatic Trading Specialist” at The Trade Desk; same URL. His own explanation of how he entered marketing or this field: NOT FOUND.
+- Military, competitive-sport, music/arts, or other non-corporate background: The Bowdoin biography says “Tyler also played basketball in school” and “Off the course, Tyler enjoys playing guitar and skiing”; URL: https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896. Military service and other non-corporate background: NOT FOUND.
+- Languages they speak: NOT FOUND. 2. LIFE OUTSIDE WORK — ONLY AS THEY THEMSELVES STATE IT - Hobbies and sports in a bio: The only located biographical statement says “Off the course, Tyler enjoys playing guitar and skiing”; URL: https://athletics.bowdoin.edu/sports/mens-golf/roster/tyler-chonoles/1896. The same page says “Tyler also played basketball in school”; same URL. Other hobbies or sports stated by Tyler himself: NOT FOUND.
+- Pets: NOT FOUND.
+- Self-announced milestones: On May 26, 2026, Tyler’s own LinkedIn post says “Excited to share that I’ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager!”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB. Other self-announced milestones, including relocation, wedding, or anniversaries: NOT FOUND.
+- Causes, volunteering, boards, mentoring, pledges, alumni service: NOT FOUND.
+- Side projects, newsletters, communities they run or built: Tyler’s own post says “I get to curate and shape what goes into The Frequency, Harmonic’s new AI security and governance newsletter”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j. Harmonic’s newsletter page says “Written by practitioners, curated by Tyler Chonoles at Harmonic”; URL: https://www.harmonic.security/frequency. The post also says “Most AI security content out there is vendor noise dressed up as thought leadership. We’re trying to do something different”; same LinkedIn post URL.
+- Books, podcasts, tools publicly recommended: NOT FOUND. 3. VOICE — 3 TO 5 VERBATIM QUOTES FROM LONG-FORM MATERIAL - Long-form podcasts, webinars, conference talks, interviews, AMAs, authored articles, or Substack/Medium material by Tyler Chonoles: NOT FOUND.
+- Accordingly, three to five qualifying long-form quotes, source dates, and timestamps: NOT FOUND.
+- Available non-long-form first-person LinkedIn quote (not counted as qualifying long-form material): “The problem Harmonic is solving is one I genuinely believe matters: enabling the safe use of AI.” Source: Tyler Chonoles LinkedIn post, May 26, 2026. URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB
+- Available non-long-form first-person LinkedIn quote (not counted as qualifying long-form material): “Most organizations can tell you which AI tools their teams are using. Very few can tell you what work is actually getting done inside them.” Source: Tyler Chonoles LinkedIn post, May 27, 2026. URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_most-organizations-can-tell-you-which-ai-activity-7465428804988121088-w05G 4. PROFESSIONAL IDENTITY - Current role: The indexed LinkedIn profile states “Growth and Demand Gen Marketing Manager - Harmonic Security (Current)” and “May 2026 - Present”; URL: https://www.linkedin.com/in/tyler-chonoles-106405a0. Tyler’s own joining announcement uses the title “Growth and Demand Gen Marketing Manager”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB.
+- What he personally owns / is accountable for: His own post explicitly states “I get to curate and shape what goes into The Frequency, Harmonic’s new AI security and governance newsletter”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j. Beyond this newsletter responsibility, a complete statement of his personally owned marketing scope: NOT FOUND.
+- What he is visibly proud of: His joining post says “I couldn’t be more proud to join this team”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB. His newsletter post says “Been heads down building something I’m really excited to finally share”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j.
+- Professional themes he states: His joining post says Harmonic gives “security teams full visibility into how AI is being used across their organization,” “detects sensitive data in real time using their own small language models,” and “coaches employees toward secure behavior at the exact moment it matters”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB. These are his description of Harmonic’s product, not independently asserted personal responsibilities.
+- Stated pet peeves / things that annoy him: His newsletter post criticizes “vendor noise dressed up as thought leadership”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j. No other personal pet peeves or annoyances: NOT FOUND.
+- Team and hiring activity: Tyler’s own post says “Kenneth Pouliot on my team is hiring for a Director, Revenue Operations role here at Harmonic Security”; URL: https://www.linkedin.com/posts/tyler-chonoles-106405a0_director-revenue-operations-activity-7485049755153149952-5OuV. The post describes the role as owning “lead to close, systems, data, and processes across the entire GTM engine”; same URL. This describes the advertised role, not Tyler’s own scope.
+- Additional professional identity details, management philosophy, preferred working style, or stated frustrations: NOT FOUND.
+
+=== MATERIAL 2: LINKEDIN PROFILE (indexed copy) ===
+# Tyler Chonoles
+
+Securing AI | Growth Marketing @ Harmonic Security
+
+New York City Metropolitan Area (US)
+
+500 connections • 795 followers
+
+## About
+
+Securing AI | Growth Marketing @ Harmonic Security
+
+Total Experience: 7 years and 1 month
+
+## Experience
+
+### Growth and Demand Gen Marketing Manager - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)
+
+May 2026 - Present (2 months) in New York, New York, United States
+
+Department: Marketing • Level: Manager
+
+Harmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.
+
+### Programmatic Trading Specialist - [The Trade Desk](https://www.linkedin.com/company/the-trade-desk)
+
+Apr 2024 - May 2026 (2 years and 1 month) in New York, New York, United States
+
+Department: Marketing • Level: Specialist
+
+The Trade Desk (TTD) is a Technology, Information and Internet company. The Trade Desk has 3,000-4,000 employees (+10% YoY) and has annual revenue in the $2B-$3B range, founded in 2009. Headquartered in Ventura, California, United States, operates in 14 countries (including France, Australia, Taiwan, South Korea, and China). Its workforce is distributed across 31 countries (including United States, United Kingdom, Australia, Singapore, and Germany). Has a market cap in the $50B-$60B range. IPO 2016.
+
+### Business Intelligence Architect - [GRAIN Group](https://www.linkedin.com/company/grain-group)
+
+Nov 2021 - Mar 2024 (2 years and 4 months)
+
+GRAIN GROUP is working at the intersection of technology, marketing, and commerce to solve challenges for some of the world’s most ambitious brands.
+
+Department: Engineering and Technical • Level: Specialist
+
+Grain Group is a Advertising Services company. Grain Group is a digital marketing agency that drives growth for ambitious brands. They offer marketing strategy, digital media, analytics, crm, and data solutions. They serve clients in various industries, including cpg foods, cpg beverages, and alcohol. Grain Group has 10-20 employees (+20% YoY), founded in 2010. Headquartered in New York, New York, United States, with an office in Old Greenwich. Its workforce is distributed across United States and Indonesia.
+
+### [Horizon Media](https://www.linkedin.com/company/horizon-media)
+
+#### Senior Analyst, Data Analytics
+
+Sep 2021 - Nov 2021 (2 months)
+
+Department: Research • Level: Senior
+
+#### Analyst, Data Analytics
+
+May 2021 - Sep 2021 (4 months)
+
+Department: Research
+
+Horizon Media is a Advertising Services company. Horizon Media is a media agency that offers various advertising and marketing services. The company has recently launched its B2B growth practice Green Thread, acquired experiential transformation pioneer First Tube, launched a Metaverse- and Web3-focused unit Chapter & Verse, announced eMbrace, a customized software and data solution for communications and media planning, and made blu.ID interoperable with Unified ID 2.0. Horizon Media is committed to diversity, equity, and inclusion (DEI). Horizon Media has 1,000-2,000 employees and has annual revenue in the $1B-$2B range, founded in 1989. Headquartered in New York, New York, United States, with offices in Los Angeles and Ontarion. Its workforce is distributed across 22 countries (including United States, Canada, India, France, and Pakistan).
+
+### Employee - [Snowbird](https://www.linkedin.com/company/snowbird)
+
+Dec 2020 - May 2021 (5 months) in Salt Lake City, Utah, United States
+
+Department: Other
+
+Snowbird is a Travel Arrangements company. Snowbird is a skiing and snowboarding resort located in Utah, offering a 500+ annual snowfall, 3,000 vertical feet, and 2,500 acres of legendary skiing and snowboarding terrain. Snowbird has 300-400 employees (+5-6% YoY) and has annual revenue in the $20M-$30M range, founded in 1971. Headquartered in Snowbird, Utah, United States, with offices in Sandy and Holladay. Its workforce is distributed across 7 countries (including United States, United Kingdom, Colombia, Argentina, and Cambodia).
+
+### [Mizuho](https://www.linkedin.com/company/mizuho)
+
+#### Analyst
+
+Jul 2019 - Sep 2020 (1 year and 2 months) in New York, New York
+
+FX and Interest Rate Derivatives
+
+Department: Other • Level: Specialist
+
+#### Summer Analyst
+
+May 2018 - Aug 2018 (3 months) in New York, New York
+
+Fixed Income Derivatives Sales & Trading
+
+Department: Finance & Accounting • Level: Intern
+
+Mizuho is a Financial Services company. Mizuho Financial Group is a financial partner that helps customers shape their future and achieve their dreams. Mizuho has 8,000-9,000 employees. Headquartered in Tokyo, Japan, operates in 6 countries (including United States, United Kingdom, Brazil, Mexico, and Chile). Its workforce is distributed across 53 countries (including United States, Japan, United Kingdom, India, and Singapore).
+
+### Intern - [HGK Asset Management, Inc.](https://www.linkedin.com/company/hudson-edge-investment-partners)
+
+Jun 2017 - Jul 2017 (1 month)
+
+Department: Other
+
+Hudson Edge Investment Partners, Inc. is a Investment Management company. Hudson Edge is a leading institutional asset management company focused on US Value equities, Fixed Income, and International equities. Hudson Edge Investment Partners, Inc. has 10-20 employees (+7-8% YoY), founded in 1983. Headquartered in Jersey City, New Jersey, United States.
+
+## Education
+
+### Mathematics, Physics at [Bowdoin College](https://www.linkedin.com/school/bowdoin-college)
+
+2015 - 2019 (4 years) in Brunswick, Maine, United States
+
+Bowdoin College is a higher education institution. bowdoin College is a private liberal arts college in Brunswick Maine. Bowdoin College has 1,000-2,000 employees (1-2% YoY decline) and has annual revenue in the $300M-$400M range, founded in 1794. Headquartered in Brunswick, Maine, United States. Its workforce is distributed across 14 countries (including United States, Canada, Colombia, France, and Netherlands). Research output of 5,000-6,000 works, primarily in Social Sciences, Arts and Humanities, and Environmental Science. Funds research behind 1-10 works.
+
+### High School at Friends Seminary
+
+2011 - 2015 (4 years)
+
+## Licenses & Certifications
+
+### The Trade Desk Edge Academy: Trading Essentials: Kokai by [The Trade Desk](https://linkedin.com/company/the-trade-desk)
+
+Issued: Jun 2024
+
+[View Certificate](https://credly.com/badges/5c333c54-f056-4368-9e8b-9f1fb6bae5a5/linked_in_profile?trk=public_profile_certification-title)
+
+## Skills
+
+analyst • analytics • architect • business intelligence • business intelligence architect • commerce • data • data analytics • demand generation • derivatives • derivatives sales • event planning • fixed income • fixed income derivatives • fx • genetics • golf instructor • group working • illustrations • instructor • insurance • interest rate derivatives • management • marketing • marketing management • mathematica • microsoft excel • microsoft word • policy • powerpoint • programmatic • programmatic trading • sales • sales & trading • social media • trading
+
+## Languages
+
+English - Native or bilingual proficiency
+
+Arabic - Limited working proficiency
+
+## Social
+
+### Linkedin
+
+- [2026-07-30 · Posted · 38 reactions] [Big day today here Harmonic Security.. I'm happy to announce we've...](https://www.linkedin.com/posts/tyler-chonoles-106405a0_big-day-today-here-harmonic-security-im-activity-7488684001579159552--B1P)
+  > Big day today here Harmonic Security.. I'm happy to announce we've launched our newsletter - The Frequency!
+  >
+  > It's a place for the folks here at Harmonic to share more about what we're building, what we're seeing in the AI sec space, and why it all matters.
+  >
+  > I want to give a specific shoutout to Edward M. and Cameron B., both of whom contributed to the newsletter and are key members of our own security team. Ed wrote about the new ChatGPT Work app and its security implications, and Cameron highlighted the AI-powered Threat Engine that he built.
+  >
+  > Bottom line: If you want content that matters and information that you can use, subscribe at https://lnkd.in/g5kPcjrZ.
+  >
+  > First edition - https://lnkd.in/geHUHm9U
+
+- [2026-07-27 · Reshared · 3 reactions] [Bumping this up as it's 🚀release week 🚀!!! Sign up for The...](https://www.linkedin.com/posts/tyler-chonoles-106405a0_bumping-this-up-as-its-release-week-activity-7487518678993903616-ozBN): Bumping this up as it's 🚀release week 🚀!!! Sign up for The Frequency Newsletter at https://lnkd.in/g5kPcjrZ if you want to stay up to date with all things AI security & governance. First issue drop...
+
+- [2026-07-20 · Posted · 12 reactions] [Kenneth Pouliot on my team is hiring for a Director, Revenue...](https://www.linkedin.com/posts/tyler-chonoles-106405a0_director-revenue-ope
+
+=== MATERIAL 3: LONG-FORM MEDIA TRANSCRIPTS (where this person verifiably speaks) ===
+NONE — no long-form media in which this person verifiably speaks was located.
+
+=== MATERIAL 4: CONFIRMED SOURCE URLS FROM THE SWEEP ===
+- https://www.linkedin.com/in/tyler-chonoles-106405a0 (Tyler Chonoles)
+- https://www.linkedin.com/posts/tyler-chonoles-106405a0_excited-to-share-that-ive-officially-joined-activity-7465103151470292992--FHB (Excited to share that I’ve officially joined Harmonic Security as their new Grow)
+- https://www.linkedin.com/posts/jackson-harrower_im-stoked-to-share-that-weve-launched-frequency-activity-7488627900376608769-AcEy (I’m stoked to share that we’ve launched Frequency, a kickass new newsletter from)
+- https://www.linkedin.com/posts/tyler-chonoles-106405a0_director-revenue-operations-activity-7485049755153149952-5OuV (Kenneth Pouliot on my team is hiring for a Director, Revenue Operations role her)
+- https://www.linkedin.com/posts/tyler-chonoles-106405a0_most-organizations-can-tell-you-which-ai-activity-7465428804988121088-w05G (Most organizations can tell you which AI tools their teams are using. Very few c)
+- https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j (Been heads down building something I'm really excited to finally share. | Tyler )
+- https://www.linkedin.com/posts/heidinewiger_the-team-keeps-getting-better-and-better-activity-7465850630868262912-ic2Z (The team keeps getting better and better! So happy to have Kit Huynh, MBA and Ty)
+- https://www.linkedin.com/posts/tyler-chonoles-106405a0_big-day-today-here-harmonic-security-im-activity-7488684001579159552--B1P (Big day today here Harmonic Security.. I'm happy to announce we've launched our )
+- https://www.linkedin.com/posts/kareema-price-cdr-8a23a01_hiring-cybersecurity-ai-activity-7465797805844963328-YuyQ (Excited to officially welcome two incredible new additions to the Harmonic Secur)

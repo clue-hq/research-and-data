@@ -1,0 +1,73 @@
+{
+  "flash_lite_quotes_verified": [
+    {
+      "timestamp": "05:14",
+      "quote": "And the biggest pain of cybersecurity when you come from the offensive war to the defensive war, the biggest pain is we don't have enough operators to operate all the different vulnerabilities.",
+      "in_asr": "PARTIAL",
+      "in_flash_lite_unique_window": true
+    },
+    {
+      "timestamp": "06:22",
+      "quote": "I was a part of maybe the best cybersecurity services in the world, I'm not kidding. The name is Mandiant.",
+      "in_asr": "EXACT",
+      "in_flash_lite_unique_window": true
+    },
+    {
+      "timestamp": "09:19",
+      "quote": "Today, it's like kind of simple, you do scan, right? And then you say, okay, have like, I'm not kidding, like when I say 30 million vulnerabilities, these are the real numbers we are seeing.",
+      "in_asr": "PARTIAL",
+      "in_flash_lite_unique_window": true
+    },
+    {
+      "timestamp": "10:17",
+      "quote": "So, from threat analysis, we move to the risk analysis and we bubble it up by understanding the threat, but also the layers of the security.",
+      "in_asr": "PARTIAL",
+      "in_flash_lite_unique_window": true
+    },
+    {
+      "timestamp": "22:33",
+      "quote": "And I believe the next generation of cybersecurity, it should look more like biology, when it's a self-healing platform...",
+      "in_asr": "PARTIAL",
+      "in_flash_lite_unique_window": false
+    }
+  ],
+  "second_half_mined_quotes": [
+    {
+      "quote": "An athlete being an athlete has a lot to do to bring in a new startup because you have to believe, you have to be competitor, you have to be obsessed, not losing in order to succeed, I believe.",
+      "topic": "leadership",
+      "why": "Explains her philosophy on the mindset required for startup success.",
+      "verbatim_check": "EXACT"
+    },
+    {
+      "quote": "I think it's very important to understand that no matter which technology you're bringing to the world, at the end you have to deal with habits.",
+      "topic": "product_belief",
+      "why": "Highlights the core challenge of changing user habits when introducing new tech.",
+      "verbatim_check": "EXACT"
+    },
+    {
+      "quote": "When we especially when we introduced, I don't know if I have to say but it's important for any young entrepreneur or anybody that wants to create a new impact in this world, I think it's very important to understand that no matter which technology you're bringing to the world, at the end you have to deal with habits.",
+      "topic": "product_belief",
+      "why": "Advice for entrepreneurs about the reality of technology adoption.",
+      "verbatim_check": "EXACT"
+    },
+    {
+      "quote": "I do think this has been definitely the biggest challenge, understanding how you can also change habits with a very good technology but also make them believe that they can do it different.",
+      "topic": "product_belief",
+      "why": "Identifies changing customer habits as the biggest hurdle in her market.",
+      "verbatim_check": "EXACT"
+    },
+    {
+      "quote": "These are the times that you say okay, when it works, it works. People are going to change their reality themselves and and I definitely wants to see these kind of scenarios more often.",
+      "topic": "personal",
+      "why": "Expresses pride in seeing customers organically viral-adopt and use her product.",
+      "verbatim_check": "EXACT"
+    },
+    {
+      "quote": "Passion, obsession. There would be if you pick the problem you're going to solve that you believe that it's a problem, not because you told, you believe it and you're obsessed about solving it.",
+      "topic": "leadership",
+      "why": "Her single piece of core advice for aspiring entrepreneurs.",
+      "verbatim_check": "EXACT"
+    }
+  ],
+  "asr_chars": 37029
+}

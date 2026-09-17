@@ -607,3 +607,202 @@ test("a product decision carries the dedicated selected product field", () => {
     /Choose one/,
   );
 });
+
+/**
+ * The set-valued product gate (O6 ruling D10).
+ *
+ * A project buys *products*, plural: the gate presents this brand's whole
+ * catalog and the human checks the ones this project sells. The snapshot is the
+ * immutable subject, so the card's options, its pre-checks and its receipt all
+ * come from that one payload — never from a live catalog read.
+ */
+
+const PRODUCT_SET_PRODUCTS = [
+  {
+    product_id: "prd_phone",
+    name: "AI Phone Agents",
+    short_description: "Healthcare call and scheduling automation",
+    aliases: ["Insight Voice"],
+    status: "active",
+    resolution_state: "model_matched",
+    reconcile_confidence: "high",
+    reconcile_reason: null,
+    offering_kind: "product",
+    family: "Voice",
+    lifecycle: "active",
+    official_url: "https://example.test/phone",
+  },
+  {
+    product_id: "prd_intake",
+    name: "Patient Intake",
+    // A product row the catalog does not describe is honestly blank.
+    short_description: "",
+    aliases: [],
+    status: "active",
+    resolution_state: "model_unsure",
+    reconcile_confidence: "low",
+    reconcile_reason: "Name overlaps the phone offering",
+    offering_kind: "platform",
+    family: null,
+    lifecycle: "beta",
+    official_url: null,
+  },
+  {
+    product_id: "prd_fax",
+    name: "Legacy Fax",
+    short_description: "Retired fax bridge",
+    aliases: [],
+    status: "archived",
+    resolution_state: null,
+    reconcile_confidence: null,
+    reconcile_reason: null,
+    offering_kind: "service",
+    family: null,
+    lifecycle: "retired",
+    official_url: null,
+  },
+] as const;
+
+function productSetGate(overrides: Record<string, unknown> = {}): ChatGate {
+  const {
+    snapshot = {},
+    ...gateOverrides
+  } = overrides as { snapshot?: Record<string, unknown> };
+  const [gate] = ChatGateListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureGates[0],
+        kind: "product_set_selection",
+        max_spend_cents: null,
+        currency: null,
+        subject_ref: "brand-product-catalog:brd_demo:doc-catalog",
+        subject_revision: 3,
+        permitted_decisions: ["approved", "rejected", "revised"],
+        subject_snapshot: {
+          brand_id: "brd_demo",
+          catalog_document_id: "doc-catalog",
+          catalog_version: 3,
+          products: PRODUCT_SET_PRODUCTS,
+          omitted_count: 1,
+          current_selection: null,
+          suggested_product_ids: ["prd_phone"],
+          ...snapshot,
+        },
+        ...gateOverrides,
+      },
+    ],
+  });
+  return gate;
+}
+
+test("a product-set gate derives every option, the suggested pre-check and the duplicate flag", () => {
+  const card = model({ gate: productSetGate() });
+  assert.ok(card);
+  assert.equal(card.kind, "product_set_selection");
+  assert.equal(card.title, "Choose this project's products");
+  assert.ok(card.productSet);
+  assert.deepEqual(
+    card.productSet.options.map((option) => option.productId),
+    ["prd_phone", "prd_intake", "prd_fax"],
+  );
+  // Archived rows are shown but never selectable, so the choosable set is two.
+  assert.deepEqual(
+    card.productSet.options
+      .filter((option) => option.status !== "archived")
+      .map((option) => option.productId),
+    ["prd_phone", "prd_intake"],
+  );
+  assert.deepEqual(card.productSet.preselectedIds, ["prd_phone"]);
+  assert.equal(card.productSet.currentSelectionVersion, null);
+  assert.deepEqual(card.productSet.selectedIds, []);
+  assert.equal(card.productSet.options[0]?.offeringKind, "product");
+  assert.equal(card.productSet.options[0]?.family, "Voice");
+  assert.equal(card.productSet.options[0]?.lifecycle, "active");
+  assert.equal(card.productSet.options[0]?.officialUrl, "https://example.test/phone");
+  assert.equal(card.productSet.options[0]?.possibleDuplicate, false);
+  assert.equal(card.productSet.options[1]?.possibleDuplicate, true);
+  assert.equal(
+    card.productSet.options[1]?.duplicateReason,
+    "Name overlaps the phone offering",
+  );
+  assert.equal(card.summary, "3 products available · 1 pre-checked");
+});
+
+test("a saved project selection is the pre-check, not the suggestion", () => {
+  const card = model({
+    gate: productSetGate({
+      snapshot: {
+        current_selection: { selection_version: 2, product_ids: ["prd_intake"] },
+      },
+    }),
+  });
+  assert.ok(card?.productSet);
+  assert.deepEqual(card.productSet.preselectedIds, ["prd_intake"]);
+  assert.equal(card.productSet.currentSelectionVersion, 2);
+});
+
+test("a product-set decision refuses an empty or archived choice and carries the id list", () => {
+  const gate = productSetGate();
+  const card = model({ gate });
+  assert.ok(card);
+  assert.throws(
+    () =>
+      gateAnswerResponse(card, {
+        kind: "product_set_selection",
+        decision: "approved",
+        selectedProductIds: [],
+      }),
+    /Choose at least one of the products shown before continuing\./,
+  );
+  assert.throws(
+    () =>
+      gateAnswerResponse(card, {
+        kind: "product_set_selection",
+        decision: "approved",
+        selectedProductIds: ["prd_fax"],
+      }),
+    /no longer available/,
+  );
+  assert.throws(
+    () => gateAnswerResponse(card, { kind: "decision", decision: "approved" }),
+    /Choose at least one of the products shown before continuing\./,
+  );
+  assert.deepEqual(
+    gateAnswerResponse(card, {
+      kind: "product_set_selection",
+      decision: "approved",
+      selectedProductIds: ["prd_phone", "prd_intake"],
+    }),
+    {
+      gateId: gate.gateId,
+      decision: "approved",
+      expectedSubjectSha256: gate.expectedSubjectSha256,
+      expectedEstimatedCostCents: null,
+      selectedProductIds: ["prd_phone", "prd_intake"],
+    },
+  );
+});
+
+test("an answered product-set gate keeps the chosen ids and names", () => {
+  const gate = productSetGate({
+    answer: {
+      turn_id: "turn-product-set",
+      action_ref: "turn-action:turn-product-set",
+      decision: "approved",
+      expected_subject_sha256: fixtureGates[0]?.expected_subject_sha256,
+      decision_payload: { selected_option_refs: ["prd_phone", "prd_intake"] },
+      selected_option_ref: null,
+      answered_by_user_id: "usr_demo",
+      answered_at: "2026-09-09T12:00:00Z",
+    },
+  });
+  const card = model({ gate });
+  assert.ok(card?.productSet);
+  assert.equal(card.state, "responded");
+  assert.deepEqual(card.productSet.selectedIds, ["prd_phone", "prd_intake"]);
+  assert.equal(card.summary, "AI Phone Agents, Patient Intake");
+  assert.deepEqual(gateAnswerDisplay(gate), {
+    detail: "AI Phone Agents, Patient Intake",
+    label: "Products selected",
+  });
+});

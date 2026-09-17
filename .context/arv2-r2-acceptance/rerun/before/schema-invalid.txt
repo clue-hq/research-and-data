@@ -1,0 +1,49 @@
+               field_key               |                                                          value                                                           | coerced_from 
+---------------------------------------+--------------------------------------------------------------------------------------------------------------------------+--------------
+ account.abm_program_maturity          | "You’ll be the architect of how our biggest deals get won — building the ABM strategy, and the AI-powered systems behind | 
+ account.abm_program_maturity          | "Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segmen | 
+ account.claimed_outcomes_metrics      | ["22% Increase in HVAC average ticket (first 10 months, YOY) - Peterman", "95% Of dispatching decisions made by Probook  | 
+ account.claimed_outcomes_metrics      | ["Reduce 90% of noisy critical issues and achieve SLA relief", "99% of critical vulns aren't exploitable", "Each Zafran  | 
+ account.claimed_outcomes_metrics      | ["29% AVG REVENUE PER OFFICE FTE LIFT", "82% INTERACTIONS HANDLED END TO END", "58,000+ CUSTOMER INTERACTIONS DAILY", "4 | 
+ account.committee_candidate           | {"title": "ABM Manager", "persona": "champion", "vacant_seat": true, "confirmed_by": "https://www.linkedin.com/posts/kib | 
+ account.committee_candidate           | {"name": null, "title": "Senior Manager, ABM & Integrated Campaigns", "persona": "user", "vacant_seat": true, "confirmed | 
+ account.committee_candidate           | {"title": "Senior Manager, ABM & Integrated Campaigns", "persona": "user", "vacant_seat": true, "confirmed_by": "https:/ | 
+ account.committee_candidate           | {"name": "Varinder Kaur", "title": "Head of Growth Marketing", "persona": "Marketing / Demand Gen / ABM buyer", "confirm | 
+ account.committee_candidate           | {"name": null, "title": "ABM Manager", "persona": "champion", "vacant_seat": true, "confirmed_by": "https://www.linkedin | 
+ account.committee_candidate           | {"title": "ABM Manager (champion)", "vacant_seat": true, "confirmed_by": "https://www.linkedin.com/posts/kibrady12_im-gr | 
+ account.gtm_tooling_stack             | "Proficiency in Salesforce, HubSpot and major ABM platforms. You've built campaigns in them, not just reported from them | 
+ account.gtm_tooling_stack             | "CRM hygiene: Maintain clean, accurate records in Ashby for every prospect interaction. Your data is the team’s data."   | 
+ account.gtm_tooling_stack             | "Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences, the whole  | 
+ account.hiring_velocity               | "I'm growing the marketing team at Probook — Series A ($40M in funding)."                                                | 
+ account.hiring_velocity               | [{"url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf", "title": "Senior Manager, ABM  | 
+ account.hiring_velocity               | "Our marketing team at Zafran Security is expanding! I'm hiring a Senior Manager, ABM & Integrated Campaigns."           | 
+ account.hiring_velocity_eng           | {"published": "2026-01-13 and 2026-06-03", "open_eng_roles": ["Senior Software Engineer", "Staff Software Engineer", "Fo | 
+ account.named_customers               | [{"name": "Lumen", "evidence_quote": "Lumen is a global telecommunications provider", "testimonial_author": "Brett Wentw | 
+ account.named_customers               | {"name": "Lumen Technologies", "role": "Brett Wentworth, Vice President & Deputy Chief Security Officer", "assets": "30, | 
+ account.open_requisitions             | [{"url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0", "title": "SDR", "days_open": 138, "dep | 
+ account.product_packaging             | "One system. One customer experience."                                                                                   | 
+ account.recent_funding                | {"date": "2026-07-22", "round": "strategic investment", "investor": "Cisco Investments", "amount_usd": null, "amount_sem | 
+ account.recent_funding                | {"date": "2026-02-24", "round": "strategic investment", "investor": "Amex Ventures", "amount_usd": null, "amount_semanti | 
+ account.reputation_risk               | {"item": "ServiceTitan competitive overlap", "status": "UNRESOLVED", "meaning_for_approach": "Complementary partner per  | 
+ account.reputation_risk               | {"item": "layoffs_lawsuits_acquisition_rumours_down_round", "status": "NOT_FOUND", "meaning_for_approach": "No layoff, l | 
+ account.reputation_risk               | {"claim": "ProBook AI publishes no pricing, has no G2 or Capterra profile, and its entire independent review corpus is 3 | 
+ account.reputation_risk               | {"claim": "CTech reported advanced talks with Cisco to pay between $150 million and $200 million; company denied negotia | 
+ account.reputation_risk               | {"claim": "Snir Havdala's transition to his next professional chapter was planned and coordinated; Snir Havdala departur | 
+ account.reputation_risk               | {"item": "Summers first-month job count differs between company letter (2,873) and GlobeNewswire (2,542)", "status": "UN | 
+ account.resonance.attrition_signal    | {"event": "co-founder/CPO left; company says planned; Itay Nachum VP Product assumed product org", "person": "Snir Havda | 
+ account.resonance.buying_culture      | {"office_policy": "NYC office ~3 days a week for the BDR seat", "bdr_reports_into": "Marketing department"}              | 
+ account.resonance.public_frustrations | "CEO publicly called founder-led sales a bottleneck and not a flex"                                                      | 
+ account.resonance.public_frustrations | "Company positions product against noisy scanners and manual triage; claims 99% of critical vulns aren't exploitable"    | 
+ account.strategic_moves               | {"req": "Director of Alliances", "move": "stand up partner/alliances channel from zero, GSI-first", "published_at": "202 | 
+ account.strategic_moves               | {"move": "Agentic Exposure Management launch with Series C; capital for product innovation and global expansion"}        | 
+ account.total_funding                 | {"note": "Cisco and Amex strategic cheques undisclosed; CTech estimated post-Cisco >$140M — NOT FOUND as company figure" | 
+ account.total_funding                 | {"as_of": "June 23, 2026", "semantics": "reported_total_after_round", "amount_usd": 40000000}                            | 
+ core.employee_count                   | {"as_of": "2026-09", "count": 36, "semantics": "linkedin_estimate"}                                                      | 
+ core.employee_range                   | {"range": "60-65+", "semantics": "company_claimed_in_job_postings", "conflicts_with": "LinkedIn 36 and AI Ark 30"}       | 
+ core.founded_year                     | {"year": 2024, "conflict": "George Eliadis LinkedIn tenure Nov 2021", "semantics": "third_party_and_linkedin_company_pag | 
+ core.founded_year                     | "2024"                                                                                                                   | 
+ core.hq_location                      | "New York, New York, United States"                                                                                      | 
+ core.hq_location                      | {"city": "New York", "state": "New York", "country": "United States", "position": {"lat": 40.748295, "lng": -73.98556},  | 
+ core.hq_location                      | {"city": "New York, New York", "country": "United States", "position": {"lat": 40.748295, "lng": -73.98556}, "continent" | 
+(45 rows)
+

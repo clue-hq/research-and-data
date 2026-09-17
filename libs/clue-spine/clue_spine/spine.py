@@ -16,8 +16,10 @@ factories below (prefixed uuid4 hex, the ``clue_core.new_*_id`` factory pattern 
 
 from __future__ import annotations
 
+import unicodedata
+from collections.abc import Sequence
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
@@ -126,6 +128,22 @@ async def get_workspace(conn: AsyncConnection, workspace_id: str) -> Workspace |
     return Workspace(**dict(row)) if row is not None else None
 
 
+async def rename_workspace(conn: AsyncConnection, workspace_id: str, name: str) -> Workspace | None:
+    """Rename only the workspace; brands retain their independent names."""
+    cleaned = name.strip()
+    if not cleaned or len(cleaned) > 200:
+        raise ValueError("workspace name must contain 1 to 200 characters")
+    result = await conn.execute(
+        text(
+            "UPDATE workspace SET name = :name WHERE workspace_id = :workspace_id "
+            "RETURNING workspace_id, name, status, created_at"
+        ),
+        {"workspace_id": workspace_id, "name": cleaned},
+    )
+    row = result.mappings().first()
+    return Workspace(**dict(row)) if row is not None else None
+
+
 # --- brand ------------------------------------------------------------------
 async def create_brand(
     conn: AsyncConnection, *, workspace_id: str, name: str, brand_id: str | None = None
@@ -221,6 +239,57 @@ async def get_product(conn: AsyncConnection, product_id: str) -> Product | None:
     return _row_to_product(dict(row)) if row is not None else None
 
 
+#: Trademark/service-mark/copyright marks a company decorates its own product names with. They are
+#: stripped BEFORE NFKC, which would otherwise expand ``™`` into the letters ``tm`` and make
+#: ``Aura™`` fold to ``auratm`` — a different identity from ``Aura``.
+_MARK_TABLE = str.maketrans("", "", "™®©℠")
+
+
+def _alias_fold(value: str) -> str:
+    """A comparison key for a product spelling: mark-free, case-free, spacing- and punctuation-free.
+
+    Deliberately mirrors the onboarding lane's ``normalize_identity`` (it cannot be imported: that
+    lives in ``clue_api``, which sits ABOVE the spine). Whitespace and punctuation are not identity
+    — "Front Desk" and "FrontDesk" are one spelling — so the alphanumerics are joined with nothing.
+    """
+    folded = unicodedata.normalize("NFKC", value.translate(_MARK_TABLE)).casefold()
+    return "".join(ch for ch in folded if ch.isalnum())
+
+
+async def add_product_aliases(
+    conn: AsyncConnection, *, product_id: str, workspace_id: str, aliases: Sequence[str]
+) -> Product:
+    """Append observed spellings to a product's aliases and return the refreshed row.
+
+    Never renames, never reorders, never drops an alias: the only edit is an append. A spelling is
+    added only when its folded form matches neither the name nor an alias already recorded (marks,
+    case, spacing and punctuation ignored) — an alias that folds onto the name buys no new match
+    and would only grow the row. Raises :class:`ValueError` when the product is not in this
+    workspace, so a caller can never write across the tenancy boundary.
+    """
+    product = await get_product(conn, product_id)
+    if product is None or product.workspace_id != workspace_id:
+        raise ValueError("product is not in this workspace")
+    seen = {_alias_fold(product.name)} | {_alias_fold(a) for a in product.aliases}
+    merged = list(product.aliases)
+    for alias in aliases:
+        folded = _alias_fold(alias)
+        if alias.strip() and folded and folded not in seen:
+            merged.append(alias.strip())
+            seen.add(folded)
+    if merged != list(product.aliases):
+        await conn.execute(
+            text(
+                "UPDATE product SET aliases = CAST(:aliases AS jsonb) "
+                "WHERE product_id = :id AND workspace_id = :ws"
+            ),
+            {"aliases": serialize_value_json(merged), "id": product_id, "ws": workspace_id},
+        )
+    refreshed = await get_product(conn, product_id)
+    assert refreshed is not None  # it was read a moment ago in this same transaction
+    return refreshed
+
+
 async def list_products(conn: AsyncConnection, brand_id: str) -> list[Product]:
     """All products under a brand (the natural key: products live under a brand;
     ``product_name_per_brand`` is keyed the same way), name-ordered."""
@@ -298,6 +367,22 @@ async def get_project_for_workspace(
     return Project(**dict(row)) if row is not None else None
 
 
+async def set_project_name(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, name: str
+) -> Project | None:
+    """Rename only the project owned by this workspace; preserve its identity and contents."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET name = :name "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id, "name": name},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
 async def confirm_project_product(
     conn: AsyncConnection,
     *,
@@ -335,6 +420,156 @@ async def confirm_project_product(
     )
     row = result.mappings().one_or_none()
     return Project(**dict(row)) if row is not None else None
+
+
+# --- project product set (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.2) -----------
+_PROJECT_PRODUCT_COLUMNS = (
+    "workspace_id, project_id, brand_id, product_id, selection_version, gate_id, "
+    "confirmed_by_user_id, confirmed_at"
+)
+
+
+class ProjectProductSet(BaseModel):
+    """One confirmed version of a project's product set. Rows are append-only; the current set is
+    the highest ``selection_version``; a run pins the version it started under (ruling P2)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workspace_id: str
+    project_id: str
+    brand_id: str
+    selection_version: int
+    product_ids: tuple[str, ...]
+    gate_id: UUID
+    confirmed_by_user_id: str
+    confirmed_at: UtcDatetime
+
+
+def _rows_to_sets(rows: list[dict[str, Any]]) -> list[ProjectProductSet]:
+    """Group version rows (already ordered by version, then insertion) into sets."""
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(int(row["selection_version"]), []).append(row)
+    sets: list[ProjectProductSet] = []
+    for version, members in sorted(grouped.items()):
+        head = members[0]
+        sets.append(
+            ProjectProductSet(
+                workspace_id=head["workspace_id"],
+                project_id=head["project_id"],
+                brand_id=head["brand_id"],
+                selection_version=version,
+                product_ids=tuple(m["product_id"] for m in members),
+                gate_id=head["gate_id"],
+                confirmed_by_user_id=head["confirmed_by_user_id"],
+                confirmed_at=head["confirmed_at"],
+            )
+        )
+    return sets
+
+
+async def list_project_product_sets(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> list[ProjectProductSet]:
+    """Every confirmed version of the project's product set, oldest first; members keep the
+    order the human chose them in (``ctid`` reflects insertion order within one version)."""
+    result = await conn.execute(
+        text(
+            f"SELECT {_PROJECT_PRODUCT_COLUMNS} FROM project_product "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            "ORDER BY selection_version, ctid"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id},
+    )
+    return _rows_to_sets([dict(row) for row in result.mappings().all()])
+
+
+async def current_project_product_set(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> ProjectProductSet | None:
+    sets = await list_project_product_sets(conn, workspace_id=workspace_id, project_id=project_id)
+    return sets[-1] if sets else None
+
+
+async def confirm_project_product_set(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    product_ids: Sequence[str],
+    gate_id: UUID,
+    confirmed_by_user_id: str,
+) -> ProjectProductSet | None:
+    """Human-authorized confirmation of the whole set as a new version (rulings P1/P2).
+
+    Returns ``None`` — without revealing which coordinate was foreign — when the project is absent
+    from the workspace or any product is not a product of the project's own brand and workspace.
+    Repeats in ``product_ids`` collapse, first occurrence wins. Raises ``ValueError`` on an empty
+    list: an empty set is not a selection.
+    """
+    ordered = list(dict.fromkeys(product_ids))
+    if not ordered:
+        raise ValueError("a project product set needs at least one product")
+    locked = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT brand_id FROM project "
+                    "WHERE project_id = :project_id AND workspace_id = :workspace_id FOR UPDATE"
+                ),
+                {"project_id": project_id, "workspace_id": workspace_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if locked is None:
+        return None
+    brand_id = str(locked["brand_id"])
+    known = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT product_id FROM product WHERE product_id = ANY(:ids) "
+                    "AND brand_id = :brand_id AND workspace_id = :workspace_id"
+                ),
+                {"ids": ordered, "brand_id": brand_id, "workspace_id": workspace_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if set(known) != set(ordered):
+        return None
+    next_version = (
+        await conn.execute(
+            text(
+                "SELECT COALESCE(MAX(selection_version), 0) + 1 FROM project_product "
+                "WHERE project_id = :project_id"
+            ),
+            {"project_id": project_id},
+        )
+    ).scalar_one()
+    for product_id in ordered:
+        await conn.execute(
+            text(
+                "INSERT INTO project_product (workspace_id, project_id, brand_id, product_id, "
+                " selection_version, gate_id, confirmed_by_user_id) "
+                "VALUES (:workspace_id, :project_id, :brand_id, :product_id, :version, :gate_id, "
+                " :user_id)"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "brand_id": brand_id,
+                "product_id": product_id,
+                "version": int(next_version),
+                "gate_id": gate_id,
+                "user_id": confirmed_by_user_id,
+            },
+        )
+    sets = await list_project_product_sets(conn, workspace_id=workspace_id, project_id=project_id)
+    return sets[-1]
 
 
 async def list_projects(

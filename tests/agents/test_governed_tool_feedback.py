@@ -316,6 +316,9 @@ def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch)
     assert [event for event, _ in emitted] == ["agent.tool_repair"] * 4
     assert [fields["attempt"] for _, fields in emitted] == [1, 2, 3, 4]
     assert [fields["exhausted"] for _, fields in emitted] == [False, False, False, True]
+    # W10 spares only an effect-free read refused by precondition; a write refused on its value
+    # still pays, so every one of these four spends the budget.
+    assert [fields["budgeted"] for _, fields in emitted] == [True] * 4
     assert emitted[0][1]["error_type"] == "ValueError"
     assert emitted[0][1]["reasons"] == [f"ValueError: {_VERIFIER_REFUSAL}"]
 
@@ -346,3 +349,76 @@ def test_every_converted_refusal_is_operator_visible(monkeypatch: pytest.MonkeyP
     assert fields["address"] == "record_interview_answer@1"
     assert fields["attempt"] == 1
     assert fields["exhausted"] is False
+    assert fields["budgeted"] is True
+
+
+def _read_call(call_id: str) -> AIMessage:
+    """A model turn that calls an effect-free read (the shape of the 2026-09-13 fan-out)."""
+    return AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": call_id,
+                "name": "read_project_accounts",
+                # ``project_id`` is trusted authority: ``_with_trusted_runtime`` strips it from
+                # the model-visible schema, so a model that sent one would get an ordinary
+                # validation error instead of ever reaching the governed wrapper.
+                "args": {"limit": 25, "offset": 0},
+                "type": "tool_call",
+            }
+        ],
+    )
+
+
+class _RefusingReadExecution(_RefusingExecution):
+    """Refuses with the read tools' own error type."""
+
+    async def execute(self, *, plan: ValidatedPlan) -> AsyncIterator[ExecutionProgress]:
+        self.executed.append(plan)
+        operation = plan.operations[0]
+        if len(self.executed) <= self.refusals:
+            yield ExecutionProgress(
+                execution_id=plan.execution_id,
+                status="failed",
+                failed_node_keys=(operation.node_key,),
+                failures=(
+                    OperationFailure(
+                        node_key=operation.node_key,
+                        address=operation.address,
+                        error_type="PreconditionFailed",
+                        message="tool preconditions unmet: overview_not_written",
+                    ),
+                ),
+            )
+            return
+        async for progress in super().execute(plan=plan):  # the committing path
+            yield progress
+
+
+def test_honest_read_refusals_do_not_spend_the_repair_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """W10: five parallel account reads answered ``overview_not_written`` killed a live turn.
+
+    A ``PreconditionFailed`` from an effect-free read is information, not a misread contract.
+    """
+
+    emitted: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        wiring_module,
+        "log",
+        SimpleNamespace(warning=lambda event, **fields: emitted.append((event, fields))),
+    )
+    execution = _RefusingReadExecution(refusals=5)
+    outcome, calls = _run(
+        (
+            *(_read_call(f"read-{ordinal}") for ordinal in range(5)),
+            _finalize_call("finalize", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+
+    assert outcome.status is not AgentExecutionStatus.FAILED
+    assert [fields["budgeted"] for _, fields in emitted] == [False] * 5
+    assert all(fields["exhausted"] is False for _, fields in emitted)
+    assert len(calls.batches) == 6

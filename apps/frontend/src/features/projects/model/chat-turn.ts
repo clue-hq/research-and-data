@@ -30,6 +30,34 @@ export const TurnStateSchema = z.enum([
 
 export type TurnState = z.infer<typeof TurnStateSchema>;
 
+export const QueueControlSchema = z.object({
+  paused: z.boolean(),
+  hold_control_id: z.string().nullable(),
+  paused_at: z.string().nullable(),
+}).transform((wire) => ({ paused: wire.paused, holdControlId: wire.hold_control_id, pausedAt: wire.paused_at }));
+
+export type QueueControl = z.infer<typeof QueueControlSchema>;
+export const EMPTY_QUEUE_CONTROL: QueueControl = { paused: false, holdControlId: null, pausedAt: null };
+
+const StopRequestSchema = z.object({
+  control_id: z.string().min(1), requested_at: z.string(), pending: z.boolean(),
+}).transform((wire) => ({ controlId: wire.control_id, requestedAt: wire.requested_at, pending: wire.pending }));
+
+export const StopTurnResponseSchema = z.object({ data: z.object({
+  turn_id: z.string().min(1), control_id: z.string().min(1),
+  requested_at: z.string(), already_requested: z.boolean(),
+}) }).transform(({ data }) => ({ turnId: data.turn_id, controlId: data.control_id,
+  requestedAt: data.requested_at, alreadyRequested: data.already_requested }));
+
+export const ResumeQueueResponseSchema = z.object({ data: z.object({
+  hold_control_id: z.string().min(1), replayed: z.boolean(),
+  dispatched_turn_id: z.string().nullable(), queue_control: QueueControlSchema,
+}) }).transform(({ data }) => ({ holdControlId: data.hold_control_id, replayed: data.replayed,
+  dispatchedTurnId: data.dispatched_turn_id, queueControl: data.queue_control }));
+
+export type StopTurnReceipt = z.infer<typeof StopTurnResponseSchema>;
+export type ResumeQueueReceipt = z.infer<typeof ResumeQueueResponseSchema>;
+
 export const LIVE_TURN_STATES: ReadonlySet<TurnState> = new Set([
   "queued",
   "running",
@@ -73,6 +101,7 @@ const TurnViewWireSchema = z.object({
   last_event_id: z.number().int().nullable().default(null),
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
+  stop_request: StopRequestSchema.nullable().default(null),
 });
 
 export interface ChatTurn {
@@ -86,13 +115,14 @@ export interface ChatTurn {
   generationAttempts: number;
   /** Accepted user bytes not yet materialized into canonical thread history. */
   submissionMessage: ChatMessage | null;
+  stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
 export const ChatTurnListResponseSchema = z
   .object({
     data: z.array(TurnViewWireSchema).default([]),
     meta: z
-      .object({ thread_status: z.string().default("idle") })
+      .object({ thread_status: z.string().default("idle"), queue_control: QueueControlSchema.optional() })
       .default({ thread_status: "idle" }),
   })
   .transform((wire) => ({
@@ -105,6 +135,7 @@ export const ChatTurnListResponseSchema = z
         requestedAt: item.requested_at,
         lastEventId: item.last_event_id,
         generationAttempts: item.generation_attempts,
+        stopRequest: item.stop_request,
         submissionMessage:
           item.submission_message === null
             ? null
@@ -112,6 +143,7 @@ export const ChatTurnListResponseSchema = z
       }),
     ),
     threadRunning: wire.meta.thread_status === "running",
+    queueControl: wire.meta.queue_control ?? EMPTY_QUEUE_CONTROL,
   }));
 
 export type ChatTurnPage = z.infer<typeof ChatTurnListResponseSchema>;
@@ -193,6 +225,7 @@ export interface MessageSubmissionAttempt {
 export type TurnContextObjectType =
   | "account"
   | "contact"
+  | "project_document"
   | "design_document"
   | "design_node"
   | "design_asset";
@@ -284,15 +317,22 @@ export const GateResponseSchema = z
     expectedEstimatedCostCents: z.number().nullable(),
     revisionRequest: z.string().min(1).optional(),
     selectedProductId: z.string().min(1).optional(),
+    // The set-valued product gate (O6/D10) answers with the whole chosen list.
+    // The route refuses `selected_product_id` on that kind and this list on the
+    // single-valued one, so the two are never both present here either.
+    selectedProductIds: z.array(z.string().min(1)).min(1).readonly().optional(),
   })
   .superRefine((response, ctx) => {
-    if (
-      response.revisionRequest !== undefined &&
-      response.selectedProductId !== undefined
-    ) {
+    const exclusive = [
+      response.revisionRequest,
+      response.selectedProductId,
+      response.selectedProductIds,
+    ].filter((value) => value !== undefined);
+    if (exclusive.length > 1) {
       ctx.addIssue({
         code: "custom",
-        message: "revisionRequest and selectedProductId are mutually exclusive",
+        message:
+          "revisionRequest, selectedProductId and selectedProductIds are mutually exclusive",
       });
     }
   });
@@ -335,6 +375,9 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
   }
   if (submission.response.selectedProductId !== undefined) {
     gateResponse.selected_product_id = submission.response.selectedProductId;
+  }
+  if (submission.response.selectedProductIds !== undefined) {
+    gateResponse.selected_product_ids = [...submission.response.selectedProductIds];
   }
   return {
     gate_response: gateResponse,

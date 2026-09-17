@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330112-qe2OkJ9nTopCvsTuD6TN",
+  "object": "chat.completion",
+  "created": 1788330112,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"As a high-school student, Vineet Edupuganti won the Siemens Competition Individual Grand Prize for a project titled \u201cDevelopment of a High-Performance Biodegradable Battery for Transient Electronics.\u201d\",\n    \"evidence_quote\": \"PROJECT: \u2018Development of a High-Performance Biodegradable Battery for Transient Electronics\u2019.\",\n    \"source_url\": \"https://www.youtube.com/watch?v=8x_RZ4yIRbw\",\n    \"why_generic_tools_miss_it\": \"Enrichment tools focus on current roles and company data and typically omit early-life academic competition wins recorded in event or foundation videos.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.recent_award|contact.facet.education_highschool\",\n      \"value\": [\n        \"2016 Siemens Competition Individual Grand Prize Winner\",\n        \"High School: Oregon Episcopal School, Portland, OR\"\n      ],\n      \"evidence_quote\": \"HIGH SCHOOL: Oregon Episcopal School, Portland, OR\",\n      \"source_url\": \"https://www.youtube.com/watch?v=8x_RZ4yIRbw\",\n      \"charter_category\": \"background\",\n      \"priority\": \"P1\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8CBD0_sH3J5e1kIToVXArey5EVNdtzfVyZHb9z81Od5AQe3MiCPGfMMfk4v0uslquwm4o7hWbP_eV97ySYyaD_M70rwjGAyiIVGFdUBcFEY9OuvvLyD-Gg2_JUwM4iCHsBd_mDeupBI4_7679sx_-XTw_8Tqf1wyFY1bb4bdKK-q5d-Fj7cZXE57rZXPLtC41A8Yu9NovqPinvP-C-7MkehP-f8cnrrC0NIDwZLKL-la_uDtsKfPX4ozmM4P3H1onL08aXUBp8SSxmlRZ17JN2kqxG7glnGbjwzrfY8-hNHk8IgLO3YE-8xvcp8ubweh1GyEQZsRLj0bqHsGCF21sAM3SODbGci0LNEm2djtH4MSRSrRCCumTK2zjIUrl3YRGioVulrwL-dnUpJQbX3igCxxd-aiFqghiTPdb7laPesLNZp8TMyt03Zn5fTyf_HMt65ZRZ_ZtSGCu249Q4kU-5raCcK6u26q5GnZtsnADcliQOfJGJgCpAx6kV5cnB_l-b-Kq8ivuvr8SA8JqQhqP1ySdaU796UDnFy7_uvfIGgZSeZrF5jrQNIMEzeZjpLxnMmKEg6FpmaMo3s6Ukr-GzvNuNzdujsP-heHRUIwQdEPBsDvOXsFBMaEf-UYpnKfWScUkRb-gEBG5ShrR4dQHnk10hRQ3qB_mKHDDBLeUlTc_OLQrcOC22FKp7v7omod_I_M6F5XXFBsICnBP9Bh0i8u4kl6HSggIaYgVbSNFj0cUBg_DFoyEyE0qGW4OA3VQoz_b_HZ7tcXhGK2_alWT3lp5v2GWokCE4y5CjF7Jekq0IZgFpMufbKOmb4dHqOSqQf8yfGIp2D6HqA64gKhZQ0evsDz1x5MrMONDNQ3mzcGN3WUXz6JPogmlLx4cUtK-6Pr4V6rwBrVzvdL4XmQ2US3jhs1_rQHrU4KoLeAvr_hIPCQrylNfvSCRuGwO0Qz9V1ahLcnqTd08J7lddklkp_asxUWfU_lisJaB8_5H2yo2jAaa7JdK4gg90WJqy0OEpYZ9BCPnjI390MSWVwYCrLEg7kreHYO4oE5kcksmFi2GY3UFKCkrBVdI8gNCWETEp6XC_6Wcmrr5TyyZ0TXNUZVWUnvJV2ODjOgJqxc7HXgBIu1DTRUeJHRjpSpFSZxTeD95-_HM_6NLqF5XCAu_B07z3YhRlrzeD1WRLZU_GS2mehCe9YbVzSccLQV0lE6AWWkV18iYuyccPvTDBpn2QV4UGxESasIlVFF8eRgVUa7N0ceSx5DgxdldWuqX_waQ5CxfnErMUbioYAMsh8VrcOGul86qI28QQehDAfpcTeLYdRUU3be1wANvXKceNFmAJc11Y6l1th5UGeQ5ZEkZxtZJmVPYVSHlt1i3XcNzODA5lOd0QPbr5EJ23l7ExAXrzV1RyhRPWj9E7yJcqtlM60hA==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0b118e77cacee221016a97c081893487d0b5c0c5e6ddfc4af6",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2825,
+    "completion_tokens": 312,
+    "total_tokens": 3137,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00133025,
+      "upstream_inference_prompt_cost": 0.00070625,
+      "upstream_inference_completions_cost": 0.000624
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 3.14
+}

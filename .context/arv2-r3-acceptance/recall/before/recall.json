@@ -1,0 +1,1562 @@
+{
+  "accounts": [],
+  "people": [
+    {
+      "account": "alastair-paterson",
+      "by_section": {
+        "contact.facet": {
+          "hits": 3,
+          "keys": 16
+        }
+      },
+      "exact": 1,
+      "field_only": 13,
+      "insight_found": true,
+      "keys": 16,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Chief Executive Officer - Harmonic Security (Aug 2023 - Present)",
+          "run_claim_id": "034c1cbe-5420-4e41-b3a2-cb4b04ab5544",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Chief Executive Officer",
+              "start": "2023-08-01"
+            },
+            {
+              "org": "GBx",
+              "role": "Board Member",
+              "start": "2023-07-01"
+            },
+            {
+              "end": "2023-07-31",
+              "org": "Digital Shadows",
+              "role": "Chief Executive Officer (CEO)",
+              "start": "2011-05-01"
+            },
+            {
+              "end": "2011-05-31",
+              "org": "Detica",
+              "role": "International Propositions Manager",
+              "start": "2010-02-01"
+            },
+            {
+              "end": "2010-01-31",
+              "org": "Detica",
+              "role": "Principal Consultant",
+              "start": "2005-04-01"
+            },
+            {
+              "end": "2004-08-31",
+              "org": "Hewlett-Packard",
+              "role": "Mobile and Internet Research & Development",
+              "start": "2002-06-01"
+            },
+            {
+              "end": "2001-08-31",
+              "org": "Imagination Technologies",
+              "role": "Developer at PowerVR",
+              "start": "2001-06-01"
+            }
+          ],
+          "source_row_id": "alastair_paterson-001",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Co‑founder and CEO of Digital Shadows (2011 - acquisition Jul 2022)",
+          "run_claim_id": "034c1cbe-5420-4e41-b3a2-cb4b04ab5544",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Chief Executive Officer",
+              "start": "2023-08-01"
+            },
+            {
+              "org": "GBx",
+              "role": "Board Member",
+              "start": "2023-07-01"
+            },
+            {
+              "end": "2023-07-31",
+              "org": "Digital Shadows",
+              "role": "Chief Executive Officer (CEO)",
+              "start": "2011-05-01"
+            },
+            {
+              "end": "2011-05-31",
+              "org": "Detica",
+              "role": "International Propositions Manager",
+              "start": "2010-02-01"
+            },
+            {
+              "end": "2010-01-31",
+              "org": "Detica",
+              "role": "Principal Consultant",
+              "start": "2005-04-01"
+            },
+            {
+              "end": "2004-08-31",
+              "org": "Hewlett-Packard",
+              "role": "Mobile and Internet Research & Development",
+              "start": "2002-06-01"
+            },
+            {
+              "end": "2001-08-31",
+              "org": "Imagination Technologies",
+              "role": "Developer at PowerVR",
+              "start": "2001-06-01"
+            }
+          ],
+          "source_row_id": "alastair_paterson-002",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": "Master’s Degree, University of Bristol (2000 - 2004)",
+          "run_claim_id": "4439a6fa-c9cb-4500-97e1-93b25f3bffb8",
+          "run_value": [
+            "first class MEng in Computer Science, University of Bristol (2000-2004)"
+          ],
+          "source_row_id": "alastair_paterson-003",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "Enabling Secure AI Use; Securing generative AI in enterprise workforce",
+          "run_claim_id": "bd9f3ca5-25eb-425c-bfbb-dd5863508a7a",
+          "run_value": [
+            "Enabling Secure AI Use",
+            "task-level AI usage visibility",
+            "zero-touch data protection"
+          ],
+          "source_row_id": "alastair_paterson-004",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": [
+            "Guest: Cloud Security Podcast by Google EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!",
+            "Guest: CYBR.SEC.CAST \"Why Usage Intelligence is the Missing Layers in Enterprise AI Security\" (June 24, 2026)"
+          ],
+          "run_claim_id": "e5ef6fb5-33a4-438b-b0ae-03bb8b605391",
+          "run_value": [
+            {
+              "title": "guest talk to a third year class at the University of Bristol Centre for Innovation and Entrepreneurship",
+              "venue": "University of Bristol Centre for Innovation and Entrepreneurship"
+            }
+          ],
+          "source_row_id": "alastair_paterson-005",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": "Harmonic Security research: analysis of more than 22 million prompts and file uploads",
+          "run_claim_id": "96051984-d702-48a5-b20c-b9bf7ec0a5c0",
+          "run_value": [
+            {
+              "date": "2025-05-14",
+              "title": "Is AI Use in the Workplace Out of Control?",
+              "url": "https://www.securityweek.com/contributors/alastair-paterson/",
+              "venue": "SecurityWeek"
+            }
+          ],
+          "source_row_id": "alastair_paterson-006",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": "Describes approach as supportive, evidence-backed, use-case focused; positions security as enabler",
+          "run_claim_id": "6bacf501-6633-48b6-8e21-56f939774489",
+          "run_value": {
+            "style_label": "direct, anti-boilerplate, focus-first",
+            "summary": "Tells prospects what Harmonic does not do; criticises one-stop-shop AI security claims; frames security as an enabler rather than a blocker."
+          },
+          "source_row_id": "alastair_paterson-007",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Launch announcement: Harmonic Security with a $7m seed round to help companies adopt Generative AI safely",
+          "run_claim_id": "e8112688-ddbb-48bf-9e28-053563ff2ba2",
+          "run_value": "Black Hat 2026 takeaway: tell prospects what you don't do; rejects one-stop-shop AI security claims.",
+          "source_row_id": "alastair_paterson-008",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Board Member - GBx (Jul 2023 - Present)",
+          "run_claim_id": "034c1cbe-5420-4e41-b3a2-cb4b04ab5544",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Chief Executive Officer",
+              "start": "2023-08-01"
+            },
+            {
+              "org": "GBx",
+              "role": "Board Member",
+              "start": "2023-07-01"
+            },
+            {
+              "end": "2023-07-31",
+              "org": "Digital Shadows",
+              "role": "Chief Executive Officer (CEO)",
+              "start": "2011-05-01"
+            },
+            {
+              "end": "2011-05-31",
+              "org": "Detica",
+              "role": "International Propositions Manager",
+              "start": "2010-02-01"
+            },
+            {
+              "end": "2010-01-31",
+              "org": "Detica",
+              "role": "Principal Consultant",
+              "start": "2005-04-01"
+            },
+            {
+              "end": "2004-08-31",
+              "org": "Hewlett-Packard",
+              "role": "Mobile and Internet Research & Development",
+              "start": "2002-06-01"
+            },
+            {
+              "end": "2001-08-31",
+              "org": "Imagination Technologies",
+              "role": "Developer at PowerVR",
+              "start": "2001-06-01"
+            }
+          ],
+          "source_row_id": "alastair_paterson-009",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": "Music (played in school bands and performed live as teenager/young adult)",
+          "run_claim_id": "8ab1069d-90a8-440b-ae5b-72c0d8e8ff36",
+          "run_value": [
+            "Liverpool football supporter"
+          ],
+          "source_row_id": "alastair_paterson-010",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": "Fitness activities: plays football, runs, snowboards",
+          "run_claim_id": "d2bf6316-1bf7-405b-9178-08e2ef247380",
+          "run_value": [
+            "plays football",
+            "runs",
+            "snowboards"
+          ],
+          "source_row_id": "alastair_paterson-011",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.conference_talk",
+          "key_value": "RSA 2026 presentation referenced: 'Shadow Agents: A New Era of Shadow AI Risk in the Enterprise'",
+          "run_claim_id": "d48b8066-88b5-44a5-a000-3d4870392097",
+          "run_value": [
+            "Black Hat 2026 takeaway on telling prospects what you don't do",
+            "RSA Innovation Sandbox Finalist 2024 (Harmonic)"
+          ],
+          "source_row_id": "alastair_paterson-012",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.voice_quote",
+          "key_value": "Most enterprise AI risk comes from employees dumping sensitive data into personal accounts and unauthorized apps.",
+          "run_claim_id": "bce003c8-3153-4bd4-96db-b17cd61c491f",
+          "run_value": {
+            "source_title": "Forbes Technology Council executive spotlight",
+            "text": "DLP tools have never worked properly and are totally inappropriate for the AI era"
+          },
+          "source_row_id": "alastair_paterson-013",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "Loved your post: \"Enabling Secure AI Use\" — would be great to hear how Harmonic measures task-level AI usage in large teams.",
+            "Congrats on launching Harmonic: \"Today I am delighted to announce the launch of Harmonic Security with a $7m seed round\" — curious what customer problem closed the round for you?"
+          ],
+          "run_claim_id": "be20742b-fce3-40ff-9849-94dc93936267",
+          "run_value": [
+            "You wrote that existing data protection technology has failed, and on 909 Exec that the controls 'kind of suck' after 20 years of DLP — that is the same argument as Harmonic's launch, and I would like to hear how you measure enablement versus leakage with customers."
+          ],
+          "source_row_id": "alastair_paterson-014",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": "University of Bristol connection: gave a guest talk and referenced being \"in the same seat\" 20 years earlier",
+          "run_claim_id": "353fad87-1e64-4b47-b857-73a43677e7f2",
+          "run_value": [
+            "Black Hat 2026: tell prospects what you don't do; rejects one-stop-shop AI security claims",
+            "Aggressively ramping GTM; hiring Sales Representatives across Central and Eastern U.S.",
+            "University of Bristol guest talk: 20 years ago I was in the same seat as these students",
+            "Addicted to Claude Cowork as thinking companion",
+            "Launch of Harmonic Security with a $7m seed round",
+            "Liverpool fan; plays football, runs, snowboards"
+          ],
+          "source_row_id": "alastair_paterson-015",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": [
+            "Plays football",
+            "Runs",
+            "Snowboards"
+          ],
+          "run_claim_id": "d2bf6316-1bf7-405b-9178-08e2ef247380",
+          "run_value": [
+            "plays football",
+            "runs",
+            "snowboards"
+          ],
+          "source_row_id": "alastair_paterson-016",
+          "verdict": "exact"
+        }
+      ],
+      "missing": 0,
+      "partial": 2,
+      "recall": 0.1875,
+      "subject_kind": "person"
+    },
+    {
+      "account": "alexander-semien",
+      "by_section": {
+        "contact.facet": {
+          "hits": 4,
+          "keys": 12
+        }
+      },
+      "exact": 2,
+      "field_only": 8,
+      "insight_found": true,
+      "keys": 12,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.nickname",
+          "key_value": "Alex",
+          "run_claim_id": "5273186c-7c0d-47df-a46f-d66ca66d82d4",
+          "run_value": "Alex",
+          "source_row_id": "alexander_semien-001",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": [
+            "Marketing - Cogent Security (Current) Aug 2025 - Present",
+            "VP, Product Marketing - Sevco Security Aug 2023 - Aug 2025",
+            "Director, Strategy & Analytics - Abnormal Security Aug 2020 - Aug 2023",
+            "Manager, Finance & Operations - Zyper Nov 2019 - Aug 2020",
+            "Associate - Forward Nov 2018 - Oct 2019",
+            "Senior Analyst - Accenture Dec 2017 - Nov 2018",
+            "Analyst - Accenture Jul 2016 - Dec 2017"
+          ],
+          "run_claim_id": "f7b62b5b-72de-4d00-80e5-2ec1e554bc93",
+          "run_value": [
+            {
+              "org": "Cogent Security",
+              "role": "Head of Growth",
+              "start": "2025-08-01"
+            },
+            {
+              "end": "2025-08-31",
+              "org": "Sevco Security",
+              "role": "VP, Product Marketing",
+              "start": "2023-08-01"
+            },
+            {
+              "end": "2023-08-31",
+              "org": "Abnormal Security",
+              "role": "Director, Strategy & Analytics",
+              "start": "2020-08-01"
+            },
+            {
+              "end": "2020-08-31",
+              "org": "Zyper (Acquired by Discord)",
+              "role": "Manager, Finance & Operations",
+              "start": "2019-11-01"
+            },
+            {
+              "end": "2019-10-31",
+              "org": "Forward",
+              "role": "Associate",
+              "start": "2018-11-01"
+            },
+            {
+              "end": "2018-11-30",
+              "org": "Accenture",
+              "role": "Senior Analyst",
+              "start": "2017-12-01"
+            },
+            {
+              "end": "2017-12-31",
+              "org": "Accenture",
+              "role": "Analyst",
+              "start": "2016-07-01"
+            }
+          ],
+          "source_row_id": "alexander_semien-002",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": "Duke University — Bachelor of Arts (B.A.) Public Policy Analysis Psychology",
+          "run_claim_id": "2699d126-7aeb-4bcb-84a9-9596182cd95e",
+          "run_value": [
+            "Duke University"
+          ],
+          "source_row_id": "alexander_semien-003",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": [
+            "I like the early stages; no playbook, just a vision and a lot to figure out.",
+            "I'm a marketer by title but a builder at heart.",
+            "Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR."
+          ],
+          "run_claim_id": "37154f5b-0a74-42dc-bbbe-107d8758707a",
+          "run_value": [
+            "early-stage GTM with no playbook",
+            "building growth systems",
+            "cybersecurity startups"
+          ],
+          "source_row_id": "alexander_semien-004",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": [
+            "finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters.",
+            "growth is an equation to be understood and optimized, not just gut feeling."
+          ],
+          "run_claim_id": "457e994c-eb0d-4be5-aa66-c359ac624236",
+          "run_value": {
+            "style_label": "direct, data-and-systems operator",
+            "summary": "Frames growth as an equation to optimize; mixes casual hiring posts with first-person product-and-market takes."
+          },
+          "source_row_id": "alexander_semien-005",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": [
+            "Applied AI for Vulnerability Management — byline: Alexander Semien, Head of Growth (Oct 10, 2025)",
+            "AI CTEM: How Cogent Makes It Practical — byline: Alexander Semien, Head of Growth (Oct 14, 2025)",
+            "Cogent Community’s Agent vs. General LLMs: A Head-to-Head Comparison of Accuracy — byline: Alexander Semien, Head of Growth (Nov 3, 2025)",
+            "Hardcoded Trust, Translated — byline: Alexander Semien, Head of Growth (May 14, 2026)",
+            "The Question Mythos and Daybreak Don't Answer — byline: Alexander Semien, Head of Growth (May 13, 2026)"
+          ],
+          "run_claim_id": "f034dbe5-eb72-4ef1-ad97-6e7eea63d695",
+          "run_value": [
+            {
+              "date": "May 13, 2026",
+              "title": "The Question Mythos and Daybreak Don't Answer",
+              "url": "https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer",
+              "venue": "Cogent blog"
+            }
+          ],
+          "source_row_id": "alexander_semien-006",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": "We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming (presentation listed)",
+          "run_claim_id": "a9b2e37a-2a96-4672-a163-e0fdaba5c1b8",
+          "run_value": [
+            {
+              "title": "We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming",
+              "url": "https://www.threatcon1.org/speakers/alexander-semien",
+              "venue": "THREATCON1"
+            }
+          ],
+          "source_row_id": "alexander_semien-007",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Me posting about new roles at Cogent is low key becoming a trend…\n\nI’m back with two more opportunities to join the Growth team! And, this time, we’re searching for the operators the make the revenue engine hum.",
+          "run_claim_id": "7d9671bc-21a9-4752-b378-386fbc7e86f2",
+          "run_value": "Me posting about new roles at Cogent is low key becoming a trend… I’m back with two more opportunities to join the Growth team! And, this time, we’re searching for the operators the make the revenue engine hum.",
+          "source_row_id": "alexander_semien-008",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": [
+            "At Cogent, we built the entire growth function on a custom in-house AI operating system. Every decision we make is rooted in data.",
+            "We started building an in-house AI operating system from day one",
+            "With AI, two people have the output of a team of ten."
+          ],
+          "run_claim_id": "8e031d69-60dd-4ba9-bd1f-1ca92580663a",
+          "run_value": [
+            "We built the entire growth function on a custom in-house AI operating system.",
+            "Head of Demand Generation brief spans field, channel, digital, content, outbound, and creative plays",
+            "Publicly hiring Field Marketing Manager and Sales Operations Analyst after Black Hat"
+          ],
+          "source_row_id": "alexander_semien-009",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "Me posting about new roles at Cogent is low key becoming a trend… I’m back with two more opportunities to join the Growth team!",
+            "At Cogent, we built the entire growth function on a custom in-house AI operating system. Every decision we make is rooted in data."
+          ],
+          "run_claim_id": "ef551dce-14e8-4429-ba8d-3025c8c33d7b",
+          "run_value": [
+            "You prefer early stages with no playbook; what did week one at Cogent, joining Vineet and Geng mid-Black Hat, reveal that a playbook would have missed?"
+          ],
+          "source_row_id": "alexander_semien-010",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": "We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming (presentation listed)",
+          "run_claim_id": "a9b2e37a-2a96-4672-a163-e0fdaba5c1b8",
+          "run_value": [
+            {
+              "title": "We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming",
+              "url": "https://www.threatcon1.org/speakers/alexander-semien",
+              "venue": "THREATCON1"
+            }
+          ],
+          "source_row_id": "alexander_semien-011",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": [
+            "Applied AI for Vulnerability Management \u00046#x2014; byline: Alexander Semien, Head of Growth (Oct 10, 2025)",
+            "AI CTEM: How Cogent Makes It Practical \u00046#x2014; byline: Alexander Semien, Head of Growth (Oct 14, 2025)",
+            "Hardcoded Trust, Translated (May 14, 2026)",
+            "The Question Mythos and Daybreak Don\u00039t Answer (May 13, 2026)"
+          ],
+          "run_claim_id": "f034dbe5-eb72-4ef1-ad97-6e7eea63d695",
+          "run_value": [
+            {
+              "date": "May 13, 2026",
+              "title": "The Question Mythos and Daybreak Don't Answer",
+              "url": "https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer",
+              "venue": "Cogent blog"
+            }
+          ],
+          "source_row_id": "alexander_semien-012",
+          "verdict": "field_only"
+        }
+      ],
+      "missing": 0,
+      "partial": 2,
+      "recall": 0.3333,
+      "subject_kind": "person"
+    },
+    {
+      "account": "ana-corio",
+      "by_section": {
+        "contact.facet": {
+          "hits": 1,
+          "keys": 14
+        }
+      },
+      "exact": 0,
+      "field_only": 13,
+      "insight_found": true,
+      "keys": 14,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "Growth and demand gen marketing nerd in the B2B cybersecurity space, based in SF…",
+          "run_claim_id": "810557b1-5de9-45f6-bd94-b8fc62fddda0",
+          "run_value": [
+            "Love of food / snacks"
+          ],
+          "source_row_id": "ana_corio-001",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": [
+            "Director of Demand Generation - Harmonic Security (Sep 2024 - Present)",
+            "Director of Demand Generation - Material Security (Jul 2021 - Sep 2024)",
+            "Growth Marketing Strategist - CrowdStrike (Jul 2020 - Jul 2021)",
+            "Senior Content Marketing & Digital Strategy Manager - Digital Shadows (Dec 2015 - Jun 2020)",
+            "Security Marketing Project Specialist and Social Media Channel Manager - Cisco (Jun 2013 - Dec 2015)",
+            "Marketing Intern - Malwarebytes (Jun 2012 - Jun 2013)"
+          ],
+          "run_claim_id": "a3171ee5-9aa7-4f89-aca3-2f7dbd76099a",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Director of Demand Generation",
+              "start": "2024-09-01"
+            },
+            {
+              "end": "2024-09-30",
+              "org": "Material Security",
+              "role": "Director of Demand Generation",
+              "start": "2021-07-01"
+            },
+            {
+              "end": "2021-07-31",
+              "org": "CrowdStrike",
+              "role": "Growth Marketing Strategist",
+              "start": "2020-07-01"
+            },
+            {
+              "end": "2020-06-30",
+              "org": "Digital Shadows (Acquired by Reliaquest)",
+              "role": "Senior Content Marketing & Digital Strategy Manager",
+              "start": "2015-12-01"
+            },
+            {
+              "end": "2015-12-31",
+              "org": "Cisco",
+              "role": "Security Marketing Project Specialist and Social Media Channel Manager",
+              "start": "2013-06-01"
+            },
+            {
+              "end": "2013-06-30",
+              "org": "Malwarebytes",
+              "role": "Marketing Intern",
+              "start": "2012-06-01"
+            },
+            {
+              "end": "2011-08-31",
+              "org": "First Allied Securities",
+              "role": "Event Planning Intern",
+              "start": "2011-08-01"
+            },
+            {
+              "end": "2011-07-31",
+              "org": "Choura Events",
+              "role": "Event Planning Intern",
+              "start": "2011-07-01"
+            },
+            {
+              "end": "2011-06-30",
+              "org": "Santa Clara University Activities Programming Board",
+              "role": "Promo Team Member",
+              "start": "2010-09-01"
+            },
+            {
+              "end": "2010-06-30",
+              "org": "Palos Verdes High School Associated Student Body",
+              "role": "Special Events Coordinator",
+              "start": "2009-09-01"
+            }
+          ],
+          "source_row_id": "ana_corio-002",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "First marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team.",
+          "run_claim_id": "a3171ee5-9aa7-4f89-aca3-2f7dbd76099a",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Director of Demand Generation",
+              "start": "2024-09-01"
+            },
+            {
+              "end": "2024-09-30",
+              "org": "Material Security",
+              "role": "Director of Demand Generation",
+              "start": "2021-07-01"
+            },
+            {
+              "end": "2021-07-31",
+              "org": "CrowdStrike",
+              "role": "Growth Marketing Strategist",
+              "start": "2020-07-01"
+            },
+            {
+              "end": "2020-06-30",
+              "org": "Digital Shadows (Acquired by Reliaquest)",
+              "role": "Senior Content Marketing & Digital Strategy Manager",
+              "start": "2015-12-01"
+            },
+            {
+              "end": "2015-12-31",
+              "org": "Cisco",
+              "role": "Security Marketing Project Specialist and Social Media Channel Manager",
+              "start": "2013-06-01"
+            },
+            {
+              "end": "2013-06-30",
+              "org": "Malwarebytes",
+              "role": "Marketing Intern",
+              "start": "2012-06-01"
+            },
+            {
+              "end": "2011-08-31",
+              "org": "First Allied Securities",
+              "role": "Event Planning Intern",
+              "start": "2011-08-01"
+            },
+            {
+              "end": "2011-07-31",
+              "org": "Choura Events",
+              "role": "Event Planning Intern",
+              "start": "2011-07-01"
+            },
+            {
+              "end": "2011-06-30",
+              "org": "Santa Clara University Activities Programming Board",
+              "role": "Promo Team Member",
+              "start": "2010-09-01"
+            },
+            {
+              "end": "2010-06-30",
+              "org": "Palos Verdes High School Associated Student Body",
+              "role": "Special Events Coordinator",
+              "start": "2009-09-01"
+            }
+          ],
+          "source_row_id": "ana_corio-003",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": "Bachelor’s, Marketing — Santa Clara University - Leavey School of Business (2010 - 2014)",
+          "run_claim_id": "7941c6a7-b1ae-459d-bd2a-fb67309f7063",
+          "run_value": [
+            "Santa Clara University - Leavey School of Business"
+          ],
+          "source_row_id": "ana_corio-004",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "First launch 👀........ Series A is LIVE!!!!!!!! 🚀",
+          "run_claim_id": "ad604d5b-c0bd-44df-8aab-c22720ad117f",
+          "run_value": "Hiring post! I'm hiring an ABM (account based marketing) manager for our most strategic accounts.",
+          "source_row_id": "ana_corio-005",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "What does a #marketingnerd do for 1.5 weeks between jobs?",
+          "run_claim_id": "ad604d5b-c0bd-44df-8aab-c22720ad117f",
+          "run_value": "Hiring post! I'm hiring an ABM (account based marketing) manager for our most strategic accounts.",
+          "source_row_id": "ana_corio-006",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": [
+            "Kicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.",
+            "Built out all early stage functions including content strategy & an inbound motion, paid advertising, analyst relations, search, events, gifting, review sites, and more."
+          ],
+          "run_claim_id": "150c4eb7-cf32-41c5-90ad-b1dda3a6eada",
+          "run_value": [
+            "Hiring an ABM manager for Harmonic's most strategic accounts — account mapping, outreach, direct mail, events, plus weird creative stuff nobody's tried yet",
+            "Launched The Frequency: monthly 5 min read, zero fluff, because AI security content is mostly a vendor pitch in disguise",
+            "Hiring a Growth Marketer to own outbound using Clay, Common Room, PhantomBuster",
+            "At Material: first marketing hire; automated outbound with 6sense, Clearbit, Warmly, and Clay"
+          ],
+          "source_row_id": "ana_corio-007",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": "Kicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.",
+          "run_claim_id": "75d24da4-3d61-43d5-9ff5-c9bd3502682e",
+          "run_value": [
+            "At Material you built an automated outbound program that included building account and contact lists and used 6sense, Clearbit, Warmly, and Clay — that's the motion Harmonic is now hiring outbound and ABM seats to scale."
+          ],
+          "source_row_id": "ana_corio-008",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": "Hit the beach for a mind break. 🏖",
+          "run_claim_id": "16ebb25f-a56d-40aa-a477-b6e465996426",
+          "run_value": [
+            "Bowling (self-deprecating: 'my bowling skillz')"
+          ],
+          "source_row_id": "ana_corio-009",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": "Kicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.",
+          "run_claim_id": "bbcc253e-2f85-4ebd-8bc4-2ce582e65cdc",
+          "run_value": {
+            "style_label": "direct, informal, anti-fluff demand-gen operator",
+            "summary": "Writes hiring posts in first person with emoji and snacks jokes; editorial standard is 'zero fluff' and hostility to vendor-pitch content."
+          },
+          "source_row_id": "ana_corio-010",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": "Utilized tools such as 6sense, Clearbit, Warmly, and Clay.",
+          "run_claim_id": "150c4eb7-cf32-41c5-90ad-b1dda3a6eada",
+          "run_value": [
+            "Hiring an ABM manager for Harmonic's most strategic accounts — account mapping, outreach, direct mail, events, plus weird creative stuff nobody's tried yet",
+            "Launched The Frequency: monthly 5 min read, zero fluff, because AI security content is mostly a vendor pitch in disguise",
+            "Hiring a Growth Marketer to own outbound using Clay, Common Room, PhantomBuster",
+            "At Material: first marketing hire; automated outbound with 6sense, Clearbit, Warmly, and Clay"
+          ],
+          "source_row_id": "ana_corio-011",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "So... we built ‘The Frequency’. Monthly (to start), 5 min read, zero fluff",
+          "run_claim_id": "ad604d5b-c0bd-44df-8aab-c22720ad117f",
+          "run_value": "Hiring post! I'm hiring an ABM (account based marketing) manager for our most strategic accounts.",
+          "source_row_id": "ana_corio-012",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [
+            "contact.facet.stated_interests"
+          ],
+          "field_key": "contact.facet.hobby",
+          "key_value": [
+            "Hits the beach for a mind break",
+            "Binges marketing content (#growthmarketing #contentmarketing #digitalmarketing)"
+          ],
+          "run_claim_id": "16ebb25f-a56d-40aa-a477-b6e465996426",
+          "run_value": [
+            "Bowling (self-deprecating: 'my bowling skillz')"
+          ],
+          "source_row_id": "ana_corio-013",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [
+            "contact.facet.hobby"
+          ],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": [
+            "Hits the beach for a mind break",
+            "Binges marketing content (#growthmarketing #contentmarketing #digitalmarketing)"
+          ],
+          "run_claim_id": "810557b1-5de9-45f6-bd94-b8fc62fddda0",
+          "run_value": [
+            "Love of food / snacks"
+          ],
+          "source_row_id": "ana_corio-013",
+          "verdict": "field_only"
+        }
+      ],
+      "missing": 0,
+      "partial": 1,
+      "recall": 0.0714,
+      "subject_kind": "person"
+    },
+    {
+      "account": "cameron-coles",
+      "by_section": {
+        "contact.facet": {
+          "hits": 1,
+          "keys": 9
+        }
+      },
+      "exact": 0,
+      "field_only": 8,
+      "insight_found": false,
+      "keys": 9,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": "BSE Marketing, The Wharton School",
+          "run_claim_id": "6ddb856f-4bab-4a02-9644-83e5cca60123",
+          "run_value": [
+            "The Wharton School"
+          ],
+          "source_row_id": "cameron_coles-001",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": [
+            "VP of Marketing - Cogent Security (Nov 2025 - Present)",
+            "VP of Marketing - Cyberhaven (May 2022 - Jun 2025)",
+            "Head of Product and Content Marketing - Wiz (Feb 2021 - Dec 2021)",
+            "Director of Product Marketing - Proxy (Oct 2018 - Jan 2021)",
+            "Director of Product Marketing - Skyhigh (Jul 2013 - Mar 2018)",
+            "Product Marketing Manager - Symantec (Jul 2011 - Feb 2013)",
+            "Product Marketing Manager - Clearwell Systems (Jul 2010 - Feb 2013)"
+          ],
+          "run_claim_id": "aecbc851-d192-418d-ab86-ec109cb779af",
+          "run_value": [
+            {
+              "org": "Cogent Security",
+              "role": "VP of Marketing",
+              "start": "2025-11-01"
+            },
+            {
+              "end": "2025-06-30",
+              "org": "Cyberhaven",
+              "role": "VP of Marketing",
+              "start": "2022-05-01"
+            },
+            {
+              "end": "2021-12-31",
+              "org": "Wiz",
+              "role": "Head of Product and Content Marketing",
+              "start": "2021-02-01"
+            },
+            {
+              "end": "2021-01-31",
+              "org": "Proxy",
+              "role": "Director of Product Marketing",
+              "start": "2018-10-01"
+            },
+            {
+              "end": "2018-03-31",
+              "org": "Skyhigh",
+              "role": "Director of Product Marketing",
+              "start": "2013-07-01"
+            },
+            {
+              "end": "2013-02-28",
+              "org": "Symantec",
+              "role": "Product Marketing Manager",
+              "start": "2011-07-01"
+            },
+            {
+              "end": "2013-02-28",
+              "org": "Clearwell Systems (Acquired by Symantec)",
+              "role": "Product Marketing Manager",
+              "start": "2010-07-01"
+            }
+          ],
+          "source_row_id": "cameron_coles-002",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "I'm thrilled to announce that I'm joining Cogent Security as VP of Marketing!",
+          "run_claim_id": "a1de7b19-7dfe-4d78-ba55-7296b6f8ade9",
+          "run_value": "Forbes just named Cogent to its Next Billion-Dollar Startups list, a year after the company launched out of stealth.",
+          "source_row_id": "cameron_coles-003",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": "Direct, advocacy for category-building and operational clarity in security marketing",
+          "run_claim_id": "a99a7cb6-3421-44da-9091-3b5ae83b458e",
+          "run_value": {
+            "style_label": "direct category-builder",
+            "summary": "Credits collaborators by name, frames GTM as category definition, and uses concrete operational language (alerts, remediation, templates) rather than vendor slogans."
+          },
+          "source_row_id": "cameron_coles-004",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": "Represented Cogent Security at a joint Cogent Security x Anthropic RSA event",
+          "run_claim_id": "33eb2c09-3ec9-4d63-b258-c366207ab8e8",
+          "run_value": [
+            {
+              "date": "2026-08-03",
+              "title": "Black Hat Las Vegas with the Cogent team",
+              "url": "https://www.linkedin.com/posts/cameroncoles_just-landed-in-vegas-for-black-hat-full-activity-7489902544320909312-eIVr",
+              "venue": "Black Hat"
+            }
+          ],
+          "source_row_id": "cameron_coles-005",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "Category definition in security and transforming vulnerability management/prioritization",
+          "run_claim_id": "e3bf1f86-827a-43f3-b6a8-04593b0e8d62",
+          "run_value": [
+            "category-defining companies",
+            "vulnerability management transformation",
+            "go-to-market at product-market fit"
+          ],
+          "source_row_id": "cameron_coles-006",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": [
+            "You described vulnerability management as overdue for transformation because security teams are drowning in alerts—what part of the category still seems most misunderstood?",
+            "You called the new Cogent site build ‘Organized, smooth, no drama’; what vendor behavior made the biggest difference in keeping a project that more than doubled page templates and content painless?",
+            "You said AI for security means ‘you don't get to be wrong’; where do you draw the line between useful prioritization and an unacceptable false positive?"
+          ],
+          "run_claim_id": "e75435f6-7911-4c11-81e0-607a57089969",
+          "run_value": [
+            "CASB category at Skyhigh → Wiz first year → Cyberhaven GTM → Cogent VM category",
+            "Vulnerability management overdue; security teams drowning in alerts",
+            "Cogent on a steeper curve than anything he has seen; building is the best part",
+            "14islands site rebuild: organized, smooth, no drama; more than doubled templates",
+            "First Cogent offsite three weeks in: GTM/Product focus and AI-agent hackathon"
+          ],
+          "source_row_id": "cameron_coles-007",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "You described vulnerability management as overdue for transformation because security teams are drowning in alerts—what part of the category still seems most misunderstood?",
+            "You called the new Cogent site build ‘Organized, smooth, no drama’; what vendor behavior made the biggest difference in keeping a project that more than doubled page templates and content painless?",
+            "You said AI for security means ‘you don't get to be wrong’; where do you draw the line between useful prioritization and an unacceptable false positive?"
+          ],
+          "run_claim_id": "0b35c153-175b-46d6-baf4-a71816f5e99f",
+          "run_value": [
+            "You called the 14islands Cogent site build organized, smooth, no drama after more than doubling templates — what made that partner process work?"
+          ],
+          "source_row_id": "cameron_coles-008",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.voice_quote",
+          "key_value": "Building AI for security means you don't get to be wrong. That conviction shapes everything Geng and the team build at Cogent.",
+          "run_claim_id": "b38b49d7-3142-4fca-be59-25f667cd7f98",
+          "run_value": {
+            "source_title": "Joining Cogent Security as VP of Marketing",
+            "text": "After spending the last decade in cybersecurity, from helping define the CASB category at Skyhigh, to scaling Wiz in its breakout first year, to building go-to-market at Cyberhaven, I've seen firsthand how the right technology at the right time can transform an entire industry."
+          },
+          "source_row_id": "cameron_coles-009",
+          "verdict": "field_only"
+        }
+      ],
+      "missing": 0,
+      "partial": 1,
+      "recall": 0.1111,
+      "subject_kind": "person"
+    },
+    {
+      "account": "tyler-chonoles",
+      "by_section": {
+        "contact.facet": {
+          "hits": 5,
+          "keys": 8
+        }
+      },
+      "exact": 2,
+      "field_only": 3,
+      "insight_found": true,
+      "keys": 8,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": [
+            "Growth and Demand Gen Marketing Manager - Harmonic Security (May 2026 - Present)",
+            "Programmatic Trading Specialist - The Trade Desk (Apr 2024 - May 2026)",
+            "Business Intelligence Architect - GRAIN Group (Nov 2021 - Mar 2024)",
+            "Senior Analyst, Data Analytics - Horizon Media (Sep 2021 - Nov 2021)",
+            "Analyst, Data Analytics - Horizon Media (May 2021 - Sep 2021)",
+            "Employee - Snowbird (Dec 2020 - May 2021)",
+            "Analyst - Mizuho (Jul 2019 - Sep 2020)",
+            "Summer Analyst - Mizuho (May 2018 - Aug 2018)",
+            "Intern - HGK Asset Management, Inc. (Jun 2017 - Jul 2017)"
+          ],
+          "run_claim_id": "b45227a0-f076-4b99-b901-d8c05a5f0179",
+          "run_value": [
+            {
+              "org": "Harmonic Security",
+              "role": "Growth and Demand Gen Marketing Manager",
+              "start": "May 2026"
+            },
+            {
+              "end": "May 2026",
+              "org": "The Trade Desk",
+              "role": "Programmatic Trading Specialist",
+              "start": "Apr 2024"
+            },
+            {
+              "end": "Mar 2024",
+              "org": "GRAIN Group",
+              "role": "Business Intelligence Architect",
+              "start": "Nov 2021"
+            },
+            {
+              "end": "Nov 2021",
+              "org": "Horizon Media",
+              "role": "Senior Analyst, Data Analytics",
+              "start": "Sep 2021"
+            },
+            {
+              "end": "Sep 2021",
+              "org": "Horizon Media",
+              "role": "Analyst, Data Analytics",
+              "start": "May 2021"
+            },
+            {
+              "end": "May 2021",
+              "org": "Snowbird",
+              "role": "Employee",
+              "start": "Dec 2020"
+            },
+            {
+              "end": "Sep 2020",
+              "org": "Mizuho",
+              "role": "Analyst",
+              "start": "Jul 2019"
+            },
+            {
+              "end": "Jul 2017",
+              "org": "HGK Asset Management, Inc.",
+              "role": "Intern",
+              "start": "Jun 2017"
+            }
+          ],
+          "source_row_id": "tyler_chonoles-001",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": "Mathematics, Physics at Bowdoin College (2015 - 2019)",
+          "run_claim_id": "2ef4fbbe-ab7e-45d4-becd-8157b991dafe",
+          "run_value": [
+            "Mathematics, Physics at Bowdoin College (2015 - 2019)"
+          ],
+          "source_row_id": "tyler_chonoles-002",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": [
+            "playing guitar",
+            "skiing",
+            "played basketball in school",
+            "golf"
+          ],
+          "run_claim_id": "bd2e0213-993c-4f0a-b546-126526cab039",
+          "run_value": [
+            "playing guitar",
+            "skiing",
+            "golf"
+          ],
+          "source_row_id": "tyler_chonoles-003",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Excited to share that I’ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager!",
+          "run_claim_id": "c6b5ecec-6232-4125-b0c8-fd4f352ba851",
+          "run_value": "Excited to share that I’ve officially joined Harmonic Security as their new Growth and Demand Gen Marketing Manager!",
+          "source_row_id": "tyler_chonoles-004",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": "Curator of The Frequency, Harmonic’s AI security and governance newsletter",
+          "run_claim_id": "32823fc6-ab93-4d78-8b22-ba8d13e5e1a9",
+          "run_value": [
+            {
+              "date": "2026-07-30",
+              "title": "The Frequency (curator)",
+              "url": "https://www.harmonic.security/frequency",
+              "venue": "Harmonic Security"
+            }
+          ],
+          "source_row_id": "tyler_chonoles-005",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": "Most AI security content out there is vendor noise dressed up as thought leadership. We’re trying to do something different",
+          "run_claim_id": "10685bcc-6847-4e06-a2d8-5ff2b3155363",
+          "run_value": [
+            {
+              "date": "2026-07-08",
+              "title": "Most AI security content out there is vendor noise dressed up as thought leadership",
+              "url": "https://www.linkedin.com/posts/tyler-chonoles-106405a0_been-heads-down-building-something-im-really-activity-7480653138769661953-LZ8j",
+              "venue": "LinkedIn"
+            }
+          ],
+          "source_row_id": "tyler_chonoles-006",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": "The problem Harmonic is solving is one I genuinely believe matters: enabling the safe use of AI.",
+          "run_claim_id": "31dd5112-6b1e-45e4-8d41-dd6154e4ea99",
+          "run_value": {
+            "style_label": "direct product contrast",
+            "summary": "Writes short first-person product contrasts and editorial ownership lines rather than vendor boilerplate."
+          },
+          "source_row_id": "tyler_chonoles-007",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "Congrats on joining Harmonic Security — excited to see how you shape The Frequency.",
+            "Loved your line: \"Most organizations can tell you which AI tools their teams are using. Very few can tell you what work is actually getting done inside them.\""
+          ],
+          "run_claim_id": "833323d1-cd5f-49e1-b4b1-1f90cb2c9645",
+          "run_value": [
+            "You called most AI security content vendor noise dressed up as thought leadership — what did you refuse to put in Issue 001 because of that?"
+          ],
+          "source_row_id": "tyler_chonoles-008",
+          "verdict": "field_only"
+        }
+      ],
+      "missing": 0,
+      "partial": 3,
+      "recall": 0.625,
+      "subject_kind": "person"
+    },
+    {
+      "account": "vineet-edupuganti",
+      "by_section": {
+        "contact.facet": {
+          "hits": 4,
+          "keys": 15
+        }
+      },
+      "exact": 2,
+      "field_only": 10,
+      "insight_found": true,
+      "keys": 15,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Co-Founder and CEO - Cogent Security (Current)",
+          "run_claim_id": "29fcd2ba-6586-48af-8d28-98f09015a0cf",
+          "run_value": [
+            {
+              "org": "Cogent Security",
+              "role": "Co-Founder & CEO",
+              "start": "2024-10-01"
+            },
+            {
+              "end": "2024-05-31",
+              "org": "Abnormal Security",
+              "role": "Head of Multi Product Platform Division",
+              "start": "2023-07-01"
+            },
+            {
+              "end": "2023-07-31",
+              "org": "Abnormal Security",
+              "role": "Director of Product Management",
+              "start": "2022-12-01"
+            },
+            {
+              "end": "2022-12-31",
+              "org": "Abnormal Security",
+              "role": "Senior Product Manager",
+              "start": "2021-08-01"
+            },
+            {
+              "end": "2021-08-31",
+              "org": "Abnormal Security",
+              "role": "Product Manager / Engineer",
+              "start": "2020-09-01"
+            },
+            {
+              "end": "2020-09-30",
+              "org": "Abnormal Security",
+              "role": "ML Engineer",
+              "start": "2020-06-01"
+            },
+            {
+              "end": "2020-12-31",
+              "org": "Meta, New Relic, Stanford",
+              "role": "ML Engineering / Research",
+              "start": "2016-01-01"
+            }
+          ],
+          "source_row_id": "vineet_edupuganti-001",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Head of Multi Product Platform Division - Abnormal AI (Jan 2023 - Jan 2024)",
+          "run_claim_id": "29fcd2ba-6586-48af-8d28-98f09015a0cf",
+          "run_value": [
+            {
+              "org": "Cogent Security",
+              "role": "Co-Founder & CEO",
+              "start": "2024-10-01"
+            },
+            {
+              "end": "2024-05-31",
+              "org": "Abnormal Security",
+              "role": "Head of Multi Product Platform Division",
+              "start": "2023-07-01"
+            },
+            {
+              "end": "2023-07-31",
+              "org": "Abnormal Security",
+              "role": "Director of Product Management",
+              "start": "2022-12-01"
+            },
+            {
+              "end": "2022-12-31",
+              "org": "Abnormal Security",
+              "role": "Senior Product Manager",
+              "start": "2021-08-01"
+            },
+            {
+              "end": "2021-08-31",
+              "org": "Abnormal Security",
+              "role": "Product Manager / Engineer",
+              "start": "2020-09-01"
+            },
+            {
+              "end": "2020-09-30",
+              "org": "Abnormal Security",
+              "role": "ML Engineer",
+              "start": "2020-06-01"
+            },
+            {
+              "end": "2020-12-31",
+              "org": "Meta, New Relic, Stanford",
+              "role": "ML Engineering / Research",
+              "start": "2016-01-01"
+            }
+          ],
+          "source_row_id": "vineet_edupuganti-002",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": [
+            "Bachelor of Science - BS, Electrical Engineering, Stanford University",
+            "Master of Science - MS, Computer Science, Stanford University"
+          ],
+          "run_claim_id": "7a6349aa-6021-41c6-961a-23710794ff8f",
+          "run_value": [
+            "Stanford University"
+          ],
+          "source_row_id": "vineet_edupuganti-003",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Today we're announcing Autonomous Vulnerability Response (AVR), the first end-to-end autonomous AI vulnerability response capability proven in production.",
+          "run_claim_id": "30d4c85d-0066-42cd-872c-f2e9acb5dc11",
+          "run_value": "It was great to be back at Stanford University, with the Stanford Applied Cyber group a few weeks ago.",
+          "source_row_id": "vineet_edupuganti-004",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": "Today, we’re thrilled to launch out of stealth with $11 million in funding.",
+          "run_claim_id": "2f53528b-73d7-4075-adcb-6c9261a4348e",
+          "run_value": [
+            {
+              "date": "Mar 28, 2017",
+              "title": "From Hoop Dreams to Science Stardom",
+              "url": "https://medium.com/regeneron-science-talent-search/from-hoop-dreams-to-science-stardom-d48c21194518",
+              "venue": "Regeneron Science Talent Search / Medium"
+            }
+          ],
+          "source_row_id": "vineet_edupuganti-005",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": "This brings our total funding to $53 million.",
+          "run_claim_id": "2f53528b-73d7-4075-adcb-6c9261a4348e",
+          "run_value": [
+            {
+              "date": "Mar 28, 2017",
+              "title": "From Hoop Dreams to Science Stardom",
+              "url": "https://medium.com/regeneron-science-talent-search/from-hoop-dreams-to-science-stardom-d48c21194518",
+              "venue": "Regeneron Science Talent Search / Medium"
+            }
+          ],
+          "source_row_id": "vineet_edupuganti-006",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "Product and startup leader with a passion for AI and Cybersecurity",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vineet_edupuganti-007",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.voice_quote",
+          "key_value": "building systems that have the right verification, transparency, uh demonstrate the reasoning chain and provide confidence to the end user, that becomes really critical.",
+          "run_claim_id": "de5f2759-304a-41bf-ad54-b0e39eb72af5",
+          "run_value": {
+            "media_url": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+            "source_title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+            "text": "And so why vulnerability management? It was really a couple of things, right, that happened in tandem. I think number one, at Abnormal and just through my network in the broader industry, I had the opportunity to chat with hundreds of different organizations."
+          },
+          "source_row_id": "vineet_edupuganti-008",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.voice_quote",
+          "key_value": "every company past a certain point of maturity to where you actually have digital assets to go and defend, they have to worry about cybersecurity.",
+          "run_claim_id": "de5f2759-304a-41bf-ad54-b0e39eb72af5",
+          "run_value": {
+            "media_url": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+            "source_title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+            "text": "And so why vulnerability management? It was really a couple of things, right, that happened in tandem. I think number one, at Abnormal and just through my network in the broader industry, I had the opportunity to chat with hundreds of different organizations."
+          },
+          "source_row_id": "vineet_edupuganti-009",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+          "run_claim_id": "632afb3a-caa6-46e0-8466-84e0dd5f660a",
+          "run_value": [
+            {
+              "title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+              "url": "https://mcdn.podbean.com/mf/web/3zewen7za624jpfj/HVS25_EP391_Cogent_Audiobns0t.mp3"
+            }
+          ],
+          "source_row_id": "vineet_edupuganti-010",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.conference_talk",
+          "key_value": "recorded live at Black Hat 2025 in Las Vegas",
+          "run_claim_id": "aa6e6be8-00eb-49c2-92ff-6b74aea96b85",
+          "run_value": [
+            "AI Meets Cyber Defense: A Fireside Chat with Vineet Edupuganti on the Future of Autonomous Security — Stanford Applied Cyber, Friday, October 31, 2025"
+          ],
+          "source_row_id": "vineet_edupuganti-011",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": "AI is raising the ceiling on what attackers can do. Cyber defense needs to evolve just as quickly.",
+          "run_claim_id": "5bf1d157-5593-4af0-ad4b-d4149e1c0dcf",
+          "run_value": [
+            "Vulnerability management is fundamentally broken. Today, we're launching Cogent Security to fix it.",
+            "Security teams don't have a visibility problem. They have an execution problem. That's the gap we built Cogent to close.",
+            "This round of funding lets us double down on our core data and AI platforms, scale our go-to-market efforts, and hire exceptional builders.",
+            "Today we're announcing Autonomous Vulnerability Response (AVR), the first end-to-end autonomous AI vulnerability response capability proven in production.",
+            "AI is raising the ceiling on what attackers can do. Cyber defense needs to evolve just as quickly."
+          ],
+          "source_row_id": "vineet_edupuganti-012",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": "AI is raising the ceiling on what attackers can do — curious how Cogent's AVR has changed remediation times for teams like yours?",
+          "run_claim_id": "61da55ac-5875-4954-9907-6905282f0147",
+          "run_value": [
+            "Your Series A note said the round lets you scale go-to-market efforts — how are you thinking about named-account coverage as the team grows?"
+          ],
+          "source_row_id": "vineet_edupuganti-013",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [
+            "contact.facet.recent_award"
+          ],
+          "field_key": "contact.facet.education_highschool",
+          "key_value": [
+            "2016 Siemens Competition Individual Grand Prize Winner",
+            "High School: Oregon Episcopal School, Portland, OR"
+          ],
+          "run_claim_id": "0495e079-99bc-487f-ab1d-40b4a37f7fd8",
+          "run_value": "Oregon Episcopal School",
+          "source_row_id": "vineet_edupuganti-014",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [
+            "contact.facet.education_highschool"
+          ],
+          "field_key": "contact.facet.recent_award",
+          "key_value": [
+            "2016 Siemens Competition Individual Grand Prize Winner",
+            "High School: Oregon Episcopal School, Portland, OR"
+          ],
+          "run_claim_id": "0495e079-99bc-487f-ab1d-40b4a37f7fd8",
+          "run_value": "Oregon Episcopal School",
+          "source_row_id": "vineet_edupuganti-014",
+          "verdict": "field_only"
+        }
+      ],
+      "missing": 1,
+      "partial": 2,
+      "recall": 0.2667,
+      "subject_kind": "person"
+    }
+  ],
+  "run_id": "1e2edb26-6c86-5e14-9dfc-132ac16033e4",
+  "run_ids": [
+    "1e2edb26-6c86-5e14-9dfc-132ac16033e4"
+  ],
+  "workspace_id": "ws_arv2_answer_key"
+}

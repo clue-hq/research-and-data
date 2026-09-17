@@ -1,16 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
 import {
   DESIGN_REFERENCE_ACCEPT,
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
 } from "@/features/projects/model/design-reference-attachments";
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
+import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
+import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
+import { useResearchProgressController } from "@/features/projects/hooks/use-research-progress-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
@@ -20,6 +25,7 @@ import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene
 import { useSceneLiveReveal } from "@/features/design-editor/hooks/use-scene-live-reveal";
 import type { Operation } from "@/features/design-editor/engine/scene/contracts";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
+import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
@@ -32,6 +38,7 @@ import {
   chatSurfacePaneParams,
   chatSurfaceUrlState,
 } from "../model/chat-surface-params";
+import { discoveryLaunchToOpen } from "../model/discovery-launch-signal";
 import {
   ANNOTATIONS_ONLY_MESSAGE,
   annotationChips,
@@ -39,6 +46,10 @@ import {
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
+import { galleryCardTarget } from "../model/gallery-card-target";
+import { openArtifactFromParam } from "../model/open-artifact-param";
+import { useProjectDocuments } from "@/features/projects/hooks/use-project-documents";
+import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
@@ -76,8 +87,18 @@ import { WebInspector } from "./web-inspector";
  * the auto-open effect a new array identity on every render. */
 const NO_ARTIFACTS: ProjectArtifact[] = [];
 
+/** Every tool call id in the transcript whose part has landed (`output-available`). */
+function completedToolCallIds(transcript: ProjectChatController["transcript"]): string[] {
+  return transcript.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      part.kind === "tool" && part.state === "output-available" ? [part.toolCallId] : [],
+    ),
+  );
+}
+
 export function ChatSurface({
   artifacts,
+  canEditDocuments = false,
   chat,
   controller,
   documentIds,
@@ -91,6 +112,7 @@ export function ChatSurface({
    * props, never the workspace schema (`workspace.artifacts` stays the
    * schema-hard empty tuple). */
   artifacts?: ProjectArtifact[];
+  canEditDocuments?: boolean;
   chat: ProjectChatController;
   controller: ReturnType<typeof useProjectWorkspaceController>;
   /** Artifact id → design-document id over the whole feed. Consumed by the
@@ -103,6 +125,50 @@ export function ChatSurface({
   workspace: ProjectWorkspace;
 }) {
   const urlState = chatSurfaceUrlState(paneState);
+  // The Target accounts tab's "Add to chat": prepared against THIS project and
+  // the open thread, landing in this mount's composer (no picker, no navigation).
+  const addToOpenChat = useAddToOpenChatController({
+    onAdded: controller.addEntities,
+    onFailed: controller.failContextHandoff,
+    projectId,
+    threadId: chat.activeThreadId ?? undefined,
+  });
+  // The Target accounts tab's live poll (spec 2026-09-12 §3): the status decides the spinner,
+  // each read bumps the token the tab refetches on, and the launch signal primes the first read.
+  const [discoveryPrime, setDiscoveryPrime] = useState(0);
+  const discovery = useDiscoveryStatus(projectId, { prime: discoveryPrime });
+  // The pinned research card (spec 2026-09-12): one per project, above the composer, alive
+  // while the read returns a card. A completed ARV2 research launch primes the read — both
+  // `launch_arv2_account_research` and `launch_arv2_person_research` create research jobs, so
+  // either one is enough to make the next read find a card (the old lane's
+  // `launch_account_research` is superseded and is NOT matched).
+  const [researchPrime, setResearchPrime] = useState(0);
+  const research = useResearchProgressController(projectId, { prime: researchPrime });
+  const knownResearchLaunchIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const known = knownResearchLaunchIds.current;
+    const ids = chat.transcript.flatMap((message) =>
+      message.parts.flatMap((part) =>
+        part.kind === "tool" &&
+        (part.toolName === "launch_arv2_account_research" ||
+          part.toolName === "launch_arv2_person_research") &&
+        part.state === "output-available"
+          ? [part.toolCallId]
+          : [],
+      ),
+    );
+    if (known === null) {
+      // Same discipline as the discovery launch signal above: the transcript is fetched in a
+      // client effect, so snapshotting before it lands would bank an EMPTY set and the replayed
+      // backlog's own persisted launch part would read as new on every visit.
+      if (chat.loading) return;
+      knownResearchLaunchIds.current = new Set(ids);
+      return;
+    }
+    const fresh = ids.filter((id) => !known.has(id));
+    for (const id of ids) known.add(id);
+    if (fresh.length) setResearchPrime((current) => current + 1);
+  }, [chat.loading, chat.transcript]);
   const shell = useEditorShellController({
     editing: urlState.editing,
     inspectorSelection: urlState.inspectorSelection,
@@ -410,6 +476,13 @@ export function ChatSurface({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const documentTabs = useProjectDocumentTabs({
+    projectId, active: shell.panelOpen && (shell.surface === "gallery" || shell.surface === "plan"),
+    initialPath: paneState.surface === "plan" ? searchParams.get("document") || "project/plan.md" : undefined,
+    writeRevision: chat.planWriteRevision, writtenDocumentId: chat.writtenProjectDocumentId,
+    onOpen: shell.openPlan, onEmpty: shell.openGallery,
+  });
+  const selectedDocumentPath = documentTabs.selectedPath;
   const {
     edit: editParam,
     selection: selectionParam,
@@ -456,21 +529,29 @@ export function ChatSurface({
     reloadSceneCanvas();
   }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
 
-  // Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: the
-  // leg-born document opens ITSELF next to the Gallery, so the user watches the
-  // page land instead of hunting for the card. The whole rule is the pure
-  // `../model/artifact-auto-open`; this effect is only its transport, and it
-  // reuses the exact `shell.openArtifact` the gallery card's own click uses (so
-  // the tab, its activation, and the R6 dock choreography behave identically
-  // whether the user opened it or the leg did).
-  //
-  // The trigger is the FEED, never the frame: `leg.opened` carries only a leg
-  // id and names no document, and on a cold load the replayed backlog re-fires
-  // it — keying off the frame would re-open the tab on every page load. What
-  // the frame does do is refresh the feed, so the born card arrives in props on
-  // its own; everything already there at mount is banked as known and can never
-  // auto-open.
+  // The header's rename is a document write, so it goes through the design API
+  // and the tab takes the title the backend STORED. The rename advances the
+  // document version, so both canvases reload and the server-fetched feed is
+  // re-read — nothing is left holding the pre-rename document.
+  const setArtifactTitleFor = shell.setArtifactTitleFor;
+  const onArtifactRenamed = useCallback(
+    (artifactId: string, persisted: string) => {
+      setArtifactTitleFor(artifactId, persisted);
+      reloadWebCanvas();
+      reloadSceneCanvas();
+      router.refresh();
+    },
+    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+  );
+  const renameArtifact = useArtifactRename({
+    documentIds,
+    onRenamed: onArtifactRenamed,
+  });
+
+  // Open a named design tab on each new/updated file from this chat. Baseline the
+  // server-fetched feed at mount so replayed history cannot open old files.
   const knownArtifactIds = useRef<Set<string> | null>(null);
+  const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
   useEffect(() => {
     const known = knownArtifactIds.current;
@@ -479,6 +560,7 @@ export function ChatSurface({
       // render (no render-phase side effects), which is the same set: the
       // chats page awaits `loadGalleryFeed` server-side, so the first client
       // render already holds the complete feed.
+      knownArtifactUpdates.current = new Map(feedArtifacts.map((artifact) => [artifact.id, artifact.updatedAt]));
       knownArtifactIds.current = new Set(
         feedArtifacts.map((artifact) => artifact.id),
       );
@@ -488,23 +570,92 @@ export function ChatSurface({
       activeThreadId: chat.activeThreadId,
       artifacts: feedArtifacts,
       knownArtifactIds: known,
+      knownUpdates: knownArtifactUpdates.current,
     });
     // Bank everything this delivery carried — including the one being opened —
     // before acting on the decision. That is what makes a document open at
-    // most once: a tab the user then closes stays closed, and the next feed
+    // most once per update: a closed tab stays closed until another write, and a feed
     // refresh (the URL write-back below re-renders the page too) is inert.
-    for (const artifact of feedArtifacts) known.add(artifact.id);
+    for (const artifact of feedArtifacts) { known.add(artifact.id); knownArtifactUpdates.current.set(artifact.id, artifact.updatedAt); }
     if (opening === null) return;
     openArtifact(opening);
   }, [chat.activeThreadId, feedArtifacts, openArtifact]);
 
+  // The composer's Files and Microsites come from the same feeds the Gallery draws. The
+  // document list is fetched here unconditionally (the tabs hook fetches only while a
+  // panel is open) and re-read when this thread writes a document.
+  const composerDocuments = useProjectDocuments(projectId, {
+    active: true,
+    refreshToken: chat.planWriteRevision,
+  });
+  const composerCatalog = useMemo(
+    () =>
+      buildComposerCatalog({
+        documents: composerDocuments.documents,
+        artifacts: feedArtifacts,
+        entities: workspace.entities,
+      }),
+    [composerDocuments.documents, feedArtifacts, workspace.entities],
+  );
+  const { setCatalogEntities } = controller;
+  useEffect(() => {
+    setCatalogEntities(composerCatalog);
+  }, [composerCatalog, setCatalogEntities]);
+
+  // `?open=` (2026-09-15): land with one artifact tab open. Read once (the ref), resolved against
+  // the server-fetched feed, and stripped by the write-back below.
+  const openParamHandled = useRef(false);
+  useEffect(() => {
+    if (openParamHandled.current) return;
+    openParamHandled.current = true;
+    const opening = openArtifactFromParam({ openId: searchParams.get("open"), artifacts: feedArtifacts });
+    if (opening) openArtifact(opening);
+  }, [feedArtifacts, openArtifact, searchParams]);
+
+  // The controller distinguishes live writes from late history replay using server cursors.
+  // Founder ruling 2026-09-12: when the agent launches discovery, the rail opens the Target
+  // accounts surface by itself. The rule is `../model/discovery-launch-signal`; this effect only
+  // transports it, banking every tool call id it has seen so a replayed backlog opens nothing.
+  const knownLaunchIds = useRef<Set<string> | null>(null);
+  const openTargetAccounts = shell.openTargetAccounts;
+  useEffect(() => {
+    const known = knownLaunchIds.current;
+    if (known === null) {
+      // The mount snapshot WAITS for the conversation. Unlike the gallery feed above, the
+      // transcript is not server-rendered: `useProjectChatController` starts at `messages = []`
+      // with `loading = true` and fetches the conversation in a client effect. Snapshotting on
+      // the first commit would bank an EMPTY set, so the durable backlog's own persisted
+      // `launch_arv2_discovery` part (persisted parts carry their finished `output-available`
+      // state) would read as new and hijack the rail on every visit to a thread that ever
+      // launched discovery. Residual, accepted: a launch part that arrives later still — an
+      // older page prepended by `loadOlderMessages` — opens the surface once.
+      if (chat.loading) return;
+      knownLaunchIds.current = new Set(completedToolCallIds(chat.transcript));
+      return;
+    }
+    const opening = discoveryLaunchToOpen({ transcript: chat.transcript, knownToolCallIds: known });
+    // Bank only COMPLETED parts. A tool part is delivered first as `input-streaming` /
+    // `input-available` and flips to `output-available` when it lands; banking it on first sight
+    // would make its completion read as already known, and the launch would never open the tab
+    // (live walk, 2026-09-12).
+    for (const id of completedToolCallIds(chat.transcript)) known.add(id);
+    if (opening === null) return;
+    openTargetAccounts();
+    setDiscoveryPrime((current) => current + 1);
+  }, [chat.loading, chat.transcript, openTargetAccounts]);
+
   useEffect(() => {
     // Compose over the LIVE query so params we do not own (?handoff=, anything
-    // future) survive; only the three pane keys are ours to rewrite.
+    // future) survive; only the pane keys are ours to rewrite.
     const query = new URLSearchParams(searchParams.toString());
     query.delete("surface");
     query.delete("edit");
     query.delete("selection");
+    query.delete("document");
+    // `?open=` is read once at mount and never written back: stripping it here canonicalizes the
+    // URL to the ordinary `surface=web|ad` state the opened tab produces.
+    query.delete("open");
+    if (surfaceParam === "plan" && selectedDocumentPath) query.set("document", selectedDocumentPath);
     if (surfaceParam) query.set("surface", surfaceParam);
     if (editParam) query.set("edit", editParam);
     if (selectionParam) query.set("selection", selectionParam);
@@ -515,7 +666,7 @@ export function ChatSurface({
     if (next === searchParams.toString()) return;
     // replace, never push: pane toggles must not grow browser history.
     router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
-  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam]);
+  }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam, selectedDocumentPath]);
 
   /**
    * The composer's ONE submit path — the composer's own send button and the
@@ -767,9 +918,10 @@ export function ChatSurface({
             >
               <ConversationContent
                 chat={chat}
+                contextEntities={controller.composerEntities}
                 contextHandoffError={controller.contextHandoffError}
+                onOpenPlan={(id) => void documentTabs.openById(id)}
                 projectId={projectId}
-                workspace={workspace}
               />
             </div>
           ) : null}
@@ -779,9 +931,16 @@ export function ChatSurface({
             targetChips.length || annotationChipList.length
               ? styles.composerDockWithTargets
               : ""
-          }`}
+          } ${research.card || chat.queueControl.paused ? styles.composerDockWithResearchCard : ""}`}
         >
           <div className={styles.composerFrame}>
+            {research.card ? (
+              <ResearchProgressCard
+                card={research.card}
+                headline={research.headline}
+                line={research.line}
+              />
+            ) : null}
             {/* Slice 2 (R-A2): the annotations, in badge order, above the
                 composer — the same bar the ad lane's edit targets use, so a
                 chip means the same thing in both lanes: "this turn is about
@@ -830,7 +989,17 @@ export function ChatSurface({
                 </div>
               </div>
             ) : null}
+            {chat.queueControl.paused && chat.queuedTurns.length > 0 ? (
+              <div className={styles.queueControls}>
+                <span>{chat.queuedTurns.length} {chat.queuedTurns.length === 1 ? "message" : "messages"} queued</span>
+                <button type="button" disabled={chat.stopPending || chat.resumingQueue}
+                  onClick={() => void chat.resumeQueuedTurns()}>Resume</button>
+              </div>
+            ) : null}
             <ProjectComposer
+              running={chat.runningTurn !== null}
+              stopping={chat.stopPending}
+              onStop={() => void chat.stopActiveTurn()}
               attachmentAccept={DESIGN_REFERENCE_ACCEPT}
               attachmentError={
                 designReferencesEnabled ? referenceAttachments.error : null
@@ -954,23 +1123,49 @@ export function ChatSurface({
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
         onCloneTextCommit={session.onCloneTextCommit}
+        onOpenTargetAccounts={shell.openTargetAccounts}
+        documentTabs={documentTabs}
+        canEditDocuments={canEditDocuments}
+        panelOpen={shell.panelOpen}
+        targetAccountsBusy={discovery.live}
+        targetAccountsRefreshToken={discovery.tick + research.tick}
+        onAddAccountsToChat={
+          addToOpenChat.available && workspace.composerCapabilities.contextRefs
+            ? addToOpenChat.add
+            : undefined
+        }
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}
         richTextEnabled={webEditingActive}
         richTextTheme={session.theme}
-        onOpenGalleryArtifact={(artifact) =>
-          shell.openArtifact({
+        onOpenGalleryArtifact={(artifact) => {
+          // The card's own document type decides where it lands (the pure
+          // ../model/gallery-card-target): an account-list card opens the
+          // target-accounts surface; everything else opens an artifact tab.
+          const target = galleryCardTarget({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
             title: artifact.title,
-          })
-        }
+            type: artifact.source?.type,
+            document: artifact.document,
+          });
+          if (target.surface === "plan") {
+            documentTabs.openPath(target.documentPath);
+            return;
+          }
+          if (target.surface === "target-accounts") {
+            shell.openTargetAccounts();
+            return;
+          }
+          shell.openArtifact(target.artifact);
+        }}
         onRenameArtifact={(title) => {
           if (shell.activeArtifactId) {
-            shell.setArtifactTitleFor(shell.activeArtifactId, title);
+            renameArtifact(shell.activeArtifactId, title);
           }
         }}
+        // The tab strip's rename of a NON-active tab is unchanged local state
+        // (it carries no document handle of its own here).
         onRenameArtifactFor={shell.setArtifactTitleFor}
         onToggleMaximized={shell.toggleArtifactMaximized}
         onTogglePanel={shell.toggleArtifactPanel}
@@ -1000,6 +1195,7 @@ export function ChatSurface({
           ) : null
         }
         projectTitle={workspace.title}
+        projectId={projectId}
         // AD3.3: the header carries ONE pair of history-row disables, and the
         // artifact on screen decides which lane's stacks they describe — the
         // same kind switch that gates the two sessions above. Without it an ad

@@ -167,8 +167,8 @@ export interface ChatToolPart {
  * `text_ephemeral` is the backend saying the load-bearing thing about that
  * text: unlike assistant prose it has no durable counterpart, so it exists for
  * as long as the stream held it and cannot be re-fetched after a reload or a
- * `stream.reset`. The adapter renders it as a live diagnostic, never as part of
- * the transcript.
+ * `stream.reset`. The frontend groups supplied text into one plain-text
+ * disclosure per response; its presentation does not change that retention.
  */
 const ReasoningPartWireSchema = z.object({
   ...partBase,
@@ -244,6 +244,8 @@ const TaskCountsWireSchema = z.object({
   running: z.number().int().min(0).default(0),
   completed: z.number().int().min(0).default(0),
   partial: z.number().int().min(0).default(0),
+  /** Defaulted like its siblings, so a snapshot persisted before the split still parses. */
+  needs_review: z.number().int().min(0).default(0),
   blocked: z.number().int().min(0).default(0),
   failed: z.number().int().min(0).default(0),
 });
@@ -264,6 +266,8 @@ export interface ChatTaskCounts {
   running: number;
   completed: number;
   partial: number;
+  /** Finished and routed to a human — a queue, not the shortfall `partial` names. */
+  needsReview: number;
   blocked: number;
   failed: number;
 }
@@ -278,6 +282,79 @@ export interface ChatTaskPart {
   counts: ChatTaskCounts;
   exceptionRefs: readonly ChatObjectRef[];
 }
+
+function toTaskPart(wire: z.infer<typeof TaskPartWireSchema>): ChatTaskPart {
+  return {
+    kind: "task",
+    partId: wire.part_id,
+    revision: wire.revision,
+    state: wire.state,
+    title: wire.title,
+    runRef: toObjectRef(wire.run_ref),
+    counts: {
+      total: wire.counts.total,
+      queued: wire.counts.queued,
+      running: wire.counts.running,
+      completed: wire.counts.completed,
+      partial: wire.counts.partial,
+      needsReview: wire.counts.needs_review,
+      blocked: wire.counts.blocked,
+      failed: wire.counts.failed,
+    },
+    exceptionRefs: wire.exception_refs.map(toObjectRef),
+  };
+}
+
+/**
+ * One pollable research task — `ResearchTaskWire` on the durable
+ * `GET …/threads/{id}/research-tasks` read (Slice C C2/C3).
+ *
+ * The `part` is the exact same shape the stream emits for the run, so a polled
+ * snapshot and a streamed one meet as one card, merged on
+ * `(runRef.objectId, revision)` — never as two cards that happen to look alike.
+ */
+export interface PolledResearchTask {
+  /**
+   * The turn whose durable `turn-action:` receipt launched the run — where a
+   * re-materialized card belongs after a reload. `null` for a launch receipt
+   * that is not a turn action; such a task merges by run but is never placed.
+   */
+  turnId: string | null;
+  part: ChatTaskPart;
+  /**
+   * Fields landed vs. fields honestly given up on across the run's settled
+   * subjects; `null` before any coverage exists. Parsed off the wire; it has
+   * no designed slot on the card yet, so nothing renders it (visual-parity
+   * rule — the backend serves it, the frontend waits for a designed home).
+   */
+  fieldProgress: { completed: number; unresolved: number } | null;
+}
+
+const PolledResearchTaskWireSchema = TaskPartWireSchema.extend({
+  // The poll's whole point is the ledger's high-water mark: a snapshot without
+  // one cannot participate in the highest-revision-wins merge, so unlike the
+  // stream shape there is no default here.
+  revision: z.number().int().min(1),
+  field_progress: z
+    .object({
+      completed: z.number().int().min(0),
+      unresolved: z.number().int().min(0),
+    })
+    .nullable()
+    .optional(),
+  source_turn_id: z.string().nullable().optional(),
+});
+
+/** `{"tasks": [...]}` from the C2 route → the domain shape the poller holds. */
+export const ResearchTaskListResponseSchema = z
+  .object({ tasks: z.array(PolledResearchTaskWireSchema).default([]) })
+  .transform(({ tasks }): PolledResearchTask[] =>
+    tasks.map((wire) => ({
+      turnId: wire.source_turn_id ?? null,
+      part: toTaskPart(wire),
+      fieldProgress: wire.field_progress ?? null,
+    })),
+  );
 
 // --- plan ----------------------------------------------------------------
 
@@ -502,16 +579,7 @@ export const ChatPartSnapshotSchema = z
           })),
         };
       case "task":
-        return {
-          kind: "task",
-          partId: wire.part_id,
-          revision: wire.revision,
-          state: wire.state,
-          title: wire.title,
-          runRef: toObjectRef(wire.run_ref),
-          counts: wire.counts,
-          exceptionRefs: wire.exception_refs.map(toObjectRef),
-        };
+        return toTaskPart(wire);
       case "plan":
         return {
           kind: "plan",

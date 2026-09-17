@@ -43,6 +43,7 @@ from clue_core import ProjectRunId, UtcDatetime, parse_value_json, serialize_val
 from clue_db import transaction
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import WorkId
+from clue_obs.otel import carrier_from_current_span
 
 # A ``CLAIMED`` task older than this is presumed orphaned by a killed worker and is re-owned by
 # the next claimant. Sized to outlive the driver lease TTL (takeover is lease-gated first; the
@@ -381,6 +382,18 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
     )
 
 
+def _with_trace_carrier(payload: dict[str, JsonValue] | None) -> dict[str, JsonValue]:
+    """The payload plus the current span's W3C carrier (lane 3 slice 2, D1).
+
+    Stamped only when a valid span is current, and never over a key the caller set, so an enqueue
+    outside any trace writes exactly the payload it was given.
+    """
+    stamped: dict[str, JsonValue] = dict(payload) if payload is not None else {}
+    for key, value in carrier_from_current_span().items():
+        stamped.setdefault(key, value)
+    return stamped
+
+
 async def enqueue_task(
     conn: AsyncConnection,
     *,
@@ -411,7 +424,7 @@ async def enqueue_task(
                 "project_run_id": project_run_id,
                 "dedup_key": dedup_key,
                 "priority": priority,
-                "payload": serialize_value_json(payload if payload is not None else {}),
+                "payload": serialize_value_json(_with_trace_carrier(payload)),
             },
         )
     ).first()

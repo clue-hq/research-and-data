@@ -362,6 +362,9 @@ class Persona(StrEnum):
     ECONOMIC_BUYER = "economic_buyer"
     TECHNICAL_EVALUATOR = "technical_evaluator"
     BLOCKER = "blocker"
+    # Appended 2026-09-07 (ARV2 master plan D8): the person who operates the tool daily. Not a DB
+    # enum — the value lives in registered value schemas; migration arv2_d1 rewrites stored rows.
+    USER = "user"
 
 
 class ICPStatus(StrEnum):

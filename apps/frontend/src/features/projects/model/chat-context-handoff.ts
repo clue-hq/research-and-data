@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProjectEntitySchema } from "./project-workspace";
+import { ProjectEntitySchema, ProjectEntityTypeSchema } from "./project-workspace";
 
 export const CHAT_CONTEXT_HANDOFF_TTL_MS = 30 * 60 * 1_000;
 const CHAT_CONTEXT_HANDOFF_SCHEMA_VERSION = 1;
@@ -7,7 +7,7 @@ const CHAT_CONTEXT_HANDOFF_PREFIX = "clue:chat-context-handoff:";
 
 export const ChatContextRefSchema = z.object({
   objectId: z.string().min(1).max(200),
-  objectType: z.enum(["account", "contact"]),
+  objectType: ProjectEntityTypeSchema,
   version: z.number().int().positive().nullable().default(null),
 }).strict();
 
@@ -34,6 +34,12 @@ export type PreparedComposerContext = z.infer<
   typeof PreparedComposerContextSchema
 >;
 
+/**
+ * Later entries win by id, order kept. Two callers: the composer's catalog
+ * merged with its selection, and — the same rule — a selection merged with
+ * entities the server just prepared for an in-chat "Add to chat" (a prepared
+ * entity replaces a same-id selection, carrying the version just pinned).
+ */
 export function mergeComposerContextEntities(
   catalog: readonly z.infer<typeof ProjectEntitySchema>[],
   selected: readonly z.infer<typeof ProjectEntitySchema>[],

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.frontend_read.accounts_list import WireModel
-from clue_api.research_view_governance import display_allowed
+from clue_api.frontend_read.v1_shared import arv2_display_allowed
 from clue_config import STRICT_DEFAULT_REGIME, Jurisdiction, RetentionTtls
 from clue_core import (
     Claim,
@@ -105,6 +105,8 @@ ConnFactoryLike = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 _CONTRACT_VERSION = "fi2-contact-email-lookup-v1"
 _FIELD_KEY = "core.work_email"
+#: The ``core.work_email`` verdict for an address no provider probed (registry vocabulary).
+_UNPROBED_STATUS = "unverified"
 _PROVIDER_LABELS = {
     EXA_WEBSETS_SOURCE_KEY: "Exa",
     PEOPLE_SOURCE_KEY: "Sumble",
@@ -252,6 +254,20 @@ def _normalize_email(value: str) -> str:
     if not local or separator != "@" or not host or "." not in host or " " in normalized:
         raise ValueError("provider returned a malformed email")
     return normalized
+
+
+def _claim_address(value: JsonValue) -> str | None:
+    """The address inside a ``core.work_email`` value, in either shape it has ever had.
+
+    Since D4-b the value is ``{"address", "status", …}``; rows written before it are the bare
+    address string, and this view is a provider-attempt history that still points at them.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        address = value.get("address")
+        return address if isinstance(address, str) else None
+    return None
 
 
 def _normalized_profile(value: str) -> str:
@@ -592,15 +608,20 @@ async def _load_attempts(
         value: str | None = None
         if claim_id is not None:
             claim = live_claims.get(ClaimId(uuid.UUID(str(claim_id))))
+            # The ARV2 display predicate, not C7's: the address this view reports is the one the
+            # contact screens render from the same claim, and two predicates over one claim is two
+            # answers to "may this person's email be shown" (C7's also demands a STRONG identity
+            # binding, which the ARV2 lenient writer does not stamp — so it hid every ARV2 address
+            # the screens were happily showing).
             claim_is_currently_displayable = (
                 claim is not None
                 and claim.entity_id == EntityId(uuid.UUID(str(contact_id)))
                 and str(claim.field_key) == _FIELD_KEY
                 and claim.source_key == str(source_key)
-                and display_allowed(claim, policy)
+                and arv2_display_allowed(claim, policy)
             )
             if claim_is_currently_displayable and claim is not None:
-                value = claim.value_json if isinstance(claim.value_json, str) else None
+                value = _claim_address(claim.value_json)
             elif provider_state is ProviderState.AVAILABLE:
                 # Provider history remains immutable, but a policy change, retention expiry or DSAR
                 # tombstone must take effect on every read. Never resurrect the historical value
@@ -1227,7 +1248,12 @@ class ContactEmailLookupService:
             entity_id=EntityId(target.contact_id),
             entity_type=EntityType.CONTACT,
             field_key=_FIELD_KEY,
-            value_json=_normalize_email(email),
+            # ARV2 D4-b decision 6: the address travels with the verdict that grades it. Neither
+            # acquisition source here probes a mailbox — Exa Websets and Sumble return an address
+            # and nothing about its deliverability — so the honest verdict is ``unverified``, and
+            # there is no ``checked_at`` to record. That is also why this claim is born
+            # ``VerificationStatus.UNVERIFIED``: the two say the same thing at two layers.
+            value_json={"address": _normalize_email(email), "status": _UNPROBED_STATUS},
             source_url=_safe_public_url(source_url, target.linkedin_url),
             source_key=source_key,
             artifact_key=artifact_key,
@@ -1286,7 +1312,7 @@ class ContactEmailLookupService:
             retention=RetentionTtls(),
             third_party_collected=True,
         )
-        return claim.id, decision.usable_for_outreach and display_allowed(claim, policy)
+        return claim.id, decision.usable_for_outreach and arv2_display_allowed(claim, policy)
 
     async def _mark_failure(
         self,

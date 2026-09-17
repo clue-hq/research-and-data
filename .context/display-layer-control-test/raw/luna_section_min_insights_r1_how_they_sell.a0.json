@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504828-x5m7m8CXCo2OPpIYIg3e",
+ "object": "chat.completion",
+ "created": 1788504828,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"how_they_sell\",\"empty\":false,\"items\":[{\"h2\":\"Zafran claims 99% of critical vulnerabilities are not exploitable\",\"body\":[{\"text\":\"Zafran says it uses existing security tools to prove that \\\"99% of critical vulnerabilities are not exploitable\\\" and de-risks 90% of critical vulnerabilities overnight.\",\"claimIds\":[\"zaf-148\",\"zaf-127\",\"zaf-174\"]},{\"text\":\"What it means for us: Clue can position its account research around Zafran’s measurable exposure-management claims rather than generic AI language.\",\"claimIds\":[\"zaf-148\",\"zaf-127\"]},{\"text\":\"What it means for us: Its strongest proof points are numeric and operational, including an asserted 87% reduction in time per vulnerability.\",\"claimIds\":[\"zaf-145\",\"zaf-174\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Zafran lists OpenAI, Kraft Heinz, Chipotle, Netskope, and Ashland as customer proof\",\"body\":[{\"text\":\"Zafran lists Kraft Heinz, Chipotle, Netskope, Ashland, OpenAI, and Sallie Mae among its customer logos and references CISO voices including Ricardo Lafosse, Dave Estlick, James Robinson, Robert Schuetter, and Steve Lodin.\",\"claimIds\":[\"zaf-150\",\"zaf-172\",\"zaf-093\"]},{\"text\":\"What it means for us: Outreach can use the customer proof most relevant to the account we are targeting, while keeping the message grounded in named security leaders and companies.\",\"claimIds\":[\"zaf-150\",\"zaf-172\"]}],\"contactRefs\":[{\"name\":\"Ricardo Lafosse\"},{\"name\":\"Dave Estlick\"},{\"name\":\"James Robinson\"},{\"name\":\"Robert Schuetter\"},{\"name\":\"Steve Lodin\"}],\"priority\":1},{\"h2\":\"Zafran sells a core platform plus two add-ons\",\"body\":[{\"text\":\"Zafran packages its offering as \\\"the core platform plus two add-ons\\\": Zafran Discover and Zafran Autonomous Workflows.\",\"claimIds\":[\"zaf-173\"]},{\"text\":\"What it means for us: Its sales motion can be framed around a defined platform-and-add-on structure, including agentless machine assessment and AI agents for zero-day monitoring and exploitability confirmation.\",\"claimIds\":[\"zaf-173\"]}],\"contactRefs\":[],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmsBQyVxg_shsOB01bLjADRpZMn2iCpPQvNkDSTlwWv6m23HkLc-ID5tk9KQmhwGXmYE_L6SeFvc79Tj24j7jCYgXw8LhgyRupl7HnBotZkyw30fQhwcXAKoWvr0T7L4A5RTnmfkkUknJuKNC1E4qnVOrlHCuricQ8s_tBTbGBHcD_0vo3k6Q-JsbhtoMnyELtEO6cE-NzKjUOLy1Llm3px1Gaa3eXLaS3QVyjEGXaXAXuL9Mp6wVVddmiU5bzMZ4__N7C_hXlMC7PVGa-oM6upJ6rhadOrJTnk8dZwLkqMTAS1CQkH38kms14emkh6iCFqcRc8rvaR_mbDl1oeq44-SIJvy8fL_S_Bxb04vMWgPy5GFx4jllPRGd5aU5pTmNtpmH-Mu83tgdCRGZV0MtKzxSyRCQ8ptYIozXrQ_IS-hYy3cGht039eFHrpK_9WQDdYq_b1Zmr4gjC66viS5kHBOTw3MuRqES0t3Ig9ZH4iBQyllLdlvG7uIy2fSIJqbbikC9trdJCiFB7G1qxC1P20H6L9Cgj7eaxESiGu8Er3f6woR1U8s4y6wXdlSb3iCBfwL--7OyzV0V9f4g4XW9tD-GgNU5wx49wvGtwPBYsaEqGEBok0twCfX6ccji6FirlwIFdBvwScaZvnJgMETpaBWL78t4n2Tknm15zVR9NFDLY_yyTKYQguQAEatB2XHfQJLXzMq5RWgdASM5f4MnOFWp6OEmnY5KMAMETflrd79J9e5G6mqqv5vINw9kYcnEgWeyAlG6lFRBRaCRsk5VNk_7BAu8N14UqSm8rOOgH-hgPuYIuQ9TGp4H5Xd8-pdzWFK-8LXH3NHqAkfDveMN6laJofuuWwkDd0hRuL7d5FIxthseRxOww7nzW9olUl9LBV866WHyGPECIY__GqzgEuUiNjqc_vRh9LTdVxWslI_z0pVhhvjvl2NbOu2zxghnuyL0dlQJttDI_lSDYT7S_0mleqQK3VAWW1xLpGona4h-j81IbTEwfGOHq3dBDRUAtwmV2qEmPaEa0q6UxvWWnTEO8uYLJ45y8N2PNQP-sdAPfNrTij--zz1d59X3sZppn_eoQUvXvXwOWFIidHnbAwxZHuBIHtZoJehn4mMHAHcdu0MbwIG1dhLefTLbD35WZsPw_vjtK2aqIaa_6DrbggklcnuhuclHvJAqn5YpSvZHyH53f4IHxWrEpQF_uUVvYJB6b4hviDwIAnhN6X-YDupt3IMHQb5PXejDjkmtMqnr3Uy5KzpizQHaxOZr6wmNtiOBNjvsDMPCGO92c84HCbOkekSGBZzkD0joSKM4j47-t_zbvCwMFggZh1veIIOMaN-ZcgFDE7g_CDYByamPpxq_zHi47GurwhcsvAcAtAzIP0dKaMKHmx5MrQcK7gaRY3oJzcgllE9iDDLJgnfSKN9Lq0YVfcx6lXISaHiGj3Cd7q1vRYkGtM5XGVW2ve4oLH82GY7IxSL5ovkxH26itsAP7K29TvcVqXTZVPaMvOttPgM29TvetNASPqd68beJXq4rE4iGupNQ8FtGYrOyTjBhaxlun4YqoodiHmztu-Utd2OrKHQQipVns5v9_TPn_x0UVJxpIppYYUx9YWRLd17L49IuX5Y1d1wsHsb0kY4vVKog2QuqJrQwfjtz6u44kBoz-Z7PYTfWfNiSuGAQnxaHMVMuYbRZnZ9tBDwjLqFl784W34LonKMuoSp2iYNCosIGuCPInuMya5Rm8mSInqsDWtHZBfkLVmVsOy_cZc3lrGC9GUDQPwv7hRpRAcTpd6ZOARXO2n7ilV8YfIX04FjZUlQKEqTrXt_pObtK3voWSBNfo4R0oC6aeRNWSiZtflNd_jHl_FchB_ThVP_zfUMCXb2i5WhA0ORfN6qCWsjqItpjMSbtcLsbOZ7SpYPllxq413eoku-ueuBKYW_pKeC8OZa4hAZ_NtsUjUqyt2JBn_GmDK5A3vWZw8HPrerry80mXsnzfwLjckaW5LF0EcH9S8GOGj6REBjfvW7-WQw1bJGes0J_Ztk0yA_o3BrVqTY7-GHM44Yxo1kB2yVB8uwI-i7wXuNUkEkv0wO2_zFJAGYBxKJoi3MZ83hwwqhSPyocIH_Vg4Ixb4sYbWmY9j6SLLglOUUGghzH_pr-Gg2rSDVoZHJmQoKvWfXsN1l1gdd2c9eX7e6R7qXPqJyTPCsT8vJfagJLvtZ1Nq2GRRbVOBJs508wovqeTSeflvEIpLO5AKCWuDzyDZHi-7B9SWvEGCD5bVyfo-vti1OZ9VNdXlBpYNy9x0I9IeezAV-hf9Sfvpx6nxq9CUy5oXd5XW74BbJK2tOBobwn88oQJ3KZR7b2gMbUaFeuwI44Iqj1QKvvOmvG-Gscgl0JxaSbG4naW1GK0c5m1ZeBWtwMmYTVK4OfIKs_DJ5pXzij9OUYy7-3iTxjwQ4Rk1XGAokjnl75d9PFfa6Dzrnb8-xgoGL4VFhlrxcVM7qys9z5rRSQQXCdp9rf6b-63YB3i5x3RUOz-6iFbWSA0nZCH44OQf-NpfDft3MsqlsgDlBTe7RVqLI-CRjovT-ZuZn-SMXq_TBTZpo4gvEvLIeeUSfI9TN9lknzbbqC92WoTWSPHZMWDaWlpgQAMFuWPFy9zgs3S-gQ5ANppFo2iY-L2BUMSqiyOy1_XK5qmTQLdcARRgWj3Moh7HpQc2e5ZWlepZVW1A2y4JjNL6OoYXm8hDP9NWU4Kozyi6QmZrezJsI1ofrS0a8XsQMrlpBP83EtiuUT0o0Gffh7ssxbfyNjIFXnT5yNM8xtlvFXNRwrkge37SGwGdQIPY0Ijc0l_J2TmFYz50KqFcm3f1VuPlx4mrhe0aEmqZ40amwS5OzamkDypF6Zh-OszhpJA8oUcn2iw-rXDpKC7mue_KmydeB613QreZTDbeh-Myj29pBRL7kRsN-ecZJFWGyxKm5vA1oKsaqC_YPGESbldIOK1ItwYdgvwL8JW1dCeI7JEJIJnNrNU0gglmlIab6pZnE-cbE8wX-TX_7Iab7XAyq5BN1WO0dq-keld_CeKwTIBrCm2hwgxJZfw86zS4oyLSZ-CtPYzdmRhBRlq9f8Iumf9RBY0j_ONywIYFw5iYmHYbnthPhzltp8qxMPh4XuF9C-g7q23dC8EVU7WGdeEtWNml4sHH-Ypm4BPFSs1vuJ4IRIsSBNf9lokO9Ytq9ai63JoO8vAoiEKXNL5ab510o96c8Y2IVoUgHtjCPVLtpEVh1ktwP3yUE3NAHuGRXB-hlroZ8Gp5xGHIxzFr-6ui6qiW3pWZgEqbExN9Quj93mEVZacUlUqv1wGvu7VoXDIDJhZLpS_jPBe_eCw1tzqVwanq-hXHjLah-8ntMxVQqwlGYfRSf5oYE46zq03l-wgoli5lsc3v0cvyhP3-TQlNNYY4hfSs3RzPgsspwOSMspB7U-G6lGLUCyKI7tcCjnm8UA2b8q7KXAGLVUPyq-gVCYvxzcMA9M_12v8PgxpN91JRdWQqWx2j9jLqljE2Ps7onXNbCuv2c6ucU-TpKw0WzayhvPcHcm31-MqJRivPvSPN08QIoRkwQGAVz_aI2uM6QRXgAzRCu3iOfm-KwL37CqjD8nvI34b-8PKFp63TZ1e40hLem0p6dTsWOO2QzLmZbdZ2S5KhLX8dyKUu7Jim9UN9p7QmS4EUbnE4vYsQ4ialWVqG9VGCWbYb0trCRUE9Nlx3ZjroE3ReLAAilFGNEIy8-z04m4h2iVYI1145chR4HkGhOzdf0hF3LW6fwfnXH3HsWnVLXcF1BqJkXy-J_UZfcEm5qNJHxwURP0sXxIQIizpALe8R5qsrssVRT_gKfrG7jEonq0CbhLQwsJ02DOdT01dNDhAPOs-GtsJut2rQY-O9dpnUy8krThTZwQLjjm_BaXr97E3xlI6zzLLmWpFtsbgEvRZnHS1SqQnVDvfFAqe3oYyHpNnpmrWRtYL5AwRpFNeu58v7yvop_JVpt1Is0MYeRG-1zvP6jgccLLhFrIe3-r33rIfW8NQJsB9NKNvy5qBF83bzKKzHPwjYG6oPun83ObQHC7rjtZBv3ua68zv7Xnmk2PJMP6jqCns0OtRMqhBGWIrODzMN2WQ4CUX2n-F-TPcxLv0kdO8hqagcapTt29Ro6iA4uUwN4NL7Yia-rOE1dwcqf_6WfFdThsJNTIUmt5CmiJDJSRLFrHYEsR_m4nEIeFTap2Ct5Bh_OWvJJmNhkc-2kCv0tQHT_NF3-Z4nyBqnefcTvPfAOR8LLsc_DvVoHW0PS.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0cb81a1228c9dcfb016a9a6afd0e0887d0b439f2133fb9fc39",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 3328,
+  "completion_tokens": 1028,
+  "total_tokens": 4356,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 3325,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00206545,
+   "upstream_inference_prompt_cost": 0.00083185,
+   "upstream_inference_completions_cost": 0.0012336
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.35,
+ "_attempt": 0
+}

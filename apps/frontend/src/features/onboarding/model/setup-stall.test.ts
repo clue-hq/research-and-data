@@ -11,16 +11,14 @@ import {
 
 const STARTING: SetupStallSnapshot = {
   status: "starting",
-  fast_status: null,
-  background_status: null,
-  fields: [],
+  steps: [],
 };
 
-function withFields(
+function withSteps(
   base: SetupStallSnapshot,
-  fields: SetupStallSnapshot["fields"],
+  steps: SetupStallSnapshot["steps"],
 ): SetupStallSnapshot {
-  return { ...base, fields };
+  return { ...base, steps };
 }
 
 test("a first observation is never a stall — learning the state is progress", () => {
@@ -31,72 +29,46 @@ test("a first observation is never a stall — learning the state is progress", 
 test("an unchanged in-flight tick increments, in both in-flight statuses", () => {
   assert.equal(stallAdvance(STARTING, STARTING, 0), 1);
   assert.equal(stallAdvance(STARTING, STARTING, 7), 8);
-  const running = { status: "running", fast_status: "running" };
+  const running: SetupStallSnapshot = {
+    status: "running",
+    steps: [{ kind: "overview", subjectRef: null, status: "running" }],
+  };
   assert.equal(stallAdvance(running, { ...running }, 3), 4);
 });
 
-test("a new field event resets the count — a slow but alive lane is never cut off", () => {
-  const seen = withFields(STARTING, [
-    { field_key: "client.value_prop", lane: "fast", status: "started" },
-  ]);
+test("a new step resets the count — a slow but alive lane is never cut off", () => {
+  const seen = withSteps(STARTING, [{ kind: "overview", subjectRef: null, status: "running" }]);
   assert.equal(stallAdvance(STARTING, seen, 39), 0);
-  // …and a field moving from started to resolved is motion too.
-  const resolved = withFields(STARTING, [
-    { field_key: "client.value_prop", lane: "fast", status: "resolved" },
+  // …and a second step appearing is motion too.
+  const both = withSteps(STARTING, [
+    { kind: "overview", subjectRef: null, status: "running" },
+    { kind: "lineup", subjectRef: null, status: "queued" },
   ]);
-  assert.equal(stallAdvance(seen, resolved, 39), 0);
+  assert.equal(stallAdvance(seen, both, 39), 0);
 });
 
-test("a lane transition with no new field event still counts as motion", () => {
-  const before = { status: "running", fast_status: "running", background_status: "queued" };
-  const after = { status: "running", fast_status: "completed", background_status: "running" };
+test("a step status change with no new step still counts as motion", () => {
+  const before = withSteps(STARTING, [{ kind: "overview", subjectRef: null, status: "running" }]);
+  const after = withSteps(STARTING, [{ kind: "overview", subjectRef: null, status: "completed" }]);
   assert.equal(stallAdvance(before, after, 12), 0);
-});
-
-test("committed official-site crawl movement resets the stall budget", () => {
-  const before: SetupStallSnapshot = {
-    status: "running",
-    official_site: {
-      run_status: "fast_active",
-      phase: "fast",
-      fetched: 2,
-      snapshots: 2,
-      last_event_seq: 8,
-      last_event_kind: "stage0.crawl.page_fetched",
-    },
-  };
-  const after: SetupStallSnapshot = {
-    ...before,
-    official_site: {
-      ...before.official_site,
-      fetched: 3,
-      snapshots: 3,
-      last_event_seq: 10,
-    },
-  };
-  assert.equal(stallAdvance(before, after, 39), 0);
   assert.equal(stallAdvance(after, { ...after }, 7), 8);
 });
 
-test("durable link-expansion movement resets the stall budget", () => {
-  const before: SetupStallSnapshot = {
-    status: "running",
-    official_site: {
-      run_status: "fast_active",
-      expansion_queued: 1,
-      expansion_leased: 0,
-      expansion_completed: 0,
-    },
-  };
-  const after: SetupStallSnapshot = {
-    ...before,
-    official_site: {
-      ...before.official_site,
-      expansion_queued: 0,
-      expansion_leased: 1,
-    },
-  };
-  assert.equal(stallAdvance(before, after, 39), 0);
+test("per-subject steps are distinguished by their subject, not only their kind", () => {
+  // The background persona steps all share one kind; only `subjectRef` tells them apart, so a
+  // second persona starting must read as motion rather than as an unchanged tick.
+  const one = withSteps(
+    { status: "running" },
+    [{ kind: "persona", subjectRef: "clue-abm-buyers", status: "running" }],
+  );
+  const two = withSteps(
+    { status: "running" },
+    [
+      { kind: "persona", subjectRef: "clue-abm-buyers", status: "running" },
+      { kind: "persona", subjectRef: "clue-abm-champions", status: "running" },
+    ],
+  );
+  assert.equal(stallAdvance(one, two, 39), 0);
 });
 
 test("an overall status change resets the count", () => {
@@ -112,7 +84,7 @@ test("statuses that are not in-flight never accumulate a stall", () => {
 });
 
 test("the release tick can never be swallowed by an accumulated stall", () => {
-  // The fast lane completing is the release signal — it must reset, not trip, the bound.
+  // The fast steps completing is the release signal — it must reset, not trip, the bound.
   assert.equal(stallAdvance(STARTING, { ...STARTING, status: "complete" }, MAX_STALL_POLLS), 0);
 });
 
@@ -131,19 +103,23 @@ test("stall fallback keeps polling while true backend terminals stop", () => {
 });
 
 test("the signature ignores payload that is not progress", () => {
-  const a = { status: "running", fields: [] } as SetupStallSnapshot;
-  const b = { status: "running", fields: [] } as SetupStallSnapshot;
+  const a: SetupStallSnapshot = { status: "running", steps: [] };
+  const b: SetupStallSnapshot = { status: "running", steps: [] };
   assert.equal(progressSignature(a), progressSignature(b));
-  // Absent optional lane statuses read the same as explicit nulls — a pre-slice-3 payload and a
-  // slice-3 one describing the same state must not look like motion to each other.
+  // An absent step list reads the same as an explicit empty one, and an absent `subjectRef` the
+  // same as an explicit null — two payloads describing one state must not look like motion.
+  assert.equal(progressSignature({ status: "starting" }), progressSignature(STARTING));
   assert.equal(
-    progressSignature({ status: "starting" }),
-    progressSignature({ status: "starting", fast_status: null, background_status: null, fields: [] }),
+    progressSignature({ status: "running", steps: [{ kind: "overview", status: "running" }] }),
+    progressSignature({
+      status: "running",
+      steps: [{ kind: "overview", subjectRef: null, status: "running" }],
+    }),
   );
 });
 
 test("a dead driver reaches the terminal after exactly the budget of unchanged ticks", () => {
-  // The end-to-end shape of the fix: `starting` forever (the durable input row means the read
+  // The end-to-end shape of the fix: `starting` forever (the durable run row means the read
   // surface never serves `none` again), nothing else ever moving.
   let count = 0;
   let previous: SetupStallSnapshot | null = null;

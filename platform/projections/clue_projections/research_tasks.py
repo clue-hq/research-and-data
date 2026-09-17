@@ -16,9 +16,11 @@ research writes ``entity_research_account_fleet`` (M8D R6), contact research wri
 actually produced, and a turn that launched nothing gets an empty tuple — never a fabricated card.
 
 The counts are over ``entity_research_job``, which is the only place a per-subject outcome exists.
-"Partial" is a *finalization outcome*, not a state: a job that exhausted its budget or was routed to
-review finished, but not with everything asked of it, and reporting it as ``completed`` would be the
-one lie a progress card must never tell.
+"Partial" is a *finalization outcome*, not a state: a job that exhausted its budget finished, but
+not with everything asked of it, and reporting it as ``completed`` would be the one lie a progress
+card must never tell. ``needs_review`` is counted separately from ``partial`` for the same reason
+they are separate outcomes: a reviewable subject is work a *human* can pick up, not a shortfall to
+be re-run, and folding the two made them indistinguishable to every consumer downstream.
 """
 
 from __future__ import annotations
@@ -50,6 +52,9 @@ class ResearchTaskCounts(BaseModel):
     running: int = Field(default=0, ge=0)
     completed: int = Field(default=0, ge=0)
     partial: int = Field(default=0, ge=0)
+    #: Finished, reviewable, and *actionable by a human* — the one terminal outcome that names a
+    #: queue rather than a shortfall, which is why it is counted apart from ``partial``.
+    needs_review: int = Field(default=0, ge=0)
     blocked: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
 
@@ -96,8 +101,11 @@ _TASKS_SQL = text(
            ) AS completed,
            count(*) FILTER (
                WHERE j.state = 'terminal'
-                 AND j.finalization_outcome IN ('exhausted', 'needs_review', 'budget_stopped')
+                 AND j.finalization_outcome IN ('exhausted', 'budget_stopped')
            ) AS partial,
+           count(*) FILTER (
+               WHERE j.state = 'terminal' AND j.finalization_outcome = 'needs_review'
+           ) AS needs_review,
            count(*) FILTER (
                WHERE j.state = 'terminal'
                  AND j.finalization_outcome IN ('cancelled', 'failed')
@@ -151,6 +159,7 @@ async def research_tasks_for_action_refs(
                 running=int(row["running"]),
                 completed=int(row["completed"]),
                 partial=int(row["partial"]),
+                needs_review=int(row["needs_review"]),
                 blocked=int(row["blocked"]),
                 failed=int(row["failed"]),
             ),

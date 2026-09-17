@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-08-31T07:53:58.242Z",
+  "status": 404,
+  "error": "no email found",
+  "path": "",
+  "_http_status": 404,
+  "_elapsed_s": 1.75,
+  "_request": {
+    "url": "https://www.linkedin.com/in/alexander-semien"
+  }
+}

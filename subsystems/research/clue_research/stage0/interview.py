@@ -744,14 +744,12 @@ async def check_claim_value_entailment(
             )
         return False
     if entailment_judge is None:
-        raise InterviewEvidenceRefused(
-            reason_code=VALUE_JUDGE_UNAVAILABLE,
-            message=(
-                "a typed claim value cannot be admitted here because no entailment judge is "
-                "configured; send the value as the user's own words, or route the statement as "
-                "`unmapped`"
-            ),
-        )
+        # R0 ruling (ARV2-R0-foundations-plan Part 3C fix 1): no judge composed (verification off)
+        # means a typed value is admitted UNJUDGED, exactly like the substring path admits strings.
+        # The claim is born UNVERIFIED, which is the durable record that no judge ran. Refusing
+        # here was the kill-switch inversion: turning verification off bricked every typed
+        # Client-KB fact, so the interview had to ask the user for everything in their own words.
+        return False
     entailment = await entailment_judge.entails(
         workspace_id=workspace_id,
         entity_id=entity_id,

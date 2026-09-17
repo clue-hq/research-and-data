@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type { ProjectEntity } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { useTurnInspector } from "../hooks/use-turn-inspector";
 import { ChatTranscript } from "./chat-transcript";
@@ -32,14 +32,17 @@ import styles from "./project-flow.module.css";
  */
 export function ConversationContent({
   chat,
+  contextEntities,
   contextHandoffError,
+  onOpenPlan,
   projectId,
-  workspace,
 }: {
   chat: ProjectChatController;
+  /** The composer's whole catalog, so a chip resolves whatever was mentioned. */
+  contextEntities: ProjectEntity[];
   contextHandoffError: string | null;
+  onOpenPlan?: (documentId: string) => void;
   projectId: string;
-  workspace: ProjectWorkspace;
 }) {
   // The dev-lens turn inspector. Its own controller, not part of `chat`: it
   // reads nothing the conversation needs and the conversation needs nothing
@@ -53,6 +56,11 @@ export function ConversationContent({
   );
   const { transcriptScrollRef } = useTranscriptAutoScroll({
     activeMessageRevision: activeUserMessageId,
+    // C5 scrollback: reaching the top of the list loads the preceding durable
+    // page; the hook re-anchors the view when it prepends. No new UI — the
+    // dummy build shows nothing during a scrollback fetch, so nothing renders.
+    canLoadOlder: chat.hasOlderMessages,
+    onLoadOlder: () => void chat.loadOlderMessages(),
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
       chat.transcript.length,
@@ -62,6 +70,7 @@ export function ConversationContent({
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
+      onOpenPlan,
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
@@ -73,7 +82,7 @@ export function ConversationContent({
         void chat.recoverGate(card);
       },
     }),
-    [chat],
+    [chat, onOpenPlan],
   );
 
   return (
@@ -102,7 +111,7 @@ export function ConversationContent({
         <ChatTranscript
           activeUserMessageId={activeUserMessageId}
           actions={partActions}
-          contextEntities={workspace.entities}
+          contextEntities={contextEntities}
           gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
           onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
@@ -110,20 +119,6 @@ export function ConversationContent({
       </div>
       <ChatTurnInspector inspector={turnInspector} />
 
-      {chat.threadBusy ? (
-        <div className={styles.planApprovalActions}>
-          <span role="status">
-            {chat.runningTurn
-              ? "Working — new messages will queue behind this turn."
-              : "Queued — waiting for the current turn to start."}
-          </span>
-          {chat.runningTurn ? (
-            <button onClick={() => void chat.stopActiveTurn()} type="button">
-              Stop
-            </button>
-          ) : null}
-        </div>
-      ) : null}
     </>
   );
 }

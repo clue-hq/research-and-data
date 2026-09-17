@@ -1,0 +1,427 @@
+{
+  "requestId": "3d1df1b61451da3d01ec0a518a10873f",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/p04c3lhkl37",
+      "title": "Aaron Churba",
+      "url": "https://www.linkedin.com/in/aaronloganchurba",
+      "publishedDate": "2026-07-09T00:00:00.000Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFIADvgdH-qOA/profile-displayphoto-scale_200_200/B4EZ70kBAKIwAg-/0/1782219548150?e=2147483647&v=beta&t=weNYL3IOuWTXFlroC5QAPpfm6dBR35zU3HLFKvf82Mk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/p04c3lhkl37",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Aaron Churba",
+            "firstName": "Aaron",
+            "lastName": "Churba",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Director of Sales & Development",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Advisor",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": null,
+                "location": "New York, NY",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2024-05-01",
+                  "to": "2025-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fl2d7w9k3vr",
+                  "name": "Bite"
+                }
+              },
+              {
+                "title": "Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": "2026-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fzsnq8ft964",
+                  "name": "Techvera"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": "2024-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/930gtqgxgtw",
+                  "name": "Zip Security"
+                }
+              },
+              {
+                "title": "Advisor",
+                "location": null,
+                "dates": {
+                  "from": "2022-09-01",
+                  "to": "2023-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/930gtqgxgtw",
+                  "name": "Zip Security"
+                }
+              },
+              {
+                "title": "Manager, Sales",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2023-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Senior Account Executive",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Account Executive",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tw1wzgv65yh",
+                  "name": "Electric"
+                }
+              },
+              {
+                "title": "Business Development",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2017-08-01",
+                  "to": "2019-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS, Inc."
+                }
+              },
+              {
+                "title": "Senior Business Analyst",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2016-05-01",
+                  "to": "2017-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kcwwfl54lkt",
+                  "name": "SinglePlatform"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor\u2019s Degree Telecommunications",
+                "dates": {
+                  "from": "2012",
+                  "to": "2016"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/2t7pc9hxmhp",
+                  "name": "Penn State University"
+                }
+              },
+              {
+                "degree": "Master of Science - MS Law",
+                "dates": {
+                  "from": "2018",
+                  "to": "2022"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qcxxvbbfmrn",
+                  "name": "Nova Southeastern University Shepard Broad College of Law"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+      "title": "Aaron Churba's Post",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+      "publishedDate": "2026-06-27T05:26:24.049Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFBYclyTHwqvw/feedshare-image-high-res/B4EZ7RYdhyKwAU-/0/1781629312479?e=2147483647&v=beta&t=5p16n1ZkYjkYgqQ48Z6Th6L_cPNuMhZ3fUWKKwU0Mh8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+      "title": "Probook - Employees, Jobs, Stock & Culture | LinkedIn",
+      "url": "https://www.linkedin.com/company/probook-ai",
+      "publishedDate": "2026-06-10T00:00:00.000Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E0BAQHR6vIRGmC8oA/company-logo_200_200/B4EZ718TnoJkAE-/0/1782242687683/probook_ai_logo?e=2147483647&v=beta&t=uXnbQ-6wUP3pOSlTWyli5kWYNovnStDdNTaOwK94uIQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Probook",
+            "foundedYear": 2024,
+            "description": "Dispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nProbook unifies intake, data cleaning, chat, outbound, and dispatch. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America are on Probook. Learn more at probook.ai. ",
+            "workforce": {
+              "total": 36
+            },
+            "headquarters": {
+              "address": "New York, NY 10022, US",
+              "city": "New York",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 6208,
+              "countryRank": 845739,
+              "avgDurationSeconds": 64,
+              "history": [
+                {
+                  "value": 8273,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 12156,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 12961,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10365,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10906,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 6208,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "title": "Probook's Post",
+      "url": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "publishedDate": "2026-06-27T05:26:24.049Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFBYclyTHwqvw/feedshare-image-high-res/B4EZ7RYdhyKwAU-/0/1781629312479?e=2147483647&v=beta&t=5p16n1ZkYjkYgqQ48Z6Th6L_cPNuMhZ3fUWKKwU0Mh8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+      "title": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate. Thanks for the helpful tip, Matt Grossbard. \u2026 | Aaron Churba",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+      "publishedDate": "2024-06-26T00:00:00.000Z",
+      "author": "Aaron Churba"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_2026-it-security-budget-planning-activity-7394430474065956865-UUuf",
+      "title": "The companies that get most from their technology aren't spending more, they're planning with precision. | Aaron Churba",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_2026-it-security-budget-planning-activity-7394430474065956865-UUuf",
+      "publishedDate": "2025-11-12T00:00:00.000Z",
+      "author": "Aaron Churba"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_just-a-short-35-years-ago-i-was-laid-off-activity-6914610056449679361-UPhs",
+      "title": "Just a short 3.5 years ago I was laid off. I had no idea what was next. | Aaron Churba",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_just-a-short-35-years-ago-i-was-laid-off-activity-6914610056449679361-UPhs",
+      "publishedDate": "2022-03-29T00:00:00.000Z",
+      "author": "Aaron Churba",
+      "image": "https://media.licdn.com/dms/image/v2/C4E22AQHCyJCkWjyLpg/feedshare-shrink_800/feedshare-shrink_800/0/1648571504140?e=2147483647&v=beta&t=BXM9UTmkCucc786z69UNIYJJfXObTvty6wnZ8k3YbXI"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/aaronloganchurba_bites-kiosk-solution-enhances-guest-experiences-activity-7232014464059863040-4nV2",
+      "title": "Bite's Kiosk Solution enhances guest experiences, reduces labor costs, and boosts restaurant sales\u2014three key benefits in one comprehensive solution.\n\nCheck out the video below. Special thanks to 858\u2026 | Aaron Churba",
+      "url": "https://www.linkedin.com/posts/aaronloganchurba_bites-kiosk-solution-enhances-guest-experiences-activity-7232014464059863040-4nV2",
+      "publishedDate": "2024-08-21T13:23:32.000Z",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/gabrielsierranyc_techvera-tulsa-msp-activity-7362095842125574144-0T0t",
+      "title": "We\u2019re thrilled to welcome three incredible new hires to the Techvera team \ud83d\udc4f | Gabriel Sierra",
+      "url": "https://www.linkedin.com/posts/gabrielsierranyc_techvera-tulsa-msp-activity-7362095842125574144-0T0t",
+      "publishedDate": "2025-08-15T00:00:00.000Z",
+      "author": "Gabriel Sierra",
+      "image": "https://media.licdn.com/dms/image/v2/D4D22AQFdUaQ_zbru7Q/feedshare-image-high-res/B4DZipoQPeGkAs-/0/1755192562903?e=2147483647&v=beta&t=ULoqiSHhv1okZ7anDNcNzT7hEOjOjJO1Rdx9lItwhoY"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/willnelsonevans_wow-what-a-year-2021-was-for-electric-records-activity-6887786955749285888-ERSE",
+      "title": "Wow. What a year 2021 was for Electric. Records broken. Success for new and old friends. 500+ new customers welcomed to the family. | Will Evans",
+      "url": "https://www.linkedin.com/posts/willnelsonevans_wow-what-a-year-2021-was-for-electric-records-activity-6887786955749285888-ERSE",
+      "publishedDate": "2022-01-14T00:00:00.000Z",
+      "author": "Will Evans",
+      "image": "https://media.licdn.com/dms/image/v2/C4E22AQE7uq25I_GimA/feedshare-shrink_1280/feedshare-shrink_1280/0/1642176378062?e=2147483647&v=beta&t=VUpF1MBqU8zJfZqXx_7LprBffD3XXmOU0ddPjPL5iCM"
+    }
+  ],
+  "searchTime": 33407.2,
+  "costDollars": {
+    "total": 0.015
+  },
+  "output": {
+    "content": {
+      "report": "# Aaron Churba \u2014 professional buying-committee profile Research cutoff: 2026-08-27. I treated the supplied LinkedIn URL and the employment-history lock as the identity key. Sensitive material was not collected or reported. ## 1. Identity confirmation Confirmed subject. The supplied LinkedIn profile is titled \u201cAaron Churba\u201d and says \u201cDirector of Sales & Development at Probook\u201d; its employment entry says \u201cDirector of Sales & Development - Probook (Current)\u201d and \u201cFeb 2026 - Present.\u201d URL: https://www.linkedin.com/in/aaronloganchurba A first-party announcement by Aaron, dated June 16, 2026, says: \u201cI'm excited to share that I've joined Probook as Director of Sales & Development.\u201d URL: https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT Probook\u2019s own announcement, dated June 27, 2026, says: \u201cWe\u2019re excited to welcome Aaron Churba to Probook as our Director of Sales & Development.\u201d It also says he will help \u201cget more businesses to discover Probook,\u201d communicate value, and support/coach the growing GTM team. URL: https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f Same-name people encountered and excluded. * \u201cAaron Churba\u201d in Florida corporate-registry search results is listed as a registered agent for \u201cSandals for You 007, L.L.C.\u201d with a Florida address and a 2007 filing date; it has no match to the locked Probook/Bite/Zip Security/Electric history, so I excluded it. URL: https://opengovus.com/florida-corporation/P04000021150\n* The same Florida-registry record also appears in a separate \u201cSandals 4 Events Inc\u201d result; again, there is no matching professional history, so I excluded it. URL: https://opengovus.com/florida-corporation/P08000045694\n* No other exact-name professional profile with the locked employment sequence was identified in the returned results. Similar-name results such as Andrew Frydman, David Golub, Michael Slade, Jake Ben-Ami, and Rohan Bakshi were different names and were not treated as same-name candidates. ## 2. Career Dates below are the dates explicitly surfaced by the subject\u2019s LinkedIn profile. Where the profile did not state responsibilities, I mark them NOT FOUND rather than infer them. * Probook \u2014 Director of Sales & Development \u2014 Feb 2026\u2013present. Aaron\u2019s profile says: \u201cCurrently leading a team of 5 sellers and counting.\u201d It describes Probook as \u201cThe AI Operating System for Home Services\u201d and says the product is built around dispatch and intended to drive \u201crevenue growth, improve operational efficiency, and add points to their EBITDA.\u201d Aaron says his objectives are \u201chelping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.\u201d Probook says his remit includes getting businesses to discover Probook, communicating value clearly, and giving the growing GTM team \u201csupport and coaching.\u201d\n* Bite \u2014 Director of Sales \u2014 May 2024\u2013Aug 2025. The profile says he was \u201cOverseeing the sales team at Bite,\u201d focused on \u201cdriving sales, nurturing client relationships, and achieving high growth revenue numbers.\u201d URL: https://www.linkedin.com/in/aaronloganchurba\n* Bite \u2014 Advisor \u2014 Aug 2025\u2013Feb 2026. The profile lists \u201cAdvisor\u201d at Bite for this period. Specific responsibilities are NOT FOUND.\n* Techvera \u2014 Sales / Senior Account Executive \u2014 Aug 2025\u2013Jan 2026 (the search extract labels the role \u201cSales\u201d; a Techvera announcement calls him \u201cSenior Account Executive\u201d). Techvera\u2019s announcement says: \u201cPlease join us in saying hello to: Aaron Churba, Senior Account Executive.\u201d URL: https://www.linkedin.com/posts/gabrielsierranyc_techvera-tulsa-msp-activity-7362095842125574144-0T0t. The profile extract does not explain responsibilities. NOT FOUND beyond the title.\n* Zip Security \u2014 Director of Sales \u2014 Jun 2023\u2013May 2024. The profile lists this title and period. Specific responsibilities are NOT FOUND.\n* Zip Security \u2014 Advisor \u2014 Sep 2022\u2013Jun 2023. The profile lists \u201cAdvisor.\u201d Specific responsibilities are NOT FOUND.\n* Electric \u2014 Manager, Sales \u2014 May 2022\u2013Jun 2023. Aaron\u2019s profile says he was \u201cOne of the early sales hires and a consistent top performer,\u201d was \u201cPromoted to running a team of sellers while continuously exceeding sales targets on an individual basis,\u201d and was part of the Series A\u2013D fundraising rounds.\n* Electric \u2014 Senior Account Executive \u2014 Jan 2022\u2013May 2022. The profile identifies him as \u201cPresident\u2019s Club Member FY 2021 (Inaugural Year).\u201d\n* Electric \u2014 Account Executive \u2014 Jan 2019\u2013Jan 2022. The profile lists the role; detailed responsibilities are NOT FOUND.\n* VTS, Inc. \u2014 Business Development \u2014 Aug 2017\u2013Jan 2019. The profile lists the role; detailed responsibilities are NOT FOUND.\n* SinglePlatform \u2014 Senior Business Analyst \u2014 May 2016\u2013Aug 2017. The profile lists the role; detailed responsibilities are NOT FOUND. Outbound sales, demand generation, ABM, target-account lists, and GTM tooling. Evidence supports sales leadership, business development, and GTM-team building: Aaron\u2019s current stated goal is \u201cbuilding a world-class GTM organization,\u201d and Probook is hiring SDRs, Commercial AEs, Strategic AEs, and Solutions Consultants. His Electric profile says he ran sellers and exceeded sales targets. Explicit evidence of a named outbound methodology, demand-generation program, ABM process, target-account-list construction, or sales-development software/tooling is NOT FOUND in the sources reviewed. ## 3. Education * Penn State University \u2014 Bachelor\u2019s Degree, Telecommunications \u2014 2012\u20132016. URL: https://www.linkedin.com/in/aaronloganchurba\n* Nova Southeastern University Shepard Broad College of Law \u2014 Master of Science (MS), Law \u2014 2018\u20132022. The profile describes him as \u201cpursuing a Master of Science - MS focused in Law\u201d; the structured profile reports 2018\u20132022.\n* Post-graduate professional programmes, certificates, or other continuing education: NOT FOUND. ## 4. Public writing, talks, and podcasts The following publicly indexed authored posts were found; no independently indexed bylines, webinars, panels, or podcast appearances were found. * \u201cIn my ~10 year journey in SaaS sales, one key lesson stands out\u2026\u201d \u2014 LinkedIn, June 26, 2024. Aaron writes: \u201cprospects buy from people they like, relate to, or aspire to emulate.\u201d He extends the point to sales-rep/leader relationships, saying alignment in \u201cvalues, goals, and communication styles\u201d matters and that hitting targets is \u201ca huge component.\u201d URL: https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD\n* \u201cBite\u2019s Kiosk Solution enhances guest experiences, reduces labor costs, and boosts restaurant sales\u2026\u201d \u2014 LinkedIn, Aug. 21, 2024. The post describes Bite\u2019s kiosk value proposition and thanks 858 Partners and California Fish Grill. URL: https://www.linkedin.com/posts/aaronloganchurba_bites-kiosk-solution-enhances-guest-experiences-activity-7232014464059863040-4nV2\n* \u201cThe companies that get most from their technology aren\u2019t spending more, they\u2019re planning with precision.\u201d \u2014 LinkedIn, Nov. 12, 2025. The indexed extract begins: \u201cI talk a lot with business leaders\u2026\u201d; the complete substantive text is NOT FOUND in the returned evidence. URL: https://www.linkedin.com/posts/aaronloganchurba_2026-it-security-budget-planning-activity-7394430474065956865-UUuf\n* \u201cJust a short 3.5 years ago I was laid off. I had no idea what was next.\u201d \u2014 LinkedIn, Mar. 29, 2022. Aaron describes calling Matt Deis about Electric and says: \u201cFast forward 3.5 years later, Electric is a unicorn.\u201d URL: https://www.linkedin.com/posts/aaronloganchurba_just-a-short-35-years-ago-i-was-laid-off-activity-6914610056449679361-UPhs\n* \u201cExcited to (finally) share what I\u2019ve been working over the past few months.\u201d \u2014 LinkedIn, June 16, 2026. This is his Probook announcement and says he is focused on discovery, GTM organization-building, and growth. Most substantive quote. \u201cIn my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate.\u201d ## 5. What Aaron owns at Probook today Publicly evidenced scope: sales and development; a current team of \u201c5 sellers and counting\u201d; helping more businesses discover Probook; building a \u201cworld-class GTM organization\u201d; clearly communicating value; and supporting/coaching the growing GTM team. Direct reports: Public evidence says he leads \u201ca team of 5 sellers and counting.\u201d Names and exact reporting lines are NOT FOUND. Open roles reporting into him: Probook\u2019s careers page lists \u201cFounding Account Executive\u201d under Sales. URL: https://www.probook.ai/careers. Probook\u2019s company page lists GTM openings \u201cSales Development Representative\u201d and \u201cEnterprise Account Executive.\u201d URL: https://www.probook.ai/company. The pages do not explicitly say that these roles report to Aaron; therefore reporting relationship is NOT FOUND. What he says he is building: \u201chelping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.\u201d A customer case-study page quotes Ryan Laske saying: \u201cWhen Aaron and I tell new prospective hires we\u2019re dispatching based on objective metrics, we see that those who react positively end up being true A players.\u201d This supports a public hiring/operating emphasis on objective dispatch metrics, but it is a customer-side quote rather than Aaron\u2019s own direct statement. URL: https://www.probook.ai/case-studies/tr-miller ## 6. How they think and buy Evaluation/buying evidence: Aaron publicly says, \u201cThe companies that get most from their technology aren\u2019t spending more, they\u2019re planning with precision.\u201d This indicates a stated preference for disciplined technology planning rather than simply higher spend. Specific procurement process, buying committee, ROI model, security review, implementation criteria, or software-selection checklist: NOT FOUND. Tools publicly praised or criticised: No named sales, marketing, CRM, prospecting, ABM, or GTM tools were found in the reviewed sources. NOT FOUND. Methodologies: No named sales methodology or ABM methodology was found. NOT FOUND. Metrics: His LinkedIn profile references \u201cachieving high growth revenue numbers\u201d at Bite, \u201ccontinuously exceeding sales targets\u201d at Electric, and leading five sellers at Probook. Probook\u2019s public positioning emphasizes customer \u201cmeasurable value,\u201d revenue growth, operational efficiency, and EBITDA improvement. The Probook case study uses \u201cobjective metrics\u201d in dispatch/hiring context. Communication style: Relationship-led and alignment-oriented. Aaron writes that prospects buy from people they \u201clike, relate to, or aspire to emulate,\u201d and that alignment in \u201cvalues, goals, and communication styles\u201d creates \u201cpalpable\u201d synergy. ## 7. Non-sensitive personal hooks * Penn State connection: His profile lists Penn State University, Telecommunications, 2012\u20132016.\n* Sales achievement: He identifies as \u201cPresident\u2019s Club Member FY 2021 (Inaugural Year)\u201d and \u201cPresident\u2019s Club Member FY 2022.\u201d\n* Longstanding professional relationship: Aaron says Mark Hoffman hired him \u201cinto my first job out of college\u201d ten years before the Probook announcement, and that returning to work with Mark was a meaningful reason for joining.\n* Publicly stated interests/hobbies, sports, volunteering, side projects: NOT FOUND in reviewed sources. ## 8. Three grounded conversation openers 1. Hook: building Probook\u2019s GTM organization. \u201cYou\u2019ve said you\u2019re \u2018building a world-class GTM organization\u2019 and are hiring SDRs, Commercial AEs, Strategic AEs, and Solutions Consultants\u2014what part of the system are you designing first?\u201d Evidence: Aaron\u2019s announcement. URL: https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT 2. Hook: relationship-led selling. \u201cYour SaaS-sales lesson was that prospects buy from people they \u2018like, relate to, or aspire to emulate.\u2019 How do you turn that principle into coaching behavior for your five-plus sellers?\u201d Evidence: Aaron\u2019s sales-leadership post and profile. URLs: https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD and https://www.linkedin.com/in/aaronloganchurba 3. Hook: precision and objective metrics. \u201cYou\u2019ve written that technology leaders should be \u2018planning with precision,\u2019 while Probook\u2019s customer story references dispatching based on \u2018objective metrics.\u2019 Which metrics are most useful in proving value during an enterprise evaluation?\u201d Evidence: Aaron\u2019s technology-planning post and Probook case study. URLs: https://www.linkedin.com/posts/aaronloganchurba_2026-it-security-budget-planning-activity-7394430474065956865-UUuf and https://www.probook.ai/case-studies/tr-miller ## Evidence limitations The strongest identity and career evidence is LinkedIn, including a structured profile extract, while the strongest current-scope evidence is Aaron\u2019s own Probook announcement and Probook\u2019s announcement. No public source reviewed supplied complete role-by-role responsibilities for every earlier position, named GTM tools, a formal buying methodology, direct-report names, explicit reporting lines for open roles, or a complete inventory of talks/podcasts. Those items are marked NOT FOUND rather than inferred. Third-party profile aggregation was used only as a weak corroborating index and is labelled indirectly by its nature; the me.sh result itself says it is a \u201cLinkedIn, Twitter\u201d profile summary and was not used to establish unique identity or sensitive facts. URL: https://me.sh/profile/aaron-churba"
+    },
+    "grounding": [
+      {
+        "field": "report",
+        "citations": [
+          {
+            "url": "https://www.linkedin.com/in/aaronloganchurba",
+            "title": "Aaron Churba"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+            "title": "Aaron Churba's Post"
+          },
+          {
+            "url": "https://www.linkedin.com/company/probook-ai",
+            "title": "Probook - Employees, Jobs, Stock & Culture | LinkedIn"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+            "title": "Probook's Post"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+            "title": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate. Thanks for the helpful tip, Matt Grossbard. \u2026 | Aaron Churba"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/aaronloganchurba_2026-it-security-budget-planning-activity-7394430474065956865-UUuf",
+            "title": "The companies that get most from their technology aren't spending more, they're planning with precision. | Aaron Churba"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/aaronloganchurba_just-a-short-35-years-ago-i-was-laid-off-activity-6914610056449679361-UPhs",
+            "title": "Just a short 3.5 years ago I was laid off. I had no idea what was next. | Aaron Churba"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/aaronloganchurba_bites-kiosk-solution-enhances-guest-experiences-activity-7232014464059863040-4nV2",
+            "title": "Bite's Kiosk Solution enhances guest experiences, reduces labor costs, and boosts restaurant sales\u2014three key benefits in one comprehensive solution.\n\nCheck out the video below. Special thanks to 858\u2026 | Aaron Churba"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/gabrielsierranyc_techvera-tulsa-msp-activity-7362095842125574144-0T0t",
+            "title": "We\u2019re thrilled to welcome three incredible new hires to the Techvera team \ud83d\udc4f | Gabriel Sierra"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/willnelsonevans_wow-what-a-year-2021-was-for-electric-records-activity-6887786955749285888-ERSE",
+            "title": "Wow. What a year 2021 was for Electric. Records broken. Success for new and old friends. 500+ new customers welcomed to the family. | Will Evans"
+          },
+          {
+            "url": "https://me.sh/profile/aaron-churba",
+            "title": "Aaron Churba - LinkedIn, Twitter"
+          },
+          {
+            "url": "https://www.probook.ai/careers",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/case-studies/tr-miller",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://opengovus.com/florida-corporation/P04000021150",
+            "title": "Stepright Sandals Inc. \u00b7 6834 Sienna Club Drive, Lauderhill, FL 33319"
+          },
+          {
+            "url": "https://opengovus.com/florida-corporation/P08000045694",
+            "title": "Sandals 4 Events Inc \u00b7 11088 Canary Island Ct, Plantation, FL 33324"
+          }
+        ],
+        "confidence": "medium"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 33.8,
+  "_request": {
+    "query": "Produce an exhaustive, cited markdown profile of Aaron Churba (Director of Sales & Development at Probook):\n\n1. IDENTITY CONFIRMATION \u2014 the primary sources that tie this exact person to Probook and this\n   exact title, with dates. List the same-name people you excluded.\n2. CAREER \u2014 every role with organisation, title and start/end dates, and what they were\n   responsible for at each. Highlight anything to do with outbound sales, demand generation,\n   account-based marketing, target-account list building, sales development or GTM tooling.\n3. EDUCATION \u2014 institutions, degrees, dates, and any post-graduate or professional programmes.\n4. PUBLIC WRITING, TALKS AND PODCASTS \u2014 every post, article, byline, webinar, panel or podcast\n   appearance you can find, with title, venue, date and URL. Quote the most substantive one.\n5. WHAT THEY OWN AT PROBOOK TODAY \u2014 scope of the role, who reports to them, which open Probook\n   roles report into them, and what they have publicly said about what they are building.\n6. HOW THEY THINK AND BUY \u2014 evidence about how they evaluate and purchase software: tools they\n   have publicly praised or criticised, methodologies they advocate, their stated metrics, and\n   their communication style (quote them).\n7. NON-SENSITIVE PERSONAL HOOKS \u2014 publicly stated interests, hobbies, sports, schools, awards,\n   volunteering, side projects. Nothing from the compliance exclusion list.\n8. THREE GROUNDED CONVERSATION OPENERS \u2014 each must name the exact hook it uses and the URL that\n   evidences it. No opener may rest on an unsourced fact.\n",
+    "type": "deep-reasoning",
+    "systemPrompt": "You are researching ONE named professional for a B2B buying-committee dossier.\n\nTARGET LOCK \u2014 the ONLY subject is:\n  Aaron Churba, currently Director of Sales & Development at Probook (probook.ai), the AI operating system for home-services\n  businesses (plumbing / HVAC / electrical), headquartered in New York, NY.\n  LinkedIn: https://www.linkedin.com/in/aaronloganchurba\n  Known employment history (already verified, use it to disambiguate): Probook (Director of Sales & Development, since Feb 2026), Bite (Director of Sales / Advisor), Zip Security (Director of Sales), Electric (Manager, Sales / Senior AE)\n\nAny person with the same or a similar name who does NOT match that employment history is a\nDIFFERENT PERSON. Name every same-name person you encountered and discarded, and say why.\n\nCOMPLIANCE CHARTER \u2014 hard exclusions. Do NOT collect, report, quote or allude to: health or\nmedical information, religion or religious activity, political opinions or affiliation, sexual\norientation, racial or ethnic origin, trade-union membership, criminal matters, family or\nbereavement details, home address, personal phone number or personal email address, or anything\nabout their children. If a source contains such material, skip it and say you skipped it. Only\nprofessionally-public and clearly non-sensitive personal material is in scope.\n\nRULES: every assertion carries a verbatim quote and its URL. Write \"NOT FOUND\" rather than\nguessing. Prefer the person's own words (their posts, talks, interviews, bylines) over third-party\nprofiles. Aggregator/people-directory pages are the weakest evidence and must be labelled as such.\n",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "type": "string",
+          "description": "The exhaustive cited markdown profile answering every numbered section, with a verbatim quote and URL behind every assertion and explicit NOT FOUND markers."
+        }
+      }
+    }
+  }
+}

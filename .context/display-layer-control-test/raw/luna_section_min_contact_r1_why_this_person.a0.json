@@ -1,0 +1,78 @@
+{
+ "id": "gen-1788504502-v2JJtaDntdu2fOVw5wpP",
+ "object": "chat.completion",
+ "created": 1788504502,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"why_this_person\",\"empty\":false,\"items\":[{\"h2\":\"VP Marketing and economic buyer while Zafran builds ABM from scratch\",\"body\":[{\"text\":\"Nick is VP of Marketing at Zafran Security and is tagged as an economic buyer.\",\"claimIds\":[\"zaf-038\",\"zaf-039\",\"zaf-043\"]},{\"text\":\"Zafran's ABM program is being built from scratch, with a Senior Manager, ABM & Integrated Campaigns role responsible for the motion.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"In your email: Acknowledge that you're building ABM from scratch and position Clue as a way to help execute account research and coordinated plays.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"His Zafran POV centers on real risk exposure, not patching everything\",\"body\":[{\"text\":\"Nick authored the LinkedIn article “Why I joined Zafran Security,” which describes his rationale for joining and market/problem framing.\",\"claimIds\":[\"zaf-158\"]},{\"text\":\"In that article, he wrote, “we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.”\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: Connect Clue's account-level research to the risk-exposure story behind “Why I joined Zafran Security.”\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"A senior B2B marketer with product marketing and scale experience\",\"body\":[{\"text\":\"His career history includes VP of Marketing at Zafran Security, Vice President Product Marketing at Sysdig, and Senior Director Product Marketing at Okta.\",\"claimIds\":[\"zaf-045\"]},{\"text\":\"He describes himself as a “Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale.”\",\"claimIds\":[\"zaf-044\"]}],\"sendLine\":\"In the platform: Prioritize a senior-marketer brief spanning team building, product marketing, and scale.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmm8Yxg_soNxHeF2cn7IfRnaSBPcWRNSWppwvmruC2hgaD43z_6jP9ewPjF4mfwHwA-iOGie5lIEjXWCXxtX4aqwrN1TQx_8ClR9ZiY0FHi1siOWOZIYkf6_6ODfjyHMB1FIZ6JbZoKhTDzd0CSwe60GzFYzmz_nksT3jU37tbSySrfN9xdWhG_Kya2YdzWeh2pb9AtVLta9XkzOFlAuLnE-G4x4Wbzs0HgQCgFaHYAubD854k2j_I2WcW3BVXumDxI1_2tMfWbNCNWpS7_2eaDbeiMWz38R6CjzcEuBbZIb6fyVZXRuuwa3h2uaYhHRhRH0ksXjqw5kBn_Mcu_sxeNYRwoSE75M3MBtbk6lrcJIEb-MBvojtDOZbIjp35kMKIxXN3vfZS6_2_goQTToYGjiMXcqSuflaQkure9fhmf3opOhBntQWei7GhKh6eGDXbq41L3K-xxVghdVTsTpMq6UZO1F9r3CSbUgGF2gc-6PFQlgxh9E9Q-dWvI2ZzeleOVGxAf9OnythYKlO9ar6MlWPK6qadouMx0oDCB2eNNeiqOfB5FfTTRdDPS0GhNs7ub-D62fkGpu2LKirHXMiGCA12bw9y3zfhA78fhWBdEJegB219jPu7NdC2rp5wRNOyDG14K-DX0r3FJihc8FewEvXB8Yzi8UCFNQFfnuXXkfh0xCRWyQPWT0rikLpq7Z6tQMWFt0ZSEMdnlLsq4xrUM3a0cDhJdCGZ_7xle3yDQCnDISQrCl_xioqKzOPFwaR3i0M0YES6O5Yj0QjvBInu1hEqtxHAi6F6eCpGZr_t9ddhmHqlkGo-Ztc_HKbeaPLs1rwi9o6j_LboR3sh5TTrItYU0Sdq-F1_Su5_dq4ns52Y78JSXlZVF7Ud1RoWWIKSIbapLxyoBZSC3hqYEZ6AuuqdciGmW6pf01YNZOukZCMNzzs4BeBtN2XR6kFYFdiKsfyPlgC3vqrovOe3cV6e--H9fMLVwmI6gsT79DeiMORmBAoQf1uPerTTWov11C2EZLsKXWHl5Xw4Ddc61jQiMHvmYCum8GlPgpr9cPJa4XNRS8SN34VtYCPOaYb0gRQdYMsNJXnB8idMggxci7n3cC9r_xquLI0zqHaO8G-o9o4vbxHIfjEAQ7uGUpLUQ_ymLMnZPjSS9xB0UounoSUcHbD_vZVSzN4SExdJh9Bhen_JabnHQKQnbK_8WHWm2NKOzN8SEW40Yv2oLfKkAaYTuzYGrHrclZrPMiyfPXPEi7A6Yi2lED1yIseqdctOZTUUVYUgjsGDECvggywoL_jTqigy59B3KhLU-lW-giXBL_q-HQFvXg6IkTJLfRX-z8kF57g_nVP-kQnJyMub4FnX40Cdk7hOOV-QooGrcY_kKkJV_YtUe3u_fMuprwPhdclDEH4qzXMyU2tBCT91YH9e_bHt_pVzX6QTt6wj8LarO8mdivmMvW-b5BO9yoZe5-mnymO3rExNRXn_05MorwV2xpCn8S80ZCcVu4e4bNTH0JhT8pRfgxfWgzcQEkgHHb2RmDjUQ1v_wcPKxKYunmJHba1eHnuSqr3eTkYlom8RMen-HSUjt7c0H5LK3fEESWRqxi3z8zn4PIQNDW4P9eSxcSOYIARS-_4GzzXZYb8R0aPWRHKn9txOLAeTgqDE114jnVSjrD5NNkWqJBCYEKMHfLIkFASgihM5YDrTdjJBoGyZPyaK6A341uWGW-UYuhat4MGdE5_QsYIZWUvMs2WoMQEBZEoTsFWizJ2kC4wH_iQ68PW3Ok7KSDQgte4arsmm2Z9QNoKBIzf7xQe_7fCImustpYE30gRAs5qXXZD-8Fjw5FZTnoDym1B8PwEW07GSm_H5KrAmtjaawoYjQH_ZYS_Wg5aaXXssPxkfU_ogxBbWswaO1PXmdHwCS2CseAL0dXg5qP4rc7r5KTgS_rEwTiuLF6gNB6ZJzhaZBLrkoKdDjCfp3MtUqxYIsH-iDazVU686sjWnAwhdZbpnKhBMLEyKJ1s-AAbipMufq1mcm8tb_CW0arDQQX1qKQqcNyG0sdufqObU3K3CaPzophWt7djy1P9cZOyU3Wc_EOTcg01gjEOoQK0c5WQ0wjhAXXrDXU_V4VlemWQlgJzJ5HW1JyZCyMMWDoRIf-JN5IHshjGBwavphG6O7tw3Z0gFgMU5g4r7GobyvGG0ZWUArGWCtilosR5KIrjxdrZXYy5noAv1Zyo5tdHzy9Bx663pKRYCsqNp_g5Vlr7JqaUsrxW-akw2Hx9bnGTcWLO-iPwgQPYfaxDT1TvyOY4Qa_NkK1fIJacO2d39qN8p-ee-oIG2AjK1bHoSmkjfl7Xt3LsQxx-aCUjVnjs_duArYPwi8Q76xqjfv2d3zN8iAPpHaz3-0f8tLGHRtS7lOEEfhq_4HjdfvedLljriErWIN7QL6MTFWYLvbt9kLUQlzoueEs9SpDAW3aRoV01n4JdlROrpPAN99FgkBjSV1QkETTq4M8uThAUKTOX5p6wQ67xuAvF6eDoktkMgd8JMN2mr7VFSNyT6A9mtZWnatulPwePbu5LfCvB-l6mEszOBHSMTrwY30s6DLsrITsRsyA63gjlEhL2o8L-70-bSr1X2CRH7YRSOdgF4C9XGKXN2Jem2CeII-KX7BcgITgh2LU11YF4FR5zvFo3hkWGCk8PokSb3IQ24diGTQWGdxIoLG8FfIhOHCWBBplXFmYLhP-_rBPGJiVBj2BARAWcqF59_NjuLbPNXxGTsSp1pN9RMCliv45amuwa8yLWFnZA0MOGH9iN4G_71MWBVUVUatJysR-tkHkmdcyHCm655k_I8YqFoBV-R7lyJupu_6UBydyoHnt-933WX68O7xbKIL1XXwufTkIFV21lRUFI-xOOQszQdcYqhbyKfMRevt6tbCITfgp9ge-v_iy0xz7o--xlRendSk1uBoleW6-fFRS1SaAx3Bz6G9NNcUFeLK3zPV0X9OxKMiIWmZpvncVMIcXZvPLCeeytAJTIIIxGPaDfhSEnw2WKce5svbtjKPUzR5KT-Q-unsTGD7kmOi2-kCIzis0BfC7zbGfAGq3-kjAMg_CKRI_hE72y8XBQhjM8CjX3fBRIzq_UDTXo9Pt2ofTqepU_mDK60VyTVRHBHPHH7s3D7IaiKVvSwHu01RPAFs6mIKEDYr3xw0uSfiNP2dwArgqWbYtGLF0ctx5QyZtKQY93QqojvEESih9acILbOURcVKDFoabRZ8vPIk-CiVBcxGoDeDOs4aLhEMiy0EiaJ6dd90HRpa6Rx8iEFTBjR66wBGc44ZZeDNcm4SQXFDdf4wTVZWqiMrXryr3BQUZOeacfRQ0N30-lAkxXuEBw0xNLWkPwG3-elXuy88zKjnUMZEhQ7yX-SEFHdL5zFxdzNhR-NrGNuMu2XmnT6572jAnaARtTGiaCszMwH40FUAbUDrtg_8Z0bMzenhSKxmxRJsYrQpXI2egL9JB9O7_teyG5uKWL1SVa6GMYgWbWGrRsGp25sq0Yr-YZGOZTnmldAn2ABc8m-9sBTVVj-_B7xhvI1c7uvpdx2EH9-YlW3vGbGIf6fzriqBUCRnKkLfLgCiA-NYGOSXpcji71wD8cGmwVw_t_DArx8Dz_mdou4qxVav1XDhxv9hIjvJgy0L34bYmVog0saN2k1CgPgbCd262-NhuXXK3YYBRbgeos3cSYtQwbtZ4Fqf2dZZDXZGa4bXkhxSC-1DoYz-XwopcuzEZJypuHQakN24co1Pq76nEk9L1PXNf-zlV6sdVt-IQaz9sfKiqs6ESLJgk6p-Daaq0D2aApxM_n6DLGFEW-1SE3yRgDjHobU6i_9Uv6eyBAHwEWOt-KosTwWrlMj8b2rNV3kRC6uelTPSSDXkmAv7_r_2Yw9qshajIsrQn5JgLoLil7VSLBIZjxI-xhhxE3oySk3n_Ic231wBUYeunp0_HjsCgHgI-QvYxkba-dJTlMezh2htpCFz9cGQKrAgD2_tjohTXXwx3Wqr8AvRSQTiFv5t_Sq--yhWDacRooIw9ZuRPtXfzHwFg4Lx190WbkGcGpp7FNhq5xeHoQYEH5xPBSEQQl3xMlshFvXYm-WMXmEj2sLGfysy0Nm1ETV2HFU7aVubsmo2-E5cfjcOJZDOdbC3DziPMpdmNkSzgQDr1pMHIunXDT339MCUy91cJQHH1Jh8GlBLetxIG6r9crrNzBH62llj1cqF-6LJunSPSFgFX7HHD3uIi7uQyKeZ0U2BguyKFrJaLUHIUpl11zwaaUf_pcJ_vA5WCpF6dUH0jPgOzFF2WRaDAi3xvclnC3g3mjKK_JYFrkyhJ_ta00A33Px_bXytG5bZyFsasMCWfTofwyu2ObwtFaWkeDdMh9Q2qJL8yY6l4luiZGpdpwxAe7c8Z1uPkxAfq_o3j15pQqCII178rOuv-2xRHEosxjHGbOumfudh4_MntpEcv9e5rDz3dbHJvP3uP-uGCpcnNBQEWTBQ5-iJChg==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0dc420d1fc3ed2bd016a9a69b7dba887d0bdbb0bf0dd4e1e97",
+      "index": 0
+     },
+     {
+      "type": "reasoning.summary",
+      "summary": "**Evaluating risk exposure**\n\nI see the client is talking about a \"risk-exposure story.\" It seems like they want to frame the challenge as understanding the real risk exposure involved, which is an interesting angle. I'll need to think about how to explain that effectively and convey its importance. It sounds like focusing on the actual risks rather than just theoretical ones could really make a difference in their approach.",
+      "format": "openai-responses-v1",
+      "index": 1
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnBuje-1CYmJn3_KcUObhoyrBmzDjfJqQzuVRrF7yqhhVhVu5x1LKIYSiPtEJZUKOSLlrTquTomf95G1y8bwmdSrb63kUCILOpe0gS5Z3BARvcehQhScNyEt59f5kVuBBGXM-57dapSQYctdn-XUxF6FTfbFHS5Fu1hWK7pmG8s9-zHKiBgbfqgNUpugsjuCtLxqfEy5gJ21cECBBmMDqBly--8itB_XEGqFZe8CVp7uOoVZri4OUFgQtXKdlTzNCJNmrFkirA6MMH7s6IoZvNhQCpUDPkQ6vNKTss6xk6MIgzlH6b-JYOEHS8uFh8Zwq1srz39kauiH0lYX8TM9IVOuDaarN5T8WXPmqYdYTpJC2pDdSLccolkfoZ2KvmhBjhCec4p_idCyZIoAINiLreM-k5sUeQoFYt8n2zO8k8vvt7okt-Mnf-fEvSjKWczZDLQjBt-Y2DyUaet8ZsCztOTCMAilxXeSD22BY581bG1JhENWjwyLv8xFcl-qWK28P4FjsqMdnvffuWJjoxEmgOmkduPncJwiVvKOcCuZtBl7Dizv_iWzVdRoRcgLlxzFH3C_eVicQ_NJWfXLOjcDq3XYDzI-ydwMfM7RCZU1kp-Ms13rKiPlSvPaEpCcdtEooA4p45YbuoQOy_A_vnnqvbC6hXlsKBKb7o7nnR83vNb-5glHPaSvU7nJ7ddLQ3-HS29K65KWHAPGAZ4-c2r6qmcJSF3PpsNFUUt6Bl4LiIivxF1WTqU88_eKR61YQkI-BAlsDqJebBlPhal0cw9uISvxvRtINgvrHiIfx5yj4bKltArmJXoSp0bi28hUmfsgZiER7JVIwvvQDl1iwtt-g2ke59tpzxJHPAQUFJFOkOu6jUEmcfqPOLaMs01YRDYr39QrDvoB8tIIHS2iuo5bniMy8ltHxrAZlk0OfqgQ4jm1k-CxWtxymDfEMcrIGsy4ln0ObLpMaGfPnBtPZMhTweDiOGofxIYmwEOCRkWV8rFwKjwUY8hAyfKp8nypFuucbD4vr2Y2uD9pkUCpBNsqdFsmP9anHAT6seRW0Tg5s3vzfQr9sZnNqO7pA1zvKt7lDc-coFzxWHXFpyPuKsvkbuoK1vY336wk7Y8Qvfj0Xf3Jt_wFKrEdWuMziIzDu9nERqL14hOGtO1RUn19pIgMJajVxrYnxuWFNU6HyzGzYSpUg9hU61e0YWT1L24dnDpSUqYcGDntSnj7zkxlUdTTWOK3MlcJCWnuNpiugbuqtHHNXEoItVO4ijUBwZaArgHCeW2ECKfpdA8ubmqkXjI1cvJyJSvp6mDySil40QO3qcmufBRKA-pUcd6weC5YJ_fWp4S_rMA_3QK5i8bhxxKaTh0mVgPrIB7Uwy2X8_ZHVu4TmpnYpMdKoxKZdbiN416unDIKPr4Qan8jETYCXJCi5JWg2pbuxECkg0n8zqdtOM5-Y0CvSfJ5C2NaRNmvcc_0gN0JS17Ovg_b756VoUitT4K1OLkzoq2uSj2jVR8Ocbd9aT8mEuyRzOBDvXm5sH3Kfxvl1lzhUKwmfcZxJCN6x7D3mZMrE82Hd6gYnD5Xf3tFqM04BgtKeCz-z6_kVvaUOq9e8JK3638t_8wON7f-j-tbCa5A0wjl1FHezGjRlrVGVrD7-lS0B9LcumGP5NKTiTT9k9onA9dvBK7VDQfbdX6zGgBh4hhODlOjUN7cUqXpXT3kagDB1lDSmwi6Lhcbj-WgQijuL9YRzMDPl34OUZGfMfcOVyMO5aDFpFTU67vjd1ec3hrVd4sZt5rm18LC0Xk2GTKvsFKRCbKpy8Ntx7lJZT0VRb213UuOnA3CGOiVXV8eskcsptSKH67_ivosJ7Agr2Wqdv2o1MmtLeqStY0r8HLqN8j60wdxEd6jaWUBGTp6lTtXOpP9vGtKsAkTdOR5xZ7VcToc_3kZ1XxQiMY8h0xPQOQlUW4pVsV7tcQwpKdpB-r5IP8V0kLv7aChiy-4FCMtllTYJDBYoleh6YbX9_MtNX-94CmHHB7Y0lwqAv3vXNU6dZ1I3g2B-_OWROmRi797KzMvhd9daireATLEpAV9WZO3rT1Di-pFWFDC-MH9vfCQu3FjH0GJuHC4r6wRqBhpYMzypy-9kk28ZPTjE-Rau40Y0lzbF4Fv9_dDgcSM3QjWbgf3B2W1DSrofJb2UbVVyNuqylnhBWv7lR7dtfAu6AVzm3tRwrOqqph3z54qR3NnmOpnl8VYOGC7NjTeIGxgkUZbsus3hS2zOYC3UVYaWDL1MfXvyIQrPU4Zqcmms8b0PN92CgEGFp_eRHN8uelZbPbYvjWgFdf7hqOW2YY9-49b7ekf7wUqhmSJ3WU48zmZCo2sxDA2RWkwxnwRS1k_HNn8dWRim30pcVlBelib17_yr0cTmXesh87uTr9LDEw2cYljX-a7IBYmcibqgDkAchyOodbzJxPmIhwEtGBM7u08U9rb7DQF4Jk59dlPvjbXfChMUsXSqYlXzMUIO6DwPC3D-sJlHQRWBtGIkzK6Hu4YH5FT2bem0z0Spuin3GDMfXLUv2Rp4Rydt1vKsNzE246TGd1LBb2rcBzRcrJH6WQaziHBZXwHrJ4DWxPsG2hD_r3nkeBWh-9cdJmsF9VyXy3Ol-9ztvLmnOoBFpoPuhuTvkxOUCcnwT4mKEZVdpJJo10QOqf02TwZOIxUp5s-qoDabJHD2a-o7c2Xb6dK8bTHy9JvMloM_aZ0P4OBqDfPgELmHbCRkTRCAQBrLrGf_28BN-O08Qrr-ZnFc-1QImW8wcZCXBVXo2NYRBlVRYs_L5uS6BRmpzm3T91qnDg3y7FpPdmXU50zNt7HJoYfJHMQdBGXHQXGB6nnIG52AB82ZsvI0onSXXO1rzjta7mjXYqauQmMbsJZgD3IFOlAhUXC4E8F0M6hIG6ahZVM_STWjs6JAll46AP8ec2YthLHg5-8Tos4LBINelv-bioEJ5HQ8xwUczMvmodXrzyzldqaEGYIqjs-hbfeN4vld3IaNPzO2hwjmjzyvkSna19m-MY8Z-2xk6P9msf2fc462uLAuRn09Y7lFmHlH1ytgCSFm_8uhooRontX0ZBVngI9iFxQsZN27TQcP7vVKBNTP4cyVHd_7JU0kKISJpVtf04octvoubXro9m83Nzmxb9J-h_cmRG6ZZgyi8pIL379WXDRYkbYh4xTe8HcVeTK7poZSMpld_ECkP0CL5bc-iJz158IgtUIxE1Vx-82aBRNJjf2eOAovNGjbVd6_PTDgQiI4Di69i_pBjE359jU_4PModCfxLn3_eWqMangL9bLfK21DDTDeit3yYdQCmOn4twSsHl6JHDikOf2K696NqgIAOmdpOIq7bKJ_17truTA2-tKLXsh9R2gpWbeYFnrWgPQL5syBU7iYIBeMLsVJ6lAWu5b3iU1af4vi2z2A-wEjQBXqWX9O9wDWZaWBACBmarF1NdnAHtNPNcwsCUpedJPIFFBEg94_eRnm70ZLBUpV3cDtGZvYPAXH8axi17T_oTLoA0NaIsdLlyxse2M_st5jqmOdFGYDgFX8AqxP1offcjIW1DCOa3m6r9j5eAM--Qd7xJdS_rnN9SORJDFBn7BpKzRpi6dQgeVYzfkJloBcl_L3iZS1UPLmYk4amioX4K_psXCQs4v3-RgwnbZp2-Zr0VtdPRECWbEfh1aMIKCMS8gCYlc7EjVaGBN22s2km5zxTk3E7d5xga4qijpUmXsYdiZHUyYR5jiENmyBB3WiSiPfQ5IkBeh-KwPDnpu2BrExML6tYrhyk9stl7_E-aJRYWn0DSe_YbLLKm8scMgtVgxkjJDDdaF8zskx64loTrouRwYhSSZNluhozpxx17NkxUOhaehT_gEJxvwJvXZKpyya1w4ybW3HaWIsT4QDCQlZER08eD8GRnjW6aoIlEHcg74YuqfyxAL66UrTFKcCcGlUL8G1aI_wmwPzUKSpaRjlAVVK9UNhJffZ-NCM-Giw7wMoN8kXH4dyKD4Hr4uEfMsEXaqI3ELOSkfAGWghE4bPhiTvB2QX8Neq_pX4fE5k6G9kn_8DF8L_Oy3qvi05il3_WjDeTBZdrN5JTXPBcSg1ynux2NBJD1gMEfjp7vs8RK8aTwiv_UDl0IOLh6PuzfSjVkhxbMrdCmuMbEsWNaU6IVEui_mgaux-TiAH89QkzHAcKjnujZzqcsroF05LeYr7KR6Qip2kGRwLM_uek7vVkIW0ZQ-D4K4PocmtWPdt8Mb_b2U1Idqg44GhWtC9MYve3T6tJf1XZok3D_Sh8LAgWS2GQejOEzqnWIB3ZJwkeWokikHw0lrGwnX6y9c8xRt-Pq_Hh-MmQ4-qmaXyA1GptuNLTshLZhnZrf4-ExMKRm7cMnWhy0pchuRoFvMlzOyglJmdWQxdZzDVBJbTUnreyjanorpEAx5pHjP6bvq9zUCDYdsoei_TA9Rtm1aabji1eDa9w88r8oHZLGpLeLO6FvixwisbO-raz3Fib1sCmfuWxcA3ade0v7nR2R4soqkmNZCeHioONgdRMrTzicaIEsQYrFqy9uUwUP6Q==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0dc420d1fc3ed2bd016a9a69bc01b087d084d9fe2f2aefcdb4",
+      "index": 2
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnBUawyAQDCaZmOIk25muIwlOWnnrZH6O3VRheXSF15AXNDapSdTcfJGkci6loU4D-Ufc-jtweCtjgvXVJMUX-rW7LpMSuDEWMgwxHpOgHUl099a16ROVHRwfIejoYnlGh6YJcsVs-xwes2gEOnff1nCiX7b1T8dST9jJ8W6TXfrVIbLP22p5a2D_JP4hbCZqvJvqyfLtIWt-QWWgPk_5u5bVP-KvbL8p_uLHrI65TiUaesatN1pZoImH3fW-kvjUos7EoVhSVCfR1g26jFL6iculcMPLAjbu-NmiyKsy95WsbjwiImjO0r94AX6tgeCWKYApM0srJYzuR1Z8l7FovK7WdCq3sibKKMsSEWjzj0qnUU2RzP301TedeHyXwoq5Tod53X6AN9NTrPAfkqj97LEvCNtDkyWKrHVtXop7RFrWWs0keLbCAtp3E_OLlFFaTrqPZ75CG9LJ3PcGZVmcx_lusm0DFl0ZOi6YUJSwSwNK0Er42EyCQ2J9EPpDZC3DDgY3D7yvbFYKbXjCg4RUzDP9vr6iHOzAaSui5QOeOum2PuYEc00P_Dako-75NyIe3lNAfMicJqC0tEWM7WrZXOWHGJMUUfLcKx7bS0CeID1zSIBellN5jnNhiN-M6GpRLbLBTd83N3ZTUwtUsaj1Ybhi5H55xp2y068PbVWetwlM6Y59ECez4Co6vZrjzRbn4kKkMWUKY5fWszp_YCDPCJkfiH366Qh06RNG-j9JQOYr31D9LVjjYgU65vi49m1DwZWYxOPCVuBgsQSJ_EtuVhTuYqvFrF99i3HUOUHTeDxjZgTGbH2gDqPW57vPR-WFo_kkjKRdxD-IfF0yql3C0AMgpL3bF6iKwRK1TMScsjrZT2tvegngtq5cr7rVbsQipPDhoMZp915izIL6plql34_IpilXssDSisvQgHG6LF76zTOUETXjDga3keTX8wlctPRmnmLxa1aBvqGCR4QdkBrXUPdgM5exdT5_GZ4k3McWNq3UJNP_bEY8sVIZ9PsRaynR03y0tb7Nbua3YSdGryrJ-7jptePrY3-XyhlhNTJ01G-lmqXPSZhQwaKD2CfM1DmbxY5edwMcs3Qn7U8lOTFV90fEq1SyJ6Wwuhlu3qyp0XSl6eeYHF0pFIffY29q27E5_R8BuwH8fbZqEImDSSPXqcao_xBTZLo7ZWk7Pm6GKZWN-X7wQy1yBonwCmUZy8Fv_slWylMqmii-ZPczLaugHsExuxTFGeU6Hc1T12bOUUdaDpzpal0UJEexycbn6--wT_4E4hOYLPcKSEhXv_0EAWGh2qxHVAkilkVVkE363MabQUqgEy_04127fi-r1my5aYMG-HVDBcsZjn1tAQBzntD8ZKi0FZkZza1-2L_SsLhjB8w3_PDEI5tgfAqWhwCNkwAx9fCgv4G8qqaQ1-5swpqExo2fahhZZbqeUaUdWPZKgXmz6xlDsdNssDyDERIblo_wJep1kOMgqPcnEL_pNm5nQ7f4_iJy5Qjq2VXTG-Myvh38m07YO3ELrHQC2fCE7jVI8nnNa-G5cre3WIsdpcY2XdbB4-4FP0Mc_te2muJlvykpgAHd98K4y8RW7xulxru3NplX9gwmMSJbmnJjxIPAgqs0FuwTt80ZyeW6ydNtBQrQQqALD6lHZnP3c4WUxiKaF1nNistLRtVaW_MTWaRGyWuFtGfGHIWKRe3ebpRGnzPZ1Q6YdScZraMEtJgfMrtK8f0qz0hzP-XR-s0quYSl2cIz5dMXrqRlGGLWkfgtmJX4CWZIiQC9PbwMAXca2sse4HA3oEOAslZdTFuyzX18kfoDKEV7C8WpOYum0_tL0RJ3t82ZSESJxJDuNV.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0dc420d1fc3ed2bd016a9a69c14f9087d088da998287cd5417",
+      "index": 3
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 3128,
+  "completion_tokens": 1593,
+  "total_tokens": 4721,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 3125,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00269345,
+   "upstream_inference_prompt_cost": 0.00078185,
+   "upstream_inference_completions_cost": 0.0019116
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 1129,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 14.27,
+ "_attempt": 0
+}

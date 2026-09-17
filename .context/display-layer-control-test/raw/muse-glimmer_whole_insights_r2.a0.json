@@ -1,0 +1,49 @@
+{
+ "id": "gen-1788506985-JFNDkIzHtMHhLB60kcER",
+ "object": "chat.completion",
+ "created": 1788506986,
+ "model": "meta/muse-glimmer-30b",
+ "provider": "Phala",
+ "system_fingerprint": null,
+ "service_tier": null,
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "stop",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{},{\"key\":\"buying_signals\",\"h1\":\"Buying signals\",\"empty\":false,\"items\":[{\"h2\":\"ABM program being built from scratch with Senior Manager role open 77 days\",\"body\":[{\"text\":\"Zafran is building ABM from the ground up and is hiring a Senior Manager, ABM & Integrated Campaigns, published at \\\"2026-06-17\\\" with \\\"days_open\\\": 77 and reporting to \\\"Head of Growth Marketing (Vari Kaur)\\\". The job description states \\\"Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segments, and scaled 1:many motions where volume matters.\\\" What it means for us: Zafran is explicitly resourcing ABM leadership and needs partner support for account selection, buying-group mapping and orchestration. Clue can be positioned as the research and content engine for that build.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"\",\"contactRefs\":[{\"name\":\"Vari Kaur\"}]}]},{\"key\":\"money_momentum\",\"h1\":\"Money & momentum\",\"empty\":false,\"items\":[{\"h2\":\"Series C $60M announced 2025-12-02\",\"body\":[{\"text\":\"Recent funding shows a Series C \\\"raised_amount\\\": 60000000 announced at \\\"2025-12-02\\\" with investors including \\\"Vintage Investment Partners\\\", \\\"Cyberstarts\\\", \\\"Amex Ventures\\\", \\\"PSP Growth\\\", \\\"Knollwood Investment Advisory\\\", \\\"Sequoia Capital\\\", \\\"Menlo Ventures\\\". Total funding is reported as \\\"amount\\\": 130500000 USD with 4 rounds and 9 investors. What it means for us: The Series C capital is being used to accelerate product innovation and global expansion and the company is actively hiring, creating a window for marketing and sales enablement spend.\",\"claimIds\":[\"zaf-018\",\"zaf-017\",\"zaf-144\"]}],\"sendLine\":\"\",\"contactRefs\":[]}]},{\"key\":\"tools\",\"h1\":\"Tools they already use\",\"empty\":false,\"items\":[{\"h2\":\"GTM stack includes Salesforce, LinkedIn Sales Navigator, ZoomInfo, Outreach and HubSpot\",\"body\":[{\"text\":\"The GTM tooling stack lists sdr_stack [\\\"Salesforce\\\", \\\"LinkedIn Sales Navigator\\\", \\\"ZoomInfo\\\", \\\"Outreach\\\"] and marketing_stack [\\\"HubSpot\\\", \\\"Salesforce\\\", \\\"(unnamed) major ABM platforms\\\"]. A job requirement notes \\\"Utilize tools such as Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach Requirements\\\". What it means for us: Clue plugs into HubSpot / Salesforce / Outreach and can augment the existing SDR and marketing stack without replacement.\",\"claimIds\":[\"zaf-089\"]}],\"sendLine\":\"\",\"contactRefs\":[]}]},{\"key\":\"how_they_sell\",\"h1\":\"How they sell, and who they win\",\"empty\":false,\"items\":[{\"h2\":\"Customer logos include Kraft Heinz, Chipotle, Netskope, Ashland and OpenAI\",\"body\":[{\"text\":\"Account named customers include Ricardo Lafosse, CISO, Kraft Heinz and Dave Estlick, CISO, Chipotle. Claimed logos also list \\\"Kraft Heinz (Ricardo Lafosse, CISO)\\\", \\\"Chipotle (Dave Estlick, CISO)\\\", \\\"Netskope (James Robinson, CISO)\\\", \\\"Ashland (Robert Schuetter, CISO)\\\", \\\"Unnamed Fortune 25 Healthcare Enterprise (CISO quote)\\\" and \\\"OpenAI (press: \\\\\\\"OpenAI Selects Zafran for Trusted Access for Cyber\\\\\\\")\\\". What it means for us: Wins are with large security buyers; messaging and case assets should speak to Fortune 500 CISOs and high-growth security teams.\",\"claimIds\":[\"zaf-093\",\"zaf-172\"]}],\"sendLine\":\"\",\"contactRefs\":[]}]},{\"key\":\"contact_insights\",\"h1\":\"Contact insights\",\"empty\":false,\"items\":[{\"h2\":\"Vari Kaur is Head of Growth Marketing and the ABM role reports to her\",\"body\":[{\"text\":\"Vari Kaur holds the title \\\"Head of Growth Marketing\\\" and persona \\\"champion\\\". The ABM role description confirms \\\"reports_to\\\": \\\"Head of Growth Marketing (Vari Kaur)\\\". What it means for us: Vari is the internal sponsor for ABM build and the primary champion for programmatic outreach and pipeline acceleration.\",\"claimIds\":[\"zaf-024\",\"zaf-090\"]}],\"contactRefs\":[{\"name\":\"Vari Kaur\"}]},{\"h2\":\"Nick Fisher is VP of Marketing and authored \\\"Why I joined Zafran Security\\\"\",\"body\":[{\"text\":\"Nick Fisher current title is \\\"VP of Marketing\\\" with persona \\\"economic_buyer\\\". He authored a LinkedIn article \\\"Why I joined Zafran Security\\\". The article notes \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\" What it means for us: Nick frames the market problem around real risk exposure and is the economic buyer to align on pipeline and brand narrative.\",\"claimIds\":[\"zaf-038\",\"zaf-158\",\"zaf-159\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}]},{\"h2\":\"Sanaz Yashar is Co-Founder & CEO and voices the operator pain point\",\"body\":[{\"text\":\"Sanaz Yashar current title is \\\"Co-Founder & CEO\\\" with persona \\\"executive_sponsor\\\". She states \\\"And the biggest pain of cybersecurity when you come from the offensive war to the defensive war, the biggest pain is we don't have enough operators to operate all the different vulnerabilities.\\\" What it means for us: Executive messaging centers on operator scarcity and habit change; outreach should tie ABM to reducing manual toil and accelerating adoption.\",\"claimIds\":[\"zaf-052\",\"zaf-095\"]}],\"contactRefs\":[{\"name\":\"Sanaz Yashar\"}]},{\"h2\":\"Ben Seri is Co-Founder & CTO, the technical evaluator\",\"body\":[{\"text\":\"Ben Seri current title is \\\"Co-Founder & CTO\\\" with persona \\\"technical_evaluator\\\". His career history shows \\\"company\\\": \\\"Zafran Security\\\" with start \\\"2022-11-01\\\" and prior role VP of Research at Armis. What it means for us: Ben will evaluate technical fit and integration; position Clue as a technical and data-validated enrichment layer that works with existing security tooling.\",\"claimIds\":[\"zaf-063\",\"zaf-069\"]}],\"contactRefs\":[{\"name\":\"Ben Seri\"}]},{\"h2\":\"Tom Anthony is SVP Global Sales, the sales owner of pipeline\",\"body\":[{\"text\":\"Tom Anthony current title is \\\"SVP, Global Sales\\\" with persona \\\"adjacent_buyer\\\". His career history shows \\\"company\\\": \\\"Zafran Security\\\" start \\\"2024-11-01\\\". What it means for us: Tom owns deal motion and sales enablement; demonstrate how Clue accelerates pipeline generation and account coverage for his global sales org.\",\"claimIds\":[\"zaf-072\",\"zaf-078\"]}],\"contactRefs\":[{\"name\":\"Tom Anthony\"}]}]},{\"key\":\"context_only\",\"h1\":\"Context only — never use in outreach\",\"empty\":false,\"items\":[{\"h2\":\"Cisco strategic investment announced 2026-07-22\",\"body\":[{\"text\":\"The claim states a strategic investment was announced from Cisco Investments on 2026-07-22 and is marked outreachSafe=false. Status: unresolved. Never mention.\",\"claimIds\":[\"zaf-135\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"CTech third-party claim of ~$20M ARR and competitive struggles / high burn\",\"body\":[{\"text\":\"The claim records a CTech/third-party claim about ARR and competitive struggles and is marked outreachSafe=false. Status: unresolved. Never mention.\",\"claimIds\":[\"zaf-138\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"Amex Ventures strategic investment Feb 24 2026 extension\",\"body\":[{\"text\":\"The claim records an Amex Ventures strategic investment announced Feb 24 2026 and is marked outreachSafe=false. Status: unresolved. Never mention.\",\"claimIds\":[\"zaf-139\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"Co-founder/CPO Snir Havdala departure to NVIDIA confirmed\",\"body\":[{\"text\":\"The claim records co-founder/CPO Snir Havdala departure to NVIDIA and is marked outreachSafe=false. Status: confirmed. Never mention.\",\"claimIds\":[\"zaf-142\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"Cisco acquisition rumor refuted\",\"body\":[{\"text\":\"The claim notes a Cisco acquisition rumor was refuted and is marked outreachSafe=false. Status: refuted. Never mention.\",\"claimIds\":[\"zaf-169\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"CTech ARR estimate ~$20M and competitive struggles\",\"body\":[{\"text\":\"The claim records CTech third-party ARR estimate and competitive commentary and is marked outreachSafe=false. Status: unresolved. Never mention.\",\"claimIds\":[\"zaf-170\"]}],\"sendLine\":\"\",\"contactRefs\":[]},{\"h2\":\"Founder/CPO Snir Havdala departure to NVIDIA confirmed\",\"body\":[{\"text\":\"The claim records founder/CPO Snir Havdala departure to NVIDIA and is marked outreachSafe=false. Status: confirmed. Never mention.\",\"claimIds\":[\"zaf-171\"]}],\"sendLine\":\"\",\"contactRefs\":[]}]}]}",
+    "refusal": null,
+    "reasoning": null
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25044,
+  "completion_tokens": 1950,
+  "total_tokens": 26994,
+  "cost": 0.00965638,
+  "is_byok": false,
+  "prompt_tokens_details": {
+   "cached_tokens": 7,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00965638,
+   "upstream_inference_prompt_cost": 0.00751138,
+   "upstream_inference_completions_cost": 0.002145
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 0,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 13.42,
+ "_attempt": 0
+}

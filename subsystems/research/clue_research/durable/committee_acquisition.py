@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Final
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -24,6 +25,10 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_COMMITTEE_RESERVATION: Final = "sumble_committee_reservation"
 
 
 class CommitteeAcquisitionRepositoryError(RuntimeError):
@@ -160,15 +165,37 @@ async def reserve_committee_acquisition(
 ) -> tuple[CommitteeAcquisitionOperation, bool]:
     """Reserve one bounded committee-acquisition operation.
 
-    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
-    money check. This operation's own reserved-vs-cap invariants are consistency guards on
-    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    ``enforce_budget`` is the FI pilot budget-controls switch. It gates the project-run money check
+    **and** — since the 2026-08-20 ruling that our own spend caps are record-only in the pilot
+    posture — the two reserved-vs-cap comparisons below, which are pure arithmetic against numbers
+    we chose. Both are still computed and announced
+    (:mod:`clue_research.durable.spend_posture`); only the refusal goes inert. The reservation
+    itself is the wire plan's own bounded maximum, so the ledger CHECK
+    ``charged <= reserved`` keeps holding in both modes without anything being relaxed.
     """
 
     request = operation.request
-    if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
+    if operation.provider_units_reserved > Decimal(
+        request.provider_credit_cap
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_COMMITTEE_RESERVATION,
+        reason="reserved_units_above_cap",
+        amounts={
+            "provider_units_reserved": operation.provider_units_reserved,
+            "provider_credit_cap": request.provider_credit_cap,
+        },
+    ):
         raise CommitteeAcquisitionBudgetExceeded("committee provider cap exceeded")
-    if operation.cost_cents_reserved > request.money_budget_cap_cents:
+    if operation.cost_cents_reserved > request.money_budget_cap_cents and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_COMMITTEE_RESERVATION,
+        reason="reserved_cost_above_cap",
+        amounts={
+            "cost_cents_reserved": operation.cost_cents_reserved,
+            "money_budget_cap_cents": request.money_budget_cap_cents,
+        },
+    ):
         raise CommitteeAcquisitionBudgetExceeded("committee money cap exceeded")
     if {item.source_key for item in snapshots} != {"sumble_teams", "sumble_people"}:
         raise ValueError("committee reservation requires Teams and People snapshots")

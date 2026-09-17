@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788163184-y3uj5J2OtutYZoHOSJ7e",
+  "object": "chat.completion",
+  "created": 1788163184,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"contact_claims\": [\n    {\n      \"field_key\": \"contact.current_title\",\n      \"value_json\": \"Head of Growth\",\n      \"evidence_span\": \"Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps.\",\n      \"source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"confidence\": 0.9,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"contact.current_location\",\n      \"value_json\": {\n        \"raw\": \"New York, New York, United States\",\n        \"country\": \"United States\"\n      },\n      \"evidence_span\": \"Location: New York, New York, United States.\",\n      \"source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"contact.facet.career_history\",\n      \"value_json\": [\n        {\n          \"org\": \"Cogent Security\",\n          \"role\": \"Head of Growth\",\n          \"start\": \"Aug 2025\",\n          \"end\": \"Present\"\n        },\n        {\n          \"org\": \"Sevco Security\",\n          \"role\": \"VP, Product Marketing\",\n          \"start\": \"Aug 2023\",\n          \"end\": \"Aug 2025\"\n        },\n        {\n          \"org\": \"Abnormal Security\",\n          \"role\": \"Director, Strategy & Analytics\",\n          \"start\": \"Aug 2020\",\n          \"end\": \"Aug 2023\"\n        },\n        {\n          \"org\": \"Zyper\",\n          \"role\": \"Manager, Finance & Operations\",\n          \"start\": \"Nov 2019\",\n          \"end\": \"Aug 2020\"\n        },\n        {\n          \"org\": \"Forward\",\n          \"role\": \"Associate\",\n          \"start\": \"Nov 2018\",\n          \"end\": \"Oct 2019\"\n        },\n        {\n          \"org\": \"Accenture\",\n          \"role\": \"Senior Analyst / Analyst\",\n          \"start\": \"Jul 2016\",\n          \"end\": \"Nov 2018\"\n        }\n      ],\n      \"evidence_span\": \"Cogent Security \u2014 Head of Growth / profile work-history label \u201cMarketing,\u201d August 2025\u2013present.\\nSevco Security \u2014 VP, Product Marketing, August 2023\u2013August 2025, New York.\\nAbnormal Security \u2014 Director, Strategy & Analytics, August 2020\u2013August 2023, New York.\\nZyper (Acquired by Discord) \u2014 Manager, Finance & Operations, November 2019\u2013August 2020, San Francisco.\\nForward \u2014 Associate, November 2018\u2013October 2019, San Francisco.\\nAccenture \u2014 Senior Analyst, December 2017\u2013November 2018; Analyst, July 2016\u2013December 2017.\",\n      \"source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"confidence\": 0.9,\n      \"priority\": 2,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value_json\": \"Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and\",\n      \"evidence_span\": \"Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and\",\n      \"source_url\": \"https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk\",\n      \"confidence\": 0.9,\n      \"priority\": 1,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.communication_style\",\n      \"value_json\": {\n        \"style_label\": \"energetic, conversational, builder-oriented\",\n        \"summary\": \"Uses energetic, conversational tone with informal language and emojis; mixes long explanatory posts with concise hiring/event announcements; emphasizes building and operational specifics.\"\n      },\n      \"evidence_span\": \"I like the early stages; no playbook, just a vision and a lot to figure out\\nlife is too short to do boring marketing.\\nHey \ud83d\udc4b I\u2019m Alex\\nChat, who should I hire\\nWe started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\\nWith AI, two people have the output of a team of ten.\\nAnd we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. \ud83d\udc85\\n\ud83e\udd73\\n\ud83d\udd39\",\n      \"source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"confidence\": 0.85,\n      \"priority\": 3,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.persona\",\n      \"value_json\": \"champion\",\n      \"evidence_span\": \"Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.\",\n      \"source_url\": \"https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b\",\n      \"confidence\": 0.7,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"contact.facet.stated_interests\",\n      \"value_json\": [\n        \"Applied AI in cybersecurity\",\n        \"GTM strategy and revenue marketing\",\n        \"Data-driven automation and RevOps\",\n        \"Differentiated brand/community building\"\n      ],\n      \"evidence_span\": \"We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\\nWith AI, two people have the output of a team of ten.\\nI wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber.\\nEvery decision we make is rooted in data.\",\n      \"source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"confidence\": 0.9,\n      \"priority\": 2,\n      \"use_class\": \"personal-public-non-sensitive\"\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"contact.role_on_committee\",\n      \"entity_type\": \"contact\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"role\"\n        ],\n        \"properties\": {\n          \"role\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"champion\",\n              \"economic_buyer\",\n              \"technical_evaluator\",\n              \"blocker\"\n            ]\n          },\n          \"rationale\": {\n            \"type\": \"string\"\n          }\n        }\n      },\n      \"description\": \"Inferred buying-committee role + plausibility rationale (proposed; not directly evidenced in the reviewed sources).\",\n      \"reuse_scope\": \"account\",\n      \"hypothesis\": \"Knowing Alexander's committee role (e.g., champion) and a rationale explaining why he is likely to champion an ABM/orchestration purchase helps Clue prioritize outreach and tailor messaging \u2014 champions can advocate for product trials and cross-team pilots that drive early adoption.\",\n      \"example_value\": {\n        \"role\": \"champion\",\n        \"rationale\": \"Head of Growth building an AI-native RevOps and growth stack, publicly hiring for demand generation and emphasizing data-driven automation, likely to sponsor ABM tooling to convert attention into pipeline.\"\n      },\n      \"example_evidence_span\": \"We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\\nBlack Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates.\",\n      \"example_source_url\": \"https://www.linkedin.com/in/alexander-semien\",\n      \"priority\": 1\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTRxp7WARuuVZGfgaEJL5w71-KEfIPVG46V0qUx0yJbb-O3TM6SIn2YVqTHRu88UlqRp9QI8hRHTu5g0rUBjWN_4TI9k0hzO07w9hTr3gKqsPAs5Z5eVvZSEA0uX3foawxSa3p1WBxzJ859sVsb4-S6Yj6jcEVBsY8LLH7kMMJEctUlQPnIzM-Yy5JzpOU4T_XOtdtkPaKtfH4sutOETfDBmvvHyCpdSaHa_x1TyEBdBc4Q44nAGM6BllADsBrS9u09lWYGRoBIpKBcV7eIVBDIABM1PdhiU8NiILTaVJG3Be50ccXx7sXDJUgaVA0jMxxsCWUaeE3RJ6AwCXcBGOUnMhhTzLj6y8PZ9cQnnuTev9zeObT-jXWuLbUHA4wVApODw8Thaoh4BjPSfdDZMFwA6w5nfaz31RseZPRl9H9Kf0fgJRCyKimf8BZhG8ArAqlPT0y-lfrj73d7mxfkwaQiS2ScpXJQt23xdF6Io6aT9Z57TBOxe-bDlnVQkY9cypBS_otpOvyZN4SIRDhHD-1T9zxkBI3eZhSGpxoPZNQ8xoKLM5F_NKQE1Uh9EOH0NeV_DQL7bv1J5mGuFRuyXSVZSos6ea-ERQh4TLCx1-veJhTI4eFmFsn5uA6HVUCEmf256CMckN_J3K3EhAKC2qygeckHL4hThjVjLhdY7C_p1f5jarFaPEoM6vcA22SOZzKPnRUF_a8V20HxEH7urt2KO_R_Tihv_XCJlHmrK7R33aYrO8B3VxiCCV4flqhFl08Ix8CqBn_JgDigF1LkaRlWfnCUjgU4CxHHgIaTzcSCZhCt_58L4WxiWFrnDS_rqjlXRxy0NdSIdCEOym4lU9O10fQxxtksm2pd94vnDvb7zvDATZm3ZTSEPjtC9tFaj4kl4WLk9zaaxnoqLbB1Dy5B_Q1xoufOZ-iQ8PvaZ5imf000_tMP68TOg7KIH4pHPswwj-blChG2yzfIgJdXGS_AlyOCYkd3snncFA3oh_zy9wG_Qbe8Xns8QRc8cj6FI45_h4W41CeA-K01RXnKBr3t4FMn7qt_74CQu7KtCd3h9bqWiLxqzkkhKfBQarQdeYmk9RP7wmYNmNm1tC5ivTguUViqCNO7lN6mA2ZkAdmi-HMhqSmHMeUU-gYl37QcX1VbpFPyRJZePspjfPMpl0twg_eShHbv5ZrSbibQ0h4RIKhiOz6jiePW1hFyRyEfD7osbagrVOHTqPDFuEqqXhsopUWD_szl0_IKVYVErnjucYOdcjnEslGtthzn0zgH0UJAiOR-Zx9-_4IRc7pq0OIuNAt61xy3Fon_YLSG1TfX9gfg3P_9hDAD_os3cC_plwHLsp2V8Y679YYS8waorqyPe3u0M0y-iVKjpbGUU5mUUZyfBbtZmj1iv401Tp0LT-uyD.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_00fbf73167b61035016a953471815087d0b09267c03d995842",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 6841,
+    "completion_tokens": 1972,
+    "total_tokens": 8813,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 2816,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00502065,
+      "upstream_inference_prompt_cost": 0.00107665,
+      "upstream_inference_completions_cost": 0.003944
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 17.02,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 28912,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}

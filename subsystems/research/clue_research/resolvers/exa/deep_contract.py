@@ -9,10 +9,11 @@ cost, structured output, and field-level grounding for every non-null output fie
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from hashlib import blake2s
 from math import isfinite
 from typing import Annotated, Literal, cast
 from urllib.parse import urlsplit, urlunsplit
@@ -40,9 +41,11 @@ BoundedPromptStr = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=8000),
 ]
 _FIELD_KEY = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
-_FIELD_ALIAS = re.compile(r"f_[0-9a-f]+")
+_LEGACY_FIELD_ALIAS = re.compile(r"f_[0-9a-f]+")
+_SHORT_FIELD_ALIAS = re.compile(r"k_[0-9a-v]{8}")
 _PROMPT_FIELD_MAPPING = re.compile(
-    r"(?<![A-Za-z0-9_])(f_[0-9a-f]+)=([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)(?![A-Za-z0-9_])"
+    r"(?<![A-Za-z0-9_])(f_[0-9a-f]+|k_[0-9a-v]{8})"
+    r"=([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+)(?![A-Za-z0-9_])"
 )
 _SAFE_NESTED_PROPERTY = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
@@ -51,6 +54,13 @@ EXA_OUTPUT_MAX_DEPTH = 2
 EXA_OUTPUT_MAX_FIELDS = 8
 ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS = 10_000
 _MAX_FIELD_ALIAS_CHARACTERS = 256
+# One short alias is ``k_`` plus eight base32 digits of a 40-bit field-key digest.
+_SHORT_ALIAS_DIGITS = 8
+_SHORT_ALIAS_ALPHABET = "0123456789abcdefghijklmnopqrstuv"
+EXA_FIELD_ALIAS_CHARACTERS = 2 + _SHORT_ALIAS_DIGITS
+# 40 bits over at most eight bundle members never collides in practice; the salted retry keeps
+# the assignment total and deterministic anyway rather than raising on an astronomical draw.
+_MAX_ALIAS_COLLISION_SALTS = 64
 _EXA_SCHEMA_TYPES = frozenset({"string", "integer", "number", "boolean", "object", "array"})
 _COMMON_SCHEMA_KEYS = frozenset({"type", "enum", "description", "title"})
 _TYPE_SCHEMA_KEYS: dict[str, frozenset[str]] = {
@@ -155,13 +165,14 @@ class ExaDeepContactTargetLock(BaseModel):
         return normalize_host(self.employer_domain)
 
 
-def exa_field_alias(field_key: str) -> str:
-    """Encode a registry key into one reversible, field-path-safe provider property name.
+def legacy_exa_field_alias(field_key: str) -> str:
+    """Encode a registry key the frozen v1 way: ``f_`` plus the hex of the validated ASCII key.
 
-    Exa reports grounding names as field paths. Sending a dotted registry key directly would make
-    a literal property indistinguishable from a nested path, so the wire contract hex-encodes the
-    validated ASCII key behind an ``f_`` prefix. The compiler also pins the readable mapping in the
-    system prompt; E1 can persist the request without a separate mutable alias table.
+    Production stopped compiling these because the provider must copy the property name verbatim
+    into its structured answer, and a 50-80 character hex run is exactly the kind of meaningless
+    token a generator drops or rewrites characters in. The encoding stays here because every
+    persisted v1 request and retained response still names its fields this way, and replay,
+    snapshot materialization, and the retained-response recovery path must keep resolving them.
     """
 
     if _FIELD_KEY.fullmatch(field_key) is None:
@@ -172,11 +183,91 @@ def exa_field_alias(field_key: str) -> str:
     return alias
 
 
-def field_key_from_exa_alias(alias: str) -> FieldKey:
-    """Decode and revalidate a provider alias; malformed or non-canonical aliases fail closed."""
+def _short_field_alias(field_key: str, *, salt: int) -> str:
+    digest = blake2s(f"{salt}:{field_key}".encode("ascii"), digest_size=5).digest()
+    number = int.from_bytes(digest, "big")
+    digits: list[str] = []
+    for _ in range(_SHORT_ALIAS_DIGITS):
+        number, remainder = divmod(number, len(_SHORT_ALIAS_ALPHABET))
+        digits.append(_SHORT_ALIAS_ALPHABET[remainder])
+    return "k_" + "".join(reversed(digits))
 
+
+def exa_field_alias(field_key: str) -> str:
+    """The canonical short provider property name for one registry field key.
+
+    Exa reports grounding names as field paths, so a dotted registry key cannot be sent literally.
+    The wire contract therefore aliases it, and the alias is a fixed ten characters — a ``k_``
+    prefix over eight base32 digits of a 40-bit digest — so the provider has a token it can copy
+    exactly instead of a hex run whose length grew with the field name. The readable mapping is
+    pinned in the system prompt, which is what makes the alias resolvable without a mutable table.
+
+    This is the assignment for a field key considered alone. A request bundle must use
+    :func:`exa_field_aliases`, which resolves the (vanishingly rare) in-bundle digest collision.
+    """
+
+    if _FIELD_KEY.fullmatch(field_key) is None:
+        raise ValueError(f"invalid registered field key {field_key!r}")
+    return _short_field_alias(field_key, salt=0)
+
+
+def exa_field_aliases(field_keys: Iterable[str]) -> dict[FieldKey, str]:
+    """Assign one collision-free short alias per field key of a single request bundle.
+
+    Assignment walks the sorted key set, so the table depends only on the bundle's membership and
+    never on the caller's ordering. A digest collision inside one bundle bumps a salt rather than
+    failing the request; the loser of the draw is decided by that same sorted order, so recompiling
+    or revalidating the bundle reproduces the identical table.
+    """
+
+    keys = tuple(str(field_key) for field_key in field_keys)
+    if not keys:
+        raise ValueError("an Exa request bundle must declare at least one field key")
+    if len(set(keys)) != len(keys):
+        raise ValueError("Exa request bundle field keys must be unique")
+    assigned: dict[FieldKey, str] = {}
+    taken: set[str] = set()
+    for field_key in sorted(keys):
+        if _FIELD_KEY.fullmatch(field_key) is None:
+            raise ValueError(f"invalid registered field key {field_key!r}")
+        for salt in range(_MAX_ALIAS_COLLISION_SALTS):
+            alias = _short_field_alias(field_key, salt=salt)
+            if alias not in taken:
+                break
+        else:  # pragma: no cover - unreachable below 2**40 distinct digests per bundle
+            raise ValueError("Exa provider alias assignment could not be made collision-free")
+        taken.add(alias)
+        assigned[field_key] = alias
+    return assigned
+
+
+def validate_exa_field_alias(alias: str) -> None:
+    """Fail closed on any property name that is not a canonical provider alias.
+
+    A short alias carries no field key of its own, so only its shape can be checked here; the
+    request's own declared table (:func:`exa_alias_field_keys`) is what binds it to a field. A
+    legacy hex alias is still fully round-tripped, so no v1 strictness is lost.
+    """
+
+    if _SHORT_FIELD_ALIAS.fullmatch(alias) is not None:
+        return
+    field_key_from_exa_alias(alias)
+
+
+def field_key_from_exa_alias(alias: str) -> FieldKey:
+    """Decode and revalidate a legacy v1 alias; malformed or non-canonical aliases fail closed.
+
+    A short v2 alias is deliberately refused here: it is resolvable only against the bundle that
+    declared it, which is what :func:`exa_alias_field_keys` reads off the persisted request.
+    """
+
+    if _SHORT_FIELD_ALIAS.fullmatch(alias) is not None:
+        raise ValueError(
+            f"Exa field alias {alias!r} is a short bundle alias and resolves only through the "
+            "declared alias table of the request that asked for it"
+        )
     if (
-        _FIELD_ALIAS.fullmatch(alias) is None
+        _LEGACY_FIELD_ALIAS.fullmatch(alias) is None
         or len(alias) > _MAX_FIELD_ALIAS_CHARACTERS
         or len(alias.removeprefix("f_")) % 2 != 0
     ):
@@ -185,9 +276,53 @@ def field_key_from_exa_alias(alias: str) -> FieldKey:
         field_key = bytes.fromhex(alias.removeprefix("f_")).decode("ascii")
     except (UnicodeDecodeError, ValueError) as exc:
         raise ValueError(f"invalid Exa field alias {alias!r}") from exc
-    if _FIELD_KEY.fullmatch(field_key) is None or exa_field_alias(field_key) != alias:
+    if _FIELD_KEY.fullmatch(field_key) is None or legacy_exa_field_alias(field_key) != alias:
         raise ValueError(f"invalid Exa field alias {alias!r}")
     return field_key
+
+
+def exa_alias_field_keys(
+    *,
+    system_prompt: str,
+    aliases: Iterable[str],
+) -> dict[str, FieldKey]:
+    """Recover the exact alias-to-field-key table one wire request declares.
+
+    Every compiled request pins ``alias=field.key`` for each output member in its own system
+    prompt, and construction proves that pin matches the output schema. That makes the persisted
+    request self-describing under either alias generation: a v1 request is checked by decoding its
+    hex aliases, and a v2 request is checked by recompiling its bundle assignment. Retained
+    responses, snapshot replay, and the quarantined-response recovery path therefore read whichever
+    generation the stored request actually asked for, and never the compiler's current one.
+    """
+
+    declared = tuple(str(alias) for alias in aliases)
+    if not declared:
+        raise ValueError("wire request must declare at least one provider field alias")
+    if len(set(declared)) != len(declared):
+        raise ValueError("wire request must declare unique provider field aliases")
+    # A repeat of the *same* pin is not a contradiction — the prompt may embed untrusted prior
+    # research context, and the frozen v1 validator compared a set of pairs. Only a second key for
+    # one alias is a real conflict.
+    table: dict[str, FieldKey] = {}
+    for alias, field_key in _PROMPT_FIELD_MAPPING.findall(system_prompt):
+        if table.setdefault(alias, field_key) != field_key:
+            raise ValueError("systemPrompt maps one provider alias to two field keys")
+    if set(table) != set(declared):
+        raise ValueError("systemPrompt must contain exactly the provider-alias field mappings")
+    if len(set(table.values())) != len(table):
+        raise ValueError("systemPrompt maps two provider aliases to one field key")
+    short = tuple(alias for alias in declared if _SHORT_FIELD_ALIAS.fullmatch(alias) is not None)
+    if short and len(short) != len(declared):
+        raise ValueError("one wire request cannot mix provider alias generations")
+    if short:
+        if exa_field_aliases(table.values()) != {key: alias for alias, key in table.items()}:
+            raise ValueError("systemPrompt aliases are not this bundle's canonical assignment")
+    else:
+        for alias, field_key in table.items():
+            if field_key_from_exa_alias(alias) != field_key:
+                raise ValueError("systemPrompt maps a provider alias to a different field key")
+    return {alias: table[alias] for alias in declared}
 
 
 def _declared_schema_types(schema: Mapping[str, JsonValue], *, path: str) -> frozenset[str]:
@@ -334,7 +469,7 @@ def validate_exa_output_schema(schema: Mapping[str, JsonValue]) -> None:
     for alias, child in properties.items():
         if not isinstance(alias, str):
             raise ValueError("outputSchema property aliases must be strings")
-        field_key_from_exa_alias(alias)
+        validate_exa_field_alias(alias)
         if not isinstance(child, dict):
             raise ValueError(f"outputSchema.{alias} must be a schema object")
         if "null" not in _declared_schema_types(
@@ -607,11 +742,23 @@ class ExaDeepSearchRequest(BaseModel):
             instruction not in prompt for instruction in required_instructions
         ):
             raise ValueError("systemPrompt is missing target-lock or grounding instructions")
-        expected_mappings = {(alias, field_key_from_exa_alias(alias)) for alias in properties}
-        prompt_mappings = set(_PROMPT_FIELD_MAPPING.findall(self.system_prompt))
-        if prompt_mappings != expected_mappings:
-            raise ValueError("systemPrompt must contain exactly the provider-alias field mappings")
+        exa_alias_field_keys(system_prompt=self.system_prompt, aliases=properties)
         return self
+
+    @property
+    def field_key_by_alias(self) -> dict[str, FieldKey]:
+        """This request's own alias table, in output-schema property order.
+
+        Everything that reads a response — exchange validation, normalization, snapshot replay,
+        governed field partitioning — resolves aliases through here rather than through a global
+        decoder, so a request compiled under the legacy hex generation keeps resolving after the
+        compiler moved to short aliases.
+        """
+
+        properties = self.output_schema.get("properties")
+        if not isinstance(properties, dict):  # independently safe after construction
+            raise ValueError("outputSchema properties must be an object")
+        return exa_alias_field_keys(system_prompt=self.system_prompt, aliases=properties)
 
 
 class ExaDeepContactSearchRequest(ExaDeepSearchRequest):
@@ -667,13 +814,13 @@ class ExaDeepOutput(BaseModel):
     def _every_non_null_field_is_grounded(self) -> ExaDeepOutput:
         try:
             for key in self.content:
-                field_key_from_exa_alias(key)
+                validate_exa_field_alias(key)
         except ValueError as exc:
             raise ValueError("output content keys must be canonical Exa field aliases") from exc
         grounded_fields = tuple(item.field.removeprefix("content.") for item in self.grounding)
         try:
             for field in grounded_fields:
-                field_key_from_exa_alias(field)
+                validate_exa_field_alias(field)
         except ValueError as exc:
             raise ValueError("grounding fields must be canonical Exa field aliases") from exc
         if len(grounded_fields) != len(set(grounded_fields)):
@@ -758,6 +905,7 @@ def validate_exa_deep_exchange(
             "structured output fields do not match the request schema "
             f"(missing={sorted(expected - returned)}, extra={sorted(returned - expected)})"
         )
+    field_key_by_alias = request.field_key_by_alias
     for alias, value in response.output.content.items():
         field_schema = properties[alias]
         if not isinstance(field_schema, dict):  # independently safe after request validation
@@ -770,13 +918,14 @@ def validate_exa_deep_exchange(
             )
         except ValueError as exc:
             raise ValueError(
-                f"structured output value for {field_key_from_exa_alias(alias)!r} "
+                f"structured output value for {field_key_by_alias[alias]!r} "
                 f"violates its admitted registry schema: {exc}"
             ) from exc
 
 
 __all__ = [
     "ACCOUNT_DEEP_CONTENT_MAX_CHARACTERS",
+    "EXA_FIELD_ALIAS_CHARACTERS",
     "EXA_OUTPUT_MAX_DEPTH",
     "EXA_OUTPUT_MAX_FIELDS",
     "EXA_OUTPUT_MAX_PROPERTIES",
@@ -795,10 +944,14 @@ __all__ = [
     "ExaDeepSearchResponse",
     "ExaDeepTextOptions",
     "classify_exa_deep_http_failure",
+    "exa_alias_field_keys",
     "exa_field_alias",
+    "exa_field_aliases",
     "field_key_from_exa_alias",
+    "legacy_exa_field_alias",
     "normalize_exa_profile_url",
     "validate_exa_deep_exchange",
+    "validate_exa_field_alias",
     "validate_exa_output_schema",
     "validate_exa_output_value",
 ]

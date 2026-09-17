@@ -1,0 +1,960 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: Vendelux (vendelux.com). Entity id: account:vendelux
+# The client selling INTO this account is Clue (cluehq.ai), an AI-native ABM orchestration platform: deep account research, buying-committee mapping, per-account microsites, LinkedIn/Meta paid media, and direct mail. Judge priority against THAT sale.
+
+# DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Vendelux dossier As-of date: 2026-08-31. I treated the subject as the New York B2B event-intelligence company at vendelux.com. The supplied “Kyle Fitzgerald” identification is not supported by the sources found: Vendelux’s own About page names “Alex Reynolds” as “Co-Founder, CEO,” and its founding article is authored by Alex Reynolds and says “we decided to build it.” https://vendelux.com/about https://vendelux.com/blog/from-intropreneur-to-entrepreneur ## Special probe — account qualification first - Roadmap direction: campaign execution — YES. Vendelux’s own guide says the platform has “two operational layers,” including an “execution layer”; ChatVDX “auto-generates three sub-campaigns” with “multi-step email sequences,” while its Meetings team runs a “28-day cadence.” https://vendelux.com/event-marketing
+- Account intelligence / intent data — YES, in the form of event-attendee intelligence. Vendelux says it has “seven years of historical attendance data across 250,000+ B2B events” and attendee tiers of “Historic,” “Predicted (~60% confidence AI forecast),” and “Confirmed (>90% confidence, verified by organizer or attendee).” https://vendelux.com/event-marketing
+- Outbound orchestration — YES. The Series B announcement says Vendelux pairs “proprietary attendee intelligence with agents that book qualified meetings for teams”; the company’s guide says ChatVDX creates campaigns and its Meetings team executes email and cold-call cadences. https://vendelux.com/blog/series-b https://vendelux.com/event-marketing
+- Current marketing leader: Tanya Peress — “Head of Marketing,” according to Vendelux’s About page. https://vendelux.com/about
+- CMO/VP Marketing above that seat: NOT FOUND. The public leadership source names Tanya Peress as “Head of Marketing” and does not name a CMO or VP Marketing above her. https://vendelux.com/about
+- Head of Growth Marketing request: NOT FOUND under that exact title in the search results. The closest primary posting is “Growth Marketing Lead,” published “2026-04-16,” department “Marketing,” and it says it is a “player-coach leadership role.” https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+- Outreach Campaign Operations Manager: the posting describes the role as sitting “at the intersection of customer success, outbound execution, and AI operations,” owning “AI-powered outreach campaigns for a portfolio of customers,” and collaborating “closely with Customer Success.” That explains why the work is operationally housed with Customer Success rather than demand-generation Marketing; Vendelux does not explicitly state the organizational rationale, so the rationale beyond those quoted duties is NOT FOUND. https://lensa.com/job-v1/vendelux/remote/campaign-manager/8f4d049f98742c8d7cf69e722d5e75ef
+- The supplied posting date “2026-04-21” and “still open 132 days later” are NOT FOUND in the retrieved posting. The accessible repost instead says “This position is open” and “This job was posted on Sat Jul 18 2026.” https://lensa.com/job-v1/vendelux/remote/campaign-manager/8f4d049f98742c8d7cf69e722d5e75ef
+- ABM/intent tooling: NOT FOUND. The reviewed public sources do not identify Vendelux as using 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, or Common Room. The Growth Marketing Lead posting mentions “ABM” and “AI tools and automation platforms,” but names no vendor. https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+- Named customers, ARR, customer counts: named customer ShipBob is publicly quoted; ARR and total customer count are NOT FOUND in company sources. https://vendelux.com/event-marketers ## 1. Identity and disambiguation - Operating name/domain: Vendelux; principal domain “vendelux.com.” The company homepage titles it “Vendelux | AI-Native Event Marketing Platform.” https://vendelux.com/
+- Legal name: NOT FOUND.
+- HQ: New York City. Vendelux says “60+ full-time employees based at our NYC HQ and globally,” and the hiring page says the Growth Marketing Lead is based at the “NYC headquarters.” https://vendelux.com/about https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+- Street HQ address: NOT FOUND. An automated LinkedIn/Exa company record gives “New York, New York 10001, US”; this is an automated record, not a street-address source. https://linkedin.com/company/vendelux
+- GTM location: NYC for the Growth Marketing Lead (“3-4 days onsite”); the public record also shows distributed employees, including an Outreach Campaign Manager in St. Louis and Sales Development leadership in Las Vegas. https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a https://www.linkedin.com/in/justintsmith22 https://www.linkedin.com/in/alexmfranco7
+- Founded: 2021. An independent job listing says “Founded in 2021”; Vendelux’s founding article says it was built after the founders left Shutterstock, but does not state the year in the retrieved excerpt. https://simplify.jobs/p/6c3e5925-4219-47ef-804e-e5eba5d1d7a8/Head-of-Meetings-Operations
+- LinkedIn: https://linkedin.com/company/vendelux. https://linkedin.com/company/vendelux
+- Employee count: company claim “60+ full-time employees”; automated LinkedIn/Exa estimate “83.” These must not be conflated. https://vendelux.com/about https://linkedin.com/company/vendelux
+- Same-name exclusions: no other same-name operating entity was substantiated in the retrieved results. I excluded automated/third-party records that conflict with the target’s primary sources, including the 4dayweek entry claiming “~110 employees,” “$18M raised,” and different investors, because it conflicts with Vendelux’s own Series B announcement; I also excluded all unrelated people named Vendelux in search indexing because no evidence tied them to this company. https://4dayweek.io/company/vendelux https://vendelux.com/blog/series-b ## 2. Product and buyers - Vendelux describes itself as “the intelligence layer that connects every participant in the B2B event ecosystem,” helping companies “identify where their buyers will be, who they should meet, and how to create meaningful business relationships.” https://vendelux.com/blog/series-b
+- Product scope: it tracks “more than 250,000 global B2B events.” https://vendelux.com/blog/series-b
+- Buyer/user titles explicitly named: “Event Marketers,” “Marketing Ops / RevOps,” and “Event Organizers.” https://vendelux.com/pricing
+- Exact buyer title requested: a singular exact economic-buyer title is NOT FOUND. Vendelux’s site targets “event marketers” and its pricing page separately lists the three categories above. https://vendelux.com/pricing
+- Target universe: the enumerated event universe is “250,000+ B2B events”; a possible-customer universe count is NOT FOUND. https://vendelux.com/blog/series-b
+- Pricing: published package names/features exist, but dollar prices are NOT FOUND. The Plus tier includes “5,000 monthly lead credits,” “10 annual meeting campaign credits,” CRM push, and dedicated campaign support; Enterprise is “Custom.” https://vendelux.com/pricing ## 3. Traction - Named customer: ShipBob. Its Director of Partner Marketing, Gina Ellison, says, “in just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.” This is a customer claim quoted by Vendelux, not independently audited. https://vendelux.com/event-marketers
+- Other named examples: Voltage, Pecan AI, HLTH, Stablecon, and This Week In FinTech appear in Vendelux content; the site says “Voltage tripled its late-stage pipeline,” and another page says Stablecon attributed “23% of its attendees” to the platform and HLTH saw a “6% increase in executive-level attendees.” These are company-published case/example claims; independent verification is NOT FOUND. https://vendelux.com/event-marketing/event-marketing-examples https://investorshangout.com/vendelux-launches-innovative-delegate-marketing-platform-for-events-367959-
+- Logo count: NOT FOUND.
+- ARR/revenue: NOT FOUND in primary sources. An automated LinkedIn/Exa estimate says “Annual Revenue: USD 1,200,000”; label: automated estimate, not company-reported ARR. https://linkedin.com/company/vendelux
+- Customer count: NOT FOUND. ## 4. Funding - Seed, 2022-01-28: automated database record says “USD 2.4M,” led by Tenacity Venture Capital, with six investors. This is an automated/third-party record; participants beyond that description are NOT FOUND. https://linkedin.com/company/vendelux
+- Seed, 2022-10-13: automated database record says “USD 700,000”; lead and participants are NOT FOUND. https://linkedin.com/company/vendelux
+- Series A, 2023-11-21: automated database record says “USD 14.0M,” led by FirstMark, with ten investors; participant list is NOT FOUND in the retrieved source. https://linkedin.com/company/vendelux
+- Series B, announced 2026-07-08: “$50M Series B,” led by “Tribeca Venture Partners,” with participation from “S3, Pelion Ventures, HubSpot Ventures, FirstMark, and Cervin Ventures.” https://vendelux.com/blog/series-b
+- Total raised: Vendelux’s own announcement says “This brings our total funding to $71M.” This conflicts with the user-supplied ~$66.4M and with the automated pre-Series-B database total, so $71M is the company-reported figure. https://vendelux.com/blog/series-b https://linkedin.com/company/vendelux
+- Use of proceeds/growth commitment: NOT FOUND beyond the announcement’s statement that the round is “to power the future of B2B events.” https://vendelux.com/blog/series-b ## 5. GTM hiring - Growth Marketing Lead — published 2026-04-16; status on the retrieved page: NOT FOUND. Department Marketing; NYC, 3–4 days onsite; compensation “160,000–230,000 USD per year plus equity.” https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a - Account-reach language: “global demand generation strategy across paid media, email, content, SEO, ABM, and events”; “Build and scale ABM programs that deliver highly personalized engagement for target accounts”; “partner closely with Sales”; “AI-assisted workflows … rapid campaign iteration and personalization.” https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a - Reports to: NOT FOUND.
+- Head of Event Organizer Partnerships — published 2026-05-01; status and reporting line NOT FOUND in the retrieved excerpt. https://jobs.ashbyhq.com/vendelux/a3120857-378e-47b7-a07b-d997d7ef8962
+- Senior IRL Engineer / In-Person Marketing Engineer — publication date shown as 1970-01-01 in the job index, therefore reliable publication date NOT FOUND; reports “directly to our Head of Marketing.” Account-reach language includes building strategy across “owned events, third-party conferences” and field activations. https://jobs.ashbyhq.com/vendelux/858f0c2f-7926-4ff4-99f6-1f0ba0609289
+- Outreach Campaign Operations Manager — accessible repost says open and posted 2026-07-18; status open per repost. It owns “onboarding and ongoing campaign execution,” analyzes “prospect list quality, email copy, sequencing, and deliverability,” writes “1:1 outbound copy,” tracks replies and books meetings, and collaborates with Customer Success. https://lensa.com/job-v1/vendelux/remote/campaign-manager/8f4d049f98742c8d7cf69e722d5e75ef - Reports to: NOT FOUND.
+- LinkedIn’s company result additionally lists “Enterprise Account Executive - West Coast,” “SDR, Cold Call Specialist - Las Vegas,” “Mid-Market Account Executive,” and “Contract Recruiting Sourcer (GTM),” but publication dates, descriptions, reporting lines, and open/closed status are NOT FOUND from the retrieved result. https://linkedin.com/company/vendelux
+- Long-open flag: the user-supplied 2026-04-21 date is NOT FOUND in the accessible source; therefore a verified 132-day-open flag is NOT FOUND. ## 6. Marketing and ABM tooling - CRM: HubSpot and Salesforce are explicitly named as destinations: “Every booked meeting flows continuously into HubSpot or Salesforce.” https://vendelux.com/event-marketing
+- Marketing automation/sales engagement: Vendelux’s own content names “Outreach, Salesloft, Apollo for outbound” as examples of sequencing platforms and says ChatVDX generates email sequences. Whether Vendelux itself uses each named platform is NOT FOUND. https://vendelux.com/event-marketing/event-marketing-tools
+- ABM: ABM is a planned/operated channel in the Growth Marketing Lead job: “Build and scale ABM programs.” https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+- Specific ABM/intent vendors requested — 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, Common Room: NOT FOUND as confirmed Vendelux tooling. https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a https://vendelux.com/event-marketing/event-marketing-tools ## 7. Leadership and GTM organization - Alex Reynolds — “Co-Founder, CEO.” https://vendelux.com/about
+- Stefan Deeran — “Co-Founder, COO.” https://vendelux.com/about
+- Tanya Peress — “Head of Marketing.” https://vendelux.com/about
+- Michael Goerlitz — “Growth Marketer.” https://vendelux.com/about
+- Matt Nelson — “Head of Data Operations.” https://vendelux.com/about
+- Alexandra Franco — “Head of Forward Deployed Engineers.” https://vendelux.com/about
+- Lex Franco’s LinkedIn result says “Head of Forward Deployed Engineering,” with employment beginning February 2025; exact discrepancy with the About-page name/title is unresolved. https://www.linkedin.com/in/alexmfranco7
+- Justin Smith — LinkedIn says “Outreach Campaign Manager - Vendelux (Current),” beginning June 2025. https://www.linkedin.com/in/justintsmith22
+- Rohan L. — LinkedIn result says “Demand Generation Manager,” beginning June 2026. https://www.linkedin.com/in/rohan-lal
+- Luis Velazco — “Meetings Development Representative Team Lead,” beginning June 2026. https://www.linkedin.com/in/luis-velazco1
+- Sydnee Millison — “Senior Outreach Campaign Manager,” beginning October 2025. https://www.linkedin.com/in/sydneemillison
+- GTM vacancy: Growth Marketing Lead is recruiting a senior demand-generation/ABM owner; whether it is the vacant Head of Growth Marketing seat described by the user is NOT FOUND. https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+- Recent GTM hire under 12 months: Rohan L. is shown as starting June 2026; Luis Velazco as June 2026; both are LinkedIn/automated profile evidence rather than company announcements. https://www.linkedin.com/in/rohan-lal https://www.linkedin.com/in/luis-velazco1 ## 8. Operational pain and strategic moves - Pain: Vendelux says “digital channels saturate and AI automates email and paid outreach,” creating a shift toward in-person GTM. https://vendelux.com/blog/series-b
+- Pain: its founding article says there was “no platform” for the end-to-end event-marketing journey, from selecting events and scheduling meetings to tracking channel impact. https://vendelux.com/blog/from-intropreneur-to-entrepreneur
+- Strategic moves: build an event data asset (“over 30,000 events” in the early product description, now “more than 250,000 global B2B events”), add attendee intelligence, add agents/Meetings that book qualified meetings, and connect CRM attribution. https://vendelux.com/blog/from-intropreneur-to-entrepreneur https://vendelux.com/blog/series-b https://vendelux.com/event-marketing ## 9. Culture and resonance - Company self-description: “AI-Native Event Marketing Platform”; homepage language says it turns “in-person connections into predictable pipeline.” https://vendelux.com/
+- Culture: “Based in Manhattan, Vendelux embraces in-person collaboration with the flexibility teams need.” https://vendelux.com/about
+- Public frustration: the company describes digital-channel saturation and the broken event-measurement workflow, quoted above; employee-sentiment frustration/attrition signal is NOT FOUND. https://vendelux.com/blog/series-b https://vendelux.com/blog/from-intropreneur-to-entrepreneur
+- Awards/recognition: NOT FOUND. ## 10. Newest timing events affecting buying posture - 2026-07-08 — Series B announced: “$50M,” led by Tribeca Venture Partners; total company-reported funding “$71M.” This materially supports expansion of event intelligence, meeting automation, and the broader event ecosystem platform. https://vendelux.com/blog/series-b
+- 2026-07-08 — Head of Meetings Operations listing was indexed; the listing says “Posted on 5/6/2026,” indicating investment in scaling the managed meeting-execution function. https://simplify.jobs/p/6c3e5925-4219-47ef-804e-e5eba5d1d7a8/Head-of-Meetings-Operations
+- 2026-06 — LinkedIn profile evidence shows a Demand Generation Manager and Meetings Development Representative Team Lead starting at Vendelux. https://www.linkedin.com/in/rohan-lal https://www.linkedin.com/in/luis-velazco1
+- 2026-05-27 — Vendelux published its event-marketing-tools guide describing ChatVDX, outbound sequencing, and a managed Meetings team. https://vendelux.com/event-marketing/event-marketing-tools
+- 2026-05-05 — Vendelux published a guide describing target-account shortlisting, outbound, predicted-attendee data, meeting booking, and CRM attribution. https://vendelux.com/event-marketing
+- Events in the last six months not otherwise listed: NOT FOUND. ## Bottom line Vendelux is not merely adjacent to an ABM buyer: its publicly described roadmap already combines event/account intelligence, predicted attendee signals, target-account segmentation, campaign generation, outbound sequencing, AI-assisted meeting booking, and CRM attribution. However, specific ABM/intent infrastructure vendors are NOT FOUND, ARR and customer count are NOT FOUND, and the public evidence supports Tanya Peress as Head of Marketing with no publicly identified CMO/VP Marketing above her. https://vendelux.com/blog/series-b https://vendelux.com/event-marketing https://vendelux.com/about https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a
+
+# THE COMPANY'S OWN PAGES + FUNDING ANNOUNCEMENTS (fetched verbatim)
+SOURCE https://www.vendelux.com [via Exa /contents]
+Vendelux | AI-Native Event Marketing Platform
+
+# The Future of In-Person Marketing Starts Here
+
+Vendelux turns in-person events into a predictable, pipeline-generating engine - before you even step on the show floor.
+
+Request a Demo
+
+Deployed across global enterprises
+
+Event Industry Truth
+
+## You spend six figures on events. Your team flies across the country. Sales says they’ll “try to book some meetings.” And somehow the ROI slides still feel like guesswork.
+
+##### That Era is Over
+
+Vendelux shows you exactly where your ICP will be, books the right meetings automatically, and ties every interaction back to revenue.
+
+###### No gut instinct
+
+Make decisions based on real data and insights, not guesswork.
+
+###### No scrambling
+
+Stay organized with streamlined workflows and clear processes.
+
+###### No wasted budget
+
+Optimize spending with efficient resource allocation and planning.
+
+How It Works
+
+# The Event Engine
+
+01
+
+##### Map Your ICP
+
+Upload a list, connect your CRM, or build it from scratch. Instantly see customers, prospects, competitors, and partners - all in one place.
+
+02
+
+##### Match to High-ROI Events
+
+Identify the events where your ICP is actually attending, speaking, or sponsoring - across our proprietary database of more than 250,000+ B2B events worldwide.
+
+03
+
+##### Book Meetings Before Day 1
+
+AI-powered outreach engages prospects at the perfect moment. Your reps land at the event with a full calendar - and attributable ROI.
+
+Features
+
+# Choose Your Path
+
+Whether you’re planning smarter, booking meetings earlier, or proving ROI down to the dollar, Vendelux gives you the tools to make every event perform. Explore the platform components that power your entire in-person strategy.
+
+Product Overview
+
+Meetings Event Discovery List Builder CRM Integration
+
+Meetings
+
+##### Fill your team’s calendars before the event even begins.
+
+Vendelux combines verified attendee data with human-led outreach to pre-book conversations with your highest-value prospects. No scrambling. No guesswork. Just confirmed meetings that generate pipeline you can track in Salesforce or Hubspot.
+
+Learn More
+
+Event Discovery
+
+##### Find the events that actually drive revenue.
+
+Search 250,000+ B2B events and instantly pinpoint the shows where your ICP, customers, partners, and competitors will be. Make every decision backed by attendee intelligence - not anecdotal notes or last year’s list.
+
+Learn More
+
+List Builder
+
+##### See who matters - and where they’ll be next.
+
+Create dynamic lists of prospects, customers, open deals, and competitors. Track them across events, filter by roles and titles, and identify opportunities before anyone else sees them.
+
+Learn More
+
+CRM Integration
+
+##### Turn Salesforce or HubSpot into your event growth engine.
+
+Connect your CRM to monitor who’s attending upcoming events, understand deal context, and automatically push outreach lists to Sales. Measure pipeline, attribution, and ROI without manual work.
+
+Learn More
+
+Why Vendelux
+
+# Vendelux is the only platform built to ensure you drive trackable ROI from your most expensive channel - Events.
+
+Teams don't buy another event tool. They buy predictable results. Here's what Vendelux delivers in the real world.
+
+### 300% increase in late-stage pipeline compared to the previous year
+
+Voltage tripled their pipeline and secured the largest deal in company history by utilizing event intelligence.
+
+The difference: identifying high-value prospects through data-driven booking instead of relying on general attendance.
+
+View Case Study
+
+Real Teams. Real Results.
+
+# Results That Speak Louder Than We Can
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement and Deal Strategy, Rain
+
+“Vendelux has helped us book 60 meetings with high-priority target accounts that had historically been difficult for us to reach.”
+
+Laura Garcia
+
+Director of Global Events + Field Marketing, Contentful
+
+“Booking twelve pre-event meetings by using Vendelux was a pretty high mark for us.”
+
+Cameron Nelson
+
+Senior Marketing Manager, Rocketium
+
+“In just our first two campaigns, we booked 20 meetings and connected with over 24 target accounts.”
+
+Gina Ellison
+
+Director of Partner Marketing, ShipBob
+
+“Their platform has helped us pick high-ROI events, get approvals fast, and skip the duds.”
+
+Jason Leland
+
+VP of Enterprise Sales, SecurityMetrics
+
+“Significantly reduced the burden on our team and elevated the quality of meetings we’re having at events.”
+
+Elizabeth McAlpin
+
+Director of Enablement 
+
+SOURCE https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/ [via Exa /contents]
+Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events - FirstMark
+
+# Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events
+
+## 07.08.2026
+
+Partner, FirstMark
+
+When we led Vendelux’s Series A back in 2023, our conviction was simple: in-person events remain one of the highest-ROI channels in B2B go-to-market, and in a world of increasing digital noise, they would only increase in value.
+
+Alex and Stefan had already built something remarkable: one of the largest event intelligence data repositories in existence, with tens of millions of data points spanning the world’s B2B events.
+
+In the time since, the team has done something even more impressive: they’ve used AI to turn that data asset into something genuinely actionable, at a scale that simply wasn’t possible before.
+
+What used to be a large dataset to support event marketers is now an intelligence and automation layer that helps marketing and sales teams identify the right events, find the right people to meet, and book meetings automatically and at scale. That shift, from data to an AI-native decision and matching engine, is the story of the last 18 months and has profoundly moved Vendelux into a “must own” in the AI-GTM stack.
+
+The results speak for themselves. Vendelux now tracks more than 250,000 global B2B events, and thousands of marketing professionals rely on the platform to run programs that have influenced billions of dollars in event spend.
+
+Customers across every stage, from fast-growing AI-native companies to global enterprises, are using Vendelux to bring the same visibility, ROI accountability, and predictability to their event budgets that they’ve long demanded from every other marketing channel. That’s a hard problem to solve, and Vendelux has become the category-defining platform for it.
+
+Today, we’re thrilled to share that Vendelux has raised a $50M Series B, led by our friends at Tribeca Venture Partners, with continued participation from FirstMark and others.
+
+As AI reshapes so much of how companies find and engage buyers, we believe human connection, and the events where it happens, only becomes more valuable, not less.
+
+We expect this trend to keep compounding, and we couldn’t be more proud to keep backing Alex, Stefan, and the entire Vendelux team as they build the infrastructure for the next era of B2B events.
+
+Click here to read the full Series B announcement in Business Insider
+
+## You may also like
+
+### Securing the Agentic Workforce: Our Investment in Onyx Security
+
+AI / ML Every company will soon manage more AI agents than employees. Onyx is building the infrastructure that will make that future secure.
+
+### From Busywork to Business: Why We Led Henry’s Series A
+
+Enterprise I told Henry's founder not to build this company. I was wrong. Here's why AI changed one of the toughest software markets, and why we're excited to lead Henry's Series A.
+
+### Synthesia Launches AI Roleplay for Workplace Training
+
+AI / ML Synthesia is redefining workplace learning with Roleplay Sessions, a new AI-powered platform for practicing high-stakes conversations in a safe, interactive environment.
+
+Join our mailing list
+
+- LP Login
+- Guilds Login
+
+SOURCE https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7 [via Exa /contents]
+Vendelux Just Raised $50 Million to Capitalize on Live B2B Events - Business Insider
+
+Exclusive
+
+You're currently following this author! Want to unfollow? Unsubscribe via the link in your email.
+
+Follow
+
+Vendelux's founders, Stefan Deeran and CEO Alex Reynolds, want to show events can drive business results. Vendelux
+
+2026-07-08T10:00:01.255Z
+
+Copy link
+
+Facebook
+
+WhatsApp
+
+X
+
+LinkedIn
+
+Bluesky
+
+Threads
+
+Save Saved
+
+Listen to this story
+
+As anyone who went to Cannes Lions last month knows, the appetite for in-person gatherings is going strong. Vendelux, a live events information platform, has raised $50 million to help marketers capitalize on that.
+
+Tribeca Venture Partners led the company's Series B raise, with S3, Pelion Ventures, HubSpot Ventures, FirstMark, and Cervin Ventures also participating, Business Insider exclusively learned. It's raised $71 million to date, including a $14 million Series A round in 2023.
+
+Vendelux uses AI and proprietary event data from over 250,000 events
+
+# THE COMPANY'S OWN LIVE GO-TO-MARKET JOB REQS (Ashby posting API, verbatim; every one below is STILL LISTED on 2026-08-31)
+JOB IRL Engineer (In-Person Marketing Engineer)  | dept=Marketing/Marketing | loc=New York, NY | published=2026-02-05T20:41:08.801+00:00 | comp=$100K – $300K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/vendelux/f66e02f1-a198-4a97-84f0-7d223ffad58e
+Vendelux https://vendelux.com/ is building the category-defining platform for event marketing intelligence.
+
+Events are one of the largest and most impactful marketing channels, yet historically one of the least measurable. Vendelux brings transparency and performance to this space — helping companies discover, evaluate, and optimize their event strategy with data.
+
+Our platform powers thousands of event decisions by delivering proprietary, AI-driven insights across hundreds of thousands of events globally. At the core of our platform is a robust ecosystem of event organizer partnerships — where organizers share first-party data, enabling richer insights for customers while receiving benchmarking and audience intelligence in return. From identifying the highest ROI conferences to enabling targeted meeting programs, Vendelux helps companies turn events into a predictable and scalable growth engine.
+
+In addition, Vendelux Meetings extends our platform by turning insights into pipeline — using AI to identify high-value attendees and proactively book 1:1 meetings between our customers and their ideal prospects at events. This enables go-to-market teams to drive measurable ROI and maximize every event interaction.
+
+Founded in 2021, Vendelux is a Series B SaaS company backed by top-tier investors including FirstMark. We partner with many of the fastest-growing companies in the world, and our team includes leaders from Bain, ZoomInfo, Shutterstock, FanDuel, Compass, Airbnb, Forter and beyond.
+
+________________
+
+As companies shift more of their revenue strategy toward in-person interactions, we’re creating a new role inside Vendelux that reflects the future of go-to-market: the IRL Engineer.
+
+This role is dedicated to engineering the highest-impact in-person interactions possible — for our internal teams, our customers, and our partners. The IRL Engineer will design the systems, playbooks, and programs that maximize face-to-face time across events, field activations, owned experiences, and business travel.
+
+If the GTM Engineer empowers teams with AI, the IRL Engineer uses AI to empower teams with human connection — the ultimate lever in modern GTM.
+
+We are hiring our first IRL Engineer to set the standard for innovation, measurement, and ROI around every in-person moment Vendelux creates.
+
+This role reports directly to our Head of Marketing.
+
+To apply, email your resume and cover letter to careers@vendelux.com.
+
+
+
+
+RESPONSIBILITIES
+
+As the founding IRL Engineer, you will:
+
+
+ENGINEER AN INDUSTRY-LEADING IRL MARKETING STRATEGY
+
+ - Build and execute Vendelux’s strategy for in-person interactions across owned events, third-party conferences, field activations, and community experience.
+
+ - Use the Vendelux platform to identify the highest-ROI opportunities for customer and prospect engagements
+
+ - Collaborate with team members across departments while also leveraging AI Agents to create IRL connections at scale
+
+
+
+
+MAXIMIZE MEETING DENSITY & RELATIONSHIP VALUE
+
+ - Generate sales pipeline and deepen customer/partner relationships through high-quality in-person interactions
+
+ - Ensure every event (owned or sponsored) is optimized for maximum meetings with prospects, customers, partners, and talent
+   
+
+
+OPERATIONALIZE IRL EXECUTION
+
+ - Own sponsorship negotiations, event budgets, and ROI reporting
+
+ - Run owned experiences such as meetups, customer dinners, micro-events, and executive gatherings
+
+ - Coordinate all pre- and post-event logistics, coordinate AI Agent & human outreach, and build agentic follow-up systems
+   
+
+
+BUILD REPEATABLE PLAYBOOKS & CROSS-FUNCTIONAL ALIGNMENT
+
+ - Collaborate closely with sales, marketing, product, and leadership to align IRL strategy with business goals
+
+ - Create scalable processes and measurement frameworks that operationalize relationship-building
+
+ - Represent Vendelux externally as a thought leader in IRL marketing excellence and the future of event marketing
+
+ - Collaborate with engineering and product to build AI Agents that operationalize IRL Engineering tasks and IRL marketing jobs to be done
+   
+
+
+
+
+QUALIFICATIONS
+
+ - 5+ years in event marketing, field marketing, experiential marketing, or similar roles at a B2B tech company
+
+ - Experience managing event budgets and driving measurable ROI
+
+ - Data-driven mindset — can tie IRL activities directly to pipeline and revenue (badge scans ≠ success)
+
+ - Interest and experience leveraging new AI capabilities to manage event logistics, budgets and driving measurable ROI
+
+ - High ownership mindset; sets a high bar for excellence
+
+ - Thrives in a fast-paced environment and learns quickly
+
+ - Exceptional at prioritization and delivering results
+
+ - Demonstrated track record of beating goals and growing in responsibility
+
+ - A culture-builder who elevates team performance
+
+
+
+
+BENEFITS
+
+ - High earnings potential with aggressive bonuses for over-performance
+
+ - Competitive base salary + bonus
+
+ - Equity participation
+
+ - Medical, dental, a
+
+JOB Senior IRL Engineer (In-Person Marketing Engineer)  | dept=Marketing/Marketing | loc=New York, NY | published=2026-02-05T20:41:26.178+00:00 | comp=$100K – $300K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/vendelux/858f0c2f-7926-4ff4-99f6-1f0ba0609289
+Vendelux https://vendelux.com/ is building the category-defining platform for event marketing intelligence.
+
+Events are one of the largest and most impactful marketing channels, yet historically one of the least measurable. Vendelux brings transparency and performance to this space — helping companies discover, evaluate, and optimize their event strategy with data.
+
+Our platform powers thousands of event decisions by delivering proprietary, AI-driven insights across hundreds of thousands of events globally. At the core of our platform is a robust ecosystem of event organizer partnerships — where organizers share first-party data, enabling richer insights for customers while receiving benchmarking and audience intelligence in return. From identifying the highest ROI conferences to enabling targeted meeting programs, Vendelux helps companies turn events into a predictable and scalable growth engine.
+
+In addition, Vendelux Meetings extends our platform by turning insights into pipeline — using AI to identify high-value attendees and proactively book 1:1 meetings between our customers and their ideal prospects at events. This enables go-to-market teams to drive measurable ROI and maximize every event interaction.
+
+Founded in 2021, Vendelux is a Series B SaaS company backed by top-tier investors including FirstMark. We partner with many of the fastest-growing companies in the world, and our team includes leaders from Bain, ZoomInfo, Shutterstock, FanDuel, Compass, Airbnb, Forter and beyond.
+
+________________
+
+As companies shift more of their revenue strategy toward in-person interactions, we’re creating a new role inside Vendelux that reflects the future of go-to-market: the IRL Engineer.
+
+This role is dedicated to engineering the highest-impact in-person interactions possible — for our internal teams, our customers, and our partners. The IRL Engineer will design the systems, playbooks, and programs that maximize face-to-face time across events, field activations, owned experiences, and business travel.
+
+If the GTM Engineer empowers teams with AI, the IRL Engineer uses AI to empower teams with human connection — the ultimate lever in modern GTM.
+
+We are hiring our first IRL Engineer to set the standard for innovation, measurement, and ROI around every in-person moment Vendelux creates.
+
+This role reports directly to our Head of Marketing.
+
+
+
+
+RESPONSIBILITIES
+
+As the founding IRL Engineer, you will:
+
+
+ENGINEER AN INDUSTRY-LEADING IRL MARKETING STRATEGY
+
+ - Build and execute Vendelux’s strategy for in-person interactions across owned events, third-party conferences, field activations, and community experience.
+
+ - Use the Vendelux platform to identify the highest-ROI opportunities for customer and prospect engagements
+
+ - Collaborate with team members across departments while also leveraging AI Agents to create IRL connections at scale
+
+
+
+
+MAXIMIZE MEETING DENSITY & RELATIONSHIP VALUE
+
+ - Generate sales pipeline and deepen customer/partner relationships through high-quality in-person interactions
+
+ - Ensure every event (owned or sponsored) is optimized for maximum meetings with prospects, customers, partners, and talent
+   
+
+
+OPERATIONALIZE IRL EXECUTION
+
+ - Own sponsorship negotiations, event budgets, and ROI reporting
+
+ - Run owned experiences such as meetups, customer dinners, micro-events, and executive gatherings
+
+ - Coordinate all pre- and post-event logistics, coordinate AI Agent & human outreach, and build agentic follow-up systems
+   
+
+
+BUILD REPEATABLE PLAYBOOKS & CROSS-FUNCTIONAL ALIGNMENT
+
+ - Collaborate closely with sales, marketing, product, and leadership to align IRL strategy with business goals
+
+ - Create scalable processes and measurement frameworks that operationalize relationship-building
+
+ - Represent Vendelux externally as a thought leader in IRL marketing excellence and the future of event marketing
+
+ - Collaborate with engineering and product to build AI Agents that operationalize IRL Engineering tasks and IRL marketing jobs to be done
+   
+
+
+
+
+QUALIFICATIONS
+
+ - 5+ years in event marketing, field marketing, experiential marketing, or similar roles at a B2B tech company
+
+ - Experience managing event budgets and driving measurable ROI
+
+ - Data-driven mindset — can tie IRL activities directly to pipeline and revenue (badge scans ≠ success)
+
+ - Interest and experience leveraging new AI capabilities to manage event logistics, budgets and driving measurable ROI
+
+ - High ownership mindset; sets a high bar for excellence
+
+ - Thrives in a fast-paced environment and learns quickly
+
+ - Exceptional at prioritization and delivering results
+
+ - Demonstrated track record of beating goals and growing in responsibility
+
+ - A culture-builder who elevates team performance
+
+
+
+
+BENEFITS
+
+ - High earnings potential with aggressive bonuses for over-performance
+
+ - Competitive base salary + bonus
+
+ - Equity participation
+
+ - Medical, dental, and vision coverage
+
+ - Work remotely or from our NYC HQ
+   
+
+ - Unlimit
+
+JOB Outreach Campaign Operations Manager | dept=Customer Success/Customer Success | loc=New York, NY | published=2026-04-21T15:07:56.230+00:00 | comp=$80K – $120K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/vendelux/7dfeabd3-7595-490b-af19-dff052216d67
+Vendelux https://vendelux.com/ is building the category-defining platform for event marketing intelligence.
+
+Events are one of the largest and most impactful marketing channels, yet historically one of the least measurable. Vendelux brings transparency and performance to this space — helping companies discover, evaluate, and optimize their event strategy with data.
+
+Our platform powers thousands of event decisions by delivering proprietary, AI-driven insights across hundreds of thousands of events globally. At the core of our platform is a robust ecosystem of event organizer partnerships — where organizers share first-party data, enabling richer insights for customers while receiving benchmarking and audience intelligence in return. From identifying the highest ROI conferences to enabling targeted meeting programs, Vendelux helps companies turn events into a predictable and scalable growth engine.
+
+In addition, Vendelux Meetings extends our platform by turning insights into pipeline — using AI to identify high-value attendees and proactively book 1:1 meetings between our customers and their ideal prospects at events. This enables go-to-market teams to drive measurable ROI and maximize every event interaction.
+
+Founded in 2021, Vendelux is a Series B SaaS company backed by top-tier investors including FirstMark. We partner with many of the fastest-growing companies in the world, and our team includes leaders from Bain, ZoomInfo, Shutterstock, FanDuel, Compass, Airbnb, Forter and beyond.
+
+________________
+
+We're looking for an Outreach Campaign Operations Manager to sit at the intersection of customer success, outbound execution, and AI operations. You'll own the end-to-end performance of AI-powered outreach campaigns for a portfolio of customers — managing high volumes of moving pieces, diagnosing what's working, fixing what isn't, and constantly raising the bar on quality and results.
+
+This is a high-ownership, fast-paced role for someone who thrives in ambiguity, moves with urgency, and takes pride in the details.
+
+
+
+
+WHAT YOU'LL DO
+
+ - Own onboarding and ongoing campaign execution for a portfolio of accounts — managing multiple live campaigns simultaneously while keeping everything organized and nothing falling through the cracks.
+
+ - Diagnose and optimize B2B outreach performance: analyze reply rates, prospect list quality, email copy, sequencing, and deliverability — and take action without waiting to be asked.
+
+ - Write and refine 1:1 outbound copy that feels human, earns replies, and reflects each customer's brand voice and compliance requirements.
+
+ - Track campaign replies, drive follow-up, manage conversion funnels, and book meetings on behalf of customers.
+
+ - Collaborate closely with Customer Success to align on account priorities, surface risks early, and deliver outcomes that map to each customer's business goals.
+
+ - Partner with the product and engineering team to surface patterns from the field and influence the roadmap.
+
+ - Build and document scalable outreach processes that can be systematized and improved over time.
+
+
+
+
+WHAT WE'RE LOOKING FOR
+
+ - 3–5 years in outbound sales, B2B marketing, customer success, or a high-volume client-facing operations role.
+
+ - Proven experience managing a large number of concurrent accounts or workstreams without things slipping — you have a system and you stick to it.
+
+ - Strong instincts for B2B email copy: you can tell the difference between a message that earns a response and one that doesn't, and you know why.
+
+ - Analytical enough to diagnose campaign performance and turn metrics into clear next actions.
+
+ - High ownership mindset — you take responsibility for outcomes, follow through without being chased, and treat customer results as your results.
+
+ - Naturally adaptable and a fast self-learner: when you encounter a new tool or problem, you figure it out before asking for help.
+
+ - Creative problem solver who finds practical solutions in ambiguous situations and doesn't wait for a perfect playbook.
+
+ - Clear, concise communicator who works well cross-functionally and keeps the right people informed without over-communicating.
+
+ - Genuinely excited about AI — not just as a buzzword, but as a core part of how you work and think.
+
+Not all candidates will check all of the requirements listed above and that’s ok! We are open to great people from non-traditional backgrounds.
+
+
+
+Vendelux is proud to be an equal opportunity workplace. We are committed to equal opportunity regardless of race, color, ancestry, religion, gender, gender identity, parental or pregnancy status, national origin, sexual orientation, age, citizenship, marital status, disability, or veteran status.
+
+JOB Head of Event Organizer Partnerships - NYC  | dept=Sales/Sales | loc=New York, NY | published=2026-05-01T21:31:29.460+00:00 | comp=$175K – $240K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/vendelux/a3120857-378e-47b7-a07b-d997d7ef8962
+Vendelux https://vendelux.com/ is building the category-defining platform for event marketing intelligence.
+
+Events are one of the largest and most impactful marketing channels, yet historically one of the least measurable. Vendelux brings transparency and performance to this space — helping companies discover, evaluate, and optimize their event strategy with data.
+
+Our platform powers thousands of event decisions by delivering proprietary, AI-driven insights across hundreds of thousands of events globally. At the core of our platform is a robust ecosystem of event organizer partnerships — where organizers share first-party data, enabling richer insights for customers while receiving benchmarking and audience intelligence in return. From identifying the highest ROI conferences to enabling targeted meeting programs, Vendelux helps companies turn events into a predictable and scalable growth engine.
+
+In addition, Vendelux Meetings extends our platform by turning insights into pipeline — using AI to identify high-value attendees and proactively book 1:1 meetings between our customers and their ideal prospects at events. This enables go-to-market teams to drive measurable ROI and maximize every event interaction.
+
+Founded in 2021, Vendelux is a Series B SaaS company backed by top-tier investors including FirstMark. We partner with many of the fastest-growing companies in the world, and our team includes leaders from Bain, ZoomInfo, Shutterstock, FanDuel, Compass, Airbnb, Forter and beyond.
+
+________________
+
+
+
+We’re looking for a Head of Event Organizer Partnerships  based in New York City to help fuel Vendelux’s growth across EMEA. Reporting directly to the Head of Marketplace, the role serves as connective tissue across Partnerships, Customer Success, Marketing, Finance, Data, and Product. This is a hands-on, high-impact role for someone who loves building relationships, opening doors, and closing meaningful deals.
+
+You’ll play a key role in expanding our customer base, shaping our go-to-market approach in the region, and working closely with leadership as the company scales.
+
+
+
+Willingness to travel to our London office as needed, typically 1–3 times per quarter.
+
+
+
+
+WHAT YOU’LL DO
+
+ - Own and drive new business opportunities end-to-end with event organizers — from first conversation to signed deal
+
+ - Prospect, qualify, and close new customers across brands, agencies, and strategic partners
+
+ - Build and maintain a strong pipeline in a fast-moving environment
+
+ - Source and structure data-driven partnerships, including data exchange and technical collaborations, that support revenue growth and product expansion
+
+ - Develop long-term relationships with senior stakeholders and decision-makers
+
+ - Stay close to customer feedback and market trends to help influence product and positioning
+
+ - Represent Vendelux externally at industry events, conferences, and meetings
+
+
+QUALIFICATIONS
+
+ - 5-10+ years in business development, partnerships, strategy & operations, consulting, or a similar analytical/operational role
+
+ - Highly organized, detail-oriented, and proactive—able to manage multiple workstreams simultaneously
+
+ - Comfortable pitching to mid-market and enterprise clients
+
+ - Strong communicator who can build trust quickly and navigate complex conversations
+
+ - Self-starter mentality — you’re comfortable owning your number and your process
+
+ - Thrive in fast-paced, early-stage or scaling environments
+
+
+
+
+BONUS POINTS
+
+ - Experience in data, analytics, media, or marketing intelligence platforms
+
+ - Familiarity with events, experiential marketing, or brand marketing ecosystems
+
+ - Experience working with international clients or expanding into new markets
+
+
+
+
+ BENEFITS
+
+ - Competitive base salary and bonus
+
+ - Healthcare covering medical, dental and vision
+
+ - Work from our NYC HQ
+
+ - Unlimited PTO plus two company-wide shutdowns during the July 4th week and the Christmas – New Years week
+
+Come build a great company with us!
+
+
+
+
+
+Not all candidates will check all of the requirements listed above and that’s ok! We are open to great people from non-traditional backgrounds.
+
+
+
+Vendelux is proud to be an equal opportunity workplace. We are committed to equal opportunity regardless of race, color, ancestry, religion, gender, gender identity, parental or pregnancy status, national origin, sexual orientation, age, citizenship, marital status, disability, or veteran status.
+
+JOB  SDR, Cold Call Specialist - Salt Lake City | dept=Sales/Sales | loc=Salt Lake City | published=2026-05-18T20:51:46.623+00:00 | comp=$45K – $55K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/vendelux/71520ab7-f56c-4346-9dd7-947069bf8e33
+Vendelux https://vendelux.com/ is building the category-defining platform for event marketing intelligence.
+
+Events are one of the largest and most impactful marketing channels, yet historically one of the least measurable. Vendelux brings transparency and performance to this space — helping companies discover, evaluate, and optimize their event strategy with data.
+
+Our platform powers thousands of event decisions by delivering proprietary, AI-driven insights across hundreds of thousands of events globally. At the core of our platform is a robust ecosystem of event organizer partnerships — where organizers share first-party data, enabling richer insights for customers while receiving benchmarking and audience intelligence in return. From identifying the highest ROI conferences to enabling targeted meeting programs, Vendelux helps companies turn events into a predictable and scalable growth engine.
+
+In addition, Vendelux Meetings extends our platform by turning insights into pipeline — using AI to identify high-value attendees and proactively book 1:1 meetings between our customers and their ideal prospects at events. This enables go-to-market teams to drive measurable ROI and maximize every event interaction.
+
+Founded in 2021, Vendelux is a Series B SaaS company backed by top-tier investors including FirstMa
+
+# TARGETED GAP-FILL SEARCH RESULTS
+
+
+# REPUTATION / NEGATIVES SEARCH RESULTS
+
+
+
+Emit ONLY account-entity claims for account:vendelux now.
+Return {"account_claims":[...], "proposed_fields":[...]}.

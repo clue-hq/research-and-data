@@ -1,0 +1,737 @@
+[
+  {
+    "angle": "semantic_icp",
+    "label": "d1_semantic_saas",
+    "query_verbatim": "US Series B B2B SaaS company selling to large enterprise named accounts with a small marketing team running account-based marketing campaigns",
+    "payload": {
+      "query": "US Series B B2B SaaS company selling to large enterprise named accounts with a small marketing team running account-based marketing campaigns",
+      "type": "auto",
+      "numResults": 10,
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.87,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://abmatic.ai/blog/account-based-marketing-playbook-for-series-b-saas",
+        "title": "Account-Based Marketing Playbook for Series B SaaS | Abmatic AI",
+        "publishedDate": "2026-04-29T00:00:00.000Z",
+        "author": null,
+        "text": "Account-Based Marketing Playbook for Series B SaaS | Abmatic AI\n\n# Account-Based Marketing Playbook for Series B SaaS (5-Phase Build)\n\nFive-phase ABM playbook for Series B SaaS: foundations, tier-2 programmatic, tier-1 named-account, measurement, and scale-up decision at month nine. Learn how.\n\nJM Jimit Mehta Published Apr 29, 2026 \u00b7 Last updated Apr 30, 2026 \u00b7 8 min read\n\nA Series B SaaS company is at the exact stage where ABM stops being optional and starts being load-bearing. Per public customer reports, the under-100M-ARR band is where pipeline efficiency starts to matter more than top-of-funnel volume; the average Series B GTM team spends 12 to 18 months learning that the demand-gen playbook from Series A no longer scales. This playbook is the structured response: a five-phase ABM build for a Series B SaaS team, with cadence, ownership, budget, and exit criteria for each phase.\n\nFull disclosure: Abmatic AI ships an ABM platform that targets the Series B band specifically, so we have a financial interest in teams running structured ABM. The framework below is platform-agnostic. It works whether you build the stack on a single vendor or a stack of CRM, intent data, ads, and orch"
+      },
+      {
+        "url": "https://demandcollective.substack.com/p/signal-based-demand-gen-done-right",
+        "title": "Signal-based demand gen done right: how Fingerprint 2x'd ACV while tripling ARR",
+        "publishedDate": "2026-08-11T00:00:00.000Z",
+        "author": "Eric Linssen",
+        "text": "Signal-based demand gen done right: how Fingerprint 2x'd ACV while tripling ARR\n\n# The Demand Collective Newsletter\n\nSubscribeSign in\n\n# Signal-based demand gen done right: how Fingerprint 2x'd ACV while tripling ARR\n\n### w. Alexander Goodwin, Director of Demand Gen @ Fingerprint\n\nAug 11, 2026\n\n30\n\n2\n\n1\n\nShare\n\nThis newsletter is a beautiful case study of how to move upmarket as a demand gen leader. Specifically, how Alex Goodwin, Director of DG @ Fingerprint did it, 2X\u2019ing ACV while tripling ARR over 2 years.\n\nThis is a slightly longer one, we\u2019ll be covering the 3 core pieces of Fingerprint\u2019s machine:\n\nAccount selection: Hey they score and prioritize their market into TAM \u2192 SAM \u2192 Target Accounts & align everyone on the same accounts.\n\nAccount Engagement: Which plays we run at those accounts & why.\n\nAccount Conversion: Enabling sales, and holding them accountable.\n\nLet\u2019s dive in.\n\n---\n\n\u2192 Vector- Run ads to your ICP, at the person level, on every channel (meta, reddit, youtube, etc). So you can save money (cut waste), save time (no more manual audience updating), and drive better results (lots of cool stuff you can do). Request a demo here, or use DCREVEAL to get a free month of Vec"
+      },
+      {
+        "url": "https://www.factors.ai/conversations/the-abm-playbook-behind-high-acv-deals",
+        "title": "The ABM Playbook Behind High-ACV Deals",
+        "publishedDate": "2026-08-06T00:00:00.000Z",
+        "author": null,
+        "text": "The ABM Playbook Behind High-ACV Deals\n\nWant to know your competitor's Ad strategy?\n\n[Giveaway] 20 accounts that are currently searching for you\n\nConversations\n\nThe ABM Playbook Behind High-ACV Deals\n\nAugust 6, 2026\n\n# The ABM Playbook Behind High-ACV Deals\n\nAlexander Goodwin\n\nDirector of Demand Generation, Fingerprint\n\n\u200d\n\n### Introduction\n\nThis session, hosted by Praveen (Factors) with guest Alex Goodwin, Director of Demand Generation at Fingerprint, walked through how Fingerprint built its ABM program from the ground up \u2014 from choosing which three verticals to go all-in on, to mapping buying committees account-by-account, to running a five-tier system that ranges from mass BDR outreach to nine hand-built \"whale\" campaigns a quarter. Alex shared the actual account-planning frameworks, budget splits, and measurement systems Fingerprint uses internally, plus the surprising, expensive experiment that ended up proving how much personalization really moves the needle.\n\n### About Alexander Goodwin\n\nAlex is Director of Demand Generation at Fingerprint, a device intelligence company that helps large marketplaces and consumer-facing platforms prevent fraud and improve user experience. He j"
+      },
+      {
+        "url": "https://www.vector.co/blog/contact-level-abm-how-fingerprint-rebuilt-their-motion-and-opened-up-new-channels",
+        "title": "Contact-level ABM: how Fingerprint rebuilt their motion",
+        "publishedDate": null,
+        "author": null,
+        "text": "Contact-level ABM: how Fingerprint rebuilt their motion\n\nContents\n\nHeading 2\n\n## The gap account-level tools cannot close\n\nFingerprint builds device intelligence infrastructure, with buyers sitting in product, engineering, and fraud teams across fintech, e-commerce, and other enterprise verticals. The average prospect logs 17-plus touchpoints before converting, which means precision matters more than volume at every stage of the funnel.\n\nTo move upmarket and land larger deals, they needed to get precise about which signals actually preceded enterprise conversions and build their advertising around those. Alexander Goodwin, Fingerprint\u2019s Director of Demand Generation, had built an ABM motion across three tiers to do exactly that:\n\n- 1:1 campaigns with personalized ads and landing pages for their highest-priority enterprise accounts\n- 1:few campaigns segmented by use case and industry for broader but still targeted reach\n- Brand plays across the full target account list\n\nIt was running into real limitations.\n\nThe mechanics at the 1:1 level were standard: pull a list from Apollo, import it into LinkedIn as a CSV, run ads against it. Match rates sat around 40-50%. Half the list, unreac"
+      },
+      {
+        "url": "https://ziellab.com/post/account-based-marketing-b2b-small-teams-guide",
+        "title": "Account-based marketing for small B2B teams",
+        "publishedDate": "2026-06-07T00:00:00.000Z",
+        "author": "Abhishek Singla",
+        "text": "Account-based marketing for small B2B teams\n\nRevOpsABMB2B\n\n# Account-based marketing for small B2B teams\n\nAbhishek Singla\n\nJun 7, 2026\n\n12 min read\n\nA founder of a 40-person B2B SaaS company called me last quarter, half-embarrassed. He had signed a $58,000 annual contract for an enterprise ABM platform because a board member said \"you need account-based marketing.\" Six months in, two people had logged into the tool, his pipeline looked exactly the same, and the renewal was coming up. His real question was not \"how do I use this platform.\" It was \"did I just waste sixty grand?\"\n\nHe mostly had. Not because account-based marketing is a bad idea. Because almost everything written about ABM is written for companies with a RevOps team, a six-figure software budget, and a marketing org big enough to run quarterly campaigns. That is not a 40-person company. It is not a 70-person company either.\n\nI have spent ten years in revenue operations, and I am currently a founding GTM engineer at Peec AI. I have watched small teams burn real money on ABM because they copied the enterprise playbook line for line. This post is the version I wish those founders had read first. It is opinionated, it skip"
+      },
+      {
+        "url": "https://demandcollective.substack.com/p/how-aline-is-driving-80-100-demos",
+        "title": "How Aline is driving 80-100 demos per month (& growing 30% MoM) w. 1 marketer",
+        "publishedDate": "2026-06-02T00:00:00.000Z",
+        "author": "Eric Linssen",
+        "text": "How Aline is driving 80-100 demos per month (& growing 30% MoM) w. 1 marketer\n\n# The Demand Collective Newsletter\n\nSubscribeSign in\n\n# How Aline is driving 80-100 demos per month (& growing 30% MoM) w. 1 marketer\n\n### w. Ian Block, Growth & Head of Marketing\n\nJun 02, 2026\n\n24\n\nShare\n\nbtw - the Demand Day Summit is BACK! June 18, 8, 20-min sessions from the smartest demand operators I could find. Just posted about it on LinkedIn :), check it out.\n\n---\n\nGood morning my lovely reader \u2764\ufe0f. Today is one of my favorite flavors of newsletter. Ian Block is driving 80-100 demos/mo as Aline\u2019s only marketer. In this newsletter he\u2019s sharing exactly how:\n\nCold email at scale (Email Bison, $100 gift card offer, 1000+ inboxes, Clay-built lists) \u2014 ~50% of demos\n\nLinkedIn organic + paid (thought leadership ads from CEO Brent \u2192 message ads retargeting) \u2014 ~30% of pipeline\n\nHis vibecoded signal-based prospecting agent \u2013 10% of pipeline\n\nAnd SEO/AEO, and Meta ads (just getting started)\n\nTo be real, the crazy growth is coming from nuts PMF (Aline is in legal AI). But that being said, Ian is very sharp, and I\u2019m hoping there\u2019ll be one nugget you can steal that\u2019ll help you drive more growth in your day-to-d"
+      },
+      {
+        "url": "https://fullfunnel.substack.com/p/abm-case-study-how-backbase-built",
+        "title": "\ud83d\udd75\ud83c\udffb\u200d\u2642\ufe0f [ABM Case Study] How Backbase built an AI-native ABM motion",
+        "publishedDate": "2026-06-12T00:00:00.000Z",
+        "author": "Andrei Zinkevich",
+        "text": "\ud83d\udd75\ud83c\udffb\u200d\u2642\ufe0f [ABM Case Study] How Backbase built an AI-native ABM motion\n\n# Full-Funnel B2B Marketing\n\nSubscribeSign in\n\n# \ud83d\udd75\ud83c\udffb\u200d\u2642\ufe0f [ABM Case Study] How Backbase built an AI-native ABM motion\n\n### A detailed breakdown of how Backbase is building a global ABM function and integrating it in GTM AI system.\n\nAndrei Zinkevich and Vladimir Blagojevic\n\nJun 12, 2026\n\n26\n\n2\n\nShare\n\nIn this case study, we\u2019ll share:\n\nHow Tim Rutten reorganized an entire marketing function around strategic accounts and got sales aligned in six regions\n\nHow Backbase built their own AI-native go-to-market operating system in-house, what they automated, and what they kept human\n\nThe five-stage account velocity framework they use to measure ABM progress and pipeline contribution\n\n---\n\n## Work with us\n\nNeed help with building/refining ABM motion? Book a free strategy session: https://fullfunnel.io/consulting/\n\nWant to learn ABM? Join our academy: https://fullfunnel.io/academy/ or buy our book: https://fullfunnel.io/full-funnel-marketing-book/\n\nWant to get your product in front of B2B marketing leaders (we have 98k followers combined on LinkedIn + 27k subscribers on Substack)? See the formats and book a call here: https:/"
+      },
+      {
+        "url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+        "title": "Uptiq.ai ABM Case Study: $400K+ Pipeline | GrowthSpree",
+        "publishedDate": "2026-05-28T00:00:00.000Z",
+        "author": "GrowthSpree",
+        "text": "Uptiq.ai ABM Case Study: $400K+ Pipeline | GrowthSpree\n\nClient Success Story\n\n# How GrowthSpree Built Uptiq.ai an ABM Engine for Modern Financial Leaders\n\nConservative financial buyers rarely move fast on AI. Uptiq.ai needed to win them anyway. A 120-day, multi-layered ABM motion across four lending segments turned $2,700 of ad spend into $400K+ in pipeline \u2014 with CFO-level engagement across 150+ enterprise accounts.\n\n$400K+\n\nPipeline Created\n\n8\n\nOpportunities Created\n\n150+\n\nEnterprise Accounts Engaged\n\nUptiq.ai\n\nAI credit & lending automation for financial institutions\n\nFounded\n\n2022\n\nHeadquarters\n\nMcKinney, Texas\n\nCompany Size\n\n51\u2013200 employees\n\nSector\n\nAI Lending / FinTech SaaS\n\nUptiq.ai \u00d7 GrowthSpree \u2014 At a Glance\n\nClient Uptiq.ai \u2014 AI credit & lending automation platform, founded 2022, McKinney, Texas\n\nProblem Conservative AI buyers, hard-to-reach CFOs, four distinct lending segments, and a lean $2,700 budget\n\nResult $400K+ pipeline and 8 opportunities from just $2,700 of ad spend\n\nTimeframe 120 days, across 150+ enterprise accounts in the U.S.\n\nCase Study at a Glance\n\n## Key Takeaways\n\nUptiq.ai \u2014 an AI credit and lending automation platform \u2014 hired GrowthSpree to expand its f"
+      },
+      {
+        "url": "https://abmatic.ai/blog/abm-playbook-for-series-a-saas-startups-2026",
+        "title": "ABM Playbook for Series A SaaS Startups 2026 | Abmatic AI",
+        "publishedDate": "2026-04-28T00:00:00.000Z",
+        "author": null,
+        "text": "ABM Playbook for Series A SaaS Startups 2026 | Abmatic AI\n\n# ABM Playbook for Series A SaaS Startups (2026 Edition)\n\nThe 2026 ABM playbook calibrated for Series A SaaS startups. Three sprints, 50 tier-1 accounts, capital-efficient operating tempo. Learn how Abmatic AI powers.\n\nJM Jimit Mehta Published Apr 28, 2026 \u00b7 Last updated Apr 30, 2026 \u00b7 8 min read\n\nAn ABM playbook for Series A SaaS startups in 2026 looks nothing like the enterprise version Forrester or Gartner write about. You do not have a 10-person revops team, a Demandbase contract, or a quarterly all-hands with 200 sales reps. You have 4 to 8 reps, a marketing team of one to three, a Series A war chest, and a board pushing for capital efficiency. Per public benchmarks from Forrester Wave 2025 coverage, the ABM motions that actually compound at this stage are smaller, sharper, and signal-led, not platform-led.\n\nFull disclosure: Abmatic AI sells an ABM platform aimed at the post-Series-A growth band, so we have a financial interest in startups running real ABM motions. The playbook here is platform-agnostic; the same plays work on Abmatic AI, on a stitched stack of HubSpot plus Clearbit plus a target-account list in a spre"
+      },
+      {
+        "url": "https://salesrelief.com/how-openais-first-b2b-marketer-built-ai-powered-abm-7-intelligence-frameworks-converting-43-more-enterprise-accounts/",
+        "title": "How OpenAI\u2019s First B2B Marketer Built AI-Powered ABM: 7 Intelligence Frameworks Converting 43% More Enterprise Accounts | SalesRelief",
+        "publishedDate": "2026-03-21T00:00:00.000Z",
+        "author": "salesrelief",
+        "text": "How OpenAI\u2019s First B2B Marketer Built AI-Powered ABM: 7 Intelligence Frameworks Converting 43% More Enterprise Accounts | SalesRelief\n\n## The Intelligence Gap: Why Traditional ABM Fails in AI-First Organizations\n\nDane Vahey joined OpenAI as their first B2B marketer when the company was still primarily known for research papers and developer tools. Within 18 months, he built account-based programs that helped scale OpenAI\u2019s enterprise business from early adopters to Fortune 500 deployment at unprecedented velocity. The approach differed fundamentally from traditional ABM playbooks.\n\nMost enterprise ABM programs operate with static account lists refreshed quarterly, demographic-based scoring models updated monthly, and intent signals processed in batch workflows. This worked when buying cycles stretched 9-12 months and committee structures remained stable. OpenAI\u2019s market moves faster. Technology adoption decisions that once required 6-month evaluations now happen in weeks. The companies converting enterprise accounts at scale have rebuilt their intelligence infrastructure around real-time signal processing, dynamic account prioritization, and AI-native orchestration.\n\nData from Forr"
+      }
+    ]
+  },
+  {
+    "angle": "semantic_icp_vertical_health",
+    "label": "d2_semantic_health",
+    "query_verbatim": "Series A or Series B US healthcare software company selling to hospitals, health systems and payers with an enterprise sales team and a small marketing team",
+    "payload": {
+      "query": "Series A or Series B US healthcare software company selling to hospitals, health systems and payers with an enterprise sales team and a small marketing team",
+      "type": "auto",
+      "numResults": 10,
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.71,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://www.prnewswire.com/news-releases/sift-healthcare-raises-20m-series-b-funding-round-to-enhance-ai-powered-payment-solutions-302140400.html",
+        "title": "SIFT HEALTHCARE RAISES $20M SERIES B FUNDING ROUND TO ENHANCE AI-POWERED PAYMENT SOLUTIONS",
+        "publishedDate": "2024-05-09T00:00:00.000Z",
+        "author": "Sift Healthcare",
+        "text": "SIFT HEALTHCARE RAISES $20M SERIES B FUNDING ROUND TO ENHANCE AI-POWERED PAYMENT SOLUTIONS Accessibility Statement Skip Navigation\n\nLed by B Capital, investment will accelerate growth as Sift further innovates its AI Co-Pilot solutions and scales to support market demand.\n\nMILWAUKEE, May 9, 2024 /PRNewswire/ -- Sift Healthcare (\"Sift\" or the \"Company\"), a leading innovator in AI-powered healthcare payment solutions, today announced the successful close of its $20M Series B funding round. Led by B Capital, with continued support from existing investors, including Allos Ventures, First Trust Capital Partners and Rock River Capital, Sift will use this funding to prioritize team expansion and technology investments in artificial intelligence as the Company grows its industry-first Payments Intelligence Platform.\n\nContinue Reading\n\nSift Healthcare delivers advanced AI-driven solutions that optimize the healthcare revenue cycle.\n\nSift's AI-powered solutions enable healthcare organizations to leverage data to work smarter, enhance margins and accelerate cash flow. The Company's Payments Intelligence Platform unifies clinical and payments data, creating a longitudinal data set that ties cl"
+      },
+      {
+        "url": "https://www.businesswire.com/news/home/20260311059455/en/Translucent-Announces-%2427M-Series-A-Led-by-GV-to-Tackle-Healthcares-Existential-Financial-Crisis",
+        "title": "Translucent Announces $27M Series A Led by GV to Tackle Healthcare's Existential Financial Crisis",
+        "publishedDate": "2026-03-11T00:00:00.000Z",
+        "author": null,
+        "text": "Translucent Announces $27M Series A Led by GV to Tackle Healthcare's Existential Financial Crisis\n\nMar 11, 2026 9:30 AM Eastern Daylight Time\n\n# Translucent Announces $27M Series A Led by GV to Tackle Healthcare's Existential Financial Crisis\n\nShare\n\n---\n\nTranslucent brings its AI platform to health systems across the country like Duly Health and Care, Wray Hospital and Clinic, and Springfield Clinic, to give leaders early visibility into financial risk and a clear path to respond\n\nNEW YORK--(BUSINESS WIRE)--Translucent, the AI platform for healthcare finance, today announced a $27 million Series A funding round led by GV (Google Ventures), with continued participation from NEA, Virtue, and FPV Ventures. The preemptive, oversubscribed round comes just months after the company's $7 million seed round, announced in August 2025, reflecting the urgent need for real-time financial visibility in an industry facing unprecedented fiscal pressure.\n\n\u201cHealthcare organizations are in trouble, and the financial infrastructure that should help leaders respond is fundamentally broken. That's why healthcare needs a true financial operating system built for this moment.\" - Jack O'Hara, CEO of Trans"
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/arintra-raises-25m-to-pioneer-revenue-assurance-for-americas-health-systems-302860106.html",
+        "title": "Arintra Raises $25M to Pioneer Revenue Assurance for America's Health Systems",
+        "publishedDate": "2026-08-26T00:00:00.000Z",
+        "author": "Arintra",
+        "text": "Arintra Raises $25M to Pioneer Revenue Assurance for America's Health Systems Accessibility Statement Skip Navigation\n\nAs the first and only autonomous coding platform across 23+ specialties and every health system care setting, Arintra is setting a new standard for revenue cycle management and reinventing how leading health systems like UC Davis Health, Mercyhealth, Meritus Health, Rochester Regional Health, Reid Health, Mercy Medical Center, and more get paid accurately, promptly, and in full\n\nSAN FRANCISCO, Aug. 26, 2026 /PRNewswire/ -- Arintra, the first and only enterprise AI platform for revenue assurance in healthcare, today announced a $25 million Series B funding round, bringing the company's total funding to $51 million. The round is led by Define Ventures, with participation from existing investors including Peak XV Partners, Yale New Haven Health (YNHH) Center for Health Care Innovation, Endeavor Health Ventures, Y Combinator, Counterpart Ventures, Ten13, and Spider Capital. Endeavor Health, based in Chicagoland, also was an early adopter of the technology, and participated in both the Series A and B rounds.\n\nU.S. healthcare is a$5 trillion system, yet most health syste"
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/certifyos-closes-14-5-million-series-a-funding-round-led-by-general-catalyst-301618753.html",
+        "title": "CertifyOS Closes $14.5 Million Series A Funding Round Led by General Catalyst",
+        "publishedDate": "2022-09-07T00:00:00.000Z",
+        "author": "CertifyOS",
+        "text": "CertifyOS Closes $14.5 Million Series A Funding Round Led by General Catalyst Accessibility Statement Skip Navigation\n\nCompany Announces Accreditation from the National Committee for Quality Assurance\n\nNEW YORK, Sept. 7, 2022 /PRNewswire/ -- CertifyOS, the frictionless provider intelligence platform that delivers API-first credentialing, licensing, enrollment, and network monitoring to payors, providers, health systems and digital health companies, today announced the successful closing of a $14.5 million Series A funding round led by General Catalyst. The Company also announced it has received Accreditation from the National Committee for Quality Assurance (NCQA), a private, non-profit organization dedicated to improving health care quality.\n\nCertifyOS plans to use the new capital to grow its commercial, product and engineering teams, enhance its existing insurance credentialing platform, and expand product offerings to include hospital credentialing, privileging, network accuracy, adequacy, and directory management.\n\n\"This funding reinforces market conviction around the importance of integrating provider data silos to make information accessible, transparent, and actionable,\" sai"
+      },
+      {
+        "url": "https://www.businessinsider.com/amazon-10-million-raise-hospital-ai-agents-pitch-deck-ascertain-2025-5",
+        "title": "Ex-Amazon Leader Got $10 Million for Hospital AI Agents With This Deck - Business Insider",
+        "publishedDate": "2025-05-02T00:00:00.000Z",
+        "author": "Rebecca Torrence",
+        "text": "Ex-Amazon Leader Got $10 Million for Hospital AI Agents With This Deck - Business Insider\n\n# Here's an exclusive look at the pitch deck that got an ex-Amazon exec $10 million to bring AI agents to health systems\n\nBy\n\nRebecca Torrence\n\n \n\n \n\n Ascertain CEO Mark Michalski. Ascertain \n\n 2025-05-02T09:00:02.128Z \n\nAscertain CEO Dr. Mark Michalski, a radiologist by training, loved practicing medicine. But the administrative burdens he faced as a clinician eventually drove him to stop seeing patients.\n\nIt's the very problem Michalski wants to fix at Ascertain, a healthcare startup that's collaborating with top New York health system Northwell Health to relieve clinicians of those administrative burdens using AI.\n\n\"It's so hard to deliver care in a scalable way that's fulfilling for providers and meaningful for patients,\" Michalski said. \"I don't want to pass the baton on to the next generation [of clinicians] with the same story.\"\n\nIn its efforts to change that story with AI, Ascertain just "
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/sift-healthcare-closes-9-million-series-a-financing-301587131.html",
+        "title": "SIFT HEALTHCARE CLOSES $9 MILLION SERIES A FINANCING",
+        "publishedDate": "2022-07-15T00:00:00.000Z",
+        "author": "Sift Healthcare",
+        "text": "SIFT HEALTHCARE CLOSES $9 MILLION SERIES A FINANCING Accessibility Statement Skip Navigation\n\nFunding will support the acceleration of Sift's AI-based Payments Intelligence Platform for payer reimbursement and patient payments.\n\nMILWAUKEE, July 15, 2022 /PRNewswire/ -- Sift Healthcare, a data science company enabling increased patient payment and payer reimbursement for healthcare providers, announced the closing of a $9 million Series A funding round. The round was led by new investors, Allos Ventures and First Trust Capital Partners. Continued support came from Rock River Capital Partners and the Winnebago Seed Fund, both early investors in Sift, and others.\n\nContinue Reading\n\nThis financing supports the company's accelerating sales of its denials management and patient payment solutions and the launch of its mid-cycle denials prevention solution. \"Our growth and funding validate the work Sift is doing to transform healthcare payments,\" said Justin Nicols, founder and CEO of Sift Healthcare, \"We are honored to add experienced investors who fully understand the opportunity for innovation within the healthcare payments space.\"\n\nEach year, healthcare payers and providers spend$496B "
+      },
+      {
+        "url": "https://techfundingnews.com/ex-bain-operators-raise-17m-to-tackle-behavioural-healthcares-data-blind-spot-with-ai/",
+        "title": "Ex-Bain operators raise $17M to tackle behavioural healthcare\u2019s data blind spot with AI \u2014 TFN",
+        "publishedDate": "2026-08-26T13:59:13.000Z",
+        "author": "Abhinaya Prabhu",
+        "text": "# Ex-Bain operators raise $17M to tackle behavioural healthcare\u2019s data blind spot with AI \u2014 TFN\n\nAuthor: Abhinaya Prabhu\nPublished: 2026-08-26T13:59:13+00:00\nSource: techfundingnews.com (techfundingnews.com)\nLanguage: en\n\n## Story\n\nEx-Bain operators raise $17M to tackle behavioural healthcare\u2019s data blind spot with AI \u2014 TFN\n\nAugust 26, 2026\n\n### Ex-Bain operators raise $17M to tackle behavioural healthcare\u2019s data blind spot with AI\n\nAugust 26, 2026\n\n### Certain Energy raises \u00a310M to tackle Britain\u2019s \u00a38B grid waste problem\n\nAugust 26, 2026\n\n### Mara raises $7M from Khosla Ventures and a16z to build a cheaper defence against FPV drone swarms\n\nAugust 26, 2026\n\n### Breedr raises $27M from Partech to digitise the global beef supply chain\n\nAugust 26, 2026\n\n### Stability AI raises $76M from Universal, Sony and Warner Music to expand creative AI\n\n###### Ex-Bain operators raise $17M to tackle behavioural healthcare\u2019s data blind spot with AI\n\nAugust 26, 2026\n\n4 minute read\n\n###### Certain Energy raises \u00a310M to tackle Britain\u2019s \u00a38B grid waste problem\n\nAugust 26, 2026\n\n4 minute read\n\n###### Mara raises $7M from Khosla Ventures and a16z to build a cheaper defence against FPV drone swarms\n\nAugus"
+      },
+      {
+        "url": "https://www.citybiz.co/article/894833/arintra-raises-25-million-series-b-to-expand-healthcare-revenue-ai/",
+        "title": "Arintra Raises $25 Million Series B to Expand Healthcare Revenue AI",
+        "publishedDate": "2026-08-26T17:25:12.000Z",
+        "author": null,
+        "text": "# Arintra Raises $25 Million Series B to Expand Healthcare Revenue AI\n\nPublished: 2026-08-26T17:25:12+00:00\nSource: citybiz.co (citybiz.co)\nLanguage: en\n\n## Story\n\nArintra has raised $25 million in Series B funding to expand its AI-powered revenue assurance platform across U.S. health systems, bringing the healthcare technology company\u2019s total funding to $51 million.\n\nDefine Ventures led the round, with participation from existing investors Peak XV Partners, Yale New Haven Health Center for Health Care Innovation, Endeavor Health Ventures, Y Combinator, Counterpart Ventures, Ten13 and Spider Capital. Endeavor Health, an early customer of Arintra\u2019s technology, also invested in both the Series A and Series B rounds.\n\nThe new capital will support Arintra\u2019s expansion into additional enterprise health systems, broaden its clinical and specialty coverage and extend its technology into more parts of the healthcare revenue cycle.\n\nArintra is targeting a persistent financial challenge for healthcare providers: collecting the appropriate revenue for care already delivered. The company argues that traditional revenue cycle management remains fragmented across coding, clinical documentation, d"
+      },
+      {
+        "url": "https://hitconsultant.net/2026/06/23/prosper-ai-raises-30-million-series-a-a16z/",
+        "title": "Prosper AI Raises $30M to Scale Patient Access Automation -",
+        "publishedDate": "2026-06-23T00:00:00.000Z",
+        "author": "Fred Pennic",
+        "text": "Prosper AI Raises $30M to Scale Patient Access Automation -\n\n# Prosper AI Raises $30M to Scale Patient Access Automation\n\nby Fred Pennic 06/23/2026 Leave a Comment\n\n### What You Should Know\n\n- Healthcare automation pioneer Prosper AI has announced a $30M Series A financing round led by Andreessen Horowitz (a16z), with participation from Base10 Partners and continued backing from Emergence Capital and Y Combinator.\n- The capital injection follows a massive commercial expansion, including 5x organic revenue growth over six months, expanding the platform\u2019s reach to power more than $1.3 billion in patient care across 150,000 providers.\n- Moving past legacy first-generation voice bots that stop at basic calendar booking, Prosper AI delivers a unified system for financially cleared appointments by managing scheduling, real-time insurance verification, and billing in a single workflow.\n- The company commands a dominant market position, winning 80% of active competitive evaluations (RFPs) against standalone voice vendors and point-solution scheduling applications.\n- The platform\u2019s enterprise footprint includes major regional health systems like Florida\u2019s Jackson Memorial Hospital, large PE"
+      },
+      {
+        "url": "https://www.anterior.com/insights/anterior-secures-usd20-million-series-a-to-unlock-administrative-efficiencies-for-healthcare",
+        "title": "Anterior",
+        "publishedDate": null,
+        "author": null,
+        "text": "Anterior\n\n/\n\n# Anterior secures $20 Million Series A to unlock administrative efficiencies for healthcare payers\n\nJune 10, 2024\n\nAbdel Mahmoud, MD\n\n[Custom coded text]\n\nShare\n\nClinician-built generative AI company utilizes advanced technology to reduce near trillion-dollar administrative burden in U.S. healthcare.\n\nNEW YORK \u2013 Anterior, the AI company built by clinicians to transform healthcare administration, today announced the completion of a $20 million Series A funding round. The funding round was led by New Enterprise Associates(NEA), with participation from Sequoia Capital, Blue Lion Global, and Neo. Previously named Co:Helm, the company recently rebranded to Anterior.\n\nAnterior is on a mission to unlock doctors and nurses from the administrative burden they experience. The company\u2019s first objective is to make prior authorization invisible, like the seamless communication that occurs when a credit card is swiped. Anterior\u2019s technology leverages generative AI to clinically reason, delivering value out of the box, unlike the predictive AI models that have emerged in previous years.\n\n\u201cOur proprietary technology will reduce the administrative burden health insurers in the U.S. fa"
+      }
+    ]
+  },
+  {
+    "angle": "signal_first_job_req_abm",
+    "label": "d3_jobs_abm",
+    "query_verbatim": "Account Based Marketing Manager job opening: build and maintain the target account list, research accounts, run 1:1 ABM campaigns for our top accounts",
+    "payload": {
+      "query": "Account Based Marketing Manager job opening: build and maintain the target account list, research accounts, run 1:1 ABM campaigns for our top accounts",
+      "type": "auto",
+      "numResults": 10,
+      "includeDomains": [
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+        "jobs.lever.co",
+        "jobs.ashbyhq.com",
+        "ashbyhq.com"
+      ],
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.17,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://jobs.ashbyhq.com/ideals/6fbda266-7e85-4472-bb40-f875de0b9fdb",
+        "title": "Account-Based Marketing Manager @ Ideals",
+        "publishedDate": null,
+        "author": null,
+        "text": "Account-Based Marketing Manager @ Ideals\n\n# Account-Based Marketing Manager\n\n## Location\n\nUnited States\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nRemote\n\n## Department\n\nMarketing\n\n### Get to know us\n\nIdeals is a global B2B SaaS product company recognized as the most highly rated and customer-centric brand in the secure business collaboration market. Trusted by over 2,000,000 business users at 300,000 companies worldwide, our data room platform powers hundreds of billion-dollar M&A deals every day for the world's top investment banks, advisory firms, and corporate dealmakers.\n\n### The role\n\nWorking in close partnership with Sales and the wider Marketing organization, you will design how Ideals runs account-based marketing for our highest-value accounts, delivering a robust ABM framework and playbooks that regional teams transform into sharp, locally resonant programs for Tier 1 accounts.\n\nThis is an architect-level role: account-selection logic and scoring, buying-committee maps, campaign and program frameworks, the attribution model, account planning, and the dashboards that give Leadership, Sales, and Marketing real-time visibility.\n\nYou'll also work closely with regional "
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/xero/ac00326f-1442-4af8-87d0-51ef25859571",
+        "title": "Senior Manager, ABM at Xero",
+        "publishedDate": "2026-07-13T00:00:00.000Z",
+        "author": null,
+        "text": "# Senior Manager, ABM at Xero\n\n- **Company:** Xero\n- **Location:** US: New York (124 E 14th St)\n- **Department:** Marketing\n- **Employment type:** Full Time\n- **Published:** 2026-07-13\n\n# Description\n\n**The role / impact**\n\nDesign, establish, and manage Xero's global account-based marketing strategy as our Senior ABM Manager. In this role, you will drive the multi-year strategic vision for our 1-to-Many, 1-to-Few, and 1-to-1 programmes, accelerating the adoption of our platform across high-value prospects. You will be responsible for building an automated, AI-powered marketing engine that aligns closely with our outbound sales efforts to generate a high-performing pipeline.\n\nBy taking strategic ownership of the global investment, you will hold shared accountability for pipeline and revenue generation across key enterprise and accounting partner channels. Your work will directly influence multi-million dollar outcomes, optimising campaigns and evolving performance indicators across all contact levels to shape the future of B2B marketing at Xero.\n\n**The team / how they connect**\n\nYou will join the Partner Acquisition Marketing team, a collaborative group spread across remote US locat"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/filigran/9329f223-5491-433f-914c-bcfe0b651659",
+        "title": "Senior Account-Based Marketing Manager @ Filigran",
+        "publishedDate": null,
+        "author": null,
+        "text": "Senior Account-Based Marketing Manager @ Filigran\n\n- Back to Filigran\u2019s Job Listings\n\n# Senior Account-Based Marketing Manager\n\n## Location\n\nFrance\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nRemote\n\n## Department\n\nMarketing\n\n## \ud83c\udf00 The Company\n\nFiligran, founded in October 2022, stands out in the cybertech ecosystem for its commitment to revolutionizing cyber threat management with a proactive approach. Its mission is to develop innovative open-source solutions designed to anticipate cyber threats, identify security gaps, and strengthen organizational security posture.\n\nFiligran solutions are now trusted by over 6,000 public and private organizations worldwide.\n\n# \ud83c\udfaf The Role\n\nWe're looking for a Senior Account-Based Marketing Manager to join our Growth Marketing team and lead Filigran's enterprise pipeline strategy through account-level marketing. You are the owner of our global ABM strategy, responsible for defining the vision, building the playbooks, and driving measurable revenue outcomes across our most strategic target accounts.\n\nYou operate as a recognized domain expert. You shape the direction of ABM at Filigran, lead multi-quarter growth plans, and are a trusted part"
+      },
+      {
+        "url": "https://jobs.lever.co/smarsh/89fcfe70-7765-4980-8bbe-0657133834fc",
+        "title": "Smarsh - Sr. Account-Based Marketing Manager",
+        "publishedDate": null,
+        "author": null,
+        "text": "Smarsh - Sr. Account-Based Marketing Manager\n\n## Sr. Account-Based Marketing Manager\n\nWho are we?\n\nSmarsh empowers its customers to manage risk and unleash intelligence in their digital communications. Our growing community of over 6500 organizations in regulated industries counts on Smarsh every day to help them spot compliance, legal or reputational risks in 80+ communication channels before those risks become regulatory fines or headlines. Relentless innovation has fueled our journey to consistent leadership recognition from analysts like Gartner and Forrester, and our sustained, aggressive growth has landed Smarsh in the annual Inc. 5000 list of fastest-growing American companies since 2008.\n\n### Summary\n\nThe Sr. ABM Manager is a strategic, cross-functional project and program manager focused on advancing account-based marketing efforts focused on the Enterprise Business Unit.\n\nIn this role you will lead the development and execution of campaigns targeting enterprise accounts, driving qualified leads to sales and optimizing conversion through the sales funnel to meet pipeline targets. You will also align with enterprise marketing and sales enablement to drive cross-functional c"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf",
+        "title": "Senior Manager, ABM & Integrated Campaigns at Zafran-security",
+        "publishedDate": "2026-06-17T00:00:00.000Z",
+        "author": null,
+        "text": "# Senior Manager, ABM & Integrated Campaigns at Zafran-security\n\n- **Company:** Zafran-security\n- **Location:** USA\n- **Department:** Marketing\n- **Employment type:** Full Time\n- **Published:** 2026-06-17\n\n# Description\n\n**Description:**\n\nAs our Senior Manager of ABM & Integrated Campaigns, you will the marketing programs that move our highest priority accounts. Reporting to the Head of Growth Marketing, you will design and execute coordinated, multi-channel campaigns that will accelerate pipeline generation, accelerate deals and deepen customer engagement. You'll sit at the intersection of Sales, Product Marketing, RevOps, and Customer Marketing, translating commercial priorities into focused account-based motions with measurable business impact.\n\nWe\u2019re looking for a builder and operator, someone who can think strategically but also execute hands-on, and thrive in a fast-moving environment. If you need a large team and a large budget to do great work, this role is probably not for you. But if you know how to move quickly, and build meaningful programs with focus and creativity, we\u2019d love to talk.\n\n**About Zafran:**\n\n**Our Mission:** To stop the exploitation of vulnerabilities, eve"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561",
+        "title": "Account-Based Marketing Manager, Strategic Accounts @ Harmonic Security, Inc",
+        "publishedDate": null,
+        "author": null,
+        "text": "Account-Based Marketing Manager, Strategic Accounts @ Harmonic Security, Inc\n\n# Account-Based Marketing Manager, Strategic Accounts\n\n## Location\n\nNew York, NY - Remote\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nRemote\n\n## Department\n\nGo to Market Corporate Marketing\n\n## Compensation\n\n- $93K \u2013 $108K \u2022 Offers Equity \u2022 Offers Bonus\n\nAI doesn't run in one place anymore. It runs in the browser tab, the desktop app, the agent your engineers kicked off, and the copilot embedded in the tools you already pay for. Harmonic Security governs all of it.\n\nOur AI Governance and Control (AIGC) platform sits on the device, inside the interaction, at the moment of action, reading what AI is actually doing (not just the traffic around it) and acting in under 200ms. Security teams get full visibility and control across every AI surface, including the agentic and MCP layer that traditional tools can't see. Their people get to innovate without guardrails slowing them down.\n\nWe're gaining serious traction at the intersection of AI and cybersecurity, and backed by investors who know the space: N47, Ten Eleven Ventures, and In-Q-Tel. As AI adoption inside the enterprise accelerates, the ability to s"
+      },
+      {
+        "url": "https://jobs.lever.co/idealscorp/a7a3bdad-d5ae-41d1-b874-84f558632a32",
+        "title": "Ideals - Account Based Marketing Manager",
+        "publishedDate": null,
+        "author": null,
+        "text": "Ideals - Account Based Marketing Manager\n[![Ideals logo](https://lever-client-logos.s3.us-west-2.amazonaws.com/e80a7602-2264-4892-a324-874af5ba3dfa-1730716434735.png)](https://ideals.jobs/)\n## Account Based Marketing Manager\nBrazil\nMarketing \u2013Field Marketing & Demand Generation /\nFull-Time /\nRemote\n[Apply for this job](https://jobs.lever.co/idealscorp/a7a3bdad-d5ae-41d1-b874-84f558632a32/apply)\n**Get to know us**\n**Ideals**is a global B2B SaaS product company recognized as[the most highly rated and customer-centric](https://www.g2.com/categories/virtual-data-room?tab=highest_rated)in a secure business collaboration market. Trusted by more than**2,000,000 users**from**175,000 companies**globally, we are on a mission to create more prosperity in the world by accelerating high-stake business decisions. We achieve this by delivering intuitive and robust software products that help people make impactful decisions with less stress, higher quality, and shorter hours:\n[**Ideals Virtual Data Room**](https://www.idealsvdr.com/): A web-based cloud platform used by companies in a wide range of industries to ensure secure confidential document sharing for online due diligence, fundraising trans"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56",
+        "title": "Senior Account Based Marketing Manager @ RevenueCat",
+        "publishedDate": null,
+        "author": null,
+        "text": "Senior Account Based Marketing Manager @ RevenueCat\n\n- Back to RevenueCat\u2019s Job Listings\n\n# Senior Account Based Marketing Manager\n\n## Location\n\nAmericas; EMEA\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nRemote\n\n## Department\n\nGrowthMarketing\n\n## Compensation\n\n- $189K \u2022 Offers Equity\n\nRevenueCat removes the headaches of building and scaling in\u2011app subscriptions. Since graduating from YC\u2019s S18 batch we\u2019ve grown into the default monetization platform for mobile: we\u2019re in >40% of newly shipped subscription apps, we process $12B+ in annual purchase volume, and we help everyone from a solo dev in Brazil to the OpenAI mobile team understand and grow their revenue.\n\nWe\u2019re a remote\u2011first crew of 150+, spread across 25+ countries, and guided by values we actually practice: Customer Obsession, Always Be Shipping, Own It, and Balance. If you want your work to touch hundreds of millions of end\u2011users (and help the developers behind them get paid), you\u2019ll fit right in.\n\n## The Role\n\nWe\u2019re hiring a Senior ABM Manager to help RevenueCat speak to, engage, and build pipeline with established consumer apps.\n\nThis is not your standard \u201cown the funnel\u201d demand gen role. And it is definitely not th"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/airwallex/be9acfec-6f06-46f2-885e-088d7fb19cd9",
+        "title": "Manager, Global Account Based Marketing at Airwallex",
+        "publishedDate": "2026-03-06T00:00:00.000Z",
+        "author": null,
+        "text": "Manager, Global Account Based Marketing @ Airwallex\n\nManager, Global Account Based Marketing @ Airwallex"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/ncontracts/1614ba87-3dbf-43a7-a9fd-581ac3785f7d",
+        "title": "Account-Based Marketing Manager @ Ncontracts",
+        "publishedDate": null,
+        "author": null,
+        "text": "Account-Based Marketing Manager @ Ncontracts\n* [![Ncontracts](https://app.ashbyhq.com/api/images/org-theme-wordmark/df692634-ec24-426d-bb4e-52d0aed6f5cf/ebd4be55-3d92-4516-909c-7f88066a4f98/05ef12fb-b276-412f-b265-52a08bb5084f.png)](https://www.ncontracts.com/)\n* [](https://jobs.ashbyhq.com/ncontracts)\n*\n# Account-Based Marketing Manager\n## Location\nRemote\n## Employment Type\nFull time\n## Location Type\nRemote\n## Department\nMarketingGrowth Marketing\n## Compensation\n* $100K \u2013 $120K \u2022 Offers Bonus\n**WHO WE ARE**\nHeadquartered in Nashville, Tennessee, Ncontracts leads the industry in integrated risk management and compliance solutions, serving over 5,000 financial institutions nationwide. As a seven-time Inc. 5000 Fastest Growing Companies honoree and consistent year-over-year recipient of \"Best Places to Work\" awards, we offer a thriving, work environment where career growth and life-work balance go hand in hand.\nAt Ncontracts, you'll join a team of industry experts dedicated to strengthening the financial services sector through innovation and thought leadership. We're seeking creative, collaborative, and self-driven professionals across all areas of our business - from developing cut"
+      }
+    ]
+  },
+  {
+    "angle": "signal_first_job_req_demandgen",
+    "label": "d4_jobs_demandgen",
+    "query_verbatim": "Demand Generation Manager job description: account research, target account lists, personalized outbound campaigns, direct mail and field marketing",
+    "payload": {
+      "query": "Demand Generation Manager job description: account research, target account lists, personalized outbound campaigns, direct mail and field marketing",
+      "type": "auto",
+      "numResults": 10,
+      "includeDomains": [
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+        "jobs.lever.co",
+        "jobs.ashbyhq.com",
+        "ashbyhq.com"
+      ],
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.22,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d",
+        "title": "Head of Demand Generation at Cogent-security",
+        "publishedDate": "2026-08-14T00:00:00.000Z",
+        "author": null,
+        "text": "Head of Demand Generation @ Cogent Security\n\n- Cogent Security\n- Back to Cogent Security\u2019s Job Listings\n\n# Head of Demand Generation\n\n## Location\n\nNew York, NY; Remote US; San Francisco, CA\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nHybrid\n\n## Department\n\nGTM\n\n# Role Overview\n\nCogent is building autonomous cyber defense with AI agents that help security teams move from finding risk to actually fixing it. We are hiring a Head of Demand Generation to lead all pipeline-generating functions across marketing, including digital, partner, and field, and sales development.\n\nThis person will report into the Head of Growth, who owns revenue marketing and revenue operations: full-funnel revenue management in close partnership with Sales. Within that model, the Head of Demand Generation owns the front end of the revenue engine: creating, converting, and scaling qualified pipeline.\n\nThis is a senior player-coach role with room to create immediate leverage. In the first three months, you will sharpen the FY27 demand model, launch the first integrated plays, and start building your team across field/channel and digital/content so Cogent can scale pipeline with far more leverage.\n\n# Role Re"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/oscilar/f66f24ff-495b-400a-af28-c902cd8a20a1",
+        "title": "Outbound Marketing Manager @ Oscilar",
+        "publishedDate": null,
+        "author": null,
+        "text": "Outbound Marketing Manager @ Oscilar\n\n- Back to Oscilar\u2019s Job Listings\n\n# Outbound Marketing Manager\n\n## Location\n\nRemote\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nRemote\n\n## Department\n\nMarketingGrowth\n\n## Compensation\n\n- Base Salary $155K \u2013 $184K \u2022 Offers Equity\n\nCompensation range provided in compliance with applicable country, state, and local pay transparency laws. Final compensation is determined by level, scope, and experience.\n\n# Oscilar Growth Outbound Marketing Manager\n\n## About Oscilar\n\nOscilar is building the AI Risk Decisioning\u2122 platform for banks and fintechs.\n\nOur platform enables financial institutions to manage fraud, credit risk, compliance, and onboarding decisions in real time using modern AI infrastructure.\n\nWe work with leading fintechs and financial institutions and are backed by world-class investors. Oscilar was founded by Neha Narkhede, co-creator of Apache Kafka and co-founder of Confluent.\n\nWe are building a category-defining company \u2014 and our GTM engine will be a core competitive advantage.\n\n# The Role\n\nWe are hiring a Growth Outbound Marketing Manager to own outbound pipeline generation for Oscilar\u2019s newest and highest-potential ICP verticals \u2014"
+      },
+      {
+        "url": "https://job-boards.greenhouse.io/centralreach/jobs/4202872009",
+        "title": "Job Application for Demand Generation Manager at CentralReach",
+        "publishedDate": null,
+        "author": null,
+        "text": "Job Application for Demand Generation Manager at CentralReach\n\n# Demand Generation Manager\n\nHolmdel, New Jersey, United States\n\nApply\n\nCentralReach is a leading provider of autism and IDD care software for Applied Behavior Analysis (ABA), multidisciplinary therapy, and special education. Trusted by more than 200,000 users, we enable therapy providers, educators, and employers to scale the way they deliver ABA and related therapies with innovative technology, market-leading industry expertise, and world-class customer satisfaction.\n\nWe are looking for a Demand Generation Manager to own the strategy and execution of demand gen programs across our target markets. This role is responsible for cross-channel campaign management for all product lines, collaborating closely with Marketing leaders, Sales, and Customer Success. The ideal candidate has successfully scaled full-funnel demand programs in a fast-growing B2B SaaS or data-driven tech company, bringing a mix of strategy, analytical thinking, and hands-on execution. This role will report into the Director of Demand Generation and Marketing Ops.\n\nKey Accountabilities:\n\n- Define strategy for, manage, and optimize the execution of dema"
+      },
+      {
+        "url": "https://jobs.lever.co/ciandt/0461a3a5-61d4-4daf-a1b0-7f51148ada44",
+        "title": "CI&T - [Job-28760] B2B Demand Generation Manager",
+        "publishedDate": null,
+        "author": null,
+        "text": "CI&T - [Job-28760] B2B Demand Generation Manager\n\n## [Job-28760] B2B Demand Generation Manager\n\nSan Francisco, CA / California\n\nEnterprise Services - Mkt \u2013 Mkt_Default /\n\nHomeoffice /\n\nHybrid\n\napply for this job\n\nAt CI&T, we help large enterprises transform the potential of AI into real business impact with AI Deployment, AI-native execution, and tech-integrated business solutions.\n\nWith 30 years of experience in technological transformation, we accelerate innovation with expertise in Agentic SDLC, Application modernization, Data & AI, Martech and Business strategy.\n\nWe are 8,000 CI&Ters across more than 25 countries, collaborating to build solutions with real impact. AI is already part of how we work, evolve, and innovate every day.\n\nThe role\n\nCI&T is seeking a B2B Demand Generation Manager to lead marketing planning and pipeline generation across priority industries in North America.\n\nThis role acts as a key marketing partner for assigned verticals, responsible for translating business priorities into integrated marketing plans and executing programs that drive qualified pipeline and revenue growth.\n\nYou will partner closely with sales and industry leadership to define go-to-mark"
+      },
+      {
+        "url": "https://jobs.lever.co/seerinteractive/4d7a9ca8-e79b-4654-8a49-1b9976227bb7",
+        "title": "Seer Interactive - Demand Generation Manager",
+        "publishedDate": null,
+        "author": null,
+        "text": "Seer Interactive - Demand Generation Manager\n\n## Demand Generation Manager\n\nRemote\n\nMarketing /\n\nFull-time /\n\nRemote\n\napply for this job\n\nThe Role: Seer is hiring a Demand Generation Manager to own the systems, programs, and measurement infrastructure behind our demand gen strategy. This is a hands-on, individual contributor role on a 3-person marketing team, reporting to Director of Marketing. You'll own HubSpot campaigns and programs as our MOPs owner, newsletter growth and engagement, webinar and digital event programs (including owned and third-party event registration through conversion), lifecycle nurture programs, demand gen asset coordination, automations for tracking, flagging, and repurposing content across channels, and KPI ownership and reporting on outbound MQLs, program conversion, and event engagement.\n\nThis role is not a content creation role, blog and editorial live with our content team, so you'll focus on distribution, repurposing, and program performance. We're looking for someone who has actually built in a marketing automation platform: built workflows, set up campaigns and emails, run a newsletter, not just logged into one. Experience with events across diffe"
+      },
+      {
+        "url": "https://job-boards.greenhouse.io/auctane/jobs/7776417003",
+        "title": "Job Application for Sr Demand Generation Manager at Auctane",
+        "publishedDate": null,
+        "author": null,
+        "text": "Job Application for Sr Demand Generation Manager at Auctane\n\n# Sr Demand Generation Manager\n\nAustin, TX\n\nApply\n\nAbout us\n\nAt Auctane, we are united by a passion to help businesses deliver \u2014 whatever their size, wherever they are, and however they operate. We make it possible for businesses to meet the ever-changing requirements of their industry and customer expectations. Auctane products enable hundreds of thousands of businesses to annually mail and ship billions of items \u2014 over $200 billion worth \u2014 to recipients around the globe.\n\nThe Auctane family of mailing and shipping software products includes ShipStation, Stamps.com, ShipStation API, Metapack, GlobalPost, and Packlink. Our partners include Amazon, UPS, USPS, eBay, BigCommerce, Shopify, WooCommerce, and Walmart.\n\nOur values\n\nWin as One. Delight Customers. Deliver Great Outcomes.\n\nAbout the role\n\nThe Senior Demand Generation Manager is responsible for executing and optimizing integrated campaigns that generate pipeline and accelerate revenue growth. You\u2019ll run performance campaigns, and coordinate ABM and demand plays across key segments, primarily focused on Enterprise.\n\nYou\u2019ll work closely with teams across Content Market"
+      },
+      {
+        "url": "https://job-boards.greenhouse.io/connectwise/jobs/4724677005",
+        "title": "Demand Generation Manager at Connectwise",
+        "publishedDate": "2026-08-17T00:00:00.000Z",
+        "author": null,
+        "text": "# Demand Generation Manager at Connectwise\n\n- **Company:** Connectwise\n- **Location:** USA Remote\n- **Department:** Demand Generation\n- **Published:** 2026-08-17\n\n# Description\n\n*ConnectWise is an industry and Global leading software company* *with over 3,000 colleagues in North America, EMEA and APAC. As a community-driven software company dedicated to the success of technology solution providers, our suite helps* *over 45,000 of our partners manage their businesses better, sell more efficiently, automate service delivery, and remotely control technology so they can consistently deliver amazing customer experiences.*\n\n*Our company is powered by our connections, our colleagues, and our community. And, we accept all kinds.*\n\n*Game-changers, innovators, culture-lovers\u2014and humankind.*\n\n*We invite discovery and debate. We recognize key moments as milestones.*\n\n*We see you and value you for your unique contributions. Our inclusive, positive culture lays the foundation to ensure every colleague is valued for their perspectives and skills, giving you the choice of how YOU make a difference.*\n\n**Curious? Read this opportunity to learn how YOU can make a difference at ConnectWise!**\n\nGenera"
+      },
+      {
+        "url": "https://jobs.lever.co/jobgether/80102cc5-67ff-4fd5-a1b9-4d2970173e4d",
+        "title": "Jobgether - Senior Manager, Demand Generation",
+        "publishedDate": null,
+        "author": null,
+        "text": "Jobgether - Senior Manager, Demand Generation\n\n## Senior Manager, Demand Generation\n\nUS\n\nMarketing \u2013 Marketing /\n\nFull-time /\n\nRemote\n\napply for this job\n\nThis position is listed on behalf of a partner company, who manages all applications and next steps. Our partner is looking for a Senior Manager, Demand Generation based in United States.\n\nThis is a high-impact demand generation leadership role focused on accelerating pipeline and revenue growth across the North American market.You will own integrated, multi-channel programs spanning digital, paid media, email, content, partnerships, and events.The role combines strategic planning with hands-on execution, optimization, and performance management across the full funnel.You will work closely with Sales, SDRs, RevOps, Partner teams, and Marketing to create strong alignment around growth priorities.Using data, experimentation, and attribution, you will continuously improve campaign performance, lead quality, conversion, and sales velocity.You will also help build scalable demand generation systems and processes that can support continued growth across global markets.This is an ideal opportunity for a data-driven B2B marketer who thri"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/demandbase/83aa00bc-c44d-4583-995b-51d5bc038488",
+        "title": "Director, Demand Generation at Demandbase",
+        "publishedDate": "2026-08-04T00:00:00.000Z",
+        "author": null,
+        "text": "# Director, Demand Generation at Demandbase\n\n- **Company:** Demandbase\n- **Location:** US - Remote\n- **Department:** Marketing\n- **Employment type:** Full Time\n- **Published:** 2026-08-04\n\n# Description\n\n**Introduction to Demandbase:**\n\nDemandbase is the only pipeline AI platform that empowers GTM teams to automate growth at scale. With a unified view of data, insights, actions, and outcomes, B2B enterprises can seamlessly align and execute their account-based GTM strategies with confidence. Thousands of businesses trust Demandbase to maximize revenue, minimize waste, and consolidate their data and tech stacks \u2013 all in one platform.\n\nAs a company, we\u2019re as committed to growing careers as we are to building world-class technology. We invest heavily in people, our culture, and the community around us. We have also continuously been recognized as One of The Best Places To Work in the San Francisco Bay Area by Fortune, and One of The 60 Best Companies To Sell For by Selling Power. Our offices are located in San Francisco, New York, Austin, Seattle, India, and the United Kingdom.\n\n**About the Role**\n\nOwn the strategy, performance, and evolution of the global demand generation engine, wi"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/directive/e6fdeeee-e00d-4043-bd30-c8e467c91547",
+        "title": "Demand Generation Manager (Remote US) at Directive",
+        "publishedDate": "2026-08-18T00:00:00.000Z",
+        "author": null,
+        "text": "# Demand Generation Manager (Remote US) at Directive\n\n- **Company:** Directive\n- **Location:** Remote - United States\n- **Department:** Performance\n- **Employment type:** Full Time\n- **Published:** 2026-08-18\n\n# Description\n\nDirective Consulting is the leading B2B marketing agency for brands that are serious about the metrics that matter most.\n\nWith over a decade of expertise and 420+ B2B brands under our belt, we've earned our reputation on real outcomes. We run through 3 divisions: Performance, Communications, and Commerce, all wired to share intelligence and answer to revenue. That system spans everything from Paid Media and Content Marketing, to PR and Paid Social, to Marketplace and Lifecycle Marketing. Tying it all together is our methodology, DiscoverabilityOS\u2122, which aligns brand and demand to guide your ICP to choose you across every decision point.\n\nWe move fast. We think boldly. We hire people who challenge the status quo, build campaigns worth talking about, and make bold brands impossible to ignore. If you live for performance, love solving hard problems, and want your work to actually mean something, you'll fit right in.\n\n**About The Role**\n\nWe are looking to offer a "
+      }
+    ]
+  },
+  {
+    "angle": "funding_signal_gtm_earmark",
+    "label": "d5_funding_gtm",
+    "query_verbatim": "raises Series B funding to expand its enterprise go-to-market and sales team, B2B software company, United States",
+    "payload": {
+      "query": "raises Series B funding to expand its enterprise go-to-market and sales team, B2B software company, United States",
+      "type": "auto",
+      "numResults": 10,
+      "startPublishedDate": "2025-09-01T00:00:00.000Z",
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.56,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://www.globenewswire.com/news-release/2026/07/01/3320495/0/en/Aligned-Closes-60M-Series-B-to-Solidify-Leadership-Position-as-the-System-of-Action-for-B2B-Sales.html",
+        "title": "Aligned Closes $60M Series B to Solidify Leadership",
+        "publishedDate": "2026-07-01T00:00:00.000Z",
+        "author": "Aligned",
+        "text": "Aligned Closes $60M Series B to Solidify Leadership\n\n# Aligned Closes $60M Series B to Solidify Leadership Position as the System of Action for B2B Sales\n\n## PeakSpan Capital leads round; Aligned replaces legacy B2B sales workflows and tools with an agentic execution layer already used by 70K sellers and 1M buyers\n\nJuly 01, 2026 07:00 ET | Source: Aligned Aligned\n\n---\n\nNEW YORK and TEL AVIV, Israel, July 01, 2026 (GLOBE NEWSWIRE) -- Aligned, the AI Deal Workspace where sellers, buyers, and their AI agents run deals together, today announced $60 million in Series B financing, bringing its total funding to $73.8 million. The round was led by PeakSpan Capital, with participation from all existing investors, Hetz Ventures, JAL Ventures and NFX. The new capital accelerates Aligned\u2019s mission to fix the part of selling that has been broken for decades: deal execution. Aligned\u2019s platform is used by 70K sellers and 1 million buyers to run deals every month.\n\nEnterprise customers, including Deel, SimilarWeb, and WordPress, run their most complex deals on Aligned, and report 30% faster sales cycles and 15% higher win rates. The Company has experienced rapid growth since inception, tripling AR"
+      },
+      {
+        "url": "https://www.businesswire.com/news/home/20260428810008/en/Actively-Raises-%2445M-Series-B-to-Scale-Intelligence-Led-Revenue-Platform",
+        "title": "Actively Raises $45M Series B to Scale Intelligence-Led Revenue Platform",
+        "publishedDate": "2026-04-28T00:00:00.000Z",
+        "author": null,
+        "text": "Actively Raises $45M Series B to Scale Intelligence-Led Revenue Platform\n\nApr 28, 2026 10:00 AM Eastern Daylight Time\n\n# Actively Raises $45M Series B to Scale Intelligence-Led Revenue Platform\n\nShare\n\n---\n\nCompany builds a go-to-market platform where AI agents continuously move every account forward, scaling rapidly across enterprises; expands with a San Francisco office\n\nNEW YORK--(BUSINESS WIRE)-- Actively, the company transforming revenue teams from human-led execution to Intelligence-Led Revenue, today announced $45 million in Series B funding. The round was co-led by TCV and First Harmonic, with participation from investors Bain Capital Ventures, First Round Capital, and Alkeon, bringing total funding to $68 million. The funding will go toward building new products for go-to-market teams, bringing on world-class talent, expanding into more enterprises, and opening a new San Francisco office.\n\n\u201cAI is transforming every single business function. We now have Cursor and Claude Code for coding, Decagon and Sierra for support, and Harvey and Legora for legal. But sales, the most expensive function in most companies\u2013which spend 30-40% of every dollar they\u2019re bringing in on GTM effor"
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/letter-ai-raises-40m-series-b-to-bring-deal-level-intelligence-to-revenue-enablement-302694721.html",
+        "title": "Letter AI Raises $40M Series B to Bring Deal-Level Intelligence to Revenue Enablement",
+        "publishedDate": "2026-02-24T00:00:00.000Z",
+        "author": "Letter AI",
+        "text": "Letter AI Raises $40M Series B to Bring Deal-Level Intelligence to Revenue Enablement Accessibility Statement Skip Navigation\n\nLed by Battery Ventures, the round comes just four months after the company's previous raise, as enterprise revenue teams turn to AI to improve deal outcomes\n\nCHICAGO, Feb. 24, 2026 /PRNewswire/ -- Letter AI, the AI-native revenue enablement platform for the world's leading go-to-market teams, today announced it has raised a $40 million Series B funding round led by Battery Ventures, with participation from Y Combinator, Lightbank, Northwestern Mutual Future Ventures, Stage 2 Capital, and existing investors. The new funding will be used to scale product development, expand the team globally, and accelerate go-to-market efforts as enterprises move away from fragmented, low-adoption enablement tools toward AI-native platforms built for modern revenue teams.\n\nContinue Reading\n\nLetter AI Logo\n\nLetter AI co-founders - Ali Akhtar, CEO and Armen Forget, CTO\n\nLetter AI helps companies like Lenovo move beyond traditional revenue enablement towards deal enablement \u2013 bringing intelligence directly into live opportunities where it can have the greatest impact on sales "
+      },
+      {
+        "url": "https://alignedup.com/blog/why-we-raised-60m-to-build-the-system-of-action-for-b2b-sales/",
+        "title": "Why We Raised $60M to Build the System of Action for B2B Sales",
+        "publishedDate": "2026-07-01T00:00:00.000Z",
+        "author": "Gal Aga",
+        "text": "Skip to content\n\n# Why We Raised $60M to Build the System of Action for B2B Sales\n\nGal Aga\n\nHome\n/ Blog\n/ Why We Raised $60M to Build the System of Action for B2B Sales\n\n#### Table of contents\n\n#### About Company\n\n### Founded\n\n2016\n\n### Founded\n\n2016\n\n### Industry\n\nSoftware Development\n\n### This is the heading\n\nLondon, United Kingdom\n\n### Employees\n\n51-100\n\n#### Share\n\nA few years ago, one of our top reps closed a deal that stuck with us. When we asked how she did it, she said,\u201cIt\u2019s the first time I wasn\u2019t selling. I was creating an experience the buyer would actually pay for.\u201d\n\nThere\u2019s no such thing as a complex sale. There\u2019s only a complex purchase. The top 1% of reps don\u2019t win by selling harder. They win by making it easier to buy. We built Aligned to give every rep that ability.\n\nEarlier this year, we closed a $60 million Series B led by PeakSpan Capital, with participation from NFX, Hetz Ventures, and JAL Ventures, bringing our total funding to $73.8 million.\u200b\n\nBut the number isn\u2019t the story. The story is what we\u2019re building, why it\u2019s taken this long for anyone to build it, and what it means for the way revenue teams will work from here.\n\n## The Problem No One Fixed\n\nToday, on"
+      },
+      {
+        "url": "https://www.peakspancapital.com/resources/news/why-we-raised-60m-to-build-the-system-of-action-for-b2b-sales",
+        "title": "Why We Raised $60M to Build the System of Action for B2B Sales | PeakSpan News",
+        "publishedDate": "2026-07-01T00:00:00.000Z",
+        "author": null,
+        "text": "Why We Raised $60M to Build the System of Action for B2B Sales | PeakSpan News\n\nSkip to main content\n\nPartnership News\n\n# Why We Raised $60M to Build the System of Action for B2B Sales\n\nJuly 1, 2026\n\nOriginally published here by Aligned\n\nA few years ago, one of our top reps closed a deal that stuck with us. When we asked how she did it, she said, \u201cIt\u2019s the first time I wasn\u2019t selling. I was creating an experience the buyer would actually pay for.\u201d\n\nThere\u2019s no such thing as a complex sale. There\u2019s only a complex purchase. The top 1% of reps don\u2019t win by selling harder. They win by making it easier to buy. We built Aligned to give every rep that ability.\n\nEarlier this year, we closed a $60 million Series B led by PeakSpan Capital, with participation from NFX, Hetz Ventures, and JAL Ventures, bringing our total funding to $73.8 million.\n\nBut the number isn\u2019t the story. The story is what we\u2019re building, why it\u2019s taken this long for anyone to build it, and what it means for the way revenue teams will work from here.\n\n## The Problem No One Fixed\n\nToday, only about one in five sales reps hits quota. The instinct is to blame the rep. The real problem is the buyer.\n\nOver the last decade, bu"
+      },
+      {
+        "url": "https://www.globenewswire.com/news-release/2026/05/18/3296726/0/en/Dust-raises-40M-to-make-AI-multiplayer-inside-the-enterprise.html",
+        "title": "Dust raises $40M to make AI multiplayer inside the",
+        "publishedDate": "2026-05-18T00:00:00.000Z",
+        "author": "Dust",
+        "text": "Dust raises $40M to make AI multiplayer inside the\n\n# Dust raises $40M to make AI multiplayer inside the enterprise\n\n## Series B round with Abstract and Sequoia to scale its multiplayer AI platform for human-agent collaboration. The company now serves more than 3,000 organizations, with 51,000 monthly active users, zero churn in 2025, and 300,000 agents deployed across the platform.\n\nMay 18, 2026 09:30 ET | Source: Dust Dust\n\n---\n\nSan Francisco, CA, May 18, 2026 (GLOBE NEWSWIRE) -- Most companies have adopted AI, but they haven\u2019t become meaningfully more intelligent as organizations. One person prompts an assistant, gets an answer, and the context disappears into a private chat window. The result is real productivity at the individual level, with very little compounding across teams. Dust, the multiplayer agentic AI system, was built to change that by making AI collaborative, shared, and operational across an entire company.\n\nThe company today announced a $40 million Series B with Abstract and Sequoia, with participation from Snowflake Ventures and Datadog. With this round, Dust has raised over $60 million in total funding.\n\nDust founders Gabriel Hubert and Stanislas Polu.\n\nWhy thi"
+      },
+      {
+        "url": "https://pulse2.com/aligned-raises-60-million-to-advance-ai-deal-workspace-platform/amp/",
+        "title": "Aligned Raises $60 Million To Advance AI Deal Workspace Platform",
+        "publishedDate": "2026-07-01T00:00:00.000Z",
+        "author": null,
+        "text": "Aligned Raises $60 Million To Advance AI Deal Workspace Platform\n\n# Aligned Raises $60 Million To Advance AI Deal Workspace Platform\n\nBy Amit Chowdhry \u25cf Jul 1, 2026\n\n(See Aligned Pulse 2.0 profile here)\n\nAligned announced it has raised $60 million in Series B financing, bringing its total funding to $73.8 million. Aligned is the AI Deal Workspace where sellers, buyers, and AI agents run deals together.\n\nThe round was led by PeakSpan Capital, with participation from all existing investors, including Hetz Ventures, JAL Ventures, and NFX.\n\nAligned said the new capital will accelerate its mission to improve deal execution in B2B sales. The company\u2019s platform is used by 70,000 sellers and 1 million buyers to run deals every month.\n\nEnterprise customers, including Deel, SimilarWeb, and WordPress, use Aligned to run complex deals. The company said customers report 30% faster sales cycles and 15% higher win rates. Aligned has also tripled annual recurring revenue over the past 12 months.\n\nAligned was recognized by G2 as the category leader in Digital Sales Rooms, ranking No. 1 for SMB, Mid-Market, and Client Portal in the Summer 2026 reports.\n\nAligned pioneered the Digital Sales Room categ"
+      },
+      {
+        "url": "https://siliconangle.com/2026/07/14/instalily-developer-ai-teammates-can-automate-complex-business-specific-work-raises-60m/",
+        "title": "InstaLILY, a developer of AI teammates that can automate complex, business-specific work, raises $60M - SiliconANGLE",
+        "publishedDate": "2026-07-14T00:00:00.000Z",
+        "author": "Mike Wheatley",
+        "text": "InstaLILY, a developer of AI teammates that can automate complex, business-specific work, raises $60M - SiliconANGLE\n\n UPDATED 19:45 EDT / JULY 14 2026 \n\n### InstaLILY, a developer of AI teammates that can automate complex, business-specific work, raises $60M\n\n by Mike Wheatley \n\nEnterprise automation startup InstaLILY Inc. said today it has closed on a hefty $60 million Series B round of funding that brings its total amount raised to date to almost $100 million.\n\nIn addition, it launched a new tool that can help companies to quickly build, deploy and then continuously update and maintain software that runs their business operations.\n\nToday\u2019s round was led by Energize Capital and saw participation from previous backer Insight Partners, as well as new investors like Home Depot Ventures and United Rentals.\n\nInstaLILY is a developer of autonomous artificial intelligence agents and infrastructure that caters to physical goods and services firms. Its AI agents, known as \u201cInstaWorkers,\u201d serve as domain-specific AI teammates that can help to automate complex sales, operations and service workflows.\n\nFor sales teams, they\u2019re able to perform tasks such as ranking and prioritizing sales call"
+      },
+      {
+        "url": "https://startupfortune.com/vendelux-raises-50-million-dollars-to-prove-trade-shows-actually-work/",
+        "title": "Vendelux Raises 50 Million Dollars to Prove Trade Shows Actually Work - Startup Fortune",
+        "publishedDate": "2026-07-14T00:00:00.000Z",
+        "author": null,
+        "text": "Vendelux Raises 50 Million Dollars to Prove Trade Shows Actually Work - Startup Fortune\n\n# Vendelux Raises 50 Million Dollars to Prove Trade Shows Actually Work\n\nVendelux closed a $50 million Series B led by Tribeca Venture Partners, bringing its total funding to $71 million. The AI-native platform tracks over 250,000 B2B events and is betting it can finally measure whether trade show and conference spending actually pays off.\n\nRon Patel\n\n Jul 14, 2026 \u00b7 12:41 PM \u00b7 5 min read \u00b7 1K reads \n\nVendelux raised $50 million because corporate event spending still has one basic problem: too much money goes out before anyone can prove what came back.\n\nVendelux just closed a $50 million Series B. Tribeca Venture Partners led the round, with S3 Ventures, Pelion Ventures, HubSpot Ventures, FirstMark Capital and Cervin Ventures also joining. Business Insider reported the raise on July 8, and said the New York startup has now raised $71 million since Alex Reynolds and Stefan Deeran, two former Shutterstock alums, founded it in 2021.\n\nIf your marketing budget has a line item for conference sponsorships, you already know the problem Vendelux is chasing. You sponsor a booth, fly people out, print the"
+      },
+      {
+        "url": "https://hrtechcube.com/genspark-ai-extends-series-b-to-485m-appoints-cro/",
+        "title": "Genspark.ai Extends Series B to $485M, Appoints CRO",
+        "publishedDate": "2026-06-22T00:00:00.000Z",
+        "author": "BusinessWire",
+        "text": "Genspark.ai Extends Series B to $485M, Appoints CRO\n\nSHARE\n\nShare on X Share on Linkedin\n\n- New financing marks a $1B increase from Genspark\u2019s $1.6B valuation in March\n- Powell to lead Genspark\u2019s commercial team and drive the company\u2019s next phase of growth\n- Genspark also introduces AgentBase, an AI-native custom database and dashboard builder, replacing legacy SaaS\n\nGenspark.ai, the company building the all-in-one AI workspace, today announced it has closed a $100M Series B extension at a $2.6B post-money valuation, up from its $1.6B valuation in March. The company also announced the appointment of Jamison Powell as Chief Revenue Officer. With more than two decades of experience leading high-performing go-to-market (GTM) organizations and helping startups scale to successful acquisitions and IPO, Powell brings expertise in go-to-market strategy, enterprise customer acquisition, and revenue leadership.\n\nThe extension brings Genspark\u2019s total Series B funding to $485M. The round was backed by Sozo Ventures, Korea Mirae Asset, UpHonest Capital, and other existing investors. Genspark was not actively raising, but expanded the round in response to strong interest from investors who want"
+      }
+    ]
+  },
+  {
+    "angle": "founder_pain_post",
+    "label": "d6_founder_pain",
+    "query_verbatim": "we spent weeks researching accounts to personalize outbound and only shipped a handful of campaigns \u2014 B2B marketing leader writing about ABM being too much work",
+    "payload": {
+      "query": "we spent weeks researching accounts to personalize outbound and only shipped a handful of campaigns \u2014 B2B marketing leader writing about ABM being too much work",
+      "type": "auto",
+      "numResults": 10,
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.41,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://sparkle.io/blog/account-based-marketing/",
+        "title": "Account-Based Marketing: What It Is, What It Costs, and When to Skip It",
+        "publishedDate": "2026-07-31T00:00:00.000Z",
+        "author": null,
+        "text": "Account-Based Marketing: What It Is, What It Costs, and When to Skip It\n\nPublished Jul 31, 2026\n\n# Account-Based Marketing: What It Is, What It Costs, and When to Skip It\n\nGive a rep twenty contacts and two hours a week on each, and you\u2019ve spent their entire week before a single reply.\n\nThat\u2019s the math sitting under account-based marketing, and it never hits the win rate.\n\nSo the complaint is clear.\n\nABM is sold as a strategy, and it lands as a workload, on the people you have.\n\nMore than five years of running outbound, and a 30-person team on named accounts every day, has made us hard to impress with a percentage that carries no denominator.\n\nWhat follows is the definition, the three tiers and who each is for, what a tier actually costs in hours and headcount, and the threshold below which a founder doing their own outbound should leave ABM alone.\n\nLet\u2019s get started.\n\n## TL;DR\n\n- What it is: outreach aimed at a named list of companies, not a segment.\n- Which tier you can run: ABM Lite, the middle one. One practitioner carries 1 to 3 accounts, so twenty at the top tier needs 7 to 20 people..\n- What twenty accounts cost: one full-time person. The 40 hours behind that is our own assu"
+      },
+      {
+        "url": "https://ciente.io/blogs/account-based-marketing-for-saas/",
+        "title": "Account-Based Marketing For SaaS: It Is (Not) Personalization - Ciente",
+        "publishedDate": "2026-03-12T00:00:00.000Z",
+        "author": null,
+        "text": "Account-Based Marketing For SaaS: It Is (Not) Personalization - Ciente\n\n# Account-Based Marketing for SaaS: It is (Not) Personalization\n\n- Ciente Editorial Team \n- March 12, 2026 \n\n> ABM is not a campaign. It is not a tactic. It is a strategy that requires patience, personalization, and the willingness to engage people who have not asked to hear from you yet. Most SaaS teams are doing a pale imitation of it and wondering why nothing closes.\n\nEveryone has heard the ABM success stories.\n\nPipeline quality goes up. Sales cycles shorten. The right accounts start responding. The whole go-to-market motion starts feeling less like shouting into a void and more like a real conversation.\n\nSo teams invest in it. Buy the intent tools. Build the account lists. Set up the personalized sequences. Run the targeted ads as part of their broader SaaS marketing playbook.\n\nAnd then nothing happens.\n\nThe pipeline does not improve. The accounts stay quiet. The dashboard looks busy and the revenue does not move.\n\nAnd the conclusion most teams reach is that ABM does not work for them, even though it is often a matter of misalignment with core B2B SaaS marketing principles.\n\nThat conclusion is wrong. ABM wo"
+      },
+      {
+        "url": "https://www.linkedin.com/pulse/ive-run-40-abm-programs-heres-why-most-them-fail-3-fixes-3euic",
+        "title": "I\u2019ve Run 40+ ABM Programs. Here\u2019s Why Most of Them Fail (And the 3 Fixes)",
+        "publishedDate": "2026-08-12T00:00:00.000Z",
+        "author": null,
+        "text": "I\u2019ve Run 40+ ABM Programs. Here\u2019s Why Most of Them Fail (And the 3 Fixes)\n\n \n\n# I\u2019ve Run 40+ ABM Programs. Here\u2019s Why Most of Them Fail (And the 3 Fixes)\n\n The Smarketers \n\n### The Smarketers \n\n#### We help B2B companies generate 30X ROI with Full Funnel Integrated Marketing Strategies \n\n Published Aug 12, 2026 \n\n + Follow \n\n Most ABM programs are dead within six months. Not because ABM does not work: because of three architectural mistakes made before the first campaign ever runs. \n\n I can say this with some confidence because I have now run more than 40 ABM programs at The Smarketers, across enterprise tech, manufacturing, SaaS, and services. Our program success rate is around 85%, and I am proud of that number. But the honest way to read it is that even with a specialized team and a repeatable playbook, programs still fail. When they do, it is almost never the channel mix, the creative, or the platform. It is one of three decisions made in week one. \n\n The frustrating part is that the strategy itself keeps proving out. ITSMA research finds 87% of marketers say ABM delivers higher ROI than any other marketing strategy, and Forrester\u2019s 2024 research puts the typical ROI advantage "
+      },
+      {
+        "url": "https://formanorden.com/blog/why-abm-programs-fail/",
+        "title": "7 Reasons ABM Programs Fail in B2B SaaS (and How to Fix Each One)",
+        "publishedDate": "2026-03-21T00:00:00.000Z",
+        "author": null,
+        "text": "7 Reasons ABM Programs Fail in B2B SaaS (and How to Fix Each One)\n\n## TL;DR\n\n- Most ABM programs fail not because ABM doesn't work but because companies implement lead gen and call it ABM. The seven failure modes below appear in 80%+ of programs we audit.\n- The three most common failures: targeting too many accounts (500+ instead of 50 to 100), running single-channel outreach (email only), and measuring MQLs instead of account-level pipeline metrics.\n- Each failure has a specific, actionable fix. If your ABM program scores 3+ failures from this list, it needs restructuring before additional budget will produce results.\n\n---\n\n## Contents\n\n- 1. Targeting Too Many Accounts\n- 2. Single-Channel Execution\n- 3. Measuring Leads Instead of Account Engagement\n- 4. Sales and Marketing Misalignment\n- 5. No Buying Committee Coverage\n- 6. Generic Content That Doesn't Match Account Context\n- 7. No Account-Level Attribution\n- How to Audit Your ABM Program\n- FAQ\n\n---\n\nABM is the most promising and most poorly executed strategy in B2B SaaS. The promise is real: ITSMA research consistently shows ABM delivers higher ROI than any other B2B strategy. But the execution gap is enormous. Most companies spe"
+      },
+      {
+        "url": "https://erikrmiller.com/blog/why-most-abm-programs-fail/",
+        "title": "Why Most ABM Programs Fail | Erik R. Miller",
+        "publishedDate": "2026-04-27T00:00:00.000Z",
+        "author": "Erik R. Miller",
+        "text": "Why Most ABM Programs Fail | Erik R. Miller\n\nABM\n\n# Why Most ABM Programs Fail Before They Start\n\nErik R. Miller Monday, April 28, 2025 6 min read\n\nI've inherited a lot of broken ABM programs. More than I'd like to admit.\n\nAnd the thing is, they rarely fail because of bad execution. The campaigns are usually fine. The content is decent. The sales team is bought in \u2014 at least in theory. What's broken is almost always upstream. Way upstream.\n\nHere's what I keep seeing.\n\n---\n\n## The list is a lie\n\nMost ABM programs start with a target account list that someone built in an afternoon. Sales leadership pulled a few dream logos. Marketing added some firmographic filters in ZoomInfo. Someone's VP said \"let's go after financial services\" and suddenly that's your ICP.\n\nThat's not a list. That's a wish list.\n\nA real ABM list comes from your existing revenue data first. Who actually closed? Who expanded? What did those companies have in common \u2014 not just in terms of industry and headcount, but in terms of what was happening inside them when they bought? Were they in a transformation? Under regulatory pressure? Did they have a new CRO?\n\nIntent signals tell you who's looking. Your closed-won dat"
+      },
+      {
+        "url": "https://demandscience.com/resources/blog/abm-why-programs-fail/",
+        "title": "Why ABM Program Marketing Fails: What Vendors Won\u2019t Tell- DemandScience",
+        "publishedDate": "2026-06-11T00:00:00.000Z",
+        "author": "Chris Moody",
+        "text": "Why ABM Program Marketing Fails: What Vendors Won\u2019t Tell- DemandScience\n\n##### Ionic\n\nThe intelligence and orchestration layer that unifies verified buyer data and AI to deliver precision you can trust.\n\n##### Labs\n\nThe expert services team that transforms intelligence into impact and manages campaigns across every channel.\n\n##### VID\n\nThe website intelligence that reveals which companies are engaging and turns anonymous traffic into verified, actionable buyer insight.\n\n##### OUR SOLUTIONS\n\n# Why ABM Program Marketing Fall Short: The Pitfalls Most Vendors Won\u2019t Discuss\n\n#### Share\n\nThe content account based marketing vendors publish about failure tends to follow a predictable structure: identify a common mistake, explain how their platform solves it, move on. What that framing misses is that most ABM program marketing failures are not tool problems. They are structural decisions made before any tool was selected.\n\nABM failure is not rare. Industry surveys consistently find that the majority of ABM programs underperform against initial expectations. This is not a sign that ABM does not work. It is a sign that ABM is routinely adopted under conditions that make it unlikely to succeed"
+      },
+      {
+        "url": "https://www.marketscale.com/industries/marketing-tech/why-most-b2b-abm-programs-fail-before-the-first-campaign-goes-live",
+        "title": "Why most B2B ABM programs fail before launch",
+        "publishedDate": "2026-07-17T00:00:00.000Z",
+        "author": null,
+        "text": "Why most B2B ABM programs fail before launch\n\n# Most B2B ABM programs fail before the first campaign goes live\n\nA significant portion of B2B Account-Based Marketing (ABM) programs fail due to structural flaws, which become evident as buyers complete 61% of their evaluation before reaching out to vendors. This highlights the need for ABM strategies to adapt to buyer behaviors and expectations. Understanding customer journeys is crucial for the success of these programs.\n\nThis story was produced through MarketScale. See how Marketing Tech teams put it to work with AI Writing.\n\nBy MarketScale Newsroom \u00b7 July 17, 2026, 1:07 PM UTC\u00b7 Account-based Marketing Abm B2b Marketing Demand Generation+8 more\n\nKey facts, context, and what it means, in one minute.\n\nKey takeaways\n\n01\n\nBuyers complete up to 61% of their evaluation before contacting a vendor.\n\n02\n\nStructural flaws in ABM programs can lead to failure before a campaign launches.\n\nAdaptation to buyer behaviors is crucial for successful ABM strategies.\n\nThe average enterprise ABM program launches with a long list of impressive logos, a LinkedIn campaign, and a lot of optimism. It rarely ends well. In 2026, practitioners and analysts are c"
+      },
+      {
+        "url": "https://www.usergems.com/blog/outbound-abm",
+        "title": "The Complete Outbound ABM Guide for Modern Revenue Teams",
+        "publishedDate": "2025-07-17T00:00:00.000Z",
+        "author": "Trinity Nguyen CMO, UserGems",
+        "text": "The Complete Outbound ABM Guide for Modern Revenue Teams\n\nIntroducing UserGems MCP - Build and run GTM campaigns from Claude or Chat GPT\n\nWritten by\n\nNo items found.\n\nPUBLISHED On\n\nJuly 17, 2025\n\nUpdated on\n\nFeb 13, 2026\n\nRead Time\n\n11 min\n\nShare the love\n\nCopied!\n\n\u200d\n\n\u200d\n\nYour sales team sent 5,000 cold emails last month and booked 12 meetings. Of those 12, only 3 were qualified prospects, and zero closed. Meanwhile, your marketing team generates \"qualified leads\" that turn out to be junior employees downloading content with no buying authority.\n\nMost B2B teams repeat this cycle, and many have written off ABM entirely after poor results. One Reddit user recently said ABM is a complete waste of time and that it should only focus on industry dinners and small events.\n\nTo be fair, they\u2019re not wrong about traditional ABM being broken. Most companies slap \"ABM\" on their regular marketing campaigns and wonder why nothing changes. They're still sending generic content, just to a smaller list.\n\nReal outbound ABM treats each high-value account as its own market. You research their specific problems and reach out with relevant solutions tailored to their situation.\n\nBelow, we'll show you how "
+      },
+      {
+        "url": "https://www.humanr.ai/intelligence/abm-implementation-failures-why-70-percent-miss-roi",
+        "title": "Why Most ABM Programs Miss ROI (And How to Fix It)",
+        "publishedDate": "2026-04-29T00:00:00.000Z",
+        "author": "Justin Leader, Human Renaissance",
+        "text": "Why Most ABM Programs Miss ROI (And How to Fix It)\n\n# Your $220K ABM Program Closed Zero Deals. Here's the Audit That Explains Why.\n\n Plate /92 \u2014 the instrument drawer \n\nA PE-portfolio SaaS company spent $220K on ABM and closed nothing. The failure wasn't the software \u2014 it was sales coverage. Here's the diagnostic.\n\nBy\n\nJustin Leader\n\nIndustry\n\nB2B Technology & Software\n\nFunction\n\nRevenue Operations & Marketing\n\nApril 29, 2026\n\nUpdated\n\nMay 30, 2026\n\nAnswer summary\n\n## The practical answer\n\nShort answer\n\nA PE-portfolio SaaS company spent $220K on ABM and closed nothing. The failure wasn't the software \u2014 it was sales coverage. Here's the diagnostic.\n\nBest fit\n\nIndustry: B2B Technology & Software. Function: Revenue Operations & Marketing\n\nOperating path\n\nGTM Execution \u2192 Commercial Performance \u2192 Performance Improvement\n\nKey metric\n\n70% of Account-Based Marketing programs fail to generate a positive ROI within the first twelve months due to a lack of operational alignment.\n\n## The line item that closed nothing\n\nThe first thing I pulled in the audit was a single number: $220,000 a year, allocated to a $50M SaaS portfolio company's account-based marketing stack \u2014 platform license, intent"
+      },
+      {
+        "url": "https://thesmarketers.com/ebook/why-abm-programs-fail/",
+        "title": "Why ABM Programs Fail and How to Fix Yours",
+        "publishedDate": "2026-04-29T00:00:00.000Z",
+        "author": "Enoch Pakanati",
+        "text": "Why ABM Programs Fail and How to Fix Yours\n\n###### eBOOKS\n\n# Why 74% of ABM Programs Fail\n\n### What you will learn\n\n- The research behind the 74% failure rate and why the diagnosis is structural, not tactical\n- Failure Point 1: Why treating accounts as single units ignores the buying committee reality\n- Failure Point 2: Why measuring ABM with outbound KPIs guarantees the wrong optimization\n- Failure Point 3: How the handoff chasm between marketing and sales kills accounts mid-cycle\n- The three architectural fixes: signal tracking, unified SLAs, and multi-threading\n- A 90-day turnaround plan with the first 30, 60, and 90-day deliverables mapped out\n\n### Want us to audit your ABM program?\n\nBook a 75-minute ABM Program Audit. We review your committee coverage, handoff quality, and signal tracking, then hand you a 90-day rebuild plan.\n\nDownload Now about EBook Why74ofABMProgramsFail.pdf about EBook Why74ofABMProgramsFail.pdf"
+      }
+    ]
+  },
+  {
+    "angle": "vertical_fintech_finite_market",
+    "label": "d7_fintech_banks",
+    "query_verbatim": "venture-backed US fintech software company selling software to banks and credit unions, enterprise deals, named account sales",
+    "payload": {
+      "query": "venture-backed US fintech software company selling software to banks and credit unions, enterprise deals, named account sales",
+      "type": "auto",
+      "numResults": 10,
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.51,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://www.uptiq.ai/",
+        "title": "Uptiq - Financial AI Platform for Banks, Credit Unions & Wealth Firms",
+        "publishedDate": null,
+        "author": null,
+        "text": "Uptiq - Financial AI Platform for Banks, Credit Unions & Wealth Firms\n\nThe AI Platform for Financial Services\n\n# The only bank-grade AI platform.\n\nGeneral-purpose AI goes wide. Uptiq goes deep with agents built for financial services, running in 150+ institutions with the governance examiners expect.\n\nBook a Discovery Call\n\nBanks\n\nCredit Unions\n\nNon-Bank Lenders\n\nEquipment Finance\n\nWealth Firms\n\nIndustry preview\n\n## Banks\n\nGoverned agents for underwriting, monitoring, and member service \u2014 held to bank-grade standards.\n\nIndustry preview\n\n## Credit Unions\n\nMember-first automation across account opening, lending, and everyday servicing.\n\nIndustry preview\n\n## Non-Bank Lenders\n\nFaster origination and portfolio operations for specialty and consumer lenders.\n\nIndustry preview\n\n## Equipment Finance\n\nStreamlined credit, documentation, and booking for equipment finance teams.\n\nIndustry preview\n\n## Wealth\n\nAdvisor-ready agents for onboarding, review prep, and client operations.\n\n150+\n\nInstitutions Trust Uptiq\n\nThe Qore AI Platform\n\n## Everything you need to run AI.\n\nActions grounded in your institution's truth, provable to your examiners, and governed end to end as work moves front office to "
+      },
+      {
+        "url": "https://linkedin.com/company/withglide",
+        "title": "glide",
+        "publishedDate": "2026-06-23T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Glide\n\nGlide is a Technology, Information and Internet company. Glide provides AI-powered origination, onboarding, and back office tools for financial institutions that refuse to be left behind. Glide employs 38 people (+91.7% YoY, +22 people), founded in 2021. Headquartered in New York, New York, United States. Its workforce is distributed across United States, Thailand, and Malaysia. Has $15M in total funding, with 1 prior funding round.\n\n## About\n\nAI for financial institutions that refuse to be left behind. \n\nGlide is the AI platform for credit unions and community banks that want to grow. We handle the full member lifecycle: digital account opening, loan origination, personalized onboarding, and AI agents that automate the back office. Leading financial institutions use Glide to open accounts in minutes, fund loans the same day, and turn new members into engaged ones.\n\n## Company Details\n- Industry: Technology, Information and Internet\n- Type: Privately Held\n- Headquarters: New York, United States\n- Founded Year: 2021\n- Homepage: withglide.com\n- Status: active\n- Aliases: glide\n- LinkedIn: linkedin.com/company/withglide\n- Linkedin Followers: 2,969 (Monthly: +5.0%, Yearly: +174"
+      },
+      {
+        "url": "https://linkedin.com/company/fusefinance",
+        "title": "fuse",
+        "publishedDate": "2026-06-26T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Fuse (Elsker Inc.)\n\nFuse is a Financial Services company. Fuse is an AI-powered loan origination software that offers all-in-one los and account opening solutions. They provide proactive automation and rescue fund services to credit unions, auto and powersports, banks, and finance companies. Fuse employs 69 people (+51.1% YoY, +24 people). Headquartered in New York, New York, United States. Its workforce is distributed across 8 countries (including Colombia, Argentina, United States, Costa Rica, and Brazil). Has $82M in total funding, with 5 prior funding rounds.\n\n## About\n\nFuse is the AI-native Loan Origination System and Account Opening platform for Credit Unions, Banks, Auto & Powersports Lenders, and Finance Companies.\n\nFounded in 2020, Fuse powers 100+ financial institutions with one platform that runs the full lending and account opening flow, anchored by Proactive Automation, a continuous program that identifies and ships the next highest-impact automation opportunity for each institution, and contractual guarantees that put outcomes on the line, not in the sales deck.\n\nBacked by $25M+ from the investors behind Chime and OpenAI. Headquartered in New York.\n\n## Company Detai"
+      },
+      {
+        "url": "https://linkedin.com/company/vikartech",
+        "title": "vikar",
+        "publishedDate": "2026-06-26T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Vikar (Vikar Technologies, Inc.)\n\nVikar is a Financial Services company. Vikar is a company that provides solutions for loan lifecycle management and client lifecycle management. They serve community banks, credit unions, and their team. They offer resources, testimonials, news, blogs, and industry insights. Vikar is attending the NJ bankers association Ai in banking conference on October 30th at the park avenue club, NJ. Vikar employs 12 people (+42.1% YoY, +8 people), founded in 2017. Headquartered in Iselin, New Jersey, United States, with offices in Old Bridge and New York. Its workforce is distributed across United States and Denmark. with 1 prior funding round.\n\n## About\n\nVikar provides intelligent, unified platforms for consumer & commercial account opening and lending, purpose-built for banks and credit unions. The platform integrates digital account opening, loan origination, KYC/KYB, compliance, treasury services, and lifecycle management into a single, configurable environment \u2014 eliminating fragmented systems, reducing manual handoffs, and enabling true straight-through processing.\n\nDesigned to support complex commercial relationships, Vikar manages multi-entity busine"
+      },
+      {
+        "url": "https://linkedin.com/company/spiral-gives",
+        "title": "spiral",
+        "publishedDate": "2026-06-28T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Spiral (Spiral Financial, Inc)\n\nSpiral is a Financial Services company. Spiral is an award-winning personalized banking platform that helps financial institutions grow deposits, attract new account holders, and boost engagement through financial wellness and community impact. Spiral employs 25 people and has an annual revenue of $4.1M, founded in 2019. Headquartered in New York, New York, United States, with presence in Israel. Its workforce is distributed across United States, Israel, and Kenya. Has $42.1M in total funding, with 4 prior funding rounds.\n\n## About\n\nHeadquartered in New York City, Spiral is an award-winning platform redefining how banks and credit unions grow core deposits and retention through personalized banking experiences. Trusted by 45+ financial institutions, Spiral has saved millions for families and local communities, turning institutions into the primary choice for savings, cards, loans, and giving. With Spiral, financial institutions empower account holders to build savings automatically, achieve financial freedom, and support their communities through any banking account or debit card.\n\n## Company Details\n- Industry: Financial Services\n- Type: Privately"
+      },
+      {
+        "url": "https://linkedin.com/company/akuvo",
+        "title": "akuvo",
+        "publishedDate": "2026-06-22T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# AKUVO (AKUVO LLC)\n\nAKUVO is a Software Development company. AKUVO is a modern cloud-based collection software platform for banks, credit unions, and fintechs powered by data and analytics. They offer a visionary, behavior-based approach to credit risk and delinquency management through their products and consulting services. AKUVO employs 80 people (+29.6% YoY, +21 people) and has an annual revenue of $1.1M, founded in 2019. Headquartered in Malvern, Pennsylvania, United States. Its workforce is distributed across United States and Saudi Arabia. Has $13M in total funding, with 5 prior funding rounds.\n\n## About\n\nAKUVO is a leading provider of cloud-native software that elevates how financial institutions collect and manage their portfolios via its collections platform. It provides the technology and data necessary to increase collections efficiency, reduce staff costs, anticipate delinquencies, and provide insight into future credit decisions. AKUVO is defining the future of collections and account performance management with a visionary, behavior-based approach while taking full advantage of emerging technologies such as artificial intelligence, natural language processing, and m"
+      },
+      {
+        "url": "https://linkedin.com/company/linkerfinance",
+        "title": "linker finance",
+        "publishedDate": "2026-06-23T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Linker Finance (Linker Finance, Inc.)\n\nLinker Finance is a Financial Services company. Linker Finance is a company that provides digital banking and CRM solutions for retail and commercial banks. Linker Finance employs 23 people, founded in 2023. Headquartered in Pasadena, California, United States. Its workforce is distributed across Honduras, United States, El Salvador, and Argentina. Has $3.7M in total funding, with 3 prior funding rounds.\n\n## About\n\nLinker Finance is on a mission to help Community Banks grow through digital channels.\nWe provide core-agnostic, out-of-the-box solutions for Online Deposit Account Opening, Business Onboarding, and Digital Banking for both Retail and Commercial Banks.\n\n## Company Details\n- Industry: Financial Services\n- Type: Privately Held\n- Headquarters: Pasadena, United States\n- Founded Year: 2023\n- Homepage: linkerfinance.com\n- Status: active\n- Aliases: linker finance, linker finance, inc.\n- LinkedIn: linkedin.com/company/linkerfinance\n- Linkedin Followers: 1,657 (Monthly: +3.5%)\n- Emails: info@linkerfinance.com\n\n## Financials\n- Total Funding: USD 3,720,000\n  - Corporate Round (2025-05-29) - 1 investor, led by Alloy Labs\n  - Pre Seed Round (20"
+      },
+      {
+        "url": "https://www.naehas.com/",
+        "title": "Accelerate Value in Banking with Naehas | Personalized at Scale",
+        "publishedDate": null,
+        "author": null,
+        "text": "New: UK bank, Canadian retail bank, and top-10 U.S. credit union chose Naehas in Q1 2026 | Read More\n\n0:00 / 0:00\n\n\u2922\n\n# Launch Compliant Products and Offers Faster Across Every Line of Business\n\n### Purpose-built product, pricing, disclosure, and compliance software for banks, credit unions, and wealth management.\n\n## 145%\n\n### Increase in offer volume at a top U.S. bank\n\n## 70%\n\n### Reduction in cycle times at a top 10 institution\n\n## 79%\n\n### Lower operating costs at a tier one bank\n\n## 5x\n\n### Boost in targeted offers at a leading regional bank\n\n## Discover the problems Naehas solves\n\n#### Operational and regulatory challenges that slow product, pricing, and offer delivery.\n\nby problemby solution\n\n### Personalized Offers\n\nDeliver the right offer to the right customer with speed, compliance, and consistency.\n\n### Relationship-Based Rewards\n\nTurn fragmented rewards into unified loyalty that drives growth.\n\n### Speed to Market\n\nLaunch products and offers in days, not months, without sacrificing compliance.\n\n### Streamlined Compliance\n\nTurn compliance from a bottleneck problem into a competitive advantage.\n\n### Dynamic Pricing\n\nDeliver real-time, personalized pricing for every custo"
+      },
+      {
+        "url": "https://adapfin.com/",
+        "title": "AI-Native Core Banking Platform for Community Banks",
+        "publishedDate": null,
+        "author": "adapfin Technologies",
+        "text": "Improve Bank Economics with AI-Native Core Banking | adapfin\n\nThe operating core for modern financial institutions\n\n# Improve your bank\u2019s economics.Nucleus BankOS is an AI-native, customer-journey-driven bank operating system that helps banks and credit unions lower TCO, consolidate third-party systems, and regain control over their operating future.\n\nNucleus BankOS unifies operations, lending, servicing, fraud, compliance, and customer intelligence in one AI-native operating environment built to reduce complexity, improve control, and change the economics of banking.\n\nMinimize risk: deploy Nucleus BankOS alongside your legacy core through a side-core configuration and move forward without an immediate core replacement.\n\nRequest a demo Become a design partner\n\nThe problem\n\n## Banking didn\u2019t become simpler.It became layered.\n\nEvery decade added another layer on top of a core built for a different era. The result is accumulated complexity the institution pays for in cost, speed, risk, and customer experience.\n\nVendor sprawl\n\nA dozen contracts, each with its own data model and its own bill \u2014 every vendor adding cost, integrations, data seams, and operational dependency.\n\nFragmented da"
+      },
+      {
+        "url": "https://www.candescent.com/",
+        "title": "Candescent | Intelligent Banking Platform",
+        "publishedDate": null,
+        "author": null,
+        "text": "Candescent | Intelligent Banking Platform\n\noutcomes\n\n## What Intelligent Banking delivers\n\nFor banks and credit unions, Intelligent Banking is a better way to grow, serve, and compete. It turns connected data, thoughtfully designed experiences, and real-time intelligence into measurable business outcomes.\n\n### Experience\n\nDeliver thoughtfully designed, intelligent experiences that feel intuitive and connected in every interaction.\n\n### Growth\n\nDrive engagement, increase usage, and unlock new revenue through more relevant, real-time interactions.\n\n### Primacy\n\nEarn the primary financial relationship by becoming the most useful and trusted part of your customers\u2019 and members\u2019 financial lives.\n\n### Trust\n\nBuild confidence through security, transparency, and control in every interaction.\n\n## Trusted by forward-thinking financial institutions\n\nIntelligent Banking Experience\n\n## Meet Votiv\n\nVotiv brings together unified digital experiences and real-time intelligence to help people understand what matters, know what to do next, and act when it counts.\n\n## Proven impact\n\n1,300+\n\n### Financial institutions served\n\n30M+\n\n### Customers and members supported nationwide\n\n150+\n\n### Leading finte"
+      }
+    ]
+  },
+  {
+    "angle": "agency_second_order",
+    "label": "d8_agency",
+    "query_verbatim": "venture-backed US B2B marketing services company running account-based marketing programs for enterprise software clients",
+    "payload": {
+      "query": "venture-backed US B2B marketing services company running account-based marketing programs for enterprise software clients",
+      "type": "auto",
+      "numResults": 10,
+      "contents": {
+        "text": {
+          "maxCharacters": 1200
+        }
+      }
+    },
+    "http": 200,
+    "elapsed_s": 1.08,
+    "cost_usd": 0.007,
+    "results": [
+      {
+        "url": "https://trevon.network/",
+        "title": "Trevon | B2B Pipeline Marketing at Scale",
+        "publishedDate": null,
+        "author": null,
+        "text": "Trevon | B2B Pipeline Marketing at Scale\n\nDemand Generation \u00b7 Pipeline Marketing\n\n# Pipelinethat closesitself.\n\nTrevon builds full-cycle demand generation infrastructure for enterprise software companies \u2014 from target account identification to closed-won revenue, every program engineered to fill pipeline predictably and accelerate deal velocity across your entire go-to-market.\n\nBook a Strategy Call \u2192 See Solutions\n\nPipeline Influenced\n\n$4.1B\n\nAcross all active client programs\n\nLive tracking enabled\n\nAverage Deal Acceleration\n\n38%\n\nReduction in sales cycle length\n\nSQL-to-Close Rate\n\n24%\n\nQualified pipeline conversion\n\nFull-funnel pipeline coverage, zero blind spots\n\nFrom anonymous intent signal to signed contract \u2014 every stage of your pipeline is instrumented, optimized, and iterated on continuously by a team that treats demand gen as revenue engineering.\n\n520+\n\nAccount-based campaigns deployed across verticals\n\n18\n\nEnterprise software categories with dedicated playbooks\n\n72h\n\nAverage onboarding to first pipeline signal\n\nTrusted by\n\nDATASTACK CLOUDVAULT SIGNALPATH OPSGRID HQ LAYERSHIFT INFRACORE NEXUSPOINT\n\n01 \u2014 About Trevon\n\n## Demand generationbuilt like revenue ops.\n\nWe treat eve"
+      },
+      {
+        "url": "https://www.ignitium.com/enterprise-abm-agency",
+        "title": "Enterprise ABM Agency for Marketing Leaders | Ignitium",
+        "publishedDate": null,
+        "author": null,
+        "text": "Enterprise ABM Agency | ABX Orchestration\u00ae | Ignitium\n\n###### ENTERPRISE ABM AGENCY\n\n# The marketing leaders hitting their ABM number aren't doing it alone.\n\nIgnitium is the enterprise account-based marketing agency behind revenue leaders at Verizon, HPE, Sage, IBM, and other enterprise programs operating at scale. Your Revenue Operating Layer \u2014 built to hit the number with you.\n\nBook an ABX Strategy Call\n\nSee How It Works\n\n30 mins \u2022 No pitch \u2022 No platform demo\n\nG2 Verified Review\n\n4th Time Repeat Customer!\n\nIf you\u2019re looking for a strategic partner to help scale your ABM and demand generation efforts \u2014 whether you\u2019re just getting started or looking to mature your existing programs \u2014 Ignitium is a standout choice. They operate as an extension of your GTM team, bringing expertise across Sales, Marketing, RevOps, and MOPs. Their people are thoughtful, invested, and truly care about helping you hit your goals.\n\nKristin M.\n\nVice president, revenue Marketing\n\n150+\n\nEnterprise ABM Programs\n\n$100M+\n\nABM Investment Managed\n\n10+ Years\n\nPure Play ABM Agency\n\nUS-Based\n\nSenior Team Extension\n\nG2 \u00b7 4.8\u2605\n\nEnterprise ABM Agency\n\n###### Trusted by enterprise revenue teams at\n\n###### THE DIAGNOSIS\n"
+      },
+      {
+        "url": "https://www.revvgrowth.com/abm-agency",
+        "title": "The ABM Agency for SaaS | ABM Services | Revvgrowth",
+        "publishedDate": null,
+        "author": null,
+        "text": "The ABM Agency for SaaS | ABM Services | Revvgrowth\n\n# Target Your Dream \n\n100\n\n100\n\n200\n\n500\n\n Accounts\n\n Account Through Strategic ABM\n\nWe help you build a list, research, create multi-channel integrated campaigns that can generate pipeline with your best prospects. \n\nThe ABM Agency For Leading SaaS Brands\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\nSeries B - $70 million\n\n## Why you need RevvGrowth as your ABM partner?\n\n### Data-driven account selection\n\nThorough research and competitor analysis to ensure each targeted account has the highest potential for success.\n\n### Pipeline acceleration\n\nSpeed up deal closures by engaging multiple stakeholders within target accounts.\n\n### Personalized campaigns\n\nHigh-value campaigns and messaging that speaks directly to your audience's challenges and aspirations\n\n### ROI optimization\n\nTrack and optimize campaigns to deliver the highest possible return on your investment.\n\n## Our ABM services\n\nAccount Identification & Prioritization\n\nHot\n\nMake your marketing tech work harder for you. We'll help you select and integrate"
+      },
+      {
+        "url": "https://forefrontabm.com/",
+        "title": "Forefront ABM | B2B Account-Based Marketing Consulting",
+        "publishedDate": null,
+        "author": null,
+        "text": "Forefront ABM | B2B Account-Based Marketing Consulting\n\nEnterprise-grade Marketing. Accelerated by AI.\n\n# Your Marketing is busy.Your pipeline isn't.\n\nCompanies spend months building Marketing and ABM programs that never reach an account. We build yours in weeks, with AI-powered intelligence, account-specific plays, and a measurement system that proves impact every month.\n\nRun Your Free Audit See How It Works\n\nNo pitch. Just answers.\n\nSOUND FAMILIAR?\n\n## Most mid-market Marketing teams are working hard. The problem isn't effort; it's focus.\n\n01\n\n#### You don't have a real Marketing function yet.\n\nSales is closing deals on relationships and referrals. There's no repeatable system, no account targeting, no messaging that travels without you in the room.\n\n02\n\n#### Your sales team doesn't trust Marketing.\n\nThey see campaigns. They don't see pipeline. And they've stopped waiting for leads that never convert.\n\n03\n\n#### You're targeting everyone. Which means no one.\n\nWithout a defined account list and account-specific plays, your budget reaches the wrong people, or the right people with the wrong message.\n\n04\n\n#### You know ABM works. You can't get it off the ground.\n\nThe platforms are ex"
+      },
+      {
+        "url": "https://linkedin.com/company/precision-point-abm",
+        "title": "precisionpoint",
+        "publishedDate": "2026-06-23T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# PrecisionPoint\n\nPrecisionPoint is a Marketing Services company. PrecisionPoint is an ABM consultancy that helps B2B companies design and execute account-based marketing programs that target the right accounts, close real pipeline, and deliver measurable revenue. PrecisionPoint employs 3 people, founded in 2024.\n\n## About\n\nMost ABM programs look good on paper but don't convert. The targeting is too broad, the channels don't match how buyers actually move, and marketing and sales aren't aligned on the accounts that matter. Pipeline stalls.\n\nPrecisionPoint fixes that.\n\nWe're an account-based marketing consultancy that partners with B2B marketing and sales teams to design, build, and execute ABM programs that drive real pipeline \u2014 not vanity metrics. We start with your data: historical wins, intent signals, competitive landscape, and buying stage intelligence. Then we build programs around the accounts you can actually close.\n\nOur work spans the full ABM lifecycle: target list development and scoring, program architecture, multi-channel campaign build, sales and marketing alignment, and ongoing execution and optimization. Every engagement is rooted in diagnosis \u2014 we find the structur"
+      },
+      {
+        "url": "https://linkedin.com/company/abm-demand",
+        "title": "abm demand",
+        "publishedDate": "2026-06-10T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# ABM Demand\n\nABM Demand is a Advertising Services company. ABM Demand employs 2 people. Headquartered in Sheridan, Wyoming, United States. Its workforce is distributed across United States and India.\n\n## About\n\nABM Demand\u2019s integrated demand generation and account-based marketing services empower B2B teams to build predictable, revenue-driven pipelines that sales teams are eager to engage with.\n\nWe combine strategic demand creation, qualified lead generation, and precision-targeted account-based programs to help marketing and sales align around the accounts that matter most. By leveraging data-driven targeting, thoughtful outreach frameworks, and deep account insights, we ensure your team connects with high-value prospects at the right time with the right message. \n\nAt the core of our approach is a commitment to quality over quantity: identifying the best accounts, engaging them with intent-informed strategies, and fueling meaningful conversations that accelerate deal velocity and fuel sustainable growth. Whether you\u2019re building pipeline, expanding existing accounts, or refining your Go-To-Market playbook, ABM Demand is the partner that helps you turn strategy into measurable reve"
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/sproutsai-raises-9m-pre-series-a-led-by-true-global-ventures-and-accel-to-scale-revenue-agents-with-differentiated-data-for-b2b-enterprises-302772512.html",
+        "title": "Sprouts.ai Raises $9M Pre-Series A Led by True Global Ventures and Accel to Scale Revenue Agents with Differentiated Data for B2B Enterprises",
+        "publishedDate": "2026-05-15T00:00:00.000Z",
+        "author": "True Global Ventures",
+        "text": "Sprouts.ai Raises $9M Pre-Series A Led by True Global Ventures and Accel to Scale Revenue Agents with Differentiated Data for B2B Enterprises Accessibility Statement Skip Navigation\n\nFunding brings total raised to $14M. Sprouts.ai's differentiated GTM data layer powers autonomous Revenue Agents already trusted by Global Brands like Hewlett Packard, Razorpay, HighRadius, and Udemy.\n\nSAN FRANCISCO, May 15, 2026 /PRNewswire/ -- True Global Ventures (TGV) and Accel today announced a $9 million Pre-Series A round in Sprouts.ai, bringing the company's total funding to $14 million. Sprouts.ai is a fast-growing AI native startup delivering Revenue Agents for B2B enterprises, anchored in a proprietary go-to-market (GTM) data layer.\n\nContinue Reading\n\nFrom Left to Right: Kapil Chaudhry Co-Founder and CTO of Sprouts AI, Karan Chaudhry, Co-Founder and CEO of Sprouts AI and Beatrice Lion, CEO and General Partner of True Global Ventures\n\nThe platform enables revenue teams to identify, enrich, engage, and convert ideal customers with precision using deep account intelligence. Its Deep AI GTM Engine powers several first to market AI functionality like complex query search, product heatmaps, buyer "
+      },
+      {
+        "url": "https://www.cbinsights.com/company/sproutsai",
+        "title": "Sprouts.ai - Products, Competitors, Financials, Employees, Headquarters Locations",
+        "publishedDate": "2026-05-15T00:00:00.000Z",
+        "author": null,
+        "text": "Sprouts.ai - Products, Competitors, Financials, Employees, Headquarters Locations\n\n# Sprouts.ai\n\nsprouts.ai\n\n## Founded Year\n\n2022\n\n## Stage\n\nSeed VC - II | Alive\n\n## Total Raised\n\n$9M\n\n## Last Raised\n\n$9M | 3 mos ago\n\n## About Sprouts.ai\n\nSprouts.ai is a platform that focuses on account-based marketing and go-to-market intelligence in the B2B sector. It provides tools to discover customer profiles, enrich databases, identify intent signals, automate outreach, and predict purchase patterns. It was founded in 2022 and is based in Palo Alto, California.\n\n## Headquarters Location\n\n2627 Hanover Street \n\nPalo Alto, California, 94304, \n\nUnited States\n\n+91-9164409734\n\n## ESPs containing Sprouts.ai\n\nThe ESP matrix leverages data and analyst insight to identify and rank leading companies in a given technology landscape.\n\nEnterprise Tech / Sales & Customer Service\n\nThe sales engagement platforms market uses advanced technologies to streamline and enhance interactions between sales teams and prospects. Through integrated communication tools, analytics, and automation, they optimize outreach efforts, ensuring timely and personalized interactions. By centralizing data, these solutions enable sa"
+      },
+      {
+        "url": "https://linkedin.com/company/khronos-agency",
+        "title": "khronos",
+        "publishedDate": "2026-03-19T00:00:00.000Z",
+        "author": "Exa",
+        "text": "# Khronos (Khronos LLC)\n\nKhronos is a Advertising Services company. Khronos Agency is a marketing agency that helps b2b companies quickly validate, refine, and execute their go-to-market strategy by running targeted account-based programs that deliver real pipeline. Khronos employs 2 people (-30.0% YoY), founded in 2019. Headquartered in Research Triangle Park, North Carolina, United States. Its workforce is distributed across Ecuador and United States.\n\n## About\n\nKhronos Agency partners with B2B marketing and Go-to-Market leaders to deliver repeatable results faster by, providing turn-key technology, accelerating focused campaigns, and developing quality pipelines. Our scalable, nimble methodologies make mature account-based marketing (ABM) programs achievable and repeatable.\n\nWe specialize in right-sized ABM for every B2B stage, ensuring personalized and targeted strategies that accelerate time to market. Our data-driven, speed-optimized approach focuses on tangible outcomes, enabling businesses to swiftly validate, deploy, and optimize GTM strategies with minimal risk. Our clients focus on their customers\u2019 needs, while we expertly manage the intricate multi-touch strategy, strea"
+      },
+      {
+        "url": "https://www.ignitium.com/home/account-based-marketing-agency",
+        "title": "Ignitium | Account Based Marketing Agency for Scaling Enterprise-Wide",
+        "publishedDate": null,
+        "author": null,
+        "text": "Ignitium | Account Based Marketing Agency for Scaling Enterprise-Wide\n\n# Account-Based Marketing Agency for Scaling Enterprise-Wide\n\nIgnitium integrates ABM expertise, buyer group intent data, and GTM technology to scale ABX, streamline execution, and accelerate sustainable revenue\u2014effortlessly.\n\n## ABX Orchestration\u00ae\u00ae Without the Complexity\n\nBuyer Group Intent\n\nTechnology\n\nMarketing Agency\n\nSales Engagement\n\n### One-Size-Fits-All Intent Data Isn\u2019t Enough\n\nStop guessing and start selling smarter. With Ignitium\u2019s Buyer Group Intent, you\u2019ll know who's interested, what they want, and when to act.\n\n\u200d\n\nMost B2B buyers are deep into their journey before filling out a form. Ignitium\u2019s Buyer Group Intent Data reveals hidden signals\u2014giving you a full view of the buying committee before they reach out.\n\n### Composable ABX, Powered by Cutting-Edge Tech\n\nWith Ignitium\u2019s Composable ABX, we help you move beyond standard ABM to deliver data-driven account-based experiences at scale.\n\n\u200d\n\nOur approach helps you break free from cookie-cutter solutions and unify your teams around a single, adaptable strategy that grows as your business evolves.\n\nLearn About Composable ABX\n\n### Deep Expertise for Comp"
+      }
+    ]
+  }
+]

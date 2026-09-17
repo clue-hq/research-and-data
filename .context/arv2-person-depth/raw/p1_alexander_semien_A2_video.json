@@ -1,0 +1,101 @@
+{
+  "requestId": "244ac24db6c96da8bdba745e96c3f33b",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.youtube.com/watch?v=fbn5EJagBmQ",
+      "title": "How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast",
+      "url": "https://www.youtube.com/watch?v=fbn5EJagBmQ",
+      "publishedDate": "2026-05-27T17:00:09.000Z",
+      "author": "LangChain",
+      "text": "# How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast\n\n- Channel: LangChain\n- Length: 00:50\n- Views: 1.7K\n- Likes: 46\n- Published: 2026-05-27T10:00:09-07:00\n- Category: Science & Technology\n- Keywords: AI agents, AI security, agent sandboxing, agentic AI, LangChain, defense in depth, AI infrastructure, secure AI, AI engineering, Max Agency podcast\n- Language: en\n\n## Description\n\nGng Sng, Co-Founder and CTO of Cogent Security, breaks down how they approach defense in depth for AI agents. Their sandboxes run with read-only permissions by default, a policy engine handles access elevation, and any write action happens outside the box \u2014 fully secure and deterministic. The rule: agents should never be able to do something the system is disallowing.\n\nThis clip is from Max Agency, a #podcast about how the best AI agents are actually being built. Hosted by Harrison Chase, CEO of LangChain, each episode goes deep with the builders designing, deploying, and learning from real agent systems in the wild. From architecture decisions to evals, tooling, and failure modes, Max Agency is for people who want to understand what it really takes to build useful agents.\n\n#AIAgents #AISecurity\n\n## Transcript\n\nThe way we think about the architecture of anything that touches customer data requires a lot of defense in depth. You know, we do run agents and boxes, but the level of isolation that we apply to these sandboxes is very very deep. So, these sandboxes basicall",
+      "image": "https://i.ytimg.com/vi/fbn5EJagBmQ/sd2.jpg?sqp=-oaymwEoCIAFEOAD8quKqQMcGADwAQH4AbYIgAKAD4oCDAgAEAEYPyBjKGUwDw==&rs=AOn4CLCXPKlFZzGjS3ODTMTvfEG1Pc_pRA"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=D6XWu54oG4g",
+      "title": "Inside Cogent's three-agent architecture for autonomous defense | Geng Sng (Co-founder, Cogent)",
+      "url": "https://www.youtube.com/watch?v=D6XWu54oG4g",
+      "publishedDate": "2026-05-22T00:00:00.000Z",
+      "author": "LangChain",
+      "text": "This is basically SAS 2.0. Attackers only need to write once and defenders can write all the time. And today the mean time to exploit is in minutes. Today I'm talking to Gang Song, co-founder and CTO of Cogent. They're building agents for autonomous cyber defense and closing vulnerabilities at machine speed. We don't use a graph database, but we have a very high right throughput system, like billions of events flowing through the system every single day. He walks me through how Cogent builds trust with customers before letting agents act autonomously. Even if the agent is hallucinating and wants to like do some kind of right action, it's not allowed to do that. And how they make sure their LLM judges are actually qualified to assess the agent's work. At the most complex level, it's LLMs that have environmental parity with the actual agent that we're evaluating. Cogent also has an interesting way of thinking about context. We're differentiating between hot and cold context. It's not that this context has existed for a short amount of time. It's that this context is actively being used. Right at the end, Gang talks about why defensive security won't be replaced by AI anytime soon. The nature of a defensive security task is I have a castle, [music] here are all my walls, how do I patch every single little hole in the wall? And every single castle is built differently. There really is no data. Welcome to Max Agency, the podcast [music] that goes deep into how the best agents are ",
+      "image": "https://i.ytimg.com/vi/D6XWu54oG4g/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=q4bOybgBv8U",
+      "title": "The Agent Lake: Combining AI agents with high-scale data processing | Max Agency #podcast",
+      "url": "https://www.youtube.com/watch?v=q4bOybgBv8U",
+      "publishedDate": "2026-06-01T18:15:31.000Z",
+      "author": "LangChain",
+      "text": "# The Agent Lake: Combining AI agents with high-scale data processing | Max Agency #podcast\n\n- Channel: LangChain\n- Length: 00:55\n- Views: 1.5K\n- Likes: 30\n- Published: 2026-06-01T11:15:31-07:00\n- Category: Science & Technology\n- Keywords: AI agents, agentic AI, knowledge graph, AI security, LangChain, data platform, AI architecture, enterprise AI, vulnerability management, Max Agency podcast\n- Language: en\n\n## Description\n\nGng Sng, Co-Founder and CTO of Cogent Security, breaks down what they call an Agent Lake \u2014 an agentic data lake that pairs long-running agents with a high-scale data platform. Agents don't just query the graph, they color it over time, building higher-confidence edges that make risk classification precise enough to cut through hundreds of millions of vulnerabilities and surface what actually matters.\n\nThis clip is from Max Agency, a #podcast about how the best AI agents are actually being built. Hosted by Harrison Chase, CEO of LangChain, each episode goes deep with the builders designing, deploying, and learning from real agent systems in the wild. From architecture decisions to evals, tooling, and failure modes, Max Agency is for people who want to understand what it really takes to build useful agents.\n\n#AIAgents #AISecurity\n\n## Transcript\n\nWe call it agent lake. Basically, it's agentic data lake and we kind of have two parts of our system. So, the first part of it is basically a context swarm.\nSo, agent swarms that have live access to data. These agent",
+      "image": "https://i.ytimg.com/vi/q4bOybgBv8U/sd2.jpg?sqp=-oaymwEoCIAFEOAD8quKqQMcGADwAQH4AbYIgAKAD4oCDAgAEAEYRSBlKGUwDw==&rs=AOn4CLDtwfB5QQuXCzsGWyI2Zd0ZLllHKA"
+    },
+    {
+      "id": "https://www.youtube.com/shorts/x7xZ22hr5g0",
+      "title": "Alexander on Modern Security Tooling and Mindset - YouTube",
+      "url": "https://www.youtube.com/shorts/x7xZ22hr5g0",
+      "publishedDate": "2025-08-04T16:08:29.000Z",
+      "text": "Alexander on Modern Security Tooling and Mindset - YouTube\n\nAlexander on Modern Security Tooling and Mindset - YouTube\n[](https://www.youtube.com/)[](https://www.youtube.com/)\n[About](https://www.youtube.com/about/)[Press](https://www.youtube.com/about/press/)[Copyright](https://www.youtube.com/about/copyright/)[Contact us](https://www.youtube.com/t/contact_us/)[Creators](https://www.youtube.com/creators/)[Advertise](https://www.youtube.com/ads/)[Developers](https://developers.google.com/youtube)[Terms](https://www.youtube.com/t/terms)[Privacy](https://www.youtube.com/t/privacy)[Policy & Safety](https://www.youtube.com/about/policies/)[How YouTube works](https://www.youtube.com/howyoutubeworks?utm_campaign=ytgen&utm_source=ythp&utm_medium=LeftNav&utm_content=txt&u=https://www.youtube.com/howyoutubeworks?utm_source=ythp&utm_medium=LeftNav&utm_campaign=ytgen)[Test new features](https://www.youtube.com/new)[NFL Sunday Ticket](https://tv.youtube.com/learn/nflsundayticket)\n&copy; 2026 Google LLC",
+      "image": "https://i.ytimg.com/vi/x7xZ22hr5g0/hq720.jpg?sqp=-oaymwEkCJUDENAFSFryq4qpAxYIARUAAAAAJQAAyEI9AICiQ3gB0AEB&rs=AOn4CLBBD2U5pgjfF3W_g3eQwyBY8JKhlg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=1s8YwStewjE",
+      "title": "Securing Real-Time Communication - Peter Cox & Alexander Voevoda | CHERI Blossoms 2026",
+      "url": "https://www.youtube.com/watch?v=1s8YwStewjE",
+      "publishedDate": "2026-05-06T10:25:17.000Z",
+      "author": "CHERI Alliance",
+      "text": "# Securing Real-Time Communication - Peter Cox & Alexander Voevoda | CHERI Blossoms 2026\n\n- Channel: CHERI Alliance\n- Length: 16:45\n- Views: 33\n- Likes: 0\n- Published: 2026-05-06T03:25:17-07:00\n- Category: Science & Technology\n- Language: en\n\n## Description\n\nSecuring Real-Time Communication: Porting and running Edge Computing for mission critical services on Morello CHERI\n\nUM Labs is a UK R&D company specialising in cybersecurity for Real-Time Communication. This includes voice and video calls, streaming video, augmented reality and IoT. Our Unicus\u00ae platform implements a Core/Edge architecture with Core running in a public or private cloud and Edge protecting end point devices such as cameras, AR devices or IoT sensors and actuators. Unicus Edge may be integrated with an end-point device or operate on a small-scale system protecting multiple devices. Edge and Core share a common architecture with layered security providing full-stack protection. Edge systems are provisioned by Core with all communication between Edge and Core authenticated and encrypted. Encryption options include the use of Post Quantum Cryptography (PQC) algorithms.\n\nUnicus is widely installed in government, defence and commercial networks through our partnerships with BT, KPN and with Atos.\n\nUM Labs ported Unicus Edge to Morello CHERI to provide an additional level of assurance of the design and implementation of Unicus including under long-term operation with frequent and multiple recurring connection bet",
+      "image": "https://i.ytimg.com/vi/1s8YwStewjE/sddefault.jpg?sqp=-oaymwEmCIAFEOAD8quKqQMa8AEB-AH-CYAC0AWKAgwIABABGGUgZShlMA8=&rs=AOn4CLAXC-1EjIdRp2xNMJMrCF-Ync_eDg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=t-GesPCeMrI",
+      "title": "AI & Cybersecurity. Securing the Enterprise in the Age of AI | Executive Webinar",
+      "url": "https://www.youtube.com/watch?v=t-GesPCeMrI",
+      "publishedDate": "2026-05-22T13:54:02.000Z",
+      "author": "AI Future Leaders | AI Leadership & Upskilling",
+      "text": "# AI & Cybersecurity. Securing the Enterprise in the Age of AI | Executive Webinar\n\n- Channel: AI Future Leaders | AI Leadership & Upskilling\n- Length: 53:15\n- Views: 302\n- Likes: 2\n- Published: 2026-05-22T06:54:02-07:00\n- Category: Science & Technology\n- Keywords: ai future leaders, ai leadership, ai training, ai strategy, ai workflow automation, ai agents, no code ai agents, ai upskilling, ai productivity tools, ai for professionals, ai for organizations, enterprise ai, ai capability building, ai literacy, responsible ai, ai governance, ai transformation, future of work skills, ai professional development, ai for educators, adult learning ai, ai course design, team ai training\n- Language: en\n\n## Description\n\nArtificial intelligence is transforming how organizations operate, innovate, and compete. But as AI adoption accelerates, a new category of cyber risk is emerging.\n\nAI systems introduce expanded attack surfaces, autonomous decision-making, sensitive data exposure, and entirely new security challenges that traditional cybersecurity approaches were not designed to address.\n\nIn this executive webinar, industry leaders explore how organizations can secure AI-driven environments while maintaining innovation, operational resilience, and trust.\n\nTopics include:\n\u2022 AI security risks and attack surfaces \n\u2022 Prompt injection and data leakage \n\u2022 AI governance and risk management \n\u2022 Model manipulation and supply chain vulnerabilities \n\u2022 Responsible AI adoption and compliance \n\u2022 Build",
+      "image": "https://i.ytimg.com/vi/t-GesPCeMrI/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=H9eji5PhM70",
+      "title": "EP 115: The Shift From Identity Protection \u2192 Identity Resilience | Alex Weinert, CPO @ Semperis",
+      "url": "https://www.youtube.com/watch?v=H9eji5PhM70",
+      "publishedDate": "2026-05-18T12:52:47.000Z",
+      "author": "Hubscale",
+      "text": "# EP 115: The Shift From Identity Protection \u2192 Identity Resilience | Alex Weinert, CPO @ Semperis\n\n- Channel: Hubscale\n- Length: 34:15\n- Views: 76\n- Likes: 0\n- Published: 2026-05-18T05:52:47-07:00\n- Category: Entertainment\n- Language: en\n\n## Description\n\nWelcome to the Hubscale Podcast where we dive into the minds of leaders within the cybersecurity & AI space.\n\nIn this episode, we sit down with Alex Weinert, CPO at Semperis, recorded live at RSA Conference, to discuss:\n\n\u2611\ufe0f What\u2019s actually changed in identity security heading into 2026\n\u2611\ufe0f Why attackers are evolving faster than most organisations realise\n\u2611\ufe0f The shift from identity protection \u2192 identity resilience\n\u2611\ufe0f The future of the identity security market\n\u2611\ufe0f Semperis\u2019 vision, the MightyID acquisition, and where the industry is heading next\n\u2611\ufe0f Lessons from Alex\u2019s Microsoft / EntraID background and how that experience is shaping what Semperis is building today\n\nThis was one of our favourite conversations from RSA week, packed with insights on where identity security is heading and what cybersecurity leaders need to be preparing for now.\n\nHubscale is focused on scaling cybersecurity and AI teams globally. For more information reach out to info@hub-scale.com or visit https://www.hub-scale.com.\n\nIf you want to see more, please like and subscribe! \ud83d\ude80\ud83d\ude80\n\n## Transcript\n\nI had people on my team that were physically threatened by hackers. We had to put people into secure housing because they were successfully doxed by the attackers.\n",
+      "image": "https://i.ytimg.com/vi/H9eji5PhM70/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=_ahj3rGQj8I",
+      "title": "The CISOs Guide To Unified Agentic Defense Platforms (UADP)",
+      "url": "https://www.youtube.com/watch?v=_ahj3rGQj8I",
+      "publishedDate": "2026-03-04T17:54:47.000Z",
+      "author": "Software Analyst Cyber Research",
+      "text": "# The CISOs Guide To Unified Agentic Defense Platforms (UADP)\n\n- Channel: Software Analyst Cyber Research\n- Length: 46:03\n- Views: 123\n- Likes: 0\n- Published: 2026-03-04T09:54:47-08:00\n- Category: Science & Technology\n- Language: en\n\n## Description\n\nAs AI agents become deeply integrated into the enterprise, traditional security measures are reaching an inflection point. In this premiere research briefing, Lawrence Pingree (Head of Data & AI Security at SACR and former Gartner analyst) breaks down the emerging category of UADP and why intent-aware security is the new standard for 2026.\n\nIn this video, you will learn:\n- The Definition of Agentics: The difference between the AI Agent (the software) and Agentics (the reasoning mind).\n- New Attack Surfaces: Why LLMs and autonomous agents require runtime expansion and behavioral analysis.\n- The Majestic Technoscope: A unique matrix ranking of the top vendors in the UADP space, including Palo Alto Networks, SentinelOne, Microsoft, and Cyera.\n- Regulatory Landscapes: How Executive Orders, NIST, and the EU Cyber Resilience Act are forcing a shift in AI governance.\n- Proactive vs. Reactive: Why we must move toward Just-In-Time (JIT) trust and machine-speed autonomous response.\n\nTimestamps:\n\nResources:\nRead our Substack report: https://softwareanalyst.substack.com/p/the-convergence-of-ai-and-data-security\nVisit our website for more reports: https://www.softwareanalyst.io\nConnect with us on LinkedIn: https://www.linkedin.com/company/soft",
+      "image": "https://i.ytimg.com/vi/_ahj3rGQj8I/sddefault.jpg"
+    }
+  ],
+  "searchTime": 1545,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.63,
+  "_request": {
+    "query": "\"Alexander Semien\" Cogent Security talk webinar video keynote",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "youtube.com",
+      "youtu.be",
+      "vimeo.com"
+    ]
+  }
+}

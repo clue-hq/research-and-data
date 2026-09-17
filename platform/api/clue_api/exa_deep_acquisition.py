@@ -241,6 +241,10 @@ class ExaDeepAcquisitionCoordinator:
         before_dispatch: ExaDeepBeforeDispatch | None = None,
     ) -> ExaDeepAcquisitionResult:
         operation, created = await self._reserve(preflight)
+        if operation.state is ExternalResearchOperationState.SPEND_OUTCOME_UNKNOWN:
+            recovered = await self._recover_retained_success(preflight, operation)
+            if recovered is not None:
+                return recovered
         terminal = await self._terminal_result(
             operation, request=preflight.request, replay=not created
         )
@@ -578,6 +582,7 @@ class ExaDeepAcquisitionCoordinator:
         response_key: str,
         response: ExaDeepSearchResponse,
         normalization: ExaDeepAnyNormalization,
+        recover_spend_unknown: bool = False,
     ) -> ExaDeepAcquisitionResult:
         reported_cost = normalization.synthesis.cost_cents
         stop = await self._stop(operation)
@@ -600,7 +605,7 @@ class ExaDeepAcquisitionCoordinator:
             return ExaDeepAcquisitionResult(
                 outcome=ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
                 operation=unknown,
-                provider_calls=1,
+                provider_calls=0 if recover_spend_unknown else 1,
             )
         now = self._clock()
         fresh_until = now + timedelta(seconds=preflight.request.freshness_seconds)
@@ -664,6 +669,13 @@ class ExaDeepAcquisitionCoordinator:
                 result_artifacts=tuple(result_refs),
                 receipt_artifact_key=receipt_key,
                 now=now,
+                recover_spend_unknown=recover_spend_unknown,
+                recovery_parser_version=(
+                    "exa-deep-unique-alias-recovery-v1" if recover_spend_unknown else None
+                ),
+                recovery_actor_ref=(
+                    "engine:exa-deep-retained-response-recovery" if recover_spend_unknown else None
+                ),
             )
             snapshot = await adopt_external_research_snapshot(
                 conn,
@@ -681,11 +693,62 @@ class ExaDeepAcquisitionCoordinator:
                 await _bind_artifact(conn, operation, result_ref.artifact_key, "exa_deep_result")
         ready = await self._get(operation)
         return ExaDeepAcquisitionResult(
-            outcome=ExaDeepAcquisitionOutcome.READY,
+            outcome=(
+                ExaDeepAcquisitionOutcome.REPLAYED
+                if recover_spend_unknown
+                else ExaDeepAcquisitionOutcome.READY
+            ),
             operation=ready,
             snapshot=snapshot,
-            provider_calls=1,
+            provider_calls=0 if recover_spend_unknown else 1,
         )
+
+    async def _recover_retained_success(
+        self,
+        preflight: ExaDeepAnyAcquisitionPreflight,
+        operation: ExternalResearchOperationRow,
+    ) -> ExaDeepAcquisitionResult | None:
+        """Re-parse a retained response after a parser/persistence repair, without new spend."""
+
+        if await self._stop(operation) is not None:
+            return None
+        async with self._conn_factory() as conn:
+            attempt = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT ordinal, response_artifact_key FROM external_research_attempt "
+                            "WHERE operation_id=:operation_id AND state='spend_outcome_unknown' "
+                            "ORDER BY ordinal DESC LIMIT 1"
+                        ),
+                        {"operation_id": operation.operation_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if attempt is None or attempt["response_artifact_key"] is None:
+            return None
+        response_key = str(attempt["response_artifact_key"])
+        try:
+            raw = json.loads(await self._storage.get(response_key))
+            if not isinstance(raw, Mapping):
+                return None
+            response = parse_exa_deep_response(preflight.exa_request, raw)
+            normalization = _normalize_preflight(preflight, response)
+            return await self._persist_success(
+                preflight,
+                operation,
+                int(attempt["ordinal"]),
+                response_key,
+                response,
+                normalization,
+                recover_spend_unknown=True,
+            )
+        except Exception:
+            # The response remains quarantined and replay remains no-spend. A later code repair or
+            # explicit billing reconciliation can still resolve it; never dispatch again here.
+            return None
 
     async def _fail_pre_dispatch(
         self,
@@ -878,29 +941,25 @@ class ExaDeepAcquisitionCoordinator:
         return None
 
 
-def compile_exa_deep_acquisition_plan(
-    *,
-    workspace_id: str,
-    project_id: str,
-    project_run_id: ProjectRunId,
+def pack_exa_deep_field_bundles(
     account: AccountEntity,
-    icp_key: str,
-    icp_version: int,
-    research_directive: ResearchDirectivePin,
     fields: Sequence[ExaDeepFieldSpec],
+    *,
     research_intent: str,
     additional_queries: Sequence[str],
-    observation_window: str,
-    freshness_policy_ref: str,
-    freshness_seconds: int,
-    cost_cents_reserved_per_bundle: Decimal,
-    entity_research_job_id: UUID | None = None,
     config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
-) -> ExaDeepAcquisitionBundlePlan:
-    """Pack admitted fields deterministically under Exa's schema limits.
+) -> tuple[tuple[ExaDeepFieldSpec, ...], ...]:
+    """The one definition of how admitted fields split into provider-safe bundles.
 
-    Directional questions are attached to every necessary bundle, but never introduce fields.
-    Most account profiles fit one bundle; only the documented provider property limit can split it.
+    Greedy over the sorted field order: keep adding until ``compile_exa_deep_request`` refuses,
+    then start a new bundle. The refusal is *any* schema-shape limit, not just the alias cap —
+    ``validate_exa_output_schema`` also caps total **nested** properties, so object-valued rows
+    split earlier than a count of aliases predicts.
+
+    Extracted because the budget reservation has to be sized from exactly this rule. Sizing it
+    from a `ceil(len(fields) / max-aliases)` estimate under-reserved every object-heavy
+    comprehensive account: the plan really compiled four bundles, the reservation covered two, and
+    the atomic-reservation guard suspended the job on settlement — deterministic on replay.
     """
 
     ordered = sorted(fields, key=lambda field: str(field.field_key))
@@ -933,6 +992,41 @@ def compile_exa_deep_acquisition_plan(
         else:
             current = candidate
     grouped.append(current)
+    return tuple(tuple(bundle) for bundle in grouped)
+
+
+def compile_exa_deep_acquisition_plan(
+    *,
+    workspace_id: str,
+    project_id: str,
+    project_run_id: ProjectRunId,
+    account: AccountEntity,
+    icp_key: str,
+    icp_version: int,
+    research_directive: ResearchDirectivePin,
+    fields: Sequence[ExaDeepFieldSpec],
+    research_intent: str,
+    additional_queries: Sequence[str],
+    observation_window: str,
+    freshness_policy_ref: str,
+    freshness_seconds: int,
+    cost_cents_reserved_per_bundle: Decimal,
+    entity_research_job_id: UUID | None = None,
+    config: ExaDeepConfig = DEFAULT_EXA_CONFIG,
+) -> ExaDeepAcquisitionBundlePlan:
+    """Pack admitted fields deterministically under Exa's schema limits.
+
+    Directional questions are attached to every necessary bundle, but never introduce fields.
+    Most account profiles fit one bundle; only the documented provider property limit can split it.
+    """
+
+    grouped = pack_exa_deep_field_bundles(
+        account,
+        fields,
+        research_intent=research_intent,
+        additional_queries=additional_queries,
+        config=config,
+    )
     preflights: list[ExaDeepAcquisitionPreflight] = []
     for index, bundle in enumerate(grouped):
         wire = compile_exa_deep_request(
@@ -1005,11 +1099,20 @@ async def load_exa_deep_snapshot(
 ) -> tuple[ExaDeepSearchResponse, dict[str, Any]]:
     """Offline-only snapshot loader for E2; it has no provider transport dependency."""
 
+    request_artifact = json.loads(await storage.get(snapshot.request_artifact_key))
     response_payload = json.loads(await storage.get(snapshot.response_artifact_key))
     normalization_payload = json.loads(await storage.get(snapshot.normalization_artifact_key))
-    if not isinstance(response_payload, dict) or not isinstance(normalization_payload, dict):
+    if (
+        not isinstance(request_artifact, dict)
+        or not isinstance(response_payload, dict)
+        or not isinstance(normalization_payload, dict)
+    ):
         raise ValueError("stored Exa snapshot artifacts must be JSON objects")
-    return ExaDeepSearchResponse.model_validate(response_payload), normalization_payload
+    wire_request = request_artifact.get("wire_request")
+    if not isinstance(wire_request, dict):
+        raise ValueError("stored Exa request lacks its immutable wire body")
+    request = ExaDeepSearchRequest.model_validate(wire_request)
+    return parse_exa_deep_response(request, response_payload), normalization_payload
 
 
 async def _bind_artifact(

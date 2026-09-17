@@ -1,0 +1,514 @@
+{
+  "scoreboard": [
+    {
+      "person": "Vari Kaur",
+      "key": "vari_kaur",
+      "title": "Head of Growth Marketing",
+      "company": "Zafran Security",
+      "depth_score": 53.4,
+      "claims": 12,
+      "p1": 9,
+      "hooks": 6,
+      "charter_categories_filled": "5/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 0,
+      "background_rows": 2,
+      "not_found_count": 12
+    },
+    {
+      "person": "Nick Fisher",
+      "key": "nick_fisher",
+      "title": "VP Marketing",
+      "company": "Zafran Security",
+      "depth_score": 68.7,
+      "claims": 11,
+      "p1": 10,
+      "hooks": 11,
+      "charter_categories_filled": "6/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 3,
+      "background_rows": 2,
+      "not_found_count": 10
+    },
+    {
+      "person": "Sanaz Yashar",
+      "key": "sanaz_yashar",
+      "title": "Co-Founder & CEO",
+      "company": "Zafran Security",
+      "depth_score": 67.8,
+      "claims": 13,
+      "p1": 8,
+      "hooks": 12,
+      "charter_categories_filled": "6/6",
+      "unique_insight_found": true,
+      "voice_rows": 2,
+      "life_rows": 1,
+      "background_rows": 2,
+      "not_found_count": 7
+    },
+    {
+      "person": "Alexander Semien",
+      "key": "alexander_semien",
+      "title": "Head of Growth",
+      "company": "Cogent Security",
+      "depth_score": 55.1,
+      "claims": 12,
+      "p1": 9,
+      "hooks": 8,
+      "charter_categories_filled": "5/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 0,
+      "background_rows": 3,
+      "not_found_count": 5
+    },
+    {
+      "person": "Cameron Coles",
+      "key": "cameron_coles",
+      "title": "VP of Marketing",
+      "company": "Cogent Security",
+      "depth_score": 53.0,
+      "claims": 9,
+      "p1": 7,
+      "hooks": 8,
+      "charter_categories_filled": "5/6",
+      "unique_insight_found": true,
+      "voice_rows": 2,
+      "life_rows": 0,
+      "background_rows": 1,
+      "not_found_count": 7
+    },
+    {
+      "person": "Vineet Edupuganti",
+      "key": "vineet_edupuganti",
+      "title": "Co-Founder & CEO",
+      "company": "Cogent Security",
+      "depth_score": 63.5,
+      "claims": 14,
+      "p1": 10,
+      "hooks": 9,
+      "charter_categories_filled": "5/6",
+      "unique_insight_found": true,
+      "voice_rows": 2,
+      "life_rows": 0,
+      "background_rows": 2,
+      "not_found_count": 8
+    },
+    {
+      "person": "Ana Corio",
+      "key": "ana_corio",
+      "title": "Director of Demand Generation",
+      "company": "Harmonic Security",
+      "depth_score": 66.5,
+      "claims": 13,
+      "p1": 8,
+      "hooks": 7,
+      "charter_categories_filled": "6/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 3,
+      "background_rows": 2,
+      "not_found_count": 8
+    },
+    {
+      "person": "Tyler Chonoles",
+      "key": "tyler_chonoles",
+      "title": "Growth and Demand Gen Marketing Manager",
+      "company": "Harmonic Security",
+      "depth_score": 60.5,
+      "claims": 8,
+      "p1": 7,
+      "hooks": 5,
+      "charter_categories_filled": "6/6",
+      "unique_insight_found": true,
+      "voice_rows": 2,
+      "life_rows": 1,
+      "background_rows": 1,
+      "not_found_count": 10
+    },
+    {
+      "person": "Alastair Paterson",
+      "key": "alastair_paterson",
+      "title": "CEO & Co-Founder",
+      "company": "Harmonic Security",
+      "depth_score": 66.6,
+      "claims": 16,
+      "p1": 8,
+      "hooks": 4,
+      "charter_categories_filled": "6/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 3,
+      "background_rows": 4,
+      "not_found_count": 8
+    },
+    {
+      "person": "Mandar Marathe",
+      "key": "mandar_marathe",
+      "title": "VP Marketing",
+      "company": "UPTIQ, Inc.",
+      "depth_score": 54.4,
+      "claims": 11,
+      "p1": 7,
+      "hooks": 2,
+      "charter_categories_filled": "5/6",
+      "unique_insight_found": true,
+      "voice_rows": 1,
+      "life_rows": 0,
+      "background_rows": 3,
+      "not_found_count": 8
+    }
+  ],
+  "source_coverage_matrix": {
+    "vari_kaur": {
+      "linkedin_profile": 6,
+      "linkedin_post": 8,
+      "youtube": 0,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 0,
+      "substack_medium": 0,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 0,
+      "social_x_bsky": 0,
+      "directory_aggregator": 1
+    },
+    "nick_fisher": {
+      "linkedin_profile": 17,
+      "linkedin_post": 8,
+      "youtube": 1,
+      "podcast_dir": 5,
+      "podcast_site": 1,
+      "company_site": 0,
+      "personal_site_or_github": 1,
+      "substack_medium": 5,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 2,
+      "social_x_bsky": 0,
+      "directory_aggregator": 1
+    },
+    "sanaz_yashar": {
+      "linkedin_profile": 1,
+      "linkedin_post": 2,
+      "youtube": 0,
+      "podcast_dir": 1,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 0,
+      "substack_medium": 0,
+      "trade_press": 5,
+      "conference_event": 3,
+      "university_alumni": 0,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    },
+    "alexander_semien": {
+      "linkedin_profile": 1,
+      "linkedin_post": 13,
+      "youtube": 0,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 4,
+      "personal_site_or_github": 0,
+      "substack_medium": 0,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 0,
+      "social_x_bsky": 0,
+      "directory_aggregator": 2
+    },
+    "cameron_coles": {
+      "linkedin_profile": 8,
+      "linkedin_post": 12,
+      "youtube": 0,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 1,
+      "substack_medium": 0,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 3,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    },
+    "vineet_edupuganti": {
+      "linkedin_profile": 1,
+      "linkedin_post": 8,
+      "youtube": 2,
+      "podcast_dir": 8,
+      "podcast_site": 1,
+      "company_site": 1,
+      "personal_site_or_github": 0,
+      "substack_medium": 4,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 2,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    },
+    "ana_corio": {
+      "linkedin_profile": 1,
+      "linkedin_post": 11,
+      "youtube": 1,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 0,
+      "substack_medium": 0,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 0,
+      "social_x_bsky": 0,
+      "directory_aggregator": 1
+    },
+    "tyler_chonoles": {
+      "linkedin_profile": 1,
+      "linkedin_post": 8,
+      "youtube": 0,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 0,
+      "substack_medium": 0,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 1,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    },
+    "alastair_paterson": {
+      "linkedin_profile": 6,
+      "linkedin_post": 4,
+      "youtube": 0,
+      "podcast_dir": 4,
+      "podcast_site": 2,
+      "company_site": 1,
+      "personal_site_or_github": 0,
+      "substack_medium": 1,
+      "trade_press": 4,
+      "conference_event": 0,
+      "university_alumni": 0,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    },
+    "mandar_marathe": {
+      "linkedin_profile": 8,
+      "linkedin_post": 16,
+      "youtube": 1,
+      "podcast_dir": 0,
+      "podcast_site": 0,
+      "company_site": 0,
+      "personal_site_or_github": 0,
+      "substack_medium": 8,
+      "trade_press": 0,
+      "conference_event": 0,
+      "university_alumni": 1,
+      "social_x_bsky": 0,
+      "directory_aggregator": 0
+    }
+  },
+  "source_type_yield_across_10_people": {
+    "linkedin_profile": 10,
+    "linkedin_post": 10,
+    "university_alumni": 5,
+    "youtube": 4,
+    "podcast_dir": 4,
+    "substack_medium": 4,
+    "directory_aggregator": 4,
+    "podcast_site": 3,
+    "company_site": 3,
+    "personal_site_or_github": 2,
+    "trade_press": 2,
+    "conference_event": 1,
+    "social_x_bsky": 0
+  },
+  "angle_productivity": [
+    {
+      "angle": "A1_podcast",
+      "people_with_a_strong_hit": 10,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.007
+    },
+    {
+      "angle": "A4_authored",
+      "people_with_a_strong_hit": 10,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.007
+    },
+    {
+      "angle": "A10_community",
+      "people_with_a_strong_hit": 9,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0078
+    },
+    {
+      "angle": "A12_targeted_prior_voice",
+      "people_with_a_strong_hit": 9,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0078
+    },
+    {
+      "angle": "A8_personal_site",
+      "people_with_a_strong_hit": 9,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0078
+    },
+    {
+      "angle": "A11_local_hometown",
+      "people_with_a_strong_hit": 8,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0088
+    },
+    {
+      "angle": "A6_alumni",
+      "people_with_a_strong_hit": 8,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0088
+    },
+    {
+      "angle": "A3_podcast_dirs",
+      "people_with_a_strong_hit": 3,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.0233
+    },
+    {
+      "angle": "A7_awards",
+      "people_with_a_strong_hit": 3,
+      "cost_usd": 0.063,
+      "usd_per_person_served": 0.021
+    },
+    {
+      "angle": "A2_video",
+      "people_with_a_strong_hit": 1,
+      "cost_usd": 0.07,
+      "usd_per_person_served": 0.07
+    },
+    {
+      "angle": "A5_writing_platforms",
+      "people_with_a_strong_hit": 0,
+      "cost_usd": 0.07,
+      "usd_per_person_served": null
+    },
+    {
+      "angle": "A9_social",
+      "people_with_a_strong_hit": 0,
+      "cost_usd": 0.07,
+      "usd_per_person_served": null
+    }
+  ],
+  "by_provider": {
+    "exa": {
+      "calls": 148,
+      "usd": 1.188,
+      "wire_seconds": 474.2
+    },
+    "live_http": {
+      "calls": 31,
+      "usd": 0.0,
+      "wire_seconds": 14.3
+    },
+    "openrouter": {
+      "calls": 22,
+      "usd": 0.0982,
+      "wire_seconds": 336.5
+    }
+  },
+  "by_phase_money": {
+    "P1 sweep": {
+      "calls": 121,
+      "usd": 0.84
+    },
+    "P1c targeted+linkedin": {
+      "calls": 11,
+      "usd": 0.08
+    },
+    "P2 media": {
+      "calls": 36,
+      "usd": 0.027
+    },
+    "P3 deep-reasoning": {
+      "calls": 11,
+      "usd": 0.241
+    },
+    "P4 structuring": {
+      "calls": 12,
+      "usd": 0.0804
+    },
+    "P4b unique": {
+      "calls": 10,
+      "usd": 0.0178
+    }
+  },
+  "by_phase_wallclock_s": {
+    "P1_sweep": 37.82,
+    "P1c_targeted": 4.64,
+    "P2a_media_resolve": 15.12,
+    "P2b_captions": 3.35,
+    "P2c_exa_media_pages": 2.13,
+    "P2d_transcript_hunt": 3.4,
+    "P2e_extra_media": 2.58,
+    "P3_deep_vari_kaur": 31.1,
+    "P3_TOTAL": 84.27,
+    "P3_deep_nick_fisher": 17.93,
+    "P3_deep_sanaz_yashar": 29.7,
+    "P3_deep_cameron_coles": 13.25,
+    "P3_deep_alexander_semien": 33.19,
+    "P3_deep_vineet_edupuganti": 24.01,
+    "P3_deep_ana_corio": 27.55,
+    "P3_deep_tyler_chonoles": 25.57,
+    "P3_deep_alastair_paterson": 27.78,
+    "P3_deep_mandar_marathe": 25.54,
+    "P4_struct_vari_kaur": 31.21,
+    "P4_TOTAL": 19.6,
+    "P4_struct_nick_fisher": 30.36,
+    "P4_struct_sanaz_yashar": 31.97,
+    "P4_struct_alexander_semien": 24.44,
+    "P4_struct_cameron_coles": 19.59,
+    "P4_struct_vineet_edupuganti": 20.27,
+    "P4_struct_ana_corio": 21.68,
+    "P4_struct_tyler_chonoles": 17.91,
+    "P4_struct_alastair_paterson": 24.07,
+    "P4_struct_mandar_marathe": 17.27,
+    "P3_deep_cameron_coles_RETRY": 39.68,
+    "P4b_unique_repair": 49.38
+  },
+  "total_usd": 1.2862,
+  "total_credits": 0.0,
+  "segment_truth": {
+    "people": 10,
+    "avg_depth": 61.0,
+    "avg_hooks": 7.2,
+    "insight_health_bar_hooks": 5,
+    "people_at_or_above_bar": 8,
+    "people_with_any_life_outside_work_row": 5,
+    "people_with_long_form_voice_media": 3,
+    "people_with_a_unique_insight": 10,
+    "people_with_hometown": 5,
+    "people_with_alma_mater": 10,
+    "people_with_hobby_or_publication": 7
+  },
+  "sensitivity_audit": {
+    "banned_category_hits": [],
+    "origin_mentions_requiring_the_not-an-outreach-hook_flag": [
+      {
+        "person": "sanaz_yashar",
+        "term": "born in iran"
+      },
+      {
+        "person": "sanaz_yashar",
+        "term": "born in iran"
+      },
+      {
+        "person": "sanaz_yashar",
+        "term": "fled"
+      }
+    ],
+    "verdict": "CLEAN \u2014 no banned-category claim was recorded"
+  }
+}

@@ -10,6 +10,10 @@ from uuid import UUID
 
 from pydantic import Field, StringConstraints
 
+from clue_api.account_research_discovery_readiness import (
+    AccountResearchDiscoveryNotReady,
+    require_sealed_account_discovery,
+)
 from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetProjection,
@@ -265,6 +269,16 @@ class LaunchSelectedAccountResearchTool(Tool):
                     "selected_launch_project_run_mismatch",
                     "the research run must belong to the captured message's project",
                 )
+            try:
+                await require_sealed_account_discovery(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    project_run_id=project_run_id,
+                    icp_key=project_run.icp_key,
+                    icp_version=project_run.icp_version,
+                )
+            except AccountResearchDiscoveryNotReady as exc:
+                raise _SelectedAccountLaunchRefused(exc.reason_code, str(exc)) from exc
             directive = await get_research_directive(
                 conn,
                 directive_id,

@@ -43,15 +43,28 @@ from clue_db import ConnFactory, transaction
 from clue_fleet.entity_research import EntityResearchExecutionFence, EntityResearchJobRow
 
 _TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r5:account-agent-turn")
-_ACCOUNT_PROFILE_REF = "agent-profile:account-research:v1"
-_ACCOUNT_PROMPT_REF = "agent-prompt:account-research:v1"
-_ACCOUNT_SKILL_REF = "agent-skill:governed-account-research:v1"
+#: The profile is the resource a launch durably pins into `EntityResearchJobAuthorization`
+#: (`agent_profile_ref` + `agent_profile_sha256`), and `resolve` refuses any job whose
+#: authorization names a different one. Its body is unchanged since v2, so its pin stays v2: a ref
+#: bump here would strand every already-launched job (they carry the v2 ref at rest) and is
+#: warranted only when the role identity itself changes.
+_ACCOUNT_PROFILE_VERSION = "v2"
+_ACCOUNT_PROFILE_REF = f"agent-profile:account-research:{_ACCOUNT_PROFILE_VERSION}"
+#: Steering content (prompt + skills) is *not* authorization-pinned — it is pinned for replay by
+#: the R3 journal's `system_prompt_sha256`/`resource_manifest_sha256`, and the turn key carries the
+#: task attempt, so a resumed job legitimately re-drives under newer steering. v3 adds the account
+#: tool operations manual (the Tier-1 static failure playbook) alongside the v2 prompt/skill.
+_ACCOUNT_STEERING_VERSION = "v3"
+_ACCOUNT_PROMPT_REF = f"agent-prompt:account-research:{_ACCOUNT_STEERING_VERSION}"
+_ACCOUNT_SKILL_REF = f"agent-skill:governed-account-research:{_ACCOUNT_STEERING_VERSION}"
+_ACCOUNT_MANUAL_REF = f"agent-skill:account-tool-operations-manual:{_ACCOUNT_STEERING_VERSION}"
 _ACCOUNT_TOOL_NAMES = (
     "read_account_research_state",
     "research_account_deep",
     "enrich_account",
     "inspect_account_evidence",
     "discover_buying_committee",
+    "record_committee_role_inferences",
     "assess_account_coverage",
     "read_research_result",
     "read_evidence",
@@ -82,6 +95,17 @@ def _committee_plan_block(plan: AccountCommitteePlanProjection | None) -> str:
     if plan.questions:
         lines.append("- confirmed committee questions:")
         lines.extend(f"  - {value}" for value in plan.questions)
+    else:
+        # An unrestricted plan is authority to research the committee, not a reason to refuse it.
+        # Live, an agent read "(unrestricted)" plus a `questions` field it could not leave empty,
+        # concluded it had no verbatim question to copy and no function it was allowed to choose,
+        # and looped on the coverage refusal until the graph recursion cap killed the job. Say the
+        # two admissible values out loud instead.
+        lines.append(
+            "- this plan confirms no committee question: leave `questions` empty (never invent "
+            "one), and because every selector above is unrestricted, choose the "
+            "`buying_unit_scope.target_functions` your account evidence supports."
+        )
     return "\n".join(lines)
 
 
@@ -120,6 +144,7 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         model_policy: ModelPolicy,
         conn_factory: ConnFactory = transaction,
         catalog_root: Path | None = None,
+        profile_catalog_root: Path | None = None,
         require_atomic_admission: bool = False,
         enforce_budget: bool = True,
     ) -> None:
@@ -128,9 +153,8 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         self._provider_actions = provider_actions
         self._model_policy = model_policy
         self._conn_factory = conn_factory
-        self._catalog_root = catalog_root or (
-            Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v1"
-        )
+        self._catalog_root = catalog_root or _account_catalog_root()
+        self._profile_root = profile_catalog_root or _account_catalog_root(_ACCOUNT_PROFILE_VERSION)
         self._require_atomic_admission = require_atomic_admission
         self._enforce_budget = enforce_budget
 
@@ -208,9 +232,14 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
             raise AccountResearchCompositionError("account research run is absent")
         context = EntityResearchRuntimeContext(
             agent_execution_id=job.authorization.attempt_id,
+            # One drive is one turn. The attempt ordinal is load-bearing: a released lease
+            # restarts at generation 1, so a crashed job resumed at the same durable state would
+            # otherwise re-mint the previous drive's turn id and the R3 journal would refuse the
+            # resume as a replay under different exact construction.
             agent_turn_id=uuid5(
                 _TURN_NAMESPACE,
-                f"{job.job_id}:{fence.lease_generation}:{job.current_state_sha256}",
+                f"{job.job_id}:{fence.lease_generation}:{fence.task_attempt}"
+                f":{job.current_state_sha256}",
             ),
             role=EntityAgentRole.ACCOUNT,
             authorization=job.authorization,
@@ -238,6 +267,14 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
         questions = "\n".join(
             f"- {value}" for value in job.authorization.selection.research_questions
         )
+        question_instruction = (
+            "The confirmed directional questions are:\n" + questions
+            if questions
+            else (
+                "No separate directional questions were confirmed. The admitted field/source "
+                "plan is the complete research boundary."
+            )
+        )
         return EntityResearchAgentDefinition(
             context=context,
             model_policy=self._model_policy,
@@ -256,38 +293,58 @@ class AccountResearchDefinitionResolver(EntityResearchDefinitionResolver):
                     if not self._enforce_budget
                     else ""
                 )
-                + "The confirmed directional questions are:\n"
-                f"{questions}"
-                f"{_committee_plan_block(committee_plan)}"
+                + question_instruction
+                + _committee_plan_block(committee_plan)
             ),
         )
 
     def _resources(self) -> EntityResearchResourceBundle:
-        def resource(kind: str, ref: str, name: str) -> EntityResearchResource:
-            body = (self._catalog_root / name).read_text(encoding="utf-8")
+        def resource(kind: str, ref: str, version: str, path: Path) -> EntityResearchResource:
+            body = path.read_text(encoding="utf-8")
             return EntityResearchResource(
                 kind=kind,  # type: ignore[arg-type]
                 ref=ref,
-                version="v1",
+                version=version,
                 sha256=hashlib.sha256(body.encode()).hexdigest(),
                 body=body,
             )
 
+        def steering(kind: str, ref: str, name: str) -> EntityResearchResource:
+            return resource(kind, ref, _ACCOUNT_STEERING_VERSION, self._catalog_root / name)
+
         return EntityResearchResourceBundle(
-            profile=resource("profile", _ACCOUNT_PROFILE_REF, "profile.md"),
-            prompt=resource("prompt", _ACCOUNT_PROMPT_REF, "prompt.md"),
-            skills=(resource("skill", _ACCOUNT_SKILL_REF, "skill.md"),),
+            profile=resource(
+                "profile",
+                _ACCOUNT_PROFILE_REF,
+                _ACCOUNT_PROFILE_VERSION,
+                self._profile_root / "profile.md",
+            ),
+            prompt=steering("prompt", _ACCOUNT_PROMPT_REF, "prompt.md"),
+            skills=(
+                steering("skill", _ACCOUNT_SKILL_REF, "skill.md"),
+                steering("skill", _ACCOUNT_MANUAL_REF, "manual.md"),
+            ),
         )
 
 
-def account_research_profile_sha256(catalog_root: Path | None = None) -> str:
-    root = catalog_root or (
-        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / "v1"
+def _account_catalog_root(version: str = _ACCOUNT_STEERING_VERSION) -> Path:
+    return (
+        Path(__file__).parents[2] / "agents" / "catalog" / "entity-research" / "account" / version
     )
+
+
+def account_research_profile_sha256(catalog_root: Path | None = None) -> str:
+    root = catalog_root or _account_catalog_root(_ACCOUNT_PROFILE_VERSION)
     return hashlib.sha256((root / "profile.md").read_bytes()).hexdigest()
 
 
+#: The one profile reference a launch may stamp into a job authorization. The launcher and this
+#: resolver must never disagree about it — ``resolve`` refuses a job whose authorization names any
+#: other profile — so both read this constant.
+ACCOUNT_RESEARCH_PROFILE_REF = _ACCOUNT_PROFILE_REF
+
 __all__ = [
+    "ACCOUNT_RESEARCH_PROFILE_REF",
     "AccountResearchCompositionError",
     "AccountResearchDefinitionResolver",
     "AccountResearchProviderActionResolver",

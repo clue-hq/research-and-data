@@ -436,19 +436,13 @@ async def request_run_cancellation(
     # no-op cases below. One read decides which, so the answer is never guessed.
     current = (
         await conn.execute(
-            text(
-                "SELECT * FROM design_agent_run WHERE run_id = :r AND workspace_id = :w"
-            ),
+            text("SELECT * FROM design_agent_run WHERE run_id = :r AND workspace_id = :w"),
             {"r": run_id, "w": workspace_id},
         )
     ).first()
     if current is None:
         raise DesignNotFoundError("agent_run", run_id)
-    outcome = (
-        "already_requested"
-        if current.cancel_requested_at is not None
-        else "already_terminal"
-    )
+    outcome = "already_requested" if current.cancel_requested_at is not None else "already_terminal"
     return {
         **_agent_run_from_row(current),
         "outcome": outcome,
@@ -456,9 +450,7 @@ async def request_run_cancellation(
     }
 
 
-async def cancellation_requested(
-    conn: AsyncConnection, *, workspace_id: str, run_id: str
-) -> bool:
+async def cancellation_requested(conn: AsyncConnection, *, workspace_id: str, run_id: str) -> bool:
     """Has this run been asked to stop? The probe the driving worker polls at call boundaries.
 
     Deliberately narrow — one boolean off one indexed key lookup, not the whole row — because it

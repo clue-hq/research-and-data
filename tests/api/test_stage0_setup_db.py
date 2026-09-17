@@ -1107,7 +1107,7 @@ def test_setup_routes_mount_only_behind_the_flag() -> None:
             base = load_settings(_env_file=None)
 
             def app_for(enabled: bool):
-                settings = base.model_copy(update={"self_serve_provisioning_enabled": enabled})
+                settings = base.model_copy(update={"legacy_stage0_recon_enabled": enabled})
                 registry = ToolRegistry()
                 return create_projections_app(
                     surface=build_surface(conn),

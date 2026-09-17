@@ -1,0 +1,388 @@
+{
+  "zafran": {
+    "admitted": [
+      {
+        "name": "Brian Sams",
+        "title": "RSM SLED",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/brian-sams",
+        "start": "2026-08-01"
+      },
+      {
+        "name": "Tom Anthony",
+        "title": "SVP, Global Sales",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+        "start": "2024-11-01"
+      },
+      {
+        "name": "Corey Wahler",
+        "title": "Technical Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/coreywahler",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Jordan Beam",
+        "title": "Major Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/jordanbeam",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Travis J. Bennett",
+        "title": "Regional Sales Manager - Majors",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Sanaz Yashar",
+        "title": "Co-Founder & CEO",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+        "start": "2022-11-01"
+      },
+      {
+        "name": "Brett Robinson",
+        "title": "Regional Sales Manager - Majors",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/bwrobinson1",
+        "start": "2025-02-01"
+      },
+      {
+        "name": "Aidan Maloney",
+        "title": "Business Development",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/aidan-maloney-614856181",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Rotem Peled-Dvir",
+        "title": "SVP, Finance",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/rotem-peled-dvir",
+        "start": "2025-01-01"
+      },
+      {
+        "name": "Andrew Marasa",
+        "title": "Regional Sales Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/andrewmarasa",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Kris Nordberg",
+        "title": "Regional Sales Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+        "start": "2025-10-01"
+      },
+      {
+        "name": "Quentin O'Dell",
+        "title": "Director, Technical Account Manager",
+        "current_company": "Zafran Security",
+        "linkedin": "https://www.linkedin.com/in/quentin-odell",
+        "start": "2026-06-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 12,
+    "roster_total_available": 163
+  },
+  "cogent": {
+    "admitted": [
+      {
+        "name": "Neil J.",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/neil-j-b168509",
+        "start": "2024-12-01"
+      },
+      {
+        "name": "Justin Jancaric",
+        "title": "Founding GTM Sales Leader",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/justinjancaric",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Steven Do",
+        "title": "Head of Technical Recruiting",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/dosteven",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Ryan Marasco",
+        "title": "Solutions",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/ryanmarasco",
+        "start": "2025-09-01"
+      },
+      {
+        "name": "Karan Gugle",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/karan-gugle-a8a80160",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Kimberli Nichols",
+        "title": "Southeast GTM",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/kimberlinichols",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Cameron Coles",
+        "title": "VP of Marketing",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/cameroncoles",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Peyman Mani",
+        "title": "Technical Lead Manager, Data Platform",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/peymanmani",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Geng Sng",
+        "title": "Co-Founder & CTO",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/geng-sng",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Rebecca Brock",
+        "title": "Regional Sales Manager",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/rebecca-brock-412782160",
+        "start": "2026-05-01"
+      },
+      {
+        "name": "Jia Z.",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/jia-z-2a4b7aa2",
+        "start": "2024-12-01"
+      }
+    ],
+    "rejected_same_name": [
+      {
+        "name": "Sheryl A. Culliver-Turner, MBA",
+        "title": "Founder & Chief Executive Officer",
+        "current_company": "sigma-Cogent Solutions, LLC",
+        "linkedin": "https://www.linkedin.com/in/scturner1",
+        "start": "2019-07-01"
+      }
+    ],
+    "roster_returned": 12,
+    "roster_total_available": 62
+  },
+  "harmonic": {
+    "admitted": [
+      {
+        "name": "James Derbyshire",
+        "title": "VP Strategic Partnerships / Founding Executive",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/james-derbyshire-7989531",
+        "start": "2025-02-01"
+      },
+      {
+        "name": "Ana Corio",
+        "title": "Director of Demand Generation",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/anastasiacorio",
+        "start": "2024-09-01"
+      },
+      {
+        "name": "John Vatz",
+        "title": "Regional Sales Manager, Southwest",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/johnvatz",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Colin Lyon",
+        "title": "Regional Director",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/colin-lyon-87297b116",
+        "start": "2025-07-01"
+      },
+      {
+        "name": "Seb Gaziano",
+        "title": "Commercial Director, EMEA",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/seb-gaziano-5a257631",
+        "start": "2025-06-01"
+      },
+      {
+        "name": "Tom Gore",
+        "title": "Regional Sales Manager",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/tomgore1",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Ashley Freeman",
+        "title": "Senior Customer Success Manager",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/ashleyfreemanco",
+        "start": "2026-07-01"
+      },
+      {
+        "name": "Jessica Couto",
+        "title": "VP Channels & Alliances",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/jessica-couto-8a908a2",
+        "start": "2025-10-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 8,
+    "roster_total_available": 69
+  },
+  "vendelux": {
+    "admitted": [
+      {
+        "name": "Leanne Ortega",
+        "title": "GTM @ Vendelux",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/leanne-ortega-810865201",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Cullen O'Neill",
+        "title": "Data / Data Ops",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/cullenoneill",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Violet Hyun",
+        "title": "Product Designer",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/violet-hyun",
+        "start": "2026-03-01"
+      },
+      {
+        "name": "Charlie Bentivenga",
+        "title": "Head of Talent",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/charliebentivenga",
+        "start": "2023-11-01"
+      },
+      {
+        "name": "Matthew Nelson",
+        "title": "Head of Data Operations",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/matthewnelson92",
+        "start": "2025-01-01"
+      },
+      {
+        "name": "Erica Korn",
+        "title": "Head of Mid-Market Sales",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/ericankorn",
+        "start": "2026-04-01"
+      },
+      {
+        "name": "Elena Kokhanovski",
+        "title": "Talent Acquisition Partner",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/elenakokhanovski",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Eli Silverman",
+        "title": "Enterprise Account Executive",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/eli-silverman-baa479b4",
+        "start": "2024-02-01"
+      },
+      {
+        "name": "Alex Reynolds",
+        "title": "Co-founder & CEO",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/alexreynolds1",
+        "start": "2021-01-01"
+      },
+      {
+        "name": "Dena Lopez",
+        "title": "Field Sales Representative",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/denalopez",
+        "start": "2026-07-01"
+      },
+      {
+        "name": "Tanya Peress",
+        "title": "Head of Marketing",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/tanya-p",
+        "start": "2025-07-01"
+      },
+      {
+        "name": "Stanton Quan",
+        "title": "Head of Sales",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/stantonquan",
+        "start": "2024-09-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 12,
+    "roster_total_available": 100
+  },
+  "uptiq": {
+    "admitted": [
+      {
+        "name": "Manuj Paliwal",
+        "title": "Engineering Lead",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/manujpaliwal",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Joe Rost",
+        "title": "VP, Wealth Solutions",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/joe-rost-02197819",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Ayushi Yadav",
+        "title": "Product Designer",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/uxayushi",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Kyle Kneubuhl",
+        "title": "Managing Director- Credit Union and Banking Solutions",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/kyle-kneubuhl-211b825b",
+        "start": "2023-05-01"
+      },
+      {
+        "name": "Atharva Joshi",
+        "title": "Senior Software Engineer",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/joshiatharva",
+        "start": "2022-06-01"
+      },
+      {
+        "name": "Craig McKeon",
+        "title": "VP, GTM Strategy",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/craig-mckeon",
+        "start": "2026-04-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 6,
+    "roster_total_available": 151
+  }
+}

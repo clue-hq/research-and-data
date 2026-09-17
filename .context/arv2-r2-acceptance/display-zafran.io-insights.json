@@ -1,0 +1,675 @@
+{
+  "insights": {
+    "checks": {
+      "buying-signals": {
+        "aliases": 32,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "contact-insights": {
+        "aliases": 37,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "context-only": {
+        "aliases": 1,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "how-they-sell": {
+        "aliases": 1,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 3,
+        "verbatim": null
+      },
+      "money-and-momentum": {
+        "aliases": 4,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "tools-they-already-use": {
+        "aliases": 3,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      }
+    },
+    "cost_usd": "0.01366760",
+    "display_block": {
+      "page": "insights",
+      "sections": [
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "Buying signals",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "Zafran is hiring for an ABM function built around \u201cOwn ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segments, and scaled 1:many motions where volume matters.\u201d, with the role published on 17 June 2026."
+                },
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "What it means for us: Clue can support the account-tiering, buying-group mapping and coordinated go-to-market work this new function is being created to handle."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "7226c003-484c-4bb9-946f-868a6a79588b",
+                  "name": "Vari Kaur",
+                  "persona": "champion",
+                  "title": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)"
+                }
+              ],
+              "h2": "ABM role open for 77 days as of 17 June 2026",
+              "id": "buying-signals-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "7d579f11-efda-4164-9c2f-4459d2c38150"
+                  ],
+                  "text": "The hiring snapshot records \u201cby_department: Customer Success: 1; Finance: 1; G&A: 1; HR: 1; Marketing: 3; Product: 1; R&D: 8; Sales: 11; longest_open_marketing_req_days: 77; open_reqs_total: 27; published_last_30_days: 9; published_last_7_days: 4\u201d as observed on 2 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "7d579f11-efda-4164-9c2f-4459d2c38150"
+                  ],
+                  "text": "What it means for us: Clue has a broad hiring push and a near-term need to scale account and committee research across Sales and Marketing."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "27 open requisitions, with 9 published in the last 30 days",
+              "id": "buying-signals-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "47678440-74e1-4be3-bbb5-598758a92fb9"
+                  ],
+                  "text": "Zafran says its partner ecosystem is \u201cbecoming one of the fastest ways security teams discover and adopt Zafran\u201d and is hiring a Director of Alliances to build that engine from scratch, with the role published on 1 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "47678440-74e1-4be3-bbb5-598758a92fb9"
+                  ],
+                  "text": "What it means for us: Clue can help create partner-specific account research and content as Zafran establishes its alliances motion."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Partner ecosystem role published on 1 September 2026",
+              "id": "buying-signals-3",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "bab0de1d-bda2-4397-8495-51855155a165",
+                    "fc4d40fa-43b5-4ed3-bb97-53f89583b9b7",
+                    "3c5726c8-9162-49ac-8cc6-341cfb652bdd",
+                    "69248fdb-76fc-4970-8ead-5992daf60906",
+                    "83dbdd34-ff2b-40db-acb1-70c7ff5bfba5"
+                  ],
+                  "text": "The listings include \u201cRegional Sales Manager (United Kingdom) \u2014 Sales \u2014 published 2026-06-13\u201d, while four additional regional Sales Manager roles were also still listed after 87 days."
+                },
+                {
+                  "claimIds": [
+                    "bab0de1d-bda2-4397-8495-51855155a165",
+                    "fc4d40fa-43b5-4ed3-bb97-53f89583b9b7",
+                    "3c5726c8-9162-49ac-8cc6-341cfb652bdd",
+                    "69248fdb-76fc-4970-8ead-5992daf60906",
+                    "83dbdd34-ff2b-40db-acb1-70c7ff5bfba5"
+                  ],
+                  "text": "What it means for us: Clue can help give newly expanding regional sales teams consistent, account-specific research and messaging while these territories are being staffed."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Five Sales roles still listed after 87 days",
+              "id": "buying-signals-4",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "buying-signals",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Money & momentum",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "dd9536e8-73e7-45e8-937f-84da05f410b5"
+                  ],
+                  "text": "The claim records 60000000 raised in a SERIES_C, announced on 2 December 2025, from Vintage Investment Partners, Cyberstarts, Amex Ventures, PSP Growth, Knollwood Investment Advisory, Sequoia Capital and Menlo Ventures."
+                },
+                {
+                  "claimIds": [
+                    "dd9536e8-73e7-45e8-937f-84da05f410b5"
+                  ],
+                  "text": "No lead investor or change from the round is stated in the claim."
+                },
+                {
+                  "claimIds": [
+                    "dd9536e8-73e7-45e8-937f-84da05f410b5"
+                  ],
+                  "text": "What it means for us: The latest funding announcement gives us a timely financial-growth angle for account outreach."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "60000000 SERIES_C announced on 2 December 2025",
+              "id": "money-and-momentum-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "41cd0cd6-a36f-41f8-ba39-10876f5c5c81"
+                  ],
+                  "text": "The claim records total funding of 130500000 USD across 4 rounds from 9 investors."
+                },
+                {
+                  "claimIds": [
+                    "41cd0cd6-a36f-41f8-ba39-10876f5c5c81"
+                  ],
+                  "text": "What it means for us: The funding history supports positioning Clue around scaling account and committee research across a funded business."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "130500000 raised across 4 rounds",
+              "id": "money-and-momentum-2",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "784bda47-4d4e-4444-8f1d-c2b65c1e1e1e",
+                    "7c22d0ca-9f66-4b91-b7e5-b6d7d8eb65d9"
+                  ],
+                  "text": "The revenue band is 10m_50m, while a provider estimate as of 22 August 2026 gives amount_min: 10000000 and amount_max: 25000000 USD."
+                },
+                {
+                  "claimIds": [
+                    "784bda47-4d4e-4444-8f1d-c2b65c1e1e1e",
+                    "7c22d0ca-9f66-4b91-b7e5-b6d7d8eb65d9"
+                  ],
+                  "text": "What it means for us: The stated revenue range supports a focused account-level approach rather than a broad-market message."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "10m_50m revenue band with a 10000000\u201325000000 estimate",
+              "id": "money-and-momentum-3",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "money-and-momentum",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Tools they already use",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "The hiring requirements name \"Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach.\""
+                },
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "The marketing stack also lists HubSpot, Salesforce and unnamed major ABM platforms."
+                },
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "What it means for us: We should position Clue as complementary to the sales and marketing tools they already name."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Salesforce, Sales Navigator, ZoomInfo and Outreach appear in hiring requirements",
+              "id": "tools-they-already-use-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "No ABM platform named in all 27 requisitions; the record explicitly marks 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, Clay and Common Room as absent."
+                },
+                {
+                  "claimIds": [
+                    "56ebdb65-f538-4f9d-a5aa-dde0ec41d8b1",
+                    "d64ec38a-0bb3-4423-8794-9650e55d067b"
+                  ],
+                  "text": "Their recorded technical stack includes DNSSEC, Google Cloud, Amazon S3, Envoy, Cloudflare and HubSpot Hosted."
+                },
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c",
+                    "56ebdb65-f538-4f9d-a5aa-dde0ec41d8b1",
+                    "d64ec38a-0bb3-4423-8794-9650e55d067b"
+                  ],
+                  "text": "What it means for us: We should test whether Clue can fill an account and committee research gap without requiring a named ABM platform."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "No ABM platform named across all 27 requisitions",
+              "id": "tools-they-already-use-2",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "tools-they-already-use",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "How they sell, and who they win",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "Public proof names Ricardo Lafosse, Dave Estlick and James Robinson."
+                },
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "One customer says, \u201cZafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools\u201d."
+                },
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "What it means for us: Frame Clue around customer proof tied to security-control evaluation, gap identification and tool ROI."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Public customer proof names Ricardo Lafosse, Dave Estlick and James Robinson",
+              "id": "how-they-sell-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "how-they-sell",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Contact insights",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "2371a12c-afbc-48f7-8240-d28cd2d2d5b6"
+                  ],
+                  "text": "Her current title is \"Head of Growth Marketing\"."
+                },
+                {
+                  "claimIds": [
+                    "c9302184-2a90-41d9-bc07-a1500d5fac92"
+                  ],
+                  "text": "Her certifications include \"Account-Based Go-to-Market (GTM) Certification\" and \"ABM Advanced Certification\"."
+                },
+                {
+                  "claimIds": [
+                    "2371a12c-afbc-48f7-8240-d28cd2d2d5b6",
+                    "c9302184-2a90-41d9-bc07-a1500d5fac92"
+                  ],
+                  "text": "What it means for us: lead with account-based go-to-market and growth-marketing execution."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "7226c003-484c-4bb9-946f-868a6a79588b",
+                  "name": "Vari Kaur",
+                  "persona": "champion",
+                  "title": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)"
+                }
+              ],
+              "h2": "Head of Growth Marketing with Account-Based Go-to-Market and ABM certifications",
+              "id": "contact-insights-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null,
+              "subject": {
+                "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                "contactId": "7226c003-484c-4bb9-946f-868a6a79588b",
+                "name": "Vari Kaur",
+                "persona": "champion",
+                "title": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)"
+              }
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "df97eabe-26df-4bf1-8eba-f1feba627dcf",
+                    "fc08d7bd-7450-4b67-bba1-b12b23f5c59e"
+                  ],
+                  "text": "His current title is \"VP of Marketing\" and his persona is \"economic_buyer\"."
+                },
+                {
+                  "claimIds": [
+                    "32f3fd18-8962-44af-8866-614259b99469"
+                  ],
+                  "text": "His career history includes Vice President Product Marketing at Sysdig and Senior Director Product Marketing at Okta."
+                },
+                {
+                  "claimIds": [
+                    "df97eabe-26df-4bf1-8eba-f1feba627dcf",
+                    "fc08d7bd-7450-4b67-bba1-b12b23f5c59e"
+                  ],
+                  "text": "What it means for us: position the conversation for a marketing economic buyer."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "034de76e-06e7-48b2-8141-11aa664da79c",
+                  "name": "Nick Fisher",
+                  "persona": "economic_buyer",
+                  "title": "VP of Marketing"
+                }
+              ],
+              "h2": "VP of Marketing with an economic-buyer persona",
+              "id": "contact-insights-2",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null,
+              "subject": {
+                "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                "contactId": "034de76e-06e7-48b2-8141-11aa664da79c",
+                "name": "Nick Fisher",
+                "persona": "economic_buyer",
+                "title": "VP of Marketing"
+              }
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "d1a6c31a-d174-41f6-a202-f672f795a430"
+                  ],
+                  "text": "Sanaz said, \"And the biggest pain of cybersecurity when you come from the offensive war to the defensive war, the biggest pain is we don't have enough operators to operate all the different vulnerabilities.\""
+                },
+                {
+                  "claimIds": [
+                    "63664143-4931-4d7a-a2c9-d9908a674794",
+                    "33890fcc-c07c-483a-93df-c30e07bd38b1"
+                  ],
+                  "text": "Her current title is \"Co-Founder & CEO\" and her persona is \"economic_buyer\"."
+                },
+                {
+                  "claimIds": [
+                    "d1a6c31a-d174-41f6-a202-f672f795a430"
+                  ],
+                  "text": "What it means for us: lead with reducing operator burden across vulnerabilities."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "2da6777f-6f1b-4d7d-8ec3-df0a3b545afa",
+                  "name": "Sanaz Yashar",
+                  "persona": "economic_buyer",
+                  "title": "Co-Founder & CEO"
+                }
+              ],
+              "h2": "He says cybersecurity lacks enough operators for its vulnerabilities",
+              "id": "contact-insights-3",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null,
+              "subject": {
+                "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                "contactId": "2da6777f-6f1b-4d7d-8ec3-df0a3b545afa",
+                "name": "Sanaz Yashar",
+                "persona": "economic_buyer",
+                "title": "Co-Founder & CEO"
+              }
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "823666e8-0f25-4178-ad09-8e92d642566c",
+                    "f264f677-9c86-4ad0-a07f-1a6bc9585b3c"
+                  ],
+                  "text": "His current title is \"Co-Founder & CTO\" and his persona is \"technical_evaluator\"."
+                },
+                {
+                  "claimIds": [
+                    "057fa99f-eebd-4694-b9a3-961a822f051d"
+                  ],
+                  "text": "His career history includes \"VP of Research\" at Armis."
+                },
+                {
+                  "claimIds": [
+                    "823666e8-0f25-4178-ad09-8e92d642566c",
+                    "f264f677-9c86-4ad0-a07f-1a6bc9585b3c",
+                    "057fa99f-eebd-4694-b9a3-961a822f051d"
+                  ],
+                  "text": "What it means for us: include technical depth and an evaluator-ready view."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "5b9cbf0b-436f-4df6-b29c-72299402f2a3",
+                  "name": "Ben Seri",
+                  "persona": "technical_evaluator",
+                  "title": "Co-Founder & CTO"
+                }
+              ],
+              "h2": "Co-Founder & CTO with a technical-evaluator persona",
+              "id": "contact-insights-4",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null,
+              "subject": {
+                "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                "contactId": "5b9cbf0b-436f-4df6-b29c-72299402f2a3",
+                "name": "Ben Seri",
+                "persona": "technical_evaluator",
+                "title": "Co-Founder & CTO"
+              }
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "d3b6e23e-996f-4438-82c9-31eb8e58395c",
+                    "f3b30da0-1b45-44d0-8e98-b3c6446ad973"
+                  ],
+                  "text": "His current title is \"SVP, Global Sales\" and his persona is \"user\"."
+                },
+                {
+                  "claimIds": [
+                    "37b696ad-3d57-4421-a1f2-5c2bd826150d"
+                  ],
+                  "text": "His career history includes \"VP, Global Sales & Customer Success\" at Okta."
+                },
+                {
+                  "claimIds": [
+                    "d3b6e23e-996f-4438-82c9-31eb8e58395c",
+                    "f3b30da0-1b45-44d0-8e98-b3c6446ad973"
+                  ],
+                  "text": "What it means for us: make the conversation usable for a global sales stakeholder."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "e350cdd7-324c-43b3-bc4a-722d687ae58c",
+                  "name": "Tom Anthony",
+                  "persona": "user",
+                  "title": "SVP, Global Sales"
+                }
+              ],
+              "h2": "SVP, Global Sales with a user persona",
+              "id": "contact-insights-5",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null,
+              "subject": {
+                "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                "contactId": "e350cdd7-324c-43b3-bc4a-722d687ae58c",
+                "name": "Tom Anthony",
+                "persona": "user",
+                "title": "SVP, Global Sales"
+              }
+            }
+          ],
+          "key": "contact-insights",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Context only",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "aeaa50cf-60f7-4c71-b4ee-4dc27e82b7bf"
+                  ],
+                  "text": "The 42:49 podcast transcript used Gemini 3.5 Flash-Lite, with a sustained loop beginning at 12:41; a rerun with Gemini 3.5 Transcribe produced the full 6,926-word episode but no timestamps or speaker labels."
+                },
+                {
+                  "claimIds": [
+                    "aeaa50cf-60f7-4c71-b4ee-4dc27e82b7bf"
+                  ],
+                  "text": "Do not use this fact for outreach because it is marked unsafe and the transcript required re-verification after 12:38."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Transcript quality warning observed on 2 September 2026",
+              "id": "context-only-1",
+              "newSinceLastVisit": false,
+              "priority": 3,
+              "sendLine": null
+            }
+          ],
+          "key": "context-only",
+          "restricted": true
+        }
+      ]
+    },
+    "evidence_count": 31,
+    "failed": [],
+    "generated": [
+      "buying-signals",
+      "money-and-momentum",
+      "tools-they-already-use",
+      "how-they-sell",
+      "contact-insights",
+      "context-only"
+    ],
+    "regenerated": [],
+    "skipped_empty": [],
+    "stale_served": []
+  },
+  "total_cost_usd": "0.01366760"
+}

@@ -9,6 +9,8 @@ and in `scripts/dev_stack.sh` — never only in a terminal.**
 ```bash
 ./scripts/dev_stack.sh up       # starts all five processes
 ./scripts/dev_stack.sh status   # shows what's up
+./scripts/dev_stack.sh restart-api   # restarts ONLY the two platform API processes (picks up a changed .env setting; workers keep theirs until down/up)
+./scripts/dev_stack.sh restart-workers   # restarts ONLY the fleet workers, same count × concurrency as the wrapper sets; check nothing is mid-job first
 ./scripts/dev_stack.sh down     # stops everything
 ```
 
@@ -20,6 +22,44 @@ Then open **http://localhost:3020** and sign in:
 | Password | `ClueDev2026!stripe` |
 | Email code | `424242` (fixed — Clerk test-mode `+clerk_test` address, no real email is sent) |
 
+## Running the same stack from another worktree (added 2026-09-11)
+
+`scripts/dev_stack.sh` reads five `DEV_STACK_*` knobs, each defaulting to exactly what the
+istanbul checkout always did, so a lane can run the identical five processes on the identical
+ports against **its own** database without copying the script:
+
+| Knob | Meaning | istanbul default |
+|---|---|---|
+| `DEV_STACK_DB_URL` | the database every process uses | `clue_istanbul_dev` (psycopg) |
+| `DEV_STACK_WORKERS` | fleet worker **processes** | 1 |
+| `DEV_STACK_WORKER_CONCURRENCY` | drain slots per process (`CLUE_FLEET_WORKER_CONCURRENCY`) | 1 |
+| `DEV_STACK_AGENT_WORKSPACE_ROOT` | `CLUE_AGENT_WORKSPACE_ROOT` | `/private/tmp/clue-agent-workspaces` |
+| `DEV_STACK_LOG_PREFIX` | log file prefix | `/tmp/browser` |
+| `DEV_STACK_FRONTEND_PORT` | Next.js app port (added 2026-09-17) | 3020 |
+| `DEV_STACK_DESIGN_PORT` | design API port | 8010 |
+| `DEV_STACK_PLATFORM_PORT` | platform API port | 8020 |
+| `DEV_STACK_PLATFORM2_PORT` | platform API twin's port | 8030 |
+
+A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
+**`scripts/dev_stack_san_salvador.sh`** (the ARV2 lane on branch `track-r4`): DB from that
+checkout's `.env` (`clue_san-salvador` on :55040), 4 workers × 3 slots (the O6 exit-gate ruling),
+logs at `/tmp/san-salvador_*.log`. Because the ports are the same, **only one of the two stacks
+can run at a time** — `down` the other first. Everything else in this file (login, symptom table,
+prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must name 8020 / 8010 /
+`http://localhost:3020` like istanbul's, and its `.env` must carry
+`LUMEN_API_ORIGIN=http://127.0.0.1:8010` and 3020 in `LUMEN_API_CORS_ORIGINS`.
+
+**Different ports (added 2026-09-17).** The four port knobs let a lane run *beside* another lane's
+stack instead of stopping it. The first wrapper to use them is **`scripts/dev_stack_hangzhou.sh`**
+(the composer file-tagging lane on `research-streaming-v3`): frontend **3050**, platform API
+**8090**, design API **8091**, twin **8092**, DB `clue_hangzhou`, logs at `/tmp/hangzhou_*.log`.
+The knobs only move the processes; the three guards in the port map below still read `.env` and
+`apps/frontend/.env.local`, so a lane on other ports must name them there too
+(`CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, the frontend origin in `LUMEN_API_CORS_ORIGINS`
+and `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`; `CLUE_API_BASE_URL`, `LUMEN_API_BASE_URL`,
+`CLUE_APP_ORIGIN`). The hangzhou wrapper checks all of those before starting and refuses on a
+mismatch. Every other wrapper keeps the defaults, so it is unchanged.
+
 ## The port map (memorize the first one)
 
 | Port | Process | Why it must be exactly this |
@@ -28,40 +68,7 @@ Then open **http://localhost:3020** and sign in:
 | 8010 | design API (`lumen_api.main:app`) | `CLUE_DESIGN_API_BASE_URL` points here; serves the editor, asset store, design tools. |
 | 8020 | platform API (`clue_api.projections_main:app`) | `CLUE_API_BASE_URL` in `apps/frontend/.env.local` points here — auth/session + the whole `/api/v1` surface. **Without it: "Your workspace is temporarily unavailable."** |
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
-| — | fleet workers (`clue_api.fleet_main`) | Drive design runs and agent turns. **No worker = messages accepted but nothing ever generates.** `up` starts `CLUE_DEV_FLEET_WORKERS` processes (a stack people test on runs **4**), and each process supervises `CLUE_FLEET_MAX_CONCURRENCY` tasks at once (**4**, since 2026-09-07) — so a second chat never queues behind a first chat's design turn. |
-
-### Running a second stack from another worktree
-
-The port map above is the **default**, not a constant. Six keys move a whole stack, and each
-worktree sets its own in **its own `.env`** (they are also in `.env.example`, at these defaults):
-
-| Key | Default | What it moves |
-|---|---|---|
-| `CLUE_DEV_DB_URL` | `postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev` | The dev database every process talks to. |
-| `CLUE_DEV_FRONTEND_PORT` | `3020` | Next.js — and the CORS list the design API is started with. |
-| `CLUE_DEV_DESIGN_PORT` | `8010` | Design API — and `CLUE_DESIGN_API_BASE_URL` / `LUMEN_API_ORIGIN`. |
-| `CLUE_DEV_PLATFORM_PORT` | `8020` | Platform API. |
-| `CLUE_DEV_PLATFORM_PORT_2` | `8030` | Platform API, second instance. |
-| `CLUE_DEV_LOG_SUFFIX` | *(empty)* | `/tmp/browser_<name><suffix>.log` and `/tmp/clue_dev_stack<suffix>.pids`. |
-| `CLUE_DEV_FLEET_WORKERS` | `1` | How many fleet worker processes `up` starts (worker 2+ log to `/tmp/browser_fleet_worker_<n><suffix>.log`). Set **4** for any stack a person tests on. |
-
-Precedence: a value exported in your shell beats the key in `.env`, which beats the default.
-Setting none of them reproduces the original stack byte for byte.
-
-**The rule for a second worktree: its `.env` must set its own database, its own four ports, its
-own absolute `CLUE_STORAGE_FS_ROOT`, and its own log suffix.** Sharing any one of them is a
-silent cross-stack bug — a shared DB gives two stacks the same rows with different code, a
-shared storage root splits blob custody exactly as an unset root does, and a shared log suffix
-means two processes interleave into one file (and, worse, share one pidfile).
-Also update that worktree's `apps/frontend/.env.local` (`CLUE_APP_ORIGIN`, `CLUE_API_BASE_URL`,
-`LUMEN_API_BASE_URL`) and add its frontend port to `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`.
-
-`up` records the five PIDs it started in `/tmp/clue_dev_stack<suffix>.pids`, and **`down` kills
-exactly those PIDs and their children** — it never `pkill`s by process name, so it cannot take
-down the other worktree's stack. `status` probes this worktree's resolved ports and checks the
-fleet worker through the same pidfile (a name-based `pgrep` matches every worktree's worker and
-would report your stack UP because someone else's is). Consequence: a stack started by the
-pre-2026-09-03 script has no pidfile, so it reports `fleet-worker: DOWN` until it is restarted.
+| — | fleet workers (`clue_api.fleet_main`) | Drive design runs and agent turns. **No worker = messages accepted but nothing ever generates.** `up` starts `DEV_STACK_WORKERS` processes (a stack people test on runs **4**), and each process drains `CLUE_FLEET_WORKER_CONCURRENCY` tasks at once (`DEV_STACK_WORKER_CONCURRENCY`; set **4** for a stack people test on) — so a second chat never queues behind a first chat's design turn. |
 
 ## `.env` keys that break everything when missing (all already set — do not remove)
 
@@ -72,7 +79,7 @@ pre-2026-09-03 script has no pidfile, so it reports `fleet-worker: DOWN` until i
 | `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` includes `http://localhost:3020` | Else sign-in loops forever on "session expired" (the backend rejects every token minted by the tab). |
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
-| `CLUE_FLEET_MAX_CONCURRENCY=4` + `CLUE_DEV_FLEET_WORKERS=4` | Concurrency: one process drives four chats at once, and four processes survive one dying mid-run. With the old defaults (1 and 1) the second chat's message sits queued until the first chat's design turn finishes. |
+| `DEV_STACK_WORKER_CONCURRENCY=4` + `DEV_STACK_WORKERS=4` (lane wrapper) | Concurrency: one process drives four chats at once, and four processes survive one dying mid-run. With the old defaults (1 and 1) the second chat's message sits queued until the first chat's design turn finishes. |
 | `CLUE_SELF_SERVE_PROVISIONING_ENABLED=1` | Onboarding: mounts `POST /auth/v1/provision` and the setup route. Off → a NEW account ends in "Provisioning failed with status 404" (2026-09-08). Never export it by hand only — it must be in `.env`. |
 | `CLUE_DESIGN_API_BASE_URL` = the design API origin | The setup screen's brand-kit fetch is enqueued through it. Empty → a new workspace never gets a brand kit and nothing says why. |
 | `LUMEN_BRAND_AD_ASSETS=1` + `ADYNTEL_API_KEY`/`ADYNTEL_EMAIL` + `PDL_API_KEY` + `IMAGE_MODEL_API_KEY` | The ad library (harvested ads, ad-DNA card, pre-generated grounds). The flag mounts the routes; the keys pay for the lane. It is NOT part of onboarding — see the cofounder runbook §5b for the one call that starts it per workspace. |
@@ -172,10 +179,9 @@ the message must get a response. If all four work, the stack is genuinely up.
 ## Stopping a stuck/unwanted design run
 
 ```bash
-pkill -f clue_api.fleet_main                       # kills the turn transactionally — nothing half-saved
-                                                   # NB: with two worktrees up this kills BOTH workers.
-                                                   # Kill just yours: kill $(awk '$1=="fleet-worker"{print $2}' \
-                                                   #   /tmp/clue_dev_stack"$CLUE_DEV_LOG_SUFFIX".pids)
+pkill -f "$PWD/.venv/bin/python -m clue_api.fleet_main"   # kills the turn transactionally — nothing half-saved
+                                                   # anchored on THIS checkout's interpreter, so a sibling
+                                                   # worktree's workers survive (a bare module match kills both)
 psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE status='running'"
 ./scripts/dev_stack.sh up                          # worker comes back idle (script is idempotent-ish; or relaunch just the worker)
 ```
@@ -196,3 +202,14 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | `up` reports every process UP, but a route/endpoint that exists on this branch 404s from the API (e.g. `/documents/{id}/thumbnail` missing from `/openapi.json`) | **A stale process from an earlier session still owns the port.** `up` does not `down` first, so the new uvicorn dies with `[Errno 48] address already in use` while the OLD one keeps serving — and `status` only checks that *something* listens, so it reports UP. Check: `grep -c "address already in use" /tmp/browser_design_api.log` and `ps -o lstart -p $(pgrep -f "uvicorn lumen_api.main:app")`. Fix: always `down` before `up`, and if a port survives it, `lsof -iTCP:<port> -sTCP:LISTEN -t \| xargs kill -9`. Found live 2026-08-31. |
 | Gallery cards are grey/empty for **web** documents only (ads are fine) | No Playwright Chromium, or no vendored Tailwind runtime, on the design-API process — see the prerequisites above. The API log names which: `thumbnail.capture_failed` vs `thumbnail.tailwind_runtime_missing`. Nothing is poisoned — fix the prerequisite and the next gallery read regenerates. |
 | ONE route 404s while its siblings work (e.g. `/projects/…/chats/…` → Next 404, but `/projects/…` 307s to sign-in; page.tsx exists on disk; DB rows exist) | Corrupted Next dev build cache — repeated `down` cycles pkill the dev server mid-write and its route graph can drop a route. Fix: `down` → `rm -rf apps/frontend/.next` → `up`. Found live 2026-08-30. |
+
+## Two rules learned the hard way (2026-09-12)
+
+* **Never pipe the wrapper's output** (`… restart-workers | tail`). The `( … & )` subshells that
+  spawn the API twins and the workers stay alive as their parents and keep the pipe's write end
+  open, so `tail` never sees end-of-file and the caller hangs for as long as the stack runs.
+  Redirect to a file instead: `./scripts/dev_stack_san_salvador.sh restart-workers > /tmp/x.log 2>&1`.
+* **Every kill pattern is anchored on this workspace's interpreter path.** Sibling worktrees
+  (semarang, istanbul, …) run the same module names on the same box; a bare
+  `pkill -f clue_api.fleet_main` from any launcher kills every worktree's workers. This lane's
+  workers were stopped that way at 14:18 on 2026-09-12 by a launcher outside this workspace.

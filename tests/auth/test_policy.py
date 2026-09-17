@@ -13,12 +13,15 @@ from clue_auth import (
 
 
 def test_role_policy_is_internal_and_monotonic() -> None:
-    assert ROLE_POLICY_VERSION == 2
+    assert ROLE_POLICY_VERSION == 3
     assert set(ROLE_PERMISSIONS) == {"owner", "admin", "operator", "viewer"}
     assert ROLE_PERMISSIONS["viewer"] < ROLE_PERMISSIONS["operator"]
     assert ROLE_PERMISSIONS["operator"] < ROLE_PERMISSIONS["admin"]
     assert ROLE_PERMISSIONS["admin"] == ROLE_PERMISSIONS["owner"]
     assert "workspace.manage_members" not in ROLE_PERMISSIONS["operator"]
+    assert "workspace.manage_settings" in ROLE_PERMISSIONS["admin"]
+    assert "workspace.manage_settings" not in ROLE_PERMISSIONS["operator"]
+    assert "workspace.manage_settings" not in ROLE_PERMISSIONS["viewer"]
     assert "project.write" not in ROLE_PERMISSIONS["viewer"]
     assert "project.write" in ROLE_PERMISSIONS["operator"]
     assert "research.approve_spend" not in ROLE_PERMISSIONS["operator"]

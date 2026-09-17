@@ -12,6 +12,12 @@ every gateway-span attribute passes the one redaction chokepoint.
 
 Alongside the span, every call emits the structured ``model_call_usage`` structlog event (Doc R
 §4) — the per-call telemetry Doc A §1.3's per-tier agency-vs-coverage measurement reads.
+
+Lane 3 slice 3b: each call also opens one Langfuse observation — a ``generation`` for a
+completion, an ``embedding`` for an embed — carrying the prompt/answer payload, the token usage
+and the settled cost. This is the **non-graph** path only; the graph path (``agent_model``) reports
+its own model calls through the LangChain handler, so a call is reported exactly once. When
+Langfuse is not installed the observation is a no-op handle and nothing changes.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from opentelemetry.trace import Span
 
 from clue_core.gateway import Completion, EmbeddingResult, LLMGateway, Message, TokenUsage
 from clue_obs import get_logger
+from clue_obs.langfuse import observation
 from clue_obs.otel import (
     ATTR_AGENT_ROLE,
     ATTR_COMPLETION_TOKENS,
@@ -48,7 +55,16 @@ class TracingGateway:
         self._inner = inner
 
     def complete(self, *, model: str, messages: list[Message], **opts: object) -> Completion:
-        with traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span:
+        with (
+            traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span,
+            observation(
+                "gateway.completion",
+                as_type="generation",
+                model=model,
+                input=_messages_payload(messages),
+                metadata={"requested_model": model},
+            ) as current,
+        ):
             started = time.perf_counter()
             completion = self._inner.complete(model=model, messages=messages, **opts)
             duration_ms = (time.perf_counter() - started) * 1000.0
@@ -61,10 +77,27 @@ class TracingGateway:
                 cost_cents=completion.cost_cents,
                 duration_ms=duration_ms,
             )
+            current.update(
+                model=completion.model,
+                output={"text": completion.text, "finish_reason": completion.finish_reason},
+                usage_details=_usage_details(completion.usage),
+                cost_details=_cost_details(completion.cost_cents),
+                metadata={"duration_ms": round(duration_ms, 3)},
+            )
             return completion
 
     def embed(self, *, model: str, inputs: list[str]) -> EmbeddingResult:
-        with traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span:
+        with (
+            traced_step(SPAN_LLM_GATEWAY_CALL, **{ATTR_MODEL: model}) as span,
+            observation(
+                "gateway.embedding",
+                as_type="embedding",
+                model=model,
+                # Counts only: the embedded texts themselves never leave the process (R3).
+                input={"inputs": len(inputs), "characters": sum(len(text) for text in inputs)},
+                metadata={"requested_model": model},
+            ) as current,
+        ):
             started = time.perf_counter()
             result = self._inner.embed(model=model, inputs=inputs)
             duration_ms = (time.perf_counter() - started) * 1000.0
@@ -77,7 +110,33 @@ class TracingGateway:
                 cost_cents=result.cost_cents,
                 duration_ms=duration_ms,
             )
+            current.update(
+                model=result.model,
+                output={"vectors": len(result.vectors)},
+                usage_details=_usage_details(result.usage),
+                cost_details=_cost_details(result.cost_cents),
+                metadata={"duration_ms": round(duration_ms, 3)},
+            )
             return result
+
+
+def _messages_payload(messages: list[Message]) -> list[dict[str, str]]:
+    """The prompt as Langfuse sees it — the mask truncates and redacts on export (R3)."""
+    return [{"role": str(message.role.value), "content": message.content} for message in messages]
+
+
+def _usage_details(usage: TokenUsage) -> dict[str, int]:
+    """Token usage in Langfuse's own key names (``input``/``output``/``cache_read_input``)."""
+    return {
+        "input": usage.prompt_tokens,
+        "output": usage.completion_tokens,
+        "cache_read_input": usage.cached_prompt_tokens,
+    }
+
+
+def _cost_details(cost_cents: Decimal) -> dict[str, float]:
+    """The settled cost in dollars — Langfuse's cost unit; ours is cents."""
+    return {"total": float(cost_cents / Decimal(100))}
 
 
 def record_model_call(

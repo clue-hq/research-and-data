@@ -1,0 +1,11 @@
+                job_id                |   verdict    |     reason      | count 
+--------------------------------------+--------------+-----------------+-------
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | EXACT        | on_page         |    52
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | NOT_FOUND    | not_on_page     |    18
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | PARTIAL      | partial_on_page |    12
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | EXACT        | on_page         |    55
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | fetch_failed | page_empty      |     1
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | NOT_FOUND    | not_on_page     |    15
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | PARTIAL      | partial_on_page |     3
+(7 rows)
+

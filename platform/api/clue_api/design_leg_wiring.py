@@ -42,6 +42,7 @@ import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -64,6 +65,7 @@ from clue_agents import (
     HistoryMessageRef,
     ProjectContextArtifact,
 )
+from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
 from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnScopePinRow
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.agent_turn_wiring import (
@@ -72,6 +74,7 @@ from clue_api.agent_turn_wiring import (
     DurableAgentArtifactStore,
     is_agent_turn_privacy_tombstoned,
 )
+from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.design_memory import (
@@ -317,7 +320,9 @@ async def load_design_leg_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -340,6 +345,7 @@ async def load_design_leg_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -371,7 +377,9 @@ async def load_head_of_abm_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -392,6 +400,7 @@ async def load_head_of_abm_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -489,6 +498,9 @@ async def project_design_documents(
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    # Artifacts-page spec §3.5: archived documents leave the gallery, the
+                    # project library and the agent's listing in one place — here.
+                    " WHERE d.archived_at IS NULL"
                     " ORDER BY d.updated_at DESC, d.id"
                 ),
                 {"ws": workspace_id, "project": project_id},
@@ -547,6 +559,96 @@ def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
             return int(width), int(height)
     return None
+
+
+def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
+    """What a listed design document says about itself, for every artifact list.
+
+    One helper for the per-project feed (chat router) and the workspace-wide library
+    (frontend_read.artifacts) so the two cannot disagree on kind, channel or size. Absent
+    stays ``None`` — a card states nothing rather than inventing (G-H).
+    """
+
+    pixels = document_page_pixels(document.get("pages_json"))
+    artifact_type = document.get("artifact_type")
+    return {
+        "kind": "web" if document["doc_kind"] == "web" else "ad",
+        "artifact_type": str(artifact_type) if artifact_type else None,
+        "width_px": pixels[0] if pixels else None,
+        "height_px": pixels[1] if pixels else None,
+    }
+
+
+async def workspace_design_documents(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    limit: int,
+    cursor_updated_at: datetime | None = None,
+    cursor_id: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Every design document any thread in the workspace worked on — the artifacts library.
+
+    The workspace-wide form of :func:`project_design_documents`: the same leg derivation
+    (latest leg wins as origin, one row per document), joined to the origin project for its
+    title, left-joined to ``design_account`` for the page's account when it has one, and
+    left-joined to the CALLER's own marks. Archived rows are included (the library partitions
+    them); keyset-paged newest-updated first. Fail-closed on workspace at the leg, the
+    document, the project and the account.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
+                    " d.created_at, d.updated_at, d.archived_at,"
+                    " origin.thread_id AS origin_thread_id, origin.project_id,"
+                    " p.name AS project_title,"
+                    " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.current_scene_json #>> '{pages}' AS pages_json,"
+                    " a.account_id, a.name AS account_name, a.domain AS account_domain,"
+                    " a.account_entity_id,"
+                    " COALESCE(m.saved, false) AS saved, m.last_viewed_at"
+                    " FROM ("
+                    "   SELECT DISTINCT ON (leg.document_id)"
+                    "          leg.document_id, leg.thread_id, t.project_id"
+                    "   FROM design_leg leg"
+                    "   JOIN agent_thread t"
+                    "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
+                    "   WHERE leg.workspace_id = :ws"
+                    "     AND leg.document_id IS NOT NULL"
+                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    " ) origin"
+                    " JOIN design_document d"
+                    "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    " JOIN project p"
+                    "   ON p.project_id = origin.project_id AND p.workspace_id = :ws"
+                    " LEFT JOIN design_account a"
+                    "   ON a.account_id = d.account_id AND a.workspace_id = :ws"
+                    " LEFT JOIN design_document_user_mark m"
+                    "   ON m.document_id = d.id AND m.workspace_id = :ws AND m.user_id = :user"
+                    " WHERE ("
+                    "   CAST(:cursor_updated_at AS timestamptz) IS NULL"
+                    "   OR (d.updated_at, d.id) < (:cursor_updated_at, CAST(:cursor_id AS text))"
+                    " )"
+                    " ORDER BY d.updated_at DESC, d.id DESC"
+                    " LIMIT :limit"
+                ),
+                {
+                    "ws": workspace_id,
+                    "user": user_id,
+                    "cursor_updated_at": cursor_updated_at,
+                    "cursor_id": cursor_id,
+                    "limit": limit,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(dict(row) for row in rows)
 
 
 def _canonical_json(value: object) -> bytes:
@@ -1190,6 +1292,13 @@ class DesignLegTurnRunner:
         bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
         history: list[tuple[str, str]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history.append(
+                    (
+                        "system",
+                        INTERRUPTED_ASSISTANT_NOTICE,
+                    )
+                )
             history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
         message = (await self._artifacts.read(user_message_ref)).decode()
         try:
@@ -1303,6 +1412,27 @@ class DesignLegTurnRunner:
             replayed=False,
         )
 
+    async def request_stop_for_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """Cancel only this turn's derived design run through the shared design substrate."""
+        async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            run_id = design_leg_run_id(turn_id)
+            run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
+            if run is not None:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=workspace_id, run_id=run_id
+                )
+
+    async def await_stopped_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        async with self._conn_factory() as conn:
+            run = await design_runs.get_run(
+                conn, workspace_id=workspace_id, run_id=design_leg_run_id(turn_id)
+            )
+        if run is not None and run["status"] not in _TERMINAL_RUN_STATUSES:
+            # Join the live holder or recover a crashed holder. The durable cancel probe
+            # prevents the recovered harness from starting another provider call.
+            await self._lane.drive(envelope=DesignTurnEnvelope.model_validate(run["payload"]))
+
     # -- dispatch ------------------------------------------------------------------------------
 
     async def _dispatch(
@@ -1363,6 +1493,11 @@ class DesignLegTurnRunner:
             )
         if run is None:
             async with self._conn_factory() as conn:
+                await lock_turn_control(conn, workspace_id=workspace_id, turn_id=submission.turn_id)
+                if await stop_requested(
+                    conn, workspace_id=workspace_id, turn_id=submission.turn_id
+                ):
+                    raise TurnStopRequested("Stop accepted before design dispatch")
                 if leg["state"] == "open_awaiting_user":
                     await design_legs.mark_leg_running(
                         conn, workspace_id=workspace_id, leg_id=leg_id
@@ -1425,6 +1560,13 @@ class DesignLegTurnRunner:
         message_text = (await self._artifacts.read(user_message_ref)).decode()
         history_texts: list[dict[str, JsonValue]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history_texts.append(
+                    {
+                        "role": "system",
+                        "text": INTERRUPTED_ASSISTANT_NOTICE,
+                    }
+                )
             history_texts.append(
                 {
                     "role": item.role,

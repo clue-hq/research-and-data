@@ -38,7 +38,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.account_research_fleet import AccountResearchFleetPolicy
 from clue_api.contact_eligibility import (
+    AccountRunReferenceIndexSource,
+    Arv2CommitteeReferenceSource,
+    ChainedClaimReferenceSource,
     ContactEligibilityResolver,
+    EntityResearchCoverageReferenceSource,
     build_contact_eligibility_resolver,
     build_governed_committee_view_reader,
     build_production_handoff_committee_reader,
@@ -52,17 +56,19 @@ from clue_core import (
     ExtractionMethod,
     IdentityBinding,
     Persona,
+    ProjectRunId,
     ResearchMode,
     ResearchSubjectRef,
     ResearchViewReadRequest,
     RunId,
+    SourceTier,
     UseClass,
     VerificationStatus,
     contact_claim,
     new_run_id,
 )
 from clue_fleet import EntityResearchRunEnvelope
-from clue_research.claimstore import insert_claim
+from clue_research.claimstore import WorkspaceScope, claims_by_ids, insert_claim
 from clue_research.durable import AccountRunStatus, insert_account_run, save_references
 from clue_research.identity import (
     insert_account_entity,
@@ -75,6 +81,7 @@ from clue_research.profiling.committee import (
     PERSONA,
     ROLE_ON_COMMITTEE,
     load_committee_pack,
+    write_committee_claim,
 )
 from clue_research.profiling.fields import FACET_NICKNAME
 from clue_spine import create_product, get_project
@@ -458,10 +465,35 @@ async def _seed_m8d(
 def _resolver(
     conn: AsyncConnection, fixture: _M8D, *, product_id: str | None = None
 ) -> ContactEligibilityResolver:
-    return build_contact_eligibility_resolver(
+    """This suite's subject is the M8D **coverage** source, so it is injected explicitly.
+
+    2026-09-09 — until ARV2 R3 Task 7 this was the *default* chain, and reading it through the
+    default was the same thing. It no longer is: ``Arv2CommitteeReferenceSource`` now leads the
+    default chain and would answer for every account below (their members hold live
+    ``contact.persona`` claims), which would leave the coverage source — the thing these scenarios
+    exist to prove — untested. The chain order itself is proven by
+    ``test_the_default_chain_answers_from_arv2_before_the_coverage_row``.
+    """
+
+    return _legacy_resolver(
+        conn,
         project_run_id=fixture.scope.project_run_id,
         product_id=fixture.scope.product_id if product_id is None else product_id,
+    )
+
+
+def _legacy_resolver(
+    conn: AsyncConnection, *, project_run_id: ProjectRunId, product_id: str | None
+) -> ContactEligibilityResolver:
+    """The pre-ARV2 chain — M8D coverage, then the references index — and nothing in front of it."""
+
+    return ContactEligibilityResolver(
+        project_run_id=project_run_id,
+        product_id=product_id,
         conn_factory=_factory(conn),
+        claim_reference_source=ChainedClaimReferenceSource(
+            (EntityResearchCoverageReferenceSource(), AccountRunReferenceIndexSource())
+        ),
     )
 
 
@@ -894,10 +926,11 @@ def test_a_project_run_with_no_fleet_run_still_reads_the_references_index() -> N
                 status=AccountRunStatus.DONE,
             )
 
-            governed = await build_contact_eligibility_resolver(
-                project_run_id=scope.project_run_id,
-                product_id=scope.product_id,
-                conn_factory=_factory(conn),
+            # 2026-09-09 — read through the legacy chain explicitly: the ARV2 source now leads
+            # the default chain and would answer for this account, so the default no longer
+            # exercises the references index this test is about.
+            governed = await _legacy_resolver(
+                conn, project_run_id=scope.project_run_id, product_id=scope.product_id
             ).resolve_account(account_entity_id=account, workspace_id=scope.workspace_id)
             assert [item.contact_entity_id for item in governed] == [contact]
 
@@ -950,10 +983,11 @@ def test_a_fleet_run_that_has_published_no_coverage_leaves_the_legacy_source_in_
                 status=AccountRunStatus.DONE,
             )
 
-            governed = await build_contact_eligibility_resolver(
-                project_run_id=scope.project_run_id,
-                product_id=scope.product_id,
-                conn_factory=_factory(conn),
+            # 2026-09-09 — read through the legacy chain explicitly: the ARV2 source now leads
+            # the default chain and would answer for this account, so the default no longer
+            # exercises the references index this test is about.
+            governed = await _legacy_resolver(
+                conn, project_run_id=scope.project_run_id, product_id=scope.product_id
             ).resolve_account(account_entity_id=account, workspace_id=scope.workspace_id)
             assert [item.contact_entity_id for item in governed] == [contact]
 
@@ -1028,5 +1062,402 @@ def test_the_contact_subject_read_of_the_c7_section_is_bridged_too() -> None:
             assert [reference.subject.entity_id for reference in seed.references] == [
                 fixture.members[0]
             ]
+
+    run_async(scenario())
+
+
+# --- Slice D / D4: honest role provenance keeps display continuity ------------------------------
+
+
+async def _agent_inferred_role_pair(
+    conn: AsyncConnection,
+    *,
+    contact: EntityId,
+    workspace_id: str,
+    product_id: str,
+    run_id: RunId,
+    persona: Persona,
+    title: str,
+) -> tuple[Claim, Claim]:
+    """The role/persona pair exactly as D3's ``record_committee_role_inferences`` writes it.
+
+    Written through the committee package's own ``write_committee_claim`` — the production writer
+    the D3 tool calls — rather than through this file's ``_claim`` helper, because the whole point
+    of D4 is that the *post-D1* shape serves: LLM_SYNTHESIS / tier 4 / PLATFORM_INFERRED, grounded
+    in a real URL + the member's own title span, and born UNVERIFIED. Stamping it by hand would
+    prove only that a fixture can be shaped to pass. ``write_committee_claim`` returns ids, so the
+    rows are read back to hand the coverage fixture the ``Claim`` objects it builds refs from.
+    """
+
+    source_url = f"https://{uuid4().hex[:10]}.example/team"
+    evidence_span = f"title: {title}"
+    role_claim_id = await write_committee_claim(
+        conn,
+        contact,
+        ROLE_ON_COMMITTEE,
+        {
+            "role": persona.value,
+            "confidence": 0.87,
+            "plausible": True,
+            "rationale": "the operations leader owns the workflow this product changes",
+        },
+        confidence=0.87,
+        method=ExtractionMethod.LLM_SYNTHESIS,
+        tier=SourceTier(4),
+        source_url=source_url,
+        evidence_span=evidence_span,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        identity_binding=IdentityBinding.STRONG,
+        product_id=product_id,
+    )
+    persona_claim_id = await write_committee_claim(
+        conn,
+        contact,
+        PERSONA,
+        persona.value,
+        confidence=0.87,
+        method=ExtractionMethod.LLM_SYNTHESIS,
+        tier=SourceTier(4),
+        source_url=source_url,
+        evidence_span=evidence_span,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        identity_binding=IdentityBinding.STRONG,
+        product_id=product_id,
+    )
+    written = await claims_by_ids(
+        conn,
+        (role_claim_id, persona_claim_id),
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    return written[role_claim_id], written[persona_claim_id]
+
+
+@dataclass(frozen=True)
+class _AgentInferred:
+    """One coverage row holding both post-D3 member shapes: role-inferred, and honestly roleless."""
+
+    fixture: _M8D
+    coverage_id: UUID
+    inferred: EntityId
+    roleless: EntityId
+    role_claim: Claim
+    persona_claim: Claim
+
+
+async def _seed_agent_inferred(conn: AsyncConnection) -> _AgentInferred:
+    """One account whose committee is the post-D3 world: one member the account agent gave a role,
+    one member nobody could ground a role for (the D2 ``agent_deferred`` intermediate state, or a
+    member the D3 batch simply omitted — D3 never fills an omitted member)."""
+
+    await load_committee_pack(conn)
+    scope = await _scope(conn)
+    account = await insert_account_entity(
+        conn,
+        canonical_name=f"D4 Target {uuid4().hex[:6]}",
+        primary_domain=f"{uuid4().hex[:10]}.example",
+        status=AccountStatus.ACTIVE,
+        workspace_id=scope.workspace_id,
+    )
+    envelope = await _launch_for(conn, scope, (account,))
+    run_id = new_run_id()
+
+    inferred = await _contact(conn, account, name="Agent Inferred Person")
+    inferred_title = await _claim(
+        conn,
+        contact=inferred,
+        field_key=CURRENT_TITLE,
+        value="VP of Operations",
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+    )
+    role_claim, persona_claim = await _agent_inferred_role_pair(
+        conn,
+        contact=inferred,
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+        persona=Persona.ECONOMIC_BUYER,
+        title="VP of Operations",
+    )
+
+    roleless = await _contact(conn, account, name="Roleless Person")
+    roleless_title = await _claim(
+        conn,
+        contact=roleless,
+        field_key=CURRENT_TITLE,
+        value="Director of Finance",
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=run_id,
+    )
+
+    claims = (inferred_title, role_claim, persona_claim, roleless_title)
+    members = (inferred, roleless)
+    coverage_id = await _coverage(
+        conn,
+        envelope,
+        account_entity_id=account,
+        workspace_id=scope.workspace_id,
+        claims=claims,
+        members=members,
+        committee_status="needs_review",
+    )
+    return _AgentInferred(
+        fixture=_M8D(
+            scope=scope,
+            envelope=envelope,
+            account=account,
+            run_id=run_id,
+            members=members,
+            claims=claims,
+        ),
+        coverage_id=coverage_id,
+        inferred=inferred,
+        roleless=roleless,
+        role_claim=role_claim,
+        persona_claim=persona_claim,
+    )
+
+
+async def _persisted_member_ids(conn: AsyncConnection, coverage_id: UUID) -> list[EntityId]:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT committee_member_ids FROM entity_research_account_coverage "
+                "WHERE coverage_id=:coverage_id"
+            ),
+            {"coverage_id": coverage_id},
+        )
+    ).scalar_one()
+    return [EntityId(UUID(str(value))) for value in row]
+
+
+def test_an_agent_inferred_member_serves_exactly_like_a_worker_inferred_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D4: the honest post-D1/D3 role provenance did not cost the contacts read a single member.
+
+    Every other scenario in this file writes the *pre-D1* role shape (tier-1 HUMAN), which is the
+    provenance D1 retired: an LLM's role judgment stamped as a human-asserted fact. D3 replaced it
+    with an agent-derived claim — LLM_SYNTHESIS, tier 4, PLATFORM_INFERRED, born UNVERIFIED. This
+    pins that the eligibility resolver's ``_resolve_contact_claims`` admits that shape by the same
+    route it admitted the old one (STRONG-bound role *and* persona, ``plausible`` not false,
+    ``role == persona``), which is why the ``role_claim_id``/``persona_claim_id`` identity check
+    below matters: it proves the seat came from the agent-written pair and not from some other row.
+
+    The second half is the contract's other half — a member with no grounded role is *not*
+    eligibility-committee material, but is still a discovered person. The coverage row keeps them
+    in ``committee_member_ids`` (the frontend contacts list reads members; their role simply renders
+    empty), so an honest refusal to guess a role never erases the person.
+
+    Toggle pinned to the pilot posture explicitly: the workspace ``.env`` runs the
+    ``integration_pilot`` overlay (verification disabled), and this test must state that dependence
+    rather than inherit it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "false")
+            seeded = await _seed_agent_inferred(conn)
+            # Coverage is again the only membership record — no legacy references index exists.
+            assert await _account_runs(conn) == 0
+
+            governed = await _resolver(conn, seeded.fixture).resolve_account(
+                account_entity_id=seeded.fixture.account,
+                workspace_id=seeded.fixture.scope.workspace_id,
+            )
+            assert [item.contact_entity_id for item in governed] == [seeded.inferred]
+            member = governed[0]
+            assert member.persona is Persona.ECONOMIC_BUYER
+            assert member.role_on_committee == Persona.ECONOMIC_BUYER.value
+            # The seat is the agent's pair, not an incidental row that happened to merge.
+            assert member.role_claim_id == seeded.role_claim.id
+            assert member.persona_claim_id == seeded.persona_claim.id
+            assert seeded.role_claim.extraction_method is ExtractionMethod.LLM_SYNTHESIS
+            assert seeded.role_claim.source_tier == 4
+            assert seeded.role_claim.verification_status is not VerificationStatus.VERIFIED
+            # The member's discovery-era professional facts ride along unchanged.
+            assert CURRENT_TITLE in {str(item.claim.field_key) for item in member.claims}
+
+            # The roleless member is not eligibility-committee material …
+            assert seeded.roleless not in {item.contact_entity_id for item in governed}
+            # … but is still a discovered person the contacts list must show.
+            assert await _persisted_member_ids(conn, seeded.coverage_id) == [
+                seeded.inferred,
+                seeded.roleless,
+            ]
+
+    run_async(scenario())
+
+
+def test_a_verification_enabled_deployment_withholds_the_unjudged_agent_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Continuity, not regression: with verification ENABLED the merge's verified-tier-4 gate
+    withholds the born-UNVERIFIED agent pair, so the member does not take a committee seat until
+    the M9.3 judge verifies it.
+
+    This is exact parity with a *worker*-written role after D1 — that pair is tier-4 UNVERIFIED at
+    birth too — so the toggle branch is a property of honest agent provenance, not of D3's tool.
+    The pre-D1 tier-1 HUMAN shape is what used to sail through both states (which is precisely the
+    false-provenance D1 retired); the sibling test above pins the pilot posture that serves these
+    roles today.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            monkeypatch.setenv("CLUE_VERIFICATION_ENABLED", "true")
+            seeded = await _seed_agent_inferred(conn)
+            governed = await _resolver(conn, seeded.fixture).resolve_account(
+                account_entity_id=seeded.fixture.account,
+                workspace_id=seeded.fixture.scope.workspace_id,
+            )
+            assert governed == ()
+            # Withheld from the seat, never erased from discovery: both members stay visible.
+            assert await _persisted_member_ids(conn, seeded.coverage_id) == [
+                seeded.inferred,
+                seeded.roleless,
+            ]
+
+    run_async(scenario())
+
+
+# --- ARV2 R3 Task 7: the ARV2 committee source leads the chain -----------------------------------
+#
+# 2026-09-09, founder ruling "ARV2's own rows are the only truth": committee membership is now read
+# from the claim store — a contact under the account holding a live ``contact.persona`` claim — and
+# ``Arv2CommitteeReferenceSource`` sits FIRST in ``default_claim_reference_source()``. Every
+# scenario above still proves the *coverage* source itself, which ``_resolver`` now injects
+# explicitly rather than reaching it through a chain the ARV2 source leads; the three tests below
+# prove the new leader and the chain order.
+
+
+async def _seated(
+    conn: AsyncConnection,
+    scope: _Scope,
+    account: EntityId,
+    *,
+    name: str,
+    persona: Persona = Persona.ECONOMIC_BUYER,
+) -> tuple[EntityId, tuple[Claim, ...]]:
+    """One contact seated the way R3's committee step seats one: persona + role, on the contact."""
+
+    contact = await _contact(conn, account, name=name)
+    claims = await _member_claims(
+        conn,
+        contact=contact,
+        workspace_id=scope.workspace_id,
+        product_id=scope.product_id,
+        run_id=new_run_id(),
+        persona=persona,
+    )
+    return contact, claims
+
+
+async def _bare_account(conn: AsyncConnection, scope: _Scope) -> EntityId:
+    return await insert_account_entity(
+        conn,
+        canonical_name=f"ARV2 Target {uuid4().hex[:6]}",
+        primary_domain=f"{uuid4().hex[:10]}.example",
+        status=AccountStatus.ACTIVE,
+        workspace_id=scope.workspace_id,
+    )
+
+
+def test_the_arv2_source_reads_the_committee_off_live_persona_and_role_claims() -> None:
+    """No fleet run, no coverage row, no ``account_run`` — the claims alone are the committee."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_committee_pack(conn)
+            scope = await _scope(conn)
+            account = await _bare_account(conn, scope)
+            seated, claims = await _seated(conn, scope, account, name="Seated Person")
+            unseated = await _contact(conn, account, name="Unseated Person")
+            title = await _claim(
+                conn,
+                contact=unseated,
+                field_key=CURRENT_TITLE,
+                value="Head of RevOps",
+                workspace_id=scope.workspace_id,
+                product_id=scope.product_id,
+                run_id=new_run_id(),
+            )
+
+            references = await Arv2CommitteeReferenceSource().read(
+                conn,
+                project_run_id=scope.project_run_id,
+                account_entity_id=account,
+                workspace_id=scope.workspace_id,
+            )
+            assert references is not None
+            assert references.committee_member_ids == (seated,)
+            assert {claim.id for claim in claims} <= set(references.claim_ids)
+            # A contact with claims but no persona claim is not on the committee, and none of
+            # their claims ride along on somebody else's membership.
+            assert title.id not in references.claim_ids
+            assert await _account_runs(conn) == 0
+
+    run_async(scenario())
+
+
+def test_the_arv2_source_does_not_apply_when_no_contact_holds_a_persona_claim() -> None:
+    """``None`` means "not my account" — which is what leaves the legacy sources in charge."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            await load_committee_pack(conn)
+            scope = await _scope(conn)
+            account = await _bare_account(conn, scope)
+            unseated = await _contact(conn, account, name="Unseated Person")
+            await _claim(
+                conn,
+                contact=unseated,
+                field_key=CURRENT_TITLE,
+                value="Head of RevOps",
+                workspace_id=scope.workspace_id,
+                product_id=scope.product_id,
+                run_id=new_run_id(),
+            )
+
+            assert (
+                await Arv2CommitteeReferenceSource().read(
+                    conn,
+                    project_run_id=scope.project_run_id,
+                    account_entity_id=account,
+                    workspace_id=scope.workspace_id,
+                )
+                is None
+            )
+
+    run_async(scenario())
+
+
+def test_the_default_chain_answers_from_arv2_before_the_coverage_row() -> None:
+    """Both sources apply; ARV2 wins. The bystander is seated in the claim store and absent from
+    the coverage row's ``committee_member_ids``, so serving them can only be the ARV2 answer."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _seed_m8d(conn, personas=(Persona.ECONOMIC_BUYER,))
+            bystander, _ = await _seated(
+                conn,
+                fixture.scope,
+                fixture.account,
+                name="Bystander Person",
+                persona=Persona.CHAMPION,
+            )
+            governed = await build_contact_eligibility_resolver(
+                project_run_id=fixture.scope.project_run_id,
+                product_id=fixture.scope.product_id,
+                conn_factory=_factory(conn),
+            ).resolve_account(
+                account_entity_id=fixture.account,
+                workspace_id=fixture.scope.workspace_id,
+            )
+            assert {item.contact_entity_id for item in governed} == {*fixture.members, bystander}
 
     run_async(scenario())

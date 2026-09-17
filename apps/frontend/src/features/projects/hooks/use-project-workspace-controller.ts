@@ -78,9 +78,17 @@ export function useProjectWorkspaceController(
   const [focusPane, setFocusPane] = useState<ProjectWorkspaceFocusPane>(() =>
     initialWorkspaceFocusPane(workspace.artifacts.length, initial.focusPane),
   );
+  // The picker's catalog (Gallery files, microsites, accounts) is assembled by
+  // the chat surface from the same feeds the Gallery draws and handed down
+  // here, so the composer, the chips and the send path all read one list.
+  const [catalogEntities, setCatalogEntities] = useState<ProjectEntity[]>([]);
   const composerEntities = useMemo(
-    () => mergeComposerContextEntities(workspace.entities, selectedEntities),
-    [selectedEntities, workspace.entities],
+    () =>
+      mergeComposerContextEntities(
+        mergeComposerContextEntities(workspace.entities, catalogEntities),
+        selectedEntities,
+      ),
+    [catalogEntities, selectedEntities, workspace.entities],
   );
   const selectedEntityIds = useMemo(
     () => selectedEntities.map((entity) => entity.id),
@@ -141,8 +149,33 @@ export function useProjectWorkspaceController(
   ]);
 
   return {
+    /**
+     * "Add to chat" from a surface inside this open chat (the project Target
+     * accounts tab): the server-prepared entities land in the composer exactly
+     * as a restored handoff would — as selected context, versions pinned — with
+     * no navigation and no handoff record unless one is already live for this
+     * mount, in which case it is kept in step like every other selection edit.
+     */
+    addEntities(entities: readonly ProjectEntity[]) {
+      setSelectedEntities((current) => {
+        const next = mergeComposerContextEntities(current, entities);
+        if (typeof window !== "undefined" && initial.handoffId) {
+          updateChatContextHandoffEntities(
+            window.sessionStorage,
+            initial.handoffId,
+            next,
+          );
+        }
+        return next;
+      });
+      setContextHandoffError(null);
+    },
     composerEntities,
     contextHandoffError,
+    /** A refused in-chat add states itself where a failed restore does. */
+    failContextHandoff(message: string) {
+      setContextHandoffError(message);
+    },
     focusPane,
     modelPickerOpen,
     prompt,
@@ -188,6 +221,7 @@ export function useProjectWorkspaceController(
       setSelectedModelId(modelId);
       setModelPickerOpen(false);
     },
+    setCatalogEntities,
     setPrompt,
     showSplitWorkspace() {
       setFocusPane("split");

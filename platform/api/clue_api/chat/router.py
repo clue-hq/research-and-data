@@ -26,15 +26,16 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
-from typing import Annotated, Any, Literal
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -44,6 +45,7 @@ from clue_api.agent_gate import (
     KIND_DIRECTIVE_CONFIRMATION,
     KIND_ICP_CONFIRMATION,
     KIND_PRODUCT_SELECTION,
+    KIND_PRODUCT_SET_SELECTION,
     AgentGateRow,
     GateAlreadyAnswered,
     get_gate,
@@ -58,14 +60,21 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_confirmation import (
+    IcpConfirmationStale,
+    confirm_icp_document,
+    current_icp_document,
+    pin_project_icp,
+)
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
+    PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -122,6 +131,10 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    RenameProjectRequest,
+    RenameProjectResponse,
+    RenameProjectWire,
+    ResearchTaskListResponse,
     SidebarConversationWire,
     SidebarPageMeta,
     SidebarProjectsResponse,
@@ -135,6 +148,7 @@ from clue_api.chat.schemas import (
     gate_response_message,
     gate_wire,
     message_list_response,
+    research_task_wire,
     thread_href,
     thread_speaker_wire,
     thread_wire,
@@ -143,13 +157,14 @@ from clue_api.chat.schemas import (
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.design_leg_wiring import (
+    design_document_card_fields,
     design_legs_for_threads,
-    document_page_pixels,
     project_design_documents,
 )
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
 from clue_api.thread_store import create_thread, get_thread, thread_id_for_operation
+from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_api.turn_action import derive_turn_action_ref
 from clue_auth import Permission, PrincipalError, PrincipalService
 from clue_config import Settings
@@ -171,6 +186,7 @@ from clue_projections import (
     project_sidebar_page,
     thread_gates,
     thread_messages,
+    thread_research_tasks,
     threads_for_project,
     threads_running,
     turn_context_receipt,
@@ -182,7 +198,9 @@ from clue_projections import (
 )
 from clue_research.icp import activate_icp_version
 from clue_spine import (
+    confirm_project_product_set,
     create_project,
+    current_project_product_set,
     get_brand,
     get_project,
     get_project_for_workspace,
@@ -190,6 +208,9 @@ from clue_spine import (
 )
 from clue_storage import StorageBackend, StorageError, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.chat")
 
@@ -244,22 +265,21 @@ def _design_artifact_list_item(
     rather than something false; its name is its identity.
     """
 
-    pixels = document_page_pixels(document.get("pages_json"))
-    artifact_type = document.get("artifact_type")
+    fields = design_document_card_fields(document)
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
         document_id=str(document["id"]),
-        kind="web" if document["doc_kind"] == "web" else "ad",
+        kind=fields["kind"],
         title=str(document["title"]),
         status=str(document["status"]),
         current_version_id=str(document["current_version"]),
         created_at=document["created_at"].isoformat(),
         updated_at=document["updated_at"].isoformat(),
         origin_thread_id=str(document["origin_thread_id"]),
-        artifact_type=str(artifact_type) if artifact_type else None,
-        width_px=pixels[0] if pixels else None,
-        height_px=pixels[1] if pixels else None,
+        artifact_type=fields["artifact_type"],
+        width_px=fields["width_px"],
+        height_px=fields["height_px"],
     )
 
 
@@ -524,6 +544,17 @@ def _refuse(*, status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
+def _is_knowledge_document_gate(gate: AgentGateRow) -> bool:
+    """Whether this ICP gate's subject is a knowledge document (``@2``) or a draft spec (``@1``).
+
+    The snapshot is immutable, so the shape a gate was opened with is the shape it is answered in
+    forever: an ``@1`` gate written before ARV2 onboarding O6 carries no ``subject_kind`` at all
+    and keeps the ``icp_spec`` path unchanged.
+    """
+
+    return gate.subject_snapshot.get("subject_kind") == "brand_knowledge_document"
+
+
 def _gate_response(body: SubmitTurnRequest) -> GateResponseRequest:
     """Narrow the mutually-exclusive body once, where the type checker can see it.
 
@@ -573,6 +604,8 @@ def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntity
         secondary_label=entity.secondary_label,
         image_url=entity.image_url,
         version=entity.version,
+        account_id=entity.account_id,
+        account_name=entity.account_name,
     )
 
 
@@ -583,6 +616,7 @@ async def _validated_submission_context(
     refs: tuple[Any, ...],
     design_leg_document_id: str | None = None,
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -601,6 +635,7 @@ async def _validated_submission_context(
             refs=requested,
             design_leg_document_id=design_leg_document_id,
             storage=storage,
+            project_id=project_id,
         )
     except ContextReferenceError as exc:
         if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
@@ -626,12 +661,24 @@ def _composer_capabilities() -> HomeComposerCapabilitiesWire:
     )
 
 
+def _bound_connection_factory(conn: AsyncConnection) -> ConnFactory:
+    """Adapt the route's open transaction to the standard connection-factory seam."""
+
+    @asynccontextmanager
+    async def bound() -> AsyncIterator[AsyncConnection]:
+        yield conn
+
+    return bound
+
+
 def build_chat_router(
     *,
     settings: Settings,
     conn_factory: ConnFactory,
     tool_invoker: ToolInvoker,
     storage: StorageBackend | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
 
@@ -672,6 +719,8 @@ def build_chat_router(
         idempotency_key: str | None,
         action_ref: str | None = None,
         operation_id: OperationId | None = None,
+        invoker: ToolInvoker | None = None,
+        invocation_conn_factory: ConnFactory | None = None,
     ) -> dict[str, Any]:
         """Invoke one governed tool and return its references.
 
@@ -697,7 +746,9 @@ def build_chat_router(
 
         ctx = tool_context_for_principal(
             who,
-            conn_factory=conn_factory,
+            conn_factory=(
+                invocation_conn_factory if invocation_conn_factory is not None else conn_factory
+            ),
             operation_id=(
                 operation_id
                 if operation_id is not None
@@ -708,7 +759,9 @@ def build_chat_router(
             action_ref=action_ref,
         )
         try:
-            result = await tool_invoker.invoke(name, body, ctx, idempotency_key=idempotency_key)
+            result = await (invoker if invoker is not None else tool_invoker).invoke(
+                name, body, ctx, idempotency_key=idempotency_key
+            )
         except PreconditionFailed as exc:
             first = exc.failures[0]
             status_code, code = _REASON_STATUS.get(first.reason_code, (422, "PRECONDITION_FAILED"))
@@ -732,7 +785,7 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
+        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
         durable upload-receipt endpoint exists yet.
         """
 
@@ -741,6 +794,7 @@ def build_chat_router(
             brands = await list_brands_for_workspace(conn, who.workspace_id)
             context_entities = await list_composer_context_entities(
                 conn,
+                settings=settings,
                 workspace_id=who.workspace_id,
             )
         return HomeResponse(
@@ -1162,6 +1216,7 @@ def build_chat_router(
                 if project is None
                 else await list_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                 )
             )
@@ -1185,6 +1240,22 @@ def build_chat_router(
                 composer_capabilities=_composer_capabilities(),
             )
         )
+
+    @router.patch("/projects/{project_id}")
+    async def rename_project_route(
+        project_id: str,
+        body: RenameProjectRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> RenameProjectResponse:
+        _require(who, PERMISSION_PROJECT_WRITE)
+        references = await _invoke(
+            "rename_project",
+            {"project_id": project_id, "title": body.title},
+            who=who,
+            idempotency_key=idempotency_key,
+        )
+        return RenameProjectResponse(data=RenameProjectWire.model_validate(references))
 
     @router.post("/projects/{project_id}/composer-context/prepare")
     async def prepare_project_composer_context_route(
@@ -1246,8 +1317,10 @@ def build_chat_router(
             try:
                 prepared = await prepare_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                     refs=requested,
+                    project_id=project_id,
                 )
             except ContextReferenceError as exc:
                 raise _refuse(
@@ -1435,14 +1508,15 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         all_refs = tuple(ref for item in page.items for ref in item.refs)
-        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
-        if include is None and not has_design_assets:
+        has_presented = any(ref.object_type in PRESENTED_REF_TYPES for ref in all_refs)
+        if include is None and not has_presented:
             return message_list_response(page, thread_id=thread_id)
         async with conn_factory() as conn:
-            presentations = await design_asset_ref_presentations(
+            presentations = await context_ref_presentations(
                 conn,
                 workspace_id=who.workspace_id,
                 refs=all_refs,
+                storage=storage,
             )
             bodies = None
             if include is not None:
@@ -1506,6 +1580,50 @@ def build_chat_router(
                 gate_wire(view, budget_controls_enabled=settings.budget_controls_enabled)
                 for view in views
             )
+        )
+
+    @router.get("/projects/{project_id}/threads/{thread_id}/research-tasks")
+    async def list_research_tasks_route(
+        project_id: str,
+        thread_id: str,
+        who: PrincipalDep,
+    ) -> ResearchTaskListResponse:
+        """Every research run this thread launched, counted off its jobs, right now.
+
+        The turn's SSE stream emits one ``task`` snapshot at turn close and then ends — but the
+        fleet works for minutes afterwards, so without this the progress card is frozen at the last
+        frame. This is what a live card polls: the same task shape the stream emitted (it is built
+        by the same :func:`~clue_api.chat.turn_parts.task_part_from_run`, so the two merge as one
+        card), plus the ``revision`` the transcript reducer merges on and the per-field progress
+        inside the accounts still running.
+
+        **Unpaginated, and never a not-found for a thread that launched nothing.** The list is
+        bounded by the number of runs a conversation authorized, and the card asks *every* thread —
+        so "no launches" has to be an empty list. A 404 here would make the poller treat an
+        ordinary conversation as a broken one.
+
+        Scoped exactly like its neighbours: a thread in another project or another workspace is
+        **not found**, never forbidden, because a 403 would confirm to somebody who cannot see it
+        that it exists.
+        """
+
+        _require(who, PERMISSION_THREAD_READ)
+        async with conn_factory() as conn:
+            thread = await get_thread(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+        if thread is None or thread.project_id != project_id:
+            raise _refuse(
+                status_code=404,
+                code="THREAD_NOT_FOUND",
+                message="no such thread in this project",
+            )
+        views = await thread_research_tasks(
+            workspace_id=who.workspace_id,
+            project_id=project_id,
+            thread_id=thread_id,
+            conn_factory=conn_factory,
+        )
+        return ResearchTaskListResponse(
+            tasks=tuple(research_task_wire(view, workspace_id=who.workspace_id) for view in views)
         )
 
     # --- the dev-lens turn-context inspector (dev-only; never registered in production) ---------
@@ -1757,6 +1875,7 @@ def build_chat_router(
             KIND_DIRECTIVE_CONFIRMATION,
             KIND_ICP_CONFIRMATION,
             KIND_PRODUCT_SELECTION,
+            KIND_PRODUCT_SET_SELECTION,
         }:
             raise _refuse(
                 status_code=422,
@@ -1820,7 +1939,10 @@ def build_chat_router(
             )
 
         if view.gate.kind == KIND_ICP_CONFIRMATION:
-            if response.selected_product_id is not None:
+            if (
+                response.selected_product_id is not None
+                or response.selected_product_ids is not None
+            ):
                 raise _refuse(
                     status_code=422,
                     code="GATE_PRODUCT_UNEXPECTED",
@@ -1843,7 +1965,42 @@ def build_chat_router(
             # A retry of the same answering turn is checked against its existing captured bytes
             # below. Its subject is active after an approval, so only a *new* answer revalidates the
             # still-draft snapshot before any receipt is written.
-            if view.answer is None:
+            if view.answer is None and _is_knowledge_document_gate(view.gate):
+                # ARV2 onboarding O6: the subject is a `brand_knowledge_document`, so the check is
+                # "is the brand's current ICP document for this key still the exact one the human
+                # was shown?" — same document, same bytes. A newer proposal published at that path
+                # since the gate opened is precisely what must refuse.
+                snapshot = view.gate.subject_snapshot
+                assert storage is not None  # the submit route exists only when storage does
+                brand_id = snapshot.get("brand_id")
+                icp_key = snapshot.get("icp_key")
+                if not isinstance(brand_id, str) or not isinstance(icp_key, str):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the durable gate does not name a canonical ICP document",
+                    )
+                current = await current_icp_document(
+                    conn,
+                    storage,
+                    workspace_id=who.workspace_id,
+                    brand_id=brand_id,
+                    icp_key=icp_key,
+                    # Same scope the gate was opened in, so a project-local variant revalidates
+                    # against itself rather than against the brand's document at that path.
+                    project_id=project_id,
+                )
+                if (
+                    current is None
+                    or str(current.document_id) != snapshot.get("document_id")
+                    or current.artifact_sha256 != snapshot.get("artifact_sha256")
+                ):
+                    raise _refuse(
+                        status_code=409,
+                        code="GATE_SUBJECT_STALE",
+                        message="the current ICP document differs from the reviewed one",
+                    )
+            elif view.answer is None:
                 scope = await resolve_stage0_project_scope_for_project(
                     conn,
                     workspace_id=who.workspace_id,
@@ -1887,6 +2044,12 @@ def build_chat_router(
                         message="the persisted ICP draft differs from the reviewed snapshot",
                     )
         elif view.gate.kind == KIND_PRODUCT_SELECTION:
+            if response.selected_product_ids is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="this question takes one product, not a set",
+                )
             if response.revision_request is not None:
                 raise _refuse(
                     status_code=422,
@@ -1924,6 +2087,63 @@ def build_chat_router(
                     code="GATE_PRODUCT_STALE",
                     message="the selected product was not in the presented catalog",
                 )
+        elif view.gate.kind == KIND_PRODUCT_SET_SELECTION:
+            # A project targets a SET of products (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3, ruling
+            # P1). The same rules as the single-valued gate, applied per element, plus the one this
+            # shape adds: the same product cannot be chosen twice.
+            if response.selected_product_id is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="this question takes a set of products, not one",
+                )
+            # The durable answer for this kind carries its choices and nothing else (the answer
+            # trigger enforces it), so there is nowhere to record revision text.
+            if response.revision_request is not None:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_REVISION_REQUEST_UNEXPECTED",
+                    message="a product-set question does not accept revision text",
+                )
+            chosen = list(response.selected_product_ids or ())
+            if response.decision == "approved" and not chosen:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_REQUIRED",
+                    message="select at least one product from the presented catalog",
+                )
+            if response.decision != "approved" and chosen:
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_UNEXPECTED",
+                    message="a rejected or revised product question does not accept a choice",
+                )
+            if len(set(chosen)) != len(chosen):
+                raise _refuse(
+                    status_code=422,
+                    code="GATE_PRODUCT_DUPLICATE",
+                    message="a product can only be chosen once",
+                )
+            # An archived candidate is *presented* (the human may be looking at a set that
+            # includes it) but cannot be chosen, so the allowed set is narrower than the snapshot.
+            snapshot_products = view.gate.subject_snapshot.get("products")
+            selectable = (
+                {
+                    str(item["product_id"])
+                    for item in snapshot_products
+                    if isinstance(item, dict)
+                    and isinstance(item.get("product_id"), str)
+                    and item.get("status") != "archived"
+                }
+                if isinstance(snapshot_products, list)
+                else set()
+            )
+            if not set(chosen) <= selectable:
+                raise _refuse(
+                    status_code=409,
+                    code="GATE_PRODUCT_STALE",
+                    message="a chosen product was not selectable in the presented catalog",
+                )
         else:
             is_discovery_configuration = (
                 view.gate.subject_snapshot.get("subject_kind") == "discovery_configuration"
@@ -1945,7 +2165,10 @@ def build_chat_router(
                         else "an account-research directive does not accept revision text"
                     ),
                 )
-            if response.selected_product_id is not None:
+            if (
+                response.selected_product_id is not None
+                or response.selected_product_ids is not None
+            ):
                 raise _refuse(
                     status_code=422,
                     code="GATE_PRODUCT_UNEXPECTED",
@@ -2024,6 +2247,11 @@ def build_chat_router(
                 else gate_response_message(_gate_response(body))
             )
             digest = content_address(message.encode())
+            # Set when this request pins this project's ICP below. The pin changes which version
+            # the library serves at ``audience/icp-<key>.md``, so the tree is refreshed once the
+            # transaction that wrote the pin has committed. A replayed answer pins nothing and
+            # returns from inside the transaction, so it refreshes nothing either.
+            pinned_project_icp = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2140,7 +2368,36 @@ def build_chat_router(
                         None if open_leg is None else open_leg.get("document_id")
                     ),
                     storage=storage,
+                    project_id=project_id,
                 )
+                # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
+                # approving a directive-confirmation gate atomically confirms AND launches via
+                # ``launch_selected_account_research@1``. That tool's account authority is the
+                # approving turn's durable context refs, so the capture records the exact account
+                # set the gate froze at open — the approval click genuinely references those
+                # accounts. Injected only when the turn carries no refs of its own, and only for
+                # the approval decision this authority serves; decided before the replay read so
+                # a retried approval replays against identical refs.
+                if (
+                    gate is not None
+                    and gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                    and gate.subject_snapshot.get("subject_kind") != "discovery_configuration"
+                    and not settings.budget_controls_enabled
+                    and not context_refs
+                    and body.gate_response is not None
+                    and _gate_response(body).decision == "approved"
+                ):
+                    snapshot_account_ids = gate.subject_snapshot.get("account_entity_ids")
+                    if isinstance(snapshot_account_ids, list):
+                        context_refs = tuple(
+                            DomainObjectRef(
+                                workspace_id=who.workspace_id,
+                                object_type="account",
+                                object_id=str(value),
+                                version=None,
+                            )
+                            for value in snapshot_account_ids
+                        )
                 # A gate answer must never become a design prompt (Part-III review finding C,
                 # ratified 2026-08-14): while a leg is open, the D1 routing rule would deliver
                 # these canonical bytes to the design agent as an instruction, and the gate flow
@@ -2162,9 +2419,7 @@ def build_chat_router(
                     project_id=project_id,
                     turn_id=turn_id,
                     message=message,
-                    allow_empty_reference_turn=any(
-                        ref.object_type == "design_asset" for ref in context_refs
-                    ),
+                    allow_empty_reference_turn=bool(context_refs),
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,
@@ -2204,6 +2459,23 @@ def build_chat_router(
                     # The receipt is derived from the turn this request just made durable — the
                     # client never supplies it and never could (§3.5).
                     action_ref = derive_turn_action_ref(turn_id)
+                    # A set-valued answer names its choices in the payload — the single
+                    # ``selected_option_ref`` column cannot hold a set, and the answer trigger
+                    # refuses one on this kind.
+                    if gate.kind == KIND_PRODUCT_SET_SELECTION:
+                        decision_payload: dict[str, JsonValue] = (
+                            {"selected_option_refs": list(response.selected_product_ids)}
+                            if response.selected_product_ids is not None
+                            else {}
+                        )
+                        selected_option_ref = None
+                    else:
+                        decision_payload = (
+                            {"revision_request": response.revision_request}
+                            if response.revision_request is not None
+                            else {}
+                        )
+                        selected_option_ref = response.selected_product_id
                     try:
                         await insert_gate_answer(
                             conn,
@@ -2213,12 +2485,8 @@ def build_chat_router(
                             action_ref=action_ref,
                             decision=response.decision,
                             expected_subject_sha256=response.expected_subject_sha256,
-                            decision_payload=(
-                                {"revision_request": response.revision_request}
-                                if response.revision_request is not None
-                                else {}
-                            ),
-                            selected_option_ref=response.selected_product_id,
+                            decision_payload=decision_payload,
+                            selected_option_ref=selected_option_ref,
                             answered_by_user_id=who.user_id,
                         )
                     except GateAlreadyAnswered as exc:
@@ -2243,22 +2511,46 @@ def build_chat_router(
                         # Human-only, invoked outside the model surface with server-derived
                         # authority. Rejection and revision deliberately confirm nothing: they are
                         # durable records of a decision, and the agent answers them in its turn.
-                        tool_name = (
-                            "confirm_account_research_directive"
-                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                            else "confirm_project_product"
-                        )
-                        tool_body = (
-                            {
-                                "directive_id": str(gate.subject_snapshot["research_directive_id"]),
-                                "expected_sha256": gate.expected_subject_sha256,
+                        #
+                        # Founder ruling 2026-08-19 (Slice B): with budget controls DISABLED, the
+                        # approval of a directive-confirmation gate is one atomic act — confirm
+                        # AND launch — through ``launch_selected_account_research@1``, whose own
+                        # resolve re-derives the human receipt from this turn, requires the exact
+                        # gate-frozen account set (captured above as this turn's context refs),
+                        # confirms the draft, computes the estimate server-side, and launches.
+                        # Budget-controls-enabled deployments keep the confirm-only gate
+                        # unchanged; the tool itself refuses the direct path there.
+                        directive_gate = gate.kind == KIND_DIRECTIVE_CONFIRMATION
+                        atomic_launch = directive_gate and not settings.budget_controls_enabled
+                        if atomic_launch:
+                            tool_name = "launch_selected_account_research"
+                            tool_body: dict[str, Any] = {
+                                "project_run_id": str(gate.subject_snapshot["project_run_id"]),
+                                "research_directive_id": str(
+                                    gate.subject_snapshot["research_directive_id"]
+                                ),
+                                "account_entity_ids": [ref.object_id for ref in context_refs],
+                                "source_turn_ref": action_ref,
                             }
-                            if gate.kind == KIND_DIRECTIVE_CONFIRMATION
-                            else {
-                                "project_id": project_id,
-                                "product_id": response.selected_product_id,
-                            }
-                        )
+                        else:
+                            tool_name = (
+                                "confirm_account_research_directive"
+                                if directive_gate
+                                else "confirm_project_product"
+                            )
+                            tool_body = (
+                                {
+                                    "directive_id": str(
+                                        gate.subject_snapshot["research_directive_id"]
+                                    ),
+                                    "expected_sha256": gate.expected_subject_sha256,
+                                }
+                                if directive_gate
+                                else {
+                                    "project_id": project_id,
+                                    "product_id": str(response.selected_product_id),
+                                }
+                            )
                         await _invoke(
                             tool_name,
                             tool_body,
@@ -2271,7 +2563,112 @@ def build_chat_router(
                                 who.workspace_id,
                                 f"gate-answer:{gate.gate_id}:{turn_id}",
                             ),
+                            # The budget-disabled approval is one database act. Its narrow
+                            # request-scoped invoker binds the launch tool, journal, directive
+                            # confirmation, fleet rows, and queue offer to this exact transaction.
+                            # Other gate tools keep using the process toolbelt unchanged.
+                            invoker=(
+                                transactional_tool_invoker_factory(_bound_connection_factory(conn))
+                                if atomic_launch and transactional_tool_invoker_factory is not None
+                                else None
+                            ),
+                            invocation_conn_factory=(
+                                _bound_connection_factory(conn)
+                                if atomic_launch and transactional_tool_invoker_factory is not None
+                                else None
+                            ),
                         )
+                    elif (
+                        gate.kind == KIND_PRODUCT_SET_SELECTION and response.decision == "approved"
+                    ):
+                        # Human-only and tool-free: confirming a set is one spine write with
+                        # server-derived authority (workspace, project, the answering gate and the
+                        # ambient user), in the same transaction as the immutable answer. Either
+                        # both effects commit or neither does.
+                        if (
+                            await confirm_project_product_set(
+                                conn,
+                                workspace_id=who.workspace_id,
+                                project_id=project_id,
+                                product_ids=list(response.selected_product_ids or ()),
+                                gate_id=gate.gate_id,
+                                confirmed_by_user_id=who.user_id,
+                            )
+                            is None
+                        ):
+                            raise _refuse(
+                                status_code=409,
+                                code="GATE_SUBJECT_STALE",
+                                message=(
+                                    "a chosen product no longer belongs to this project's brand"
+                                ),
+                            )
+                    elif (
+                        gate.kind == KIND_ICP_CONFIRMATION
+                        and response.decision == "approved"
+                        and _is_knowledge_document_gate(gate)
+                    ):
+                        # ARV2 onboarding O6: approving a knowledge-document ICP mints the
+                        # `confirmed` version of that same document path — human-only and
+                        # tool-free, with server-derived authority (the workspace, the project,
+                        # the ambient user and the gate's own digest), in the same transaction as
+                        # the immutable answer. Either both effects commit or neither does.
+                        assert storage is not None  # the submit route exists only when storage does
+                        snapshot = gate.subject_snapshot
+                        brand_id = str(snapshot["brand_id"])
+                        subject = await current_icp_document(
+                            conn,
+                            storage,
+                            workspace_id=who.workspace_id,
+                            brand_id=brand_id,
+                            icp_key=str(snapshot["icp_key"]),
+                            project_id=project_id,
+                        )
+                        product_set = await current_project_product_set(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            project_id=project_id,
+                        )
+                        try:
+                            if subject is None:
+                                raise IcpConfirmationStale(
+                                    "the reviewed ICP document is no longer readable"
+                                )
+                            selection_version = (
+                                None if product_set is None else product_set.selection_version
+                            )
+                            confirmed = await confirm_icp_document(
+                                conn,
+                                storage,
+                                workspace_id=who.workspace_id,
+                                brand_id=brand_id,
+                                project_id=project_id,
+                                proposed=subject,
+                                expected_sha256=gate.expected_subject_sha256,
+                                confirmed_by_user_id=who.user_id,
+                                product_selection_version=selection_version,
+                            )
+                            # Founder rulings 2026-09-10: the approval is also the moment this
+                            # project pins its ICP. Same transaction as the confirmed version and
+                            # the immutable answer — a project can never end up having confirmed a
+                            # document it does not pin, or pinning one nobody approved. A replayed
+                            # approval finds its own document already pinned and writes nothing.
+                            await pin_project_icp(
+                                conn,
+                                workspace_id=who.workspace_id,
+                                project_id=project_id,
+                                brand_id=brand_id,
+                                document=confirmed,
+                                product_selection_version=selection_version,
+                                pinned_by_user_id=who.user_id,
+                            )
+                            pinned_project_icp = True
+                        except IcpConfirmationStale as exc:
+                            raise _refuse(
+                                status_code=409,
+                                code="GATE_SUBJECT_STALE",
+                                message=str(exc),
+                            ) from exc
                     elif gate.kind == KIND_ICP_CONFIRMATION and response.decision == "approved":
                         icp_key = gate.subject_snapshot["icp_key"]
                         version = gate.subject_snapshot["version"]
@@ -2313,6 +2710,11 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     thread_id=thread_id,
                 )
+            # After the commit, never inside it: the library's compile takes this project's row
+            # lock. Best-effort by contract — an approval that confirmed and pinned must not
+            # report failure because its rendering could not be written.
+            if pinned_project_icp and project_library is not None:
+                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(
                     turn_id=str(submission.turn_id),
@@ -2335,6 +2737,8 @@ def install_chat_surface(
     principal_resolver: PrincipalResolver | None = None,
     auth_service: PrincipalService | None = None,
     storage: StorageBackend | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
@@ -2377,5 +2781,7 @@ def install_chat_surface(
             conn_factory=conn_factory,
             tool_invoker=tool_invoker,
             storage=storage,
+            transactional_tool_invoker_factory=transactional_tool_invoker_factory,
+            project_library=project_library,
         )
     )

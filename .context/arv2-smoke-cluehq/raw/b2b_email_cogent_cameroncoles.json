@@ -1,0 +1,497 @@
+{
+  "id": "2a27e143-083f-9c32-2b68-dffb50eed094",
+  "identifier": "cameroncoles",
+  "profile": {
+    "first_name": "Cameron",
+    "middle_name": null,
+    "last_name": "Coles",
+    "full_name": "Cameron Coles",
+    "headline": "VP of Marketing",
+    "title": "VP of Marketing",
+    "picture": {
+      "source": "https://images.ai-ark.com/jVSNa0Ld-KaDSyymcVuJx8afZB_M871-11gLScxVw1c/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/2a27e143-083f-9c32-2b68-dffb50eed094.jpg"
+    },
+    "background": {
+      "source": "https://media.licdn.com/dms/image/v2/D5616AQFGyGQ9rsprag/profile-displaybackgroundimage-shrink_350_1400/B56Z5g9exDJIAU-/0/1779743190412?e=1786579200&v=beta&t=RB7bqW1jnRuKskbNwDSO8bXWORTtWNj0kjkAUVKVB58"
+    },
+    "birth_date": null,
+    "summary": null
+  },
+  "link": {
+    "linkedin": "https://www.linkedin.com/in/cameroncoles",
+    "twitter": "https://x.com/camcoles",
+    "github": null,
+    "facebook": null
+  },
+  "location": {
+    "default": "San Francisco Bay Area, United States, North America",
+    "short": "San Francisco Bay Area",
+    "country": "United States",
+    "state": null,
+    "city": "San Francisco Bay Area",
+    "position": null
+  },
+  "languages": {
+    "primary_locale": {
+      "country": "US",
+      "language": "en"
+    },
+    "supported_locales": [
+      {
+        "country": "US",
+        "language": "en"
+      }
+    ],
+    "profile_languages": null
+  },
+  "industry": "Computer Software",
+  "educations": [
+    {
+      "school": {
+        "id": "caa46f51-9215-60f2-e64a-b2964baeef5d",
+        "name": "The Wharton School",
+        "logo": "https://images.ai-ark.com/Aac-hOJ0Mgi3R-aDzJh8-wcwdbj_GzTqF8e4Wc1m480/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/caa46f51-9215-60f2-e64a-b2964baeef5d.jpg",
+        "url": "https://www.linkedin.com/school/the-wharton-school"
+      },
+      "degree_name": "BSE",
+      "field_of_study": "Marketing",
+      "grade": null,
+      "date": null
+    }
+  ],
+  "position_groups": [
+    {
+      "company": {
+        "id": "1e3456b4-99bb-3193-78d7-dfb5828a1022",
+        "name": "Cogent",
+        "logo": "https://images.ai-ark.com/3TeLCMzS6a04x7vX2IshfMlZYb6Px37rMF0v4DJM4vk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1e3456b4-99bb-3193-78d7-dfb5828a1022.jpg",
+        "url": "https://www.linkedin.com/company/cogentsecurity",
+        "employees": {
+          "start": 11,
+          "end": 50
+        }
+      },
+      "date": {
+        "start": "2025-11-01",
+        "end": null
+      },
+      "profile_positions": [
+        {
+          "company": "Cogent Security",
+          "description": null,
+          "title": "VP of Marketing",
+          "employment_type": "Full-time",
+          "location": "San Francisco, CA",
+          "date": {
+            "start": "2025-11-01",
+            "end": null
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "c3bbd314-bc0d-e863-9ef4-35a901080b1e",
+        "name": "Cyberhaven",
+        "logo": "https://images.ai-ark.com/BKxKxzVMt4fUy7d2wsH_IOTEFzgymYdTheZ_WcJ-YoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c3bbd314-bc0d-e863-9ef4-35a901080b1e.jpg",
+        "url": "https://www.linkedin.com/company/cyberhaven",
+        "employees": {
+          "start": 201,
+          "end": 500
+        }
+      },
+      "date": {
+        "start": "2022-05-01",
+        "end": "2025-06-30"
+      },
+      "profile_positions": [
+        {
+          "company": "Cyberhaven",
+          "description": null,
+          "title": "VP of Marketing",
+          "employment_type": "Full-time",
+          "location": null,
+          "date": {
+            "start": "2022-05-01",
+            "end": "2025-06-30"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "94fc90f4-e76c-c992-dd1a-d713106305a4",
+        "name": "Wiz",
+        "logo": "https://images.ai-ark.com/Ol_rp9EmyBz-WA8qtXl3WPJe732KREdTWVNbNgYWffw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/94fc90f4-e76c-c992-dd1a-d713106305a4.jpg",
+        "url": "https://www.linkedin.com/company/wizsecurity",
+        "employees": {
+          "start": 1001,
+          "end": 5000
+        }
+      },
+      "date": {
+        "start": "2021-02-01",
+        "end": "2021-12-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Wiz",
+          "description": null,
+          "title": "Head of Product and Content Marketing",
+          "employment_type": null,
+          "location": null,
+          "date": {
+            "start": "2021-02-01",
+            "end": "2021-12-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "0705e8ee-8d07-7415-8e45-d5f7ae09e823",
+        "name": "Proxy (acquired by \u014cURA)",
+        "logo": "https://images.ai-ark.com/M1Gc10YHzHVuWx4YntRNFSjVR64_iIR6xr-dj0iWtA8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/0705e8ee-8d07-7415-8e45-d5f7ae09e823.jpg",
+        "url": "https://www.linkedin.com/company/proxy-technologies",
+        "employees": {
+          "start": 11,
+          "end": 50
+        }
+      },
+      "date": {
+        "start": "2018-10-01",
+        "end": "2021-01-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Proxy",
+          "description": null,
+          "title": "Director of Product Marketing",
+          "employment_type": null,
+          "location": "San Francisco Bay Area",
+          "date": {
+            "start": "2018-10-01",
+            "end": "2021-01-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "3050eacc-7662-e673-d228-7d80101c65c8",
+        "name": "Skyhigh",
+        "logo": "https://images.ai-ark.com/2YfOCjbfz8ewxcosXIehaaAWjXVPD3k2oavc2dEZUrg/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3050eacc-7662-e673-d228-7d80101c65c8.jpg",
+        "url": "https://www.linkedin.com/company/skyhighnetworks",
+        "employees": {
+          "start": 201,
+          "end": 500
+        }
+      },
+      "date": {
+        "start": "2013-07-01",
+        "end": "2018-03-31"
+      },
+      "profile_positions": [
+        {
+          "company": "Skyhigh",
+          "description": null,
+          "title": "Director of Product Marketing",
+          "employment_type": null,
+          "location": "Campbell, CA",
+          "date": {
+            "start": "2013-07-01",
+            "end": "2018-03-31"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "7f1a482e-32c1-88a9-69bf-c1d17902aee1",
+        "name": "Symantec",
+        "logo": "https://images.ai-ark.com/dVifJUxTWvbafV5jolqPLrLVtbfdaWimoYGxAJC5Ewk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/7f1a482e-32c1-88a9-69bf-c1d17902aee1.jpg",
+        "url": "https://www.linkedin.com/company/symantec",
+        "employees": {
+          "start": 10001,
+          "end": null
+        }
+      },
+      "date": {
+        "start": "2011-07-01",
+        "end": "2013-02-28"
+      },
+      "profile_positions": [
+        {
+          "company": "Symantec",
+          "description": null,
+          "title": "Product Marketing Manager",
+          "employment_type": null,
+          "location": "Mountain View, CA",
+          "date": {
+            "start": "2011-07-01",
+            "end": "2013-02-28"
+          }
+        }
+      ]
+    },
+    {
+      "company": {
+        "id": "b68fe47d-bcef-1e09-a176-32fed865c62b",
+        "name": "Clearwell Systems",
+        "logo": "https://images.ai-ark.com/DaARhMeH_bmROoriOSjyXi1Apj_sIN4iVcjibAHUa-A/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/b68fe47d-bcef-1e09-a176-32fed865c62b.jpg",
+        "url": "https://www.linkedin.com/company/clearwell-systems",
+        "employees": {
+          "start": 201,
+          "end": 500
+        }
+      },
+      "date": {
+        "start": "2010-07-01",
+        "end": "2013-02-28"
+      },
+      "profile_positions": [
+        {
+          "company": "Clearwell Systems (Acquired by Symantec)",
+          "description": null,
+          "title": "Product Marketing Manager",
+          "employment_type": null,
+          "location": null,
+          "date": {
+            "start": "2010-07-01",
+            "end": "2013-02-28"
+          }
+        }
+      ]
+    }
+  ],
+  "skills": [
+    "Product Marketing",
+    "Product Management",
+    "Enterprise Software",
+    "SaaS",
+    "Demand Generation",
+    "Sales Enablement",
+    "Competitive Analysis",
+    "Leadership",
+    "Marketing Strategy",
+    "Account Management",
+    "Go-to-market Strategy",
+    "Software as a Service (SaaS)"
+  ],
+  "member_badges": {
+    "premium": true,
+    "creator": false,
+    "open_to_work": false,
+    "hiring": false,
+    "verified": true,
+    "influencer": false
+  },
+  "statistics": {
+    "network": {
+      "influencer": false,
+      "followable": null,
+      "followers_count": 1624,
+      "connections_count": 1326
+    },
+    "experience": {
+      "prev_job_titles": null,
+      "tenure": {
+        "company": "2025-11-01",
+        "start": "2011-12-31",
+        "title": "2022-09-01"
+      }
+    }
+  },
+  "company": {
+    "id": "1e3456b4-99bb-3193-78d7-dfb5828a1022",
+    "summary": {
+      "name": "Cogent Security",
+      "legal_name": "Cogent Security, Inc.",
+      "description": "Cogent is an applied AI lab building AI systems for enterprise cybersecurity teams. We focus on cybersecurity because it affects everyone\u2014the reliability of the services we use, the privacy of our data, and the safety of the organizations we depend on. Our mission is to prevent breaches using autonomous AI systems that continuously secure systems against AI-armed adversaries operating at machine speed. Founded by researchers and operators from Google DeepMind, Abnormal Security, and Coinbase. Backed by Greylock Partners.",
+      "overview": "Cogent Security provides an AI-driven platform that automates vulnerability management by continuously ingesting context, prioritizing risks, and coordinating remediation actions with minimal manual effort from security teams. Its technology uses autonomous agents to highlight key vulnerabilities, suggest high-impact fixes, and generate program-level reporting to help organizations respond to security threats more effectively. The platform integrates with existing security and IT tools to contextualize assets and feeds, supporting end-to-end vulnerability lifecycle workflows. Cogent Security\u2019s solution is designed to reduce the time and manual work associated with identifying, triaging, and addressing vulnerabilities while aligning actions with business risk priorities. The company\u2019s approach aims to shift traditional vulnerability practices toward more dynamic risk-aware operations.",
+      "founded_year": 2024,
+      "type": "PRIVATELY_HELD",
+      "industry": "computer and network security",
+      "staff": {
+        "total": 42,
+        "range": {
+          "start": 11,
+          "end": 50
+        }
+      },
+      "logo": {
+        "source": "https://images.ai-ark.com/3TeLCMzS6a04x7vX2IshfMlZYb6Px37rMF0v4DJM4vk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1e3456b4-99bb-3193-78d7-dfb5828a1022.jpg"
+      }
+    },
+    "link": {
+      "website": "https://www.cogent.com",
+      "domain": "cogent.com",
+      "linkedin": "https://www.linkedin.com/company/cogentsecurity",
+      "twitter": "https://x.com/cogent_security",
+      "crunchbase": "https://www.crunchbase.com/organization/cogent-security"
+    },
+    "financial": {
+      "revenue": {
+        "annual": {
+          "start": 1000000,
+          "end": 5000000,
+          "amount": "1000000-5000000"
+        }
+      },
+      "funding": {
+        "type": "SERIES_A",
+        "total_amount": 53000000,
+        "last_amount": 42000000,
+        "num_investor": 4,
+        "num_funding_rounds": 2,
+        "rounds": [
+          {
+            "announced_at": "2026-02-18",
+            "raised_amount": 42000000,
+            "type": "SERIES_A",
+            "investors": [
+              "Greylock",
+              "Definition",
+              "Bain Capital Ventures"
+            ]
+          },
+          {
+            "announced_at": "2025-07-15",
+            "raised_amount": 11000000,
+            "type": "SEED_ROUND",
+            "investors": [
+              "Lockstep",
+              "Greylock"
+            ]
+          }
+        ],
+        "date": "2026-02-18"
+      }
+    },
+    "location": {
+      "headquarter": {
+        "continent": "North America",
+        "country": "United States",
+        "state": "California",
+        "city": "San Francisco",
+        "postal_code": "94105",
+        "raw_address": "San Francisco, California, United States, North America",
+        "position": {
+          "lng": -122.042,
+          "lat": 37.39271
+        }
+      },
+      "locations": [
+        {
+          "continent": "North America",
+          "country": "United States",
+          "state": "California",
+          "city": "San Francisco",
+          "postal_code": "94105",
+          "raw_address": "San Francisco, California, United States, North America",
+          "position": {
+            "lng": -122.042,
+            "lat": 37.39271
+          }
+        }
+      ]
+    },
+    "technologies": [
+      {
+        "name": "common crawl",
+        "category": "widgets"
+      },
+      {
+        "name": "euro",
+        "category": "payment"
+      },
+      {
+        "name": "dnssec",
+        "category": "ns"
+      },
+      {
+        "name": "cloudflare cdn",
+        "category": "cdn"
+      },
+      {
+        "name": "cloudflare",
+        "category": "cdn"
+      },
+      {
+        "name": "ipv6",
+        "category": "server"
+      },
+      {
+        "name": "cloudflare network error logging",
+        "category": "hosting"
+      },
+      {
+        "name": "commoncrawl top 10m",
+        "category": "widgets"
+      },
+      {
+        "name": "cloudflare hosting",
+        "category": "hosting"
+      },
+      {
+        "name": "amazon virginia region",
+        "category": "hosting"
+      }
+    ],
+    "industries": [
+      "computer",
+      "cyber security",
+      "network security",
+      "software",
+      "artificial intelligence (ai)",
+      "computer and network security"
+    ],
+    "keywords": [
+      "vulnerability management",
+      "artificial intelligence"
+    ],
+    "languages": [
+      "english"
+    ],
+    "last_updated": "2026-08-22"
+  },
+  "department": {
+    "departments": [
+      "marketing"
+    ],
+    "sub_departments": [
+      "product_marketing"
+    ],
+    "functions": [
+      "marketing"
+    ],
+    "seniority": "vp"
+  },
+  "email": {
+    "state": "DONE",
+    "output": [
+      {
+        "address": "cameron@cogent.com",
+        "mx": {
+          "record": "smtp.google.com",
+          "google": false,
+          "found": true,
+          "provider": "g-suite"
+        },
+        "domainType": "SMTP",
+        "status": "VALID",
+        "subStatus": "EMPTY",
+        "date": "2026-08-31T07:52:29.000237",
+        "free": false,
+        "generic": false,
+        "found": true
+      }
+    ]
+  },
+  "last_updated": "2026-08-22",
+  "_http_status": 200,
+  "_elapsed_s": 1.73,
+  "_request": {
+    "url": "https://www.linkedin.com/in/cameroncoles"
+  }
+}

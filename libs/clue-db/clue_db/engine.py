@@ -79,7 +79,15 @@ def create_engine(url: str | None = None, *, echo: bool = False) -> AsyncEngine:
     the caller (M1) using :func:`clue_core.serialize_value_json`, so no engine-level JSON
     codec is registered here — serialization stays aligned to ``core`` in one place.
     """
-    return create_async_engine(url or database_url(), echo=echo, future=True)
+    return create_async_engine(
+        url or database_url(),
+        echo=echo,
+        future=True,
+        # A cancelled asyncpg cleanup can leave a closed transport behind. Validate pooled
+        # connections at checkout so the next fleet claim replaces that connection instead of
+        # terminating the worker with InterfaceError("connection is closed").
+        pool_pre_ping=True,
+    )
 
 
 @asynccontextmanager

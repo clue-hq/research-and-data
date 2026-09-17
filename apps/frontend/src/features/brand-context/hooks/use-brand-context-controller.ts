@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKnowledgeEditor } from "./use-knowledge-editor";
 import type {
   BrandAssetCategory,
   BrandAssetSortDirection,
@@ -9,7 +10,6 @@ import type {
   BrandContextInitialState,
   BrandContextSection,
   BrandContextWorkspace,
-  BrandDocumentMode,
   BrandTextStyle,
   BrandTypeface,
 } from "../model/brand-context";
@@ -36,9 +36,13 @@ const assetSortOptions: ReadonlyArray<{ label: string; value: BrandAssetSortKey 
 export function useBrandContextController({
   initial,
   workspace,
+  scopeKey,
+  canWriteKnowledge,
 }: {
   initial: BrandContextInitialState;
   workspace: BrandContextWorkspace;
+  scopeKey: string;
+  canWriteKnowledge: boolean;
 }) {
   const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -50,15 +54,7 @@ export function useBrandContextController({
   const [section, setSection] = useState(initial.section);
   const [colorMode, setColorModeState] = useState(initial.colorMode);
   const [assetView, setAssetViewState] = useState(initial.assetView);
-  const [documentMode, setDocumentModeState] = useState(initial.documentMode);
-  const [selectedDocumentId, setSelectedDocumentId] = useState(defaultDocument?.id ?? "");
-  const [documentBodies, setDocumentBodies] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      workspace.knowledgeFolders.flatMap((folder) =>
-        folder.documents.map((document) => [document.id, document.body]),
-      ),
-    ),
-  );
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState(defaultDocument?.path ?? "");
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(
     () => new Set(defaultDocument ? [defaultDocument.folderId] : []),
   );
@@ -142,11 +138,9 @@ export function useBrandContextController({
     [workspace.knowledgeFolders],
   );
   const selectedDocument =
-    allDocuments.find((document) => document.id === selectedDocumentId)
+    allDocuments.find((document) => document.path === selectedDocumentPath)
     ?? allDocuments[0];
-  const documentBody = selectedDocument
-    ? documentBodies[selectedDocument.id] ?? selectedDocument.body
-    : "";
+  const knowledgeEditor = useKnowledgeEditor(selectedDocument, { scopeKey, canWrite: canWriteKnowledge });
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
@@ -181,7 +175,6 @@ export function useBrandContextController({
     assetId?: string | null;
     assetView?: BrandAssetView;
     colorMode?: BrandColorMode;
-    documentMode?: BrandDocumentMode;
     filePath?: string;
     section?: BrandContextSection;
   }) {
@@ -202,7 +195,6 @@ export function useBrandContextController({
         ? allDocuments.find((item) => item.path === next.filePath)
         : selectedDocument;
       if (document) params.set("file", document.path);
-      params.set("mode", next.documentMode ?? documentMode);
     }
 
     router.replace(`/brand-context?${params.toString()}`, { scroll: false });
@@ -216,7 +208,7 @@ export function useBrandContextController({
   function selectDocument(documentId: string) {
     const document = allDocuments.find((item) => item.id === documentId);
     if (!document) return;
-    setSelectedDocumentId(documentId);
+    setSelectedDocumentPath(document.path);
     setSection("knowledge");
     setOpenFolderIds((current) => new Set(current).add(document.folderId));
     syncRoute({ filePath: document.path, section: "knowledge" });
@@ -360,11 +352,10 @@ export function useBrandContextController({
     customFontName,
     dialog,
     deleteAsset,
-    documentBody,
-    documentMode,
     filteredAssets,
     filteredTypefaces,
     fontSearch,
+    knowledgeEditor,
     newStyle,
     editAssetDetails,
     openAsset,
@@ -410,17 +401,6 @@ export function useBrandContextController({
     setColorMode(nextMode: BrandColorMode) {
       setColorModeState(nextMode);
       syncRoute({ colorMode: nextMode, section: "colors" });
-    },
-    setDocumentBody(value: string) {
-      if (!selectedDocument) return;
-      setDocumentBodies((current) => ({
-        ...current,
-        [selectedDocument.id]: value,
-      }));
-    },
-    setDocumentMode(nextMode: BrandDocumentMode) {
-      setDocumentModeState(nextMode);
-      syncRoute({ documentMode: nextMode, section: "knowledge" });
     },
     setFontSearch,
     setNewStyle<K extends keyof BrandTextStyle>(field: K, value: BrandTextStyle[K]) {

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.entity_research_contracts import canonical_sha256
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderAction,
     EntityResearchProviderWait,
     EntityResearchResultIntegrityError,
@@ -29,6 +30,7 @@ from clue_api.exa_contact_materialization import ExaDeepContactSnapshotMateriali
 from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionCoordinator,
     ExaDeepAcquisitionOutcome,
+    ExaDeepAcquisitionResult,
     compile_exa_deep_acquisition_plan,
 )
 from clue_api.exa_deep_materialization import ExaDeepSnapshotResolverProvider
@@ -65,8 +67,8 @@ from clue_research.resolvers.exa import (
     SOURCE_KEY,
     ExaDeepConfig,
     ExaDeepFieldSpec,
+    ExaDeepRequestBoundExceeded,
 )
-from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
 from clue_research.sources import bind_resolver_overrides, resolve_field
 from clue_storage import StorageBackend, read_verified_artifact
 
@@ -76,6 +78,56 @@ _MATERIALIZATION_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r4:exa-contact-m
 _ACCOUNT_MATERIALIZATION_RUN_NAMESPACE = uuid5(
     NAMESPACE_URL, "clue:m8d:r5:exa-account-materialization-run"
 )
+# The planning sentence a comprehensive directive needs when it carries no human-authored
+# directional question. Shared with the composition root, whose budget reservation must size
+# itself against the *same* request the action will compile.
+DEFAULT_ACCOUNT_RESEARCH_INTENT = (
+    "Target-lock research to this canonical account and answer only the admitted "
+    "structured fields with inspectable evidence."
+)
+# Both are terminal in the external ledger and can never yield a snapshot: the operation was
+# dispatched, the provider answered or refused, and no retry of this exact request will change it.
+_UNPRODUCTIVE_OUTCOMES = frozenset(
+    {
+        ExaDeepAcquisitionOutcome.FAILED_TERMINAL,
+        ExaDeepAcquisitionOutcome.SPEND_OUTCOME_UNKNOWN,
+    }
+)
+
+
+async def _settle_unproductive_bundles(
+    items: Sequence[ExaDeepAcquisitionResult],
+    *,
+    projector: ExaEntityResearchProjectionBuilder,
+    field_keys_for: Callable[[ExaDeepAcquisitionResult], tuple[str, ...]],
+    caused_refs: set[str],
+    settle_terminal: Callable[
+        [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+    ],
+) -> frozenset[str]:
+    """Give every dispatched-but-unproductive bundle a durable terminal disposition.
+
+    Without this the bundle stays reserved-never-dispatched on the entity-research ledger, which
+    execution closure refuses to count as an attempt, so its fields can never settle and the whole
+    tool call fails identically on every replay.
+    """
+
+    settled: set[str] = set()
+    for item in items:
+        operation_ref = f"external-research-operation:{item.operation.operation_id}"
+        descriptor = await projector.operation(
+            item.operation,
+            disposition=(
+                ProviderObservationDisposition.CAUSED
+                if operation_ref in caused_refs
+                else ProviderObservationDisposition.REPLAY
+            ),
+            include_dispatch=True,
+            field_keys=field_keys_for(item),
+        )
+        await settle_terminal(descriptor)
+        settled.update(descriptor.field_keys)
+    return frozenset(settled)
 
 
 def _external_operation_id(reference: str) -> UUID:
@@ -346,14 +398,25 @@ class ExaEntityResearchProjectionBuilder:
         if not isinstance(wire, Mapping):
             raise EntityResearchResultIntegrityError("Exa stored request payload is malformed")
         schema = wire.get("outputSchema")
-        if not isinstance(schema, Mapping) or not isinstance(schema.get("properties"), Mapping):
+        prompt = wire.get("systemPrompt")
+        if (
+            not isinstance(schema, Mapping)
+            or not isinstance(schema.get("properties"), Mapping)
+            or not isinstance(prompt, str)
+        ):
             raise EntityResearchResultIntegrityError("Exa stored wire schema is malformed")
-        from clue_research.resolvers.exa.deep_contract import field_key_from_exa_alias
+        from clue_research.resolvers.exa.deep_contract import exa_alias_field_keys
 
-        keys = tuple(
-            str(field_key_from_exa_alias(str(alias)))
-            for alias in cast(Mapping[str, object], schema["properties"])
-        )
+        # The stored request declares its own alias generation, so a bundle compiled under the
+        # legacy hex aliases keeps partitioning correctly after the compiler moved to short ones.
+        try:
+            table = exa_alias_field_keys(
+                system_prompt=prompt,
+                aliases=cast(Mapping[str, object], schema["properties"]),
+            )
+        except ValueError as exc:
+            raise EntityResearchResultIntegrityError("Exa stored wire schema is malformed") from exc
+        keys = tuple(str(field_key) for field_key in table.values())
         if not set(keys).issubset(admitted_field_keys):
             raise EntityResearchResultIntegrityError("Exa bundle widened governed fields")
         return keys
@@ -635,6 +698,9 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         facet_fields = tuple(
             str(field_key)
@@ -720,6 +786,21 @@ class ExaContactSemanticResearchAction(EntityResearchProviderAction):
             in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
             and result.snapshot is not None
         ]
+        if not ready and all(
+            result.outcome in _UNPRODUCTIVE_OUTCOMES for result in acquired.results
+        ):
+            # Every dispatched bundle is terminal without a snapshot. Settle them so execution
+            # closure sees real attempts; the tool layer turns the empty draft set into a governed
+            # rejection. A mixed ready/unproductive batch still raises: contact bundles are all
+            # projected over the same request field set, so there is no honest field partition.
+            await _settle_unproductive_bundles(
+                acquired.results,
+                projector=self._projector,
+                field_keys_for=lambda _result: request.field_keys,
+                caused_refs=caused_refs,
+                settle_terminal=settle_terminal,
+            )
+            return ()
         if len(ready) != len(acquired.results):
             raise EntityResearchResultIntegrityError(
                 "Exa contact action did not produce a settled ready snapshot"
@@ -818,6 +899,9 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ExternalResearchProjectionDraft]:
         if (
             request.subject_type is not ResearchSubjectType.ACCOUNT
@@ -848,7 +932,11 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                         f"Exa field {field_key!r} lacks an effective schema/source authorization"
                     )
                 effective_fields.append(effective)
-        intent = self._research_intent
+        # A comprehensive account directive may be fully bounded by field/source authority and
+        # carry no separate human-authored directional question. Exa still needs an internal
+        # non-empty planning sentence; compile that mechanically from the exact field-bound task
+        # instead of making the user approve redundant prose.
+        intent = self._research_intent or DEFAULT_ACCOUNT_RESEARCH_INTENT
         observation_window = self._observation_window
         if request.parent_operation_ref is not None:
             intent = (
@@ -863,36 +951,48 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                 }
             )
             observation_window = f"{observation_window}:follow-up:{follow_up_digest[:16]}"
-        plan = compile_exa_deep_acquisition_plan(
-            workspace_id=self._workspace_id,
-            project_id=self._project_id,
-            project_run_id=self._project_run_id,
-            account=account,
-            icp_key=self._icp_key,
-            icp_version=self._icp_version,
-            research_directive=self._directive,
-            fields=tuple(
-                ExaDeepFieldSpec(
-                    field_key=effective.field_def.field_key,
-                    value_schema=cast(dict[str, JsonValue], effective.value_schema),
-                )
-                for effective in effective_fields
-            ),
-            research_intent=intent,
-            additional_queries=request.questions,
-            observation_window=observation_window,
-            freshness_policy_ref=self._freshness_policy_ref,
-            freshness_seconds=self._freshness_seconds,
-            cost_cents_reserved_per_bundle=self._reserved_per_bundle,
-            entity_research_job_id=self._entity_research_job_id,
-            config=self._config,
-        )
+        try:
+            plan = compile_exa_deep_acquisition_plan(
+                workspace_id=self._workspace_id,
+                project_id=self._project_id,
+                project_run_id=self._project_run_id,
+                account=account,
+                icp_key=self._icp_key,
+                icp_version=self._icp_version,
+                research_directive=self._directive,
+                fields=tuple(
+                    ExaDeepFieldSpec(
+                        field_key=effective.field_def.field_key,
+                        value_schema=cast(dict[str, JsonValue], effective.value_schema),
+                    )
+                    for effective in effective_fields
+                ),
+                research_intent=intent,
+                additional_queries=request.questions,
+                observation_window=observation_window,
+                freshness_policy_ref=self._freshness_policy_ref,
+                freshness_seconds=self._freshness_seconds,
+                cost_cents_reserved_per_bundle=self._reserved_per_bundle,
+                entity_research_job_id=self._entity_research_job_id,
+                config=self._config,
+            )
+        except ExaDeepRequestBoundExceeded as bound:
+            # Nothing was reserved or dispatched — the request text is simply too long, and above
+            # it is the model's own follow-up reason plus the prior result context that grew it.
+            # Live, this killed a whole account job as a raw ValueError; it is an ordinary
+            # request-shape violation, so refuse it repairably instead.
+            raise EntityResearchGovernedRejection(
+                "research_request_shape_rejected",
+                f"{bound}; shorten the follow-up reason, request the remaining fields without "
+                "the prior-result follow-up, or finalize honestly with the gap",
+            ) from bound
         caused_refs: set[str] = set()
         operation_fields: dict[UUID, tuple[str, ...]] = {}
         acquired = []
         for bundle in plan.bundles:
-            properties = cast(Mapping[str, object], bundle.exa_request.output_schema["properties"])
-            bundle_fields = tuple(str(field_key_from_exa_alias(alias)) for alias in properties)
+            bundle_fields = tuple(
+                str(field_key) for field_key in bundle.exa_request.field_key_by_alias.values()
+            )
 
             async def bind_external_before_dispatch(
                 row: ExternalResearchOperationRow,
@@ -936,10 +1036,25 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
             if item.outcome in {ExaDeepAcquisitionOutcome.READY, ExaDeepAcquisitionOutcome.REPLAYED}
             and item.snapshot is not None
         ]
-        if len(ready) != len(acquired):
+        unproductive = [item for item in acquired if item.outcome in _UNPRODUCTIVE_OUTCOMES]
+        if len(ready) + len(unproductive) != len(acquired):
             raise EntityResearchResultIntegrityError(
                 "Exa account action did not produce settled ready snapshots"
             )
+        settled_fields = await _settle_unproductive_bundles(
+            unproductive,
+            projector=self._projector,
+            field_keys_for=lambda item: operation_fields[item.operation.operation_id],
+            caused_refs=caused_refs,
+            settle_terminal=settle_terminal,
+        )
+        if not ready:
+            return ()
+        effective_fields = [
+            effective
+            for effective in effective_fields
+            if effective.field_def.field_key not in settled_fields
+        ]
         bindings = await self._snapshots.resolver_bindings(
             workspace_id=self._workspace_id,
             project_run_id=self._project_run_id,
@@ -974,7 +1089,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
         with bind_resolver_overrides({SOURCE_KEY: resolver}):
             for effective in effective_fields:
                 async with self._conn_factory() as conn:
-                    materialization = await resolve_field(
+                    await resolve_field(
                         conn,
                         Entity(entity_id=self._account_id, entity_type=EntityType.ACCOUNT),
                         effective.field_def.model_copy(update={"tier_plan": (SOURCE_KEY,)}),
@@ -982,16 +1097,12 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
                         run_id=run_id,
                         workspace_id=self._workspace_id,
                     )
-                    if not materialization.claim_refs:
-                        step_summary = ",".join(
-                            f"{step.source_key}:{step.outcome.value}:{step.n_claims}"
-                            for step in materialization.per_tier
-                        )
-                        raise EntityResearchResultIntegrityError(
-                            "Exa normalized field failed offline claim materialization: "
-                            f"{effective.field_def.field_key}; "
-                            f"stop={materialization.stop_reason.value}; steps={step_summary}"
-                        )
+                    # No claim is the correct materialization for an explicit provider null.
+                    # ``ExaEntityResearchProjectionBuilder._field`` below distinguishes that
+                    # honest empty from rejected/unsupported evidence and still fails closed if
+                    # the normalization contains a synthesized value without a durable claim.
+                    # Requiring one claim for every requested field here made comprehensive
+                    # research impossible whenever Exa correctly answered "not found".
         drafts: list[ExternalResearchProjectionDraft] = []
         for item in ready:
             assert item.snapshot is not None
@@ -1021,6 +1132,7 @@ class ExaAccountSemanticResearchAction(EntityResearchProviderAction):
 
 
 __all__ = [
+    "DEFAULT_ACCOUNT_RESEARCH_INTENT",
     "ExaAccountSemanticResearchAction",
     "ExaContactSemanticResearchAction",
     "ExaEntityResearchProjectionBuilder",

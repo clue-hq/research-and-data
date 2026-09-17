@@ -245,6 +245,10 @@ _PROJECT_SIDEBAR_PAGE = text(
         SELECT project_id, name, created_at
         FROM project
         WHERE workspace_id = :workspace_id
+          -- Archiving a project takes it out of the rail entirely (O6). The
+          -- filter belongs here rather than in the client so the page cursor
+          -- never has to step over rows nobody may see.
+          AND status = 'active'
           AND (
               CAST(:cursor_created_at AS timestamptz) IS NULL
               OR (created_at, project_id)
@@ -380,8 +384,13 @@ _TURN_UNION_SELECT = """
         e.last_event_id,
         e.attempts,
         j.status AS journal_status,
+        c.control_id AS stop_control_id,
+        ack.acknowledged_at AS stop_acknowledged_at,
         f.status AS task_status
     FROM agent_turn_submission s
+    LEFT JOIN agent_turn_control_request c ON c.workspace_id=s.workspace_id
+      AND c.turn_id=s.turn_id AND c.kind='stop'
+    LEFT JOIN agent_turn_stop_ack ack ON ack.control_id=c.control_id
     LEFT JOIN LATERAL (
         SELECT
             max(event_id) AS last_event_id,
@@ -428,6 +437,7 @@ _THREADS_RUNNING = text(
     SELECT u.thread_id
     FROM ({_TURN_UNION_SELECT} AND s.thread_id = ANY(CAST(:thread_ids AS text[]))) u
     WHERE u.terminal_event IS NULL
+      AND u.stop_acknowledged_at IS NULL
       AND (u.task_status IS NULL OR u.task_status NOT IN ('done', 'failed'))
     GROUP BY u.thread_id
     """
@@ -443,6 +453,10 @@ _TERMINAL_STATES: dict[str, str] = {
 
 
 def _turn_state(row: dict[str, object]) -> str:
+    if row.get("stop_acknowledged_at") is not None:
+        return "cancelled"
+    if row.get("stop_control_id") is not None:
+        return "running"
     terminal = row.get("terminal_event")
     if terminal is not None:
         return _TERMINAL_STATES.get(str(terminal), "completed")
@@ -583,14 +597,19 @@ def _parse_timestamp(position: str) -> datetime:
 
 # Keyset over the per-thread ``sequence``, which is already UNIQUE (workspace_id, thread_id,
 # sequence) and gap-free by construction — so it is a total order on its own and needs no tiebreak.
+#
+# Newest-first page *selection* (Slice C C5): the first page is the tail of the thread, and the
+# cursor is a *before*-key naming the preceding page — ``sequence < cursor`` walking backward.
+# Rows come back descending and are reversed in Python, so within any page the display order is
+# ascending, identical to the old read for a thread under one page.
 _PAGE_MESSAGES = text(
     """
     SELECT id, turn_id, sequence, role, body_artifact_key, body_sha256, created_at
     FROM agent_thread_message
     WHERE workspace_id = :workspace_id
       AND thread_id = :thread_id
-      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence > CAST(:cursor_sequence AS bigint))
-    ORDER BY sequence
+      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence < CAST(:cursor_sequence AS bigint))
+    ORDER BY sequence DESC
     LIMIT :row_limit
     """
 )
@@ -707,7 +726,14 @@ async def thread_messages(
     cursor: str | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ThreadMessagePage:
-    """One keyset page of a thread's durable messages, oldest first, with typed ``refs[]``.
+    """One keyset page of a thread's durable messages, **newest page first**, with typed ``refs[]``.
+
+    Slice C C5's read direction: with no cursor this serves the *latest* ``limit`` messages —
+    in ascending display order within the page — because the defect the flip fixes was a long
+    thread whose reload served the oldest 50 and lost the user's most recent prompts.
+    ``next_cursor`` is a *before*-cursor: passing it back serves the preceding (older) page, and
+    ``None`` means history is exhausted. A thread at or under one page is served whole, ascending,
+    with no cursor — byte-identical to the pre-flip read.
 
     Raises :class:`~clue_projections.pagination.InvalidCursorError` for a foreign cursor and
     ``ValueError`` for an out-of-range ``limit``.
@@ -739,7 +765,8 @@ async def thread_messages(
             .all()
         )
         has_more = len(rows) > limit
-        page = rows[:limit]
+        # Selected newest-first; reversed so the page reads in ascending display order.
+        page = list(reversed(rows[:limit]))
         refs = await _refs_by_turn(
             conn,
             workspace_id=workspace_id,
@@ -764,5 +791,6 @@ async def thread_messages(
         )
         for row in page
     )
-    next_cursor = encode_cursor(str(items[-1].sequence)) if has_more and items else None
+    # The before-cursor is the page's *oldest* row: older history continues below it.
+    next_cursor = encode_cursor(str(items[0].sequence)) if has_more and items else None
     return ThreadMessagePage(items=items, next_cursor=next_cursor)

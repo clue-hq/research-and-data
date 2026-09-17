@@ -64,7 +64,7 @@ export function useProjectHomeController(data: ProjectHome) {
     brandId: data.defaultBrandId ?? data.brands[0]?.id ?? "",
     contextRefs: [] as {
       objectId: string;
-      objectType: "account" | "contact";
+      objectType: ProjectEntity["type"];
       version: number | null;
     }[],
     message: "",
@@ -129,11 +129,6 @@ export function useProjectHomeController(data: ProjectHome) {
         .filter((entity): entity is ProjectEntity => Boolean(entity)),
     [home.entities, selectedEntityIds],
   );
-
-  const suggestions = useMemo(() => {
-    if (prompt.trim().length <= 1) return home.suggestions;
-    return home.suggestions.map((suggestion, index) => index === 1 ? prompt.trim() : suggestion);
-  }, [home.suggestions, prompt]);
 
   const selectedModel =
     home.models.find((model) => model.id === selectedModelId) ?? home.models[0];
@@ -348,6 +343,6 @@ export function useProjectHomeController(data: ProjectHome) {
     toggleModelPicker() {
       setModelPickerOpen((current) => !current);
     },
-    suggestions,
+    suggestions: home.suggestions,
   };
 }

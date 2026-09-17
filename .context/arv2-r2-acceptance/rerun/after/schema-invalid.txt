@@ -1,0 +1,41 @@
+               field_key               |                                                          value                                                           | coerced_from 
+---------------------------------------+--------------------------------------------------------------------------------------------------------------------------+--------------
+ account.abm_program_maturity          | "Hiring ABM Manager to own ABM strategy, 1:1 and 1:few programs, and ABM tooling for Strategic AE target accounts; Kate  | 
+ account.abm_program_maturity          | "Company is actively hiring for an ABM Manager and describes ABM responsibilities (architecting scoring, tooling, 1:1 pr | 
+ account.abm_program_maturity          | "Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segmen | 
+ account.abm_program_maturity          | "SDR JD requires account research on each target before outreach, tailored to business size, software stack, and operati | 
+ account.abm_program_maturity          | "Own the ABM strategy end-to-end"                                                                                        | 
+ account.abm_program_maturity          | "ABM Manager — You love partnering with sales and have experience building high-touch campaigns to hunt large ($1M+) dea | 
+ account.claimed_outcomes_metrics      | ["From 22 dispatchers to 10.", "20% increase in average ticket.", "82% true booking rate.", "20% increase in average tic | 
+ account.claimed_outcomes_metrics      | ["29% AVG REVENUE PER OFFICE FTE LIFT", "82% INTERACTIONS HANDLED END TO END", "58,000+ CUSTOMER INTERACTIONS DAILY", "4 | 
+ account.claimed_outcomes_metrics      | ["22 → 10 Dispatchers, consolidated across 8 locations - Del-Air", "16,000 Calls handled by AI monthly - Del-Air", "74%  | 
+ account.claimed_outcomes_metrics      | ["Each Zafran Remediation Item (ZRI) ... reducing time spent per vulnerability by 87% compared to traditional workflows" | 
+ account.committee_candidate           | {"name": null, "title": "Senior Manager, ABM & Integrated Campaigns", "persona": "user", "vacant_seat": true, "confirmed | 
+ account.committee_candidate           | {"name": "Kate Blumberg", "title": "Director of Growth", "persona": "marketing/growth leader", "linkedin_url": "https:// | 
+ account.committee_candidate           | {"name": null, "title": "ABM Manager", "persona": "champion", "vacant_seat": true, "confirmed_by": "https://www.linkedin | 
+ account.gtm_tooling_stack             | "Utilize tools such as Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach"                                        | 
+ account.gtm_tooling_stack             | "CRM hygiene: Maintain clean, accurate records in Ashby for every prospect interaction. Your data is the team’s data."   | 
+ account.gtm_tooling_stack             | "Build and launch campaigns yourself in HubSpot: workflows, nurture journeys, landing pages, email sequences, the whole  | 
+ account.gtm_tooling_stack             | "Proficiency in Salesforce, HubSpot and major ABM platforms. You've built campaigns in them, not just reported from them | 
+ account.hiring_velocity               | [{"title": "Sales Development Representative", "department": "GTM", "source_note": "Ashby job posting"}, {"title": "Even | 
+ account.hiring_velocity               | "The Team: >65 people"                                                                                                   | 
+ account.hiring_velocity_eng           | {"published": "2026-01-13 and 2026-06-03", "open_eng_roles": ["Senior Software Engineer", "Staff Software Engineer", "Fo | 
+ account.named_customers               | {"name": "Lumen Technologies", "role": "Brett Wentworth, Vice President & Deputy Chief Security Officer", "assets": "30, | 
+ account.product_packaging             | "One system. One customer experience."                                                                                   | 
+ account.recent_funding                | {"date": "2026-02-24", "round": "strategic investment", "investor": "Amex Ventures", "amount_usd": null, "amount_semanti | 
+ account.recent_funding                | {"date": "2026-07-22", "round": "strategic investment", "investor": "Cisco Investments", "amount_usd": null, "amount_sem | 
+ account.recent_funding                | {"lead": "Menlo Ventures", "round": "Series C", "amount": "$60M", "published_date": "December 2, 2025"}                  | 
+ account.reputation_risk               | {"item": "layoffs_lawsuits_acquisition_rumours_down_round", "status": "NOT_FOUND", "meaning_for_approach": "No layoff, l | 
+ account.reputation_risk               | {"claim": "ProBook AI publishes no pricing, has no G2 or Capterra profile, and its entire independent review corpus is 3 | 
+ account.reputation_risk               | {"item": "Summers first-month job count differs between company letter (2,873) and GlobeNewswire (2,542)", "status": "UN | 
+ account.reputation_risk               | {"item": "ServiceTitan competitive overlap", "status": "UNRESOLVED", "meaning_for_approach": "Complementary partner per  | 
+ account.resonance.attrition_signal    | {"event": "co-founder/CPO left; company says planned; Itay Nachum VP Product assumed product org", "person": "Snir Havda | 
+ account.resonance.buying_culture      | {"office_policy": "NYC office ~3 days a week for the BDR seat", "bdr_reports_into": "Marketing department"}              | 
+ account.resonance.public_frustrations | "CEO publicly called founder-led sales a bottleneck and not a flex"                                                      | 
+ account.strategic_moves               | {"move": "Agentic Exposure Management launch with Series C; capital for product innovation and global expansion"}        | 
+ account.strategic_moves               | {"req": "Director of Alliances", "move": "stand up partner/alliances channel from zero, GSI-first", "published_at": "202 | 
+ account.total_funding                 | {"note": "Cisco and Amex strategic cheques undisclosed", "as_of": "2025-12-02", "semantics": "company_reported", "amount | 
+ account.total_funding                 | {"as_of": "June 23, 2026", "semantics": "reported_total_after_round", "amount_usd": 40000000}                            | 
+ core.employee_range                   | {"range": "60-65+", "semantics": "company_claimed_in_job_postings", "conflicts_with": "LinkedIn 36 and AI Ark 30"}       | 
+(37 rows)
+

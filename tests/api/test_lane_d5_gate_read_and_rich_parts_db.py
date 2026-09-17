@@ -827,6 +827,73 @@ def test_an_ended_run_reports_partial_when_some_subjects_did_not_finish_everythi
     run_async(scenario())
 
 
+def test_a_subject_routed_to_review_is_counted_as_needs_review_not_as_partial(
+    tmp_path: Path,
+) -> None:
+    """ "Routed to review" is its own answer: a reviewable subject is not a budget casualty.
+
+    ``needs_review`` used to be folded into ``partial``, which made the two indistinguishable to
+    every consumer — yet only one of them is a queue a human can work. The count is split; the
+    *rendered* state is not: an ended run carrying a reviewable subject is still ``partial``,
+    because it still did not finish everything asked of it.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-review", label="review")
+            action_ref = derive_turn_action_ref(seeded.turn_id)
+            envelope = await _launch_run(conn, seeded, action_ref=action_ref)
+            outcomes = (
+                ResearchFinalizationOutcome.COMPLETED,
+                ResearchFinalizationOutcome.NEEDS_REVIEW,
+            )
+            assert len(envelope.jobs) == len(outcomes)
+            for job, outcome in zip(envelope.jobs, outcomes, strict=True):
+                await conn.execute(
+                    text(
+                        "UPDATE entity_research_job SET state='terminal', "
+                        " finalization_outcome=:outcome, "
+                        " finalization_receipt_ref=:receipt, terminal_at=now() "
+                        "WHERE job_id = :job_id"
+                    ),
+                    {
+                        "outcome": outcome.value,
+                        "receipt": f"finalization-receipt:{job.authorization.job_id}",
+                        "job_id": job.authorization.job_id,
+                    },
+                )
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_run SET state='terminal', terminal_at=now() "
+                    "WHERE research_run_id = :run_id"
+                ),
+                {"run_id": envelope.lifecycle.run_id},
+            )
+
+            tasks = await research_tasks_for_action_refs(
+                workspace_id=seeded.workspace_id,
+                action_refs=(action_ref,),
+                conn_factory=seeded.conn_factory,
+            )
+            assert len(tasks) == 1
+            assert tasks[0].counts.needs_review == 1
+            assert tasks[0].counts.partial == 0
+            assert tasks[0].counts.completed == 1
+
+            emitter = await _emitter(conn, seeded)
+            await emitter.emit_launched_task_parts()
+            assert emitter.emission_failures == []
+            parts = await _parts(conn, seeded, PartKind.TASK)
+            assert len(parts) == 1
+            assert parts[0]["counts"]["needs_review"] == 1
+            assert parts[0]["counts"]["partial"] == 0
+            assert parts[0]["counts"]["completed"] == 1
+            # The split lives in the counts; the card the human sees does not move.
+            assert parts[0]["state"] == TaskState.PARTIAL.value
+
+    run_async(scenario())
+
+
 # --- the wiring ----------------------------------------------------------------------------
 
 
@@ -886,5 +953,218 @@ def test_turn_close_projects_the_rich_gate_and_the_task_the_turn_launched(
                 conn_factory=seeded.conn_factory,
             )
             assert [view.gate_id for view in served] == [str(gate.gate_id)]
+
+    run_async(scenario())
+
+
+def test_turn_close_projects_a_written_project_plan_as_the_plan_card(tmp_path: Path) -> None:
+    """A plan-3 receipt: a ``project_document`` ref with no title still renders under its own name.
+
+    The set of ``domain_refs`` object types that become a plan part is closed on purpose, so the
+    plan being in it is the whole reason a written plan is visible in the chat at all. A ref
+    recorded before documents carried their own titles has none to give, and the card falls back to
+    the name that surface used — ``Plan`` / ``v3`` rather than ``project document`` / ``3`` — so a
+    replayed turn draws the card the human saw.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-plan", label="plan")
+            emitter = await _emitter(conn, seeded)
+            document_id = uuid5(NAMESPACE_URL, "lane-d5:plan:document")
+            message = ArtifactRef(
+                workspace_id=seeded.workspace_id,
+                artifact_key=f"{seeded.workspace_id}/{'1' * 64}",
+                sha256="1" * 64,
+                media_type="text/markdown",
+                byte_count=2,
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid4(),
+                execution_id=uuid5(NAMESPACE_URL, "lane-d5:plan:execution"),
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=message,
+                domain_refs=(
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_document",
+                        object_id=str(document_id),
+                        version=3,
+                    ),
+                ),
+                finalized_at=NOW_UTC,
+            )
+            outcome = AgentTurnOutcome(
+                turn_id=seeded.turn_id,
+                execution_id=envelope.execution_id,
+                status=AgentExecutionStatus.COMPLETED,
+                finalization_ref=ArtifactRef(
+                    workspace_id=seeded.workspace_id,
+                    artifact_key=f"{seeded.workspace_id}/{'0' * 64}",
+                    sha256="0" * 64,
+                    media_type="application/json",
+                    byte_count=2,
+                ),
+            )
+            await ConversationTurnEngine._project_turn_close(
+                None,  # type: ignore[arg-type] -- the method reads only its keyword arguments
+                stream=emitter,
+                outcome=outcome,
+                envelope=envelope,
+                assistant_message=None,
+                replayed=False,
+            )
+
+            parts = await _parts(conn, seeded, PartKind.PLAN)
+            assert len(parts) == 1
+            assert parts[0]["title"] == "Plan"
+            assert parts[0]["revision_label"] == "v3"
+            assert parts[0]["plan_ref"]["object_type"] == "project_document"
+            assert parts[0]["plan_ref"]["object_id"] == str(document_id)
+
+    run_async(scenario())
+
+
+def test_turn_close_titles_a_document_card_from_the_document_itself(tmp_path: Path) -> None:
+    """The card says what the document says it is (founder ruling 2026-09-14).
+
+    Any markdown path under ``project/`` is a document now, so "Plan" is no longer a name the
+    platform can supply for one: the write carries the document's own title onto the ref, and the
+    card reads it. The version is still a file revision the human can open, so it is ``v2``.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-titled", label="titled")
+            emitter = await _emitter(conn, seeded)
+            document_id = uuid5(NAMESPACE_URL, "lane-d5:titled:document")
+            message = ArtifactRef(
+                workspace_id=seeded.workspace_id,
+                artifact_key=f"{seeded.workspace_id}/{'3' * 64}",
+                sha256="3" * 64,
+                media_type="text/markdown",
+                byte_count=2,
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid4(),
+                execution_id=uuid5(NAMESPACE_URL, "lane-d5:titled:execution"),
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=message,
+                domain_refs=(
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_document",
+                        object_id=str(document_id),
+                        version=2,
+                        title="Who else is in this deal",
+                    ),
+                ),
+                finalized_at=NOW_UTC,
+            )
+            outcome = AgentTurnOutcome(
+                turn_id=seeded.turn_id,
+                execution_id=envelope.execution_id,
+                status=AgentExecutionStatus.COMPLETED,
+                finalization_ref=ArtifactRef(
+                    workspace_id=seeded.workspace_id,
+                    artifact_key=f"{seeded.workspace_id}/{'0' * 64}",
+                    sha256="0" * 64,
+                    media_type="application/json",
+                    byte_count=2,
+                ),
+            )
+            await ConversationTurnEngine._project_turn_close(
+                None,  # type: ignore[arg-type] -- the method reads only its keyword arguments
+                stream=emitter,
+                outcome=outcome,
+                envelope=envelope,
+                assistant_message=None,
+                replayed=False,
+            )
+
+            parts = await _parts(conn, seeded, PartKind.PLAN)
+            assert [(part["title"], part["revision_label"]) for part in parts] == [
+                ("Who else is in this deal", "v2")
+            ]
+            assert parts[0]["plan_ref"]["object_id"] == str(document_id)
+
+    run_async(scenario())
+
+
+def test_turn_close_names_the_written_icp_and_personas_on_their_own_cards(
+    tmp_path: Path,
+) -> None:
+    """The two older object types still render, because plan-3 receipts are still replayed.
+
+    The versioned mount briefly had three object types, one per document it admitted, and turns
+    were finalized against them. Those receipts are immutable: replaying one must still show the
+    human ``ICP`` / ``v2`` and ``Personas`` / ``v1``, not ``project icp document`` / ``2``. Nothing
+    writes these types any more — a document written today carries its own title instead.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed(conn, tmp_path, workspace_id="ws-d5-docs", label="docs")
+            emitter = await _emitter(conn, seeded)
+            icp_id = uuid5(NAMESPACE_URL, "lane-d5:docs:icp")
+            persona_id = uuid5(NAMESPACE_URL, "lane-d5:docs:persona")
+            message = ArtifactRef(
+                workspace_id=seeded.workspace_id,
+                artifact_key=f"{seeded.workspace_id}/{'2' * 64}",
+                sha256="2" * 64,
+                media_type="text/markdown",
+                byte_count=2,
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid4(),
+                execution_id=uuid5(NAMESPACE_URL, "lane-d5:docs:execution"),
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=message,
+                domain_refs=(
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_icp_document",
+                        object_id=str(icp_id),
+                        version=2,
+                    ),
+                    DomainObjectRef(
+                        workspace_id=seeded.workspace_id,
+                        object_type="project_persona_document",
+                        object_id=str(persona_id),
+                        version=1,
+                    ),
+                ),
+                finalized_at=NOW_UTC,
+            )
+            outcome = AgentTurnOutcome(
+                turn_id=seeded.turn_id,
+                execution_id=envelope.execution_id,
+                status=AgentExecutionStatus.COMPLETED,
+                finalization_ref=ArtifactRef(
+                    workspace_id=seeded.workspace_id,
+                    artifact_key=f"{seeded.workspace_id}/{'0' * 64}",
+                    sha256="0" * 64,
+                    media_type="application/json",
+                    byte_count=2,
+                ),
+            )
+            await ConversationTurnEngine._project_turn_close(
+                None,  # type: ignore[arg-type] -- the method reads only its keyword arguments
+                stream=emitter,
+                outcome=outcome,
+                envelope=envelope,
+                assistant_message=None,
+                replayed=False,
+            )
+
+            parts = await _parts(conn, seeded, PartKind.PLAN)
+            assert [(part["title"], part["revision_label"]) for part in parts] == [
+                ("ICP", "v2"),
+                ("Personas", "v1"),
+            ]
+            assert [part["plan_ref"]["object_id"] for part in parts] == [
+                str(icp_id),
+                str(persona_id),
+            ]
 
     run_async(scenario())

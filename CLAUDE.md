@@ -1,3 +1,10 @@
+## ARV2 work — coding agents start here (added 2026-09-04)
+If your task concerns account research, contact research, the display layer, the accounts screens,
+or anything named "ARV2", read **`docs/specs/ARV2-AGENT-BRIEFING.md`** first, then
+`docs/specs/ARV2-MASTER-PLAN.md` (authoritative) and `docs/specs/ARV2-WORK-SPLIT.md`, then the
+charter you were given. The backlog bullets further down this file describe the codebase's history,
+not your tasks; where they disagree with the master plan, the master plan wins.
+
 The overall product is an AI-powered ABM orchestration platform. In the full product, agents help discover target accounts, enrich account/contact data, perform deep research, draft personalized campaign content, generate brand-aligned campaign artifacts, scale those artifacts across contacts/accounts, and export or publish the resulting assets.
 
 This repo is the platform's **backend home** — the trustworthy data-and-context layer the rest of the platform is built on. It is organized as **subsystems behind shared substrates and seams**, and it grows by *adding* subsystems here, never by forking the pipeline: every subsystem communicates only through the shared substrates (the claim store; the scoped-memory seams) and never by importing another subsystem.

@@ -67,7 +67,7 @@ from sqlalchemy import text
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import principal_from_request
-from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger
+from clue_api.brand_kit_ingestion import BrandKitIngestionTrigger, read_newest_ingestion_job
 from clue_api.stage0_setup_fleet import (
     ProvisioningScope,
     Stage0ReconEnqueuer,
@@ -84,7 +84,6 @@ from clue_core import (
     ReconRunId,
 )
 from clue_db import ConnFactory
-from clue_design.ingestion import list_recent
 from clue_execution.run_events import list_run_events
 from clue_obs import get_logger
 from clue_projections import PROJECTIONS_SCHEMA_VERSION, recon_brief, stage0_progress
@@ -531,18 +530,17 @@ def create_stage0_setup_router(
     async def _brand_kit_job(workspace_id: str) -> SetupBrandKitIngestion | None:
         """The workspace's newest brand-kit ingestion job, or None when it has none.
 
-        One workspace-keyed read through the sanctioned ``clue_design`` DAL port (the same one
-        slice 2's trigger uses for its idempotency check) — ``list_recent`` is scoped to the
-        workspace and ordered newest-first, and ``limit=1`` is all the checklist row needs. The
-        setting-up screen polls this route ~1.5s, so nothing is derived here and nothing joins:
-        the design tables are read exactly once per poll, alongside the recon reads.
+        One workspace-keyed read, shared with ``GET /onboarding/current`` through
+        :func:`clue_api.brand_kit_ingestion.read_newest_ingestion_job` — both setting-up
+        surfaces read the same job the same way, so neither can drift. The setting-up screen
+        polls this route ~1.5s, so nothing is derived here and nothing joins: the design tables
+        are read exactly once per poll, alongside the recon reads.
         """
-        async with conn_factory() as conn:
-            jobs = await list_recent(conn, workspace_id=workspace_id, limit=1)
-        if not jobs:
+        job = await read_newest_ingestion_job(conn_factory, workspace_id=workspace_id)
+        if job is None:
             return None
-        job = jobs[0]
-        return SetupBrandKitIngestion(job_id=str(job["job_id"]), status=str(job["status"]))
+        job_id, status = job
+        return SetupBrandKitIngestion(job_id=job_id, status=status)
 
     async def _serve_lane_truth(
         workspace_id: str,

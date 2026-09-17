@@ -93,10 +93,14 @@ Every backend-owned payload has:
    exist — never unrelated demo data selected by missing configuration;
 5. a written contract under `docs/api-contracts`.
 
-Accounts and Contacts are live-only. Their Server Component repositories use
-the authenticated server request seam, while browser-originated requests use
-the same-origin `/api/clue` BFF. Other flows may retain explicitly configured
-fixtures until their own cutover, but that choice remains feature-owned.
+Accounts and Contacts are live by default. Their Server Component repositories
+use the authenticated server request seam, while browser-originated requests use
+the same-origin `/api/clue` BFF. They also ship the design build's fixture
+repositories, selected only by the explicit opt-in `CLUE_ACCOUNTS_FIXTURE_MODE=true`
+(the exact string, read in exactly one module) for local design work. That flag is
+a switch, never a fallback: with it unset, a live read that fails fails loudly and
+no fixture stands in for it. Other flows may retain explicitly configured fixtures
+until their own cutover, but that choice remains feature-owned.
 
 Aryan can replace or extend HTTP adapters without changing presentation
 components. Fixtures must never be imported by components or routes.
@@ -109,15 +113,25 @@ not raw hex values or Figma extraction JSON.
 
 Generated files are deterministic and are not hand-edited.
 
-The package keeps two deliberately separate inputs:
+The package has one resolved generator input: `source/production`. It records
+both the production Clue product source and the published Clue Design System
+source, together with explicit conflict-resolution rules. A sync replaces this
+resolved snapshot; it never appends another override layer.
 
-- `source/figma` is an immutable mirror used for provenance and future diffs;
-- `source/product` is the verified frontend contract for approved Dev Mode
-  values, including temporary reconciliations when a Figma library and its
-  consuming product screens resolve different values.
+Product UI consumes canonical semantic and typography tokens directly. The
+`--clue-ds-product-*` namespace is limited to application geometry, motion, and
+component contracts that do not exist as published Figma variables.
 
-Product UI consumes `--clue-ds-product-*` variables. A mismatch is documented
-in the product source instead of silently rewriting the raw Figma mirror.
+`generated/legacy-compat.css` is the one temporary exception. It holds the
+variables only the pre-D4 token set defined, so the features that have not been
+re-synced yet keep rendering; it is data, not a generator layer, and
+`design-system:build` neither reads nor writes it. It is imported once, in
+`src/app/layout.tsx`, immediately after `tokens.css`, and it may only shrink.
+The CSS re-sync job deletes it together with its one-shot extractor
+(`packages/design-system/scripts/extract-legacy-compat.mjs`). Every
+`var(--clue-…)` referenced under `src/` must resolve in `tokens.css`,
+`legacy-compat.css` or `globals.css` — `src/design-system-tokens.test.ts`
+enforces that.
 
 ## Component rule
 
@@ -140,3 +154,23 @@ npm run build
 ```
 
 Interactive flows also receive a localhost browser smoke test.
+
+
+## Shared Markdown documents (Lane 2, 2026-09-14)
+
+`components/markdown/` owns the client-only MDXEditor 4.2.5, its library toolbar,
+react-markdown/GFM preview and versioned draft transitions. Feature hooks retain
+permission, fetching and save ownership. No custom parsing or formatting engine.
+
+Project Gallery combines typed design cards with real project-document summaries
+from the authenticated repository/BFF. Documents do not impersonate design artifacts.
+`useProjectDocumentTabs` shares the list, resolves transcript references to stable
+paths, and opens named tabs only after a click or fresh write. There is no fixed
+Plan/Documents tab. Internal `surface=plan` remains a URL compatibility alias;
+`document=<path>` selects the current file. Each visited file keeps its editor mounted
+for draft/undo retention until the chat is left. Source parse errors cannot be saved.
+The backend still owns kinds, titles, paths, revisions and access decisions.
+
+Toolbar controls and shortcuts are native. H4–H6 stay available because the native
+selector shares parsing configuration. Modifier shortcuts for strike/code/lists are
+not added where the release does not provide them; their toolbar controls remain.

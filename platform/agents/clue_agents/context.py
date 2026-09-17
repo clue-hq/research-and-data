@@ -1,8 +1,12 @@
 """Deterministic seven-layer opening context for one governed agent turn.
 
 Bodies in this module are ephemeral. The durable receipt contains only exact source pointers,
-hashes, counts, materialized relative paths and stable exclusion reasons. Context is assembled
-before the first model call; the model never decides what opening authority or data it receives.
+hashes, counts and materialized relative paths. Context is assembled before the first model call;
+the model never decides what opening authority or data it receives.
+
+Layer budgets are **reported, never enforced** (founder ruling 2026-09-14): assembly emits every
+candidate every source offers, records what each one cost, and logs the layers that exceed their
+policy number. Nothing here drops context or fails a turn to stay under a budget.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from clue_agents.contracts import (
     DomainObjectRef,
 )
 from clue_agents.ports import (
+    INTERRUPTED_ASSISTANT_NOTICE,
     AgentArtifactReader,
     AssembledAgentContext,
     ContextMaterialization,
@@ -35,6 +40,7 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_core import AssemblyRequest, ContextAssembly, MemoryType, ScopeStack
+from clue_obs import get_logger
 
 __all__ = [
     "CompiledContextCard",
@@ -56,6 +62,8 @@ __all__ = [
     "WorkspaceProductLayerSource",
 ]
 
+log = get_logger("clue_agents.context")
+
 _ORDER = tuple(ContextLayer)
 
 #: Layers whose budget retains the **newest** candidates rather than the first ones in canonical
@@ -67,6 +75,11 @@ _ORDER = tuple(ContextLayer)
 #: transcript that stops before the thing the user just said. Retention is therefore newest-first
 #: for L6; **emission stays chronological** for every layer, so the model still reads the retained
 #: window in order and each candidate's ``stable_key``/receipt ordinal is unchanged.
+#:
+#: Since the 2026-09-14 ruling nothing is dropped at all, so this direction currently selects
+#: nothing. It is kept because it is the already-settled answer for the only trim that could ever
+#: be justified — one sized to the provider's context window, a fact of the model rather than a
+#: policy of ours — and that trim, if it is ever wanted, belongs exactly here.
 _RETAIN_NEWEST_LAYERS: frozenset[ContextLayer] = frozenset({ContextLayer.L6_CONVERSATION})
 
 
@@ -80,7 +93,13 @@ class LayerBudget(ContextValue):
 
 
 class ContextAssemblyPolicy(ContextValue):
-    """Versioned hard budgets; all seven layers must be explicitly governed."""
+    """Versioned per-layer budgets; all seven layers must be explicitly governed.
+
+    ``max_tokens`` is a *reporting* line, not a ceiling — the assembler measures each layer against
+    it and logs the overruns, and never withholds context or fails a turn on it. The shape is kept
+    unchanged so every receipt, old and new, still carries the seven numbers it was assembled
+    against.
+    """
 
     version: str = Field(min_length=1)
     token_counter_version: str = Field(min_length=1)
@@ -97,7 +116,7 @@ class ContextAssemblyPolicy(ContextValue):
 
 
 class ContextCandidate(ContextValue):
-    """One atomic context item. Budgeting includes or excludes the whole item."""
+    """One atomic context item; it is counted, and emitted, whole."""
 
     stable_key: str = Field(min_length=1)
     ref: ArtifactRef | DomainObjectRef
@@ -106,6 +125,20 @@ class ContextCandidate(ContextValue):
     origin: Literal["trusted_context", "history", "current_user_instruction"] = "trusted_context"
     materialized_path: str | None = None
     required: bool = False
+    interrupted: bool = False
+
+    @model_validator(mode="after")
+    def interruption_is_history(self) -> ContextCandidate:
+        if self.interrupted and (self.role != "assistant" or self.origin != "history"):
+            raise ValueError("interruption provenance belongs to assistant history")
+        return self
+
+    @property
+    def budget_text(self) -> str:
+        # Keep the provenance and exact saved body together under the layer budget.
+        if self.interrupted:
+            return INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + self.body
+        return self.body
 
 
 class ContextReceiptRef(ContextValue):
@@ -471,6 +504,7 @@ class HistoryLayerSource:
                     body=body,
                     role=item.role,
                     origin="history",
+                    interrupted=item.interrupted and item.role == "assistant",
                 )
             )
         return result
@@ -658,30 +692,26 @@ class DeterministicAgentContextAssembler:
         candidates: Sequence[ContextCandidate],
         budget: int,
     ) -> dict[str, int]:
-        """Decide which candidates fit ``budget``; return ``{stable_key: token_count}``.
+        """Count every candidate; return ``{stable_key: token_count}`` for all of them.
 
-        The greedy rule is unchanged — a candidate that does not fit is *skipped*, not a stop, so a
-        small later item still fits behind a large refused one — and so is the hard failure when a
-        ``required`` candidate cannot fit. The only thing this method adds is the **direction** in
-        which the budget is spent: canonical order for every layer, reverse (newest-first) for the
-        conversation layer, where dropping the newest messages would silently truncate the turn the
-        user just took (:data:`_RETAIN_NEWEST_LAYERS`).
+        This method used to *decide*: a candidate that did not fit ``budget`` was skipped, and a
+        ``required`` one that did not fit raised, so a profile 273 bytes too large took down every
+        turn on it. Founder ruling 2026-09-14: no layer budget may fail a turn or cost it context.
+        Nothing is skipped and nothing raises here — the budget survives as a number to report
+        against (the caller logs the layers that exceed theirs), never as a gate.
+
+        ``budget`` is therefore unread, and the newest-first order for
+        :data:`_RETAIN_NEWEST_LAYERS` no longer selects anything. Both are kept deliberately: the
+        direction is the answer already worked out for the day a *window*-sized trim lands — a fact
+        of the provider's context window rather than a policy of ours — and the day it does, this
+        is where it goes.
         """
 
+        del budget
         order = tuple(reversed(candidates)) if layer in _RETAIN_NEWEST_LAYERS else tuple(candidates)
-        retained: dict[str, int] = {}
-        used = 0
-        for candidate in order:
-            count = self._counter.count(candidate.body)
-            if used + count > budget:
-                if candidate.required:
-                    raise ValueError(
-                        f"required {layer.value} context exceeds its hard layer budget"
-                    )
-                continue
-            retained[candidate.stable_key] = count
-            used += count
-        return retained
+        return {
+            candidate.stable_key: self._counter.count(candidate.budget_text) for candidate in order
+        }
 
     async def assemble(
         self,
@@ -720,26 +750,13 @@ class DeterministicAgentContextAssembler:
             retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
             included: list[ContextCandidate] = []
-            excluded: list[ContextCandidate] = []
             hashes: list[str] = []
             paths: list[str] = []
-            # Emission stays in canonical ``stable_key`` order for every layer — only *which*
-            # candidates survive the budget depends on the layer's retention direction.
+            # Emission is canonical ``stable_key`` order for every layer, and every candidate is
+            # emitted: budgets no longer decide membership, so there is nothing left to skip.
             for candidate in candidates:
-                count = retained.get(candidate.stable_key)
-                if count is None:
-                    excluded.append(candidate)
-                    receipt_refs.append(
-                        ContextReceiptRef(
-                            layer=layer,
-                            disposition="excluded",
-                            ordinal=len(excluded) - 1,
-                            ref=candidate.ref,
-                            exclusion_reason_code="layer_budget_exceeded",
-                        )
-                    )
-                    continue
-                digest = hashlib.sha256(candidate.body.encode("utf-8")).hexdigest()
+                count = retained[candidate.stable_key]
+                digest = hashlib.sha256(candidate.budget_text.encode("utf-8")).hexdigest()
                 if candidate.materialized_path is not None:
                     if candidate.materialized_path in seen_paths:
                         raise ValueError("context materialization paths must be bundle-unique")
@@ -757,6 +774,8 @@ class DeterministicAgentContextAssembler:
                 if candidate.origin == "current_user_instruction":
                     current_instructions.append(candidate)
                 hashes.append(digest)
+                if candidate.interrupted:
+                    messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
                 messages.append(_message(candidate))
                 receipt_refs.append(
                     ContextReceiptRef(
@@ -770,6 +789,16 @@ class DeterministicAgentContextAssembler:
                     )
                 )
                 used += count
+            if used > budget:
+                # The one thing an over-budget layer now does: say so. The turn carries all of it.
+                log.warning(
+                    "agent_turn.context_layer_over_budget",
+                    execution_id=str(request.constitution.execution_id),
+                    layer=layer.value,
+                    token_count=used,
+                    token_budget=budget,
+                    policy_version=self._policy.version,
+                )
             manifests.append(
                 ContextLayerManifest(
                     layer=layer,
@@ -777,8 +806,8 @@ class DeterministicAgentContextAssembler:
                     materialized_paths=tuple(paths),
                     content_sha256s=tuple(hashes),
                     token_count=used,
-                    excluded_refs=tuple(item.ref for item in excluded),
-                    exclusion_reason_codes=tuple("layer_budget_exceeded" for _ in excluded),
+                    excluded_refs=(),
+                    exclusion_reason_codes=(),
                 )
             )
 

@@ -1,4 +1,10 @@
-import type { ChatPart, ChatTaskPart, TaskState } from "./chat-parts";
+import type {
+  ChatPart,
+  ChatTaskPart,
+  PolledResearchTask,
+  TaskState,
+} from "./chat-parts";
+import type { TranscriptMessage } from "./chat-transcript";
 
 /**
  * The research-execution task model (Figma `136:2`, charter §3.4).
@@ -120,7 +126,14 @@ export function researchTaskModel(part: ChatTaskPart): ResearchTaskModel {
       { id: "queued", label: "Queued", count: counts.queued, tone: "queued" },
       { id: "running", label: "Researching", count: counts.running, tone: "running" },
       { id: "completed", label: "Complete", count: counts.completed, tone: "complete" },
-      { id: "partial", label: "Partial", count: counts.partial, tone: "partial" },
+      {
+        id: "partial",
+        label: "Partial",
+        // The backend counts a reviewable subject apart from a shortfall; the card has one
+        // designed row for "finished, but not with everything", so both land in it.
+        count: counts.partial + counts.needsReview,
+        tone: "partial",
+      },
       { id: "blocked", label: "Blocked", count: counts.blocked, tone: "blocked" },
       { id: "failed", label: "Failed", count: counts.failed, tone: "failed" },
     ] as const
@@ -129,7 +142,9 @@ export function researchTaskModel(part: ChatTaskPart): ResearchTaskModel {
     .map((step) => ({ ...step }));
 
   const phaseIndex = RESEARCH_PHASES.indexOf(activity);
-  const settled = counts.completed + counts.partial;
+  // Settled is every subject that stopped moving — a reviewable one has, so leaving it out would
+  // stall the line at "2 of 3" on a run that has finished.
+  const settled = counts.completed + counts.partial + counts.needsReview;
   const summary =
     counts.total > 0
       ? `${settled} of ${counts.total} ${accountWord(counts.total)} ${
@@ -182,4 +197,75 @@ export function aggregateResearchTasks(
 
 export function researchActivityLabel(activity: ResearchActivity): string {
   return ACTIVITY_LABELS[activity];
+}
+
+function taskRunKey(part: ChatTaskPart): string {
+  return part.runRef.objectId ?? part.partId;
+}
+
+/**
+ * Fold the durable poll into the composed transcript (Slice C C3).
+ *
+ * The stream's task snapshot freezes at turn close while the fleet works on;
+ * the poll is the durable read that keeps the card honest afterwards. Two
+ * moves, both by `(runRef.objectId, revision)`:
+ *
+ * - **Advance in place.** A message already showing a run's card gets the
+ *   polled snapshot when — and only when — the poll's ledger revision is
+ *   strictly higher. A stale poll racing a live stream never regresses a card.
+ * - **Re-materialize after a reload.** A run whose card appears on no message
+ *   (its turn fell outside the stream-rehydration window) is restored to the
+ *   message of the turn whose durable receipt launched it. A task naming no
+ *   visible turn is dropped — an honest gap beats a misplaced card.
+ *
+ * Pure and reference-preserving: untouched messages (and an empty poll) come
+ * back identical, so React re-renders only what actually changed.
+ */
+export function withPolledResearchTasks(
+  messages: readonly TranscriptMessage[],
+  polled: readonly PolledResearchTask[],
+): readonly TranscriptMessage[] {
+  if (polled.length === 0) return messages;
+
+  // Freshest snapshot per run; the read is unpaginated, but defend anyway.
+  const freshest = new Map<string, PolledResearchTask>();
+  for (const task of polled) {
+    const key = taskRunKey(task.part);
+    const existing = freshest.get(key);
+    if (!existing || existing.part.revision <= task.part.revision) {
+      freshest.set(key, task);
+    }
+  }
+
+  const shownRuns = new Set<string>();
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind === "task") shownRuns.add(taskRunKey(part));
+    }
+  }
+
+  return messages.map((message) => {
+    let parts: ChatPart[] | null = null;
+
+    // Advance the cards this message already shows.
+    message.parts.forEach((part, index) => {
+      if (part.kind !== "task") return;
+      const poll = freshest.get(taskRunKey(part));
+      if (!poll || poll.part.revision <= part.revision) return;
+      parts ??= [...message.parts];
+      parts[index] = poll.part;
+    });
+
+    // Restore cards for runs no message shows, on their own turn's message.
+    if (message.role === "assistant") {
+      for (const task of freshest.values()) {
+        if (task.turnId !== message.turnId) continue;
+        if (shownRuns.has(taskRunKey(task.part))) continue;
+        parts ??= [...message.parts];
+        parts.push(task.part);
+      }
+    }
+
+    return parts === null ? message : { ...message, parts };
+  });
 }

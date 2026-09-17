@@ -48,7 +48,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # the Stage-0 interaction slot is replay-certified here first, and these three are the whole
     # point of the widened conversation surface — draft the direction, present its confirmation
     # gate, and launch what the human's confirming turn approved.
-    "draft_account_research_directive@3",
+    "draft_account_research_directive@5",
     "open_directive_confirmation_gate@1",
     "get_research_view@1",
     "launch_account_research@1",
@@ -63,6 +63,49 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # and no dispatch; each birth is one governed create keyed on the same replay identity as the
     # leg, so a retried delegation converges on one leg and one document rather than minting twins.
     "open_design_leg@4",
+    # ARV2 onboarding O6 (added in recipe0-stage0@22): the new-lane onboarding surface Head-of-ABM
+    # drives in the conversation slot — the set-valued product gate, the artifact-shaped ICP
+    # confirmation gate, and the ARV2 launch/read pair. Nothing is removed: every address the
+    # earlier revisions pinned stays here so an already-pinned execution still resolves it.
+    "open_product_set_selection_gate@1",
+    "open_icp_confirmation_gate@2",
+    "launch_arv2_account_research@1",
+    # Founder ruling 3 (2026-09-10): the same launch for named people, granted to the Head of ABM
+    # at `head-of-abm@v44`. It declares the same ``project`` pin as its siblings, which is what
+    # this audit requires of every standing address.
+    "launch_arv2_person_research@1",
+    # ARV2 Track R, R4 (added in recipe0-stage0@23): verified account discovery for the project,
+    # granted at `head-of-abm@v45`. It declares the same ``project`` pin as its launch siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "launch_arv2_discovery@1",
+    "read_arv2_account_research_run@1",
+    # ``author_icp_document@1`` (added in @24), ``request_persona_synthesis@1`` (@24) and
+    # ``write_project_document@1`` (@25) were retired at recipe0-stage0@27: the documents they
+    # wrote are written as files under the versioned ``project/`` mount now, and `head-of-abm@v55`
+    # grants none of them. The addresses stay REGISTERED for replay of executions pinned to ≤v26,
+    # which read their own immutable revision — they are simply no longer standing, so this audit
+    # no longer requires them to keep declaring a ``project`` pin.
+    # The ARV2 reads (added in recipe0-stage0@26): the project's accounts, one account's
+    # research, and the discovery run — effect-free reads over rows that already exist.
+    # Granted at `head-of-abm@v48` and declaring the same ``project`` pin as their siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "read_project_accounts@1",
+    # Paged and spilled reads (recipe0-stage0@28): ``read_account_research`` and
+    # ``read_discovery_run`` are RE-PINNED to their paged ``@2`` — ``offset``/``limit`` in,
+    # ``next_offset`` back — which is what `head-of-abm@v56` grants. A requirement set resolves one
+    # version per ``(kind, key)``, so ``@1`` and ``@2`` in one slot is a ``conflicting_requirement``
+    # that refuses promotion; the ``@1``s therefore LEAVE, exactly as ``open_icp_confirmation_gate``
+    # @1 left at @22. They stay registered, and v27 stays the exact replay input for turns pinned
+    # to it. Two reads join in the same revision, granted for the first time at v56: the general
+    # claims query and the gallery read. All four are effect-free over rows that already exist and
+    # declare the same ``project`` pin as their siblings, which is what this audit requires of
+    # every standing address.
+    "read_account_research@2",
+    "read_claims@1",
+    "read_artifact@1",
+    "read_discovery_run@2",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
@@ -88,6 +131,10 @@ RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
 )
 
 ACCOUNT_RESEARCH_TOOL_ADDRESSES: tuple[str, ...] = ("research_account_gaps@2",)
+
+# ARV2 onboarding O4 (plan §4.5): the synthesis unit's whole spendable surface is one governed
+# deep-reasoning search over O2's fixed persona-evidence template.
+ONBOARDING_SYNTHESIS_TOOL_ADDRESSES: tuple[str, ...] = ("exa_search_evidence@1",)
 
 
 def _split_address(address: str) -> tuple[str, str]:
@@ -117,6 +164,7 @@ def standing_recipe_addresses() -> tuple[str, ...]:
             set(RECIPE_0_TOOL_ADDRESSES)
             | set(RECIPE_1_TOOL_ADDRESSES)
             | set(ACCOUNT_RESEARCH_TOOL_ADDRESSES)
+            | set(ONBOARDING_SYNTHESIS_TOOL_ADDRESSES)
         )
     )
 
@@ -145,6 +193,7 @@ def build_replay_safety_audit(registry: ToolRegistry) -> tuple[ReplayAuditEntry,
                 ("recipe0@1", RECIPE_0_TOOL_ADDRESSES),
                 ("recipe1@1", RECIPE_1_TOOL_ADDRESSES),
                 ("account-research-unit@1", ACCOUNT_RESEARCH_TOOL_ADDRESSES),
+                ("onboarding-synthesis-unit@1", ONBOARDING_SYNTHESIS_TOOL_ADDRESSES),
             )
             if address in addresses
         )
@@ -171,6 +220,7 @@ __all__ = [
     "RECIPE_0_TOOL_ADDRESSES",
     "RECIPE_1_TOOL_ADDRESSES",
     "ACCOUNT_RESEARCH_TOOL_ADDRESSES",
+    "ONBOARDING_SYNTHESIS_TOOL_ADDRESSES",
     "ReplayAuditEntry",
     "build_replay_safety_audit",
     "standing_recipe_addresses",

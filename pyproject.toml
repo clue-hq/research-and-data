@@ -43,7 +43,7 @@ exclude = ["subsystems/clue-design"]
 line-length = 100
 target-version = "py312"
 src = ["subsystems", "platform", "tests", "libs"]
-extend-exclude = ["subsystems/clue-design"]
+extend-exclude = ["subsystems/clue-design", ".context"]
 
 [tool.ruff.lint]
 # T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured
@@ -55,6 +55,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "subsystems/research/clue_research/evals/**" = ["T20"]
 "subsystems/research/clue_research/verification/eval_cli.py" = ["T20"]
 "subsystems/design/clue_design/evals/__main__.py" = ["T20"]
+# The operating-manual builder: `make manual` / `make manual-check` tell an operator which
+# chapters were written or which are stale, on stdout, the way every other build target does.
+"platform/agents/clue_agents/manual/build.py" = ["T20"]
+"platform/agents/clue_agents/manual/fields_snapshot.py" = ["T20"]
+"platform/api/clue_api/manual_build.py" = ["T20"]
 "scripts/**" = ["T20"]
 "tests/**" = ["T20"]
 
@@ -363,6 +368,43 @@ forbidden_modules = ["openai"]
 ignore_imports = [
     "clue_api.run_composition -> clue_gateway",
     "clue_api.agent_model_wiring -> clue_gateway",
+]
+
+# Lane 3 slice 3 — the Langfuse SDK lives only behind ``clue_obs.langfuse`` (the client and every
+# platform-side helper) and ``clue_api.langfuse_callbacks`` (the LangChain adapter, which needs
+# ``langchain_core`` and so cannot live in the base library). Everything else reaches Langfuse
+# through those two modules' no-op-when-off helpers.
+[[tool.importlinter.contracts]]
+name = "the Langfuse SDK lives only behind clue_obs.langfuse and clue_api.langfuse_callbacks"
+type = "forbidden"
+source_modules = [
+    "clue_research",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage",
+    "clue_auth",
+    "clue_memory",
+    "clue_content",
+    "clue_design",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_execution",
+    "clue_fleet",
+    "clue_projections",
+    "clue_api",
+]
+forbidden_modules = ["langfuse"]
+# External imports are squashed to their top-level package by grimp
+# (``include_external_packages``), so the adapter's ``from langfuse.langchain import ...`` is
+# recorded — and must be exempted — as the edge to ``langfuse``.
+ignore_imports = [
+    "clue_obs.langfuse -> langfuse",
+    "clue_api.langfuse_callbacks -> langfuse",
 ]
 
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).

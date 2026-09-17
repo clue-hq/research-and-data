@@ -44,11 +44,10 @@ def default_readiness_spec() -> ReadinessSpec:
     return ReadinessSpec(
         floors={
             ReadinessGate.ICP_SYNTHESIS: ReadinessFloor(
-                # Seven of the nine ICP-synthesis fields is the minimum useful floor. The backend
-                # compiles that explicit gate denominator plus workspace-required extensions, so
-                # onboarding/company-knowledge growth cannot silently move it and an empty
-                # extension policy cannot turn 0/0 model-authored metrics into a success.
-                min_coverage_ratio=0.75,
+                # Founder ruling (2026-08-19): baseline-field coverage is advisory and must not
+                # mechanically block ICP synthesis by default. A workspace may still opt into a
+                # higher floor through its explicit, versioned readiness policy.
+                min_coverage_ratio=0.0,
                 require_product_id=True,
                 max_open_policy_blocks=0,
             ),
@@ -60,7 +59,12 @@ def default_readiness_spec() -> ReadinessSpec:
             ),
             ReadinessGate.DEEP_SPEND: ReadinessFloor(
                 min_coverage_ratio=0.5,
-                min_verified_claims=1,
+                # R0 Part 3C fix 3: the floor counts VERIFIED claims. With
+                # `CLUE_VERIFICATION_ENABLED=false` nothing is ever promoted to VERIFIED, so a
+                # floor of 1 could never be met and DEEP_SPEND readiness would deadlock. The
+                # human override (`override_stage0_readiness`) remains the governing gate on
+                # deep spend; this floor was never the authority.
+                min_verified_claims=0,
                 max_open_policy_blocks=0,
                 require_product_id=True,
                 require_confirmed_icp=True,

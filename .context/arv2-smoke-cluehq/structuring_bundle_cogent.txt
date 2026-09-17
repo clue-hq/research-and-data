@@ -1,0 +1,1374 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: Cogent Security, Inc. (cogent.com). Entity id: account:cogent-security
+# The client selling INTO this account is Clue (cluehq.ai), an AI-native ABM orchestration platform: deep account research, buying-committee mapping, per-account microsites, LinkedIn/Meta paid media, and direct mail. Judge priority against THAT sale.
+
+# DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Cogent Security, Inc. dossier Research date: 2026-08-31. Subject lock: the San Francisco AI-native vulnerability-management company operating at cogent.com, not another Cogent-branded business. ## 1. Identity & disambiguation - Legal/operating name: The requested legal name is Cogent Security, Inc.; the strongest public operating-name evidence is the funding wire, which says “Cogent Security today announced $42 million in Series A funding” and identifies the company as San Francisco-based. URL: https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html. Exact state-incorporation record: NOT FOUND.
+- HQ: San Francisco, California. The public company data record gives “San Francisco, California 94105, US.” URL: https://www.cogent.com/. A street-address-level HQ source: NOT FOUND.
+- Go-to-market location: New York is conspicuously represented in the GTM hiring: Head of Demand Generation is listed “New York, NY; Remote US; San Francisco, CA,” and Field Marketing Manager is listed for New York. URLs: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d; https://jobs.ashbyhq.com/cogent-security/f6f9dfd7-64f8-4aed-8b37-61a903c412cf. LinkedIn’s company/person data says the workforce is “distributed across United States and India.” URL: https://www.linkedin.com/in/justinjancaric. Conclusion: HQ is San Francisco; the revenue-marketing center appears to be New York, but an official “GTM team sits in New York” statement was NOT FOUND.
+- Founded: 2024. The independent industry report states “Cogent, founded in 2024.” URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804.
+- Domains: cogent.com is the verified operating domain. Other company-owned domains: NOT FOUND.
+- LinkedIn URL: https://www.linkedin.com/company/cogent-security/ — official company URL: NOT FOUND in the retrieved evidence. Do not substitute the similarly named Cogent Communications page.
+- Employees: 49 is an automated/company-data estimate, not a company filing: the entity record reports workforce “total 49.” URL: https://www.cogent.com/. A contemporaneous press estimate says “employs 37 people.” URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804. Therefore report 49 as an estimate and 37 as the dated press figure; neither should be treated as an audited count.
+- Excluded same-name entities: (i) Cogent Communications Holdings, NASDAQ: CCOI, cogentco.com — excluded because it is the “internet/backbone carrier” named in the assignment, not cogent.com’s cybersecurity startup; (ii) Cogent Systems/Cogent Inc — excluded because it is the fingerprint-biometrics company acquired by 3M; (iii) Cogent Infotech — excluded because it is an IT staffing/services business; (iv) Cogent Labs — excluded because it is a separate AI company; (v) Cogent Analytics — excluded because it is a separate business-consulting company; (vi) Cogent Bank — excluded because it is a bank. Direct source URLs proving each exclusion: NOT FOUND in retrieved results; these are explicit scope exclusions supplied in the research brief, not evidence attributed to Cogent Security. ## 2. Product and who they sell to - Product in Cogent’s words: “The hardest part of vulnerability management isn't finding the problems. It's fixing them.” Its agents “handle the full lifecycle of vulnerability remediation,” including investigating findings in the customer environment, determining ownership, assessing risk, generating remediation steps, and tracking verified completion. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- Product category: the company calls it an “AI-native vulnerability management platform.” URL: https://www.cogent.com/customers/csc-generation.
+- Buyer title: Cogent’s public customer proof names CISOs and information-security leaders, including “Lucas Moody, CISO, Alteryx,” “Gourav Nagar, Dir. of Information Security,” “Mo Balakrishnan, CISO, University of the Pacific,” and “Rinki Sethi, CISO, Upwind.” URL: https://www.cogent.com/customers. Exact formal buyer title used in a sales qualification document: NOT FOUND; evidence supports CISO/security leadership as the buyer persona, not an exclusive title.
+- Target universe: the company says it is “already working with dozens of Fortune 1000 companies” across financial services, higher education, retail, and more. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a. Thus the explicitly enumerable universe is Fortune 1000 companies: 1,000 by the label used, but Cogent does not publish a narrower serviceable-account count. Exact number of possible customers beyond that: NOT FOUND.
+- Pricing: NOT FOUND. No public price, seat metric, asset-based rate, usage tier, or contract minimum was found. ## 3. Traction - Named customer/logo evidence: CSC Generation, Valvoline Instant Oil Change, University of the Pacific, Alteryx, Upwind, and an unnamed large hospitality brand. URL: https://www.cogent.com/customers. The CSC story additionally names Sur La Table, One Kings Lane, and Backcountry as CSC portfolio companies, not necessarily separate Cogent contracts. URL: https://www.cogent.com/customers/csc-generation.
+- Logo count: NOT FOUND as an explicit total. The customer page displays at least the named stories above, while the company says “dozens of Fortune 1000 companies.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- ARR/revenue: NOT FOUND. The $53M figure is funding, not ARR or revenue. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- Outcomes: company-published “97% reduction in exposure window for critical vulns,” “3x in vulnerability management team output,” and “3 hours from onboarding to full vulnerability assessment.” URL: https://www.cogent.com/customers. The company attributes the 97% claim to “Customers using Cogent,” while the page’s individual testimonials are customer claims; independent validation was NOT FOUND.
+- Per-customer metrics: CSC: “Within three hours of onboarding, Cogent completed full asset discovery and vulnerability assessment for the Sur La Table brand,” and CSC scaled without adding headcount. URL: https://www.cogent.com/customers/csc-generation. University of the Pacific: the listing says “Increases VM Team Output 5x.” URL: https://www.cogent.com/customers. Hospitality brand: “cut zero-day response time from days to minutes” and displays “90%,” but the metric label/context is incomplete in retrieved evidence. URL: https://www.cogent.com/customers/hospitality-brand. ## 4. Funding - Seed: $11M, July 2025/stealth period, attributed by press to Greylock Partners. The report says it “emerged from stealth in July 2025 with $11 million in seed funding from Greylock Partners.” URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804. Exact seed closing date and full participant list: NOT FOUND.
+- Series A: $42M, announced 2026-02-18; led by Bain Capital Ventures; existing investors Greylock Partners and Definition participated; founders/executives from OpenAI, Abnormal Security, and Datadog invested personally. URLs: https://www.cogent.com/blog/cogent-security-raises-42m-series-a; https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html.
+- Total raised: “This brings our total funding to $53 million.” Company claim. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- Use of proceeds: “double down on our core data and AI platforms, scale our go-to-market efforts, and hire exceptional builders.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a. CEO’s public growth commitment: “We're going to triple the team over the course of this year, invest very heavily into R&D, and at the same time, scale our go-to-market team.” URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804. ## 5. Go-to-market hiring Status is “open” where the requisition was retrievable on 2026-08-31; Ashby close/status history was NOT FOUND unless stated. - Head of Demand Generation — published 2026-08-14; locations New York/Remote US/San Francisco; open on Ashby at research date. Reports to “the Head of Growth.” Quote: “Own the pipeline generation plan across targets, source mix, budget, quarterly plays, and operating cadence.” Account reach: “Scale field and channel as a core pipeline engine: repeatable event formats, regional plans, account targeting, rep/partner workflows”; “Build ABM and whale-hunting plays for named accounts, including competitive replacement, category education, executive outreach, and sales follow-up.” URL: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d.
+- Field Marketing Manager — published 2026-08-21; New York; open on Ashby at research date. Reports within “the Demand Generation arm of Growth”; direct manager title/name: NOT FOUND. Quote: “account-based field plans aligned to pipeline targets, priority accounts, sales territories, and partner opportunities”; “target accounts are invited, followed up with, and converted into meetings and opportunities.” URL: https://jobs.ashbyhq.com/cogent-security/f6f9dfd7-64f8-4aed-8b37-61a903c412cf.
+- Sales Enablement Lead — published 2026-08-14; New York; open on Ashby at research date. Reporting line: “sits within the Revenue Operations arm of Growth.” Account-reach mechanism is indirect: “launch a repeatable Gong insights loop” and assets for “competitive conversations” and “partner-led opportunities.” URL: https://jobs.ashbyhq.com/cogent-security/8981d25b-89d6-4119-bed5-db001de90f98.
+- Sales Operations Analyst — published 2026-08-21; New York/Hybrid in the syndicated listing; open evidence retrieved. Reports within Revenue Operations arm of Growth. Quote: “pipeline hygiene, forecasting support, trusted reporting, CRM workflows,” and “AI-native systems.” URL: https://jobs.ashbyhq.com/cogent-security/758ab0ce-b262-49b4-a079-95c976a36cee.
+- Sr. Manager, Content and Community — publication date NOT FOUND; open Ashby requisition was retrieved. Quote: “Own Cogent's organic social strategy and execution (primary: LinkedIn).” Reporting line: NOT FOUND. URL: https://jobs.ashbyhq.com/cogent-security/e7557807-c6f0-42d6-b2ce-2e6aeb917817. Flag: date unavailable, so longevity cannot be determined.
+- Growth Lead / Head of Growth — posted 2026-05-10 and described as open by Lensa. Quote: Cogent has “signals flowing in from every direction: intent data, competitive engagement, account intelligence, event interactions, and product usage”; the role builds “the account intelligence layer, the intent layer, and the automation.” URL: https://lensa.com/job-v1/cogent-security/san-francisco-ca/lead-head-of-growth/75bb1e79a5c3bc1d384933ad2dcfae45. This is a long-open requisition as of 2026-08-31 (about 113 days), subject to the aggregator’s status accuracy. However, a named current Head of Growth is also publicly identifiable below; whether this is stale, duplicate, or replacement hiring is NOT FOUND.
+- Founding GTM Sales Leader — current LinkedIn profile evidence says “Feb 2026 - Present.” Exact Ashby requisition/date/status: NOT FOUND. URL: https://www.linkedin.com/in/justinjancaric. ## 6. Marketing and ABM tooling - CRM: The Sales Operations job explicitly references “CRM workflows,” but does not name the CRM. URL: https://jobs.ashbyhq.com/cogent-security/758ab0ce-b262-49b4-a079-95c976a36cee. Specific CRM vendor: NOT FOUND.
+- Marketing automation: NOT FOUND as a named deployed vendor. The Growth Lead listing says “automation that sits on top” of account/intent intelligence, but does not identify a platform. URL: https://lensa.com/job-v1/cogent-security/san-francisco-ca/lead-head-of-growth/75bb1e79a5c3bc1d384933ad2dcfae45.
+- Sales engagement: outbound and sales-development motions are explicitly required, but vendor: NOT FOUND. URL: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d. Gong is named for enablement insights, not necessarily sales engagement: “launch a repeatable Gong insights loop.” URL: https://jobs.ashbyhq.com/cogent-security/8981d25b-89d6-4119-bed5-db001de90f98.
+- ABM/intent: Cogent’s Growth Lead listing explicitly says “intent data,” “account intelligence,” and “intent layer.” URL: https://lensa.com/job-v1/cogent-security/san-francisco-ca/lead-head-of-growth/75bb1e79a5c3bc1d384933ad2dcfae45. But named vendor evidence for 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, or Common Room: NOT FOUND. The Head of Demand Generation job mentions “ABM and whale-hunting plays,” but no platform. URL: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d. ## 7. Leadership and GTM organization - Vineet Edupuganti — “Co-founder & CEO.” URL: https://www.cogent.com/company/about.
+- Thanos Baskous — “Co-founder & VP Engineering.” URL: https://www.cogent.com/company/about.
+- Geng Sng — “Co-founder & CTO.” URL: https://www.cogent.com/company/about.
+- Alexander Semien — publicly presented as “Head of Growth”; his profile says “Head of Growth | Cogent” and “Marketing - Cogent Security,” current from August 2025. URL: https://www.linkedin.com/in/alexander-semien. His own post says, “My first week at Cogent Security” and names the start context as August 2025. URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk.
+- Anirudh Ravula — “Head of AI.” URL: https://www.cogent.com/ai/cogent-research.
+- Duc Hiep Chu — “Head of Research.” URL: https://www.cogent.com/blog/announcing-cogent-research.
+- Justin Jancaric — “Founding GTM Sales Leader,” current since February 2026. URL: https://www.linkedin.com/in/justinjancaric.
+- Zach Van Keulen and Andrew Cuzzone — named by Semien as members of the Growth team: “Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates.” Exact titles: NOT FOUND in the retrieved evidence. URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk.
+- GTM vacancy: Head of Demand Generation is explicitly being recruited and reports to Head of Growth; thus the demand-generation-lead seat is vacant as of the requisition date. URL: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d.
+- Recent GTM leadership hire: Semien joined in August 2025, which is more than 12 months before the research date only if measured after 2026-08-14; the source gives “Aug 2025 - Present.” URL: https://www.linkedin.com/in/alexander-semien. Jancaric joined February 2026 and is a GTM hire within the last 12 months. URL: https://www.linkedin.com/in/justinjancaric. ## 8. Operational pain and strategic moves - Company-described pain: “the hardest part of vulnerability management isn't finding the problems. It's fixing them.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- Operational constraints: the press describes the need to ingest/reconcile “massive volumes of enterprise security data,” handle “increasingly complex enterprise environments,” “reconcile conflicting data sources,” and improve AI reliability. URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804.
+- Next moves: invest in “the data and context layer, the AI agent development platform, and the modeling and research layer”; triple the team; invest heavily in R&D; scale GTM. URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804.
+- Product expansion: Cogent launched “Zero Day Response” and “Autonomous Remediation” for existing customers, covering disclosure through confirmed resolution. URL: https://www.cogent.com/blog/announcing-zero-day-response-and-autonomous-remediation. ## 9. Culture and resonance - Company identity: “Our vision is a world where progress accelerates because security is assured.” URL: https://www.cogent.com/company/about.
+- Employer/culture language: the content job calls for “smart, fast, exceptional people,” “a spark of creativity,” and says early hires have “an immediate, highly visible impact.” URL: https://jobs.ashbyhq.com/cogent-security/e7557807-c6f0-42d6-b2ce-2e6aeb917817.
+- Leader self-description: Semien says the team is “creative, operational, AI-first, and (clearly) having a lot of fun with it.” URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk.
+- Public frustration: no attributable public employee/leader frustration found. NOT FOUND.
+- Employee-sentiment/attrition signal: no reliable public review or attrition dataset found. NOT FOUND.
+- Awards: NOT FOUND. ## 10. Timing events, newest first - 2026-08-21 — Cogent published Field Marketing Manager and Sales Operations Analyst requisitions. The field role says field is “already a major pipeline engine”; the operations role says the sales team is scaling and needs “CRM workflows” and trusted reporting. URLs: https://jobs.ashbyhq.com/cogent-security/f6f9dfd7-64f8-4aed-8b37-61a903c412cf; https://jobs.ashbyhq.com/cogent-security/758ab0ce-b262-49b4-a079-95c976a36cee. Buying-posture implication evidenced by the postings: active investment in account-based field programs and revenue-process infrastructure.
+- 2026-08-14 — Head of Demand Generation and Sales Enablement Lead requisitions published. The demand role says Cogent is hiring to lead “all pipeline-generating functions”; the enablement role says the sales organization is scaling. URLs: https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d; https://jobs.ashbyhq.com/cogent-security/8981d25b-89d6-4119-bed5-db001de90f98.
+- 2026-08-14 — Semien publicly announced the Growth hiring push after Black Hat, saying the team needed “more teammates.” URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk.
+- 2026-05-10 — Growth Lead/Head of Growth requisition posted; it describes intent data, account intelligence, event interactions, product usage, and automation. URL: https://lensa.com/job-v1/cogent-security/san-francisco-ca/lead-head-of-growth/75bb1e79a5c3bc1d384933ad2dcfae45.
+- 2026-02-18 — Series A announced: $42M led by Bain Capital Ventures, $53M total; proceeds earmarked for core data/AI, GTM scaling, and hiring. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+- 2025-08 — Semien joined Cogent; his public first-week post says the company was tackling “asset inventory, vulnerability prioritization, remediation, and mitigation.” URL: https://www.linkedin.com/in/alexander-semien.
+- 2025-07 — Cogent emerged from stealth with an $11M Greylock seed, according to industry press. URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804. ## Special probe answers (a) Head of Growth: Alexander Semien. His public profile headline says “Head of Growth | Cogent,” and the profile lists current “Marketing - Cogent Security.” URL: https://www.linkedin.com/in/alexander-semien. (b) Named marketing/GTM leaders: Alexander Semien, Head of Growth; Justin Jancaric, Founding GTM Sales Leader; Zach Van Keulen and Andrew Cuzzone are named as Growth teammates, but exact titles are NOT FOUND. URLs: https://www.linkedin.com/in/alexander-semien; https://www.linkedin.com/in/justinjancaric; https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk. (c) CEO and founders: Vineet Edupuganti, Co-founder & CEO; Thanos Baskous, Co-founder & VP Engineering; Geng Sng, Co-founder & CTO. URL: https://www.cogent.com/company/about. (d) ABM/intent tooling: evidence of concepts exists — “intent data,” “intent layer,” “account intelligence,” and ABM/“whale-hunting” — but named vendor evidence for 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, or Common Room: NOT FOUND. URLs: https://lensa.com/job-v1/cogent-security/san-francisco-ca/lead-head-of-growth/75bb1e79a5c3bc1d384933ad2dcfae45; https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d. (e) Published customer names/count, ARR/pipeline: named customers include CSC Generation, Valvoline Instant Oil Change, University of the Pacific, Alteryx, Upwind, and an unnamed large hospitality brand. URL: https://www.cogent.com/customers. Explicit logo count: NOT FOUND; the company says “dozens of Fortune 1000 companies.” URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a. ARR: NOT FOUND. Pipeline number: NOT FOUND. Funding total: $53M, explicitly funding rather than ARR or pipeline. URL: https://www.cogent.com/blog/cogent-security-raises-42m-series-a.
+
+# THE COMPANY'S OWN PAGES + FUNDING ANNOUNCEMENTS (fetched verbatim)
+SOURCE https://www.cogent.com [via Exa /contents]
+ADuEtRoYnMoOmKoAuGsN VVuGlHnKeDr&aYbViGl#iAtJyG R4eKsHp$o9n#sNeG
+
+# Finding risks is easy. Fixing them is hard.
+
+Cogent’s AI agents investigate and resolve vulnerabilities at machine speed before attackers can exploit them.
+
+Book a demo
+
+Free risk assessment
+
+Trusted by the world’s leading security teams
+
+## Your AI workforce for vulnerability management
+
+No team can handle vulnerabilities at the speed this era demands. Cogent's AI agents can, working like skilled security analysts, IT admins, and engineers reducing risk nonstop.
+
+Explore platform
+
+sTEP
+
+01
+
+### Discover
+
+Identify vulnerable software within minutes of a new disclosure, before scanners can.
+
+### Assess
+
+Risk scoring that captures true business risk so you know what needs to be fixed first.
+
+Cogent Asset risk score, 9.8, Critical, Exploitability, Compensating controls, Trending Vulnerabilities, READ MORE, sTEP, 03
+
+### Remediate
+
+Find the optimal fix, assess impact, and remediate from assisted to fully autonomous.
+
+Production Impact, Low Impact, High Confidence, 4 Assets, 6–8 Hours
+
+Requires coordinated downtime window
+
+Write-path unavailable during failover test
+
+All dependent services must enter maintenance mode
+
+READ MORE
+
+sTEP
+
+04
+
+### Report
+
+Prove risk reduction with verified fixes and evidence-backed reporting.
+
+Report Generation, Mar 1, Mar 10, Mar 20, Mar 30, Exposure Remediated
+
+Generate a report of expected vulnerability trends in the next month given the last 30 days
+
+READ MORE
+
+IJm%p4a8cDtR
+
+## Faster remediation and measurable risk reduction
+
+### 3x increase in vulnerability management team output
+
+Read Case Study
+
+### 97% reduction in exposure window for critical vulns
+
+Read Case Study
+
+### 3 hours from onboarding to full vulnerability assessment
+
+Read Case Study
+
+CCU2S3TTOAMDE9R4 SDTXO6ROI&E0SB
+
+## What security teams achieve with Cogent
+
+Learn how security teams achieve more with Cogent at their side.
+
+CSC Generation Drives Toward VM Autonomy with Cogent
+
+Read Case Study
+
+VAiIs#iPoVnC
+
+## Resilience for the real world
+
+Every system will be tested in the AI era. We’re building technology that continuously secures infrastructure and applications so organizations can move forward with confidence.
+
+Our vision
+
+C0oJg7eSnOtX R&e#sCe8a8rIc6hR
+
+## An applied AI lab for security
+
+### Cogent Research
+
+Cogent Research works on the hardest open problems in AI × Security.
+
+Explore Cogent Research
+
+CQa$r3e@e1r@s&
+
+## Come build the future with us
+
+We’re looking for motivated, intelligent, and mission-driven individuals to join our team and innovate at the edge of agentic AI.
+
+Explore Careers
+
+F4eQa0t0uZr8e%d# R8eYs1o&u&r9c#eAsH
+
+## Insights and resources
+
+R9e1s&e&aKrQcQhG How we built and benchmarked VR-1, our frontier cyber reasoning model VR-1 is post-trained to investigate unfamiliar enterprise environments, compose weaknesses across systems, and verify attack paths through execution. Jul 27, 2026 6 min read
+
+P5rBo5d7uSc0t& Cogent at the Frontier: Announcing VR-1, the First Mythos-Class AI Model Built for Cyber Defense VR-1 is a reasoning model that investigates enterprises like a skilled adversary. It arrives with a new benchmark and the runtime to deploy it safely. Jul 27, 2026 4 min read
+
+SKeYcSuYr3iVt#y# At Hugging Face, the Attacker's AI Had No Guardrails and the Defender's Had Too Many OpenAI's models broke out of a sandbox and compromised Hugging Face on their own. Defenders need that reasoning on their side, kept in bounds. Jul 21, 2026 5 min read
+
+B4oFoNkB a& dIeEmQoQ
+
+## See Cogent In Action
+
+Schedule a personalized demo today to learn how Cogent can supercharge your vulnerability management program.
+
+Book a demo
+
+Free risk assessment
+
+---
+
+## Navigation
+
+- Terms & Conditions
+- The Cogent AI Engine
+- Cogent Research
+- Agentic AI, Explained
+- Platform Overview
+- Discover
+- Assess
+- Remediate
+- Report
+- Integrations
+- Community
+- Safety Guardrails
+- Autonomy
+- Trust Center
+- Customer Stories
+- Blog
+- Events
+- Resource Library
+- CTEM Academy
+- About Us
+- Vision
+- Careers
+- Newsroom
+- Contact Us
+- Privacy Policy
+- Terms of Service
+
+SOURCE https://www.cogent.com/blog/cogent-security-raises-42m-series-a [via Exa /contents]
+---
+title: "Cogent Security Raises $42M Series A - Blog | Cogent"
+description: Six months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.
+published: "Aug 27, 2026, 11:20 PM UTC"
+---
+
+[Blog](../blog)
+
+Company
+
+# Cogent Security Raises $42M Series A
+
+Six months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.
+
+Feb 18, 2026, 2 min read, Vineet Edupuganti, Co-Founder and CEO
+
+Six months ago, we launched Cogent with a simple thesis: the hardest part of vulnerability management isn't finding the problems. It's fixing them.
+
+Today, I'm excited to share that we've raised $42 million in Series A funding led by Bain Capital Ventures, with continued support from Greylock Partners and Definition. Founders and executives from OpenAI, Abnormal Security, and Datadog also invested personally. This brings our total funding to $53 million.
+
+I'm especially proud to welcome [Enrique Salem](https://www.linkedin.com/in/enriquesalem/) to our Board of Directors. Enrique helped build and scale some of the defining security companies of the last two decades, including Symantec, Rubrik, and Netskope. He knows what it takes to turn a fast-growing security company into a lasting one, and we're lucky to have him.
+
+## Why We're Here
+
+The vulnerability management crisis has gotten worse since we launched. Over 48,000 new CVEs were published in the past year alone, 162 percent more than five years ago. And the window between a vulnerability being disclosed and an attacker exploiting it has collapsed, in part because attackers now use AI to move faster than ever.
+
+Most security teams already have tools that find these issues. That's not the bottleneck. The bottleneck is everything after discovery: figuring out who owns the affected system, understanding why this specific vulnerability matters in this specific environment, getting the right fix in front of the right engineer, and confirming it actually got done. That work is still manual. It still involves chasing people through Slack threads and outdated spreadsheets. And it still takes days or weeks while attackers move in minutes.
+
+Security teams don't have a visibility problem. They have an execution problem. That's the gap we built Cogent to close.
+
+## What Cogent Does
+
+Our AI agents handle the full lifecycle of vulnerability remediation. They investigate findings in the context of your actual environment, determine who owns what, assess real-world risk, generate remediation steps, and track fixes through to verified completion. Every action is traceable and auditable. Everything runs through configurable approval gates. Organizations deploy autonomous agents without giving up control.
+
+Customers using Cogent have reduced their exposure windows for critical risks by an average of 97 percent. We're already working with dozens of Fortune 1000 companies and marquee brands across financial services, higher education, retail, and more.
+
+## The Team
+
+What I'm most proud of is the team we've assembled.
+
+Our co-founders lived this problem firsthand. Geng and I came from Abnormal Security, where we helped scale the company from a small startup to a multibillion-dollar business. Thanos led infrastructure at Coinbase, where he ran large-scale vulnerability remediation programs. We've fused security product leaders from Abnormal, Zscaler, and Wiz with world-class AI and software talent from DeepMind, Coinbase, Databricks, Tesla, and Stripe. Our team includes AI researchers who helped develop the transformer architectures behind ChatGPT, Claude, and Gemini.
+
+It's a group of operators who have built category leaders and want to do it again.
+
+## What's Next
+
+This round of funding lets us double down on our core data and AI platforms, scale our go-to-market efforts, and hire exceptional builders. The future of cybersecurity will be agentic, and we're just getting started.
+
+If you want to see what Cogent can do for your security program, [see the product](https://www.cogent.com/book-demo) for yourself. And if you're excited by the idea of building agentic AI from the ground up while making the digital world safer for everyone, we're hiring across R&D and GTM.
+
+## Related articles
+
+View all articles
+
+[R%e9s2eLa4rCcXhB How we built and benchmarked VR-1, our frontier cyber reasoning model VR-1 is post-trained to investigate unfamiliar enterprise environments, compose weaknesses across systems, and verify attack paths through execution. Geng Sng Co-Founder and CTO Anirudh Ravula Head of AI Jul 27, 2026 6 min read](./how-we-built-and-benchmarked-vr-1-our-frontier-cyber-reasoning-model)
+
+[PIrKoNd@u2c$t2 Cogent at the Frontier: Announcing VR-1, the First Mythos-Class AI Model Built for Cyber Defense VR-1 is a reasoning model that investigates enterprises like a skilled adversary. It arrives with a new benchmark and the runtime to deploy it safely. Geng Sng Co-Founder and CTO Jul 27, 2026 4 min read](./cogent-at-the-frontier-announcing-vr-1-the-first-mythos-class-ai-model-built-for-cyber-defense)
+
+[SLeKcZuFr1i8tByH At Hugging Face, the Attacker's AI Had No Guardrails and the Defender's Had Too Many OpenAI's models broke out of a sandbox and compromised Hugging Face on their own. Defenders need that reasoning on their side, kept in bounds. Geng Sng Co-Founder and CTO Jul 21, 2026 5 min read](./at-hugging-face-the-attacker-s-ai-had-no-guardrails-and-the-defender-s-had-too-many)
+
+BPoOoNkG aE d4eRm4o$
+
+## See Cogent In Action
+
+Schedule a personalized demo today to learn how Cogent can supercharge your vulnerability management program.
+
+Book a demo
+
+Free risk assessment
+
+---
+
+## Navigation
+
+- [Terms & Conditions](/legal/terms)
+- [The Cogent AI Engine](../ai/cogent-ai-engine)
+- [Cogent Research](../ai/cogent-research)
+- [Agentic AI, Explained](../ai/agentic-ai-explained)
+- [Platform Overview](../platform/)
+- [Discover](../platform/discover)
+- [Assess](../platform/assess)
+- [Remediate](../platform/remediate)
+- [Report](../platform/report)
+- [Integrations](../platform/integrations)
+- [Community](../platform/cogent-community)
+- [Safety Guardrails](../ai/safety-guardrails)
+- [Autonomy](../ai/autonomy-levels)
+- [Trust Center](https://trust.cogent.security/)
+- [Customer Stories](../customers)
+- [Blog](../blog)
+- [Events](../events)
+- [Resource Library](../resources)
+- [CTEM Academy](../academy)
+- [About Us](../company/about)
+- [Vision](../company/vision)
+- [Careers](../company/careers)
+- [Newsroom](../newsroom)
+- [Contact Us](../resources/lp-hv-contact)
+- [Privacy Policy](../legal/privacy-policy)
+- [Terms of Service](../legal/terms)
+
+
+SOURCE https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html [via Exa /contents]
+Cogent Security Raises $42M Series A to Arm Security Teams With Autonomous AI Agents Accessibility Statement Skip Navigation
+
+Backed by Bain Capital Ventures and Greylock, Cogent builds agentic systems to fight off escalating AI threats
+
+SAN FRANCISCO, Feb. 18, 2026 /PRNewswire/ -- Cogent Security today announced $42 million in Series A funding led by Bain Capital Ventures, with participation from existing investor Greylock Partners and Definition. Founders and executives from OpenAI, Abnormal Security, and Datadog invested personally. The financing brings Cogent's total funding to $53 million, just six months after the company's official launch.
+
+Why Attackers Are Winning
+
+In 2025, over 48,000 new software vulnerabilities known as CVEs were published. That's 162 percent higher than five years ago. Every enterprise software system has them, and new ones appear constantly as code changes and new threats emerge. Meanwhile, the time needed for hackers to figure out how to exploit new vulnerabilities has collapsed.
+
+Attackers and security teams now operate at completely different speeds. Hackers using AI begin probing enterprises for vulnerabilities minutes after they're first published. Fixing one on the defensive side still takes days or weeks. Security teams hunt down system owners through outdated directories and Slack threads. Developers field tickets without knowing which systems are affected or why this particular issue matters more than the hundreds of others in their queue.
+
+Security backlogs grow faster than teams can clear them. Banks, hospitals, retailers, manufacturers, energy companies—they all face the same problem.
+
+Finding vulnerabilities isn't the hard part. Modern scanning tools handle discovery. The hard part is everything after: figuring out who owns what, understanding real-world risk, coordinating fixes across teams, proving the work was completed. It's slow. It's manual. And the threats now move at machine speed.
+
+"Security teams are drowning in coordination work: chasing down system owners, writing tickets, proving fixes happened. We built AI agents that handle that work end-to-end, so security teams can finally keep pace with attackers," said Vineet Edupuganti, CEO and co-founder of Cogent.
+
+Cogent Security: AI Agents That Automate Remediation
+
+Traditional security tools stop at detection, surfacing findings and leaving humans to handle the rest. Cogent's AI agents investigate vulnerabilities, determine system ownership, assess real-world risk based on the environment, and generate remediation steps ready for engineers to implement. The agents then track fixes through to verified completion. Customers using Cogent have reduced exposure windows for critical risks by an average of 97 percent.
+
+Cogent is built for enterprise governance. Every agent action is traceable and reproducible. The platform integrates directly into existing security and engineering workflows and operates under configurable approval gates and policy enforcement. Organizations can deploy autonomous AI agents without sacrificing control, auditability, or human oversight.
+
+CSC is the leading AI-driven consolidator in commerce, having acquired Backcountry.com and four other brands in the past year alone. "Given the pace of our M&A activity, Cogent is central to our cybersecurity strategy—autonomously managing risk without slowing us down so we can stay focused on deploying AI," said Justin Yoshimura, CEO of CSC Generation. "Cogent has become a meaningful competitive advantage for us."
+
+The Team
+
+Cogent was founded by operators who have spent their careers both finding vulnerabilities and fixing them. Co-founders Vineet Edupuganti (CEO) and Geng Sng (CTO) came from Abnormal Security. Vineet led product strategy for a product loved by security teams. Geng built the ML fraud detection system now protecting half of the Fortune 500. Co-founder Thanos Baskous led infrastructure at Coinbase, where he ran large-scale vulnerability remediation.
+
+The team also includes AI researchers from Google DeepMind who helped develop the transformer architectures behind ChatGPT, Claude, and Gemini.
+
+Investment and Company Traction
+
+Since launching in July 2025, Cogent is already working with dozens of Fortune 1000 companies. With the new funding, Cogent plans to accelerate product development, expand enterprise deployments, and continue building agentic security systems designed for governed, trustworthy execution at scale.
+
+"The enterprise security landscape has reached a clear inflection point. The volume of vulnerabilities has outpaced what traditional, human-driven coordination can handle," said Enrique Salem, partner at Bain Capital Ventures. "Cogent's AI enables teams to accomplish five times more with the same resources. This represents a fundamental reset of what's possible in security operations, and we're proud to partner with this team as they continue to push the boundaries."
+
+"Cogent represents a new generation of security companies built natively for AI agents as first-class operators," said Saam Motamedi, partner at Greylock Partners. "Vineet, Geng, and Thanos understand that securing AI agents requires a fundamentally new operating model, which allows them to move faster and deliver measurable customer value early. The technical depth of the team combined with that execution speed makes the customer signal impossible to ignore."
+
+About Cogent Security
+
+Cogent is an applied AI lab building autonomous agents that close the execution gap in cybersecurity, the window between discovering vulnerabilities and actually fixing them. While attackers use AI to exploit flaws in minutes, defenders remain constrained by manual coordination that takes days or weeks. Cogent's AI agents automate the time-intensive work of investigation, prioritization, and remediation, helping Fortune 500 companies achieve a 97 percent reduction in exposure windows for critical risks. Built by researchers and operators from Google DeepMind, Abnormal Security, and Coinbase, Cogent is backed by Greylock Partners and Bain Capital Ventures. Learn more at cogent.com.
+
+SOURCE Cogent Security
+
+## 21%
+
+more press release views with Request a Demo
+
+## Also from this source
+
+### Cogent Unveils VR-1, the First Mythos-Class Frontier AI Model Trained Specifically to Excel at Cybersecurity Tasks
+
+Cogent Security today introduced Cogent VR-1, a frontier reasoning model built for cybersecurity and trained to operate inside live enterprise...
+
+### Cogent Research: Exploits Outpace Scanner Detection for 62% of Critical Vulnerabilities as AI Compresses Time-to-Exploit to Under 12 Hours
+
+A new report from Cogent Security found that exploit development is accelerating faster than scanner-based detection can keep pace, creating...
+
+More Releases From This Source
+
+## Explore
+
+The Latest Artificial Intelligence News
+
+News Releases in Similar Topics
+
+# THE COMPANY'S OWN LIVE GO-TO-MARKET JOB REQS (Ashby posting API, verbatim; every one below is STILL LISTED on 2026-08-31)
+JOB Solutions Engineer (US West) | dept=GTM/GTM | loc=Remote US | published=2026-07-14T21:32:24.848+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/462f6c1c-1575-4bb0-a03b-5f3e0ee8a40c
+ABOUT COGENT SECURITY
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent’s "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+
+
+We’re backed by Greylock and we’ve built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scale AI, Databricks, Stripe, Tesla, Coinbase
+
+ - World class cybersecurity experts from Wiz, Abnormal AI, Zscaler
+
+ - Preeminent ML research labs like Deepmind and SAIL
+
+
+
+
+ABOUT THE ROLE
+
+As a Solutions Engineer, you will help drive technical sales cycles, from scoping and discovery through POCs and implementation. You’ll understand complex security requirements and translate them into compelling demos and architecture proposals, align with technical stakeholders, and ensure our platform is able to supercharge our customers’ cybersecurity programs.
+
+
+
+
+WHAT YOU’LL DO
+
+ - Engage with customers to deliver polished demos and technical deep dive sessions
+
+ - Design and run POC engagements end to end to ensure that customers understand the technical value of the Cogent solution
+
+ - Work closely with AEs on deal strategy and sales cycles
+
+ - Collaborate with R&D on product enhancements and roadmap feedback
+
+ - Partner with Customer Success on pre sales → post sales handoffs
+
+
+
+
+ABOUT YOU
+
+ - 7+ years of enterprise SE experience in cybersecurity
+
+ - Proven track record of working with Global 2000 organizations
+
+ - Experience with technical cybersecurity products, ideally in the vulnerability management space
+
+ - Deep industry relationships across customers, partners, and vendors
+
+ - Able to deal with ambiguity and craft creative technical solutions to customer problems
+
+ - Excellent communication skills and strong executive presence
+
+
+
+
+WHY COGENT SECURITY
+
+Cogent Security is redefining how AI can proactively defend organizations against evolving threats. Our mission is to empower security teams with cutting-edge AI agents and clear, actionable insights. You’ll join a world-class GTM team where your work directly impacts the safety of some of the world’s most sophisticated organizations.
+
+
+
+JOB Regional Sales Manager | dept=GTM/GTM | loc=Remote US | published=2026-02-15T07:08:48.620+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/1ddb9866-d685-45c7-aabc-c3fc66521423
+ABOUT COGENT SECURITY
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent’s "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+
+
+We’re backed by Greylock and we’ve built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scale AI, Databricks, Stripe, Tesla, Coinbase
+
+ - World class cybersecurity experts from Wiz, Abnormal AI, Zscaler
+
+ - Preeminent ML research labs like Deepmind and SAIL
+
+
+
+
+ABOUT THE ROLE
+
+As a Regional Sales Manager, you will be responsible for breaking into and closing enterprise deals across a large territory. You will manage complex (and sometimes long) sales cycles with high ACVs and introduce Cogent as a preferred AI transformation partner across vulnerability management and broader cybersecurity.
+
+
+
+
+WHAT YOU’LL DO
+
+ - Drive net-new enterprise logo acquisition as well as expansion within existing strategic accounts.
+
+ - Lead complex sales cycles involving CISOs, CIOs, and other executive stakeholders.
+
+ - Work closely with strategic channel partners to accelerate enterprise traction
+
+ - Attend industry events and build the company brand
+
+
+
+
+ABOUT YOU
+
+ - 7+ years of enterprise sales experience in cybersecurity
+
+ - Proven track record of closing large six and seven figure enterprise deals with Global 2000 organizations
+
+ - Experience selling technical products across multiple stakeholders
+
+ - Deep industry relationships across customers, partners, and vendors
+
+ - Able to deal with ambiguity
+
+ - Strong “hunter” with great communication skills and presence
+
+
+
+
+WHY COGENT 
+
+Cogent is redefining how AI can proactively defend organizations against evolving threats. Our mission is to empower security teams with cutting-edge AI agents and clear, actionable insights. You’ll join a world-class GTM team where your work directly impacts the safety of some of the world’s most sophisticated organizations.
+
+JOB Director of Product Marketing | dept=GTM/GTM | loc=Remote US | published=2026-02-18T04:27:19.960+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/fbe585dc-5c69-4287-97a1-522faa5e0054
+ABOUT COGENT SECURITY
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent’s "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+We’re backed by Greylock and we’ve built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scale AI, Databricks, Stripe, Tesla, Coinbase
+
+ - World class cybersecurity experts from Wiz, Abnormal AI, Zscaler
+
+ - Preeminent ML research labs like Deepmind and SAIL
+
+
+
+
+ABOUT THE ROLE
+
+Cogent is building a world-class marketing team, and we're looking for smart, fast, exceptional people who are committed to our mission and bring a spark of creativity that sets us apart from traditional B2B marketing. As a founding member of product marketing, you'll have an immediate, highly visible impact on how Cogent shows up in a crowded market and defines an entirely new category. If you like crafting content that is clear, specific, and actually resonates with security practitioners (without the typical "marketing speak"), you'll fit in well here. You'll own Cogent's messaging, positioning, and go-to-market enablement. You're the connective tissue between Product, Sales, Customer Success, and the rest of Marketing. Your job is to translate real product differentiation into stories, proof, and sales tools that win enterprise deals.
+
+
+
+
+
+WHAT YOU'LL DO
+
+
+
+Messaging & Positioning
+
+ - Define and evolve Cogent's core narrative: category, differentiation, "why now," and "why us."
+
+ - Build segmentation and ICP clarity and tailor messaging by persona and use case.
+
+ - Own competitive positioning, battlecards, and win/loss insights.
+
+
+
+Sales Enablement
+
+ - Create and maintain the core sales deck(s), demo storyline inputs, one-pagers, and solution briefs.
+
+ - Build enablement that improves conversion at each stage: discovery, demo, POC, security review, close.
+
+ - Partner with the sales team on objection handling, pricing/packaging narratives, and proof points.
+
+
+
+Launches & Product Communication
+
+ - Own product and feature launch strategy, both internal readiness and external storytelling.
+
+ - Write product web pages and solution pages that are crisp, credible, and conversion-aware.
+
+ - Build content that supports evaluation: evaluation guides, operationalization docs, ROI/value frameworks.
+
+
+
+Customer Proof
+
+ - Turn customer outcomes into proof: case studies, quantified value, reference-ready narratives.
+
+ - Partner with CS on customer councils, reference loops, and voice-of-customer insights.
+
+
+
+AI-Native Execution
+
+ - Use AI to accelerate drafts, variants, and repurposing while maintaining high standards, and accuracy.
+
+
+
+
+WHAT WE'RE LOOKING FOR
+
+
+
+Must-Have
+
+ - 7-10+ years in B2B product marketing, with a strong cybersecurity background.
+
+ - Deep familiarity with enterprise security buyers and workflows.
+
+ - Proven ability to create positioning, sales decks, web copy, enablement, competitive assets, and launch plans.
+
+ - Excellent writing, taste, and clarity. You can explain complex security concepts simply and credibly.
+
+
+
+Nice-to-Have
+
+ - Experience in vulnerability management, exposure management, ASM/CAASM, AppSec/CloudSec adjacencies.
+
+ - Experience with channel partners, co-sell motions, and partner enablement.
+
+ - Experience supporting technical evaluations/POCs and security review processes.
+
+
+
+
+
+WHY COGENT
+
+Cogent is redefining how AI can proactively defend organizations against evolving threats. Our mission is to empower security teams with cutting-edge AI agents and clear, actionable insights. You’ll join a world-class GTM team where your work directly impacts the safety of some of the world’s most sophisticated organizations.
+
+JOB Sr. Manager, Content and Community | dept=GTM/GTM | loc=Remote US | published=2026-02-18T04:32:35.888+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/e7557807-c6f0-42d6-b2ce-2e6aeb917817
+ABOUT COGENT SECURITY
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent’s "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+We’re backed by Greylock and we’ve built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scale AI, Databricks, Stripe, Tesla, Coinbase
+
+ - World class cybersecurity experts from Wiz, Abnormal AI, Zscaler
+
+ - Preeminent ML research labs like Deepmind and SAIL
+
+
+
+
+ABOUT THE ROLE
+
+Cogent is building a world-class marketing team, and we're looking for smart, fast, exceptional people who are committed to our mission and bring a spark of creativity that sets us apart from traditional B2B marketing. As an early marketing hire, you'll have an immediate, highly visible impact. If you're a creator at heart who also knows how to build systems, and you're tired of scheduling posts for brands that have nothing to say, keep reading. This is not a "post scheduler" role. You'll be a creator-operator who can take internal work (product insights, research, customer wins, point of view) and turn it into content that travels. You'll partner closely with the VP of Marketing, Product Marketing, and technical leaders to build a consistent presence, and selectively through creator/influencer collaborations.
+
+
+
+
+WHAT YOU'LL DO
+
+
+
+Organic Social That Drives Real Attention
+
+ - Own Cogent's organic social strategy and execution (primary: LinkedIn; secondary: X/Reddit/Instagram/TikTok as appropriate).
+
+ - Create a weekly content cadence across POV, product value, customer proof, research packaging, and culture/talent content.
+
+ - Build "content series" that compound over time (e.g., weekly VM insights, AI security myths, remediation playbooks).
+
+
+
+Executive/Founder Voice
+
+ - Ghostwrite for CEO, CTO, and key leaders with a strong point of view and consistent tone.
+
+ - Build repeatable systems for capturing raw material: interviews, Slack mining, call notes, research briefs.
+
+
+
+Content Production
+
+ - Produce and edit content: short videos, motion-lite explainers, quote cards, carousels, blog-to-social repurposing.
+
+ - Use AI tools to accelerate ideation, drafting, editing, and versioning while keeping quality and credibility high.
+
+
+
+Influencers & Collaboration
+
+ - Manage paid influencer/creator relationships (selectively and tastefully) aligned to enterprise security audiences.
+
+ - Build partnerships with practitioners and communities for content collaborations: podcasts, AMAs, guest posts.
+
+
+
+Story Packaging & Internal Project Management
+
+ - Turn threat research, AI research, or product insights into marketable stories with clear narratives and guardrails.
+
+ - Coordinate with PMM on accuracy, claims, and launch timing.
+
+
+
+
+WHAT WE'RE LOOKING FOR
+
+
+
+Must-Have
+
+ - 2-5+ years in social/content roles for B2B tech (cybersecurity preferred).
+
+ - Proven track record of growing organic presence and engagement with an enterprise audience.
+
+ - Excellent writing skills and a sharp editorial eye. You can develop a point of view without fluff.
+
+ - Strong production ability: you can create visually polished assets yourself or manage contractors who do.
+
+ - Comfortable working with technical stakeholders and translating complex topics into compelling content.
+
+
+
+Nice-to-Have
+
+ - Experience running influencer programs in B2B (not just B2C).
+
+ - Experience packaging research: threat reports, benchmarks, original analysis.
+
+ - Familiarity with brand safety and compliance concerns in cybersecurity marketing.
+
+
+
+
+WHY COGENT
+
+Cogent is redefining how AI can proactively defend organizations against evolving threats. Our mission is to empower security teams with cutting-edge AI agents and clear, actionable insights. You’ll join a world-class GTM team where your work directly impacts the safety of some of the world’s most sophisticated organizations.
+
+
+
+JOB Technical Account Manager | dept=GTM/GTM | loc=San Francisco, CA | published=2026-04-23T15:33:03.394+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/87bf4b17-a2ff-4cdd-a1d8-9f7638cbe5c4
+ABOUT COGENT SECURITY 
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent’s "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+
+
+We’re backed by Greylock and we’ve built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scale AI, Databricks, Stripe, Tesla, Coinbase
+
+ - World class cybersecurity experts from Wiz, Abnormal AI, Zscaler
+
+ - Preeminent research labs like Deepmind and SAIL
+   
+   
+
+
+ABOUT THE ROLE
+
+As a Technical Account Manager focused on customer deployment, you'll own the technical success of new customers from kickoff through initial production rollout and early expansion. You'll be the person customers call when they need to understand how Cogent fits into their stack, unblock an integration, or get executive buy-in for a broader rollout. You'll partner closely with Sales, Product, Engineering, and Support to make sure deployments land on time, configurations match real-world needs, and customers see measurable value fast.
+
+This is a hands-on, customer-facing role for someone who enjoys the mix of technical depth, project ownership, and relationship building — and who knows that a great deployment experience is the foundation of a long-term account.
+
+
+
+
+WHAT YOU’LL DO & ACHIEVE
+
+ - Own the end-to-end deployment journey for new customers, from technical kickoff through go-live and early adoption milestones.
+
+ - Build and maintain customer-specific deployment plans, including timelines, success criteria, integration requirements, and risk mitigation.
+
+ - Serve as the primary technical point of contact during deployment, translating between customer engineering teams and Cogent's Product and Engineering organizations.
+
+ - Lead architecture and integration discussions, advising customers on best practices for scale, security, and reliability in their environment.
+
+ - Troubleshoot complex technical issues during rollout — debugging configurations, API integrations, authentication flows, and data pipelines — and drive them to resolution.
+
+ - Develop reusable playbooks, runbooks, and deployment artifacts that help every future customer get to value faster.
+
+ - Partner with Sales and Customer Success to identify expansion opportunities surfaced during deployment and hand off accounts cleanly once customers are in steady state.
+
+ - Advocate for customers internally by surfacing product gaps, documentation needs, and deployment friction to Product and Engineering.
+
+ - Contribute to internal tooling and process improvements that scale the deployment function as Cogent grows.
+
+
+
+
+WHAT YOU’LL BRING
+
+ - 5+ years of experience in a technical, customer-facing role — Technical Account Manager, Solutions Engineer, Deployment Engineer, Implementation Consultant, or similar.
+
+ - Proven track record leading technical deployments or implementations for enterprise or mid-market B2B SaaS customers.
+
+ - Strong technical foundation: comfortable reading and discussing code, reasoning about APIs and authentication, working in the command line, and navigating cloud infrastructure (AWS, GCP, or Azure).
+
+ - Familiarity with modern data and integration patterns — REST and webhooks, SSO/SAML/OIDC, containerization, CI/CD concepts.
+
+ - Excellent written and verbal communication skills; you can explain a system to a developer and a business outcome to a VP in the same afternoon.
+
+ - Project management instincts — you naturally break work into milestones, manage competing priorities, and keep stakeholders aligned without heavy process.
+
+ - A bias toward ownership: when something falls between teams, you pick it up and make sure it gets done.
+
+ - Comfort working remotely across time zones and traveling occasionally (roughly 10–20%) for customer on-sites and company gatherings.
+
+ - Experience at a high-growth SaaS or infrastructure company during a scaling phase.
+
+ - Background in software engineering, DevOps, or site reliability.
+
+ - Prior experience building a deployment or onboarding function — not just executing within one.
+
+ - Working knowledge of Python, SQL, or a scripting language you reach for to automate the tedious parts of the job.
+
+ - Prior experience working in Cyber-Security
+
+
+
+JOB Solutions Architect (US West) | dept=GTM/GTM | loc=Remote US | published=2026-07-15T04:50:06.426+00:00 | comp=None | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/cogent-security/f26898ee-4330-4e31-b5a2-321b9001c9bf
+ABOUT COGENT SECURITY
+
+Cogent is an Applied AI Lab building the next generation of AI agents for cybersecurity. AI has fundamentally changed how attacks happen, allowing malicious actors to operate at unprecedented speed and scale. Cogent's "AI Taskforce" assesses petabytes of enterprise data to remediate these issues before critical breaches occur.
+
+To stay at the cutting edge, we blend frontier research with real-world execution. Alongside our core product work, Cogent Research serves as our applied AI lab, providing the research horsepower needed to make truly agentic security workflows a reality.
+
+Since coming out of stealth, Cogent has experienced rapid growth. We partner with Fortune 500 companies to secure some of the most complex production environments in the world.
+
+We're backed by Greylock and we've built a team with the best minds in applied AI. Our team is comprised of people from:
+
+ - Top universities like Stanford, Berkeley, Penn, Duke, Carnegie Mellon, Waterloo
+
+ - Unicorn, high-growth companies like Scal
+
+# TARGETED GAP-FILL SEARCH RESULTS
+SOURCE https://www.linkedin.com/in/cameroncoles [published 2026-07-08T00:00:00.000Z]
+# Cameron Coles
+
+VP of Marketing
+
+San Francisco Bay Area (US)
+
+500 connections • 1,626 followers
+
+## About
+
+VP of Marketing
+
+Total Experience: 14 years and 3 months
+
+## Experience
+
+### VP of Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)
+
+Nov 2025 - Present (9 months) in San Francisco, CA
+
+Department: Marketing • Level: President/Vice President
+
+Cogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.
+
+### VP of Marketing - [Cyberhaven](https://www.linkedin.com/company/cyberhaven)
+
+May 2022 - Jun 2025 (3 years and 1 month)
+
+Department: Marketing • Level: President/Vice President
+
+Cyberhaven is a Computer and Network Security company. Cyberhaven is a company that protects data from other tools can't see, from threats they can't detect, across technologies they can't control. Cyberhaven has 200-300 employees (+30% YoY) and has annual revenue in the $10M-$20M range, founded in 2016. Headquartered in Palo Alto, California, United States, with presence in Switzerland. Its workforce is distributed across 25 countries (including United States, India, Romania, Ukraine, and Switzerland). with 5 prior funding rounds.
+
+### Head of Produ
+
+SOURCE https://www.linkedin.com/in/alexander-semien [published 2026-08-04T00:00:00.000Z]
+# Alexander Semien
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps
+
+New York, New York, United States (US)
+
+500 connections • 2,770 followers
+
+## About
+
+Hey 👋 I’m Alex. I like the early stages; no playbook, just a vision and a lot to figure out. I’m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters. Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I’ve done the work—positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none.
+
+Total Experience: 10 years and 1 month
+
+## Experience
+
+### Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)
+
+Aug 2025 - Present (1 year)
+
+Department: Marketing
+
+Cogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.
+
+### VP, P
+
+SOURCE https://www.threatcon1.org/speakers/alexander-semien [published None]
+THREATCON1
+
+Skip to main content
+
+# Alexander Semien
+
+Head of Marketing, Cogent Security
+
+Presentation Title:
+
+We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming
+
+Alexander Semien leads Marketing at Cogent Security - telling Cogent’s story as it builds the first AI taskforce for vulnerability management. Previously, he led Product Strategy and Product Marketing at Sevco Security in the CAASM and exposure management space. Prior to that, he helped scale Abnormal Security from early stage to hypergrowth while running Strategy and Analytics. He began his career at Accenture, advising Fortune 500 companies on advanced automation, AI, and emerging technologies.
+
+Craig P. Abod is president and founder of Carahsoft Technology Corp. Now in its 21st year, Carahsoft has grown from $0 to $19.5 billion in bookings and employs more than 3,800 team members.
+
+Working with a robust ecosystem of thousands of resellers, integrators, solutions providers and a deep portfolio of contracts, Carahsoft proactively markets, sells, and distributes IT to government markets in the U.S. & Canada, as well as education, healthcare, critical infrastructure, not-for-profit and commercial markets.
+
+In recognition of these accomplishments, the company is consistently recognized as the top performing partner for its vendor partners and Abod has received the EY Entrepreneur of the Year Award for Greate
+
+SOURCE https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF [published 2026-04-24T00:00:00.000Z]
+When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI… | Alexander Semien | 13 comments
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+# Alexander Semien’s Post
+
+https://www.linkedin.com/in/alexander-semien
+
+Alexander Semien
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps
+
+2mo
+
+- Report this post
+
+When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more. Andrew Cuzzone, our GTM Engineer, builds the AI architecture. I set strategy and build the models. With AI, two people have the output of a team of ten. That said, the tech isn't the only thing that makes us different. We're also very intentional about our brand. We build community through hospitality, honest conversations, and human connection. And we look cool doing it with premium experie
+
+SOURCE https://www.linkedin.com/posts/cameroncoles_im-thrilled-to-announce-that-im-joining-activity-7396260224229081088-AXVZ [published 2025-11-17T00:00:00.000Z]
+# I'm thrilled to announce that I'm joining Cogent Security as VP of Marketing! | Cameron Coles · LinkedIn · 2025-11-17
+
+**Cameron Coles**: VP of Marketing at Cogent Security for 9 months with 14 years 2 months of total professional experience. Previous roles include VP of Marketing at Cyberhaven, Head of Product and Content Marketing at Wiz, and Director of Product Marketing at Proxy. Based in San Francisco Bay Area [US].
+
+---
+
+I'm thrilled to announce that I'm joining [Cogent Security](https://linkedin.com/company/cogentsecurity) as VP of Marketing!
+
+After spending the last decade in cybersecurity, from helping define the CASB category at Skyhigh, to scaling Wiz in its breakout first year, to building go-to-market at Cyberhaven, I've seen firsthand how the right technology at the right time can transform an entire industry.
+
+Vulnerability management is overdue for that transformation. Security teams are drowning in alerts and struggling to prioritize what actually matters. Cogent is changing that by bringing real intelligence to vulnerability management, helping teams focus on the risks that could actually impact their business and accelerating remediation.
+
+What drew me here? The product vision is ambitious, the team is world-class, and the opportunity to define a new category in such a critical space is exactly the kind of challenge I've been looking for.
+
+Excited to get to
+
+SOURCE https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b [published 2026-05-13T00:00:00.000Z]
+# Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent · LinkedIn · 2026-05-13
+
+**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.
+
+---
+
+[Cogent](https://linkedin.com/company/cogentsecurity)'s Head of Growth, [Alexander Semien](https://linkedin.com/in/alexander-semien), breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.
+
+Yesterday's announcement from [OpenAI](https://linkedin.com/company/openai) positioned Daybreak as a defensive partnership story with legacy cybersecurity companies. [Anthropic](https://linkedin.com/company/anthropicresearch)'s Mythos, however, landed as offensive proof of maturing models - with early access given exclusively to mega-enterprises.
+
+Both rest on the same underlying capabilities, and both stop short of the actual hard part: turning findings into fixes, on the time scale modern adversaries operate on.
+
+Check out the original post and comments for the link!
+
+![Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent image](https://media.licdn.com/dms/image
+
+SOURCE https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk [published 2026-08-14T00:00:00.000Z]
+Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles 🥳 1. Head of Demand… | Alexander Semien
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps
+
+1w
+
+Edited
+
+Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles 🥳 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We’re creative, operational, AI-first, and (clearly) having a lot of fun with it. -- CC: Aziz Kapadia Traci Byrne Ryan Marasco Justin Whitcomb Justin Jancaric Omer Haider Kimberli Nichols Brian Ruth Bala Prasad Choubey Garrett Oliver Rebecca Brock
+
+Transcript Transcript
+
+##### Transcript
+
+I will not go turn the lights off. Carry me home.
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Reven
+
+SOURCE https://www.linkedin.com/posts/alexander-semien_ive-been-heads-down-and-slipping-on-my-social-activity-7487946922285084673-6yvs [published 2026-07-28T00:00:00.000Z]
+I’ve been heads down and slipping on my social game. But, it’s been a wild few weeks at Cogent, and I want to catch y'all up 😊 Today: Named to the Forbes Next Billion-Dollar Startups… | Alexander Semien
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps
+
+1w
+
+Edited
+
+I’ve been heads down and slipping on my social game. But, it’s been a wild few weeks at Cogent, and I want to catch y'all up 😊 Today: Named to the Forbes Next Billion-Dollar Startups list. Yesterday: Launched VR-1, our fronteir cyber reasoning model, and hosted our first LinkedIn Live. Last week: Launched AVR, our end-to-end autonomous vulnerability response capability, proven in production with testimonials from Valvoline Inc. and University of the Pacific. Next week: Black Hat where we've graduated from the startup alley to a week-long schedule. I’ll be back tomorrow with everything we 
+
+# REPUTATION / NEGATIVES SEARCH RESULTS
+SOURCE https://www.gartner.com/reviews/product/cogent-platform [published None]
+Cogent Platform Reviews & Ratings 2026 | Gartner Peer Insights
+
+## Overview
+
+### Product Information on Cogent Platform
+
+Updated 8th January 2026
+
+#### What is Cogent Platform?
+
+Cogent Platform is a software designed to centralize and automate security operations for organizations. It streamlines case management, incident tracking, and investigation processes by integrating data from multiple sources, including security sensors, access control systems, and video surveillance. The software offers features for managing workflow, visualizing incidents, and maintaining audit trails, supporting teams in documenting and resolving security events efficiently. Cogent Platform enables a unified approach to risk management and compliance by providing analytical tools and reporting capabilities. The software assists businesses in enhancing situational awareness and optimizing decision-making within physical security environments, addressing the challenge of fragmented security information and operational inefficiencies.
+
+Read More
+
+### Overall experience with Cogent Platform
+
+VP, IT Security and Risk Management
+
+500M - 1B USD, Travel and Hospitality
+
+FAVORABLE
+
+#### “A measured use of AI to streamline vulnerability management while maintaining clear human oversight ”
+
+5.0
+
+Feb 19, 2026
+
+My overall experience with Cogent has been exceptional. They operate less like a vendor and more like a
+
+SOURCE https://www.peerspot.com/products/comparisons/cogent-security-cogent-agentic-ai-for-exposure-management_vs_tines [published None]
+Cogent Security Cogent: Agentic AI for Exposure Management vs Tines (2026)
+
+No more typing reviews! Try our Samantha, our new voice AI agent.
+
+Cogent Security Cogent: Age...
+
+- 182 Views
+- 177 Comparison Views
+
+Read 8 Tines reviews
+
+- 5,155 Views
+- 361 Comparison Views
+
+90% willing to recommend
+
+Cogent Security Cogent: Age...
+
+## Comparison Buyer's Guide
+
+Executive Summary
+
+We performed a comparison between Cogent Security Cogent: Agentic AI for Exposure Management and Tines based on real PeerSpot user reviews.
+
+Find out what your peers are saying about Okta, BMC, Zendesk and others in AI IT Support.
+
+Helped 910,956 peers since 2012
+
+## Review summaries and opinions
+
+We asked business professionals to review the solutions they use. Here are some excerpts of what they said:
+
+## Categories and Ranking
+
+Cogent Security Cogent: Age...
+
+Ranking in AI IT Support
+
+71st
+
+Average Rating
+
+0.0
+
+Number of Reviews
+
+0
+
+Ranking in other categories
+
+No ranking in other categories
+
+Tines
+
+Ranking in AI IT Support
+
+9th
+
+Average Rating
+
+8.2
+
+Reviews Sentiment
+
+7.2
+
+Number of Reviews
+
+8
+
+Ranking in other categories
+
+Threat Intelligence Platforms (TIP) (11th), Security Orchestration Automation and Response (SOAR) (6th), AI-Powered Security Automation (2nd)
+
+## Featured Reviews
+
+Use Cogent Security Cogent: Agentic AI for Exposure Management?
+
+SDR and Workflow Automation Specialist at a tech services
+
+SOURCE https://www.peerspot.com/products/cogent-security-cogent-agentic-ai-for-exposure-management-reviews [published None]
+Cogent Security Cogent: Agentic AI for Exposure Management reviews 2026
+
+# Cogent Security Cogent: Agentic AI for Exposure Management Reviews
+
+## What is Cogent Security Cogent: Agentic AI for Exposure Management?
+
+Cogent Security Cogent: Agentic AI for Exposure Management provides an innovative approach to managing digital exposure through AI-driven insights, allowing organizations to better assess and address potential vulnerabilities.
+
+AI IT Support
+
+August 2026
+
+Helped 909,647 peers since 2012
+
+Learn more about Cogent Security Cogent: Agentic AI for Exposure Management
+
+Cogent Security Cogent: Agentic AI for Exposure Management is designed to offer comprehensive exposure management capabilities using advanced AI algorithms. It helps identify potential security threats and vulnerabilities, enabling proactive measures to mitigate risks. With its analytic capabilities, Cogent Security Cogent: Agentic AI for Exposure Management can help enterprises better prepare and respond to threats, ensuring a secure digital environment.
+
+What are the most important features of Cogent Security Cogent: Agentic AI for Exposure Management?
+
+- AI-Powered Analytics: Utilizes machine learning to identify and analyze security threats efficiently.
+- Real-time Monitoring: Provides continuous scanning to detect vulnerabilities instantly.
+- Risk Assessment Tools: Offers comprehensive tools to evaluate
+
+SOURCE https://www.cogent.com/blog/what-we-learned-building-safe-agents-for-enterprise-security [published None]
+---
+title: "What We Learned Building Safe Agents for Enterprise Security - Blog | Cogent"
+description: After a year running AI agents against 11M+ vulnerabilities in production, six infrastructure lessons on what actually keeps agents safe.
+published: "Aug 8, 2026, 2:09 AM UTC"
+---
+
+[Blog](../blog)
+
+Engineering
+
+# What We Learned Building Safe Agents for Enterprise Security
+
+After a year running AI agents against 11M+ vulnerabilities in production, six infrastructure lessons on what actually keeps agents safe.
+
+Jan 23, 2026, 9 min read, Geng Sng, Co-Founder and CTO
+
+## The Problem: Agents in High-Stakes Environments
+
+An agent analyzes 11,470,000 vulnerabilities across your infrastructure and decides which to prioritize. It queries production databases, generates remediation plans, and creates tickets for your engineering teams.
+
+This is high-stakes automation. One mistake like querying the wrong tenant's data, leaking credentials in a ticket, or hallucinating a critical severity will have real consequences.
+
+Over the past year at Cogent, we've learned that **building safe agents isn't about better prompts**. It's about infrastructure: isolation boundaries, credential management, and failure containment.
+
+This post shares what we learned—the patterns that work, the ones that don't, and what we're still figuring out.
+
+## What We Actually Built
+
+Before diving into lessons, here's 
+
+SOURCE https://101aitools.com/tool/cogent-security [published None]
+Cogent Security Review & Pricing | 101 AI Tools
+
+# Cogent Security
+
+Agentic AI for Cybersecurity Vulnerability Management
+
+Cogent Security is an enterprise cybersecurity platform that deploys autonomous AI agents to investigate, prioritize, and remediate software vulnerabilities faster than human security teams can. It ingests findings from existing scanners and ticketing systems, correlates vulnerabilities to real business risk and asset ownership, and can execute remediation with configurable human-in-the-loop approval gates. The company also develops its own frontier cyber reasoning model, VR-1, purpose-built for autonomous security investigation.
+
+### Related guides
+
+### Features & details
+
+Full overview from our catalog (read-only reference).
+
+Category (short) Agentic AI for Cybersecurity Vulnerability Management
+
+Directory pricing Freemium
+
+Target audience Mid-to-large enterprises with mature security operations that are overwhelmed by vulnerability backlog and want agentic automation with strong governance controls. Not ideal for: small companies without dedicated security/IT operations teams, or organizations uncomfortable granting AI agents remediation-level access.
+
+Best for Mid-to-large enterprises with mature security operations that are overwhelmed by vulnerability backlog and want agentic automation with strong governance controls. Not ideal for: small companies w
+
+SOURCE https://www.securityweek.com/cogent-security-raises-42-million-for-ai-driven-vulnerability-management/ [published 2026-02-18T00:00:00.000Z]
+Cogent Security Raises $42 Million for AI-Driven Vulnerability Management - SecurityWeek
+
+### SECURITYWEEK NETWORK:
+
+### ICS:
+
+Connect with us
+
+Hi, what are you looking for?
+
+Cogent Security on Wednesday announced raising $42 million in Series A funding to develop autonomous AI agents for vulnerability remediation.
+
+The funding was led by Bain Capital Ventures, with participation from Greylock Partners, Definition, and executives from OpenAI, Abnormal Security, and Datadog.
+
+This brings Cogent Security’s total funding to $53 million and the proceeds will be used to accelerate product development.
+
+The San Francisco-based company provides an agentic AI platform that addresses challenges in vulnerability management by automating investigation, prioritization, and remediation tasks.
+
+The system connects and normalizes vulnerability data across environments, handling scanner noise and incorporating business context.
+
+It prioritizes risks based on environmental factors beyond standard severity scores, surfaces emerging threats, and generates tailored remediation plans integrated into existing workflows.
+
+Advertisement. Scroll to continue reading.
+
+“Security teams are drowning in coordination work: chasing down system owners, writing tickets, proving fixes happened. We built AI agents that handle that work end-to-end, so security teams can finally keep pace with attackers,” said Vine
+
+SOURCE https://siliconangle.com/2026/05/27/cogent-security-launches-autonomous-vulnerability-response-tools-ai-assisted-exploits-outpace-scanners/ [published 2026-05-27T00:00:00.000Z]
+Cogent Security launches autonomous vulnerability response tools as AI-assisted exploits outpace scanners - SiliconANGLE Skip to content
+
+SHARE
+
+UPDATED 09:00 EDT / MAY 27 2026
+
+SECURITY
+
+### Cogent Security launches autonomous vulnerability response tools as AI-assisted exploits outpace scanners
+
+Cogent Security Inc., a startup that employs agentic artificial intelligence for vulnerability management, today launched two new platform capabilities aimed at compressing enterprise vulnerability response from weeks to hours, as AI-assisted exploit development shrinks attacker timelines to a matter of minutes.
+
+The company introduced Zero Day Response and Autonomous Remediation, two features designed to close the operational gap b
+
+
+Emit ONLY account-entity claims for account:cogent-security now.
+Return {"account_claims":[...], "proposed_fields":[...]}.

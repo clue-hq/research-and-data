@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ContactEmailLookupSchema } from "./account-contact";
+import type { AccountRow } from "./create-account";
 
 export const BulkActionCapabilitySchema = z.object({
   allowed: z.boolean(),
@@ -18,11 +18,6 @@ export const AccountBulkCapabilitiesSchema = z.object({
   projects: z.array(BulkProjectOptionSchema).default([]),
 });
 
-export const ContactBulkCapabilitiesSchema = z.object({
-  lookupWorkEmails: BulkActionCapabilitySchema,
-  addToChat: BulkActionCapabilitySchema,
-});
-
 export const BulkActionOutcomeSchema = z.enum([
   "accepted",
   "completed",
@@ -34,6 +29,11 @@ export const BulkActionOutcomeSchema = z.enum([
   "failed_terminal",
 ]);
 
+/**
+ * The table has exactly two bulk actions — add to project and add to chat
+ * (founder ruling b) — so a bulk item carries no email-lookup payload. The
+ * single-contact lookup is its own contract in `contact-email-lookup.ts`.
+ */
 export const BulkActionResponseSchema = z.object({
   operationId: z.string(),
   state: z.enum(["pending", "completed", "partial", "failed"]),
@@ -49,7 +49,6 @@ export const BulkActionResponseSchema = z.object({
       subjectId: z.string(),
       outcome: BulkActionOutcomeSchema,
       reasonCode: z.string().nullable().default(null),
-      emailLookup: ContactEmailLookupSchema.nullable().default(null),
     }),
   ),
 });
@@ -59,6 +58,56 @@ export type AccountBulkCapabilities = z.infer<
 >;
 export type BulkActionResponse = z.infer<typeof BulkActionResponseSchema>;
 export type BulkProjectOption = z.infer<typeof BulkProjectOptionSchema>;
-export type ContactBulkCapabilities = z.infer<
-  typeof ContactBulkCapabilitiesSchema
->;
+
+/**
+ * The one-line result the operator reads after an add-to-project.
+ *
+ * It is assembled from the server's own counts — a partially applied action
+ * says so, and a zero-count clause is omitted rather than printed as "0".
+ */
+export function addToProjectNotice(
+  counts: BulkActionResponse["counts"],
+): string {
+  return [
+    counts.completed ? `${counts.completed} added` : null,
+    counts.unchanged ? `${counts.unchanged} already in project` : null,
+    counts.ineligible ? `${counts.ineligible} ineligible` : null,
+    counts.failed ? `${counts.failed} failed` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * Reflect a completed add-to-project onto the rows in hand.
+ *
+ * Only the subjects the server actually placed in the project (`completed`) or
+ * found already there (`unchanged`) gain the membership; a failed or ineligible
+ * subject is left exactly as it was. The table is not re-read, so this is the
+ * one place the visible rows learn about the change.
+ */
+export function reflectAddToProject(
+  accounts: readonly AccountRow[],
+  // The membership a row gains is an id and a name; the option's `status` is a
+  // picker concern. Taking only those two lets a screen that already knows its
+  // project (the project Target accounts tab) reflect without inventing one.
+  project: Pick<BulkProjectOption, "id" | "name">,
+  result: BulkActionResponse,
+): AccountRow[] {
+  const reflected = new Set(
+    result.items
+      .filter((item) => item.outcome === "completed" || item.outcome === "unchanged")
+      .map((item) => item.subjectId),
+  );
+
+  return accounts.map((account) =>
+    !reflected.has(account.id) ||
+    account.projects.some((membership) => membership.id === project.id)
+      ? account
+      : {
+          ...account,
+          projects: [...account.projects, { id: project.id, name: project.name }],
+          primaryProjectId: account.primaryProjectId ?? project.id,
+        },
+  );
+}

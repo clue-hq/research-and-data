@@ -227,6 +227,10 @@ class AgentRole(StrEnum):
     # one summarized outcome; a doorway, not a container). Deliberately absent from
     # C6_ACTIVE_PROFILE_VERSIONS until P3.3 registers the catalog profile.
     DESIGN = "design"
+    # ARV2 Track O (O4): the brand-level onboarding synthesis agent — writes ICP and persona
+    # documents from the onboarding research documents. One turn per onboarding run; never a
+    # conversation surface. Registered active in C6_ACTIVE_PROFILE_VERSIONS by O4.
+    ONBOARDING_SYNTHESIS = "onboarding_synthesis"
 
 
 class ResourceKind(StrEnum):
@@ -258,6 +262,10 @@ class DomainObjectRef(FrozenContract):
     ``note`` carries the human's own words about this one reference — the per-element annotation
     a marketer writes in the web editor. It is human intent about a target, never authority: it
     selects nothing and grants nothing. Optional, so every existing construction stays valid.
+    ``title`` is what the referenced object calls itself, carried so a surface can name the card it
+    draws without reading the object back. Optional, and defaulted, because most refs are the
+    model's own citations of things it only read — and because a finalization recorded before this
+    field existed must still validate when it is replayed.
     """
 
     workspace_id: StableId
@@ -265,6 +273,7 @@ class DomainObjectRef(FrozenContract):
     object_id: StableId
     version: int | None = Field(default=None, ge=1)
     note: str | None = Field(default=None, max_length=2_000)
+    title: str | None = Field(default=None, max_length=512)
 
 
 class AgentResourceRef(FrozenContract):

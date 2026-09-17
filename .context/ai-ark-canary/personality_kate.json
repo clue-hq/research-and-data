@@ -1,0 +1,5 @@
+{
+ "http": 429,
+ "elapsed": 0.4,
+ "body": "{\"message\":\"API rate limit exceeded\"}"
+}

@@ -11,7 +11,7 @@ from clue_agents import DomainObjectRef
 from clue_api.chat.composer_context import (
     MAX_DESIGN_REFERENCE_ASSETS,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     validated_context_refs,
 )
 from clue_api.chat.schemas import SubmitTurnRequest
@@ -52,9 +52,7 @@ def _install_ready_design(monkeypatch: pytest.MonkeyPatch) -> None:
     async def get_document(*_args: object, **_kwargs: object):
         return {"id": "doc_scene", "doc_kind": "scene", "current_version": 3, "scene": {}}
 
-    async def get_asset_records(
-        *_args: object, asset_ids: tuple[str, ...], **_kwargs: object
-    ):
+    async def get_asset_records(*_args: object, asset_ids: tuple[str, ...], **_kwargs: object):
         return {asset_id: _record(asset_id) for asset_id in asset_ids}
 
     async def read_design_blob(*_args: object, **_kwargs: object):
@@ -207,7 +205,7 @@ def test_durable_reference_history_joins_filename_and_thumbnail(
     monkeypatch.setattr(assets, "get_asset_records", get_asset_records)
 
     presentations = asyncio.run(
-        design_asset_ref_presentations(
+        context_ref_presentations(
             object(),  # type: ignore[arg-type]
             workspace_id=WORKSPACE_ID,
             refs=(SimpleNamespace(object_type="design_asset", object_id="asset_one"),),

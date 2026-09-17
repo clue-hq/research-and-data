@@ -105,6 +105,42 @@ export function designLegNotice({
   }
 }
 
+// Mirrors clue_api.provider_incidents.provider_display / reason_words — the same words the
+// research card and the empty overview section use, so one outage reads one way everywhere. A
+// provider or reason the tables do not know still renders as itself (true, if terse), like every
+// other unknown code here.
+const PROVIDER_DISPLAY: Readonly<Record<string, string>> = {
+  openrouter: "Model provider",
+  exa: "Discovery provider",
+  exa_websets: "Discovery provider",
+  live_http: "Website fetch",
+};
+const REASON_WORDS: Readonly<Record<string, string>> = {
+  credits_exhausted: "credits exhausted",
+  key_limit: "key limit exceeded",
+  auth_invalid: "API key rejected",
+  account_suspended: "account suspended",
+  rate_limited: "rate limited",
+  server_error: "server errors",
+  timeout: "timeouts",
+};
+
+/**
+ * `provider_refused:<provider>:<reason>` / `provider_failed:…` as a sentence, or `null` when the
+ * code is not one of those. A refusal is a decision no retry changes, so its copy waits for the
+ * provider to be restored; a failure is a fault that usually passes, so its copy says try again.
+ */
+function providerFailureNotice(code: string): string | null {
+  const match = /^provider_(refused|failed):([a-z0-9_.-]+):([a-z_]+)$/.exec(code);
+  if (!match) return null;
+  const [, head, provider, reason] = match;
+  const who = PROVIDER_DISPLAY[provider] ?? provider;
+  const what = REASON_WORDS[reason] ?? reason.replace(/_/g, " ");
+  return head === "refused"
+    ? `${who} refused: ${what}. Send another message once it is restored — Clue has been notified.`
+    : `${who} failing: ${what}. Send another message to try again — Clue has been notified.`;
+}
+
 /**
  * The typed leg refusals (`clue_api.design_leg_wiring`), each as a sentence.
  *
@@ -119,6 +155,8 @@ export function designLegNotice({
  */
 export function designTurnFailureNotice(code: string | null): string | null {
   if (code === null) return null;
+  const provider = providerFailureNotice(code);
+  if (provider !== null) return provider;
   switch (code) {
     case "design_leg_document_finalized":
       return "This page is finalized; revising it needs a new draft revision.";

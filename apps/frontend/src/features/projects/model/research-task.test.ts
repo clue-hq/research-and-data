@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ChatPartSnapshotSchema, type ChatPart, type ChatTaskPart } from "./chat-parts";
-import { aggregateResearchTasks, researchTaskModel } from "./research-task";
+import {
+  ChatPartSnapshotSchema,
+  type ChatPart,
+  type ChatTaskPart,
+  type PolledResearchTask,
+} from "./chat-parts";
+import type { TranscriptMessage } from "./chat-transcript";
+import {
+  aggregateResearchTasks,
+  researchTaskModel,
+  withPolledResearchTasks,
+} from "./research-task";
 
 /** Task aggregation: one run is one visible task at one account or five hundred. */
 
@@ -79,6 +89,40 @@ test("step rows only appear for non-zero counts", () => {
   );
 });
 
+test("subjects routed to review are their own count and still render as partial", () => {
+  const part = taskPart(
+    { state: "partial" },
+    { total: 3, completed: 1, partial: 1, running: 0, needs_review: 1 },
+  );
+  // The count is split on the wire...
+  assert.equal(part.counts.needsReview, 1);
+  assert.equal(part.counts.partial, 1);
+  // ...and nothing the human reads moves: settled counts it, and it shares the Partial row.
+  const task = researchTaskModel(part);
+  assert.equal(task.summary, "3 of 3 accounts settled");
+  assert.deepEqual(
+    task.steps.map((step) => [step.id, step.count]),
+    [
+      ["completed", 1],
+      ["partial", 2],
+    ],
+  );
+});
+
+test("a counts payload without needsReview still parses, as zero", () => {
+  const parsed = ChatPartSnapshotSchema.parse({
+    part_id: "task:r-old",
+    kind: "task",
+    revision: 1,
+    state: "partial",
+    title: "account research",
+    run_ref: { object_type: "entity_research_run", object_id: "r-old" },
+    counts: { total: 1, queued: 0, running: 0, completed: 0, partial: 1, blocked: 0, failed: 0 },
+  }) as ChatTaskPart;
+  assert.equal(parsed.counts.needsReview, 0);
+  assert.equal(researchTaskModel(parsed).summary, "1 of 1 account settled");
+});
+
 test("two snapshots of one run collapse to the highest revision", () => {
   const parts: ChatPart[] = [
     taskPart({ revision: 1, state: "queued" }, { queued: 2, running: 0 }),
@@ -99,6 +143,105 @@ test("two different runs stay two tasks", () => {
     }),
   ];
   assert.equal(aggregateResearchTasks(parts).length, 2);
+});
+
+// --- the C3 poll merge ----------------------------------------------------
+
+function assistantMessage(
+  turnId: string,
+  parts: readonly ChatPart[],
+): TranscriptMessage {
+  return {
+    id: `message:${turnId}`,
+    turnId,
+    role: "assistant",
+    createdAt: null,
+    body: null,
+    bodyUnavailableReason: null,
+    parts,
+    refs: [],
+    live: false,
+    state: "completed",
+    failureCode: null,
+    optimistic: false,
+  };
+}
+
+function polled(
+  turnId: string | null,
+  part: ChatTaskPart,
+): PolledResearchTask {
+  return { turnId, part, fieldProgress: null };
+}
+
+test("a fresher polled snapshot replaces the stream snapshot for the same run", () => {
+  const streamed = taskPart({ revision: 2, state: "deep_research" });
+  const poll = taskPart(
+    { revision: 5, state: "partial" },
+    { total: 2, running: 0, completed: 1, partial: 1 },
+  );
+  const merged = withPolledResearchTasks(
+    [assistantMessage("t1", [streamed])],
+    [polled("t1", poll)],
+  );
+  const tasks = aggregateResearchTasks(merged[0].parts);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].activity, "partial");
+  assert.equal(tasks[0].summary, "2 of 2 accounts settled");
+});
+
+test("a lower-revision poll result never regresses the card", () => {
+  const streamed = taskPart(
+    { revision: 4, state: "partial" },
+    { total: 2, running: 0, completed: 1, partial: 1 },
+  );
+  const stale = taskPart({ revision: 3, state: "deep_research" });
+  const merged = withPolledResearchTasks(
+    [assistantMessage("t1", [streamed])],
+    [polled("t1", stale)],
+  );
+  const tasks = aggregateResearchTasks(merged[0].parts);
+  assert.equal(tasks[0].activity, "partial");
+});
+
+test("a polled task re-materializes the card on its own turn's message after a cold load", () => {
+  // The turn fell outside the rehydration window: its message survived the
+  // reload, its stream projection did not. The durable poll restores the card
+  // to exactly the message whose turn launched the run.
+  const merged = withPolledResearchTasks(
+    [assistantMessage("t-old", []), assistantMessage("t-new", [])],
+    [polled("t-old", taskPart({ revision: 6, state: "synthesizing" }))],
+  );
+  assert.equal(merged[0].parts.length, 1);
+  assert.equal(merged[0].parts[0].kind, "task");
+  assert.equal(merged[1].parts.length, 0);
+});
+
+test("a run the transcript already shows is never appended a second time", () => {
+  // The same run's card lives on its launch turn's message; the poll must
+  // advance that card in place, not add a sibling.
+  const streamed = taskPart({ revision: 1, state: "queued" }, { queued: 2, running: 0 });
+  const merged = withPolledResearchTasks(
+    [assistantMessage("t1", [streamed]), assistantMessage("t2", [])],
+    [polled("t1", taskPart({ revision: 2, state: "deep_research" }))],
+  );
+  assert.equal(merged[0].parts.length, 1);
+  assert.equal(merged[1].parts.length, 0);
+  assert.equal(aggregateResearchTasks(merged[0].parts)[0].activity, "deep_research");
+});
+
+test("a polled task naming no visible turn is dropped, not misplaced", () => {
+  const messages = [assistantMessage("t1", [])];
+  const merged = withPolledResearchTasks(messages, [
+    polled("t-unknown", taskPart({ revision: 2 })),
+    polled(null, taskPart({ revision: 2, part_id: "task:r9", run_ref: { object_id: "r9" } })),
+  ]);
+  assert.equal(merged[0].parts.length, 0);
+});
+
+test("an empty poll returns the transcript untouched, by reference", () => {
+  const messages = [assistantMessage("t1", [taskPart()])];
+  assert.equal(withPolledResearchTasks(messages, []), messages);
 });
 
 test("exception refs are surfaced without breaking the single-task rule", () => {

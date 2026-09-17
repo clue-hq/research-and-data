@@ -18,6 +18,7 @@ from clue_db import (
     DATABASE_URL_ENV,
     DEFAULT_DATABASE_URL,
     connection,
+    create_engine,
     database_url,
     db_lifespan,
     get_engine,
@@ -48,6 +49,17 @@ def test_get_engine_raises_without_active_lifespan() -> None:
         get_engine()
     with pytest.raises(RuntimeError):
         get_pool()
+
+
+def test_engines_pre_ping_connections_before_pool_reuse() -> None:
+    async def _run() -> None:
+        engine = create_engine()
+        try:
+            assert engine.sync_engine.pool._pre_ping is True  # type: ignore[attr-defined]
+        finally:
+            await engine.dispose()
+
+    run_async(_run())
 
 
 # --- lifespan + pool (DB required) ------------------------------------------

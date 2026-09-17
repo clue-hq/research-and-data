@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 __all__ = [
     "COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2",
+    "COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3",
     "LIST_PRODUCT_KNOWLEDGE_ADDRESS",
     "INSPECT_PRODUCT_CLAIM_ADDRESS",
     "MODEL_VISIBLE_LIST_PRODUCT_KNOWLEDGE_FIELDS",
@@ -31,6 +32,11 @@ __all__ = [
 
 PRODUCT_KNOWLEDGE_CONSUMPTION_DECISION_VERSION = "product-knowledge-consumption-s50-v1"
 COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V2 = "company-and-selected-product-v2"
+# V2 remains readable for immutable historical receipts. Founder ruling 2026-08-19 supersedes
+# its ``selected_without_product_knowledge`` state for every new turn: selecting a product now
+# bootstraps an empty Product-KB, and V3 makes that lineage mandatory whenever product identity is
+# present on the receipt.
+COMPANY_AND_SELECTED_PRODUCT_SCOPE_POLICY_V3 = "company-and-selected-product-required-v3"
 
 LIST_PRODUCT_KNOWLEDGE_ADDRESS = "list_product_knowledge@1"
 INSPECT_PRODUCT_CLAIM_ADDRESS = "inspect_product_claim@1"

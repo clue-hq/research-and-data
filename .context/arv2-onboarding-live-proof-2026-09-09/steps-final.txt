@@ -1,0 +1,31 @@
+       kind       |                 subj                 |  status   | start_s | done_s | cost_usd | failure_code 
+------------------+--------------------------------------+-----------+---------+--------+----------+--------------
+ overview         |                                      | completed |       1 |    159 | 0.500000 | 
+ lineup           |                                      | completed |       1 |     72 | 0.057000 | 
+ reviews          |                                      | completed |       1 |     81 | 0.100000 | 
+ catalog_sync     |                                      | completed |      72 |     72 | 0.000000 | 
+ synthesis        |                                      | completed |     159 |    457 | 0.000000 | 
+ product_research | prd_ba57f5cf330e5ef2abd03230e418f42f | completed |     159 |    229 | 0.100000 | 
+ product_research | prd_752c98ce887853d0bb37079f60791f7e | completed |     159 |    246 | 0.100000 | 
+ product_research | prd_4748265f9adf596e9ab9b3152b7c8bbd | completed |     159 |    198 | 0.100000 | 
+ product_research | prd_22844aa882dd57aa9af778161b1e8743 | completed |     159 |    269 | 0.100000 | 
+ product_research | prd_ca05ef72bd8f543ea24057991163868a | completed |     159 |    194 | 0.100000 | 
+ product_research | prd_cf33cd1d773f5cc7800b02184f08d77e | completed |     159 |    263 | 0.100000 | 
+ product_research | prd_25726ed090465bc3ba8f820bbfe494fd | completed |     194 |    256 | 0.100000 | 
+ product_research | prd_b63d22b4c300589b943a6154ac4c2bd1 | completed |     198 |    260 | 0.100000 | 
+ product_research | prd_b612d56fcab753eb87061399609da611 | completed |     229 |    321 | 0.100000 | 
+ product_research | prd_495ce225ac975f87b8b21bf5a49fc052 | completed |     246 |    321 | 0.100000 | 
+ product_research | prd_22117f5a639159aaa42257d19f563459 | completed |     256 |    335 | 0.100000 | 
+ product_research | prd_e7afd9832c1c55938bc89886c5425309 | completed |     260 |    339 | 0.100000 | 
+ product_research | prd_c9a21ac0a89055a597af62fe520044b6 | completed |     263 |    294 | 0.100000 | 
+ product_research | prd_7ef553ccb4945bf78829caa500a6559e | completed |     269 |    308 | 0.100000 | 
+ product_research | prd_8fe63e318fdf51a69ece341ef08f0215 | completed |     294 |    337 | 0.100000 | 
+ product_research | prd_69da200e7b845cd89089ad1e9d943928 | completed |     308 |    409 | 0.100000 | 
+ product_research | prd_55e180ff60e25505977a26d477321f68 | completed |     321 |    434 | 0.100000 | 
+ product_research | prd_0163733e485653cc8fbbb3e48e18656c | completed |     321 |    410 | 0.100000 | 
+ product_research | prd_f58ab11b68db542289d29bb1a300304e | completed |     335 |    418 | 0.100000 | 
+ persona          | athenahealth-specialty-organizations | completed |     457 |    692 | 0.075000 | 
+ persona          | hospital-affiliated-clinics          | completed |     457 |    734 | 0.075000 | 
+ persona          | independent-specialty-groups         | completed |     457 |    734 | 0.075000 | 
+(27 rows)
+

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import time
-from collections.abc import AsyncIterator, Iterator, Sequence
-from decimal import Decimal
-from typing import Any, cast
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+from typing import Any, Protocol, cast, runtime_checkable
 
+import httpx
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -19,19 +22,39 @@ from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
+from openai import APIConnectionError
 from pydantic import ConfigDict, SecretStr, model_validator
 
 from clue_config.gateway import GatewayConfig
 from clue_core.gateway import TokenUsage
+from clue_gateway.metadata import (
+    ANSWERING_MODEL_KEY,
+    COST_CENTS_KEY,
+    COST_SOURCE_KEY,
+    REQUESTED_MODEL_KEY,
+    ROLE_KEY,
+    CostSource,
+)
+from clue_gateway.openrouter_chat import OpenRouterChatModel
 from clue_gateway.tracing import record_model_call
+from clue_obs import get_logger
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
 
 __all__ = [
+    "ANSWERING_MODEL_KEY",
+    "COST_CENTS_KEY",
+    "COST_SOURCE_KEY",
+    "CostSource",
+    "GenerationCostLookup",
     "GovernedAgentChatModel",
     "OpenRouterAgentModelProvider",
+    "OpenRouterGenerationCost",
     "provider_compatible_tool_schema",
+    "transient_upstream_failure",
     "unsupported_schema_pattern",
 ]
+
+log = get_logger("clue_gateway.agent_model")
 
 # The OpenAI/OpenRouter Responses JSON-schema subset rejects lookaround and backreferences; a
 # single offending tool schema fails the whole request (all tools are sent together) with
@@ -74,35 +97,16 @@ def _without_unsupported_patterns(node: Any) -> Any:
     return node
 
 
-# Transient provider failures worth retrying on the SAME model before falling back or
-# raising. Found live twice on 2026-09-04 (design solo runs 2 and 3): OpenRouter returned
-# ``Auth context expired`` (code 502) on a 136s and then a 236s grok-4.6 generation — once
-# on /responses, once on chat-completions, so it is the long-generation window, not the
-# endpoint — and each time the single failed call discarded a 6- and a 35-minute web turn,
-# because a web turn persists once at the end and had no retry at the model call.
-# The ChatOpenAI-level ``max_retries`` never sees these: they arrive as error payloads in
-# an otherwise successful HTTP exchange. A retried generation simply starts over.
-_TRANSIENT_RETRIES = 2
-_TRANSIENT_MARKERS = ("auth context expired", "overloaded", "timed out", "timeout")
-_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504, 529}
-
-
-def _is_transient_provider_error(exc: BaseException) -> bool:
-    """Is this the kind of upstream failure a same-model retry can reasonably recover from?"""
-    status = getattr(exc, "status_code", None)
-    if isinstance(status, int) and status in _TRANSIENT_STATUS:
-        return True
-    text = str(exc).lower()
-    if any(marker in text for marker in _TRANSIENT_MARKERS):
-        return True
-    # The error-payload-in-a-200 shape: ValueError("{'message': ..., 'code': 502}").
-    return any(f"'code': {code}" in text or f'"code": {code}' in text for code in _TRANSIENT_STATUS)
-
-
-_REQUESTED_MODEL_KEY = "clue_requested_model"
-_ANSWERING_MODEL_KEY = "clue_answering_model"
-_COST_CENTS_KEY = "clue_cost_cents"
-_ROLE_KEY = "clue_role"
+# The response-metadata keys this module stamps are PUBLIC and live in the dependency-free
+# ``clue_gateway.metadata`` leaf: a caller that only wants to read what a model call cost must be
+# able to import them without reaching the vendor SDK this package exists to contain (Rule 4b).
+# The leading-underscore aliases keep this module's own body — and the tests that reach into it —
+# spelled the way they always were.
+_REQUESTED_MODEL_KEY = REQUESTED_MODEL_KEY
+_ROLE_KEY = ROLE_KEY
+_ANSWERING_MODEL_KEY = ANSWERING_MODEL_KEY
+_COST_CENTS_KEY = COST_CENTS_KEY
+_COST_SOURCE_KEY = COST_SOURCE_KEY
 
 
 def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
@@ -120,8 +124,281 @@ def _catalog_input_modalities(model_entry: dict[str, Any]) -> list[str] | None:
     return None
 
 
+# --- bounded transient-failure retry ---------------------------------------------------------
+#
+# A live entity-research job was suspended because OpenRouter answered HTTP 200 with an in-body
+# ``{"error": {"code": "server_error"}}``.  ``langchain_openai`` turns that into a bare
+# ``ValueError(ResponseError(...))`` while *parsing* an otherwise successful response
+# (``chat_models/base.py::_construct_lc_result_from_responses_api``), so the OpenAI SDK's own
+# ``max_retries`` — which only sees transport/status failures — never applies.  The error escaped
+# this wrapper, killed the agent graph, and the supervisor contained the job.  A momentary upstream
+# blip is not a job-integrity failure, so it is retried here, at the single provider boundary every
+# agent lane already builds its model through.
+#
+# An attempt is one pass over the whole candidate sequence (primary, then the configured fallback),
+# so the existing contract — a failing primary reaches the fallback immediately — is unchanged; only
+# a round in which the LAST candidate also failed transiently is retried.
+#
+# The bound is a MODULE CONSTANT, not a ``Settings`` knob, on purpose: it is a provider-boundary
+# safety floor rather than per-deployment policy, and the effective spend ceiling is already bounded
+# by ``GatewayConfig.max_retries`` (SDK transport retries) times this bound times the candidate
+# count.  Promote it to config only if a deployment ever needs to tune it.
+_MAX_TRANSIENT_ATTEMPTS = 3
+# Seconds to wait before attempt 2 and attempt 3.  Deliberately short: the agent turn is holding a
+# fleet lease whose heartbeat must keep landing.
+_TRANSIENT_BACKOFF_S = (0.5, 1.5)
+
+# Responses-API in-body error codes that describe a momentary upstream condition.  Everything else
+# the enum carries (``invalid_prompt``, the image/policy codes) is a deterministic rejection that
+# retrying can only repeat, so it keeps today's loud behaviour.
+_TRANSIENT_RESPONSE_ERROR_CODES = frozenset(
+    {"server_error", "rate_limit_exceeded", "vector_store_timeout"}
+)
+# 429 = rate limited, 408/409 = request timeout / conflict, ≥500 = upstream fault.
+_TRANSIENT_STATUS_CODES = frozenset({408, 409, 429})
+
+
+def transient_upstream_failure(error: BaseException) -> bool:
+    """Report whether ``error`` is a momentary upstream failure worth one more attempt.
+
+    Three shapes, all observed from OpenRouter: a transport fault or timeout, a retryable HTTP
+    status, and — the shape that suspended a live job — a successful HTTP response carrying an
+    in-body Responses ``error`` object that ``langchain_openai`` re-raises as a plain
+    ``ValueError``.  The error is classified as raised; no ``__cause__`` chain is walked, since
+    this runs directly around the provider call, where nothing has wrapped it yet.
+    """
+
+    if isinstance(error, APIConnectionError | httpx.TransportError):
+        return True
+    code = next(
+        (found for found in map(_response_error_code, error.args) if found is not None),
+        None,
+    )
+    if code is not None:
+        # An in-body Responses error is the authoritative verdict, and must be read BEFORE any
+        # status: ``langchain_openai`` re-raises it with the raw HTTP response attached, and that
+        # response is the 200 the failing body arrived in.
+        return code in _TRANSIENT_RESPONSE_ERROR_CODES
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    return isinstance(status, int) and (status >= 500 or status in _TRANSIENT_STATUS_CODES)
+
+
+def _response_error_code(argument: object) -> str | None:
+    """The Responses ``error.code`` an exception argument carries, if it is one."""
+
+    if isinstance(argument, Mapping):
+        code = argument.get("code")
+    else:
+        code = getattr(argument, "code", None)
+    return code if isinstance(code, str) else None
+
+
+def _transient_retry_backoff_s(error: Exception, attempt: int) -> float | None:
+    """Backoff before the next attempt, or ``None`` when this failure must surface as-is."""
+
+    if attempt >= _MAX_TRANSIENT_ATTEMPTS or not transient_upstream_failure(error):
+        return None
+    return _TRANSIENT_BACKOFF_S[attempt - 1]
+
+
+# --- OpenRouter's own meter for a completed generation ----------------------------------------
+#
+# Founder ruling, 2026-09-08: a governed model call's cost is OpenRouter's number and nobody
+# else's. ``usage.include`` puts it on the response, but only the chat-completions path carries
+# the provider's extra ``cost`` key back through ``langchain_openai`` — the streaming and Responses
+# paths keep a fixed key set and drop it. Rather than fall back to rates we would have to keep
+# current, those paths ask OpenRouter what the generation cost.
+#
+# The lookup is deliberately small and deliberately unimportant: it is bounded, it retries once on
+# an upstream fault, and it NEVER raises or delays a completed call for long. A failure is an
+# honest ``unpriced`` plus a log line naming the generation, which is enough for a later
+# reconciliation pass to fetch the number the meter still holds.
+
+#: Where OpenRouter publishes a finished generation's true cost.
+_GENERATION_PATH = "/generation"
+#: The ceiling on one lookup. Small on purpose: the call it prices has already been paid for, and
+#: the caller is holding a fleet lease.
+_COST_LOOKUP_TIMEOUT_S = 5.0
+#: Exactly one retry, for the two failures that are plausibly momentary: an upstream fault, and a
+#: 404. A 404 is the *expected* live shape for a job's last round — the lookup runs the instant the
+#: completion returns and OpenRouter's meter can lag the response — so it is re-asked once rather
+#: than written off. Everything else (a malformed body, an auth failure) will answer the same way
+#: twice and is not worth a second call.
+_COST_LOOKUP_ATTEMPTS = 2
+#: How long to wait before re-asking about a generation the meter had not recorded yet. Long
+#: enough for the lag, short enough that the worst case (timeout + lag + timeout) stays well
+#: inside the fleet lease the caller is holding.
+_METER_LAG_BACKOFF_S = 1.0
+#: Ids LangChain mints for its own runs. They are not generation ids and must never be looked up.
+_LANGCHAIN_ID_PREFIXES = ("lc_run", "run-")
+
+
+@runtime_checkable
+class GenerationCostLookup(Protocol):
+    """Asks the provider what one finished generation cost, in cents. ``None`` = it would not say.
+
+    A protocol rather than a concrete type so a caller can inject a recorded double (and so the
+    governed model stays testable without a network), and so a provider that meters differently
+    can be substituted without touching the model wrapper.
+    """
+
+    def cost_cents(self, generation_id: str) -> Decimal | None: ...
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None: ...
+
+
+@dataclass(frozen=True)
+class _Retry:
+    """Ask again, after ``after_s`` seconds. Distinguishes "attempt again" from a real ``None``."""
+
+    after_s: float
+
+
+class OpenRouterGenerationCost:
+    """``GET {base_url}/generation?id=…`` → ``data.total_cost`` (USD) as cents.
+
+    Bounded and silent by construction: one short request, one retry (immediately on an upstream
+    fault, after a second on a 404 — the meter can lag the response it prices), every failure
+    swallowed into ``None`` after a ``gateway.cost_lookup_failed`` log that names the generation.
+    Pricing a call must never be able to fail the call.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: SecretStr,
+        timeout_s: float = _COST_LOOKUP_TIMEOUT_S,
+        # Overridable only so a test can assert the retry without really waiting a second for it.
+        # Production never passes it; the ceiling above is what bounds this in anger.
+        meter_lag_backoff_s: float = _METER_LAG_BACKOFF_S,
+        http_client: Any | None = None,
+        http_async_client: Any | None = None,
+    ) -> None:
+        self._url = f"{base_url.rstrip('/')}{_GENERATION_PATH}"
+        self._api_key = api_key
+        self._timeout_s = min(timeout_s, _COST_LOOKUP_TIMEOUT_S)
+        self._meter_lag_backoff_s = meter_lag_backoff_s
+        self._http_client = http_client
+        self._http_async_client = http_async_client
+
+    def cost_cents(self, generation_id: str) -> Decimal | None:
+        for attempt in range(1, _COST_LOOKUP_ATTEMPTS + 1):
+            try:
+                if self._http_client is not None:
+                    response = self._http_client.get(
+                        self._url, params={"id": generation_id}, headers=self._headers()
+                    )
+                else:
+                    response = httpx.get(
+                        self._url,
+                        params={"id": generation_id},
+                        headers=self._headers(),
+                        timeout=self._timeout_s,
+                    )
+            except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
+                return self._gave_up(generation_id, reason=repr(error))
+            verdict = self._retry_or_result(response, generation_id, attempt=attempt)
+            if not isinstance(verdict, _Retry):
+                return verdict
+            if verdict.after_s:
+                time.sleep(verdict.after_s)
+        return None  # pragma: no cover - the loop returns on its last attempt
+
+    async def acost_cents(self, generation_id: str) -> Decimal | None:
+        for attempt in range(1, _COST_LOOKUP_ATTEMPTS + 1):
+            try:
+                if self._http_async_client is not None:
+                    response = await self._http_async_client.get(
+                        self._url, params={"id": generation_id}, headers=self._headers()
+                    )
+                else:
+                    async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                        response = await client.get(
+                            self._url, params={"id": generation_id}, headers=self._headers()
+                        )
+            except Exception as error:  # noqa: BLE001 - pricing never fails the call it prices
+                return self._gave_up(generation_id, reason=repr(error))
+            verdict = self._retry_or_result(response, generation_id, attempt=attempt)
+            if not isinstance(verdict, _Retry):
+                return verdict
+            if verdict.after_s:
+                # Awaited, not slept: this runs on the loop the agent graph is driving.
+                await asyncio.sleep(verdict.after_s)
+        return None  # pragma: no cover - the loop returns on its last attempt
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key.get_secret_value()}"}
+
+    def _retry_or_result(
+        self, response: Any, generation_id: str, *, attempt: int
+    ) -> Decimal | None | _Retry:
+        """One attempt's verdict: a cost, an honest ``None``, or "ask again after N seconds"."""
+        status = int(getattr(response, "status_code", 0))
+        if attempt < _COST_LOOKUP_ATTEMPTS:
+            if status >= 500:
+                # An upstream fault: nothing to wait for, the next replica may just answer.
+                return _Retry(0.0)
+            if status == 404:
+                # The meter has not recorded this generation yet. Give it a moment — this is the
+                # ordinary shape for the last round of a job, where the lookup runs immediately
+                # after the completion returns.
+                return _Retry(self._meter_lag_backoff_s)
+        if status != 200:
+            return self._gave_up(generation_id, reason=f"http_{status}")
+        try:
+            payload = response.json()
+        except Exception as error:  # noqa: BLE001 - a malformed body is a failed lookup
+            return self._gave_up(generation_id, reason=repr(error))
+        total = (payload or {}).get("data", {}).get("total_cost")
+        if total is None or isinstance(total, bool) or not isinstance(total, int | float | str):
+            return self._gave_up(generation_id, reason="no_total_cost")
+        try:
+            return Decimal(str(total)) * 100
+        except InvalidOperation:
+            return self._gave_up(generation_id, reason="unparseable_total_cost")
+
+    @staticmethod
+    def _gave_up(generation_id: str, *, reason: str) -> None:
+        # The generation id is logged on purpose: OpenRouter keeps the number, so a later
+        # reconciliation can fetch what this call could not.
+        log.warning("gateway.cost_lookup_failed", generation_id=generation_id, reason=reason)
+        return None
+
+
+def _generation_id(message: BaseMessage | None, payload: Mapping[str, Any] | None) -> str | None:
+    """The provider's id for this generation (``chatcmpl-…`` / ``gen-…``), or ``None``.
+
+    Read from the same two places the served model is read from — the result's ``llm_output`` and
+    the message's ``response_metadata`` — and, failing both, from the message id, which
+    ``langchain_openai`` sets from the response on some paths. An id LangChain minted for its own
+    run is explicitly refused: looking one of those up would be asking OpenRouter about a call it
+    has never heard of.
+    """
+    candidates = [
+        (payload or {}).get("id"),
+        (message.response_metadata if message is not None else {}).get("id"),
+        getattr(message, "id", None),
+    ]
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        cleaned = candidate.strip()
+        if cleaned and not cleaned.startswith(_LANGCHAIN_ID_PREFIXES):
+            return cleaned
+    return None
+
+
 class GovernedAgentChatModel(BaseChatModel):
-    """Provider model(s) wrapped with fallback, usage/cost metadata, tracing, and tool binding."""
+    """Provider model(s) wrapped with fallback, bounded transient retry, usage/cost metadata,
+    tracing, and tool binding.
+
+    Retries live *inside* one call: a caller (and every journal that brackets that call, such as the
+    entity-research runtime's ``model_started``/``model_completed`` pair) observes exactly one model
+    call regardless of how many attempts it took.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -133,6 +410,11 @@ class GovernedAgentChatModel(BaseChatModel):
     # attribution mechanism — LangChain callbacks and usage records are per-instance).
     # None = an unlabelled platform model; nothing changes for existing call sites.
     attribution_role: str | None = None
+    # OpenRouter's meter for a generation whose response did not carry its own cost (the streaming
+    # and Responses paths). ``None`` = do not ask — every such call reports ``unpriced`` unless the
+    # deployment happens to list the model in ``GatewayConfig.prices``. The provider injects the
+    # real one; a hand-built model (tests, doubles) gets the honest silence.
+    cost_lookup: GenerationCostLookup | None = None
 
     @model_validator(mode="after")
     def _validate_candidates(self) -> GovernedAgentChatModel:
@@ -192,7 +474,12 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost = self._annotate(message, served_model=served_model)
+            usage, served, cost, source = self._annotate(
+                message, served_model=served_model, usage_payload=result.llm_output
+            )
+            cost, _source = self._priced(
+                message, served=served, cost=cost, source=source, usage_payload=result.llm_output
+            )
             record_model_call(
                 span=span,
                 call_kind="agent_completion",
@@ -225,7 +512,12 @@ class GovernedAgentChatModel(BaseChatModel):
                 **kwargs,
             )
             message = result.generations[0].message
-            usage, served, cost = self._annotate(message, served_model=served_model)
+            usage, served, cost, source = self._annotate(
+                message, served_model=served_model, usage_payload=result.llm_output
+            )
+            cost, _source = await self._apriced(
+                message, served=served, cost=cost, source=source, usage_payload=result.llm_output
+            )
             record_model_call(
                 span=span,
                 call_kind="agent_completion",
@@ -265,7 +557,9 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost = self._usage_and_cost(usage_message or last_message)
+            final = usage_message or last_message
+            usage, served, cost, source = self._usage_and_cost(final)
+            cost, _source = self._priced(final, served=served, cost=cost, source=source)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -304,7 +598,9 @@ class GovernedAgentChatModel(BaseChatModel):
                         usage_message = chunk.message
                         self._annotate(chunk.message)
                 yield chunk
-            usage, served, cost = self._usage_and_cost(usage_message or last_message)
+            final = usage_message or last_message
+            usage, served, cost, source = self._usage_and_cost(final)
+            cost, _source = await self._apriced(final, served=served, cost=cost, source=source)
             record_model_call(
                 span=span,
                 call_kind="agent_stream",
@@ -325,8 +621,10 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            for attempt in range(_TRANSIENT_RETRIES + 1):
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
                 try:
                     result = model._generate(
                         messages,
@@ -336,22 +634,16 @@ class GovernedAgentChatModel(BaseChatModel):
                     )
                     return result, _served_model_from_result(result, fallback=model_id)
                 except Exception as exc:
-                    # Retry the SAME model only when there is no further candidate to fall
-                    # back to: a configured fallback stays the cheaper, faster answer to a
-                    # transient primary failure, exactly as before.
-                    last_candidate = index == len(self.models) - 1
-                    if (
-                        last_candidate
-                        and attempt < _TRANSIENT_RETRIES
-                        and _is_transient_provider_error(exc)
-                    ):
-                        continue
                     first_error = first_error or exc
-                    if index == len(self.models) - 1:
-                        if first_error is not exc:
-                            raise exc from first_error
-                        raise
-                    break
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        break
+                    if first_error is not exc:
+                        raise exc from first_error
+                    raise
         raise AssertionError("governed agent model requires at least one provider model")
 
     async def _agenerate_with_fallback(
@@ -363,8 +655,10 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> tuple[ChatResult, str]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            for attempt in range(_TRANSIENT_RETRIES + 1):
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
                 try:
                     result = await model._agenerate(
                         messages,
@@ -374,22 +668,16 @@ class GovernedAgentChatModel(BaseChatModel):
                     )
                     return result, _served_model_from_result(result, fallback=model_id)
                 except Exception as exc:
-                    # Retry the SAME model only when there is no further candidate to fall
-                    # back to: a configured fallback stays the cheaper, faster answer to a
-                    # transient primary failure, exactly as before.
-                    last_candidate = index == len(self.models) - 1
-                    if (
-                        last_candidate
-                        and attempt < _TRANSIENT_RETRIES
-                        and _is_transient_provider_error(exc)
-                    ):
-                        continue
                     first_error = first_error or exc
-                    if index == len(self.models) - 1:
-                        if first_error is not exc:
-                            raise exc from first_error
-                        raise
-                    break
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        await asyncio.sleep(backoff)
+                        break
+                    if first_error is not exc:
+                        raise exc from first_error
+                    raise
         raise AssertionError("governed agent model requires at least one provider model")
 
     def _stream_with_fallback(
@@ -401,24 +689,41 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            yielded = False
-            try:
-                for chunk in model._stream(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                ):
-                    yielded = True
-                    _stamp_answering_model(chunk.message, fallback=model_id)
-                    yield chunk
-                return
-            except Exception as exc:
-                if yielded:
-                    raise
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                yielded = False
+                pending: ChatGenerationChunk | None = None
+                try:
+                    for chunk in model._stream(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
+                        yielded = True
+                        yield pending
+                    return
+                except Exception as exc:
+                    # A partially consumed stream cannot be replayed: the consumer already holds
+                    # chunks, so another attempt would duplicate them.  Surface it, as today.
+                    if yielded:
+                        raise
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        time.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
@@ -432,24 +737,41 @@ class GovernedAgentChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         first_error: Exception | None = None
-        for index, (model, model_id) in enumerate(zip(self.models, self.model_ids, strict=True)):
-            yielded = False
-            try:
-                async for chunk in model._astream(
-                    messages,
-                    stop=stop,
-                    run_manager=run_manager,
-                    **kwargs,
-                ):
-                    yielded = True
-                    _stamp_answering_model(chunk.message, fallback=model_id)
-                    yield chunk
-                return
-            except Exception as exc:
-                if yielded:
-                    raise
-                first_error = first_error or exc
-                if index == len(self.models) - 1:
+        for attempt in range(1, _MAX_TRANSIENT_ATTEMPTS + 1):
+            for index, (model, model_id) in enumerate(
+                zip(self.models, self.model_ids, strict=True)
+            ):
+                yielded = False
+                pending: ChatGenerationChunk | None = None
+                try:
+                    async for chunk in model._astream(
+                        messages,
+                        stop=stop,
+                        run_manager=run_manager,
+                        **kwargs,
+                    ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
+                        yielded = True
+                        yield pending
+                    return
+                except Exception as exc:
+                    # A partially consumed stream cannot be replayed: the consumer already holds
+                    # chunks, so another attempt would duplicate them.  Surface it, as today.
+                    if yielded:
+                        raise
+                    first_error = first_error or exc
+                    if index != len(self.models) - 1:
+                        continue
+                    backoff = _transient_retry_backoff_s(exc, attempt)
+                    if backoff is not None:
+                        await asyncio.sleep(backoff)
+                        break
                     if first_error is not exc:
                         raise exc from first_error
                     raise
@@ -459,23 +781,102 @@ class GovernedAgentChatModel(BaseChatModel):
         message: AIMessage | AIMessageChunk | BaseMessage,
         *,
         served_model: str | None = None,
-    ) -> tuple[TokenUsage, str, Decimal]:
-        usage, served, cost = self._usage_and_cost(message, served_model=served_model)
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[TokenUsage, str, Decimal, CostSource]:
+        usage, served, cost, source = self._usage_and_cost(
+            message, served_model=served_model, usage_payload=usage_payload
+        )
+        self._stamp(message, served=served, cost=cost, source=source)
+        return usage, served, cost, source
+
+    def _stamp(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+    ) -> None:
+        """Write this call's attribution onto the message. Idempotent — re-stamping after the
+        generation lookup replaces the cost and its label, and nothing else."""
         message.response_metadata = {
             **message.response_metadata,
             _REQUESTED_MODEL_KEY: self.requested_model,
             _ANSWERING_MODEL_KEY: served,
             _COST_CENTS_KEY: str(cost),
+            _COST_SOURCE_KEY: source,
             **({_ROLE_KEY: self.attribution_role} if self.attribution_role else {}),
         }
-        return usage, served, cost
+
+    def _needs_lookup(
+        self, source: CostSource, message: BaseMessage | None, payload: Mapping[str, Any] | None
+    ) -> str | None:
+        """The generation id to ask about, or ``None`` when nothing should be asked.
+
+        Lazy by construction: a response that already carried its own cost is never looked up, and
+        neither is one for which there is no lookup or no provider id to ask about.
+        """
+        if source == "metered" or self.cost_lookup is None or message is None:
+            return None
+        return _generation_id(message, payload)
+
+    def _priced(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage | None,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[Decimal, CostSource]:
+        """``cost``/``source`` after asking OpenRouter, when the response did not say (sync)."""
+        generation_id = self._needs_lookup(source, message, usage_payload)
+        if generation_id is None or self.cost_lookup is None:
+            return cost, source
+        looked_up = self.cost_lookup.cost_cents(generation_id)
+        if looked_up is None:
+            # The meter would not answer: keep whatever the price table said (``estimate``) or the
+            # honest ``unpriced`` zero. Never a number we made up to fill the hole.
+            return cost, source
+        if message is not None:
+            self._stamp(message, served=served, cost=looked_up, source="metered")
+        return looked_up, "metered"
+
+    async def _apriced(
+        self,
+        message: AIMessage | AIMessageChunk | BaseMessage | None,
+        *,
+        served: str,
+        cost: Decimal,
+        source: CostSource,
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[Decimal, CostSource]:
+        """The async twin of :meth:`_priced` — the lookup is a network hop, so it is awaited
+        rather than blocking the loop the agent graph is running on."""
+        generation_id = self._needs_lookup(source, message, usage_payload)
+        if generation_id is None or self.cost_lookup is None:
+            return cost, source
+        looked_up = await self.cost_lookup.acost_cents(generation_id)
+        if looked_up is None:
+            return cost, source
+        if message is not None:
+            self._stamp(message, served=served, cost=looked_up, source="metered")
+        return looked_up, "metered"
 
     def _usage_and_cost(
         self,
         message: AIMessage | AIMessageChunk | BaseMessage | None,
         *,
         served_model: str | None = None,
-    ) -> tuple[TokenUsage, str, Decimal]:
+        usage_payload: Mapping[str, Any] | None = None,
+    ) -> tuple[TokenUsage, str, Decimal, CostSource]:
+        """This call's tokens, the model that served it, what it cost, and who says so.
+
+        ``usage_payload`` is the provider's own usage block as ``langchain_openai`` hands it back
+        (``ChatResult.llm_output``). With ``usage.include`` asked for, OpenRouter puts the credits
+        the call actually spent in ``token_usage["cost"]`` there, and a metered number always beats
+        one we derive from a price sheet.
+        """
         metadata = message.response_metadata if message is not None else {}
         served = str(
             served_model
@@ -499,7 +900,13 @@ class GovernedAgentChatModel(BaseChatModel):
             completion_tokens=output_tokens,
             cached_prompt_tokens=cached_tokens,
         )
-        return usage, served, self.gateway_config.cost_cents(served, usage)
+        reported = _reported_cost_cents(usage_payload, metadata)
+        if reported is not None:
+            return usage, served, reported, "metered"
+        if served in self.gateway_config.prices:
+            return usage, served, self.gateway_config.cost_cents(served, usage), "estimate"
+        # No meter and no listed rate: zero, said out loud as a blank rather than as a measurement.
+        return usage, served, Decimal(0), "unpriced"
 
 
 class OpenRouterAgentModelProvider:
@@ -568,6 +975,14 @@ class OpenRouterAgentModelProvider:
             requested_model=model_id,
             gateway_config=self._config,
             attribution_role=role,
+            # The meter for the paths that do not carry a cost back. Built here because this is
+            # where the key and the HTTP clients live; the model itself holds no credential.
+            cost_lookup=OpenRouterGenerationCost(
+                base_url=self._config.base_url,
+                api_key=self._api_key,
+                http_client=self._http_client,
+                http_async_client=self._http_async_client,
+            ),
         )
 
     def supports_image_input(self, model_id: str) -> bool | None:
@@ -589,7 +1004,7 @@ class OpenRouterAgentModelProvider:
                 if client is not None:
                     response = client.get(url, headers=headers)
                 else:
-                    response = httpx.get(url, headers=headers, timeout=30.0)
+                    response = httpx.get(url, headers=headers, timeout=self._config.timeout_s)
                 response.raise_for_status()
                 payload = response.json()
             except Exception:  # noqa: BLE001 - unreachable catalog = honest "unknown"
@@ -637,7 +1052,7 @@ class OpenRouterAgentModelProvider:
                 }
                 if chat_reasoning:
                     extra_body["reasoning"] = chat_reasoning
-            return ChatOpenAI(  # type: ignore[call-arg]
+            return OpenRouterChatModel(  # type: ignore[call-arg]
                 model=model_id,
                 api_key=self._api_key,
                 base_url=self._config.base_url,
@@ -646,6 +1061,7 @@ class OpenRouterAgentModelProvider:
                 max_tokens=max_output_tokens,
                 temperature=temperature,
                 stream_usage=True,
+                use_responses_api=False,
                 http_client=self._http_client,
                 http_async_client=self._http_async_client,
                 extra_body=extra_body or None,
@@ -731,6 +1147,31 @@ def _served_model_from_result(result: ChatResult, *, fallback: str) -> str:
     return str(output.get("model_name") or output.get("model") or fallback)
 
 
+def _reported_cost_cents(*sources: Mapping[str, Any] | None) -> Decimal | None:
+    """The provider's own cost for this call, in cents, or ``None`` when it did not report one.
+
+    OpenRouter answers ``usage.include`` with ``usage.cost`` in USD credits. ``langchain_openai``
+    carries that block through verbatim on the chat-completions path as
+    ``llm_output["token_usage"]``; the streaming path drops the extra keys, which is why the price
+    sheet remains the fallback rather than being retired. The value is read through ``str`` so it
+    stays exact ``Decimal`` arithmetic even when the JSON parser handed us a float.
+    """
+    for source in sources:
+        if not source:
+            continue
+        token_usage = source.get("token_usage")
+        if not isinstance(token_usage, Mapping):
+            continue
+        cost = token_usage.get("cost")
+        if cost is None or isinstance(cost, bool) or not isinstance(cost, int | float | str):
+            continue
+        try:
+            return Decimal(str(cost)) * 100
+        except InvalidOperation:
+            continue
+    return None
+
+
 def _normalize_tool_choice(
     tool_choice: dict[str, Any] | str | bool | None,
     *,
@@ -767,6 +1208,17 @@ def _normalize_tool_choice(
     if tool_choice in tool_names:
         return {"type": "function", "function": {"name": tool_choice}}
     raise ValueError(f"tool_choice names no bound function: {tool_choice!r}")
+
+
+_MODEL_KEYS: tuple[str, ...] = ("model_name", "model", _ANSWERING_MODEL_KEY)
+
+
+def _strip_model_keys(message: BaseMessage) -> None:
+    """LangChain's chunk merge concatenates equal string metadata, so only ONE chunk of a stream
+    may carry the model keys (the last, which is the provider's truthful one)."""
+    metadata = message.response_metadata
+    if any(key in metadata for key in _MODEL_KEYS):
+        message.response_metadata = {k: v for k, v in metadata.items() if k not in _MODEL_KEYS}
 
 
 def _stamp_answering_model(message: BaseMessage, *, fallback: str) -> None:

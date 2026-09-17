@@ -33,6 +33,8 @@ specifications from becoming competing sources of truth.
   messages, generation runs, attachments, and artifacts.
 - [`api-contracts/session.md`](api-contracts/session.md) — authenticated session,
   workspace selection, and same-origin BFF boundary.
+- [`api-contracts/settings.md`](api-contracts/settings.md) — profile, workspace,
+  members, invitation delivery/acceptance and static Settings previews.
 - [`api-contracts/onboarding.md`](api-contracts/onboarding.md) — onboarding
   authentication, profile, and workspace-setup handoff.
 - [`figma/projects-chat-flow.md`](figma/projects-chat-flow.md) — approved project

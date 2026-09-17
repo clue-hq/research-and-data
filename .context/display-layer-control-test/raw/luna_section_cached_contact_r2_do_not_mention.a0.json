@@ -1,0 +1,64 @@
+{
+ "id": "gen-1788504679-xCUSyNGBFbhH4q2Yb92l",
+ "object": "chat.completion",
+ "created": 1788504679,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"do_not_mention\",\"empty\":false,\"items\":[{\"h2\":\"Cisco strategic investment — unsafe for outreach\",\"body\":[{\"text\":\"This claim concerns a strategic investment from Cisco Investments and is marked unsafe for outreach.\",\"claimIds\":[\"zaf-135\"]},{\"text\":\"Do not mention this investment in messaging to Nick Fisher or Zafran Security.\",\"claimIds\":[\"zaf-135\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Competitive differentiation and cash burn claims — unresolved and unsafe\",\"body\":[{\"text\":\"This claim contains third-party statements about competitive differentiation, ARR growth pace, and cash burn, with the status unresolved.\",\"claimIds\":[\"zaf-138\"]},{\"text\":\"Do not use these statements in outreach because the claim is marked unsafe.\",\"claimIds\":[\"zaf-138\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Amex Ventures investment amount — unsafe for outreach\",\"body\":[{\"text\":\"This claim says an Amex Ventures investment was estimated at several million dollars and is marked unsafe for outreach.\",\"claimIds\":[\"zaf-139\"]},{\"text\":\"Do not mention the investment amount or estimate in outreach.\",\"claimIds\":[\"zaf-139\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Snir Havdala departure — unsafe for outreach\",\"body\":[{\"text\":\"This claim concerns Snir Havdala's reported departure to NVIDIA and is marked unsafe for outreach.\",\"claimIds\":[\"zaf-142\"]},{\"text\":\"Do not reference this leadership change in messaging to Nick Fisher or Zafran Security.\",\"claimIds\":[\"zaf-142\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"}],\"priority\":2},{\"h2\":\"Nick Fisher's cocktail hobby — unsafe for outreach\",\"body\":[{\"text\":\"This claim describes Nick Fisher hosting Cocktail Chemistry videos as a side hobby and is marked unsafe for outreach.\",\"claimIds\":[\"zaf-160\"]},{\"text\":\"Do not use this personal hobby as an outreach hook.\",\"claimIds\":[\"zaf-160\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2},{\"h2\":\"Cisco acquisition rumor — refuted and unsafe\",\"body\":[{\"text\":\"This claim concerns a Cisco acquisition rumor that is marked refuted and unsafe for outreach.\",\"claimIds\":[\"zaf-169\"]},{\"text\":\"Do not mention the acquisition rumor in outreach.\",\"claimIds\":[\"zaf-169\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Third-party ARR and competitive-struggle claim — unresolved and unsafe\",\"body\":[{\"text\":\"This claim contains a third-party estimate of roughly $20 million in ARR and statements about competitive struggles and high burn, with the status unresolved.\",\"claimIds\":[\"zaf-170\"]},{\"text\":\"Do not use these claims in outreach because they are marked unsafe.\",\"claimIds\":[\"zaf-170\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Snir Havdala departure to NVIDIA — confirmed but unsafe\",\"body\":[{\"text\":\"This claim says Snir Havdala departed for NVIDIA and is marked confirmed but unsafe for outreach.\",\"claimIds\":[\"zaf-171\"]},{\"text\":\"Do not reference this departure in messaging to Nick Fisher or Zafran Security.\",\"claimIds\":[\"zaf-171\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": "**Composing unsafe facts**\n\nI need to ensure that each unsafe fact is distinct, noting that items 135 and 169 address the same subject but make different claims. So, I’ll clarify that they’re separate. I’m also thinking about whether any potential quotes could be incorporated into the text, but for now, it seems none are necessary. The h2 status is on my radar, and I’m ready to start composing. Let's keep that focus!",
+    "reasoning_details": [
+     {
+      "type": "reasoning.summary",
+      "summary": "**Composing unsafe facts**\n\nI need to ensure that each unsafe fact is distinct, noting that items 135 and 169 address the same subject but make different claims. So, I’ll clarify that they’re separate. I’m also thinking about whether any potential quotes could be incorporated into the text, but for now, it seems none are necessary. The h2 status is on my radar, and I’m ready to start composing. Let's keep that focus!",
+      "format": "openai-responses-v1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmprUapBaQ1sg3eibQPx7ypE56ZV0C45YlJFSxJLZyKptQVqsskni1D76fqWJBlEI3z5r7lTn2k-Ks-HiSgR4KrrM6bsAIALfQS23dtJ1J8RMh6wx4WCJEIB4ao0QFnArJiHZPWt7y_CBZMUwSgBVk0T9hboHJRSp2VkVI4pi0lwVR5XSJxoYQ4yyAggAUsbiShDUNxw6-5GnqTkh3bS5QqdTNuZv7cmaxriKCwMwoj8_gCjB7ecOwwpDJOZqJ3un6BQQ6h7vIWSX2m_8vJdp83vN59p5pWubrzZb7f2VzC6RRPv7P8ly-RqRgGlBZfHXPAZg_fXH5gY1vCCQl7ZilQgFgq7OGpZ4B-N9xVOka-AAFeMJYC5tY16_NStFaardCbcFGR-vZ58YJ0VYE2ccRrV1yo0i7bmBd7reEUqxF7bLrjnHAjXYlht-YJgJ6fcvkx6jehmG7osAkOXh-ODUPTeX0T_GtUxGFDc-qsK_YyTElT1HKFIHtoTOGdJiSpc7pubrKfxoQiouMJQkfgyEWkFNa4KwmxlU8v7O0TC-9OeIhfmCozM58POu4xPtSTk3ZvnxtKnDM-5P6_1bxEz_IetRaXXchCQr90B1wximSDj2reH362IAcmHgVe8vKAqU6s5f1wTfUm7uAIoyqPKF3jnzIuyeij0flzz0V5E_WSaIyh4amZRVUS2vBB8h0mTL1wZdb2n0gwS8TX6efXJQ1MBGDv0et4i2722BFQeL5V-KgUkOQgvlEXGOfZDfZG38iUXSvvaB_qcnCGZzfBiKNpKfXYF82sXiHUqhNJm6y738CLylYtDzPJsSEayLUwVITYdFYw6DGpNLip00piGDwdZdtq5DoDkuqiLvxa-rOORhoKMYoBh8BDYfc5gprmLUavH-MSTVhI8SaG9AF4FEjS1Gz7QmSNdJQaWBGSMo7o660JCw9io9nqvQD_zIAMNSCY0fYk0BIDVNyzm1TeCsbd54nMMuSj-AfpP1NCm34w-AFAvPAuqvtwHUJa1uELyRkTqT3Kyi5DqxaVmcCI5fZGe5gyXc18R9QLww1aosmo1jyH2CPlHL_it8rApHtFD88Hplb1rx8AQnXVBeQnTikWAJFEd24ImtA_Q8vsgySKW-oJ9fDf-jAlY-2ACih_67oZLYWJNu6C4AdyaxydyVsLAYwPNOyUIvYHVpzcIA_TvBEh6RkixqvW-JvMXdSxh7f4Jh74R8iTbui-vFv4E6ig44M7ReZJIetF7wqnVtTPr6ZVgZp1_mrYBSjxZyrjQOwJcWbbp3GxdvaSjZJwzVGobOI3j4vXq6-SRLB8TjWpVx_o0eJFyj1AO0L6H1bYXIaKFEXBPbZ7MNLRl3sMqa4kc-FmboG9YkEOTuJhswIvXGURo2U8J_MGxfzE-xuDKbn8Ll9Sk4ak9OegHKOZ0WmidfP6FAmBuk4Ib5SA86zMme9d4OsbHp7Wsdhn4dzNyPa8cKjEy3l9n5h2-woNJIwJFN_jHpbLUnyuTg5J9M5NQSQWdtRn2bcnffnh-MShQgLGy667GyDtCQPDCqApylB2xcwNJl1rDFwUbDg_af0Uooj-Za997NIsUIb4B5fPk29TabK-kZvVJ1SR1rD3BSUMo_Pf8YZP2bJfnqjgKn0mff5hCMQrfwe1-hzh_YVvwUxxBxBP0TBA_BIw6RzaYjwCbzU46HL8s9GKc20zizcyrYyHGwE66GDpVzH-bliFAWUfC2TgjE86v87aLCz-QLnulQcN54Z5MF_Y0t2S4gS3yTINAsK-fl-Ra_kqOww5nozLenwOWQOQhbHLyzL3oSoBav6wTXCjRh1Jlljk3eknlJxAI5Gwt27_Q5hjD3yZrT-pCmVinQ_Jhirzkcn5KppSP8nUapVPaVTl5hkALgNFi9k--SgoKQ2EfM4oovqqpeWUAD5zetlg4OBvdPQcbJuj3nZ3UuMf6_RxQUlAc9tE-qJB5hVNok559aeOs2oghjnT-cKWwv_SWI6KtxofjzlP9PdN1cGqgFCt12QElPkjVOG92Ht0YDoJT9i_PKwJKQvDVzCer0Jdh-MtcJ2kI-CHje3-SOtMuP10lOJrl54y-axRlQkKyhBF1gtiRxWCP8H6rqpIuZy7v0Y0Qv03xJkfbM471qV3dNh-dYCQ6BfTy4SKH8nt3QeiiUv6ailXadVeZiksu1S9EKfd-o57RF3fK3YrbsEasdEfwhyepPodNXwnaWUIQP-mHgU-JDNJWwW-CnC64le25umVveZMpghPjsHBk6MRnIH0MLeS1SmZrhCRrjUaS-IRu6ZUBmWdkIjr09Qf75Gz16r-BHhuBhpoyUXUzbid_vsVim01eon69foOdxpEwZVka3w88OmllFmy0co5aDub6rYsnjBneiZdjq6GEQrmKo16BCY3up6zmEgW6GzLQaO7Uf0qe_eKB4uLw_OLBrS6g8mnPZTD9gciRoJok96PLrSQ9mqRTWrRcZdkpHxRR8fSTred6gtjs7dsd92EN5yIBD_fDUmJuEj9y_6YbfyH5cGYXoj7MYiK6Lko8XyW9wLWbmdjzwtc6f9PjGTmIyr-dUKEEtqldpvTVlKpUXNC3lLyQh3tqYLzjGoIbkExtSSLH1F8ZR0hKu-X_I57HwxHk4AZO8QbShGM1-IrbTC9BCnOpyXWvPy6eq684xTkOKNoWLLohdUUGrsP_w2OcpA4JbszdDufL6mHsd7sF3ccBrlXC6lsKuGud1ydcGPCd72CAVa23sSbuVMqsZqPhqB_VCpI-jsST2uuQSSIcPHUfzsKdXJCaWC3VOScUlVchfu32QQE14_rPyJpf5yN1Fi5Gm532EcGapqgsEVuFb22ciS2BsJh8i0IhiFXx-NZb2V2ijJfQ21vrfcvkLmUho7269gj6-I1ow9A0buBhwD-d3cfjc4ozi1heAp0=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0327595968e89267016a9a6a6849d487d0acc0c2acd9e092ee",
+      "index": 1
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15249,
+  "completion_tokens": 993,
+  "total_tokens": 16242,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 15246,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00149712,
+   "upstream_inference_prompt_cost": 0.00030552,
+   "upstream_inference_completions_cost": 0.0011916
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 293,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 6.83,
+ "_attempt": 0
+}

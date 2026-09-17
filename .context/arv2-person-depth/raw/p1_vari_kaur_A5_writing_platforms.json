@@ -1,0 +1,42 @@
+{
+  "requestId": "22257c82aa06cbbe54c721b9b0dbaa9c",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://browngirlbookshelf.substack.com/p/stories-that-stir-discourse",
+      "title": "Brown Girl Bookshelf",
+      "url": "https://browngirlbookshelf.substack.com/p/stories-that-stir-discourse",
+      "publishedDate": "2024-04-26T09:00:52.000Z",
+      "author": "Mishika & Sri",
+      "text": "Stories that stir discourse - by Mishika & Sri\n[\n![Brown Girl Bookshelf](https://substackcdn.com/image/fetch/w_80,h_80,c_fill,f_auto,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fbucketeer-e05bbc84-baa3-437e-9518-adb32be77984.s3.amazonaws.com%2Fpublic%2Fimages%2F0a768dda-46da-4599-a5be-71e148271b8c_1280x1280.png)\n](https://browngirlbookshelf.substack.com/)\n# [Brown Girl Bookshelf](https://browngirlbookshelf.substack.com/)\nSubscribeSign in\n#### Share this post\n[\n![](https://substackcdn.com/image/fetch/w_520,h_272,c_fill,f_auto,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fe5698e38-2f27-471b-aec9-9d92e1be9492_2000x2484.png)\n![Brown Girl Bookshelf](https://substackcdn.com/image/fetch/w_36,h_36,c_fill,f_auto,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fbucketeer-e05bbc84-baa3-437e-9518-adb32be77984.s3.amazonaws.com%2Fpublic%2Fimages%2F0a768dda-46da-4599-a5be-71e148271b8c_1280x1280.png)\nBrown Girl Bookshelf\nStories that stir discourse\n](https://substack.com/home/post/p-144006694?utm_campaign=post&utm_medium=web)\nCopy link\nFacebook\nEmail\nNotes\nMore\n# Stories that stir discourse\n### On Our Bookshelf | April 2024\nApr 26, 2024\n13\n#### Share this post\n[\n![](https://substackcdn.com/image/fetch/w_520,h_272,c_fill,f_auto,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fe5698e38-2f27-471b-aec9-9d92e1be9492_2000x2484.png)\n![Brown Girl Bookshelf](htt",
+      "image": "https://substackcdn.com/image/fetch/w_1200,h_600,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fe5698e38-2f27-471b-aec9-9d92e1be9492_2000x2484.png",
+      "favicon": "https://substackcdn.com/image/fetch/f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fbucketeer-e05bbc84-baa3-437e-9518-adb32be77984.s3.amazonaws.com%2Fpublic%2Fimages%2F5d007b69-8f3a-4a5b-88c5-f43fa7adb1ff%2Ffavicon.ico"
+    }
+  ],
+  "searchTime": 8.5,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.08,
+  "_request": {
+    "query": "\"Vari Kaur\" Zafran Security marketing security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "substack.com",
+      "medium.com",
+      "dev.to",
+      "hashnode.dev",
+      "ghost.io"
+    ]
+  }
+}

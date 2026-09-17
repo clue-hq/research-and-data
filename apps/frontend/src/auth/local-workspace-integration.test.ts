@@ -121,6 +121,13 @@ async function withRuntime(
         workspace_id, membership_id: `wsm_${workspace_id}`, role_key: "owner", permissions: [],
       })),
     });
+    // The merged establish route accepts pending invitations first; an installation
+    // without invitation delivery refuses with the typed 503, which the route treats
+    // as "no invitation to accept" and continues to the ordinary session path.
+    if (url.pathname === "/auth/v1/invitations/accept") return Response.json(
+      { error: { code: "INVITATIONS_UNCONFIGURED", message: "Invitation acceptance is not configured." } },
+      { status: 503 },
+    );
     if (url.pathname === "/auth/v1/principal") return Response.json({
       user_id: "usr_test", membership_id: "wsm_selected", role_key: "owner", permissions: [],
       workspace_id: state.principalWorkspace ?? headers.get("X-Clue-Workspace-Id"),
@@ -221,7 +228,11 @@ test("workspace Server Actions reject another authorized workspace and clear onl
 
 test("session establishment writes the pinned port cookie after real membership validation", async () => {
   await withRuntime(async (app, state) => {
-    await assert.rejects(app.establishRoute.GET(), { redirect: "/" });
+    // The merged route reads the invite token off the request URL before establishing.
+    await assert.rejects(
+      app.establishRoute.GET(new Request("http://localhost:3021/session/establish")),
+      { redirect: "/" },
+    );
     assert.deepEqual(state.cookieWrites, ["clue_workspace_id_3021"]);
     assert.equal(state.cookieValues.get("clue_workspace_id_3021"), "ws_aws");
   });

@@ -9,18 +9,20 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
 from langchain.tools import ToolRuntime
-from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_core import to_jsonable_python
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentFinalizeEnvelope,
@@ -38,6 +40,7 @@ from clue_agents import (
     GovernedOperationReceipt,
     ResolvedAgentProfile,
     SpecialistTaskEnvelope,
+    VersionedWriteOutcome,
 )
 from clue_agents.contracts import (
     MODEL_FORBIDDEN_AUTHORITY_KEYS,
@@ -46,7 +49,7 @@ from clue_agents.contracts import (
     ReasonCode,
     normalize_virtual_path,
 )
-from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
+from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus, ModelCostSource
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
@@ -59,17 +62,31 @@ from clue_api.agent_turn_wiring import (
 from clue_api.chat.turn_stream import TurnStreamCallbackHandler, TurnStreamEmitter
 from clue_api.client_context_authority import trusted_client_kb_version_fields
 from clue_api.client_knowledge_privacy import stream_tool_receipt
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_api.product_context_authority import (
     product_scope_from_constitution,
     trusted_product_scope_fields,
 )
 from clue_api.product_knowledge_privacy import stream_product_tool_receipt
+from clue_api.provider_incidents import record_failure, record_success
 from clue_api.turn_binding import trusted_turn_fields
+from clue_core.provider_failures import classify_exception, failure_code
 from clue_db import ConnFactory, transaction
+from clue_gateway.metadata import ANSWERING_MODEL_KEY, cost_cents_from_metadata
 from clue_obs import get_logger
-from clue_toolbelt import ToolRegistry
+from clue_obs.langfuse import LangfuseRunRegistry, guardrail, propagate_trace
+from clue_toolbelt import ToolEffectClass, ToolRegistry
+
+#: What a document the turn *wrote* is called in the finalization's ``domain_refs``. One type for
+#: every document, because the mount no longer decides what a document *is*: the agent writes any
+#: markdown path under ``project/``, the document says in its own front matter what it is, and the
+#: card is titled from that (founder ruling 2026-09-14). The two older types
+#: (``project_icp_document`` / ``project_persona_document``) survive only where plan-3 receipts are
+#: read back — see ``conversation_turns._LEGACY_DOCUMENT_TITLES``.
+PROJECT_DOCUMENT_OBJECT_TYPE = "project_document"
 
 __all__ = [
+    "PROJECT_DOCUMENT_OBJECT_TYPE",
     "AgentFinalizationAuthority",
     "DurableAgentModelCallHandler",
     "DurableDeepAgentTurnRunner",
@@ -131,12 +148,18 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         initial_sequence: int,
         artifacts: DurableAgentArtifactStore,
         turns: DbAgentTurnJournal,
+        langfuse_ids: LangfuseRunRegistry | None = None,
+        incidents_conn_factory: ConnFactory | None = None,
     ) -> None:
         self._request = request
         self._requested_model = requested_model
         self._next_sequence = initial_sequence
         self._artifacts = artifacts
         self._turns = turns
+        self._langfuse_ids = langfuse_ids
+        # None where no database is in reach (the unit-test handler): the receipt still names the
+        # refusal, only the durable incident is skipped.
+        self._incidents_conn_factory = incidents_conn_factory
         self._lock = asyncio.Lock()
         self._pending: dict[UUID, tuple[int, datetime, float, ArtifactRef]] = {}
 
@@ -193,8 +216,12 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         )
         response_metadata = getattr(message, "response_metadata", None) or {}
         llm_output = response.llm_output or {}
+        # Lane 3 slice 3: the gateway's own stamp is the served model (fallback-aware, stamped
+        # once per stream); the provider's field is the fallback for a call that reached us
+        # without one.
         answering_model = str(
-            llm_output.get("model_name")
+            response_metadata.get(ANSWERING_MODEL_KEY)
+            or llm_output.get("model_name")
             or response_metadata.get("model_name")
             or response_metadata.get("model")
             or self._requested_model
@@ -202,6 +229,12 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         role = resolve_model_call_role(
             response_metadata, constitution_role=self._request.constitution.role
         )
+        # Lane 3 slice 1: what this call cost, as the gateway measured it. The shared reader is
+        # the only parse of the stamp, so this ledger and the ARV2 research ledger can never
+        # disagree about what ``metered``/``estimate``/``unpriced`` mean. Cents arrive as a
+        # Decimal; USD is the unit every cost read reports in, at the column's six places.
+        cents, cost_source = cost_cents_from_metadata(response_metadata)
+        cost_usd = None if cents is None else (cents / Decimal(100)).quantize(Decimal("0.000001"))
         output_ref = await self._artifacts.persist_body(
             workspace_id=self._request.constitution.workspace_id,
             data=response.model_dump_json().encode(),
@@ -218,6 +251,13 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             output_tokens=int(usage.get("output_tokens", 0)),
             output_ref=output_ref,
             role=role,
+            cost_usd=cost_usd,
+            cost_source=cost_source,
+        )
+        # The provider served us: whatever it was refusing or failing at is over.
+        await self._with_incidents(
+            lambda conn: record_success(conn, "openrouter", now=datetime.now(UTC)),
+            what="close",
         )
 
     async def on_llm_error(
@@ -229,6 +269,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
     ) -> None:
         del kwargs
         pending = self._pending.pop(run_id)
+        # What the provider did, when it is the provider that did something: a refusal or a
+        # fault is named ``provider_refused|failed:<provider>:<reason>`` on the receipt, so the
+        # row, the turn's failure code and the incident all read the same sentence. Anything the
+        # provider did not cause keeps the class-name code it always had.
+        failure = classify_exception("openrouter", error)
         await self._record(
             run_id=run_id,
             pending=pending,
@@ -237,8 +282,42 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             # constitution role is the truthful attribution for a failed call.
             role=self._request.constitution.role,
             answering_model=None,
-            error_code=_stable_error_code(error),
+            error_code=failure_code(failure) if failure is not None else _stable_error_code(error),
         )
+        # After the receipt, never before: the recorder counts this provider's recent failures
+        # out of the ledgers, and this call's own row has to be one of them (ruling PI-4).
+        if failure is not None:
+            await self._with_incidents(
+                lambda conn: record_failure(
+                    conn,
+                    failure,
+                    surface="chat_turn",
+                    workspace_id=self._request.constitution.workspace_id,
+                    now=datetime.now(UTC),
+                ),
+                what="open",
+            )
+
+    async def _with_incidents(
+        self, action: Callable[[AsyncConnection], Awaitable[object]], *, what: str
+    ) -> None:
+        """Run one incident write, or none, and never raise into the callback that observes it.
+
+        The recorder swallows its own errors, but opening the connection is outside it: a
+        database that refuses a connection must not fail a model call that otherwise worked.
+        With no factory (the unit-test handler) there is nothing to write and nothing to say.
+        """
+        if self._incidents_conn_factory is None:
+            return
+        try:
+            async with self._incidents_conn_factory() as conn:
+                await action(conn)
+        except Exception:
+            log.exception(
+                "provider_incident.recorder_failed",
+                what=what,
+                turn_id=str(self._request.turn_id),
+            )
 
     async def _record(
         self,
@@ -254,8 +333,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         output_tokens: int = 0,
         error_code: str | None = None,
         output_ref: ArtifactRef | None = None,
+        cost_usd: Decimal | None = None,
+        cost_source: ModelCostSource | None = None,
     ) -> None:
         sequence, started_at, started_clock, input_ref = pending
+        langfuse = self._langfuse_ids.pop(run_id) if self._langfuse_ids is not None else None
         receipt = AgentModelCallReceipt(
             model_call_id=run_id,
             turn_id=self._request.turn_id,
@@ -269,17 +351,20 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
             cache_read_input_tokens=cache_read_input_tokens,
             cache_creation_input_tokens=cache_creation_input_tokens,
             output_tokens=output_tokens,
-            # DECIDED at P3.2 (PD-part3 delta 6, cost residual): stays 0, re-deferred —
-            # not an oversight. Real cost is measured ONCE, at the gateway
-            # (clue_cost_cents on response metadata + the llm.gateway_call span); a
-            # cents→millicredits conversion is the uncomposed millicredits milestone's
-            # policy to own (2026-08-07 audit backlog), and writing an invented rate here
-            # would create a second cost authority. When that policy lands, thread the
-            # converted figure here — never record cost in both places.
+            # cost_millicredits stays 0 by decision (P3.2, PD-part3 delta 6): converting cents
+            # to credits is the uncomposed credits milestone's policy, and inventing a rate here
+            # would create a second cost authority. The USD beside it is NOT a conversion — it is
+            # the gateway's own measurement (clue_cost_cents), read by the shared reader, so the
+            # conversation-turn ledger and the ARV2 research ledger record the same fact the same
+            # way (lane 3 slice 1).
             cost_millicredits=0,
+            cost_usd=cost_usd,
+            cost_source=cost_source,
             latency_ms=(time.monotonic() - started_clock) * 1000,
             error_code=error_code,
             role=role,
+            langfuse_trace_id=langfuse.trace_id if langfuse is not None else None,
+            langfuse_observation_id=langfuse.observation_id if langfuse is not None else None,
             started_at=started_at,
             completed_at=datetime.now(UTC),
         )
@@ -417,6 +502,49 @@ class DelegateSpecialistRequest(_ModelInput):
         return self
 
 
+def _with_written_documents(
+    declared: Sequence[DomainObjectRef],
+    *,
+    written: Sequence[VersionedWriteOutcome],
+    workspace_id: str,
+) -> tuple[DomainObjectRef, ...]:
+    """Add the documents this turn actually wrote to the refs the model declared.
+
+    A write into the versioned ``project/`` mount is a durable, human-visible event that the model
+    has no way to cite: it typed a file path, and what came back was a *version* of a document it
+    never named. So the turn says it on the model's behalf, from the outcomes the backend recorded
+    — the card the human sees is then built from the rows the turn wrote, not from a claim the
+    model remembered to make.
+
+    The model's own refs keep their places and come first: it may legitimately point at objects it
+    only read, and this is an addition, never a replacement. Deduplication is on the whole identity
+    ``(object_type, object_id, version)``, so a model that *did* cite its write gets one card, and
+    a turn that wrote the same document twice contributes one ref per version it minted.
+
+    Every written document becomes a ref. There is no kind this surface refuses to name: a document
+    the agent judged worth writing is a document the human is shown, titled by the document itself.
+    """
+
+    merged: dict[tuple[str, str, int | None], DomainObjectRef] = {}
+    for ref in declared:
+        merged.setdefault((ref.object_type, ref.object_id, ref.version), ref)
+    for outcome in written:
+        key = (PROJECT_DOCUMENT_OBJECT_TYPE, str(outcome.document_id), outcome.version)
+        merged.setdefault(
+            key,
+            DomainObjectRef(
+                workspace_id=workspace_id,
+                object_type=PROJECT_DOCUMENT_OBJECT_TYPE,
+                object_id=str(outcome.document_id),
+                version=outcome.version,
+                # The document's own title, so the card the human sees says what the document says
+                # it is rather than "project document".
+                title=outcome.title,
+            ),
+        )
+    return tuple(merged.values())
+
+
 def _with_trusted_runtime(
     model: type[BaseModel],
     *,
@@ -538,7 +666,10 @@ class AgentFinalizationAuthority:
             )
             self._lease.authorize_cleanup(finalization_ref=existing)
             return existing
-        expected_outputs = tuple(await self._lease.backend.snapshot_outputs())
+        # Snapshot-then-empty: the first call of the turn persists and clears ``outputs/``
+        # for the thread's next turn, and any later call returns that same single-flight
+        # answer, so the two sites agree without re-walking an emptied folder.
+        expected_outputs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
         if envelope.output_refs != expected_outputs:
             raise ValueError("finalization outputs differ from the frozen workspace snapshot")
         await self._turns.record_workspace_usage(
@@ -638,6 +769,29 @@ class AgentFinalizationAuthority:
         return ref
 
 
+class TurnWorkGuard(AsyncCallbackHandler):
+    """Admission check shared by model and tool boundaries for one chat turn."""
+
+    raise_error = True
+
+    def __init__(self, check: Callable[[], Awaitable[None]]) -> None:
+        self.check = check
+
+    async def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
+        await self._admit()
+
+    async def on_llm_end(self, *args: Any, **kwargs: Any) -> None:
+        await self._admit()
+
+    async def _admit(self) -> None:
+        try:
+            await self.check()
+        except BaseException as exc:
+            # Lane 3 slice 3: a refused admission is a guardrail in the tree, then the same raise.
+            guardrail("turn.work_guard", reason=f"{type(exc).__name__}: {exc}"[:200])
+            raise
+
+
 class GovernedAgentToolFactory:
     """Expose exact effective descriptors plus one trusted honest-finalize mechanism."""
 
@@ -653,7 +807,9 @@ class GovernedAgentToolFactory:
         required_output_path: str | None = None,
         completion_guard: CompletionGuard | None = None,
         stream: TurnStreamEmitter | None = None,
+        before_work: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        self._before_work = before_work
         self._request = request
         self._resolved_profile = resolved_profile
         self._registry = registry
@@ -670,6 +826,10 @@ class GovernedAgentToolFactory:
         # Per-turn state: the factory is constructed once per turn, next to the turn's execution
         # adapter, so this budget is shared across every governed tool the model may call.
         self._tool_failures = 0
+
+    async def _check_work(self) -> None:
+        if self._before_work is not None:
+            await self._before_work()
 
     def build(self) -> tuple[BaseTool, ...]:
         tools = tuple(
@@ -705,6 +865,7 @@ class GovernedAgentToolFactory:
         )
 
         async def invoke(runtime: ToolRuntime, **kwargs: Any) -> str:
+            await self._check_work()
             tool_call_id = str(runtime.tool_call_id)
             call_digest = hashlib.sha256(tool_call_id.encode()).hexdigest()[:24]
             node_key = f"agent_{name}_{call_digest}"
@@ -762,6 +923,7 @@ class GovernedAgentToolFactory:
                     ),
                     raise_when_exhausted=rejected,
                 )
+            await self._check_work()
             final_progress = None
             async for progress in self._execution.execute(plan=validated):
                 final_progress = progress
@@ -776,6 +938,16 @@ class GovernedAgentToolFactory:
                         f"{failure.error_type}: {failure.message}" for failure in failures
                     ),
                 )
+                # W10 (2026-09-13): an effect-free read that refuses by precondition — the
+                # overview is not written, no claims under that prefix, no discovery run — has
+                # answered the question it was asked. It is not a misread argument contract, so
+                # it does not spend the repair budget; a parallel fan-out of five such reads
+                # killed a live turn.
+                honest_read = (
+                    descriptor.effect_class is ToolEffectClass.READ
+                    and bool(failures)
+                    and all(failure.error_type == "PreconditionFailed" for failure in failures)
+                )
                 return self._tool_failure(
                     error="operation_failed",
                     address=pin.address,
@@ -786,6 +958,7 @@ class GovernedAgentToolFactory:
                     )
                     or ("the governed operation did not complete",),
                     raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                    budgeted=not honest_read,
                 )
             recovered = await self._execution.recover(
                 execution_id=self._request.constitution.execution_id
@@ -868,6 +1041,7 @@ class GovernedAgentToolFactory:
         error_type: str,
         reasons: tuple[str, ...],
         raise_when_exhausted: BaseException,
+        budgeted: bool = True,
     ) -> str:
         """Hand one refused governed invocation back to the model, within a per-turn budget.
 
@@ -880,10 +1054,15 @@ class GovernedAgentToolFactory:
         behaviour: the turn fails closed with its stable error code and still commits nothing.
         A repeated refusal is not a misread argument contract, and each further attempt is a paid
         model call.
+
+        W10: a refusal that is *not* ``budgeted`` is still operator-visible but costs the turn
+        nothing — a precondition refusal from an effect-free read has answered the question it was
+        asked, so it can neither exhaust the budget nor raise.
         """
 
-        self._tool_failures += 1
-        exhausted = self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        if budgeted:
+            self._tool_failures += 1
+        exhausted = budgeted and self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
         log.warning(
             "agent.tool_repair",
             address=address,
@@ -893,6 +1072,7 @@ class GovernedAgentToolFactory:
             reasons=list(reasons),
             attempt=self._tool_failures,
             exhausted=exhausted,
+            budgeted=budgeted,
         )
         if exhausted:
             raise raise_when_exhausted
@@ -911,6 +1091,7 @@ class GovernedAgentToolFactory:
         }
 
         async def delegate_specialist(runtime: ToolRuntime, **kwargs: Any) -> str:
+            await self._check_work()
             model_input = DelegateSpecialistRequest.model_validate(kwargs)
             role = AgentRole(model_input.role)
             if role not in self._resolved_profile.profile.delegation_roles:
@@ -1068,6 +1249,7 @@ class GovernedAgentToolFactory:
     def _finalize_tool(self) -> BaseTool:
         async def finalize_turn(runtime: ToolRuntime, **kwargs: Any) -> str:
             del runtime
+            await self._check_work()
             model_input = ModelFinalizeRequest.model_validate(kwargs)
             if (
                 model_input.status is FinalizeStatus.COMPLETED
@@ -1125,7 +1307,12 @@ class GovernedAgentToolFactory:
                     ]
                 )
             )
-            output_refs = tuple(await self._lease.backend.snapshot_outputs())
+            output_refs = tuple(await self._lease.backend.snapshot_outputs(empty_after=True))
+            domain_refs = _with_written_documents(
+                model_input.domain_refs,
+                written=self._lease.backend.written_documents,
+                workspace_id=workspace_id,
+            )
             envelope = AgentFinalizeEnvelope(
                 finalization_id=uuid5(
                     _FINALIZATION_NAMESPACE,
@@ -1135,7 +1322,7 @@ class GovernedAgentToolFactory:
                 status=model_input.status,
                 user_message_artifact_ref=final_message_ref,
                 output_refs=output_refs,
-                domain_refs=model_input.domain_refs,
+                domain_refs=domain_refs,
                 open_gate_refs=model_input.open_gate_refs,
                 assumption_refs=assumption_refs,
                 next_action_refs=next_action_refs,
@@ -1182,10 +1369,14 @@ class DurableDeepAgentTurnRunner:
         runtime: DeepAgentTurnRuntime,
         turns: DbAgentTurnJournal,
         artifacts: DurableAgentArtifactStore,
+        before_work: Callable[[], Awaitable[None]] | None = None,
+        conn_factory: ConnFactory = transaction,
     ) -> None:
+        self._before_work = before_work
         self._runtime = runtime
         self._turns = turns
         self._artifacts = artifacts
+        self._conn_factory = conn_factory
 
     async def run(
         self,
@@ -1202,28 +1393,54 @@ class DurableDeepAgentTurnRunner:
             turn_id=request.turn_id,
             workspace_id=workspace_id,
         )
+        # Lane 3 slice 3: the Langfuse handler reports the graph (agent, nodes, sub-agents,
+        # tools, generations); its registry hands each generation's ids to the recorder below.
+        # ``None`` when Langfuse is off, so the tuple is then exactly what it was.
+        langfuse = build_langfuse_callbacks()
         model_calls = DurableAgentModelCallHandler(
             request=request,
             requested_model=resolved_profile.profile.model.model_id,
             initial_sequence=await self._turns.next_model_call_sequence(turn_id=request.turn_id),
             artifacts=self._artifacts,
             turns=self._turns,
+            langfuse_ids=langfuse.registry if langfuse is not None else None,
+            incidents_conn_factory=self._conn_factory,
         )
         # FI Lane D D3: attaching the stream handler is also what opts *this* turn into the model's
         # streaming path (the handler is structurally a LangChain streaming consumer). With no
         # stream attached the callback tuple, and therefore the model path, is exactly what it was.
-        callbacks: tuple[AsyncCallbackHandler, ...] = (model_calls,)
+        # The Langfuse handler is a plain BaseCallbackHandler and does not opt the turn in.
+        callbacks: tuple[BaseCallbackHandler, ...] = (model_calls,)
+        if self._before_work is not None:
+            callbacks = (TurnWorkGuard(self._before_work), *callbacks)
+        if langfuse is not None:
+            callbacks = (*callbacks, langfuse.handler)
         if stream is not None:
             callbacks = (*callbacks, TurnStreamCallbackHandler(emitter=stream))
+        constitution = request.constitution
+        profile_ref = constitution.profile_ref
         try:
-            outcome = await self._runtime.run(
-                request=request,
-                resolved_profile=resolved_profile,
-                context=context,
-                backend=lease.backend,
-                governed_tools=tools,
-                callbacks=callbacks,
-            )
+            with propagate_trace(
+                trace_name="head-of-abm.turn",
+                session_id=str(request.thread_id),
+                user_id=workspace_id,
+                metadata={
+                    "project_id": constitution.project_id,
+                    "turn_id": request.turn_id,
+                    "execution_id": constitution.execution_id,
+                    "profile": f"{profile_ref.name}@{profile_ref.version}",
+                    "actor_id": constitution.actor_id,
+                },
+                tags=(constitution.role.value,),
+            ):
+                outcome = await self._runtime.run(
+                    request=request,
+                    resolved_profile=resolved_profile,
+                    context=context,
+                    backend=lease.backend,
+                    governed_tools=tools,
+                    callbacks=callbacks,
+                )
         except BaseException:
             await self._turns.mark_unfinalized(
                 turn_id=request.turn_id,

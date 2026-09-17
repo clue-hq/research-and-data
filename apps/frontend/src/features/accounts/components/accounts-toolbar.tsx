@@ -1,6 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
 import { DesignIcon } from "@/components/ui/design-icon";
 import {
   useAccountsSortController,
@@ -9,15 +10,26 @@ import {
 import type { AccountProject } from "../model/account";
 import type { AccountFilterRule } from "../model/account-query";
 import type {
+  AccountColumnDefinition,
   AccountColumnKey,
+  AccountColumnVisibility,
   AccountSort,
   AccountTableDensity,
 } from "../model/account-table-view";
 import readability from "./account-readability.module.css";
-import { AccountsFilterPanel } from "./accounts-filter-panel";
+import components from "./account-components.module.css";
+import toolbarStyles from "./accounts-toolbar.module.css";
+import { AccountColumnIcon } from "./account-column-icon";
+import {
+  AccountsFilterPanel,
+  type AccountFilterOption,
+} from "./accounts-filter-panel";
 import { TableDensitySelector } from "./table-density-selector";
 
 interface AccountsToolbarProps {
+  embedded?: boolean;
+  onAddAccounts?: () => void;
+  columnDefinitions: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
   density: AccountTableDensity;
   filters: AccountFilterRule[];
@@ -27,29 +39,17 @@ interface AccountsToolbarProps {
     target: AccountColumnKey,
   ) => void;
   onColumnToggle: (column: AccountColumnKey) => void;
-  onCreateAccount: (name: string, domain: string) => void;
+  onCreateAccount: (name: string, websiteUrl: string) => void;
   onDensityChange: (density: AccountTableDensity) => void;
   onFiltersChange: (filters: AccountFilterRule[]) => void;
   onSearchChange: (value: string) => void;
   onSortChange: (value: AccountSort) => void;
   projects: AccountProject[];
+  researchStatusOptions: AccountFilterOption[];
   search: string;
   sort: AccountSort;
-  visibleColumns: Record<AccountColumnKey, boolean>;
+  visibleColumns: AccountColumnVisibility;
 }
-
-const columnOptions: Array<{
-  icon: string;
-  key: AccountColumnKey;
-  label: string;
-}> = [
-  { icon: "building", key: "company", label: "Company name" },
-  { icon: "research", key: "research", label: "Research status" },
-  { icon: "hash", key: "score", label: "Fit score" },
-  { icon: "hash", key: "revenue", label: "Revenue" },
-  { icon: "circle-chevron-down", key: "size", label: "Employees" },
-  { icon: "circle-chevron-down", key: "projects", label: "Projects" },
-];
 
 function SmallIcon({
   name,
@@ -102,7 +102,7 @@ function ToolbarButton({
   return (
     <button
       aria-expanded={expanded}
-      className={`${readability.actionMedium} flex h-7 items-center justify-center gap-1.5 rounded-[6px] px-2.5 transition-colors hover:bg-[var(--clue-background-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdd5c4]`}
+      className={`${readability.actionMedium} flex h-[var(--clue-ds-product-component-button-sm-height)] items-center justify-center gap-[var(--clue-ds-product-component-button-gap)] rounded-[var(--clue-ds-product-component-button-sm-radius)] px-[var(--clue-ds-product-component-button-sm-padding-inline)] transition-colors hover:bg-[var(--clue-background-hover)] focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] focus-visible:outline-none`}
       onClick={onClick}
       type="button"
     >
@@ -143,19 +143,22 @@ function ColumnToggle({
     <button
       aria-checked={checked}
       aria-label={`${checked ? "Hide" : "Show"} ${label}`}
-      className={`flex h-5 w-8 shrink-0 items-center rounded-[5px] p-0.5 transition-colors ${
-        checked ? "justify-end bg-[#44483f]" : "justify-start bg-[#e6e9ed]"
+      className={`flex h-5 w-8 shrink-0 items-center rounded-[var(--clue-ds-product-component-button-md-radius)] p-0.5 transition-colors focus-visible:outline-none focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] ${
+        checked
+          ? "justify-end bg-[var(--clue-content-neutral)]"
+          : "justify-start bg-[var(--clue-ds-color-border-subtle)]"
       }`}
       onClick={onChange}
       role="switch"
       type="button"
     >
-      <span className="size-4 rounded-[4px] border-[0.5px] border-[#d6d9e0] bg-white shadow-[0_0_3px_rgba(0,0,0,0.2)]" />
+      <span className="size-4 rounded-[var(--clue-ds-product-component-button-sm-radius)] border-[0.5px] border-[var(--clue-border-neutral)] bg-[var(--clue-background-neutral)] shadow-[var(--clue-ds-shadow-card-subtle)]" />
     </button>
   );
 }
 
 function ColumnsPanel({
+  columnDefinitions,
   columnOrder,
   density,
   onDensityChange,
@@ -164,6 +167,7 @@ function ColumnsPanel({
   onToggle,
   visibleColumns,
 }: {
+  columnDefinitions: AccountColumnDefinition[];
   columnOrder: AccountColumnKey[];
   density: AccountTableDensity;
   onDensityChange: (density: AccountTableDensity) => void;
@@ -173,15 +177,15 @@ function ColumnsPanel({
     target: AccountColumnKey,
   ) => void;
   onToggle: (column: AccountColumnKey) => void;
-  visibleColumns: Record<AccountColumnKey, boolean>;
+  visibleColumns: AccountColumnVisibility;
 }) {
   const orderedColumns = columnOrder.map(
     (columnKey) =>
-      columnOptions.find((column) => column.key === columnKey)!,
-  );
+      columnDefinitions.find((column) => column.key === columnKey),
+  ).filter((column): column is AccountColumnDefinition => Boolean(column));
 
   return (
-    <section className={`${readability.popoverEnter} absolute top-9 right-0 z-40 w-[300px] overflow-hidden rounded-lg border-[0.5px] border-[#d6d9e0] bg-white shadow-[0_8px_24px_rgba(0,24,62,0.10)]`}>
+    <section className={`${readability.popoverEnter} ${components.popover} absolute top-9 right-0 z-40 w-[300px] overflow-hidden`}>
       <h2 className={`${readability.actionMedium} px-3 pt-3 pb-1 text-[var(--clue-content-subtle)]`}>
         Columns
       </h2>
@@ -220,7 +224,7 @@ function ColumnsPanel({
             {column.key !== "company" ? (
               <SmallIcon name="filters/grip-vertical" size={12} />
             ) : null}
-            <DesignIcon name={column.icon} size={12} />
+            <AccountColumnIcon name={column.icon} size={12} />
             <span className={`${readability.uiRegular} truncate`}>
               {column.label}
             </span>
@@ -234,7 +238,7 @@ function ColumnsPanel({
               <>
                 <button
                   aria-label={`Move ${column.label} earlier`}
-                  className="flex size-5 items-center justify-center rounded text-[var(--clue-content-subtle)] opacity-0 outline-none transition-opacity hover:bg-white focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[#cdd5c4] disabled:opacity-0 group-hover/column:opacity-100"
+                  className="flex size-5 items-center justify-center rounded-[var(--clue-ds-product-component-button-sm-radius)] text-[var(--clue-content-subtle)] opacity-0 outline-none transition-opacity hover:bg-[var(--clue-background-neutral)] focus-visible:opacity-100 focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] disabled:opacity-0 group-hover/column:opacity-100"
                   disabled={index <= 1}
                   onClick={() => onMove(column.key, -1)}
                   type="button"
@@ -243,7 +247,7 @@ function ColumnsPanel({
                 </button>
                 <button
                   aria-label={`Move ${column.label} later`}
-                  className="flex size-5 items-center justify-center rounded text-[var(--clue-content-subtle)] opacity-0 outline-none transition-opacity hover:bg-white focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[#cdd5c4] disabled:opacity-0 group-hover/column:opacity-100"
+                  className="flex size-5 items-center justify-center rounded-[var(--clue-ds-product-component-button-sm-radius)] text-[var(--clue-content-subtle)] opacity-0 outline-none transition-opacity hover:bg-[var(--clue-background-neutral)] focus-visible:opacity-100 focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] disabled:opacity-0 group-hover/column:opacity-100"
                   disabled={index === orderedColumns.length - 1}
                   onClick={() => onMove(column.key, 1)}
                   type="button"
@@ -284,7 +288,7 @@ function CheckRow({
 }) {
   return (
     <button
-      className="flex h-8 w-full items-center px-3 text-left hover:bg-[var(--clue-background-hover)]"
+      className={`${readability.uiRegular} flex h-8 w-full items-center px-3 text-left hover:bg-[var(--clue-background-hover)]`}
       onClick={onClick}
       type="button"
     >
@@ -306,8 +310,8 @@ function SortPanel({
   const controller = useAccountsSortController(sort, onSortChange);
 
   return (
-    <section className={`${readability.popoverEnter} absolute top-9 right-0 z-40 w-[235px] overflow-hidden rounded-[4px] border-[0.5px] border-[#d6d9e0] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.1)]`}>
-      <h2 className="px-3 pt-3 pb-1 font-medium text-[var(--clue-content-subtle)]">
+    <section className={`${readability.popoverEnter} ${components.popover} absolute top-9 right-0 z-40 w-[235px] overflow-hidden`}>
+      <h2 className={`${readability.actionMedium} px-3 pt-3 pb-1 text-[var(--clue-content-subtle)]`}>
         Sort by
       </h2>
       <CheckRow
@@ -326,8 +330,8 @@ function SortPanel({
         onClick={() => controller.chooseField("project")}
       />
       {controller.sortField !== "default" ? (
-        <div className="mt-2 border-t-[0.5px] border-[#e6e9ed]">
-          <h2 className="px-3 pt-3 pb-1 font-medium text-[var(--clue-content-subtle)]">
+        <div className="mt-2 border-t-[0.5px] border-[var(--clue-ds-color-border-subtle)]">
+          <h2 className={`${readability.actionMedium} px-3 pt-3 pb-1 text-[var(--clue-content-subtle)]`}>
             Order
           </h2>
           <CheckRow
@@ -373,7 +377,7 @@ function NewAccountModal({
       role="dialog"
     >
       <form
-        className="w-[463px] max-w-full overflow-hidden rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] bg-white shadow-[0_18px_54px_rgba(0,24,62,0.18)]"
+        className={`${components.popover} w-[463px] max-w-full overflow-hidden shadow-[0_18px_54px_rgba(0,24,62,0.18)]`}
         onSubmit={onSubmit}
       >
         <header className="flex items-center justify-between pt-3 pr-3 pb-2 pl-4">
@@ -382,7 +386,7 @@ function NewAccountModal({
           </h2>
           <button
             aria-label="Close new account dialog"
-            className="flex size-6 items-center justify-center rounded-md hover:bg-[var(--clue-background-hover)]"
+            className={components.iconButton}
             onClick={onCancel}
             type="button"
           >
@@ -394,7 +398,7 @@ function NewAccountModal({
             <span className="pt-2">Company name</span>
             <input
               autoFocus
-              className="h-8 rounded-lg border-[0.5px] border-[#e6e9ed] bg-[#fcfdfe] px-2 shadow-[var(--clue-shadow-low)] outline-none focus:border-[#cdd5c4] focus:ring-2 focus:ring-[#cdd5c4]/60"
+              className={`${components.input} px-2`}
               onChange={(event) => onNameChange(event.target.value)}
               placeholder="Acme Inc"
               value={name}
@@ -403,7 +407,7 @@ function NewAccountModal({
           <label className="grid grid-cols-[1fr_280px] items-start gap-4">
             <span className="pt-2">Website</span>
             <input
-              className="h-8 rounded-lg border-[0.5px] border-[#e6e9ed] bg-[#fcfdfe] px-2 shadow-[var(--clue-shadow-low)] outline-none focus:border-[#cdd5c4] focus:ring-2 focus:ring-[#cdd5c4]/60"
+              className={`${components.input} px-2`}
               onChange={(event) => onWebsiteChange(event.target.value)}
               placeholder="www.acme.com"
               value={website}
@@ -411,20 +415,21 @@ function NewAccountModal({
           </label>
         </div>
         <footer className="flex justify-end gap-2 p-4">
-          <button
-            className="h-8 rounded-lg px-3 font-medium hover:bg-[var(--clue-background-hover)]"
+          <Button
             onClick={onCancel}
+            size="md"
             type="button"
+            variant="transparent"
           >
             Cancel
-          </button>
-          <button
-            className="h-8 rounded-lg border-[0.5px] border-[#32362d] bg-[#32362d] px-3 font-medium text-white shadow-[0_2px_0_rgba(0,0,0,0.05),inset_0_1px_1px_rgba(255,255,255,0.5)] disabled:opacity-40"
+          </Button>
+          <Button
             disabled={!name.trim() || !website.trim()}
+            size="md"
             type="submit"
           >
             Create
-          </button>
+          </Button>
         </footer>
       </form>
     </div>,
@@ -433,6 +438,9 @@ function NewAccountModal({
 }
 
 export function AccountsToolbar({
+  embedded = false,
+  onAddAccounts,
+  columnDefinitions,
   columnOrder,
   density,
   filters,
@@ -445,6 +453,7 @@ export function AccountsToolbar({
   onSearchChange,
   onSortChange,
   projects,
+  researchStatusOptions,
   search,
   sort,
   visibleColumns,
@@ -462,16 +471,16 @@ export function AccountsToolbar({
   } = useAccountsToolbarController(onCreateAccount);
 
   return (
-    <header className={`${readability.uiRegular} relative z-20 flex h-[var(--clue-ds-product-dimension-header-action-bar-height)] shrink-0 items-center justify-between border-b-[0.5px] border-[var(--clue-border-table)] bg-white pr-5 pl-14 lg:px-6`}>
+    <header className={`${readability.uiRegular} ${embedded ? toolbarStyles.embedded : "relative z-20 flex h-[var(--clue-ds-product-dimension-header-action-bar-height)] shrink-0 items-center justify-between border-b-[0.5px] border-[var(--clue-border-table)] bg-white pr-5 pl-14 lg:px-6"}`}>
       <div className="flex min-w-0 items-center gap-4">
-        <h1 className={readability.pageTitle}>Accounts</h1>
-        <label className="flex h-[var(--clue-ds-product-dimension-header-search-height)] w-[clamp(140px,20vw,240px)] shrink-0 items-center gap-1.5 rounded-[7px] border-[0.5px] border-[var(--clue-border-input)] bg-[var(--clue-background-hover)] px-2.5 shadow-[var(--clue-shadow-low)]">
+        {!embedded ? <h1 className={readability.pageTitle}>Accounts</h1> : null}
+        <label className={`${components.input} flex w-[clamp(140px,20vw,240px)] shrink-0 items-center gap-1.5 px-2.5`}>
           <span className="sr-only">Search accounts</span>
           <DesignIcon name="search" size={12} />
           <input
             className={`${readability.uiRegular} min-w-0 flex-1 bg-transparent outline-none placeholder:text-[var(--clue-content-subtle)]`}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search"
+            placeholder={embedded ? "Search accounts" : "Search"}
             type="search"
             value={search}
           />
@@ -479,7 +488,7 @@ export function AccountsToolbar({
       </div>
 
       <div
-        className="relative ml-4 hidden shrink-0 items-center gap-2.5 md:flex"
+        className={embedded ? toolbarStyles.controls : "relative ml-4 hidden shrink-0 items-center gap-2.5 md:flex"}
         ref={controlsRef}
       >
         <div className="relative">
@@ -491,6 +500,7 @@ export function AccountsToolbar({
           />
           {openPanel === "columns" ? (
             <ColumnsPanel
+              columnDefinitions={columnDefinitions}
               columnOrder={columnOrder}
               density={density}
               onDensityChange={onDensityChange}
@@ -524,14 +534,15 @@ export function AccountsToolbar({
               filters={filters}
               onFiltersChange={onFiltersChange}
               projects={projects}
+              researchStatusOptions={researchStatusOptions}
             />
           ) : null}
         </div>
         <ToolbarButton
           expanded={openPanel === "new"}
           icon="plus"
-          label="New account"
-          onClick={() => togglePanel("new")}
+          label={onAddAccounts ? "Add accounts" : "New account"}
+          onClick={onAddAccounts ?? (() => togglePanel("new"))}
         />
       </div>
 

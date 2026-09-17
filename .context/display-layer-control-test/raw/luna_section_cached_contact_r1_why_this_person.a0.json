@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504503-EIHsiudGH9nBcTYhkGIL",
+ "object": "chat.completion",
+ "created": 1788504503,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"why_this_person\",\"empty\":false,\"items\":[{\"h2\":\"He is building Zafran's ABM motion from scratch\",\"body\":[{\"text\":\"Zafran is hiring a Senior Manager, ABM & Integrated Campaigns to own ABM from the ground up, including 1:1, 1:few, and 1:many programs.\",\"claimIds\":[\"zaf-090\"]},{\"text\":\"As VP of Marketing and an economic buyer, Nick is a relevant stakeholder for building and scaling that motion.\",\"claimIds\":[\"zaf-038\",\"zaf-039\"]}],\"sendLine\":\"In your email: I saw Zafran is building its ABM motion from the ground up, across 1:1, 1:few, and 1:many programs.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"He thinks in terms of real exposure, not raw vulnerability volume\",\"body\":[{\"text\":\"In his article \\\"Why I joined Zafran Security,\\\" Nick wrote that \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\"\",\"claimIds\":[\"zaf-158\",\"zaf-159\"]},{\"text\":\"That framing connects his marketing work to a concrete security problem: helping buyers understand real risk exposure.\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: Your point that 96% of vulnerabilities didn't require patching stood out—especially the focus on understanding real risk exposure.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"A full-stack B2B marketing leader with security-market depth\",\"body\":[{\"text\":\"Nick describes himself as a \\\"Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale.\\\"\",\"claimIds\":[\"zaf-044\"]},{\"text\":\"His career history includes VP of Product Marketing at Sysdig, Senior Director of Product Marketing at Okta, and VP of Marketing at Zafran Security.\",\"claimIds\":[\"zaf-045\"]}],\"sendLine\":\"In the platform: Position Nick as a senior B2B marketing buyer who combines storytelling, team building, and cybersecurity market experience.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmm5nNWk_o4Kom9QlD-3VuYky1SbsTH8xs39-L-a3c_27scjsMQlvZnORTqNuqu6ntFWBTF-U2GZsdDSbc_WxzEOU83Pccgm9PwqbGstPZjUWryYiOzikoTuWzhbm_YhuCiEVsfjaalfkpUOhkaowuMypObdiQSrru3XGHz4SNuI9s7Xg5mhoAdBE8NdVzLfG9ybmDXvhGiLW9RlpQ1Zf8wKZsKBuQUe_G5vLlMA0Iw78hPh8bU0MOft00kEe6I-Z74R1OIhPVpfEljA_4k7z1u8mq65O2OWiVX26L5p82SNk8jCvPuVFQ83LzbL_NtYVvr6NzUj1lQ0mb8IwZGN8g8UVXDQ0v-0gABD7OdzFA_DAcGUgMXAn869_h4oVSpEVPKNvaeVNn4UBCPCZMo8tC4o-EnDUqbCVoFupy1UdwEyUbao6n711cKMipkm7LPnMNOxK-ICphTOWvzy4Sp8GRm3FcJ7JWA5Rwixjr-dAH50RxqpdZ51XK4aey-Cl-049do4JBLsKbqizbTkA_Vv2CIzZ7WulTSSPmvAqw2vHE73mdVviE0qAFdylPlfLF5SG7dxfjPAwn-8Di1cLmxsT2NQ4zVlA-Hy24dV3j0Cf4BfQMNkOa_lC7cn8pGwaXa5Vc-1RDXK3YtyAMarTD9SA2uRx1cWYiF1Fd1Lxj6QMvyLDxpVqRik9TL50k8CDhAeu-cBM-g46RhVPyGtxnfGDfsZo9vIvh6L4QDBpxktnJu3YkQqUPmRg9DyBtDpwey39xZCR5Hj1r1bKvUk5Bu3-j_YZ0ia6mR34BO6y_3kZ3j0d_SEQyo_dLWFDB4bnq3lK5z5J6atJSyyg7VnpwaxalOAt7k9nUmW3lOUb4lUC0Q9GdP107yfY2eal55XCJ3HFNj3o9ZR9rNLjyn4xnDYcH4Zozghz0NqJUSfECqRfM_iY5oe-ooIeV0dYlUD_iBEdD3DHyuKVR-mdFOCnoHCdq9XSLGAJF6gdY6mZL2qRgZnb8w6moJIu0tL6eJ4anEI70fuvHPutgRw53arQMgu-_fjTnYx7rn-ORwe6IEdGiSrhJL9xA4esqE_U2D_aUTF_ciPGvR4Bpd4gyj7jniCOgBIp5HmR4TCWX6R1je6BPQos55hNnkDTV2ErB-4BTvVhNe_PqEsOxFtnSaozI6GNHbpplrSlkuWGAzErOtcFbB5W5IiYT7IVdyZwkz61nog269PzRJu6R98i7-5i9uGoQyZjcKe4cIbUxFlPtCrPT-e0rUbzE9dSdGrYeF6S35o-ebrX3yKHXQ9HnZ2ZF8VIhF4hoYMeOc8hyjeGDeZhfKbaGWAzMAD3tNrgeKCWUX571UtHAjgrhPz4TWXngDh9MVtNOix88JyubIQERbD24YgS9jI2LzFMh6RPZVbXdGpD0LScCc3fXL67uWnHIUv_C067Q7R5uYHJLhmaRxUYxj59071bX51cwbaGumEMlHLh6lE__XFuySNezoPykOWYNWJinNE5W-GBcLHSCrH2Q5ub1J68jhiNKZ_NGuHHhsEI-_Wmvg1z2mMFBjjsNbl0pAxivwTQ8TKnUen2T6fs5aHIAUvChxLFi6h4QXTV-d0r-RMznDFAqeOPq5kNOGHBNjD1ln0iHqt_PQN11T498RW5JWdg8AXftRWbwOQa6_Mzs28bItsSzkXVf52Uq5qohYUenbYZ1lMuj03mzFSe2RqSyS6RLLk3DdpYzOm_LXAVyPjs5DrDbC3bffE0DqQQX5Ft1832KIVGD1KQYGn0nCYhyftviQbyT3NJQ678jv-FUCZBGGr40EXnEXeSKoe25_H0CRiFxc8gt6PFiPTzQ8LL0dlU5WX6plJjR3NQfGtVFDpHkD2Rm4lYpH7HdVSMlG4LyCnHUTfUvBRscPpNkHDeAPbARZoN3NCh6WxPY5Q8YFFfsD9cyS9Hd1vKtp60KxuG4Lc90jUD7dWpqBj5o_qQep_KSNWkb9AoprPTyQsCUyL9tJbm5d-g8n2JhaZzTqQwnWaRtzx1zi7FCwIHWZ-XDo2z8ufZ0-xk7lV8kqdkrJsUjQA8I5an39c-Szu9GsxFdS4InbI54_2BbfCIPYBNDjt-Oi8v3hps4gR7w5MbwjpqIY1JDx0iW2w8X_PbHi8wO84l-mGp2LQmYmCTvuWlfOH-DBiwQSxOrnSAlxgtzI5QNV1Q6mKtF8qniTzgQ3-aWylcQxFBlMyaWLyUWdZ4muROePmGWj3c0oglWGQvQgBuYlmwkFeNc_I1jWUGJJkn2N2yBBR_DPvzZTaedl7CPE=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0cc306ecc15ca1e4016a9a69b7f96487d08a67ed28857ebc6a",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15348,
+  "completion_tokens": 645,
+  "total_tokens": 15993,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 15345,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00461085,
+   "upstream_inference_prompt_cost": 0.00383685,
+   "upstream_inference_completions_cost": 0.000774
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 156,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 5.23,
+ "_attempt": 0
+}

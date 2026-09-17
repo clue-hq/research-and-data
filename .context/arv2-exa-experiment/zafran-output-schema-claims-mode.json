@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "required": [
+    "claims"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "claims": {
+      "type": "array",
+      "description": "One row per factual assertion. NOT FOUND items are rows too, with value 'NOT FOUND' and no quote.",
+      "items": {
+        "type": "object",
+        "required": [
+          "section",
+          "field",
+          "value",
+          "source_url",
+          "quote"
+        ],
+        "properties": {
+          "section": {
+            "type": "integer",
+            "description": "Charter section number 1-12."
+          },
+          "field": {
+            "type": "string",
+            "description": "Short snake_case name of what the row asserts, e.g. total_funding, hq_city, open_role."
+          },
+          "value": {
+            "type": "string",
+            "description": "The fact itself, as concisely as the source states it, or 'NOT FOUND'."
+          },
+          "source_url": {
+            "type": "string",
+            "description": "The URL the quote was read on. Empty only for NOT FOUND."
+          },
+          "quote": {
+            "type": "string",
+            "description": "VERBATIM span from that page that states the value. Never paraphrased."
+          },
+          "claimed_by": {
+            "type": "string",
+            "description": "company | investor | press | estimate | third_party"
+          }
+        }
+      }
+    }
+  }
+}

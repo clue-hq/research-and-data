@@ -1,0 +1,330 @@
+{
+  "requestId": "b9a9976ed3773a884bf028c1cc4976a9",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/1k7x0y08cjy",
+      "title": "Galit Segev",
+      "url": "https://www.linkedin.com/in/galit-segev-0b66302b",
+      "publishedDate": "2026-08-10T06:03:11.000Z",
+      "text": "# Galit Segev\n\nSenior Payroll Controller at Nextage Ltd.\n\nRaanana, Center District, Israel (IL)\n\n500 connections \u2022 2,289 followers\n\n## About\n\nExperienced Payroll Accountant with a demonstrated history of working in the financial services industry.\n\nTotal Experience: 19 years and 10 months\n\n## Experience\n\n### Senior Payroll Controller - [Nextage Ltd.](https://www.linkedin.com/company/nextage-ltd-) (Current)\n\nSep 2017 - Present (8 years and 11 months) in Ra'anana\n\nDepartment: Finance & Accounting \u2022 Level: Senior\n\nNextage is a Financial Services company. Nextage provides a full financial framework for startups and growth companies - top-tier CFO services, accounting, payroll, and FP&A. With over 20 years of experience and hundreds of companies supported, we deliver precision, transparency, and true partnership across all stages of growth. Nextage has 100-150 employees (+6-7% YoY), founded in 2001. Headquartered in Raanana, Israel, with presence in United States. Its workforce is distributed across Israel, Pakistan, and Czechia.\n\n### Payroll Controller and Bookkeeper - [Romano Blanga Accounting Services](https://www.linkedin.com/company/romano-blanga)\n\nDec 2014 - Oct 2017 (2 years and 10 months) in Tel Aviv\n\nDepartment: Finance & Accounting \u2022 Level: Specialist\n\nRomano Blanga Accounting Services is a Financial Services company. \u05e8\u05d5\u05de\u05e0\u05d5 \u05d1\u05dc\u05e0\u05d2\u05d4 \u05d5\u05e9\u05d5\u05ea' is a company specializing in accounting, financial management, value estimates, and financial consulting. They have over 100 years of exp",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQG-NojKV6jCIQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1663879905442?e=2147483647&v=beta&t=g8pbK08TQYiEJwgcFPo9mUaZuVZ_lcDS8GEYoAKlwNM",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/1k7x0y08cjy",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Galit Segev",
+            "firstName": "Galit",
+            "lastName": "Segev",
+            "location": "Raanana, Center District, Israel",
+            "workHistory": [
+              {
+                "title": "Senior Payroll Controller",
+                "location": "Ra'anana",
+                "dates": {
+                  "from": "2017-09-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9d0c05309q4",
+                  "name": "Nextage Ltd."
+                }
+              },
+              {
+                "title": "Payroll Controller and Bookkeeper",
+                "location": "Tel Aviv",
+                "dates": {
+                  "from": "2014-12-01",
+                  "to": "2017-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/mcx9x7g0ksj",
+                  "name": "Romano Blanga Accounting Services"
+                }
+              },
+              {
+                "title": "Bookkeeper",
+                "location": "Tel Aviv - Jaffa, Tel Aviv District, Israel",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2014-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/71r48tn3n62",
+                  "name": "T&M Protection Resources, LLC"
+                }
+              },
+              {
+                "title": "Prime Minister's Office",
+                "location": "Israel",
+                "dates": {
+                  "from": "2003-10-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/v2l1p56whbx",
+                  "name": "Office of the Prime Minister of Israel"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Associate\u2019s Degree, Bookkeeping",
+                "dates": {
+                  "from": "2013",
+                  "to": "2014"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/1h48y47s8vj",
+                  "name": "The Open University of Israel"
+                }
+              },
+              {
+                "degree": "Associate\u2019s Degree, Payroll Accounting",
+                "dates": {
+                  "from": "2013",
+                  "to": "2014"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/1h48y47s8vj",
+                  "name": "The Open University of Israel"
+                }
+              },
+              {
+                "degree": "Bachelor\u2019s Degree, Communication & Political Science",
+                "dates": {
+                  "from": "2005",
+                  "to": "2008"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qc4sd27rz1n",
+                  "name": "Tel Aviv University"
+                }
+              },
+              {
+                "degree": "Master\u2019s Degree, Public policy",
+                "dates": {
+                  "from": "2010",
+                  "to": "2011"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qc4sd27rz1n",
+                  "name": "Tel Aviv University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/fhmfbbsx6gz",
+      "title": "Ruchy Gupta",
+      "url": "https://www.linkedin.com/in/ruchy-gupta-31a74b4",
+      "publishedDate": "2026-08-10T17:15:23.000Z",
+      "text": "# Ruchy Gupta\n\nDirector at KPMG\n\nNew York, New York, United States (US)\n\n500 connections \u2022 598 followers\n\n## About\n\nDirector at KPMG\n\nTotal Experience: 22 years and 4 months\n\n## Experience\n\n### [KPMG US](https://www.linkedin.com/company/kpmg-us)\n\n#### Director - Advisory, Risk and Compliance (Current)\n\nOct 2019 - Present (6 years and 10 months)\n\nRisk and Compliance\n\nDepartment: Consulting \u2022 Level: Director\n\n#### Manager\n\nSep 2011 - Oct 2019 (8 years and 1 month) in New York\n\nDepartment: General Management \u2022 Level: Manager\n\nKPMG US is a Financial Services company. KPMG is a company that is proud to be the title sponsor of the KPMG Women\u2019s PGA Championship and KPMG Women\u2019s Leadership Summit. KPMG US has 20,000-30,000 employees (+7-8% YoY) and has annual revenue in the $10B-$20B range, founded in 1994. Headquartered in New York, New York, United States, with offices including Atlanta, Philadelphia, Woodcliff Lake, San Francisco, and St Louis. Its workforce is distributed across 129 countries (including United States, India, China, United Kingdom, and Canada).\n\n### [StreetWise Partners](https://www.linkedin.com/company/streetwise-partners)\n\n#### Program Board Member\n\nJul 2014 - Apr 2016 (1 year and 9 months) in New York\n\nDepartment: Other\n\n#### Program Officer\n\nJun 2010 - Jun 2014 (4 years) in Greater New York City Area\n\nProgram Officer, Streetwise Partners, NYC\n- Managed over 30 mentors and mentees as part of 13-week career development program focused at teaching job skills (i.e",
+      "image": "https://media.licdn.com/dms/image/v2/C4E03AQEANQeJGIrCFQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1517701345726?e=2147483647&v=beta&t=I4PWR1kL_U82R8u1KX4o8ENinxLAJIAsRqC1drdK8ZI",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/fhmfbbsx6gz",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Ruchy Gupta",
+            "firstName": "Ruchy",
+            "lastName": "Gupta",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Director - Advisory, Risk and Compliance",
+                "location": null,
+                "dates": {
+                  "from": "2019-10-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pn8snzl7zxn",
+                  "name": "KPMG US"
+                }
+              },
+              {
+                "title": "Manager",
+                "location": "New York",
+                "dates": {
+                  "from": "2011-09-01",
+                  "to": "2019-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pn8snzl7zxn",
+                  "name": "KPMG US"
+                }
+              },
+              {
+                "title": "Program Board Member",
+                "location": "New York",
+                "dates": {
+                  "from": "2014-07-01",
+                  "to": "2016-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lc1wg05t9vj",
+                  "name": "StreetWise Partners"
+                }
+              },
+              {
+                "title": "Program Officer",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2010-06-01",
+                  "to": "2014-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lc1wg05t9vj",
+                  "name": "StreetWise Partners"
+                }
+              },
+              {
+                "title": "Manager Operations and Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2007-07-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Diamond Lab Instruments"
+                }
+              },
+              {
+                "title": "Senior, Technology and Security Risk Services",
+                "location": "Boston, MA",
+                "dates": {
+                  "from": "2004-03-01",
+                  "to": "2007-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/370fryhgcwm",
+                  "name": "Ernst and Young"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BCOM, Bachelor of Commerce and Accounting",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/1b2s3svvtnm",
+                  "name": "University of Mumbai"
+                }
+              },
+              {
+                "degree": "MBA, MIS",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zd3bmbjpmt5",
+                  "name": "Bentley University - McCallum Graduate School of Business"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/1vsxrs5xysq",
+      "title": "Reut Arieli",
+      "url": "https://www.linkedin.com/in/reut-arieli-015080147",
+      "publishedDate": "2026-08-06T23:39:03.000Z",
+      "text": "# Reut Arieli\n\nProject Manager at Mobileye\n\nWest Jerusalem, Jerusalem District, Israel (IL)\n\n500 connections \u2022 610 followers\n\n## About\n\nProject Manager at Mobileye\n\nTotal Experience: 6 years and 3 months\n\n## Experience\n\n### Project Manager - [Mobileye](https://www.linkedin.com/company/mobileye) (Current)\n\nSep 2023 - Present (2 years and 11 months) in Jerusalem\n\nDepartment: Project Management \u2022 Level: Manager\n\nMobileye (MBLY) is a Motor Vehicle Manufacturing company. Mobileye is a company that specializes in driver assist and autonomous driving technologies. They offer solutions for advanced driver-assistance systems and autonomous driving through world-renowned expertise in artificial intelligence. They also provide technology solutions for fleet management and road experience management. Mobileye has 3,000-4,000 employees (+5-6% YoY) and has annual revenue in the $1B-$2B range, founded in 1999. Headquartered in West Jerusalem, Jerusalem District, Israel, with presence in United States and Japan. Its workforce is distributed across 24 countries (including Israel, Germany, United States, China, and Japan). IPO 2022.\n\n### Project Manager - [tasq.ai](https://www.linkedin.com/company/tasq-ai)\n\nOct 2021 - Aug 2023 (1 year and 10 months) in Tel Aviv, Israel\n\nDepartment: Project Management \u2022 Level: Manager\n\ntasq.ai is a Software Development company. Tasq.ai has 20-30 employees (+4-5% YoY) and has annual revenue in the $1M-$10M range, founded in 2019. Headquartered in Tel Aviv, Israe",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFJUZxqkF1Kpw/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1718309753817?e=2147483647&v=beta&t=qVW1Kte_8BPFuCnJCcsoA2bLRjwFGBfELcHNu71iMNY",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/1vsxrs5xysq",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Reut Arieli",
+            "firstName": "Reut",
+            "lastName": "Arieli",
+            "location": "West Jerusalem, Jerusalem District, Israel",
+            "workHistory": [
+              {
+                "title": "Project Manager",
+                "location": "Jerusalem",
+                "dates": {
+                  "from": "2023-09-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/05w5g02p8gh",
+                  "name": "Mobileye"
+                }
+              },
+              {
+                "title": "Project Manager",
+                "location": "Tel Aviv, Israel",
+                "dates": {
+                  "from": "2021-10-01",
+                  "to": "2023-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/264qt2swjlc",
+                  "name": "tasq.ai"
+                }
+              },
+              {
+                "title": "Project Management Officer",
+                "location": null,
+                "dates": {
+                  "from": "2015-08-01",
+                  "to": "2017-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/vhsmdr7cr4d",
+                  "name": "Israeli Military Intelligence - Unit 8200"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor's degree, Neuroscience",
+                "dates": {
+                  "from": "2018",
+                  "to": "2021"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zjhbn48568v",
+                  "name": "Ben-Gurion University of the Negev"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1176.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.26,
+  "_request": {
+    "query": "\"Sanaz Yashar\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

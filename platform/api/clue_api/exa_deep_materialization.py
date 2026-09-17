@@ -37,9 +37,8 @@ from clue_research.resolvers.exa import (
     SOURCE_KEY,
     ExaDeepNormalization,
     ExaDeepSearchRequest,
-    ExaDeepSearchResponse,
-    field_key_from_exa_alias,
     normalize_exa_deep_snapshot,
+    parse_exa_deep_response,
 )
 from clue_research.resolvers.exa.deep_contract import ExaDeepResult
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
@@ -143,7 +142,7 @@ async def _build_exa_deep_snapshot_resolver(
 
         try:
             async with conn_factory() as conn:
-                response = ExaDeepSearchResponse.model_validate_json(
+                response_payload = json.loads(
                     await _verified_json(
                         conn,
                         storage,
@@ -186,19 +185,19 @@ async def _build_exa_deep_snapshot_resolver(
                     )
                     for item in indexed_results
                 }
+                if not isinstance(request_artifact, dict):
+                    raise TypeError("stored Exa request artifact is not an object")
+                request_json = request_artifact.get("wire_request")
+                if not isinstance(request_json, dict):
+                    raise TypeError("stored Exa request lacks its immutable wire body")
+                request = ExaDeepSearchRequest.model_validate(request_json)
+                if not isinstance(response_payload, dict):
+                    raise TypeError("stored Exa response artifact is not an object")
+                response = parse_exa_deep_response(request, response_payload)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise ExaDeepSnapshotError("stored Exa snapshot JSON is malformed") from exc
-        if not isinstance(request_artifact, dict):
-            raise ExaDeepSnapshotError("stored Exa request artifact is not an object")
-        request_json = request_artifact.get("wire_request")
-        if not isinstance(request_json, dict):
-            raise ExaDeepSnapshotError("stored Exa request lacks its immutable wire body")
-        request = ExaDeepSearchRequest.model_validate(request_json)
-        properties = request.output_schema.get("properties")
-        if not isinstance(properties, dict):
-            raise ExaDeepSnapshotError("stored Exa request has no structured field map")
         requested_field_keys = frozenset(
-            str(field_key_from_exa_alias(alias)) for alias in properties
+            str(field_key) for field_key in request.field_key_by_alias.values()
         )
         unauthorized = requested_field_keys - allowed
         if unauthorized:

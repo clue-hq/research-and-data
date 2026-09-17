@@ -1,0 +1,196 @@
+[
+  {
+    "entity": "contact:cameron-coles",
+    "field_key": "contact.current_title",
+    "value_json": "VP of Marketing",
+    "evidence_span": "profile.title = \"VP of Marketing\" with position_groups[0].company.name = \"Cogent\"",
+    "source_url": "https://www.linkedin.com/in/cameroncoles",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2,
+    "identity_binding": "strong"
+  },
+  {
+    "entity": "contact:cameron-coles",
+    "field_key": "contact.facet.career_history",
+    "value_json": [
+      {
+        "org": "Cogent",
+        "role": "VP of Marketing",
+        "start": "2025-11-01",
+        "end": "present"
+      }
+    ],
+    "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"VP of Marketing\", date.start: \"2025-11-01\"}",
+    "source_url": "https://www.linkedin.com/in/cameroncoles",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2,
+    "identity_binding": "strong",
+    "use_class": "professional-public"
+  },
+  {
+    "entity": "contact:ana-corio",
+    "field_key": "contact.current_title",
+    "value_json": "Director of Demand Generation",
+    "evidence_span": "profile.title = \"Director of Demand Generation\" with position_groups[0].company.name = \"Harmonic Security\"",
+    "source_url": "https://www.linkedin.com/in/anastasiacorio",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2,
+    "identity_binding": "strong"
+  },
+  {
+    "entity": "contact:ana-corio",
+    "field_key": "contact.facet.career_history",
+    "value_json": [
+      {
+        "org": "Harmonic Security",
+        "role": "Director of Demand Generation",
+        "start": "2024-09-01",
+        "end": "present"
+      }
+    ],
+    "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Director of Demand Generation\", date.start: \"2024-09-01\"}",
+    "source_url": "https://www.linkedin.com/in/anastasiacorio",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2,
+    "identity_binding": "strong",
+    "use_class": "professional-public"
+  },
+  {
+    "entity": "contact:vari-kaur",
+    "field_key": "core.work_email",
+    "value_json": {
+      "address": "vari@zafran.io",
+      "status": "VALID",
+      "domain_type": "SMTP",
+      "verdict": "verified",
+      "checked_at": "2026-08-31T07:51:52.000461"
+    },
+    "evidence_span": "email.output[0] = {address: \"vari@zafran.io\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\"}",
+    "source_url": "https://www.linkedin.com/in/vari-kaur",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2
+  },
+  {
+    "entity": "contact:nick-fisher",
+    "field_key": "core.work_email",
+    "value_json": {
+      "address": "nick@zafran.io",
+      "status": "VALID",
+      "domain_type": "SMTP",
+      "verdict": "verified",
+      "checked_at": "2026-08-31T07:52:05.000725"
+    },
+    "evidence_span": "email.output[0] = {address: \"nick@zafran.io\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\"}",
+    "source_url": "https://www.linkedin.com/in/nick-fisher",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2
+  },
+  {
+    "entity": "contact:cameron-coles",
+    "field_key": "core.work_email",
+    "value_json": {
+      "address": "cameron@cogent.com",
+      "status": "VALID",
+      "domain_type": "SMTP",
+      "verdict": "verified",
+      "checked_at": "2026-08-31T07:52:29.000237"
+    },
+    "evidence_span": "email.output[0] = {address: \"cameron@cogent.com\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\"}",
+    "source_url": "https://www.linkedin.com/in/cameron-coles",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2
+  },
+  {
+    "entity": "contact:ana-corio",
+    "field_key": "core.work_email",
+    "value_json": {
+      "address": "ana@harmonic.security",
+      "status": "VALID",
+      "domain_type": "SMTP",
+      "verdict": "verified",
+      "checked_at": "2026-08-29T23:34:09.000652"
+    },
+    "evidence_span": "email.output[0] = {address: \"ana@harmonic.security\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\"}",
+    "source_url": "https://www.linkedin.com/in/ana-corio",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2
+  },
+  {
+    "entity": "contact:tyler-chonoles",
+    "field_key": "core.work_email",
+    "value_json": {
+      "address": "tyler@harmonic.security",
+      "status": "VALID",
+      "domain_type": "SMTP",
+      "verdict": "verified",
+      "checked_at": "2026-08-31T07:52:53.000205"
+    },
+    "evidence_span": "email.output[0] = {address: \"tyler@harmonic.security\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\"}",
+    "source_url": "https://www.linkedin.com/in/tyler-chonoles",
+    "source_key": "ai_ark",
+    "source_tier": 1,
+    "extraction_method": "api",
+    "verification_status": "unverified",
+    "claim_flavor": "field",
+    "reuse_scope": "tenant_private",
+    "workspace_id": "workspace:clue-smoke-2026-08-31",
+    "confidence": 0.9,
+    "priority": 2
+  }
+]

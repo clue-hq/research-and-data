@@ -98,7 +98,6 @@ from clue_api.exa_entity_research_tools import (
     ExaAccountSemanticResearchAction,
     ExaEntityResearchProjectionBuilder,
 )
-from clue_api.frontend_read.account_detail import read_account_detail
 from clue_api.trial.account_deep_fixture import (
     DEEP_FIELD_KEYS,
     InsightHealthAccountDeepFixtureResult,
@@ -637,7 +636,7 @@ def _p2_envelope(
                 "product_id": selection.product_id,
                 "project_run_id": selection.project_run_id,
                 "selection": selection,
-                "agent_profile_ref": "agent-profile:account-research:v1",
+                "agent_profile_ref": "agent-profile:account-research:v2",
                 "agent_profile_sha256": account_research_profile_sha256(),
             }
         ).model_dump(mode="python")
@@ -711,7 +710,10 @@ async def _run_p2(
         update={"active_worker_id": "fi2-s3-economics", "lease_generation": 1}
     )
     fence = EntityResearchExecutionFence(
-        task_id=uuid4(), worker_id="fi2-s3-economics", lease_generation=1
+        task_id=uuid4(),
+        worker_id="fi2-s3-economics",
+        lease_generation=1,
+        task_attempt=1,
     )
     contacts = (
         UUID(
@@ -1178,21 +1180,10 @@ def test_fi2_slice3_p1s_lens_is_untouched_by_p2s_research_tier_and_narrative(
                 }
                 assert mine and mine.isdisjoint(p1_before[field_key])
 
-            # (b) the read layer: one section per project, each carrying its own lens.
-            detail = await read_account_detail(
-                conn,
-                workspace_id=fixture.workspace_id,
-                account_id=UUID(str(fixture.account_id)),
-            )
-            sections = {section.project_id: section for section in detail.project_sections}
-            assert {fixture.p1.project_id, fixture.p2_project_id} <= set(sections)
-            p1_section = sections[fixture.p1.project_id]
-            assert [fact.value for fact in p1_section.narratives] == list(
-                p1_before[VALUE_NARRATIVE].values()
-            )
-            assert [score.fit for score in p1_section.scores] == [0.82]
-            p2_section = sections[fixture.p2_project_id]
-            assert p2_section.narratives and p2_section.narratives != p1_section.narratives
+            # (b) the read layer's half of this assertion is gone with the FI-2 payloads
+            # (2026-09-09): ``projectSections[]`` was the only surface that showed one account's
+            # work partitioned per project, and contract v1 has no such slot. The lens guarantee
+            # itself is the ``run_lineage`` predicate above, which is where it always lived.
 
     run_async(scenario())
 
@@ -1303,19 +1294,9 @@ def test_fi2_slice3_a_stale_neutral_fact_is_refreshed_once_and_serves_both_lense
                 current.provenance.claim_id
             ]
 
-            # …and it is served to *both* lenses, because the one account-detail view serves
-            # neutral facts from the canonical merge rather than from either project's lineage.
-            detail = await read_account_detail(
-                conn,
-                workspace_id=fixture.workspace_id,
-                account_id=UUID(str(fixture.account_id)),
-            )
-            neutral = {fact.field_key: fact for fact in detail.neutral_facts}
-            assert neutral[_MOVES].value == current.value_json
-            assert neutral[_MOVES].freshness.value == "fresh"
-            assert {fixture.p1.project_id, fixture.p2_project_id} <= {
-                section.project_id for section in detail.project_sections
-            }
+            # …and to *both* lenses: a neutral fact is served from the canonical merge above, not
+            # from either project's lineage, so the one merged winner is what every reader gets.
+            # (The read-layer half of this assertion went with the FI-2 payloads on 2026-09-09.)
 
             # The Exa refresh: bought and durably written, and *withheld* from the merge until a
             # faithfulness verdict exists. Both halves pinned (see the docstring).
@@ -1333,8 +1314,17 @@ def test_fi2_slice3_a_stale_neutral_fact_is_refreshed_once_and_serves_both_lense
                 .all()
             )
             assert [str(value) for value in exa_written] == ["unverified"]
-            assert neutral[_PAIN].value == _P1_VALUES[_PAIN]
-            assert neutral[_PAIN].freshness.value == "stale"
+            # Withheld: the merge still serves P1's own stale value, not the unverified refresh.
+            pain = (
+                await current_values(
+                    conn,
+                    [fixture.account_id],
+                    [_PAIN],
+                    scope=WorkspaceScope.for_workspace(fixture.workspace_id),
+                )
+            )[(fixture.account_id, _PAIN)]
+            assert pain.value_json == _P1_VALUES[_PAIN]
+            assert pain.freshness_state.value == "stale"
 
     run_async(scenario())
 

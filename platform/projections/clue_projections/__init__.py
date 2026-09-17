@@ -44,6 +44,16 @@ from clue_projections.agents import (
     agent_turns_for_project,
     agent_turns_for_thread,
 )
+from clue_projections.cost import (
+    NOT_COVERED,
+    CostFilters,
+    CostReport,
+    JobSpendLine,
+    ModelSpendLine,
+    ProjectSpendLine,
+    ProviderSpendLine,
+    cost_report,
+)
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
     AccountProgress,
@@ -179,6 +189,11 @@ from clue_projections.thread_refs import (
     MessageRefFlavor,
     flavors_for_message_role,
 )
+from clue_projections.thread_research_tasks import (
+    ResearchFieldProgress,
+    ThreadResearchTaskView,
+    thread_research_tasks,
+)
 from clue_projections.threads import (
     AGENT_TURN_TASK_DEDUP_PREFIX,
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
@@ -277,6 +292,15 @@ __all__ = [
     "AccountDeepSteeringAccount",
     "AccountDeepSteeringCard",
     "AccountDeepSteeringLaunch",
+    # lane 3 slice 1 cost read
+    "NOT_COVERED",
+    "CostFilters",
+    "CostReport",
+    "JobSpendLine",
+    "ModelSpendLine",
+    "ProjectSpendLine",
+    "ProviderSpendLine",
+    "cost_report",
     # DTOs
     "RunOverview",
     "AccountProgress",
@@ -313,6 +337,10 @@ __all__ = [
     "ResearchTaskCounts",
     "ResearchTaskView",
     "research_tasks_for_action_refs",
+    # Slice C: the durable per-thread task read a live progress card polls
+    "ResearchFieldProgress",
+    "ThreadResearchTaskView",
+    "thread_research_tasks",
     # FI Lane D dev-lens turn-context inspector (dev-only read surface; zero new storage)
     "TurnContextLayerView",
     "TurnContextReceiptView",

@@ -125,15 +125,20 @@ def test_unprovisioned_disabled_cross_workspace_and_permission_cases_are_distinc
             resolver = DatabaseIdentityResolver(conn_factory=conn_factory)
             authorizer = DatabaseAuthorizer(conn_factory=conn_factory)
 
-            with pytest.raises(IdentityNotProvisioned):
+            with pytest.raises(IdentityNotProvisioned) as unprovisioned:
                 await resolver.resolve(_session("absent-subject"))
+            # The refusal names who was refused, for the operator log (2026-09-11): the verified
+            # provider subject when identity never resolved, the Clue user once it had.
+            assert unprovisioned.value.subject == "absent-subject"
+            assert unprovisioned.value.user_id is None
             identity = await resolver.resolve(_session("viewer-subject"))
-            with pytest.raises(WorkspaceForbidden):
+            with pytest.raises(WorkspaceForbidden) as forbidden:
                 await authorizer.require(
                     identity,
                     workspace_id=other_workspace.workspace_id,
                     permission="project.read",
                 )
+            assert forbidden.value.user_id == identity.user_id
             with pytest.raises(PermissionDenied):
                 await authorizer.require(
                     identity,

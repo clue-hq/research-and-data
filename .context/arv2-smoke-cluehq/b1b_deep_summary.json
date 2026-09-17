@@ -1,0 +1,23 @@
+{
+  "harmonic": {
+    "chars": 15729,
+    "not_found": 35,
+    "elapsed_s": 42.9,
+    "cost_usd": 0.027,
+    "http": 200
+  },
+  "vendelux": {
+    "chars": 17921,
+    "not_found": 35,
+    "elapsed_s": 40.9,
+    "cost_usd": 0.027,
+    "http": 200
+  },
+  "uptiq": {
+    "chars": 15249,
+    "not_found": 26,
+    "elapsed_s": 41.0,
+    "cost_usd": 0.027,
+    "http": 200
+  }
+}

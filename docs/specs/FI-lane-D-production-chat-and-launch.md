@@ -60,7 +60,7 @@ No LangGraph `interrupt()` anywhere. `finalize_turn` is `return_direct=True` wit
 | Step | State |
 |---|---|
 | Project run (`start_confirmed_project_run@1`) | exists, agent-callable |
-| Tier checkpoint per account | exists; human-only tool; **only** `persist_discovery_selection_tier` writes the claim shape the launcher demands (`project_run_id` + `disposition='selected'`, HUMAN/tier-1) — the scoring-mode writer never satisfies it |
+| Tier checkpoint per account | **Superseded by the 2026-08-19 founder ruling:** signal tier is prioritization metadata, not explicit Account-launch authority. The attributable user turn + exact directive Account scope authorizes research; `high`, `low`, absent, or effort-tier vocabulary mismatch cannot refuse it. |
 | Agent drafts directive (`draft_…@2`) | tool exists, agent authority — **un-callable through the agent seam (§1.4 blocker)** |
 | Estimate presented | partial: directive preview carries counts; the estimate is Σ per-account `effort_policy.budget_cap_cents` computed *inside the launcher*; **no first-class agent-callable estimate tool** (`estimate_project` is reserved `post_stage0_not_admitted`) |
 | User confirms directive (`confirm_…@2`) | tool exists, human-only, requires ambient `actor_id`+`action_ref` → **uninvocable in production** |
@@ -176,7 +176,10 @@ This contract covers the user-visible final response. `reasoning` remains a safe
 
 - The turn POST accepts exactly one of an ordinary message or a structured gate response. It also accepts stable client/idempotency identity, ordered context entity/object refs, and attachment refs; it never accepts `actor_id` or `action_ref`.
 - **One active platform-deepagent turn per thread.** Later ordinary turns may be durably queued in submission order; they never execute concurrently against the same thread history. Detached research runs do not lock the thread, so the user can keep asking questions while research proceeds.
-- **Stop turn** cancels only the active model turn/generation attempt. It does not roll back already-committed tool effects or suspend a detached research run.
+- **Stop turn** records durable intent for the active chat turn and its associated design run. It preserves committed tool effects, accepted scene versions/prior website output, and already-launched account/contact research. Acknowledgement follows owned-design termination and immutable partial-answer/history persistence; it is separate from the HTTP 202 intent receipt.
+- **Queue hold and Resume (2026-09-12 amendment):** Stop atomically holds later accepted turns. They remain FIFO across refresh/restart until explicit `POST …/threads/:threadId/queue/resume` with the observed hold ID. Sending while held appends; Resume consumes no draft. Stale Resume cannot release a newer hold. Normal completion without Stop still advances automatically. Empty holds clear on acknowledgement under the thread lock.
+- **Composer:** running plus empty draft shows Stop; running plus valid draft shows Send and queues. Pending cancellation shows disabled Stop; acknowledgement restores normal Send. No normal Stopping/Stopped copy or duplicate standalone Stop strip. The queue count/Resume sits above the composer.
+- **Interrupted history:** only the accepted finalize-answer prefix is stored, with interruption provenance carried separately into model context. Provider reasoning is excluded. Stop and successful finalization serialize so only the first durable authority wins. Detailed payloads, implementation and evidence live in [Projects §6A](../../apps/frontend/docs/api-contracts/projects.md#chat-polish-delivery-plan).
 - **Suspend/resume run** invokes the governed supervisor tool and has its own task state. It is not represented as a stream abort.
 - **Gate approve/reject/revise** is a new human turn and durable gate answer. It is not a client-only AI Elements callback.
 - **Retry turn** creates a new generation attempt tied to `retry_of_turn_id`; it never mutates or overwrites the prior transcript.

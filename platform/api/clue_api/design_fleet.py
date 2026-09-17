@@ -106,7 +106,7 @@ class InlineDesignLaneDriver:
     sense that matters — the same :class:`~lumen_api.fleet_handler.DesignJobWorkHandler`, the
     same claim CAS, the same generation fences, the same run-event stream — but it is *driven by
     the agent-turn worker* instead of queued as a second fleet task. The platform fleet drains
-    one task per concurrency slot (``CLUE_FLEET_MAX_CONCURRENCY``; exactly one until 2026-09-07),
+    one task per drain slot (``CLUE_FLEET_WORKER_CONCURRENCY``; exactly one by default),
     so an ``AGENT_TURN`` handler that enqueued a ``design_job`` and awaited it would deadlock a
     deployment whose slots are all busy against itself; holding the design
     work lease and calling the handler directly keeps single-flight, stop and fencing semantics
@@ -286,7 +286,7 @@ class InlineDesignLaneDriver:
                 # The beat exited ⇒ it declared the lease lost. The handler races
                 # ``lease_lost`` itself and abandons cooperatively — await that abandonment
                 # rather than cancelling mid-write.
-                result = await work
+                result = await asyncio.shield(work)
                 log.warning(
                     "design_leg.lane_fenced_out",
                     work_id=str(work_id),
@@ -297,6 +297,17 @@ class InlineDesignLaneDriver:
                 work_id=str(work_id),
                 outcome=result.outcome,
             )
+        except asyncio.CancelledError:
+            from clue_design import runs as design_runs
+
+            async with self._conn_factory() as conn:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            # Cancelling an asyncio wrapper does not stop its synchronous job thread.
+            # Keep the heartbeat and handler alive until the actual body exits.
+            await asyncio.shield(work)
+            raise
         finally:
             for task in (beat, work):
                 if not task.done():

@@ -306,6 +306,10 @@ def test_the_cancellation_callback_raises_rather_than_being_swallowed() -> None:
         handler.on_chat_model_start({}, [])
     with pytest.raises(TurnCancelled):
         handler.on_llm_start({}, [])
+    with pytest.raises(TurnCancelled):
+        handler.on_llm_new_token("token")
+    with pytest.raises(TurnCancelled):
+        handler.on_llm_end(None)
 
 
 def test_an_uncancelled_run_is_never_refused() -> None:

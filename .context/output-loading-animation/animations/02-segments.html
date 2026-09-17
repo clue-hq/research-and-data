@@ -1,0 +1,70 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Option 2 — Segments · Clue output loading</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+/* Option 2 — SEGMENTS. Closest to the Play reference, translated into Clue's
+   language: a frosted ghost of the artifact behind, and four brand segments that
+   pop in one after another, then each idles with its own motion. The segments
+   are the three pieces of the Clue mark plus one slate-teal ring (the secondary
+   accent), instead of Play's four unrelated 3D toys. */
+.ghost{position:absolute;inset:0;opacity:.55;filter:blur(14px) saturate(.35);transform:scale(1.02)}
+.veil{background:rgba(255,255,255,.35);backdrop-filter:blur(6px)}
+.stage{display:flex;flex-direction:column;align-items:center}
+.row{display:flex;gap:18px;align-items:center;height:56px}
+.seg{width:44px;height:44px;display:grid;place-items:center;opacity:0;transform:scale(.2);animation:pop .55s cubic-bezier(.34,1.56,.64,1) forwards}
+.seg svg{width:100%;height:100%;overflow:visible}
+.seg:nth-child(1){animation-delay:.05s}.seg:nth-child(2){animation-delay:.28s}.seg:nth-child(3){animation-delay:.51s}.seg:nth-child(4){animation-delay:.74s}
+@keyframes pop{to{opacity:1;transform:scale(1)}}
+/* idle motions start once popped (delay = pop delay + pop duration) */
+.seg:nth-child(1) svg{animation:rock 2.6s ease-in-out .6s infinite}
+.seg:nth-child(2) svg{animation:bob 2.2s ease-in-out .83s infinite}
+.seg:nth-child(3) svg{animation:tilt 3s ease-in-out 1.06s infinite}
+.seg:nth-child(4) svg{animation:spin 4s linear 1.29s infinite}
+@keyframes rock{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(9deg)}}
+@keyframes bob{0%,100%{transform:translateY(-4px)}50%{transform:translateY(4px)}}
+@keyframes tilt{0%,100%{transform:rotate(6deg) scale(1)}50%{transform:rotate(-6deg) scale(1.08)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.status{margin-top:22px}
+</style></head><body>
+<div class="app">
+ <aside class="chat">
+  <header><span>Untitled</span><span class="dots">···</span></header>
+  <div class="thread">
+   <div class="msg user">Make a LinkedIn ad for Zafran's revenue team from the account research.</div>
+   <div class="msg agent">On it. Using the Zafran claims and the confirmed product positioning.<span class="pill"><i></i>Drafting revenue ad</span></div>
+  </div>
+  <div class="composer"><div class="row"><span>+</span><span>@</span><span class="spacer"></span><span>GPT 5.5 ⌄</span><span class="send"></span></div></div>
+ </aside>
+ <main class="output">
+  <div class="tabs"><span>▦ Gallery</span><span>target accounts</span><span class="active">revenue ad</span></div>
+  <div class="toolbar"><span>revenue ad</span><span class="dots">···</span><span class="spacer"></span><span class="zoom">23% ⌄</span><button>Edit</button><button class="dark">Export</button></div>
+  <div class="canvas"><div class="card">
+   <div class="artifact ghost">
+    <div class="who"><div class="av"></div><div><b>Clue</b><small>Promoted</small></div></div>
+    <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+    <div class="hero">Stop guessing which accounts are ready. Start knowing.</div>
+    <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+   </div>
+   <div class="artifact">
+    <div class="who"><div class="av"><svg viewBox="249 264 659 629"><path fill="#F8F5DC" d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/><path fill="#F8F5DC" d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/><path fill="#F8F5DC" d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg></div><div><b>Clue</b><small>Promoted</small></div></div>
+    <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+    <div class="hero">Stop guessing which accounts are ready. Start knowing.</div>
+    <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+   </div>
+   <div class="veil"><div class="stage">
+    <div class="row">
+     <div class="seg"><svg viewBox="249 264 400 629"><path fill="#44483F" d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/></svg></div>
+     <div class="seg"><svg viewBox="665 264 244 246"><path fill="#BCC4B3" d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/></svg></div>
+     <div class="seg"><svg viewBox="500 554 410 340"><path fill="#5C7A82" d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg></div>
+     <div class="seg"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="15" fill="none" stroke="#33372E" stroke-width="7" stroke-dasharray="70 25" stroke-linecap="round"/></svg></div>
+    </div>
+    <div class="status">Generating revenue ad…</div>
+   </div></div>
+  </div></div>
+ </main>
+</div>
+<div class="controls"><span class="label">Option 2 · Segments</span><button id="replay">Replay</button><button id="finish">Finish generation</button></div>
+<script>
+const veil=document.querySelector('.veil');const html=veil.innerHTML;
+document.getElementById('finish').onclick=()=>document.body.classList.add('done');
+document.getElementById('replay').onclick=()=>{document.body.classList.remove('done');veil.innerHTML=html;};
+</script></body></html>

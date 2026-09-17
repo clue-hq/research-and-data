@@ -15,6 +15,8 @@ ENG-125 (docs/specs/M00-foundations-and-shared-contracts.md §M0.5).
 from __future__ import annotations
 
 from clue_obs.otel.attributes import (
+    ATTR_ACCOUNT_ID,
+    ATTR_ACTOR,
     ATTR_AGENT_ROLE,
     ATTR_CACHE_HIT,
     ATTR_COMPLETION_TOKENS,
@@ -23,25 +25,45 @@ from clue_obs.otel.attributes import (
     ATTR_ENTITY_ID,
     ATTR_ENTITY_TYPE,
     ATTR_FIELD_KEY,
+    ATTR_FLEET_KIND,
     ATTR_GATE_DECISION,
     ATTR_ICP_ID,
+    ATTR_JOB_ID,
     ATTR_LATENCY_MS,
     ATTR_MODALITY,
     ATTR_MODEL,
     ATTR_N_CLAIMS,
     ATTR_N_SOURCES,
+    ATTR_PROFILE_VERSION,
+    ATTR_PROJECT_ID,
     ATTR_PROJECT_RUN_ID,
     ATTR_PROMPT_TOKENS,
+    ATTR_REQUEST_ID,
     ATTR_RESEARCH_MODE,
     ATTR_RUN_ID,
     ATTR_SOURCE_KEY,
     ATTR_SOURCE_TIER,
+    ATTR_TASK_ATTEMPT,
+    ATTR_TASK_ID,
+    ATTR_THREAD_ID,
     ATTR_TOTAL_TOKENS,
+    ATTR_TURN_ID,
+    ATTR_WORK_ID,
+    ATTR_WORKER_ID,
     ATTR_WORKSPACE_ID,
     STANDARD_ATTRIBUTES,
     SpanAttributes,
     safe_attributes,
     to_otel_value,
+)
+from clue_obs.otel.install import (
+    RUN_CONTEXT_KEYS,
+    RunContextSpanProcessor,
+    TracingRuntime,
+    bind_and_annotate,
+    bound_run_context,
+    install_tracing,
+    parse_otlp_headers,
 )
 from clue_obs.otel.logging import RedactingFilter, configure_logging, get_logger
 from clue_obs.otel.metrics import (
@@ -67,6 +89,11 @@ from clue_obs.otel.metrics import (
     record_use_class_distribution,
     record_verification_health,
     set_metric_sink,
+)
+from clue_obs.otel.propagation import (
+    CARRIER_KEYS,
+    carrier_from_current_span,
+    context_from_carrier,
 )
 from clue_obs.otel.spans import (
     PROJECT_PHASES,
@@ -94,7 +121,14 @@ from clue_obs.otel.spans import (
     resolve_span,
 )
 from clue_obs.otel.testing import collect_spans
-from clue_obs.otel.tracing import apply_attributes, configure_tracing, traced, traced_step
+from clue_obs.otel.tracing import (
+    apply_attributes,
+    configure_tracing,
+    get_tracer,
+    traced,
+    traced_step,
+    use_provider,
+)
 
 __all__ = [
     # tracing
@@ -102,6 +136,19 @@ __all__ = [
     "traced",
     "apply_attributes",
     "configure_tracing",
+    # roots (lane 3 slice 2)
+    "get_tracer",
+    "use_provider",
+    "RUN_CONTEXT_KEYS",
+    "RunContextSpanProcessor",
+    "TracingRuntime",
+    "bind_and_annotate",
+    "bound_run_context",
+    "install_tracing",
+    "parse_otlp_headers",
+    "CARRIER_KEYS",
+    "carrier_from_current_span",
+    "context_from_carrier",
     # span names
     "SPAN_RESOLVE",
     "resolve_span",
@@ -150,6 +197,19 @@ __all__ = [
     "ATTR_MODALITY",
     "ATTR_N_CLAIMS",
     "ATTR_N_SOURCES",
+    "ATTR_REQUEST_ID",
+    "ATTR_PROJECT_ID",
+    "ATTR_THREAD_ID",
+    "ATTR_TURN_ID",
+    "ATTR_JOB_ID",
+    "ATTR_ACCOUNT_ID",
+    "ATTR_ACTOR",
+    "ATTR_PROFILE_VERSION",
+    "ATTR_TASK_ID",
+    "ATTR_WORK_ID",
+    "ATTR_FLEET_KIND",
+    "ATTR_TASK_ATTEMPT",
+    "ATTR_WORKER_ID",
     "STANDARD_ATTRIBUTES",
     "SpanAttributes",
     "safe_attributes",

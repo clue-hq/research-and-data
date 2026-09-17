@@ -1,7 +1,7 @@
 .panel {
-  background: white;
+  background: var(--clue-background-neutral);
   border: 0.5px solid var(--clue-border-input);
-  border-radius: 9px;
+  border-radius: var(--clue-ds-product-component-button-md-radius);
   box-shadow: 0 12px 32px rgb(0 24 62 / 10%);
   max-width: calc(100vw - 32px);
   overflow: visible;
@@ -23,21 +23,21 @@
 
 .title {
   color: var(--clue-content-neutral);
-  font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
-  line-height: var(--clue-ds-product-typography-ui-medium-line-height);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
 }
 
 .clearButton {
-  border-radius: 5px;
+  border-radius: var(--clue-ds-product-component-button-sm-radius);
   color: var(--clue-content-subtle);
   cursor: pointer;
-  font-family: var(--clue-ds-product-typography-action-medium-font-family);
-  font-size: var(--clue-ds-product-typography-action-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
   height: 28px;
-  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
   padding: 0 8px;
 }
 
@@ -67,10 +67,10 @@
 
 .whereLabel {
   color: var(--clue-content-subtle);
-  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
-  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
-  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
   padding-left: 2px;
 }
 
@@ -81,16 +81,21 @@
   min-width: 0;
 }
 
+@container target-accounts (max-width: 750px) {
+  .rule { grid-template-columns: 54px minmax(0, 1fr) 28px; }
+  .controls { grid-template-columns: minmax(0, 1fr); }
+}
+
 .valueInput {
   background: var(--clue-background-page);
   border: 0.5px solid var(--clue-border-input);
-  border-radius: 6px;
+  border-radius: var(--clue-ds-product-component-button-md-radius);
   color: var(--clue-content-neutral);
-  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
-  font-size: var(--clue-ds-product-typography-ui-regular-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-regular-font-weight);
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-font-weight);
   height: 34px;
-  line-height: var(--clue-ds-product-typography-ui-regular-line-height);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
   min-width: 0;
   outline: none;
   padding: 0 10px;
@@ -106,14 +111,14 @@
 }
 
 .valueInput:focus-visible {
-  border-color: #9aa593;
-  outline: 2px solid #dfe6d8;
-  outline-offset: 1px;
+  border-color: var(--clue-ds-color-components-button-border-neutral-default);
+  box-shadow: var(--clue-ds-product-component-button-effect-focus-surface);
+  outline: none;
 }
 
 .deleteButton {
   align-items: center;
-  border-radius: 5px;
+  border-radius: var(--clue-ds-product-component-button-sm-radius);
   color: var(--clue-content-subtle);
   cursor: pointer;
   display: flex;
@@ -142,19 +147,19 @@
 
 .addButton {
   align-items: center;
-  background: white;
+  background: var(--clue-background-neutral);
   border: 0.5px solid var(--clue-border-input);
-  border-radius: 6px;
+  border-radius: var(--clue-ds-product-component-button-md-radius);
   box-shadow: var(--clue-shadow-low);
   color: var(--clue-content-neutral);
   cursor: pointer;
   display: inline-flex;
-  font-family: var(--clue-ds-product-typography-action-medium-font-family);
-  font-size: var(--clue-ds-product-typography-action-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-action-medium-font-weight);
+  font-family: var(--clue-ds-typography-text-sm-medium-font-family);
+  font-size: var(--clue-ds-typography-text-sm-medium-font-size);
+  font-weight: var(--clue-ds-typography-text-sm-medium-font-weight);
   gap: 6px;
   height: 32px;
-  line-height: var(--clue-ds-product-typography-action-medium-line-height);
+  line-height: var(--clue-ds-typography-text-sm-medium-line-height);
   padding: 0 10px;
 }
 
@@ -165,8 +170,8 @@
 .addButton:focus-visible,
 .clearButton:focus-visible,
 .deleteButton:focus-visible {
-  outline: 2px solid #dfe6d8;
-  outline-offset: 1px;
+  box-shadow: var(--clue-ds-product-component-button-effect-focus-surface);
+  outline: none;
 }
 
 .plusIcon {

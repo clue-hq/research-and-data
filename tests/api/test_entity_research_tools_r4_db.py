@@ -20,9 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import ModelPolicy
 from clue_agents.entity_research_contracts import (
+    EntityAgentJournalEventKind,
     EntityAgentRole,
     EntityResearchAgentDefinition,
     EntityResearchAgentSuspension,
+    EntityResearchJournalEvent,
     EntityResearchResource,
     EntityResearchResourceBundle,
     EntityResearchRuntimeContext,
@@ -31,22 +33,26 @@ from clue_agents.entity_research_contracts import (
     canonical_sha256,
 )
 from clue_agents.entity_research_runtime import (
+    _ACTIVE_TOOL_EXECUTION,
     ActiveEntityResearchToolExecution,
     EntityResearchAgentFactory,
     EntityResearchAgentRuntime,
 )
-from clue_agents.entity_research_tools import ReadResearchEvidenceInput
+from clue_agents.entity_research_tools import (
+    EntityResearchSemanticToolInput,
+    ReadResearchEvidenceInput,
+)
 from clue_agents.model import ScriptedAgentChatModel
+from clue_api.contact_entity_research import ContactResearchStateStore
 from clue_api.entity_research_runtime_wiring import (
     DbEntityResearchAgentJournal,
     PostgresEntityResearchCheckpointers,
 )
 from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
     EntityResearchProviderCausationStore,
     EntityResearchProviderWait,
-    EntityResearchResultIntegrityError,
     EntityResearchResultStore,
-    EntityResearchToolAuthorityError,
     EntityResearchToolRequestStore,
     GovernedEntityResearchToolFactory,
     ProviderActionBinding,
@@ -97,6 +103,7 @@ from tests.agents.test_entity_research_runtime_r3 import (
     _proposal,
     _tool,
 )
+from tests.agents.test_entity_research_tools_r4 import _Action
 from tests.contact_research.test_c4_exa_contact_acquisition_materialization import (
     _FIELD,
     _payload,
@@ -447,6 +454,50 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
 
             first_context = await run_turn(uuid4(), "r4-exa-first")
             assert transport.calls == 1
+            retry_arguments = {
+                "field_keys": [_FIELD],
+                "source_keys": ["exa_deep"],
+                "questions": [_QUESTION],
+            }
+            retry_call = EntityResearchToolCall(
+                tool_call_id="r4-exa-first",
+                tool_name="research_contact_deep",
+                tool_version=1,
+                tool_input_sha256=canonical_sha256(retry_arguments),
+                arguments=retry_arguments,
+            )
+            retry_event = EntityResearchJournalEvent(
+                event_id=uuid4(),
+                agent_execution_id=first_context.agent_execution_id,
+                agent_turn_id=first_context.agent_turn_id,
+                kind=EntityAgentJournalEventKind.TOOL_STARTED,
+                payload={"arguments": retry_arguments},
+                tool_call_id=retry_call.tool_call_id,
+                tool_name=retry_call.tool_name,
+                tool_version=retry_call.tool_version,
+                tool_input_sha256=retry_call.tool_input_sha256,
+            )
+            retry_ref = await DbEntityResearchAgentJournal(conn_factory=connection).append(
+                retry_event
+            )
+            replayed_request = await request_store.record(
+                active=ActiveEntityResearchToolExecution(
+                    context=first_context,
+                    call=retry_call,
+                    journal_event_ref=retry_ref,
+                ),
+                semantic=EntityResearchSemanticToolInput.model_validate(retry_arguments),
+            )
+            original_event_id = (
+                await conn.execute(
+                    text(
+                        "SELECT tool_event_id FROM entity_research_tool_request "
+                        "WHERE tool_request_id=:request_id"
+                    ),
+                    {"request_id": replayed_request.tool_call_id},
+                )
+            ).scalar_one()
+            assert original_event_id != retry_event.event_id
             tool_event = (
                 await conn.execute(
                     text(
@@ -545,7 +596,10 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                 offset = unicode_page.next_offset
             assert "".join(pieces).encode("utf-8") == evidence_bytes
             emoji_offset = evidence_bytes.index("🩺".encode())
-            with pytest.raises(EntityResearchResultIntegrityError, match="code-point boundary"):
+            # A paging argument the model got wrong (a mid-code-point offset, an offset past the
+            # end, a window too small for the next code point) is its own repairable mistake — the
+            # suspending integrity species is for retained bytes that are not what they claim.
+            with pytest.raises(EntityResearchGovernedRejection, match="code-point boundary"):
                 await result_store.read_evidence(
                     active=active,
                     request=ReadResearchEvidenceInput(
@@ -554,9 +608,29 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                         max_bytes=16,
                     ),
                 )
+            with pytest.raises(EntityResearchGovernedRejection, match="exceeds retained content"):
+                await result_store.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=evidence_ref,
+                        offset=len(evidence_bytes) + 1,
+                        max_bytes=16,
+                    ),
+                )
+            with pytest.raises(EntityResearchGovernedRejection, match="page size is too small"):
+                await result_store.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=evidence_ref,
+                        offset=emoji_offset,
+                        max_bytes=1,
+                    ),
+                )
 
             foreign = _context(ResearchSubjectType.CONTACT, EntityAgentRole.CONTACT)
-            with pytest.raises(EntityResearchToolAuthorityError, match="outside the exact job"):
+            # Still refused — the read authority is unchanged — but in the repairable species, so
+            # a model-typed foreign ref corrects the agent instead of failing its execution.
+            with pytest.raises(EntityResearchGovernedRejection, match="outside the exact job"):
                 await result_store.read_result(
                     active=active.__class__(
                         context=foreign,
@@ -724,8 +798,12 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                         text(
                             """
                             SELECT
-                              (SELECT count(*) FROM entity_research_tool_request) AS requests,
-                              (SELECT count(*) FROM entity_research_result) AS results,
+                              (SELECT count(*) FROM entity_research_tool_request
+                               WHERE job_id=:job_id) AS requests,
+                              (SELECT count(*) FROM entity_research_result result
+                               JOIN entity_research_tool_request request_row
+                                 ON request_row.tool_request_id=result.tool_request_id
+                               WHERE request_row.job_id=:job_id) AS results,
                               (SELECT count(*) FROM external_research_operation
                                WHERE contact_id=:contact_id) AS operations,
                               (SELECT count(*) FROM external_research_receipt receipt
@@ -734,7 +812,10 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                                WHERE operation.contact_id=:contact_id) AS receipts
                             """
                         ),
-                        {"contact_id": seed.intent.contact_entity_id},
+                        {
+                            "job_id": authorization.job_id,
+                            "contact_id": seed.intent.contact_entity_id,
+                        },
                     )
                 )
                 .mappings()
@@ -753,7 +834,8 @@ def test_governed_exa_tool_persists_complete_result_causation_reads_and_replay(
                             "SELECT job.spent_cents AS job_spent, "
                             "run_row.spent_cents AS run_spent, "
                             "(SELECT count(*) FROM "
-                            "entity_research_provider_settlement_fold) AS folds "
+                            "entity_research_provider_settlement_fold fold "
+                            "WHERE fold.job_id=job.job_id) AS folds "
                             "FROM entity_research_job job "
                             "JOIN entity_research_run run_row "
                             "ON run_row.research_run_id=job.research_run_id "
@@ -949,8 +1031,9 @@ def test_provider_neutral_join_records_wait_and_advances_durable_state(tmp_path:
             request: GovernedResearchToolRequest,
             *,
             before_dispatch: object,
+            settle_terminal: object,
         ) -> tuple[()]:
-            del before_dispatch
+            del before_dispatch, settle_terminal
             now = datetime.now(UTC)
             raise EntityResearchProviderWait(
                 ProviderOperationReservation(
@@ -1263,6 +1346,345 @@ def test_provider_neutral_join_records_wait_and_advances_durable_state(tmp_path:
     request_workspace_id = ""
     request_project_id = ""
     request_project_run_id = uuid4()
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+async def _journal_governed_request(
+    conn: AsyncConnection,
+    *,
+    authorization: EntityResearchJobAuthorization,
+    operation_ref: str,
+    disposition: str,
+) -> UUID:
+    """Journal one governed contact tool request and its observation of ``operation_ref``.
+
+    Written as SQL rather than driven through the agent because the shape under test is durable,
+    not behavioural: two jobs over the same contact, one provider operation, one settlement. Every
+    row still passes the production triggers (turn ⇄ event ⇄ request authority, and the observation
+    ⇄ operation authority), so nothing here is admitted that the runtime could not have written.
+    """
+
+    selection = authorization.selection
+    turn_id, execution_id, event_id, request_id = uuid4(), uuid4(), uuid4(), uuid4()
+    call_id = f"governed-call:{authorization.job_id}"
+    params = {
+        "turn_id": turn_id,
+        "execution_id": execution_id,
+        "event_id": event_id,
+        "request_id": request_id,
+        "observation_id": uuid4(),
+        "call_id": call_id,
+        "job_id": authorization.job_id,
+        "research_run_id": authorization.research_run_id,
+        "contact_id": authorization.subject_entity_id,
+        "account_id": authorization.parent_account_id,
+        "workspace_id": authorization.workspace_id,
+        "project_id": authorization.project_id,
+        "product_id": authorization.product_id,
+        "project_run_id": authorization.project_run_id,
+        "checkpoint_thread_id": authorization.checkpoint_thread_id,
+        "field_keys": list(selection.admitted_field_keys),
+        "source_keys": list(selection.admitted_source_keys),
+        "questions": list(selection.research_questions),
+        "operation_ref": operation_ref,
+        "disposition": disposition,
+        "sha": "a" * 64,
+        "authority": json.dumps(
+            [
+                {"field_key": item.field_key, "source_keys": list(item.source_keys)}
+                for item in selection.field_source_authority
+            ]
+        ),
+    }
+    params["context"] = json.dumps(
+        {
+            "agent_execution_id": str(execution_id),
+            "agent_turn_id": str(turn_id),
+            "role": "contact",
+            "subject_type": "contact",
+            "subject_entity_id": str(authorization.subject_entity_id),
+            "job_id": str(authorization.job_id),
+            "research_run_id": str(authorization.research_run_id),
+            "workspace_id": authorization.workspace_id,
+            "project_id": authorization.project_id,
+            "product_id": authorization.product_id,
+            "project_run_id": str(authorization.project_run_id),
+            "checkpoint_thread_id": authorization.checkpoint_thread_id,
+            "tool_names": ["research_contact_deep"],
+            "admitted_field_keys": list(selection.admitted_field_keys),
+            "admitted_source_keys": list(selection.admitted_source_keys),
+            "field_source_authority": json.loads(str(params["authority"])),
+            "research_questions": list(selection.research_questions),
+        }
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_turn
+                (agent_turn_id, agent_execution_id, job_id, research_run_id, role, subject_type,
+                 target_entity_id, parent_account_id, workspace_id, project_id, product_id,
+                 project_run_id, checkpoint_thread_id, context_json, context_sha256,
+                 resource_manifest_json, resource_manifest_sha256, tool_manifest_json,
+                 tool_manifest_sha256, system_prompt_sha256)
+            VALUES
+                (:turn_id, :execution_id, :job_id, :research_run_id, 'contact', 'contact',
+                 :contact_id, :account_id, :workspace_id, :project_id, :product_id,
+                 :project_run_id, :checkpoint_thread_id, CAST(:context AS jsonb), :sha,
+                 '{}'::jsonb, :sha, '[]'::jsonb, :sha, :sha)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_agent_event
+                (event_id, agent_turn_id, agent_execution_id, event_kind, tool_call_id, tool_name,
+                 tool_version, tool_input_sha256, payload_json)
+            VALUES (:event_id, :turn_id, :execution_id, 'tool_started', :call_id,
+                    'research_contact_deep', 1, :sha, '{}'::jsonb)
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_tool_request
+                (tool_request_id, agent_turn_id, agent_execution_id, tool_event_id,
+                 raw_tool_call_id, research_run_id, job_id, subject_type, target_entity_id,
+                 parent_account_id, workspace_id, project_id, product_id, project_run_id,
+                 tool_name, tool_version, tool_input_sha256, field_plan_ref, source_plan_ref,
+                 field_keys, source_keys, questions, budget_reservation_key, idempotency_key,
+                 field_source_authority)
+            VALUES
+                (:request_id, :turn_id, :execution_id, :event_id, :call_id, :research_run_id,
+                 :job_id, 'contact', :contact_id, :account_id, :workspace_id, :project_id,
+                 :product_id, :project_run_id, 'research_contact_deep', 1, :sha,
+                 'contact-field-plan:1', 'contact-source-plan:1', :field_keys, :source_keys,
+                 :questions, :call_id, :call_id, CAST(:authority AS jsonb))
+            """
+        ),
+        params,
+    )
+    await conn.execute(
+        text(
+            """
+            INSERT INTO entity_research_provider_observation
+                (observation_id, tool_request_id, external_workspace_id, disposition,
+                 provider_operation_ref)
+            VALUES (:observation_id, :request_id, :workspace_id, :disposition, :operation_ref)
+            """
+        ),
+        params,
+    )
+    return request_id
+
+
+def test_a_replaying_contact_job_sees_the_settlement_another_job_folded(tmp_path: Path) -> None:
+    """The contact half of the live Millennium wedge: the fold belongs to the operation.
+
+    ``entity_research_provider_settlement_fold`` is keyed on the provider operation and inserted ON
+    CONFLICT DO NOTHING, so it is written once and stamped with the job that settled it first.
+    Provider operations are content-keyed and deliberately reused across jobs (that is the
+    anti-double-spend rule), so a later job re-derives the same ref and records a
+    ``replay_observation``. While ``_pending_refs`` demanded a fold carrying its *own* job id, that
+    operation stayed pending forever and the contact finalization guard refused every attempt —
+    the account-side shape that wedged two live jobs on 2026-08-19. Spend stays job-scoped: the
+    replaying job dispatched nothing and owes nothing.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "cross-job-fold-artifacts")
+        async with rollback_conn() as conn:
+            seed = await _seed(conn, storage, suffix="cross-job-fold")
+            connection = _TransactionalTrackedConnFactory(conn)
+            profile_body = "role: contact-research\nframework: langchain-create-agent\n"
+            profile_sha = hashlib.sha256(profile_body.encode()).hexdigest()
+            store = DbEntityResearchJobStore(conn_factory=connection)
+            # Two runs over the same contact — a relaunch, which is exactly how the live wedge
+            # arose. Each envelope mints its own selection, run and job.
+            envelopes = tuple(_fleet_envelope(seed, profile_sha256=profile_sha) for _ in range(2))
+            for envelope in envelopes:
+                await store.launch(envelope)
+            settling, replaying = (envelope.jobs[0].authorization for envelope in envelopes)
+
+            operation_ref = f"exa-contact-operation:{uuid4()}"
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_operation
+                        (operation_ref, provider_kind, workspace_id, project_id, project_run_id,
+                         subject_type, target_entity_id, parent_account_id, source_key,
+                         field_keys, request_artifact_ref, reserved_at)
+                    VALUES
+                        (:operation_ref, 'exa_deep', :workspace_id, :project_id, :project_run_id,
+                         'contact', :contact_id, :account_id, 'exa_deep', :field_keys,
+                         'artifact:cross-job-fold-request', now())
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "workspace_id": settling.workspace_id,
+                    "project_id": settling.project_id,
+                    "project_run_id": settling.project_run_id,
+                    "contact_id": settling.subject_entity_id,
+                    "account_id": settling.parent_account_id,
+                    "field_keys": list(settling.selection.admitted_field_keys),
+                },
+            )
+            await _journal_governed_request(
+                conn,
+                authorization=settling,
+                operation_ref=operation_ref,
+                disposition="caused",
+            )
+            # Causation is journalled before dispatch (the trigger enforces that order), so the
+            # dispatch stamp lands after it, exactly as the provider path stamps it.
+            await conn.execute(
+                text(
+                    "UPDATE entity_research_provider_operation SET dispatched_at=now() "
+                    "WHERE operation_ref=:operation_ref"
+                ),
+                {"operation_ref": operation_ref},
+            )
+            pending = ContactResearchStateStore._pending_refs
+            assert await pending(conn, settling.job_id) == (operation_ref,)
+
+            # The provider terminally settles the operation under the job that dispatched it.
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO entity_research_provider_settlement_fold
+                        (provider_operation_ref, research_run_id, job_id, settled_cost_cents)
+                    VALUES (:operation_ref, :run_id, :job_id, 3.25)
+                    """
+                ),
+                {
+                    "operation_ref": operation_ref,
+                    "run_id": settling.research_run_id,
+                    "job_id": settling.job_id,
+                },
+            )
+            await _journal_governed_request(
+                conn,
+                authorization=replaying,
+                operation_ref=operation_ref,
+                disposition="replay_observation",
+            )
+
+            assert await pending(conn, settling.job_id) == ()
+            assert await pending(conn, replaying.job_id) == ()
+
+            # Spend attribution is untouched and stays job-scoped.
+            spend = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT job.job_id, (SELECT COALESCE(sum(fold.settled_cost_cents), 0) "
+                            "FROM entity_research_provider_settlement_fold fold "
+                            "WHERE fold.job_id=job.job_id) AS folded_spend "
+                            "FROM entity_research_job job WHERE job.job_id=ANY(:job_ids)"
+                        ),
+                        {"job_ids": [str(settling.job_id), str(replaying.job_id)]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert {UUID(str(row["job_id"])): row["folded_spend"] for row in spend} == {
+                settling.job_id: Decimal("3.25"),
+                replaying.job_id: Decimal("0"),
+            }
+
+    from tests.db.conftest import run_async
+
+    run_async(scenario())
+
+
+def test_a_result_or_evidence_ref_outside_the_exact_job_refuses_recoverably(
+    tmp_path: Path,
+) -> None:
+    """Live 2026-08-20, job ``5b8898e3``: the account agent read three foreign refs and died.
+
+    The model had ``claim:<uuid>`` references in ``read_account_research_state``'s
+    ``existing_claims`` block and re-prefixed three of them as ``research-result:<uuid>``. The
+    prefix was right, so ``_model_supplied_uuid`` passed; the row lookup then missed and the raw
+    :class:`EntityResearchToolAuthorityError` escaped the shared read tool, failing the whole
+    execution. A model-supplied reference naming a row outside this job is R10 species 1 —
+    exactly the wrong-*type* reference converted in ``2d71e47f``, in its wrong-*job* variant.
+    """
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path / "artifacts")
+        async with rollback_conn() as conn:
+            connection = _TransactionalTrackedConnFactory(conn)
+            results = EntityResearchResultStore(storage=storage, conn_factory=connection)
+            factory = GovernedEntityResearchToolFactory(
+                requests=EntityResearchToolRequestStore(
+                    conn_factory=connection,
+                    storage=storage,
+                ),
+                causation=EntityResearchProviderCausationStore(conn_factory=connection),
+                results=results,
+            )
+            context = _context(ResearchSubjectType.ACCOUNT, EntityAgentRole.ACCOUNT)
+            foreign_result_ref = f"research-result:{uuid4()}"
+            foreign_evidence_ref = f"research-evidence:{uuid4()}"
+            active = ActiveEntityResearchToolExecution(
+                context=context,
+                call=EntityResearchToolCall(
+                    tool_call_id="read-foreign-result",
+                    tool_name="read_research_result",
+                    tool_version=1,
+                    tool_input_sha256=canonical_sha256({"result_ref": foreign_result_ref}),
+                    arguments={"result_ref": foreign_result_ref},
+                ),
+                journal_event_ref=f"entity-agent-event:{uuid4()}",
+            )
+
+            with pytest.raises(EntityResearchGovernedRejection) as rejected_result:
+                await results.read_result(active=active, result_ref=foreign_result_ref)
+            payload = json.loads(rejected_result.value.render())
+            assert payload["error"] == "governed_research_rejection"
+            assert payload["recoverable"] is True
+            assert "outside the exact job" in payload["detail"]
+            # The refusal must name the two legal moves, or the agent repeats the read.
+            assert "read_account_research_state" in payload["detail"]
+
+            with pytest.raises(EntityResearchGovernedRejection) as rejected_evidence:
+                await results.read_evidence(
+                    active=active,
+                    request=ReadResearchEvidenceInput(
+                        evidence_ref=foreign_evidence_ref,
+                        max_bytes=128,
+                    ),
+                )
+            assert "outside the exact job" in rejected_evidence.value.detail
+
+            # The whole live path: the composed read tools render it as an error tool message
+            # instead of letting it escape and fail the execution.
+            _, read_result_tool, read_evidence_tool = factory.compose_facet(
+                subject_type=ResearchSubjectType.ACCOUNT,
+                provider_action=ProviderActionBinding(action=_Action(), version=1),
+            )
+            token = _ACTIVE_TOOL_EXECUTION.set(active)
+            try:
+                rendered_result = await read_result_tool.tool.ainvoke(
+                    {"result_ref": foreign_result_ref}
+                )
+                rendered_evidence = await read_evidence_tool.tool.ainvoke(
+                    {"evidence_ref": foreign_evidence_ref, "offset": 0, "max_bytes": 128}
+                )
+            finally:
+                _ACTIVE_TOOL_EXECUTION.reset(token)
+            for rendered in (rendered_result, rendered_evidence):
+                rendered_payload = json.loads(str(rendered))
+                assert rendered_payload["error"] == "governed_research_rejection"
+                assert rendered_payload["recoverable"] is True
+
     from tests.db.conftest import run_async
 
     run_async(scenario())

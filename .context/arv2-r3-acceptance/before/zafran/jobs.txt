@@ -1,0 +1,9 @@
+   job    | subject_type |      person      |   status    | failure_code | model_rounds | tool_calls |      wall       | cost_usd | credits | media_seconds 
+----------+--------------+------------------+-------------+--------------+--------------+------------+-----------------+----------+---------+---------------
+ c216f775 | account      | -                | completed   |              |           12 |         44 | 00:07:14.939147 | 0.936423 |   2.600 |             0
+ d02e4608 | person       | Sanaz Yashar     | not_started |              |            0 |          0 |                 | 0.000000 |   0.000 |             0
+ 0ff9aa84 | person       | Vari Kaur        | not_started |              |            0 |          0 |                 | 0.000000 |   0.000 |             0
+ 967b9d06 | person       | Ben Seri         | not_started |              |            0 |          0 |                 | 0.000000 |   0.000 |             0
+ 7a2eb436 | person       | Rotem Peled-Dvir | not_started |              |            0 |          0 |                 | 0.000000 |   0.000 |             0
+(5 rows)
+

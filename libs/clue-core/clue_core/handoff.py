@@ -74,6 +74,24 @@ class CurrentValue(BaseModel):
         ClaimId, ...
     ] = ()  # the disagreeing tier<=2 claims (review surface)
 
+    @property
+    def evidence_backed(self) -> bool:
+        """Whether this merged value *answers* its field: fresh, unconflicted, evidence-backed.
+
+        The one satisfaction test every consumer must agree on. A merge winner with no evidence
+        span is not an answer (conventions §5: a claim with no evidence span cannot be promoted),
+        so treating it as one is how a field becomes simultaneously unbuyable ("already resolved")
+        and unsatisfiable ("no evidence") — a state nothing can leave. Species is deliberately not
+        part of it: reusability across projects is a property of the *field*, and callers that need
+        it apply it beside this test rather than folding it in here.
+        """
+
+        return (
+            self.freshness_state is FreshnessState.FRESH
+            and not self.conflict
+            and bool((self.provenance.evidence_span or "").strip())
+        )
+
 
 class ICPSpec(BaseModel):
     """The versioned ICP spec (staged-flow §2 / Doc B; conventions §4) — the single contract M3.2 /

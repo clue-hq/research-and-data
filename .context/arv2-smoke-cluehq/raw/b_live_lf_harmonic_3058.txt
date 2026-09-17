@@ -1,0 +1,1624 @@
+<!DOCTYPE html><!-- This site was created in Webflow. https://webflow.com --><!-- Last Published: Sun Aug 30 2026 17:55:24 GMT+0000 (Coordinated Universal Time) --><html data-wf-domain="www.harmonic.security" data-wf-page="6932186b6c06d62bc4b12926" data-wf-site="6932186a6c06d62bc4b12891" lang="en"><head><meta charset="utf-8"/><link href="https://cdn.prod.website-files.com" rel="preconnect" crossorigin="anonymous"/><title>Harmonic Security | AI Governance &amp; Control Platform</title><meta content="Govern AI wherever your workforce runs it. Detect shadow AI, prevent data leaks, and coach employees inline — across web, desktop, and agentic workflows." name="description"/><meta content="Harmonic Security | AI Governance &amp; Control Platform" property="og:title"/><meta content="Govern AI wherever your workforce runs it. Detect shadow AI, prevent data leaks, and coach employees inline — across web, desktop, and agentic workflows." property="og:description"/><meta content="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/695c2875110af64a202e3913_harmonic-1200x630.png" property="og:image"/><meta content="Harmonic Security | AI Governance &amp; Control Platform" name="twitter:title"/><meta content="Govern AI wherever your workforce runs it. Detect shadow AI, prevent data leaks, and coach employees inline — across web, desktop, and agentic workflows." name="twitter:description"/><meta property="og:type" content="website"/><meta content="summary_large_image" name="twitter:card"/><meta content="width=device-width, initial-scale=1" name="viewport"/><meta content="google-site-verification=cFsSQ5p3Ck-P1eLLEo4zvPkyLIJ20TtCvqID3Nj3kqM" name="google-site-verification"/><meta content="Webflow" name="generator"/><link href="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/css/harmonic-stage.webflow.shared.261c6ae60.css" rel="stylesheet" type="text/css" integrity="sha384-Jhxq5gQIJEHjFgqMa7Hn0kkL6QlAl4JEZMz+Xd+0cEk8QrFL2t7mfu2eLX7KEwuX" crossorigin="anonymous"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link href="https://fonts.gstatic.com" rel="preconnect" crossorigin="anonymous"/><script src="https://ajax.googleapis.com/ajax/libs/webfont/1.6.26/webfont.js" type="text/javascript"></script><script type="text/javascript">WebFont.load({  google: {    families: ["Montserrat:100,100italic,200,200italic,300,300italic,400,400italic,500,500italic,600,600italic,700,700italic,800,800italic,900,900italic","Poppins:300,400,500,600,700"]  }});</script><script type="text/javascript">!function(o,c){var n=c.documentElement,t=" w-mod-";n.className+=t+"js",("ontouchstart"in o||o.DocumentTouch&&c instanceof DocumentTouch)&&(n.className+=t+"touch")}(window,document);</script><link href="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea08b29d819485a29dd9_Harmonic-Favicon.png" rel="shortcut icon" type="image/x-icon"/><link href="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea16f2d1e74cdcb966c8_Harmonic-Webclip-img.png" rel="apple-touch-icon"/><link href="https://www.harmonic.security" rel="canonical"/><script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Harmonic Security",
+  "url": "https://www.harmonic.security",
+  "logo": {
+    "@type": "ImageObject",
+    "url": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/69321d07f0368b1686f5106b_Harmonic%20Logo.svg"
+  },
+  "description": "As every employee adopts AI in their work, organizations need control and visibility. Harmonic delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce.",
+  "slogan": "Scale AI Use Safely",
+  "knowsAbout": [
+    "AI Governance",
+    "Shadow AI Detection",
+    "AI Usage Monitoring",
+    "Browser Security",
+    "AI Agent Security",
+    "GenAI Compliance",
+    "Data Loss Prevention",
+    "AI Security"
+  ],
+  "areaServed": [
+    "Technology",
+    "Legal",
+    "Insurance",
+    "Healthcare"
+  ],
+  "makesOffer": [
+    {
+      "@type": "Offer",
+      "itemOffered": {
+        "@type": "SoftwareApplication",
+        "name": "AI Governance & Control Platform",
+        "description": "Securely enable all web, desktop, and agentic AI workflows",
+        "applicationCategory": "SecurityApplication"
+      }
+    },
+    {
+      "@type": "Offer",
+      "itemOffered": {
+        "@type": "SoftwareApplication",
+        "name": "Harmonic Protect",
+        "description": "Browser-based GenAI security and data loss prevention",
+        "applicationCategory": "SecurityApplication"
+      }
+    },
+    {
+      "@type": "Offer",
+      "itemOffered": {
+        "@type": "SoftwareApplication",
+        "name": "MCP Gateway",
+        "description": "AI agent security and visibility for agentic AI ecosystems",
+        "applicationCategory": "SecurityApplication"
+      }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is this just DLP with an AI sticker on it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Pattern-matching DLP cannot tell a draft email from a deal memo because prompts are unstructured and contextual. Static rules either flood teams with false positives or get ripped out entirely. Harmonic classifies the meaning of the work, not the shape of the string — that is what enables inline governance where legacy DLP fails."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is this different from Zscaler, Netskope, or any other SASE tool?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "SASE inspects network traffic to known AI domains. That misses everything that does not cross the network: Claude Desktop, Cursor, local MCP servers, embedded AI inside Canva or Salesforce. Harmonic operates at the browser interaction layer and at the MCP layer, covering surfaces that network proxies cannot reach."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What about Microsoft Purview or other AI-aware DLP?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Purview gives you visibility inside Microsoft, on Microsoft tools, with Microsoft pattern matching. Real AI usage is not Microsoft-only. Harmonic covers the full stack across vendors, including the long tail of AI tools that employees use outside sanctioned Microsoft products."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can't we just whitelist the AI tools we've approved?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You can, and it is a reasonable starting point. The problem is that AI no longer lives only in the tools you evaluated. Google AI mode is built into Search. Salesforce Einstein runs inside your CRM. A whitelist approach leaves the majority of real AI usage ungoverned."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What actually happens when an employee shares something they shouldn't?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Depends on what you want to happen. You can block in real time, warn the employee with context about why the action is risky, or log silently for security team review. Most customers start with warn-and-coach to build awareness before escalating to block."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What about AI agents that act autonomously, not just a human typing into a chat window?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "This is exactly what Harmonic MCP Gateway addresses. It enforces policy on agentic AI workflows at the MCP layer — covering tool calls, data access, and actions taken by autonomous agents, not just human-initiated prompts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do you avoid this becoming employee surveillance?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Harmonic is designed to govern data, not monitor people. The system flags sensitive data in context, not employee identity. Customers configure what is logged and for how long. Harmonic does not build employee behavioral profiles."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How fast is deployment?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Most customers are deployed and seeing data within a single day. Harmonic Protect is a browser extension distributed via MDM or enterprise browser policy. MCP Gateway integration timelines vary by agentic stack complexity."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What surfaces do you actually cover?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Harmonic covers web-based AI tools via browser extension, desktop AI applications, agentic AI workflows via MCP Gateway, and embedded AI within SaaS tools. It is designed as a single control plane across all four surfaces."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does this help with the EU AI Act, GDPR, or other regulations?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Harmonic provides the audit logs, policy enforcement records, and data governance controls that compliance teams need to demonstrate adherence to the EU AI Act, GDPR, and sector-specific regulations including HIPAA and FCA requirements."
+      }
+    }
+  ]
+}
+</script>
+<!-- Keep this css code to improve the font quality-->
+<style>
+  * {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -o-font-smoothing: antialiased;
+}
+</style>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag() {
+    dataLayer.push(arguments);
+}
+
+
+// Determine actual values based on your own requirements, 
+gtag('consent', 'default', {
+    'analytics_storage': 'denied',
+    'ad_storage': 'denied',
+    'ad_user_data': 'denied',
+    'ad_personalization': 'denied',
+  // Use region, to specifiy where this default should be applied.
+    'region': ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
+        "DE", "GR", "HU", "IS", "IE", "IT", "LV", "LI", "LT", "LU",
+        "MT", "NL", "NO", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+        "UK", "CH"
+    ]
+});
+
+// Step 3: This snippet sends consent updates from the HubSpot cookie banner to Google's tags using Consent Mode v2
+var _hsp = window._hsp = window._hsp || []; 
+_hsp.push(['addPrivacyConsentListener', function(consent) {
+    var hasAnalyticsConsent = consent && (consent.allowed || (consent.categories && consent.categories.analytics));
+    var hasAdsConsent = consent && (consent.allowed || (consent.categories && consent.categories.advertisement));
+
+    gtag('consent', 'update', {
+        'ad_storage': hasAdsConsent ? 'granted' : 'denied',
+        'analytics_storage': hasAnalyticsConsent ? 'granted' : 'denied',
+        'ad_user_data': hasAdsConsent ? 'granted' : 'denied',
+        'ad_personalization': hasAdsConsent ? 'granted' : 'denied'
+    });
+}]);
+</script>
+
+
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-N5HTL6Q7');</script>
+<!-- End Google Tag Manager -->
+
+<!-- Start of HubSpot Embed Code -->
+<script type="text/javascript" id="hs-script-loader" async defer src="//js-eu1.hs-scripts.com/143437702.js"></script>
+<!-- End of HubSpot Embed Code --><style>
+  /* Default: show A, hide B */
+  .mode-content-a {
+    display: block !important;
+  }
+
+  .mode-content-b {
+    display: none !important;
+  }
+
+  /* When body is mode-b, flip them instantly */
+  body.mode-b .mode-content-a {
+    display: none !important;
+  }
+
+  body.mode-b .mode-content-b {
+    display: block !important;
+  }
+
+  /* Active visual state for the selected toggle option */
+  .mode-toggle-option.is-active-mode {
+    background-color: #000;  /* adjust to your design */
+    color: #fff;
+  }
+</style><script src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891%2F66ba5a08efe71070f98dd10a%2F699771c8f5afb9740fa561b9%2Fw8btcwyrtn-1.1.1.js" type="text/javascript"></script></head><body><div class="page-wrapper"><div class="global-styles"><div class="style-overrides w-embed"><style>
+
+/* Ensure all elements inherit the color from its parent */
+a,
+.w-input,
+.w-select,
+.w-tab-link,
+.w-nav-link,
+.w-nav-brand,
+.w-dropdown-btn,
+.w-dropdown-toggle,
+.w-slider-arrow-left,
+.w-slider-arrow-right,
+.w-dropdown-link {
+  color: inherit;
+  text-decoration: inherit;
+  font-size: inherit;
+}
+
+/* Focus state style for keyboard navigation for the focusable elements */
+*[tabindex]:focus-visible,
+  input[type="file"]:focus-visible {
+   outline: 0.125rem solid #4d65ff;
+   outline-offset: 0.125rem;
+}
+
+/* Get rid of top margin on first element in any rich text element */
+.w-richtext > :not(div):first-child, .w-richtext > div:first-child > :first-child {
+  margin-top: 0 !important;
+}
+
+/* Get rid of bottom margin on last element in any rich text element */
+.w-richtext>:last-child, .w-richtext ol li:last-child, .w-richtext ul li:last-child {
+	margin-bottom: 0 !important;
+}
+
+/* Prevent all click and hover interaction with an element */
+.pointer-events-off {
+	pointer-events: none;
+}
+
+/* Enables all click and hover interaction with an element */
+.pointer-events-on {
+  pointer-events: auto;
+}
+
+/* Create a class of .div-square which maintains a 1:1 dimension of a div */
+.div-square::after {
+	content: "";
+	display: block;
+	padding-bottom: 100%;
+}
+
+/* Make sure containers never lose their center alignment */
+.container-medium,.container-small, .container-large {
+	margin-right: auto !important;
+  margin-left: auto !important;
+}
+
+
+/* Apply "..." after 3 lines of text */
+.text-style-3lines {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+}
+
+/* Apply "..." after 2 lines of text */
+.text-style-2lines {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+/* Adds inline flex display */
+.display-inlineflex {
+  display: inline-flex;
+}
+
+/* These classes are never overwritten */
+.hide {
+  display: none !important;
+}
+
+/* Remove default Webflow chevron from form select */
+select{
+  -webkit-appearance:none;
+}
+
+
+@media screen and (max-width: 991px) {
+    .hide, .hide-tablet {
+        display: none !important;
+    }
+}
+  @media screen and (max-width: 767px) {
+    .hide-mobile-landscape{
+      display: none !important;
+    }
+}
+  @media screen and (max-width: 479px) {
+    .hide-mobile{
+      display: none !important;
+    }
+}
+ 
+.margin-0 {
+  margin: 0rem !important;
+}
+  
+.padding-0 {
+  padding: 0rem !important;
+}
+
+.spacing-clean {
+padding: 0rem !important;
+margin: 0rem !important;
+}
+
+.margin-top {
+  margin-right: 0rem !important;
+  margin-bottom: 0rem !important;
+  margin-left: 0rem !important;
+}
+
+.padding-top {
+  padding-right: 0rem !important;
+  padding-bottom: 0rem !important;
+  padding-left: 0rem !important;
+}
+  
+.margin-right {
+  margin-top: 0rem !important;
+  margin-bottom: 0rem !important;
+  margin-left: 0rem !important;
+}
+
+.padding-right {
+  padding-top: 0rem !important;
+  padding-bottom: 0rem !important;
+  padding-left: 0rem !important;
+}
+
+.margin-bottom {
+  margin-top: 0rem !important;
+  margin-right: 0rem !important;
+  margin-left: 0rem !important;
+}
+
+.padding-bottom {
+  padding-top: 0rem !important;
+  padding-right: 0rem !important;
+  padding-left: 0rem !important;
+}
+
+.margin-left {
+  margin-top: 0rem !important;
+  margin-right: 0rem !important;
+  margin-bottom: 0rem !important;
+}
+  
+.padding-left {
+  padding-top: 0rem !important;
+  padding-right: 0rem !important;
+  padding-bottom: 0rem !important;
+}
+  
+.margin-horizontal {
+  margin-top: 0rem !important;
+  margin-bottom: 0rem !important;
+}
+
+.padding-horizontal {
+  padding-top: 0rem !important;
+  padding-bottom: 0rem !important;
+}
+
+.margin-vertical {
+  margin-right: 0rem !important;
+  margin-left: 0rem !important;
+}
+  
+.padding-vertical {
+  padding-right: 0rem !important;
+  padding-left: 0rem !important;
+}
+
+/* Apply "..." at 100% width */
+.truncate-width { 
+		width: 100%; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+}
+/* Removes native scrollbar */
+.no-scrollbar {
+    -ms-overflow-style: none;
+    overflow: -moz-scrollbars-none; 
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+</style></div><div class="color-schemes w-embed"><style>
+/* Color Schemes Controls*/
+<meta name="relume-color-schemes" content="false"/>
+
+  .color-scheme-1 {
+/*All sections should point to Color Scheme 1*/
+
+  }
+
+  .color-scheme-2 {
+    --color-scheme-1--text: var(--color-scheme-2--text);
+    --color-scheme-1--background: var(--color-scheme-2--background);
+    --color-scheme-1--foreground: var(--color-scheme-2--foreground);
+    --color-scheme-1--border: var(--color-scheme-2--border);
+    --color-scheme-1--accent: var(--color-scheme-2--accent);
+  }
+
+  .color-scheme-3 {
+    --color-scheme-1--text: var(--color-scheme-3--text);
+    --color-scheme-1--background: var(--color-scheme-3--background);
+    --color-scheme-1--foreground: var(--color-scheme-3--foreground);
+    --color-scheme-1--border: var(--color-scheme-3--border);
+    --color-scheme-1--accent: var(--color-scheme-3--accent);
+  }
+
+  .color-scheme-4 {
+    --color-scheme-1--text: var(--color-scheme-4--text);
+    --color-scheme-1--background: var(--color-scheme-4--background);
+    --color-scheme-1--foreground: var(--color-scheme-4--foreground);
+    --color-scheme-1--border: var(--color-scheme-4--border);
+    --color-scheme-1--accent: var(--color-scheme-4--accent);
+  }
+
+  .color-scheme-5 {
+    --color-scheme-1--text: var(--color-scheme-5--text);
+    --color-scheme-1--background: var(--color-scheme-5--background);
+    --color-scheme-1--foreground: var(--color-scheme-5--foreground);
+    --color-scheme-1--border: var(--color-scheme-5--border);
+    --color-scheme-1--accent: var(--color-scheme-5--accent);
+  }
+
+  .color-scheme-6 {
+    --color-scheme-1--text: var(--color-scheme-6--text);
+    --color-scheme-1--background: var(--color-scheme-6--background);
+    --color-scheme-1--foreground: var(--color-scheme-6--foreground);
+    --color-scheme-1--border: var(--color-scheme-6--border);
+    --color-scheme-1--accent: var(--color-scheme-6--accent);
+  }
+
+  .color-scheme-7 {
+    --color-scheme-1--text: var(--color-scheme-7--text);
+    --color-scheme-1--background: var(--color-scheme-7--background);
+    --color-scheme-1--foreground: var(--color-scheme-7--foreground);
+    --color-scheme-1--border: var(--color-scheme-7--border);
+    --color-scheme-1--accent: var(--color-scheme-7--accent);
+  }
+
+  .color-scheme-8 {
+    --color-scheme-1--text: var(--color-scheme-8--text);
+    --color-scheme-1--background: var(--color-scheme-8--background);
+    --color-scheme-1--foreground: var(--color-scheme-8--foreground);
+    --color-scheme-1--border: var(--color-scheme-8--border);
+    --color-scheme-1--accent: var(--color-scheme-8--accent);
+  }
+
+  .color-scheme-9 {
+    --color-scheme-1--text: var(--color-scheme-9--text);
+    --color-scheme-1--background: var(--color-scheme-9--background);
+    --color-scheme-1--foreground: var(--color-scheme-9--foreground);
+    --color-scheme-1--border: var(--color-scheme-9--border);
+    --color-scheme-1--accent: var(--color-scheme-9--accent);
+  }
+
+  .color-scheme-10 {
+    --color-scheme-1--text: var(--color-scheme-10--text);
+    --color-scheme-1--background: var(--color-scheme-10--background);
+    --color-scheme-1--foreground: var(--color-scheme-10--foreground);
+    --color-scheme-1--border: var(--color-scheme-10--border);
+    --color-scheme-1--accent: var(--color-scheme-10--accent);
+  }
+  
+/* Inherit slider dot colors */
+.w-slider-dot {
+  background-color: var(--color-scheme-1--text);
+  opacity: 0.20;
+}
+
+.w-slider-dot.w-active {
+  background-color: var(--color-scheme-1--text);
+  opacity: 1;
+}
+
+/* Override .w-slider-nav-invert styles */
+.w-slider-nav-invert .w-slider-dot {
+  background-color: var(--color-scheme-1--text) !important;
+  opacity: 0.20 !important;
+}
+
+.w-slider-nav-invert .w-slider-dot.w-active {
+  background-color: var(--color-scheme-1--text) !important;
+  opacity: 1 !important;
+}
+
+</style></div></div><div data-collapse="medium" data-animation="default" data-duration="400" fs-scrolldisable-element="smart-nav" data-easing="ease" data-easing2="ease" role="banner" class="navbar12_component w-nav"><div class="container-large"><div class="nav-wrapper"><a href="/" aria-current="page" class="logo-navbar w-nav-brand w--current"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f759394f5a0a74bb12bff_Harmonic-Logo-White.svg" loading="lazy" alt="Harmonic Security Company Logo Kryptonite Green"/></a><div class="navbar12_menu-button w-nav-button"><div class="menu-icon1"><div class="menu-icon1_line-top"></div><div class="menu-icon1_line-middle"><div class="menu-icon1_line-middle-inner"></div></div><div class="menu-icon1_line-bottom"></div></div></div><nav role="navigation" class="navbar12_menu is-page-height-tablet w-nav-menu"><div class="navbar12_menu-links"><div data-delay="200" data-hover="true" data-w-id="8c77d739-2c31-9cb9-e06b-d0abe93f5f3f" class="navbar12_menu-dropdown w-dropdown"><div class="navbar12_dropdown-toggle-2 w-dropdown-toggle"><div class="text-block-2">Products</div><div class="dropdown-chevron w-embed"><svg width=" 100%" height=" 100%" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M2.55806 6.29544C2.46043 6.19781 2.46043 6.03952 2.55806 5.94189L3.44195 5.058C3.53958 4.96037 3.69787 4.96037 3.7955 5.058L8.00001 9.26251L12.2045 5.058C12.3021 4.96037 12.4604 4.96037 12.5581 5.058L13.4419 5.94189C13.5396 6.03952 13.5396 6.19781 13.4419 6.29544L8.17678 11.5606C8.07915 11.6582 7.92086 11.6582 7.82323 11.5606L2.55806 6.29544Z" fill="currentColor"/>
+</svg></div></div><nav class="navbar12_dropdown-list-2 single-line-width w-dropdown-list"><div class="navbar12_dropdown-column"><div class="w-dyn-list"><div role="list" class="w-dyn-items"><div role="listitem" class="w-dyn-item"><a href="/products/explore" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-semibold justify-left text-color-green">Harmonic Explore</div><p class="text-size-small hide-mobile-landscape text-color-green">Understand exactly how your org uses AI </p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/products/guide" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-semibold justify-left text-color-green">Harmonic Guide</div><p class="text-size-small hide-mobile-landscape text-color-green">Real-time visibility and control across the browser and desktop</p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/products/command" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-semibold justify-left text-color-green">Harmonic Command</div><p class="text-size-small hide-mobile-landscape text-color-green">Unified governance for humans and agents</p></div></a></div></div></div><a href="/pricing" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-semibold text-color-green">Pricing</div></div></a></div></nav></div><div data-delay="200" data-hover="true" data-w-id="68b23593-a08d-4b65-3b03-5121629f92ba" class="navbar12_menu-dropdown w-dropdown"><div class="navbar12_dropdown-toggle-2 w-dropdown-toggle"><div class="text-block-3">Solutions</div><div class="dropdown-chevron w-embed"><svg width=" 100%" height=" 100%" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M2.55806 6.29544C2.46043 6.19781 2.46043 6.03952 2.55806 5.94189L3.44195 5.058C3.53958 4.96037 3.69787 4.96037 3.7955 5.058L8.00001 9.26251L12.2045 5.058C12.3021 4.96037 12.4604 4.96037 12.5581 5.058L13.4419 5.94189C13.5396 6.03952 13.5396 6.19781 13.4419 6.29544L8.17678 11.5606C8.07915 11.6582 7.92086 11.6582 7.82323 11.5606L2.55806 6.29544Z" fill="currentColor"/>
+</svg></div></div><nav class="navbar12_dropdown-list-2 w-dropdown-list"><div class="navbar12_dropdown-content"><div class="navbar12_dropdown-column"><div class="margin-bottom margin-xsmall"><h4 class="heading-style-h6">Use Cases</h4></div><div class="text-color-green w-dyn-list"><div role="list" class="w-dyn-items"><div role="listitem" class="w-dyn-item"><a href="/solutions/securing-claude-enterprise" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Securing Claude Use</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/shadow-ai-detection" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Shadow AI</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/ai-usage-intelligence" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Usage Intelligence</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/endpoint-ai-security" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Endpoint AI Security</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/browser-based-genai-security" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Browser AI Security</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/ai-agent-security-mcp-gateway" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">AI Agent Security</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/ai-usage-governance" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">AI Governance</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/genai-compliance-regulated-industries" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Compliance</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/dlp-for-genai" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">DLP for GenAI</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div></div></div></div><div class="navbar12_dropdown-column"><div class="margin-bottom margin-xsmall"><h4 class="heading-style-h6">Industries</h4></div><div class="text-color-green w-dyn-list"><div role="list" class="w-dyn-items"><div role="listitem" class="w-dyn-item"><a href="/solutions/technology" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Technology</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/legal" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Legal</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/insurance" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Insurance</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div><div role="listitem" class="w-dyn-item"><a href="/solutions/healthcare" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Healthcare</div><p class="text-size-small hide-mobile-landscape w-dyn-bind-empty"></p></div></a></div></div></div></div></div></nav></div><a href="/the-harmonic-difference" class="navbar12_link-2 w-nav-link"><span class="text-span-3">Why Harmonic</span></a><div data-delay="200" data-hover="true" data-w-id="58be7ff6-3724-18db-3aca-db297f52b53b" class="navbar12_menu-dropdown-copy w-dropdown"><div class="navbar12_dropdown-toggle-2 w-dropdown-toggle"><div class="text-block-4">Resources</div><div class="dropdown-chevron w-embed"><svg width=" 100%" height=" 100%" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M2.55806 6.29544C2.46043 6.19781 2.46043 6.03952 2.55806 5.94189L3.44195 5.058C3.53958 4.96037 3.69787 4.96037 3.7955 5.058L8.00001 9.26251L12.2045 5.058C12.3021 4.96037 12.4604 4.96037 12.5581 5.058L13.4419 5.94189C13.5396 6.03952 13.5396 6.19781 13.4419 6.29544L8.17678 11.5606C8.07915 11.6582 7.92086 11.6582 7.82323 11.5606L2.55806 6.29544Z" fill="currentColor"/>
+</svg></div></div><nav class="navbar12_dropdown-list-2 single-line-width text-color-green w-dropdown-list"><div class="navbar12_dropdown-column"><div class="navbar12_dropdown-link-list"><a href="/resources" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Resource Library</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="https://handbook.harmonic.security/" target="_blank" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">AI Security Handbook</div><p class="text-size-small hide-mobile-landscape"></p></div></a></div></div></nav></div><div data-delay="200" data-hover="true" data-w-id="1ae4c49f-21ba-12be-110c-1937118a8b39" class="navbar12_menu-dropdown-copy w-dropdown"><div class="navbar12_dropdown-toggle-2 w-dropdown-toggle"><div class="text-block-4">Company</div><div class="dropdown-chevron w-embed"><svg width=" 100%" height=" 100%" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M2.55806 6.29544C2.46043 6.19781 2.46043 6.03952 2.55806 5.94189L3.44195 5.058C3.53958 4.96037 3.69787 4.96037 3.7955 5.058L8.00001 9.26251L12.2045 5.058C12.3021 4.96037 12.4604 4.96037 12.5581 5.058L13.4419 5.94189C13.5396 6.03952 13.5396 6.19781 13.4419 6.29544L8.17678 11.5606C8.07915 11.6582 7.92086 11.6582 7.82323 11.5606L2.55806 6.29544Z" fill="currentColor"/>
+</svg></div></div><nav class="navbar12_dropdown-list-2 single-line-width text-color-green w-dropdown-list"><div class="navbar12_dropdown-column"><div class="navbar12_dropdown-link-list"><a href="/about" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">About Us</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="/company/partner-program" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Partner Program</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="/frequency" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">The Frequency Newsletter</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="/company/events" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Events</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="/company/careers" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Careers</div><p class="text-size-small hide-mobile-landscape"></p></div></a><a href="/contact-us" class="navbar12_dropdown-link w-inline-block"><div class="navbar12_icon-wrapper"><div class="icon-embed-xsmall w-embed"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/694351a86983be681d6c5c40_box2-nav.svg" width="24" height="24" /></div></div><div class="navbar12_text-wrapper"><div class="text-weight-medium">Contact</div><p class="text-size-small hide-mobile-landscape"></p></div></a></div></div></nav></div></div><div class="navbar12_menu-buttons"><a href="/get-demo" class="button is-small w-button">Book a demo</a></div></nav></div></div></div><main class="main-wrapper"><div class="background-color-green hero-top-padding w-embed w-iframe"><!-- ==========================================================
+     HARMONIC HOMEPAGE / FLOW GRID — EMBED 1 of 3: STYLES
+     Paste into a Webflow HTML Embed element.
+     Place first. Contains every rule for the whole page.
+     ========================================================== -->
+<style>
+:root{--deep:#043A3A;--bg:#032B2B;--racing:#022626;--teal:#0A7979;--green:#4EFF79;--orange:#FF4F01;--peri:#7C8DFC;--amber:#FFA300;--mint:#00BC79;--ashes:#efefef;--ink:#022626;--black:#000;--charcoal:#262626;
+--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:var(--bg);color:#fff;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::selection{background:var(--green);color:var(--deep)}
+a{color:var(--green)}a:hover{color:#fff}
+
+/* ================= BACKGROUND ================= */
+.bgwrap{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.bgwrap::after{content:"";position:absolute;inset:0;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .35 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity:.16;mix-blend-mode:overlay}
+/* Global control-layer grid: one viewport-fixed layer behind every section.
+   Tuning knobs: --grid-size (cell), --grid-line / --grid-dot (strength),
+   --grid-fade (how far the pattern reaches before it falls off). */
+.bg-lines{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  --grid-size:80px;
+  --grid-line:rgba(10,121,121,.22);
+  --grid-dot:rgba(10,121,121,.50);
+  --grid-fade:radial-gradient(ellipse 110% 95% at 50% 50%,#000 55%,rgba(0,0,0,.35) 85%,transparent 100%)}
+.bg-grid{position:absolute;inset:0;
+  background-image:linear-gradient(to right,var(--grid-line) 1px,transparent 1px),linear-gradient(to bottom,var(--grid-line) 1px,transparent 1px);
+  background-size:var(--grid-size) var(--grid-size);
+  mask-image:var(--grid-fade);
+  -webkit-mask-image:var(--grid-fade)}
+.bg-grid-dots{position:absolute;inset:0;
+  background-image:radial-gradient(circle,var(--grid-dot) 1.4px,transparent 1.8px);
+  background-size:var(--grid-size) var(--grid-size);
+  mask-image:var(--grid-fade);
+  -webkit-mask-image:var(--grid-fade)}
+/* Sections sit above the fixed grid; their own backgrounds must stay
+   translucent so it shows through (page colour comes from body). */
+.hero,.pipe,.platform,.social,.cta{position:relative;z-index:1}
+.bg-waves{position:absolute;inset:0}
+.bg-waves svg{position:absolute;width:100%;height:100%;overflow:visible}
+.wave-path{fill:none;stroke:var(--green);stroke-width:1;stroke-linecap:round;stroke-dasharray:1 7;opacity:.3}
+.wave-path--slow{animation:wave-slide 38s linear infinite}
+.wave-path--med{animation:wave-slide 26s linear infinite;opacity:.24;stroke:var(--peri)}
+.wave-path--fast{animation:wave-slide 18s linear infinite;opacity:.18}
+@keyframes wave-slide{from{stroke-dashoffset:0}to{stroke-dashoffset:-800}}
+.bnode{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px rgba(78,255,121,.7),0 0 16px rgba(78,255,121,.35);
+  opacity:0;animation:node-pulse 6s ease-in-out infinite}
+@keyframes node-pulse{0%,100%{opacity:0;transform:scale(.6)}40%{opacity:.9;transform:scale(1)}60%{opacity:.75;transform:scale(1.1)}}
+
+/* ================= ANNOUNCEMENT BAR ================= */
+.anb{position:fixed;right:22px;bottom:22px;z-index:70;max-width:min(400px,calc(100vw - 44px));display:flex;align-items:center;gap:11px;padding:12px 36px 12px 13px;background:linear-gradient(180deg,#064242,#043A3A);border:1px solid rgba(78,255,121,.26);border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.45)}
+.anb.gone{display:none}
+.pix{width:33px;height:33px;flex:none;filter:drop-shadow(0 0 5px rgba(78,255,121,.35));animation:bob 3.4s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.pix .ey{animation:blink 5.2s infinite}
+@keyframes blink{0%,96%,100%{transform:scaleY(1)}98%{transform:scaleY(.12)}}
+.anbw{height:21px;overflow:hidden;display:block;min-width:0;flex:0 1 auto}
+.anbt{display:block;transition:transform .55s cubic-bezier(.2,.9,.3,1)}
+.anbm{display:block;height:21px;line-height:21px;font-size:13.5px;font-weight:500;color:#fff;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.anbm:hover{color:var(--green)}
+.anbm i{font-style:normal;color:var(--green);margin-left:7px;display:inline-block;transition:transform .2s}
+.anbm:hover i{transform:translateX(3px)}
+.anbx{position:absolute;right:11px;background:none;border:0;color:rgba(255,255,255,.45);font-size:19px;line-height:1;cursor:pointer;padding:6px;font-family:inherit}
+.anbx:hover{color:#fff}
+@media(max-width:700px){.anb{right:12px;bottom:12px;gap:8px;padding:10px 32px 10px 10px;max-width:calc(100vw - 24px)}.anbm{font-size:11px}.anbx{right:7px;font-size:17px}.pix{width:27px;height:27px}}
+
+/* ================= HERO ================= */
+.hero{min-height:100svh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 24px 120px;position:relative;background:radial-gradient(ellipse 60% 45% at 50% 38%,rgba(10,121,121,.22),transparent 70%);overflow:hidden}
+.hero>*{position:relative;z-index:5}
+.hero h1{margin:0;font-size:clamp(38px,6vw,80px);font-weight:700;letter-spacing:-.025em;line-height:1.06;max-width:1000px}
+.hero h1 .flipwrap{display:inline-block;overflow:hidden;height:1.06em;vertical-align:top;text-align:right}
+.hero h1 .fliptrack{display:block}
+.hero h1 .flipitem{display:block;height:1.06em;line-height:1.06;color:var(--wc,var(--green));white-space:nowrap}
+.hero .sub{margin:20px auto 0;font-size:clamp(15px,1.8vw,22px);font-weight:400;color:var(--green);max-width:780px;line-height:1.55}
+.hero .desc{margin:22px auto 0;font-size:clamp(13.5px,1.4vw,16px);font-weight:300;color:rgba(255,255,255,.62);max-width:600px;line-height:1.75}
+.hero .btns{margin-top:40px}
+.btns{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.btn{font-family:inherit;padding:15px 34px;border-radius:100px;font-size:15px;font-weight:600;cursor:pointer;transition:.25s;border:none;text-decoration:none;display:inline-block}
+.btn.pr{background:var(--green);color:var(--deep)}
+.btn.pr:hover{transform:translateY(-3px);box-shadow:0 14px 44px rgba(78,255,121,.35);color:var(--deep)}
+.btn.gh{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35)}
+.btn.gh:hover{border-color:var(--green);color:var(--green)}
+.scrollhint{position:absolute;bottom:81px;left:50%;transform:translateX(-50%);z-index:10;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.45);display:flex;flex-direction:column;align-items:center;gap:9px;transition:opacity .5s}
+.scrollhint .arw{display:block;width:22px;height:13px;color:var(--green);animation:nudge 1.8s ease-in-out infinite}
+@keyframes nudge{0%{transform:translateY(-5px);opacity:0}25%{opacity:.9}55%{opacity:.9}100%{transform:translateY(8px);opacity:0}}
+
+/* ================= PIPELINE SECTION ================= */
+.pipe{position:relative;min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding:110px 0 90px;overflow:hidden;
+  background:var(--black,#000)}   /* opaque, so the global grid stops at this section */
+/* hard edges top and bottom — the section is a clean charcoal band */
+.pipe-head{text-align:center;padding:0 24px;position:relative;z-index:5}
+.pipe-head .eb{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--green);margin-bottom:16px}
+.pipe-head h2{margin:0;font-size:clamp(30px,4.4vw,54px);font-weight:700;letter-spacing:-.02em;line-height:1.12}
+.pipe-head h2 .g{color:var(--green)}
+.pipe-head p{text-wrap:balance;margin:16px auto 0;font-size:clamp(14.5px,1.6vw,18px);font-weight:300;color:rgba(255,255,255,.6);max-width:720px;line-height:1.7}
+
+.pipeband{position:relative;margin-top:26px;height:470px;z-index:2}
+#pcanvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+/* Stage icon size — 50% larger than the original clamp(64px,7.6vw,104px) */
+.pipe{--ringsz:clamp(76px,9vw,120px)}
+.stage-node{position:absolute;transform:translate(-50%,0);text-align:center;z-index:4;pointer-events:none;transition:opacity .5s}
+.stage-node .ring{width:var(--ringsz);height:var(--ringsz);border-radius:50%;display:grid;place-items:center;margin:0 auto;background:rgba(3,43,43,.55);border:2px solid color-mix(in srgb,var(--c) 34%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--c) 9%,transparent);backdrop-filter:blur(2px);transition:border-color .45s,box-shadow .45s,transform .45s}
+.stage-node .ring{position:relative}
+.stage-node .ring .bicon{width:56%;height:56%;opacity:.58;transition:opacity .3s;color:var(--c)}
+.ring .vicon{position:absolute;inset:0;margin:auto;width:52%;height:52%;opacity:0;transform:scale(.4);transition:opacity .25s,transform .32s cubic-bezier(.2,.9,.3,1.45)}
+#nCtrl.grant .bicon,#nCtrl.deny .bicon,#nCtrl.review .bicon{opacity:0}
+#nCtrl.grant{--c:#4EFF79}
+#nCtrl.deny{--c:#FF4F01}
+#nCtrl.review{--c:#FFA300}
+#nCtrl.grant .v-tick,#nCtrl.deny .v-cross,#nCtrl.review .v-warn{opacity:1;transform:scale(1);animation:vpulse 1s cubic-bezier(.4,0,.4,1) infinite}
+@keyframes vpulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 4px currentColor)}50%{transform:scale(1.16);filter:drop-shadow(0 0 14px currentColor)}}
+.v-tick{color:#4EFF79}.v-cross{color:#FF8A57}.v-warn{color:#FFA300}
+.stage-node .halo{position:absolute;left:50%;top:0;transform:translateX(-50%);width:calc(var(--ringsz) + 45px);height:calc(var(--ringsz) + 45px);margin-top:-22.5px;border-radius:50%;border:1px dashed color-mix(in srgb,var(--c) 38%,transparent);opacity:0;transition:opacity .5s;animation:spin 22s linear infinite}
+@keyframes spin{to{transform:translateX(-50%) rotate(360deg)}}
+.stage-node .step{margin-top:13px;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.3em;color:color-mix(in srgb,var(--c) 70%,#fff 0%);opacity:.55;transition:opacity .45s}
+.stage-node .nm{font-size:clamp(14px,1.5vw,19px);font-weight:700;letter-spacing:-.01em;opacity:.6;transition:opacity .45s}
+.stage-node.active .ring{border-color:var(--c);box-shadow:0 0 34px color-mix(in srgb,var(--c) 45%,transparent),inset 0 0 22px color-mix(in srgb,var(--c) 12%,transparent);transform:scale(1.06)}
+/* only the brand icon brightens on activation — this must not target the
+   tick/cross overlays, or it out-specifies .ring .vicon{opacity:0} and both
+   verdict icons show at once */
+.stage-node.active .ring .bicon{opacity:1}
+.stage-node.active .halo{opacity:.85}
+.stage-node.active .step,.stage-node.active .nm{opacity:1}
+
+/* ---- the event card ---- */
+.ev{position:absolute;z-index:6;width:min(372px,88vw);left:0;top:0;
+  background:linear-gradient(180deg,#f5f5f5,var(--ashes));color:var(--ink);
+  border:1.5px solid color-mix(in srgb,var(--ec,#4EFF79) 60%,var(--ink));
+  border-radius:16px;padding:20px 20px 19px;backdrop-filter:blur(8px);
+  box-shadow:0 22px 60px rgba(0,0,0,.58),0 0 34px color-mix(in srgb,var(--ec,#4EFF79) 22%,transparent);
+  transition:transform .8s cubic-bezier(.6,.05,.25,1),opacity .45s,border-color .5s,box-shadow .5s;
+  opacity:0;pointer-events:none;overflow:visible}
+.ev.show{opacity:1}
+.ev .tab{position:absolute;top:-7px;left:50%;width:15px;height:15px;margin-left:-7.5px;pointer-events:none;
+  background:#f5f5f5;
+  border-top:1.5px solid color-mix(in srgb,var(--ec,#4EFF79) 60%,var(--ink));
+  border-left:1.5px solid color-mix(in srgb,var(--ec,#4EFF79) 60%,var(--ink));
+  border-radius:4px 0 0 0;transform:rotate(45deg);
+  transition:left .8s cubic-bezier(.6,.05,.25,1),border-color .5s,opacity .3s}
+.ev.out-grant .tab,.ev.out-deny .tab,.ev.out-review .tab{opacity:0}
+.ev .mrow{display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:var(--mono);font-size:10.5px;color:color-mix(in srgb,var(--ink) 74%,#fff)}
+.ev .srcp{display:inline-flex;align-items:center;gap:7px;padding:4px 11px 4px 8px;border-radius:100px;background:rgba(2,38,38,.055);border:1px solid rgba(2,38,38,.16);color:var(--ink);font-weight:500;white-space:nowrap}
+.ev .srcp .dm{width:6px;height:6px;background:var(--mint);transform:rotate(45deg);border-radius:1.5px;flex:none}
+/* real product marks in the source pill; the diamond .dm is the fallback for
+   sources we have no logo for, so both live in the markup and swap on/off */
+.ev .srcp .lgo{width:15px;height:15px;border-radius:3.5px;object-fit:contain;flex:none;display:none}
+.ev .srcp.haslogo .dm{display:none}
+.ev .srcp.haslogo .lgo{display:block}
+.ev .srcp .via{display:none;align-items:center;gap:6px}
+.ev .srcp.hasvia .via{display:inline-flex}
+.ev .srcp .via .arw{opacity:.5;font-size:11px;line-height:1}
+.ev .srcp .via .vlgo{width:14px;height:14px;border-radius:3px;object-fit:contain;flex:none}
+.ev .srcp .via .doc{font-size:8px;font-weight:800;letter-spacing:.08em;padding:2px 4px;border-radius:3px;background:color-mix(in srgb,var(--ink) 14%,#fff);border:1px solid color-mix(in srgb,var(--ink) 26%,#fff);flex:none;display:none}
+.ev .srcp .via.isdoc .doc{display:block}
+/* the pill carries two names when an MCP resource is involved; on a phone that
+   leaves no room for the timestamp beside it, so the timestamp steps aside */
+@media(max-width:700px){.ev .mrow:has(.srcp.hasvia) .ts{display:none}}
+.ev .ts{letter-spacing:.03em;white-space:nowrap;transition:opacity .3s}
+.ev.stamped .ts{opacity:0}
+.ev .title{margin-top:15px;font-size:16.5px;font-weight:600;line-height:1.5;min-height:1.5em;color:var(--ink)}
+/* same size as the Poppins title — JetBrains Mono has a smaller x-height, so it
+   takes 600 weight to hold equal optical presence at the same px size */
+.ev .title.mono{font-family:var(--mono);font-weight:600;letter-spacing:.01em}
+.ev .finding{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--vc,#1f7846);opacity:0;translate:0 6px;height:0;overflow:hidden;transition:opacity .3s,translate .32s cubic-bezier(.2,.9,.3,1.3),height .3s}
+.ev .finding.on{opacity:1;translate:0 0;height:23px}
+.ev .finding .fi{display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1.6px solid var(--vc,#1f7846);font-size:10px;font-weight:800;flex:none}
+.ev .frow{margin-top:13px;display:flex;align-items:center;gap:8px;min-height:27px;flex-wrap:wrap}
+.ev .fpill{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--fc,#5068af);background:color-mix(in srgb,var(--fc,#5068af) 13%,#fff);border:1px solid color-mix(in srgb,var(--fc,#5068af) 42%,#fff);padding:4px 11px;border-radius:100px;opacity:0;translate:0 6px;transition:opacity .35s,translate .35s cubic-bezier(.2,.9,.3,1.3)}
+.ev .fpill.on{opacity:1;translate:0 0}
+.ev .who{font-family:var(--mono);font-size:10.5px;color:color-mix(in srgb,var(--ink) 70%,#fff);opacity:0;transition:opacity .4s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev .who.on{opacity:1}
+.ev .stamp{position:absolute;right:16px;top:16px;font-size:12px;font-weight:800;letter-spacing:.14em;padding:5px 13px;border-radius:8px;border:2px solid var(--vc,#1f7846);color:var(--vc,#1f7846);background:color-mix(in srgb,var(--vc,#1f7846) 13%,#fff);
+  opacity:0;transform:scale(1.7) rotate(-9deg);transition:opacity .3s,transform .38s cubic-bezier(.2,.9,.3,1.4)}
+.ev .stamp.on{opacity:1;transform:scale(1) rotate(-6deg)}
+/* scan shimmer while classifying */
+.ev .scan{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;opacity:0;
+  background:linear-gradient(105deg,transparent 30%,rgba(124,141,252,.26) 48%,rgba(124,141,252,.5) 50%,rgba(124,141,252,.26) 52%,transparent 70%);
+  background-size:250% 100%;background-position:120% 0}
+.ev.scanning .scan{opacity:1;animation:scan 1s ease-in-out}
+@keyframes scan{from{background-position:130% 0}to{background-position:-60% 0}}
+.ev.deny{animation:deny .5s ease}
+@keyframes deny{0%,100%{translate:0 0}18%{translate:-7px 0}42%{translate:6px 0}66%{translate:-4px 0}84%{translate:2px 0}}
+.ev.out-grant{transition:transform .7s cubic-bezier(.6,-0.02,.9,.6),opacity .55s;opacity:0}
+/* held for human review: same forward exit as a cleared event, amber not green —
+   the workflow moves on to a reviewer rather than being stopped at the gate */
+.ev.out-review{transition:transform .7s cubic-bezier(.6,-0.02,.9,.6),opacity .55s;opacity:0}
+.ev.out-deny{transition:transform .6s cubic-bezier(.55,.03,.8,.6),opacity .5s;opacity:0}
+
+/* mobile pipeline: rings row on top, card centered beneath */
+@media(max-width:820px){
+  .pipeband{height:430px}
+  .ev{width:min(372px,90vw)}
+}
+
+/* ================= WHO WE WORK WITH ================= */
+/* position/z-index matter: without them the section's background paints below the
+   page-wide fixed grid layer and the grid shows straight through it */
+.hwww-section{position:relative;z-index:1;background:var(--black,#000);padding:72px 0;overflow-x:hidden}
+/* same treatment as the .eb eyebrows ("The Harmonic Difference", "Interactive preview") */
+.hwww-headline{text-align:center;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--green);margin-bottom:44px}
+.hwww-track-wrap{overflow:hidden;
+  -webkit-mask-image:linear-gradient(to right,transparent 0%,#000 8%,#000 92%,transparent 100%);
+  mask-image:linear-gradient(to right,transparent 0%,#000 8%,#000 92%,transparent 100%)}
+.hwww-track{display:flex;align-items:center;gap:64px;width:max-content;will-change:transform}
+.hwww-logo{display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hwww-logo img{display:block;width:auto;height:32px;object-fit:contain;filter:brightness(0) invert(1);opacity:.75;transition:opacity .2s ease}
+.hwww-logo img:hover{opacity:1}
+.hwww-logo img.no-filter{filter:none}
+.hwww-divider{flex-shrink:0;width:1px;height:40px;background:var(--green);opacity:.7}
+@media(max-width:820px){
+  .hwww-section{padding:56px 0}
+  .hwww-headline{margin-bottom:32px}
+  .hwww-track{gap:44px}
+}
+
+/* ================= PLATFORM (iframe) ================= */
+.platform{padding:120px 24px 110px;position:relative;background:radial-gradient(ellipse 70% 50% at 50% 20%,rgba(10,121,121,.16),transparent 70%)}
+.platform .inner{max-width:1180px;margin:0 auto;text-align:center}
+.platform .eb{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.3em;text-transform:uppercase;color:var(--green);margin-bottom:16px}
+.platform h2{margin:0;font-size:clamp(30px,4.4vw,54px);font-weight:700;letter-spacing:-.02em}
+.platform h2 .g{color:var(--green)}
+.platform p{text-wrap:balance;margin:16px auto 0;font-size:clamp(14.5px,1.6vw,18px);font-weight:300;color:rgba(255,255,255,.6);max-width:620px;line-height:1.7}
+.frame{margin:44px auto 0;border-radius:18px;overflow:hidden;border:1px solid rgba(78,255,121,.25);background:#043A3A;box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 60px rgba(78,255,121,.08)}
+.frame .bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(180deg,#064242,#053B3B);border-bottom:1px solid rgba(255,255,255,.07)}
+.frame .bar i{width:10px;height:10px;border-radius:50%;font-style:normal;flex:none}
+.frame .bar i:nth-child(1){background:#FF4F01}
+.frame .bar i:nth-child(2){background:#FFA300}
+.frame .bar i:nth-child(3){background:#4EFF79}
+.frame .bar .url{margin-left:8px;flex:1;max-width:420px;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.55);background:rgba(3,43,43,.7);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:6px 13px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frame iframe{display:block;width:100%;height:min(72vh,760px);border:0;background:#032B2B}
+.platform .fallback{margin-top:16px;font-size:12.5px;font-weight:300;color:rgba(255,255,255,.45)}
+.platform .fallback a{font-weight:500}
+@media(max-width:700px){.frame iframe{height:70vh}.platform{padding:90px 14px 90px}}
+
+/* ================= SOCIAL PROOF ================= */
+.social{padding:110px 0;position:relative;overflow:hidden}
+.tgrid{display:flex;gap:24px;width:max-content;padding:0 6vw;text-align:left;will-change:transform}
+.tcard{width:min(480px,82vw);flex:none;padding:34px 34px;border-radius:18px;background:rgba(4,58,58,.6);border:1px solid rgba(255,255,255,.09);display:flex;flex-direction:column;gap:22px}
+.tcard .q{font-size:clamp(18px,1.45vw,21px);font-weight:300;line-height:1.6;letter-spacing:-.005em;color:rgba(255,255,255,.9)}
+.tcard .q::before{content:'\201C';display:block;font-size:44px;font-weight:700;color:var(--green);line-height:.6;margin-bottom:14px}
+.tcard .who{display:flex;align-items:center;gap:13px;margin-top:auto}
+.tcard .av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--deep));border:1px solid rgba(78,255,121,.4);display:grid;place-items:center;font-size:14px;font-weight:700;color:var(--green);flex:none}
+.tcard .who b{display:block;font-size:14px;font-weight:600}
+.tcard .who span{font-size:12.5px;font-weight:300;color:rgba(255,255,255,.55)}
+
+/* ================= CTA + FOOTER ================= */
+.cta{min-height:88vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:120px 24px calc(min(1900px,100vw) * .3116 + 52px);position:relative;overflow:hidden;color:var(--ink);background:var(--ashes)}
+/* ---- Closing panel: the page breaks to light here ----
+   Ashes (#efefef) is the exact studio background the bubble-band render was shot
+   on, so the image sits flush in the panel with its contact shadows intact and
+   no knock-out. --band-w is the only layout knob worth touching. */
+.cta{--band-w:min(1900px,100%)}
+.cta .band{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:var(--band-w);max-width:none;height:auto;z-index:0;pointer-events:none;user-select:none;-webkit-user-drag:none;
+  /* The render's studio floor is a shade brighter than Ashes, so fade the last
+     sliver of it out rather than leaving a visible horizontal seam. */
+  -webkit-mask-image:linear-gradient(to bottom,#000 86%,transparent 100%);
+  mask-image:linear-gradient(to bottom,#000 86%,transparent 100%)}
+/* Top rule echoes the nav gradient so the colour flip reads as deliberate. */
+.cta::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;z-index:3;background:linear-gradient(90deg,var(--green) 0%,var(--teal) 52%,var(--deep) 100%)}
+.cta>*:not(.band){position:relative;z-index:2}
+.cta .icons{display:flex;gap:26px;margin-bottom:38px}
+.cta .icons .mini{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--c);background:#fff;box-shadow:0 3px 14px rgba(2,38,38,.07)}
+.cta .icons .mini svg{width:32px;height:32px;color:var(--c)}
+.cta h2{margin:0;font-size:clamp(32px,5vw,60px);font-weight:700;letter-spacing:-.02em;line-height:1.08;max-width:820px}
+.cta h2 .g{color:var(--green)}
+.cta h2{color:var(--ink)}
+.cta h2 .band-word{color:var(--mint);position:relative;white-space:nowrap}
+/* Highlighter swipe under "band" — brand green reads as ink on a light panel. */
+.cta h2 .band-word::after{content:"";position:absolute;left:-.05em;right:-.05em;bottom:.20em;height:.28em;background:var(--green);opacity:.9;border-radius:3px;mix-blend-mode:multiply;pointer-events:none}
+.cta p{margin:22px auto 42px;font-size:clamp(14px,1.5vw,17px);font-weight:400;color:rgba(2,38,38,.66);max-width:560px;line-height:1.7}
+/* Buttons invert for the light panel: ink fill, ink outline. */
+.cta .btn.pr{background:var(--ink);color:#fff}
+.cta .btn.pr:hover{background:var(--deep);color:var(--green);box-shadow:0 14px 40px rgba(2,38,38,.28)}
+.cta .btn.gh{color:var(--ink);border:1px solid rgba(2,38,38,.30)}
+.cta .btn.gh:hover{border-color:var(--ink);background:rgba(2,38,38,.05);color:var(--ink)}
+@media(max-width:760px){.cta{--band-w:100%;padding-bottom:calc(31.16vw + 40px);min-height:auto}
+  .cta .icons{gap:18px}.cta .icons .mini{width:50px;height:50px}}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .wave-path,.bnode,.stage-node .halo,.scrollhint .arw,.pix,.pix .ey{animation:none}
+  .bnode{opacity:.5}
+  .ev,.ev .stamp,.ev .fpill{transition:none}
+}
+</style>
+</div><div class="div-block-3"><div class="code-embed-3 w-embed"><!-- ==========================================================
+     HARMONIC HOMEPAGE / FLOW GRID — EMBED 2 of 3: MARKUP
+     Paste into a Webflow HTML Embed element.
+     Place second. Icon sprite must stay at the top of this block.
+     ========================================================== -->
+<!-- ============ ICON SPRITE (stage icons, reused in the CTA) ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="ic-collect" viewBox="0 0 96 96"><defs><clipPath id="ic-collect-c0"><path d="M7.89 48H49v40.14H7.89Zm0 0"/></clipPath><clipPath id="ic-collect-c1"><path d="M7.89 7.89H49V49H7.89Zm0 0"/></clipPath><clipPath id="ic-collect-c2"><path d="M50 27h38.14v3H50Zm0 0"/></clipPath><clipPath id="ic-collect-c3"><path d="M38 7.89h40V11H38Zm0 0"/></clipPath><clipPath id="ic-collect-c4"><path d="M38 85h40v3.14H38Zm0 0"/></clipPath><clipPath id="ic-collect-c5"><path d="M50 66h38.14v3H50Zm0 0"/></clipPath></defs><g clip-path="url(#ic-collect-c0)"><path fill="currentColor" d="M48.02 68.08q0 .98-.1 1.97a20 20 0 0 1-.77 3.85 19 19 0 0 1-1.5 3.64 20 20 0 0 1-2.19 3.27q-.62.76-1.32 1.46t-1.46 1.32a20 20 0 0 1-6.9 3.7q-.95.27-1.91.47a21 21 0 0 1-3.92.38 20 20 0 0 1-5.82-.86 21 21 0 0 1-1.85-.66 21 21 0 0 1-1.78-.85 20 20 0 0 1-4.73-3.5q-.7-.7-1.33-1.46a21 21 0 0 1-2.18-3.27 21 21 0 0 1-1.5-3.64 19 19 0 0 1-.48-1.9 19 19 0 0 1-.3-1.95 20 20 0 0 1-.09-1.97q0-.99.1-1.97t.29-1.95.47-1.9a21 21 0 0 1 1.5-3.64 21 21 0 0 1 3.52-4.73 20 20 0 0 1 4.73-3.5q.86-.47 1.78-.85.9-.37 1.85-.66a19 19 0 0 1 1.9-.48 19 19 0 0 1 1.96-.29 19 19 0 0 1 3.93 0q.98.1 1.95.3.96.18 1.9.47a21 21 0 0 1 3.64 1.5 21 21 0 0 1 3.27 2.19 20 20 0 0 1 2.78 2.78 20 20 0 0 1 3.03 5.05q.38.91.66 1.85a20 20 0 0 1 .77 3.86q.1.98.1 1.97m0 0"/></g><g clip-path="url(#ic-collect-c1)"><path fill="currentColor" d="M48.02 27.95q0 1-.1 1.97a20 20 0 0 1-.77 3.86 19 19 0 0 1-1.5 3.63 20 20 0 0 1-2.19 3.27q-.62.76-1.32 1.46t-1.46 1.33a20 20 0 0 1-5.05 3.02q-.9.38-1.85.66a20 20 0 0 1-3.86.77q-.97.1-1.97.1a20 20 0 0 1-3.91-.39 20 20 0 0 1-1.91-.48 19 19 0 0 1-1.85-.66 21 21 0 0 1-1.78-.84 20 20 0 0 1-4.73-3.51q-.7-.7-1.33-1.46a21 21 0 0 1-2.18-3.27 21 21 0 0 1-1.5-3.63 19 19 0 0 1-.48-1.91 19 19 0 0 1-.3-1.95 20 20 0 0 1-.09-1.97q0-.98.1-1.96t.29-1.95.47-1.91a21 21 0 0 1 1.5-3.63 21 21 0 0 1 3.52-4.73 20 20 0 0 1 4.73-3.51q.86-.47 1.78-.84.9-.38 1.85-.67a19 19 0 0 1 1.9-.47 19 19 0 0 1 1.96-.3 19 19 0 0 1 3.93 0q.98.1 1.95.3.96.18 1.9.47a21 21 0 0 1 3.64 1.5 21 21 0 0 1 3.27 2.2 20 20 0 0 1 2.78 2.78 20 20 0 0 1 3.03 5.05q.38.9.66 1.85a20 20 0 0 1 .77 3.86q.1.97.1 1.96m0 0"/></g><path fill="currentColor" d="M87 34.64q.4-1.15.66-2.34H50.1q-.23 1.2-.6 2.34zm-.46-14.54a20 20 0 0 0-1.18-2.34H48.09q.58 1.14 1.03 2.34Zm1.38 4.84a20 20 0 0 0-.5-2.34H49.87q.29 1.16.44 2.34Zm0 0"/><g clip-path="url(#ic-collect-c2)"><path fill="currentColor" d="M50.45 29.8h37.6q.1-.93.1-1.85l-.02-.5H50.5l.01.5q0 .93-.08 1.84Zm0 0"/></g><path fill="currentColor" d="M83.6 15.25a21 21 0 0 0-2.26-2.34H44.77a23 23 0 0 1 1.84 2.34Zm.89 24.24a20 20 0 0 0 1.42-2.34H48.57a23 23 0 0 1-1.23 2.34Zm0 0"/><g clip-path="url(#ic-collect-c3)"><path fill="currentColor" d="M77.8 10.4a20 20 0 0 0-9.72-2.5H38.29a23 23 0 0 1 3.85 2.5Zm0 0"/></g><path fill="currentColor" d="M43.46 44.34h36.19A20 20 0 0 0 82.4 42H45.6a22 22 0 0 1-2.15 2.34Zm37.88 38.78a20 20 0 0 0 2.26-2.34h-37a23 23 0 0 1-1.83 2.34ZM40.27 49.2h34.57a20 20 0 0 0-6.76-1.17 20 20 0 0 0 6.76-1.18H40.27q-.96.64-1.98 1.18 1.02.53 1.98 1.17m0 0"/><g clip-path="url(#ic-collect-c4)"><path fill="currentColor" d="M68.08 88.14c3.4 0 6.74-.86 9.71-2.5H42.14a23 23 0 0 1-3.85 2.5Zm0 0"/></g><path fill="currentColor" d="M45.6 54.04h36.8a21 21 0 0 0-2.75-2.35H43.46q1.15 1.1 2.15 2.34Zm39.76 24.24q.67-1.13 1.18-2.34H49.12q-.45 1.2-1.03 2.34Zm2.3-14.55a20 20 0 0 0-.67-2.34H49.5q.36 1.16.59 2.34Zm0 0"/><g clip-path="url(#ic-collect-c5)"><path fill="currentColor" d="M50.45 66.24q.07.9.07 1.84v.5h37.6l.02-.5q0-.93-.08-1.84Zm0 0"/></g><path fill="currentColor" d="M87.41 73.43q.33-1.16.5-2.34h-37.6a23 23 0 0 1-.43 2.34Zm-1.5-14.55a20 20 0 0 0-1.42-2.34H47.34q.69 1.14 1.23 2.34Zm0 0"/></symbol>
+  <symbol id="ic-categorize" viewBox="0 0 96 96"><defs><clipPath id="ic-categorize-c0"><path d="M11.66 11.66H30V30H11.66Zm0 0"/></clipPath><clipPath id="ic-categorize-c1"><path d="M66 11.66h18.4V30H66Zm0 0"/></clipPath><clipPath id="ic-categorize-c2"><path d="M11.66 66H30v18.4H11.66Zm0 0"/></clipPath><clipPath id="ic-categorize-c3"><path d="M66 66h18.4v18.4H66Zm0 0"/></clipPath><clipPath id="ic-categorize-c4"><path d="M11.66 38H30v20H11.66Zm0 0"/></clipPath><clipPath id="ic-categorize-c5"><path d="M38 11.66h20V30H38Zm0 0"/></clipPath><clipPath id="ic-categorize-c6"><path d="M38 66h20v18.4H38Zm0 0"/></clipPath><clipPath id="ic-categorize-c7"><path d="M66 38h18.4v20H66Zm0 0"/></clipPath></defs><g clip-path="url(#ic-categorize-c0)"><path fill="currentColor" d="M22.84 11.9a9 9 0 0 1 3.23 1.47 9 9 0 0 1 3.2 4.2q.31.84.46 1.72.14.9.1 1.78a9 9 0 0 1-.8 3.46 9 9 0 0 1-2.08 2.88q-.66.6-1.42 1.08a9 9 0 0 1-1.6.78 9 9 0 0 1-1.72.46 9 9 0 0 1-6.78-1.6 9 9 0 0 1-1.34-1.18 9 9 0 0 1-1.08-1.42 9 9 0 0 1-.78-1.6 9 9 0 0 1-.46-1.72 9 9 0 0 1 .13-3.55q.2-.87.58-1.68a9 9 0 0 1 5.09-4.75 9 9 0 0 1 3.5-.57q.9.03 1.77.24m0 0"/></g><g clip-path="url(#ic-categorize-c1)"><path fill="currentColor" d="M76.77 11.78q.89.14 1.73.45a9 9 0 0 1 5.09 4.75q.37.82.58 1.69t.23 1.76a9 9 0 0 1-.56 3.5 9 9 0 0 1-.79 1.6 9 9 0 0 1-2.42 2.6q-.73.53-1.54.9a9 9 0 0 1-5.23.7 9 9 0 0 1-4.74-2.32 9 9 0 0 1-2.08-2.88 9 9 0 0 1-.58-1.69 9 9 0 0 1-.12-3.54q.14-.89.46-1.73a9 9 0 0 1 .78-1.6 9 9 0 0 1 2.42-2.6 9 9 0 0 1 1.54-.89 9 9 0 0 1 1.69-.57 9 9 0 0 1 1.76-.24 9 9 0 0 1 1.78.1m0 0"/></g><g clip-path="url(#ic-categorize-c2)"><path fill="currentColor" d="M29.84 75.31a9 9 0 0 1-.69 3.48 9 9 0 0 1-1.97 2.95q-.63.63-1.38 1.14a9 9 0 0 1-1.57.84 9 9 0 0 1-1.7.51 9 9 0 0 1-3.55 0 9 9 0 0 1-1.71-.51 9 9 0 0 1-4.92-4.93 9 9 0 0 1-.52-1.7 9 9 0 0 1 0-3.55 9 9 0 0 1 .52-1.7 9 9 0 0 1 3.35-4.09 9 9 0 0 1 1.57-.84 9 9 0 0 1 1.7-.51 9 9 0 0 1 3.56 0 9 9 0 0 1 4.65 2.48 9 9 0 0 1 1.97 2.95 9 9 0 0 1 .7 3.48m0 0"/></g><g clip-path="url(#ic-categorize-c3)"><path fill="currentColor" d="M84.4 75.31q0 .9-.17 1.78a9 9 0 0 1-1.35 3.28 9 9 0 0 1-1.14 1.37 9 9 0 0 1-1.37 1.14 9 9 0 0 1-5.06 1.53 9 9 0 0 1-1.77-.18 9 9 0 0 1-1.7-.51 9 9 0 0 1-2.96-1.98 9 9 0 0 1-1.13-1.37 9 9 0 0 1-.84-1.58 9 9 0 0 1-.51-1.7 9 9 0 0 1 0-3.55 9 9 0 0 1 .51-1.7q.34-.83.84-1.58a9 9 0 0 1 4.08-3.35 9 9 0 0 1 1.7-.51 9 9 0 0 1 3.56 0 9 9 0 0 1 1.7.51 9 9 0 0 1 1.58.84 9 9 0 0 1 1.37 1.13 9 9 0 0 1 1.97 2.95q.35.83.52 1.7.18.89.18 1.78m0 0"/></g><g clip-path="url(#ic-categorize-c4)"><path fill="currentColor" d="M27.18 41.6q.64.64 1.14 1.38.5.75.84 1.58.34.81.51 1.7a9 9 0 0 1 0 3.55 9 9 0 0 1-2.49 4.65q-.63.64-1.38 1.13a9 9 0 0 1-1.57.85 9 9 0 0 1-1.7.51 9 9 0 0 1-3.55 0 9 9 0 0 1-1.7-.51 9 9 0 0 1-1.58-.85 9 9 0 0 1-1.38-1.13 9 9 0 0 1-1.97-2.94 9 9 0 0 1-.51-1.71 9 9 0 0 1 0-3.55 9 9 0 0 1 1.35-3.28q.5-.74 1.13-1.38a9 9 0 0 1 1.38-1.13 9 9 0 0 1 1.57-.84 9 9 0 0 1 3.48-.69 9 9 0 0 1 3.48.7 9 9 0 0 1 1.57.83q.75.5 1.38 1.13m0 0"/></g><g clip-path="url(#ic-categorize-c5)"><path fill="currentColor" d="M54.47 14.32a9 9 0 0 1 1.96 2.95 9 9 0 0 1 .7 3.48q0 .9-.18 1.78a9 9 0 0 1-.52 1.7 9 9 0 0 1-1.97 2.95 9 9 0 0 1-2.95 1.97q-.83.35-1.7.52a9 9 0 0 1-1.78.17 9 9 0 0 1-3.48-.69 9 9 0 0 1-2.95-1.97 9 9 0 0 1-1.13-1.38 9 9 0 0 1-.84-1.57 9 9 0 0 1-.52-1.7 9 9 0 0 1 0-3.55 9 9 0 0 1 .52-1.71 9 9 0 0 1 1.97-2.95 9 9 0 0 1 2.95-1.97 9 9 0 0 1 1.7-.52 9 9 0 0 1 3.56 0q.87.18 1.7.52t1.58.84 1.38 1.13m0 0"/></g><g clip-path="url(#ic-categorize-c6)"><path fill="currentColor" d="M57.13 75.31q0 .9-.18 1.78a9 9 0 0 1-.51 1.7 9 9 0 0 1-.85 1.58 9 9 0 0 1-4.07 3.34 9 9 0 0 1-1.71.52 9 9 0 0 1-3.55 0 9 9 0 0 1-1.7-.52 9 9 0 0 1-1.58-.84 9 9 0 0 1-4.04-7.56q0-.9.17-1.77a9 9 0 0 1 .52-1.7 9 9 0 0 1 3.35-4.09 9 9 0 0 1 1.57-.84 9 9 0 0 1 1.71-.51 9 9 0 0 1 3.55 0 9 9 0 0 1 1.7.51q.83.34 1.58.84.74.5 1.37 1.13.64.64 1.13 1.38.5.75.85 1.57t.51 1.7.18 1.78m0 0"/></g><path fill="currentColor" d="M50.12 39.18a9 9 0 0 1 3.23 1.47 9 9 0 0 1 3.2 4.2q.32.84.46 1.72t.11 1.78a9 9 0 0 1-.24 1.77 9 9 0 0 1-.57 1.69 9 9 0 0 1-.9 1.53 9 9 0 0 1-2.6 2.43 9 9 0 0 1-1.6.78 9 9 0 0 1-1.72.45 9 9 0 0 1-5.23-.7 9 9 0 0 1-2.88-2.07 9 9 0 0 1-1.08-1.42 9 9 0 0 1-1.24-3.32 9 9 0 0 1 .12-3.55q.2-.87.58-1.69a9 9 0 0 1 3.5-3.96 9 9 0 0 1 5.1-1.35q.9.03 1.76.24m0 0"/><g clip-path="url(#ic-categorize-c7)"><path fill="currentColor" d="M83.72 44.56a9 9 0 0 1 .69 3.47q0 .9-.18 1.78a9 9 0 0 1-.52 1.7 9 9 0 0 1-1.97 2.96 9 9 0 0 1-1.37 1.13 9 9 0 0 1-1.58.84 9 9 0 0 1-1.7.51 9 9 0 0 1-3.55 0 9 9 0 0 1-1.7-.51 9 9 0 0 1-4.93-4.92 9 9 0 0 1-.51-1.71 9 9 0 0 1 0-3.55q.17-.88.51-1.7.34-.83.84-1.57t1.13-1.38a9 9 0 0 1 2.95-1.98 9 9 0 0 1 1.7-.51 9 9 0 0 1 3.56 0q.87.17 1.7.51a9 9 0 0 1 1.58.84 9 9 0 0 1 1.37 1.14q.64.63 1.14 1.38a9 9 0 0 1 .84 1.57m0 0"/></g></symbol>
+  <symbol id="ic-control" viewBox="0 0 96 96"><defs><clipPath id="ic-control-c0"><path d="M59 10.44h27V38H59Zm0 0"/></clipPath><clipPath id="ic-control-c1"><path d="M58 10.44h28.1V38H58Zm0 0"/></clipPath><clipPath id="ic-control-c2"><path d="M59 10.44h27V38H59Zm0 0"/></clipPath><clipPath id="ic-control-c3"><path d="M58 10.44h28.1V38H58Zm0 0"/></clipPath><clipPath id="ic-control-c4"><path d="M9.6 59H37v27.19H9.6Zm0 0"/></clipPath><clipPath id="ic-control-c5"><path d="M58 59h28v27.19H58Zm0 0"/></clipPath><clipPath id="ic-control-c6"><path d="M9.6 10.44H37V38H9.6Zm0 0"/></clipPath></defs><g clip-path="url(#ic-control-c0)"><path fill="currentColor" d="M61.65 37.15a2.4 2.4 0 0 1-2.4-2.38V24.04c0-7.24 5.92-13.12 13.2-13.12 5.07 0 9.6 2.8 11.85 7.33a13 13 0 0 1 0 11.59 13.1 13.1 0 0 1-11.85 7.32zm0 0"/></g><g clip-path="url(#ic-control-c1)"><path fill="currentColor" d="M72.45 11.32a12.8 12.8 0 0 1 11.48 7.1 12.6 12.6 0 0 1 0 11.22 12.8 12.8 0 0 1-11.48 7.1h-10.8a2 2 0 0 1-1.99-1.98V24.04c0-7.03 5.73-12.71 12.79-12.71m0-.82c-7.5 0-13.61 6.07-13.61 13.52v10.73a2.8 2.8 0 0 0 2.81 2.8h10.8c5.22 0 9.9-2.9 12.21-7.56a13 13 0 0 0 1.4-5.97 13.53 13.53 0 0 0-13.6-13.52m0 0"/></g><g clip-path="url(#ic-control-c2)"><path fill="currentColor" d="M61.65 37.08a2.4 2.4 0 0 1-2.4-2.39V23.96c0-7.23 5.92-13.11 13.2-13.11 5.07 0 9.6 2.8 11.85 7.32a13 13 0 0 1 0 11.58 13.1 13.1 0 0 1-11.85 7.33zm0 0"/></g><g clip-path="url(#ic-control-c3)"><path fill="currentColor" d="M72.45 11.25c5.04 0 9.4 2.9 11.48 7.1a12.6 12.6 0 0 1 0 11.22 12.8 12.8 0 0 1-11.48 7.1h-10.8a2 2 0 0 1-1.99-1.98V23.96c0-7.02 5.73-12.71 12.79-12.71m0-.81c-7.5 0-13.61 6.06-13.61 13.52v10.73a2.8 2.8 0 0 0 2.81 2.8h10.8c5.22 0 9.9-2.9 12.21-7.56a13 13 0 0 0 1.4-5.97 13.54 13.54 0 0 0-13.6-13.52m0 0"/></g><path fill="currentColor" d="M23.25 85.78c-5.06 0-9.6-2.8-11.85-7.33a13 13 0 0 1 0-11.59 13.1 13.1 0 0 1 11.85-7.32h10.8a2.4 2.4 0 0 1 2.4 2.39v10.73c0 7.23-5.92 13.11-13.2 13.11Zm0 0"/><g clip-path="url(#ic-control-c4)"><path fill="currentColor" d="M34.05 59.95a2 2 0 0 1 2 1.98v10.73c0 7.02-5.74 12.71-12.8 12.71a12.8 12.8 0 0 1-11.48-7.1 12.6 12.6 0 0 1 0-11.22 12.8 12.8 0 0 1 11.48-7.1zm0-.81h-10.8c-5.22 0-9.9 2.9-12.21 7.55a13 13 0 0 0-1.4 5.97 13.54 13.54 0 0 0 13.61 13.52c7.5 0 13.61-6.06 13.61-13.52V61.93a2.8 2.8 0 0 0-2.81-2.8m0 0"/></g><path fill="currentColor" d="M72.28 85.78c-7.28 0-13.2-5.88-13.2-13.12V61.93a2.4 2.4 0 0 1 2.4-2.38h10.8c5.06 0 9.6 2.8 11.85 7.33a13 13 0 0 1 1.36 5.79q0 3.06-1.36 5.79a13.1 13.1 0 0 1-11.85 7.33Zm0 0"/><g clip-path="url(#ic-control-c5)"><path fill="currentColor" d="M72.28 59.95c5.04 0 9.4 2.9 11.48 7.1a12.6 12.6 0 0 1 0 11.22 12.8 12.8 0 0 1-11.48 7.1c-7.07 0-12.8-5.7-12.8-12.71V61.93a2 2 0 0 1 2-1.98zm0-.81h-10.8a2.8 2.8 0 0 0-2.8 2.8v10.72c0 7.46 6.1 13.52 13.6 13.52 5.22 0 9.9-2.9 12.21-7.55a13 13 0 0 0 1.4-5.97 13.54 13.54 0 0 0-13.6-13.52m0 0"/></g><path fill="currentColor" d="M23.25 37.26c-5.06 0-9.6-2.8-11.85-7.33a13 13 0 0 1-1.35-5.79q0-3.06 1.35-5.8a13.2 13.2 0 0 1 11.85-7.31c7.28 0 13.2 5.88 13.2 13.12v10.72a2.4 2.4 0 0 1-2.4 2.39Zm0 0"/><g clip-path="url(#ic-control-c6)"><path fill="currentColor" d="M23.25 11.43c7.07 0 12.8 5.7 12.8 12.71v10.73c0 1.1-.9 1.98-2 1.98h-10.8a12.8 12.8 0 0 1-11.48-7.1 12.6 12.6 0 0 1 0-11.22 12.8 12.8 0 0 1 11.48-7.1m0-.81c-5.22 0-9.9 2.9-12.21 7.55a13 13 0 0 0-1.4 5.97q0 3.16 1.4 5.97c2.31 4.66 7 7.56 12.21 7.56h10.8a2.8 2.8 0 0 0 2.8-2.8V24.15a13.57 13.57 0 0 0-13.6-13.53m0 0"/></g><path fill="currentColor" d="M35.44 36.15h24.73v24.58H35.44Zm0 0"/><path fill="currentColor" d="M59.76 36.56v23.76h-23.9V36.56zm.82-.82H35.03v25.4h25.55Zm0 0"/></symbol>
+</svg>
+
+<!-- ============ CONTROL LAYER (global background grid) ============ -->
+<div class="bg-lines" aria-hidden="true">
+  <div class="bg-grid"></div>
+  <div class="bg-grid-dots"></div>
+</div>
+
+<div class="anb" id="anb"><svg class="pix" viewBox="0 0 400.99 400" aria-hidden="true"><path fill="#4EFF79" stroke="#043A3A" stroke-width="20" stroke-miterlimit="10" d="M200.49,22.65C102.54,22.65,23.14,102.05,23.14,200c0,2.52.07,5.02.17,7.51v142.03c0,15.25,12.37,27.62,27.62,27.62h141.41c2.71.12,5.42.19,8.16.19,97.95,0,177.35-79.4,177.35-177.35S298.44,22.65,200.49,22.65Z"/><g class="ey" style="transform-origin:145px 174px"><path fill="#043A3A" d="M153.13,174.3l5.48-27.03c1.56-7.69-3.41-13.92-11.1-13.92s-15.19,6.23-16.75,13.92l-5.48,27.03h11l-5.48,27.03c-1.56,7.69,3.41,13.92,11.1,13.92s15.19-6.23,16.75-13.92l5.48-27.03h-11Z"/></g><g class="ey" style="transform-origin:254px 176px"><path fill="#043A3A" d="M268.01,148.89c1.56-7.69-3.41-13.92-11.1-13.92s-15.19,6.23-16.75,13.92l-5.48,27.03h11l-5.48,27.03c-1.56,7.69,3.41,13.92,11.1,13.92s15.19-6.23,16.75-13.92l5.48-27.03h-11l5.48-27.03h0Z"/></g><path fill="#043A3A" stroke="#043A3A" stroke-width="6" stroke-miterlimit="10" d="M202.14,273.57c-13.19,0-25.02-7.86-30.66-19.56-.82-1.7-2.64-2.73-4.48-2.35-.53.11-1.15.31-1.93.66-2.17.98-2.1,2.01-2.32,2.86-.26.99-.17,2.04.27,2.96,7.18,14.97,22.29,25.03,39.13,25.03s31.94-10.06,39.12-25.02c.45-.93.5-1.98.21-2.97-.3-1.04-.36-2.35-2.76-3.15-1.5-.5-2.33-.52-2.92-.42-1.29.21-2.37,1.1-2.94,2.29-5.63,11.76-17.48,19.67-30.71,19.67h-.01Z"/></svg><span class="anbw"><span class="anbt" id="anbt"><a class="anbm" href="https://www.harmonic.security/frequency">The Frequency newsletter just launched <i>&#8594;</i></a><a class="anbm" href="https://handbook.harmonic.security/">AI Security Handbook: agents, MCP, more <i>&#8594;</i></a><a class="anbm" href="https://www.harmonic.security/frequency">The Frequency newsletter just launched <i>&#8594;</i></a></span></span><button class="anbx" id="anbx" aria-label="Dismiss">&#215;</button></div>
+
+<section class="hero">
+  <div class="bgwrap" aria-hidden="true">
+    <div class="bg-waves">
+      <svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <path class="wave-path wave-path--slow" d="M -200 240 Q 0 160, 200 240 T 600 240 T 1000 240 T 1400 240 T 1800 240"/>
+        <path class="wave-path wave-path--med" d="M -200 500 Q 100 380, 400 500 T 1000 500 T 1600 500 T 2000 500"/>
+        <path class="wave-path wave-path--fast" d="M -200 760 Q 150 880, 400 760 T 800 760 T 1200 760 T 1600 760 T 2000 760"/>
+        <path class="wave-path wave-path--slow" style="animation-delay:-12s" d="M -200 100 Q 200 60, 400 100 T 800 100 T 1200 100 T 1600 100"/>
+        <path class="wave-path wave-path--med" style="animation-delay:-8s" d="M -200 880 Q 200 820, 600 880 T 1200 880 T 1800 880"/>
+      </svg>
+    </div>
+    <div class="bnode" style="left:12%;top:24%;animation-delay:0s"></div>
+    <div class="bnode" style="left:28%;top:50%;animation-delay:1.2s"></div>
+    <div class="bnode" style="left:42%;top:18%;animation-delay:2.4s"></div>
+    <div class="bnode" style="left:58%;top:76%;animation-delay:.8s"></div>
+    <div class="bnode" style="left:71%;top:34%;animation-delay:3.1s"></div>
+    <div class="bnode" style="left:83%;top:62%;animation-delay:1.8s"></div>
+    <div class="bnode" style="left:18%;top:78%;animation-delay:4s"></div>
+    <div class="bnode" style="left:90%;top:14%;animation-delay:2.7s"></div>
+  </div>
+
+  <h1><span class="flipwrap" id="flipWrap"><span class="fliptrack" id="flipTrack"><span class="flipitem" style="--wc:var(--peri)">Understand</span><span class="flipitem">Control</span><span class="flipitem" style="--wc:var(--amber)">Enable</span><span class="flipitem" style="--wc:var(--peri)">Understand</span></span></span> AI wherever your workforce runs it</h1>
+  <p class="sub">The only platform that classifies every AI task, discovers why it is used, and then controls it in real time.</p>
+  <div class="btns">
+    <a class="btn pr" href="https://www.harmonic.security/get-demo">Book a demo</a>
+    <a class="btn gh" href="#platform">Explore the Platform</a>
+  </div>
+  <div class="scrollhint" id="hint"><span>See how it works</span><svg class="arw" viewBox="0 0 22 13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2.5 11 10.5 20 2.5"/></svg></div>
+</section>
+
+<section class="pipe" id="pipeline">
+  <div class="bgwrap" aria-hidden="true"></div>
+  <div class="pipe-head">
+    <div class="eb">The Harmonic Difference</div>
+    <h2>Understanding, <span class="g">then control</span></h2>
+    <p>Collected at the source. Categorized by business use case. Acted on in real time, so security decisions follow the work instead of blocking it.</p>
+  </div>
+
+  <div class="pipeband" id="pipeband">
+    <canvas id="pcanvas" aria-hidden="true"></canvas>
+
+    <div class="stage-node" id="nCollect" style="--c:#4EFF79">
+      <div class="halo"></div>
+      <div class="ring"><svg class="bicon" viewBox="0 0 96 95.999999" aria-hidden="true"><use href="#ic-collect"/></svg></div>
+      <div class="step">01</div><div class="nm">Collect</div>
+    </div>
+
+    <div class="stage-node" id="nCat" style="--c:#7C8DFC">
+      <div class="halo"></div>
+      <div class="ring"><svg class="bicon" viewBox="0 0 96 95.999999" aria-hidden="true"><use href="#ic-categorize"/></svg></div>
+      <div class="step">02</div><div class="nm">Categorize</div>
+    </div>
+
+    <div class="stage-node" id="nCtrl" style="--c:#FFA300">
+      <div class="halo"></div>
+      <div class="ring"><svg class="bicon" viewBox="0 0 96 95.999999" aria-hidden="true"><use href="#ic-control"/></svg>
+        <svg class="vicon v-tick" viewBox="0 0 48 48" fill="none" stroke="#4EFF79" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 25.5l8.5 8.5L36 15.5"/></svg>
+        <svg class="vicon v-cross" viewBox="0 0 48 48" fill="none" stroke="#FF8A57" stroke-width="5" stroke-linecap="round"><path d="M15.5 15.5l17 17M32.5 15.5l-17 17"/></svg>
+        <svg class="vicon v-warn" viewBox="0 0 48 48" fill="none" stroke="#FFA300" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M24 12v16"/><path d="M24 36.5v.1"/></svg>
+      </div>
+      <div class="step">03</div><div class="nm">Control</div>
+    </div>
+
+    <div class="ev" id="ev">
+      <div class="tab" id="evTab"></div>
+      <div class="scan"></div>
+      <div class="mrow"><span class="srcp" id="evSrcp"><span class="dm"></span><img class="lgo" id="evLogo" alt="" src="" decoding="async"><span id="evSrc">ChatGPT Work</span><span class="via" id="evVia"><span class="arw">&#8594;</span><span class="doc" id="evViaDoc">PDF</span><img class="vlgo" id="evViaLogo" alt="" src="" decoding="async"><span id="evViaName"></span></span></span><span class="ts" id="evTs">14:02:36.118</span></div>
+      <div class="title mono" id="evTitle">Prompt captured</div>
+      <div class="finding" id="evFind"><span class="fi" id="evFi">&#10005;</span><span id="evFindTxt">Sales Pipeline Data is Exposed</span></div>
+      <div class="frow"><span class="fpill" id="evPill">Sales</span><span class="who" id="evWho">Sales Associate</span></div>
+      <div class="stamp" id="evStamp">BLOCKED</div>
+    </div>
+  </div>
+</section>
+
+<section class="hwww-section" aria-label="Who we work with">
+  <p class="hwww-headline">Who we work with</p>
+  <div class="hwww-track-wrap" id="hwww-wrap">
+    <div class="hwww-track" id="hwww-track">
+      <div class="hwww-logo" style="margin-right:-30px;"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062ba973faa3fdc0dcebd_Advisor360.avif" alt="Advisor360" style="height:106px; max-width:175px; position:relative; top:5px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062badd0bf38346725c1f_anthropic.png" alt="Anthropic" style="height:18px;" class="no-filter"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6973d26a53af9d7700f17f6e_apex-white.png" alt="Apex" style="height:29px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062ba48022b9395e0912d_cisco.png" alt="Cisco" style="height:35px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062ba48ebd8334e50bf28_hig-capital.png" alt="HIG Capital" style="height:44px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062ba28c403010180499b_hyperion.png" alt="Hyperion" style="height:32px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062ba32789eb43f8f35b7_mps.png" alt="Monolithic Power Systems" style="height:46px;"></div>
+      <div class="hwww-divider"></div>
+      <div class="hwww-logo"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a3062bad3f252e9cb8cd3c0_NPL.avif" alt="NPL" style="height:21px;"></div>
+      <div class="hwww-divider"></div>
+    </div>
+  </div>
+</section>
+
+<section class="platform" id="platform">
+  <div class="inner">
+    <div class="eb">Interactive preview</div>
+    <h2>Explore the <span class="g">Platform</span></h2>
+    <p>Click around a live preview of the Harmonic console — no signup, no sales call.</p>
+    <div class="frame">
+      <div class="bar"><i></i><i></i><i></i><span class="url">explore.harmonic.security · Harmonic Platform preview</span></div>
+      <iframe src="https://explore.harmonic.security/" title="Harmonic Platform interactive preview" loading="lazy" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+    </div>
+    <div class="fallback">Preview not loading? <a href="https://explore.harmonic.security/" target="_blank" rel="noopener">Open it in a new tab &#8594;</a></div>
+  </div>
+</section>
+
+<section class="social">
+  <div class="tgrid">
+    <div class="tcard">
+      <div class="q">We needed to understand not just which AI tools were being used, but how they were being used. That's a completely different question, and it's the one that actually matters.</div>
+      <div class="who"><div class="av">NP</div><div><b>Neil Patel</b><span>Global Head of IT, Apax</span></div></div>
+    </div>
+    <div class="tcard">
+      <div class="q">It's literally hours to seconds. If we deploy a tool and it's covered by Harmonic, we have insight right away.</div>
+      <div class="who"><div class="av">MJ</div><div><b>Mike Janielis</b><span>Senior Principal, Information Security Architect, Advisor360</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <img class="band" src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eefa059e116f5e63bff_cta-band.webp" alt="Four Harmonic bubble characters playing in a band" decoding="async" loading="lazy">
+  <div class="icons">
+    <div class="mini" style="--c:#00BC79"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#ic-collect"/></svg></div>
+    <div class="mini" style="--c:#5B6BD6"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#ic-categorize"/></svg></div>
+    <div class="mini" style="--c:#FF4F01"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#ic-control"/></svg></div>
+  </div>
+  <h2>AI, from banned to <span class="band-word">band</span>.</h2>
+  <p>See the whole loop running live on your own AI traffic.</p>
+  <div class="btns">
+    <a class="btn pr" href="https://www.harmonic.security/get-demo">Book a demo</a>
+    <a class="btn gh" href="#platform">Explore the platform</a>
+  </div>
+</section>
+</div></div><div><div class="w-embed w-script"><!-- ==========================================================
+     HARMONIC HOMEPAGE / FLOW GRID — EMBED 3 of 3: BEHAVIOUR (JS)
+     Paste into a Webflow HTML Embed element.
+     Place last. Self-guards on DOMContentLoaded, so order is not fatal.
+     ========================================================== -->
+<script>
+/* Harmonic homepage flow-grid — behaviour. Paste order-independent: waits for DOM. */
+(function(){function __hsInit(){
+(function(){
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- shared UI wiring ---- */
+  const anb=document.getElementById('anb'),anbt=document.getElementById('anbt'),anbx=document.getElementById('anbx');
+  if(anbx&&anb)anbx.addEventListener('click',()=>anb.classList.add('gone'));
+  if(anbt&&!reduced&&anbt.children.length>1){   /* single message: nothing to rotate */
+    const n=anbt.children.length-1;let ai=0;
+    setInterval(()=>{
+      ai++;anbt.style.transition='transform .55s cubic-bezier(.2,.9,.3,1)';
+      anbt.style.transform='translateY('+(-ai*21)+'px)';
+      if(ai===n)setTimeout(()=>{ai=0;anbt.style.transition='none';anbt.style.transform='translateY(0)';},580);
+    },7000);
+  }
+  const flipTrack=document.getElementById('flipTrack');
+  if(flipTrack&&!reduced){
+    const fn=flipTrack.children.length-1;let fi=0;
+    setInterval(()=>{
+      fi++;flipTrack.style.transition='transform .42s cubic-bezier(.2,.9,.3,1.15)';
+      flipTrack.style.transform='translateY('+(-fi*1.06)+'em)';
+      if(fi===fn)setTimeout(()=>{fi=0;flipTrack.style.transition='none';flipTrack.style.transform='translateY(0)';},430);
+    },2400);
+  }
+
+  const hint=document.getElementById('hint');
+  addEventListener('scroll',()=>{hint.style.opacity=scrollY<40?1:0;},{passive:true});
+
+  /* testimonial slide-across on scroll */
+  const socialEl=document.querySelector('.social'),trackEl=document.querySelector('.tgrid');
+  if(socialEl&&trackEl&&!reduced){
+    const slideCards=()=>{
+      const sr=socialEl.getBoundingClientRect(),H=innerHeight;
+      if(sr.top<H*1.2&&sr.bottom>0){
+        const tw=trackEl.scrollWidth;
+        /* with the placeholder wordmarks gone the two cards often fit on screen,
+           and there is nothing to slide across: just centre them and stop */
+        if(tw+40<=innerWidth){trackEl.style.transform='translate3d('+((innerWidth-tw)/2).toFixed(2)+'px,0,0)';return;}
+        const cen=sr.top+sr.height/2;
+        const sk=Math.min(1,Math.max(0,(H*0.62-cen)/(sr.height*0.75)));
+        const f=trackEl.querySelector('.tcard');
+        const x0=f?(innerWidth/2-(f.offsetLeft+f.offsetWidth/2)):0;
+        const x1=Math.min(x0,innerWidth-tw-40);
+        trackEl.style.transform='translate3d('+(x0+(x1-x0)*sk)+'px,0,0)';
+      }
+    };
+    addEventListener('scroll',slideCards,{passive:true});
+    addEventListener('load',slideCards);
+  }
+
+  /* ================= PIPELINE ================= */
+  const band=document.getElementById('pipeband');
+  const canvas=document.getElementById('pcanvas');
+  const ctx=canvas.getContext('2d');
+  const nodes={collect:document.getElementById('nCollect'),cat:document.getElementById('nCat'),ctrl:document.getElementById('nCtrl')};
+  const ev=document.getElementById('ev');
+  const evSrc=document.getElementById('evSrc'),evTs=document.getElementById('evTs');
+  const evSrcp=document.getElementById('evSrcp'),evLogo=document.getElementById('evLogo');
+  /* product marks, keyed by source name. Anything not in here keeps the diamond. */
+  const LOGOS={
+    'ChatGPT Enterprise':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eef086d23b6ae8f3ec0_logo-chatgpt.png',
+    'ChatGPT Free':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eef086d23b6ae8f3ec0_logo-chatgpt.png',
+    'ChatGPT Work':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eef086d23b6ae8f3ec0_logo-chatgpt.png',
+    'Microsoft Copilot':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3ef0f0fc331a4b5bc3eb_logo-microsoft-copilot.png',
+    'Notion':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eeec2ac5cee8fbf0bee_logo-notion.png',
+    'Cursor':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eefddd26e7d73aa2e31_logo-cursor.svg',
+    'Codex':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eef5c47c81025894cb4_logo-codex.svg',
+    'GitHub':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eeebb6cdf9e800f35ec_logo-github.svg',
+    'Claude Cowork':'https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f3eef6949dfc0092e2e14_logo-claude-cowork.png'
+  };
+  const evViaLogo=document.getElementById('evViaLogo'),evViaName=document.getElementById('evViaName');
+  const evViaDoc=document.getElementById('evViaDoc');
+  const evVia=document.getElementById('evVia');
+  /* Second half of the pill: what the model reached for. When we hold a real mark
+     for it the mark speaks for itself and the name is dropped; a filename always
+     shows, because a PDF badge on its own says nothing about which file. */
+  function setSource(name,via,doc,docType){
+    evSrc.textContent=name;
+    const u=LOGOS[name];
+    if(u){evLogo.src=u;evLogo.alt=name;evSrcp.classList.add('haslogo');}
+    else{evSrcp.classList.remove('haslogo');evLogo.removeAttribute('src');evLogo.alt='';}
+    evVia.classList.toggle('isdoc',!!doc);
+    if(doc){
+      evViaDoc.textContent=docType||'PDF';
+      evViaName.textContent=doc;
+      evViaLogo.removeAttribute('src');evViaLogo.style.display='none';
+      evSrcp.classList.add('hasvia');
+    }else if(via){
+      const v=LOGOS[via];
+      evViaName.textContent=v?'':via;
+      if(v){evViaLogo.src=v;evViaLogo.alt=via;evViaLogo.style.display='';}
+      else{evViaLogo.removeAttribute('src');evViaLogo.style.display='none';}
+      evSrcp.classList.add('hasvia');
+    }else{
+      evSrcp.classList.remove('hasvia');evViaName.textContent='';
+      evViaLogo.removeAttribute('src');evViaLogo.alt='';
+    }
+  }
+  const evTitle=document.getElementById('evTitle'),evPill=document.getElementById('evPill');
+  const evWho=document.getElementById('evWho'),evStamp=document.getElementById('evStamp');
+  const evTab=document.getElementById('evTab');
+  const evFind=document.getElementById('evFind'),evFi=document.getElementById('evFi'),evFindTxt=document.getElementById('evFindTxt');
+
+  let W=0,H=0,DPR=1,ringR=48,mob=false;
+  const S={};
+
+  function resize(){
+    DPR=Math.min(devicePixelRatio||1,3);
+    W=band.clientWidth;H=band.clientHeight;
+    canvas.width=W*DPR;canvas.height=H*DPR;
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    layout();
+  }
+  function layout(){
+    mob=W<820;
+    S.y=mob?96:118;                        // rail line
+    S.hub=W*(mob?0.18:0.28);
+    S.cat=W*0.5;
+    S.ctrl=W*(mob?0.82:0.72);
+    const ringEl=nodes.collect.querySelector('.ring');
+    ringR=(ringEl?ringEl.offsetWidth:96)/2;
+    place(nodes.collect,S.hub,S.y-ringR);
+    place(nodes.cat,S.cat,S.y-ringR);
+    place(nodes.ctrl,S.ctrl,S.y-ringR);
+    // card geometry
+    S.cardY=S.y+ringR+76;
+    S.cardW=Math.min(372,W*0.88);
+    ev.style.width=S.cardW+'px';
+    ev.style.top=S.cardY+'px';
+    S.ringX={collect:S.hub,cat:S.cat,ctrl:S.ctrl};
+    if(mob){
+      // card stays centered; stages light up above it
+      S.cardX={collect:W/2,cat:W/2,ctrl:W/2};
+    }else{
+      S.cardX={collect:S.hub,cat:S.cat,ctrl:S.ctrl};
+    }
+    setCardStage(curStage,true);
+  }
+  function place(el,x,y){el.style.left=x+'px';el.style.top=y+'px';}
+
+  let curStage='collect';
+  function setCardStage(stage,instant){
+    curStage=stage;
+    const x=(S.cardX?S.cardX[stage]:0)-S.cardW/2;
+    if(instant){const t=ev.style.transition;ev.style.transition='none';ev.style.transform='translateX('+x+'px)';void ev.offsetWidth;ev.style.transition=t||'';}
+    else ev.style.transform='translateX('+x+'px)';
+    // beak x, measured from the card's left edge and kept off the rounded corners
+    const bx=Math.max(22,Math.min((S.cardW||0)-22,(S.ringX?S.ringX[stage]:0)-x));
+    if(instant){const tt=evTab.style.transition;evTab.style.transition='none';evTab.style.left=bx+'px';void evTab.offsetWidth;evTab.style.transition=tt||'';}
+    else evTab.style.left=bx+'px';
+  }
+  function setActive(stage){
+    ['collect','cat','ctrl'].forEach(k=>nodes[k].classList.toggle('active',k===stage));
+  }
+
+  /* ---- event data: classification (use case) vs control finding ---- */
+  /* Seven stories, run in this order, on a loop. Three verdicts, so the gate is
+     never a simple pass/fail: cleared, blocked, or held for a human. The two
+     injection-flavoured stories (ChatGPT/Notion and Codex/skill) are deliberately
+     kept apart in the running order so they don't read as one repeated beat.
+     SAFE:   [use case, source, function, fn colour, role]
+     RISK:   [use case, source, function, role, finding, MCP resource (optional)]
+     REVIEW: same shape as RISK — amber, flagged, not stopped */
+  const safe=e=>({use:e[0],src:e[1],fn:e[2],color:e[3],role:e[4],finding:'No Sensitive Data Detected',block:false});
+  const risk=e=>({use:e[0],src:e[1],fn:e[2],color:'#FF8A57',role:e[3],finding:e[4],via:e[5],block:true});
+  const review=e=>({use:e[0],src:e[1],fn:e[2],color:'#FFA300',role:e[3],finding:e[4],via:e[5],review:true});
+  const STORY=[
+    safe(['PRD Drafting','Claude Cowork','Design & Development','#4EFF79','Product Manager']),
+    risk(['Repository Cleanup','Cursor','Design & Development','Software Engineer','Destructive Repository Action','GitHub']),
+    risk(['Product Roadmap Research','ChatGPT Work','Design & Development','Product Manager','Indirect Prompt Injection Detected','Notion']),
+    risk(['Customer Onboarding Emails','Gemini','Customer Experience','Support Lead','Customer PII Exposed']),
+    review(['Code Review Automation','Codex','Design & Development','Software Engineer','Malicious Instructions in Skill']),
+    risk(['CI Pipeline Debugging','Perplexity','Infrastructure & Security','Platform Engineer','Access Keys Detected']),
+    safe(['Sales Call Prep','Microsoft Copilot','Sales','#4EFF79','Account Executive']),
+  ];
+  /* seeded RNG: the dot stream on the rail uses this, so it stays put */
+  let seed=11;
+  function rnd(){seed=(seed*16807)%2147483647;return (seed-1)/2147483646;}
+
+  /* what got collected, per story: a tool call, a skill, a file upload, or a prompt */
+  STORY[1].capture='Tool call: delete_repository';
+  STORY[2].capture='MCP Call';
+  STORY[4].capture='Skill invoked';STORY[4].doc='code-review/SKILL.md';STORY[4].docType='SKILL';
+  STORY[6].capture='File uploaded';STORY[6].doc='Acme-Account-Plan.pdf';
+
+  let storyIdx=0;
+  function nextEvent(){const e=STORY[storyIdx];storyIdx=(storyIdx+1)%STORY.length;return e;}
+  function fakeTs(){
+    const d=new Date();
+    const p=(n,l=2)=>String(n).padStart(l,'0');
+    return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())+'.'+p(d.getMilliseconds(),3);
+  }
+
+  /* text decode (scramble) effect */
+  const GLYPHS='ABCDEFGHKMNPRSTUVWXYZ023456789#$%&';
+  let decodeTimer=null;
+  function decode(el,text,dur){
+    if(decodeTimer)clearInterval(decodeTimer);
+    const start=performance.now(),len=text.length;
+    decodeTimer=setInterval(()=>{
+      const k=Math.min(1,(performance.now()-start)/dur);
+      const fixed=Math.floor(k*len);
+      let out=text.slice(0,fixed);
+      for(let i=fixed;i<len;i++)out+=text[i]===' '?' ':GLYPHS[Math.floor(Math.random()*GLYPHS.length)];
+      el.textContent=out;
+      if(k>=1){clearInterval(decodeTimer);decodeTimer=null;el.textContent=text;}
+    },28);
+  }
+
+  /* Pacing knob for this whole section: 1 = original speed, higher = slower.
+     Scales the story beats, the dot stream, the wave travel and the rail dash. */
+  const PACE=1.5;
+
+  /* ---- ambient stream on the rail: dots ride a travelling sound wave ---- */
+  const dots=[];
+  const colCache=new Map();                       // railColor runs per dot per frame
+  function railColorCached(x){
+    const k=x/10|0; let c=colCache.get(k);
+    if(c===undefined){c=railColor(k*10);colCache.set(k,c);}
+    return c;
+  }
+  const WAVE={};                                  // sound-wave tuning
+  function waveSetup(){
+    WAVE.len  = mob?150:200;                      // wavelength (px)
+    WAVE.amp  = mob?11:16;                        // peak height (px)
+    WAVE.spd  = (mob?2.0:2.4)/PACE;               // how fast the wave travels (rad/s)
+    WAVE.env  = mob?520:680;                      // length of the swell/beat envelope (px)
+    WAVE.envSpd = 0.55/PACE;                      // envelope drift speed
+  }
+  // y offset for any point on the wave. Phase is per-row, so the rows drift out of
+  // step instead of moving as one rigid comb.
+  function waveY(x,t,ph){
+    const k=6.2832/WAVE.len;
+    const env=0.40+0.60*Math.abs(Math.sin(x/WAVE.env*3.1416 - t*WAVE.envSpd + ph*0.6));
+    return Math.sin(k*x - t*WAVE.spd + ph)*WAVE.amp*env;
+  }
+  /* Rail row first (brightest, carries the story), then quieter rows filling the band
+     behind the card. Back rows are dimmer, smaller and slower — depth without noise,
+     so they never compete with the card content. */
+  function rowDefs(){
+    const rows=[{y:S.y,amp:1,ph:0,dim:1,rad:2,n:mob?20:34,spf:1}];
+    const extra=mob?3:5;
+    const top=(S.cardY||S.y+120)+14, bot=H-(mob?24:32);   // clear of the stage labels
+    for(let i=0;i<extra;i++){
+      const f=extra<2?0.5:i/(extra-1);
+      rows.push({y:top+(bot-top)*f,
+                 amp:0.5+0.3*(i%2),
+                 ph:1.7*(i+1),
+                 dim:Math.max(.15,.4-.05*i),
+                 rad:1.5,
+                 n:mob?12:22,
+                 spf:0.86-0.05*i});          // parallax: further rows drift slower
+    }
+    return rows;
+  }
+  function makeDots(){
+    waveSetup();
+    dots.length=0;
+    colCache.clear();                             // stage positions may have moved
+    const base=(mob?86:104)/PACE;                 // uniform speed keeps each row's wave intact
+    rowDefs().forEach(r=>{
+      const sp=base*r.spf, gap=W/r.n;
+      for(let i=0;i<r.n;i++)
+        dots.push({x:i*gap+rnd()*gap*0.25,sp:sp,o:(.3+rnd()*.45)*r.dim,out:false,
+                   y:r.y,amp:r.amp,ph:r.ph,rad:r.rad});
+      const oN=Math.max(3,Math.round(r.n*0.3)), oStart=S.ctrl+ringR, oGap=Math.max(24,(W-oStart)/oN);
+      for(let i=0;i<oN;i++)
+        dots.push({x:oStart+i*oGap,sp:sp*1.05,o:(.35+rnd()*.45)*r.dim,out:true,
+                   y:r.y,amp:r.amp,ph:r.ph,rad:r.rad});
+    });
+  }
+  function drawRail(){
+    ctx.save();
+    ctx.strokeStyle='rgba(78,255,121,.20)';
+    ctx.lineWidth=1;
+    ctx.setLineDash([1,7]);
+    ctx.lineDashOffset=-(performance.now()/(26*PACE))%800;
+    ctx.beginPath();
+    ctx.moveTo(8,S.y);
+    ctx.bezierCurveTo(S.hub*0.5,S.y-10,S.hub*0.7,S.y+8,S.hub,S.y);
+    ctx.bezierCurveTo(S.hub+(S.cat-S.hub)*0.4,S.y-10,S.cat-(S.cat-S.hub)*0.3,S.y+10,S.cat,S.y);
+    ctx.bezierCurveTo(S.cat+(S.ctrl-S.cat)*0.4,S.y-10,S.ctrl-(S.ctrl-S.cat)*0.3,S.y+8,S.ctrl,S.y);
+    ctx.lineTo(W-8,S.y);
+    ctx.stroke();
+    ctx.restore();
+    // (the vertical gate glow before Control was removed; dots still
+    //  dissolve at the same point, see drawDots)
+  }
+  /* Dot colour is a position on the rail, not a state: Kryptonite up to Categorize,
+     Purple Rain to Control, Mellow Yellow leaving the gate, Tangerine on the way out.
+     Each change is confined to a band the width of the icon it happens behind, and is
+     interpolated around the colour wheel — a straight RGB lerp between these hues
+     spends the middle of every transition in desaturated mud. */
+  const RAIL_HSL=[[135,100,65],[231,95,74],[38,100,50],[18,100,50]];
+  const smooth=t=>t*t*(3-2*t);
+  function railColor(x){
+    const band=Math.max(34,ringR);                 // change happens behind the icon
+    const centres=[S.cat,S.ctrl,S.ctrl+Math.max(70,(W-S.ctrl)*0.5)];
+    let i=0,t=0;
+    for(let k=0;k<centres.length;k++){
+      if(x>=centres[k]+band){i=k+1;t=0;}
+      else if(x>centres[k]-band){i=k;t=smooth((x-(centres[k]-band))/(2*band));break;}
+      else break;
+    }
+    const A=RAIL_HSL[i],B=RAIL_HSL[Math.min(i+1,RAIL_HSL.length-1)];
+    let dh=B[0]-A[0];                              // take the short way round the wheel
+    if(dh>180)dh-=360; else if(dh<-180)dh+=360;
+    const hh=(A[0]+dh*t+360)%360;
+    return 'hsl('+hh.toFixed(1)+' '+(A[1]+(B[1]-A[1])*t).toFixed(0)+'% '+(A[2]+(B[2]-A[2])*t).toFixed(0)+'%)';
+  }
+
+  function drawDots(dt,t){
+    const gate=S.ctrl-ringR-14;
+    dots.forEach(d=>{
+      d.x+=d.sp*dt;
+      let a=d.o;
+      if(!d.out){
+        if(d.x>gate){d.x-=gate+30;}               // wrap, preserving even spacing
+        a*=Math.min(1,(gate-d.x)/70);          // dissolve into the gate
+        a*=Math.min(1,(d.x+20)/50);
+      }else{
+        if(d.x>W+10)d.x-=(W+16-(S.ctrl+ringR));
+        a*=Math.min(1,(d.x-(S.ctrl+ringR))/40)*Math.min(1,(W-d.x)/60);
+      }
+      const y=d.y+waveY(d.x,t,d.ph)*d.amp*(d.out?0.8:1);
+      ctx.globalAlpha=Math.max(0,a);
+      ctx.fillStyle=railColorCached(d.x);
+      ctx.beginPath();ctx.arc(d.x,y,d.out?d.rad*1.2:d.rad,0,7);ctx.fill();
+    });
+    ctx.globalAlpha=1;
+  }
+
+  let last=performance.now();
+  function frame(now){
+    const dt=Math.min(0.05,(now-last)/1000);last=now;
+    ctx.clearRect(0,0,W,H);
+    drawRail();
+    drawDots(dt,now/1000);
+    requestAnimationFrame(frame);
+  }
+
+  /* Brand colours are tuned for dark backgrounds; the card is Ashes now, so
+     anything printed on it gets its light-background counterpart. */
+  const CARD_INK={'#4EFF79':'#1f7846','#00BC79':'#1f7846','#FF8A57':'#BB440B',
+                  '#FF4F01':'#BB440B','#7C8DFC':'#5068AF','#FFA300':'#866712'};
+  const ink=c=>CARD_INK[c]||c;
+
+  /* ---- the story: one event at a time ---- */
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms*PACE));
+  function pulse(node){node.classList.remove('pulse');void node.offsetWidth;node.classList.add('pulse');}
+  async function runEvent(e){
+    // 1 · COLLECT
+    setActive('collect');
+    nodes.ctrl.classList.remove('grant','deny','review');nodes.ctrl.style.setProperty('--c','#FFA300');
+    ev.classList.remove('out-grant','out-deny','out-review','deny','stamped');
+    ev.style.setProperty('--ec','#4EFF79');
+    setSource(e.src,e.via,e.doc,e.docType);
+    evTs.textContent=fakeTs();
+    evTitle.classList.add('mono');
+    evTitle.textContent=e.capture||'Prompt captured';
+    evPill.classList.remove('on');evWho.classList.remove('on');evStamp.classList.remove('on');
+    evFind.classList.remove('on');
+    setCardStage('collect',true);
+    ev.classList.add('show');
+    await sleep(1250);
+
+    // 2 · CATEGORIZE — the use case
+    setActive('cat');
+    setCardStage('cat');
+    ev.style.setProperty('--ec','#7C8DFC');
+    await sleep(650);
+    ev.classList.add('scanning');
+    decode(evTitle,e.use+' in '+e.src,620*PACE);
+    evTitle.classList.remove('mono');
+    evPill.textContent=e.fn;
+    evPill.style.setProperty('--fc',ink(e.color));
+    await sleep(520);
+    evPill.classList.add('on');
+    await sleep(680);
+    ev.classList.remove('scanning');
+
+    // 3 · CONTROL — the finding + decision
+    setActive('ctrl');
+    setCardStage('ctrl');
+    ev.style.setProperty('--ec','#FFA300');   // under review, before the verdict
+    await sleep(720);
+    evWho.textContent=e.src+' | '+e.role;
+    evWho.classList.add('on');
+    evFindTxt.textContent=e.finding;
+    evFi.innerHTML=e.review?'&#33;':(e.block?'&#10005;':'&#10003;');
+    if(e.review){
+      ev.style.setProperty('--ec','#FFA300');
+      ev.style.setProperty('--vc',ink('#FFA300'));
+      evFind.classList.add('on');
+      nodes.ctrl.classList.add('review');nodes.ctrl.style.setProperty('--c','#FFA300');
+      await sleep(420);
+      evStamp.textContent='FLAGGED';
+      evStamp.style.setProperty('--vc',ink('#FFA300'));
+      evStamp.classList.add('on');ev.classList.add('stamped');
+      await sleep(1650);
+      // not stopped: it carries on, but with a reviewer attached
+      ev.classList.add('out-review');
+      ev.style.transform='translateX('+((S.cardX.ctrl-S.cardW/2)+(mob?90:170))+'px)';
+      ev.classList.remove('show');
+      await sleep(600);
+    }else if(e.block){
+      ev.style.setProperty('--ec','#FF4F01');
+      ev.style.setProperty('--vc',ink('#FF8A57'));
+      evFind.classList.add('on');
+      nodes.ctrl.classList.add('deny');nodes.ctrl.style.setProperty('--c','#FF4F01');
+      await sleep(420);
+      evStamp.textContent='BLOCKED';
+      evStamp.style.setProperty('--vc',ink('#FF8A57'));
+      evStamp.classList.add('on');ev.classList.add('stamped');
+      ev.classList.add('deny');
+      await sleep(1650);
+      // blocked never crosses Control: it backs out the way it came
+      ev.classList.add('out-deny');
+      ev.style.transform='translateX('+((S.cardX.ctrl-S.cardW/2)-70)+'px)';
+      ev.classList.remove('show');
+      await sleep(560);
+    }else{
+      ev.style.setProperty('--ec','#4EFF79');
+      ev.style.setProperty('--vc',ink('#4EFF79'));
+      evFind.classList.add('on');
+      nodes.ctrl.classList.add('grant');nodes.ctrl.style.setProperty('--c','#4EFF79');
+      await sleep(420);
+      evStamp.textContent='ALLOWED';
+      evStamp.style.setProperty('--vc',ink('#4EFF79'));
+      evStamp.classList.add('on');ev.classList.add('stamped');
+      await sleep(1500);
+      // cleared: continues out to the right
+      ev.classList.add('out-grant');
+      ev.style.transform='translateX('+((S.cardX.ctrl-S.cardW/2)+(mob?90:170))+'px)';
+      ev.classList.remove('show');
+      await sleep(600);
+    }
+    nodes.ctrl.classList.remove('grant','deny','review');nodes.ctrl.style.setProperty('--c','#FFA300');
+    setActive('');
+    await sleep(320);
+  }
+  async function loop(){
+    for(;;){await runEvent(nextEvent());}
+  }
+
+  addEventListener('resize',()=>{resize();makeDots();if(reduced){ctx.clearRect(0,0,W,H);drawRail();}});
+  resize();makeDots();
+  if(!reduced){
+    requestAnimationFrame(frame);
+    loop();
+  }else{
+    ctx.clearRect(0,0,W,H);drawRail();
+    // static frame: a blocked event at Control tells the whole story
+    setActive('ctrl');
+    nodes.ctrl.classList.add('deny');nodes.ctrl.style.setProperty('--c','#FF4F01');
+    ev.style.setProperty('--ec','#FF4F01');ev.style.setProperty('--vc',ink('#FF8A57'));
+    setSource('ChatGPT Work','Notion');evTs.textContent='14:02:36.118';
+    evTitle.classList.remove('mono');evTitle.textContent='Product Roadmap Research in ChatGPT Work';
+    evPill.textContent='Design & Development';evPill.style.setProperty('--fc',ink('#FF8A57'));evPill.classList.add('on');
+    evFindTxt.textContent='Indirect Prompt Injection Detected';evFi.innerHTML='&#10005;';evFind.classList.add('on');
+    evWho.textContent='ChatGPT Work | Product Manager';evWho.classList.add('on');
+    evStamp.textContent='BLOCKED';evStamp.style.setProperty('--vc',ink('#FF8A57'));evStamp.classList.add('on');ev.classList.add('stamped');
+    setCardStage('ctrl',true);
+    ev.classList.add('show');
+  }
+})();
+/* ---- who we work with: seamless logo marquee ---- */
+(function(){
+  const wrap=document.getElementById('hwww-wrap'),track=document.getElementById('hwww-track');
+  if(!wrap||!track)return;
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;   // leave it static
+  track.innerHTML+=track.innerHTML;            // a second set is what makes the loop seamless
+  let setW=0,x=0,paused=false,last=performance.now();
+  const SPEED=36;                              // px per second, not per frame
+  const measure=()=>{setW=track.scrollWidth/2;};
+  measure();
+  // widths aren't final until each logo has decoded, so re-measure as they arrive
+  track.querySelectorAll('img').forEach(img=>{if(!img.complete)img.addEventListener('load',measure,{once:true});});
+  addEventListener('resize',measure);
+  wrap.addEventListener('mouseenter',()=>{paused=true;});
+  wrap.addEventListener('mouseleave',()=>{paused=false;});
+  (function tick(now){
+    const dt=Math.min(0.05,(now-last)/1000);last=now;
+    // travels rightward: the track sits one full set to the left and walks back to 0,
+    // so the wrap point lands on identical content and stays invisible
+    if(!paused&&setW){x=(x+SPEED*dt)%setW;track.style.transform='translateX('+(x-setW).toFixed(2)+'px)';}
+    requestAnimationFrame(tick);
+  })(performance.now());
+})();
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',__hsInit);else __hsInit();})();
+</script>
+</div></div><section class="section_blog38"><div class="padding-global"><div class="container-large"><div class="padding-section-large"><div class="card-component-wrapper"><div class="margin-bottom margin-large"><div class="max-width-large"><div class="margin-bottom margin-xsmall"><div class="text-style-tagline">Key Resources</div></div><div class="margin-bottom margin-xsmall"><h2 class="heading-style-h2">Catch up on GenAI Security </h2></div></div></div><div class="card-wrapper w-dyn-list"><div role="list" class="card-list w-dyn-items"><div role="listitem" class="card w-dyn-item"><a href="/resources/gartner-ai-usage-control-research-points-beyond-basic-discovery" class="card-link w-inline-block"><div class="margin-bottom margin-small"><div class="blog38_image-wrapper"><img loading="lazy" src="https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6).png" alt="" sizes="100vw" srcset="https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6)-p-500.png 500w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6)-p-800.png 800w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6)-p-1080.png 1080w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6)-p-1600.png 1600w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6)-p-2000.png 2000w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a9086867871ece76edfc1f9_Website%20Content%20Images%20(6).png 2062w" class="blog38_image"/></div></div><div class="margin-bottom margin-xxsmall"><h3 class="heading-style-h5">Gartner AI Usage Control Research Points Beyond Basic Discovery</h3></div><div class="text-size-regular w-dyn-bind-empty"></div><div class="margin-top margin-xsmall"><div class="button is-link is-icon align-left"><div>Read more</div><div class="icon-embed-xxsmall w-embed"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M6 3L11 8L6 13" stroke="CurrentColor" stroke-width="1.5"/>
+</svg></div></div></div></a></div><div role="listitem" class="card w-dyn-item"><a href="/resources/securing-chatgpt-work-a-practitioners-guide" class="card-link w-inline-block"><div class="margin-bottom margin-small"><div class="blog38_image-wrapper"><img loading="lazy" src="https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work.png" alt="" sizes="100vw" srcset="https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work-p-500.png 500w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work-p-800.png 800w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work-p-1080.png 1080w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work-p-1600.png 1600w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work-p-2000.png 2000w, https://cdn.prod.website-files.com/693329d92abad4606e758518/6a60fe305a3012caaa9c2971_Securing%20ChatGPT%20Work.png 2062w" class="blog38_image"/></div></div><div class="margin-bottom margin-xxsmall"><h3 class="heading-style-h5">Securing ChatGPT Work: A Practitioner&#x27;s Guide</h3></div><div class="text-size-regular w-dyn-bind-empty"></div><div class="margin-top margin-xsmall"><div class="button is-link is-icon align-left"><div>Read more</div><div class="icon-embed-xxsmall w-embed"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M6 3L11 8L6 13" stroke="CurrentColor" stroke-width="1.5"/>
+</svg></div></div></div></a></div><div role="listitem" class="card w-dyn-item"><a href="/resources/all-organizations-now-have-employees-using-china-based-ai-tools" class="card-link w-inline-block"><div class="margin-bottom margin-small"><div class="blog38_image-wrapper"><img loading="lazy" src="https://cdn.prod.website-files.com/693329d92abad4606e758518/6a5fa2a28f99d4eea5bcf190_694420b6673438f3839c7302_Artboard%20112%402x.avif" alt="" class="blog38_image"/></div></div><div class="margin-bottom margin-xxsmall"><h3 class="heading-style-h5">All Organizations Now Have Employees Using China-Based AI Tools</h3></div><div class="text-size-regular w-dyn-bind-empty"></div><div class="margin-top margin-xsmall"><div class="button is-link is-icon align-left"><div>Read more</div><div class="icon-embed-xxsmall w-embed"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M6 3L11 8L6 13" stroke="CurrentColor" stroke-width="1.5"/>
+</svg></div></div></div></a></div></div></div></div></div></div></div></section><section class="section_faq3"><div class="padding-global"><div class="container-large"><div class="padding-section-large"><div class="faq3_component"><div class="w-layout-grid faq3_content"><div class="faq3_content-left"><div class="margin-bottom margin-small"><h2 class="heading-style-h2-2">FAQs</h2></div><p class="text-size-medium">Quick answers about Harmonic Security</p><div class="margin-top margin-medium"><div class="button-group-3"><a href="/contact-us" class="button is-secondary w-button">Contact Us</a></div></div></div><div class="collection-list-wrapper-2 w-dyn-list"><div role="list" class="faq3_list w-dyn-items"><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">Is this just DLP with an AI sticker on it?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>No. Pattern-matching DLP cannot tell a draft email from a deal memo because prompts are unstructured and contextual. Static rules either flood teams with false positives or get ripped out entirely. We classify the meaning of the work, not the shape of the string. That is what lets us govern inline, where DLP can only monitor.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">How is this different from Zscaler, Netskope, or any other SASE tool?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>SASE inspects network traffic to known AI domains. Useful, but it misses everything that does not cross the network: Claude Desktop, Cursor, local MCP servers, embedded AI inside Canva or Salesforce, free-tier accounts on personal devices. Most shadow AI exposure happens on personal devices that never touch the corporate network, which is also where SASE has no jurisdiction. We sit on the device and inside the AI surface itself. That is why we can govern where SASE can only observe, and why we cover the agent layer SASE never reaches.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">What about Microsoft Purview or other AI-aware DLP?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>Purview gives you visibility inside Microsoft, on Microsoft tools, with Microsoft pattern matching. Real AI usage is not Microsoft-only. We see the full stack across vendors, including the long tail and the agentic surfaces, and we govern with intent classification rather than regex.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">Can&#x27;t we just whitelist the AI tools we&#x27;ve approved?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>You can, and it&#x27;s a reasonable starting point. The problem is that AI no longer lives only in the tools you evaluated. Google AI mode is built into Search. Salesforce Einstein runs inside your CRM. Copilot ships with every Microsoft 365 license. Canva, Grammarly, Notion, and most of your SaaS stack now have AI features that activate whether or not you toggled them on. Whitelisting governs the standalone tools you approved. It does not reach the AI embedded in the tools you already use every day.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">What actually happens when an employee shares something they shouldn&#x27;t?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>Depends on what you want to happen. You can block in real time, warn the employee with context about why the action is risky, or log silently for security team review. Most customers start with warn-and-log during rollout, then move toward inline blocking for the highest-risk categories once they understand the patterns. The governance layer is yours to configure. We do not impose defaults that shut down legitimate work.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">What about AI agents that act autonomously, not just a human typing into a chat window?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>This is the problem most security platforms cannot see yet. When an agent reads a file, calls an API, writes to a database, and emails a summary, all without a human in the loop, there is no browser request to inspect and no prompt to classify at the keyboard. We govern at the MCP layer and at the tool surface, which is where agentic workflows execute. Policy follows the action, not the person.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">How do you avoid this becoming employee surveillance?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>HR, Finance, Ops, and Founders are excluded from reporting by design. Employee names can be masked in the portal. The dataset is sanitized and frozen. EU hosting is available on request. The design principle is that security teams need risk visibility, not a feed of individual employee behavior. We made the hard restraint choices in the product so you do not have to defend them in every internal review.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">How fast is deployment?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>Minutes. Roll out through Intune, JAMF, Kandji, or Group Policy. The browser extension covers all browsers and MCP gateway run on Windows, macOS, and Linux. No proxy redesign, no certificate gymnastics, no long onboarding. On day one you get a full inventory of AI tools in use across your organization. By the end of the first week, most security teams have a clearer picture of AI data exposure than they have had in years.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">What surfaces do you actually cover?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>Browsers (Chrome, Edge, Firefox, Safari, Arc, Brave, Vivaldi, Island, Genspark, Comet, Dia). Desktop AI (Claude Desktop, ChatGPT Desktop, Cursor, Windsurf). Agents and MCP (Claude Code, Cowork, custom MCP servers). Embedded AI (Canva, Grammarly, Google AI mode). Plus the long tail of 1,000+ web AI tools the catalogue updates every week.</p></div></div></div></div></div><div role="listitem" class="faq-accordion-wrapper w-dyn-item"><div class="faq3_accordion"><div data-w-id="ae3bbf1c-53e7-3212-0eb3-0e5c87756361" class="faq3_question"><div class="text-size-medium text-weight-bold">Does this help with the EU AI Act, GDPR, or other regulations?</div><div class="faq3_icon-wrapper"><div class="icon-embed-small w-embed"><svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true" role="img">
+<path d="M7.08691 9.02344C7.18774 9.02344 7.26471 9.05385 7.34277 9.13184L11.6455 13.459L11.999 13.8145L16.6816 9.13184C16.7593 9.05424 16.8257 9.03227 16.9062 9.03516C17.0005 9.0386 17.0819 9.07117 17.168 9.15723C17.246 9.23531 17.2764 9.31223 17.2764 9.41309C17.2763 9.51371 17.2458 9.59001 17.168 9.66797L12.249 14.5869C12.1949 14.6411 12.1522 14.667 12.124 14.6787C12.0885 14.6935 12.0486 14.7021 12 14.7021C11.9755 14.7021 11.9532 14.6993 11.9326 14.6953L11.875 14.6787L11.8223 14.6484C11.8015 14.634 11.7779 14.6138 11.751 14.5869L6.80664 9.64355C6.7328 9.56972 6.70662 9.50009 6.70996 9.40527C6.71375 9.29797 6.74977 9.2141 6.83203 9.13184C6.90996 9.05403 6.98632 9.02351 7.08691 9.02344Z" fill="currentColor" stroke="currentColor"/>
+</svg></div></div></div><div class="faq3_answer"><div class="margin-bottom margin-small"><div class="w-richtext"><p>Yes, though compliance is a byproduct of good governance, not the other way around. The EU AI Act requires organizations to manage high-risk AI use and maintain logs of consequential AI-assisted decisions. GDPR creates exposure whenever personal data enters AI tools hosted outside the EEA. Our data classification and logging give you the audit trail, the data residency controls, and the ability to demonstrate that AI use in your organization operates within defined boundaries. Documentation mapping our controls to specific regulatory requirements is available on request.</p></div></div></div></div></div></div></div></div></div></div></div></div></section></main><div class="footer1_component background-color-dark-green"><div class="padding-global"><div class="container-large"><div class="padding-vertical padding-xxlarge"><div class="padding-bottom padding-xxlarge text-color-green"><div class="w-layout-grid footer1_top-wrapper"><div class="footer1_left-wrapper"><div class="margin-bottom margin-small"><a href="/" aria-current="page" class="footer1_logo-link w-nav-brand w--current"><img src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6a7f759394f5a0a74bb12bff_Harmonic-Logo-White.svg" loading="lazy" alt="Harmonic Security Company Logo"/></a></div><div class="margin-bottom margin-small"><div class="text-size-tiny text-color-secondary-grey">As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.</div></div></div><div class="w-layout-grid footer1_menu-wrapper"><div class="footer1_link-list"><div class="margin-bottom margin-xsmall"><div class="text-weight-semibold">Products</div></div><a href="https://www.harmonic.security/products/explore" class="footer1_link text-color-green">Harmonic Explore</a><a href="https://www.harmonic.security/products/guide" class="footer1_link text-color-green">Harmonic Guide</a><a href="https://www.harmonic.security/products/command" class="footer1_link text-color-green">Harmonic Command</a><a href="/pricing" class="footer1_link text-color-green">Pricing</a></div><div class="footer1_link-list"><div class="margin-bottom margin-xsmall"><div class="text-weight-semibold">Resources</div></div><a href="/resources" class="footer1_link text-color-green">Resource Library</a><a href="https://handbook.harmonic.security/" target="_blank" class="footer1_link text-color-green">AI Security Handbook</a><a href="/frequency" class="footer1_link text-color-green">The Frequency Newsletter</a><a href="/brand" class="footer1_link text-color-green">Brand Guide and Logos</a></div><div class="footer1_link-list"><div class="margin-bottom margin-xsmall"><div class="text-weight-semibold">Company</div></div><a href="/about" class="footer1_link text-color-green">About Us</a><a href="/company/partner-program" class="footer1_link text-color-green">Partner Program</a><a href="/company/events" class="footer1_link text-color-green">Events</a><a href="/company/careers" class="footer1_link text-color-green">Careers</a><a href="/contact-us" class="footer1_link text-color-green">Contact Us</a></div></div></div></div><div class="line-divider"></div><div class="padding-top padding-medium"><div class="footer1_bottom-wrapper"><div class="footer1_credit-text">© 2026 Harmonic Security</div><div class="w-layout-grid footer1_legal-list text-color-green"><a href="https://trust.harmonic.security/" target="_blank" class="footer-link text-color-green">Trust Center</a><a href="/privacy-policy" class="footer-link text-color-green">Privacy Policy</a><a href="/terms-and-conditions" class="footer-link text-color-green">Terms of Service</a><div class="footer-link text-color-green w-embed"><!-- Start of HubSpot code snippet -->
+<button type="button" id="hs_show_banner_button"
+style="background-color: none; border: none;
+       border-radius: none; padding: none text-decoration: none; color: #fffff;
+       font-family: inherit; font-size: inherit; font-weight: normal; line-height: inherit;
+       text-align: left; text-shadow: none;"
+onClick="(function(){
+  var _hsp = window._hsp = window._hsp || [];
+  _hsp.push(['showBanner']);
+})()"
+>
+Cookie Settings
+</button>
+
+<!-- End of HubSpot code snippet --></div><a fs-consent-element="open-preferences" href="/glossary-of-terms" class="footer-link text-color-green">Glossary of Terms</a></div><div class="social-icons1_component"><div class="w-layout-grid social-icons1_list"><a id="Social-X" href="https://x.com/intent/user?screen_name=harmonicsec" target="_blank" class="social-icons1_link w-inline-block"><div class="icon-embed-xsmall w-embed"><svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M17.1761 4H19.9362L13.9061 10.7774L21 20H15.4456L11.0951 14.4066L6.11723 20H3.35544L9.80517 12.7508L3 4H8.69545L12.6279 9.11262L17.1761 4ZM16.2073 18.3754H17.7368L7.86441 5.53928H6.2232L16.2073 18.3754Z" fill="CurrentColor"/>
+</svg></div></a><a href="https://www.linkedin.com/company/harmonic-security" target="_blank" class="social-icons1_link w-inline-block"><div id="Social-Linked-In" class="icon-embed-xsmall w-embed"><svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M4.5 3C3.67157 3 3 3.67157 3 4.5V19.5C3 20.3284 3.67157 21 4.5 21H19.5C20.3284 21 21 20.3284 21 19.5V4.5C21 3.67157 20.3284 3 19.5 3H4.5ZM8.52076 7.00272C8.52639 7.95897 7.81061 8.54819 6.96123 8.54397C6.16107 8.53975 5.46357 7.90272 5.46779 7.00413C5.47201 6.15897 6.13998 5.47975 7.00764 5.49944C7.88795 5.51913 8.52639 6.1646 8.52076 7.00272ZM12.2797 9.76176H9.75971H9.7583V18.3216H12.4217V18.1219C12.4217 17.742 12.4214 17.362 12.4211 16.9819V16.9818V16.9816V16.9815V16.9812C12.4203 15.9674 12.4194 14.9532 12.4246 13.9397C12.426 13.6936 12.4372 13.4377 12.5005 13.2028C12.7381 12.3253 13.5271 11.7586 14.4074 11.8979C14.9727 11.9864 15.3467 12.3141 15.5042 12.8471C15.6013 13.1803 15.6449 13.5389 15.6491 13.8863C15.6605 14.9339 15.6589 15.9815 15.6573 17.0292V17.0294C15.6567 17.3992 15.6561 17.769 15.6561 18.1388V18.3202H18.328V18.1149C18.328 17.6629 18.3278 17.211 18.3275 16.7591V16.759V16.7588C18.327 15.6293 18.3264 14.5001 18.3294 13.3702C18.3308 12.8597 18.276 12.3563 18.1508 11.8627C17.9638 11.1286 17.5771 10.5211 16.9485 10.0824C16.5027 9.77019 16.0133 9.5691 15.4663 9.5466C15.404 9.54401 15.3412 9.54062 15.2781 9.53721L15.2781 9.53721L15.2781 9.53721C14.9984 9.52209 14.7141 9.50673 14.4467 9.56066C13.6817 9.71394 13.0096 10.0641 12.5019 10.6814C12.4429 10.7522 12.3852 10.8241 12.2991 10.9314L12.2991 10.9315L12.2797 10.9557V9.76176ZM5.68164 18.3244H8.33242V9.76733H5.68164V18.3244Z" fill="CurrentColor"/>
+</svg></div></a></div></div></div></div></div></div></div></div></div><script src="https://d3e54v103j8qbb.cloudfront.net/js/jquery-3.5.1.min.dc5e7f18c8.js?site=6932186a6c06d62bc4b12891" type="text/javascript" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script><script src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/js/webflow.schunk.36b8fb49256177c8.js" type="text/javascript" integrity="sha384-4abIlA5/v7XaW1HMXKBgnUuhnjBYJ/Z9C1OSg4OhmVw9O3QeHJ/qJqFBERCDPv7G" crossorigin="anonymous"></script><script src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/js/webflow.schunk.2e1de6c69580c391.js" type="text/javascript" integrity="sha384-YpsEAAtOSxWsmwrWegDBNUVqlqBDn/3/DUskY5EGJOAc5J4rXPiOcmQqdBKdf0Ih" crossorigin="anonymous"></script><script src="https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/js/webflow.bcffd7fc.720b94e3f5ad5657.js" type="text/javascript" integrity="sha384-Fbl/VmVshZBRT6prXXnnjk+KZueTJD3+KSvfWrJHqjiC/rc1UFmhTKhmd3quJlaB" crossorigin="anonymous"></script><script src="https://static.claydar.com/init.v1.js?id=cmGymkyves"></script>
+
+<style>
+   
+  .footer-link #hs_show_banner_button {
+    /* Typography + color from footer-link */
+    font: inherit;
+    color: inherit;
+
+    /* Let the footer-link’s background / layout show through */
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+
+    /* Make it behave more like text/link if needed */
+    display: inline;
+    cursor: pointer;
+  }
+
+  /* Optional: make it look like the rest of your footer links on hover */
+  .footer-link #hs_show_banner_button:hover {
+    color: inherit; /* or a specific hover color if your footer links change */
+    text-decoration: inherit; /* or underline; */
+  }
+</style><script>
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log('[mode-toggle] DOM loaded');
+
+    // Find radios by Group Name (name="mode-toggle")
+    var radios = document.querySelectorAll('input[type="radio"][name="mode-toggle"]');
+    console.log('[mode-toggle] radios found:', radios.length);
+    if (!radios.length) return;
+
+    function updateActiveState() {
+      radios.forEach(function(radio) {
+        var wrapper = radio.closest('.mode-toggle-option');
+        if (!wrapper) return;
+
+        if (radio.checked) {
+          wrapper.classList.add('is-active-mode');
+        } else {
+          wrapper.classList.remove('is-active-mode');
+        }
+      });
+    }
+
+    // Ensure A is default if nothing is checked
+    var checkedRadio = Array.from(radios).find(function(r) { return r.checked; });
+    if (!checkedRadio) {
+      checkedRadio = Array.from(radios).find(function(r) { return r.value === 'a'; });
+      if (checkedRadio) {
+        checkedRadio.checked = true;
+      }
+    }
+
+    var defaultValue = checkedRadio ? checkedRadio.value : 'a';
+    console.log('[mode-toggle] initial defaultValue:', defaultValue);
+
+    if (defaultValue === 'a') {
+      document.body.classList.add('mode-a');
+      document.body.classList.remove('mode-b');
+    } else if (defaultValue === 'b') {
+      document.body.classList.add('mode-b');
+      document.body.classList.remove('mode-a');
+    }
+
+    updateActiveState();
+
+    // Listen for changes
+    radios.forEach(function(radio) {
+      radio.addEventListener('change', function() {
+        if (!radio.checked) return;
+
+        var value = radio.value; // "a" or "b"
+        console.log('[mode-toggle] change ->', value);
+
+        if (value === 'a') {
+          document.body.classList.add('mode-a');
+          document.body.classList.remove('mode-b');
+        } else if (value === 'b') {
+          document.body.classList.add('mode-b');
+          document.body.classList.remove('mode-a');
+        }
+
+        updateActiveState();
+      });
+    });
+  });
+</script></body></html>

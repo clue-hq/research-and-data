@@ -18,7 +18,6 @@ export const BrandAssetCategorySchema = z.enum([
 ]);
 export const BrandAssetSortKeySchema = z.enum(["name", "type", "size", "created"]);
 export const BrandAssetSortDirectionSchema = z.enum(["ascending", "descending"]);
-export const BrandDocumentModeSchema = z.enum(["preview", "edit"]);
 
 export const BrandColorSwatchSchema = z.object({
   id: z.string(),
@@ -90,6 +89,9 @@ export const BrandKnowledgeDocumentSchema = z.object({
   name: z.string(),
   path: z.string(),
   updatedLabel: z.string(),
+  /** Only persisted Knowledge documents have a version; generated Design briefs do not. */
+  version: z.number().int().positive().optional(),
+  bodyLoaded: z.boolean().optional(),
 });
 
 export const BrandKnowledgeFolderSchema = z.object({
@@ -116,8 +118,8 @@ export type BrandAssetView = z.infer<typeof BrandAssetViewSchema>;
 export type BrandColorMode = z.infer<typeof BrandColorModeSchema>;
 export type BrandContextSection = z.infer<typeof BrandContextSectionSchema>;
 export type BrandContextWorkspace = z.infer<typeof BrandContextWorkspaceSchema>;
-export type BrandDocumentMode = z.infer<typeof BrandDocumentModeSchema>;
 export type BrandKnowledgeDocument = z.infer<typeof BrandKnowledgeDocumentSchema>;
+export type BrandKnowledgeFolder = z.infer<typeof BrandKnowledgeFolderSchema>;
 export type BrandTextStyle = z.infer<typeof BrandTextStyleSchema>;
 export type BrandTypeface = z.infer<typeof BrandTypefaceSchema>;
 
@@ -125,7 +127,6 @@ export interface BrandContextInitialState {
   assetId?: string;
   assetView: BrandAssetView;
   colorMode: BrandColorMode;
-  documentMode: BrandDocumentMode;
   filePath?: string;
   section: BrandContextSection;
 }

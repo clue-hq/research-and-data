@@ -1,0 +1,659 @@
+{
+  "person": {
+    "id": "66f6837df4af8c000147044c",
+    "first_name": "Steijn",
+    "last_name": "Pelle",
+    "name": "Steijn Pelle",
+    "linkedin_url": "http://www.linkedin.com/in/steijn",
+    "title": "CEO and Co-Founder Lassie.",
+    "photo_url": "https://media.licdn.com/dms/image/v2/D5603AQGcW3cioKnu3g/profile-displayphoto-scale_200_200/B56Z6Gxl0BHwAg-/0/1780377609747?e=2147483647&v=beta&t=J1d_07KA56hwzhBYPQ44lswIOkkHuBVI4BykZHYTWTY",
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": "CEO and Co-Founder Lassie.",
+    "organization_id": "63174e0badba1b00014e22fa",
+    "employment_history": [
+      {
+        "_id": "6a8e7caa75562a00018fd25f",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "63174e0badba1b00014e22fa",
+        "organization_name": "Lassie",
+        "raw_address": null,
+        "start_date": "2020-03-01",
+        "title": "CEO and Co-Founder Lassie.",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd25f",
+        "key": "6a8e7caa75562a00018fd25f"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd260",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2019-11-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "5a9d6ff7a6da98d93bdfcbbc",
+        "organization_name": "Robinhood",
+        "raw_address": null,
+        "start_date": "2018-12-01",
+        "title": "Product Manager",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd260",
+        "key": "6a8e7caa75562a00018fd260"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd261",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2018-07-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "6258437809bcbc00c04a37a5",
+        "organization_name": "Coinbase",
+        "raw_address": null,
+        "start_date": "2018-01-01",
+        "title": "Product Lead, Growth",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd261",
+        "key": "6a8e7caa75562a00018fd261"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd262",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2017-12-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a1204069702d8aa1d12602",
+        "organization_name": "HealthTap",
+        "raw_address": null,
+        "start_date": "2016-02-01",
+        "title": "Product Manager, Growth",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd262",
+        "key": "6a8e7caa75562a00018fd262"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd263",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2016-02-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a23eb174686935beee6b19",
+        "organization_name": "FITMO",
+        "raw_address": null,
+        "start_date": "2014-04-01",
+        "title": "COO and Co-Founder",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd263",
+        "key": "6a8e7caa75562a00018fd263"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd264",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2014-04-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": true,
+        "organization_id": null,
+        "organization_name": "Pelliano",
+        "raw_address": null,
+        "start_date": "2011-06-01",
+        "title": "CEO and Co-Founder",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd264",
+        "key": "6a8e7caa75562a00018fd264"
+      },
+      {
+        "_id": "6a8e7caa75562a00018fd265",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2011-05-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": true,
+        "organization_id": null,
+        "organization_name": "ELF Entertainment",
+        "raw_address": null,
+        "start_date": "2007-01-01",
+        "title": "CEO and Co-Founder",
+        "updated_at": null,
+        "id": "6a8e7caa75562a00018fd265",
+        "key": "6a8e7caa75562a00018fd265"
+      }
+    ],
+    "street_address": "",
+    "city": "San Francisco",
+    "state": "California",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "San Francisco, CA, USA",
+    "time_zone": "America/Los_Angeles",
+    "email": "steijn@lassie.ai",
+    "email_status": "verified",
+    "organization": {
+      "id": "63174e0badba1b00014e22fa",
+      "name": "Lassie",
+      "website_url": "http://www.lassie.ai",
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/lassie",
+      "twitter_url": null,
+      "facebook_url": null,
+      "languages": [],
+      "alexa_ranking": null,
+      "phone": "+1 650-405-0509",
+      "linkedin_uid": "447803",
+      "founded_year": null,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/6a58b43172ba5b0001c72814/picture",
+      "crunchbase_url": null,
+      "primary_domain": "lassie.ai",
+      "sic_codes": [
+        "7372"
+      ],
+      "naics_codes": [
+        "513210"
+      ],
+      "primary_phone": {
+        "number": "+1 650-405-0509",
+        "sanitized_number": "+16504050509"
+      },
+      "sanitized_phone": "+16504050509",
+      "industry": "information technology & services",
+      "estimated_num_employees": 41,
+      "keywords": [
+        "software development",
+        "information technology & services"
+      ],
+      "organization_revenue_printed": null,
+      "organization_revenue": 0.0,
+      "industries": [
+        "information technology & services",
+        "computer software"
+      ],
+      "secondary_industries": [
+        "computer software"
+      ],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567cd4773696439b10b0000",
+      "industry_tag_hash": {
+        "information technology & services": "5567cd4773696439b10b0000",
+        "computer software": "5567cd4e7369643b70010000"
+      },
+      "retail_location_count": 0,
+      "raw_address": "san francisco, california, united states",
+      "street_address": "",
+      "city": "San Francisco",
+      "state": "California",
+      "postal_code": null,
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": "Lassie is an AI-powered software company focused on automating administrative workflows for healthcare practices, particularly dental offices. Founded by Steijn Pelle and Frederik, the company aims to support independent doctors by allowing them to concentrate on patient care instead of paperwork. Headquartered in the U.S., Lassie has rapidly grown to serve over 1,000 dentists nationwide and is on track to achieve $100 million in annual recurring revenue.\n\nThe core offering is an AI healthcare admin worker that automates financial and insurance-related operations. Key features include instant retrieval and posting of Explanation of Benefits (EOBs), claims posting, payment tracking, and back-office automation. This solution significantly reduces manual errors and saves practices an average of 60-70 hours per month on administrative tasks. Lassie targets independent doctor-owners managing substantial annual admin expenses, positioning itself as a vital tool in enhancing operational efficiency in healthcare.",
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "total_funding": 35000000,
+      "total_funding_printed": "35M",
+      "latest_funding_round_date": "2026-06-01T00:00:00.000+00:00",
+      "latest_funding_stage": "Series A",
+      "funding_events": [
+        {
+          "id": "6a30ae765b8ef70001fa7504",
+          "date": "2026-06-01T00:00:00.000+00:00",
+          "news_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+          "type": "Series A",
+          "investors": "Andreessen Horowitz, Zach Perret, Brian Balfour, Gokul Rajaram, Rahul Vohra, Taavet Hinrikus, Night Capital",
+          "amount": "35M",
+          "currency": "$"
+        }
+      ],
+      "technology_names": [
+        "AI",
+        "Anthropic Claude",
+        "Apple Business Manager",
+        "Apple Pay",
+        "Apple School Manager",
+        "Canva",
+        "CloudFlare",
+        "CloudFlare CDN",
+        "Cloudflare DNS",
+        "Cursor",
+        "Django",
+        "Enom",
+        "Facebook Pixel",
+        "Figma",
+        "GitHub",
+        "Gmail",
+        "Google AlloyDB for PostgreSQL",
+        "Google Analytics",
+        "Google Analytics 4",
+        "Google Cloud",
+        "Google Meet",
+        "Google Search Console",
+        "Google Search Console",
+        "Google Tag Manager",
+        "Google Workspace",
+        "HSTS",
+        "Hightouch",
+        "Linear",
+        "LinkedIn Ads",
+        "Linkedin Marketing Solutions",
+        "Loom",
+        "Microsoft 365",
+        "Mobile Friendly",
+        "Next.js",
+        "Notion",
+        "Open Graph",
+        "OpenAI",
+        "OpenSRS",
+        "Postman",
+        "Priority Hints",
+        "Python",
+        "React",
+        "Redis",
+        "SQLite",
+        "Salesforce",
+        "Sanity",
+        "Slack",
+        "Snowflake",
+        "Stripe",
+        "Tailwind",
+        "Tailwind CSS",
+        "TypeScript",
+        "Uber for Business",
+        "Vercel",
+        "Viewport Meta",
+        "Zendesk",
+        "Zendesk Support Suite",
+        "Zendesk for Service",
+        "Zoom Meetings",
+        "webpack"
+      ],
+      "current_technologies": [
+        {
+          "uid": "ai",
+          "name": "AI",
+          "category": "Other"
+        },
+        {
+          "uid": "anthropic_claude",
+          "name": "Anthropic Claude",
+          "category": "Other"
+        },
+        {
+          "uid": "apple_business_manager",
+          "name": "Apple Business Manager",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "apple_pay",
+          "name": "Apple Pay",
+          "category": "Payments"
+        },
+        {
+          "uid": "apple_school_manager",
+          "name": "Apple School Manager",
+          "category": "Education Management Software"
+        },
+        {
+          "uid": "canva",
+          "name": "Canva",
+          "category": "Content Management Platform"
+        },
+        {
+          "uid": "cloudflare",
+          "name": "CloudFlare",
+          "category": "Web Accelerators"
+        },
+        {
+          "uid": "cloudflare_cdn",
+          "name": "CloudFlare CDN",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "cloudflare_dns",
+          "name": "Cloudflare DNS",
+          "category": "Domain Name Services"
+        },
+        {
+          "uid": "cursor",
+          "name": "Cursor",
+          "category": "Other"
+        },
+        {
+          "uid": "django",
+          "name": "Django",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "enom",
+          "name": "Enom",
+          "category": "Domain Name Services"
+        },
+        {
+          "uid": "facebook_pixel",
+          "name": "Facebook Pixel",
+          "category": "ERP"
+        },
+        {
+          "uid": "figma",
+          "name": "Figma",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "github",
+          "name": "GitHub",
+          "category": "Hosting"
+        },
+        {
+          "uid": "gmail",
+          "name": "Gmail",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "google_alloydb_for_postgresql",
+          "name": "Google AlloyDB for PostgreSQL",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "google_analytics",
+          "name": "Google Analytics",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_analytics_4_ga4",
+          "name": "Google Analytics 4",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_cloud",
+          "name": "Google Cloud",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "google_meet",
+          "name": "Google Meet",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_tag_manager",
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "uid": "google workspace",
+          "name": "Google Workspace",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "hsts",
+          "name": "HSTS",
+          "category": "Security"
+        },
+        {
+          "uid": "hightouch",
+          "name": "Hightouch",
+          "category": "Data Management Platform"
+        },
+        {
+          "uid": "linear",
+          "name": "Linear",
+          "category": "Other"
+        },
+        {
+          "uid": "linkedin_ads",
+          "name": "LinkedIn Ads",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "linkedin_display_ads__formerly_bizo",
+          "name": "Linkedin Marketing Solutions",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "loom",
+          "name": "Loom",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_365",
+          "name": "Microsoft 365",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "mobile_friendly",
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "uid": "nextjs",
+          "name": "Next.js",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "notion",
+          "name": "Notion",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "open_graph",
+          "name": "Open Graph",
+          "category": "Other"
+        },
+        {
+          "uid": "openai",
+          "name": "OpenAI",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "opensrs",
+          "name": "OpenSRS",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "postman",
+          "name": "Postman",
+          "category": "Other"
+        },
+        {
+          "uid": "priority_hints",
+          "name": "Priority Hints",
+          "category": "Web Performance Monitoring"
+        },
+        {
+          "uid": "python",
+          "name": "Python",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "react",
+          "name": "React",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "redis",
+          "name": "Redis",
+          "category": "Database"
+        },
+        {
+          "uid": "sqlite",
+          "name": "SQLite",
+          "category": "Database"
+        },
+        {
+          "uid": "salesforce",
+          "name": "Salesforce",
+          "category": "Customer Relationship Management"
+        },
+        {
+          "uid": "sanity",
+          "name": "Sanity",
+          "category": "CMS"
+        },
+        {
+          "uid": "slack",
+          "name": "Slack",
+          "category": "Chats"
+        },
+        {
+          "uid": "snowflake",
+          "name": "Snowflake",
+          "category": "Data Management Platform"
+        },
+        {
+          "uid": "stripe",
+          "name": "Stripe",
+          "category": "Payments"
+        },
+        {
+          "uid": "tailwind",
+          "name": "Tailwind",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "tailwind_css",
+          "name": "Tailwind CSS",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "typescript",
+          "name": "TypeScript",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "uber_for_business",
+          "name": "Uber for Business",
+          "category": "Other"
+        },
+        {
+          "uid": "vercel",
+          "name": "Vercel",
+          "category": "Hosting"
+        },
+        {
+          "uid": "viewport_meta",
+          "name": "Viewport Meta",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "zendesk",
+          "name": "Zendesk",
+          "category": "Support and Feedback"
+        },
+        {
+          "uid": "zendesk_support_suite",
+          "name": "Zendesk Support Suite",
+          "category": "Support and Feedback"
+        },
+        {
+          "uid": "zendesk_for_service",
+          "name": "Zendesk for Service",
+          "category": "Customer Relationship Management"
+        },
+        {
+          "uid": "zoom_meetings",
+          "name": "Zoom Meetings",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "webpack",
+          "name": "webpack",
+          "category": "CSS and JavaScript Libraries"
+        }
+      ],
+      "org_chart_root_people_ids": [
+        "66f6837df4af8c000147044c"
+      ],
+      "org_chart_sector": "OrgChart::SectorHierarchy::Rules::IT",
+      "org_chart_removed": false,
+      "org_chart_show_department_filter": true,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": 0.1904761904761905,
+      "organization_headcount_twelve_month_growth": 0.3888888888888889,
+      "organization_headcount_twenty_four_month_growth": 5.25
+    },
+    "departments": [
+      "c_suite"
+    ],
+    "subdepartments": [
+      "executive",
+      "founder"
+    ],
+    "seniority": "founder",
+    "functions": [
+      "entrepreneurship"
+    ],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": true,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  },
+  "request_id": -4995778767622330780,
+  "_http_status": 200,
+  "_elapsed_s": 0.3,
+  "_rate_headers": {
+    "x-minute-requests-left": "999",
+    "x-rate-limit-24-hour": "",
+    "x-rate-limit-hourly": "",
+    "x-rate-limit-minute": "1000"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/people/match",
+    "body": {
+      "id": "66f6837df4af8c000147044c",
+      "reveal_personal_emails": false
+    }
+  }
+}

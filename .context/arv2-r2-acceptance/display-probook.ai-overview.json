@@ -1,0 +1,304 @@
+{
+  "overview": {
+    "checks": {
+      "how-to-approach": {
+        "aliases": 13,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "what-they-do": {
+        "aliases": 3,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "why-now": {
+        "aliases": 13,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "why-they-fit": {
+        "aliases": 15,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      }
+    },
+    "cost_usd": "0.00633305",
+    "display_block": {
+      "page": "overview",
+      "sections": [
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "What they do",
+          "intro": [
+            {
+              "claimIds": [
+                "ae788c29-0783-45bf-93da-88dd0c1ea444"
+              ],
+              "text": "Probook is in software development. The available claims do not specify what Probook sells or whom it serves."
+            },
+            {
+              "claimIds": [
+                "0f73a66c-59cb-4048-9920-62501530a483",
+                "fc7a1135-7a79-46e5-8a5e-39f9214784ea"
+              ],
+              "text": "Probook is based in New York, New York, United States, and has 30 employees. The available claims do not include its founding year, funding, or named customers."
+            }
+          ],
+          "items": [],
+          "key": "what-they-do",
+          "restricted": false
+        },
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "Why they fit",
+          "intro": [
+            {
+              "claimIds": [
+                "57ee04b5-c378-4420-9b84-bd5a65cb4799",
+                "0028938f-7f6f-4a50-9b4d-97c20abf5d25",
+                "4d2a6377-bed4-4cdc-8c93-1fad021950c7",
+                "5678ac59-0637-42d4-94f1-97eb4be08a87",
+                "fc7a1135-7a79-46e5-8a5e-39f9214784ea",
+                "0f73a66c-59cb-4048-9920-62501530a483"
+              ],
+              "text": "The available evidence points to a New York\u2013based company actively hiring across customer, GTM, engineering and talent functions."
+            }
+          ],
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "798193ec-16fa-473d-9b2c-70ece0aba5ca",
+                    "4d2a6377-bed4-4cdc-8c93-1fad021950c7",
+                    "8fa8e425-1fd8-455c-97ea-18091c91bcab",
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "Probook has still-listed roles in Customer, GTM, Engineering and People & Talent, including a Deployment Strategist, Strategic Account Executive, Staff Software Engineer and Head of Talent."
+                },
+                {
+                  "claimIds": [
+                    "798193ec-16fa-473d-9b2c-70ece0aba5ca",
+                    "4d2a6377-bed4-4cdc-8c93-1fad021950c7",
+                    "8fa8e425-1fd8-455c-97ea-18091c91bcab",
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "The roles were published between 13 January 2026 and 4 September 2026, showing hiring activity across multiple functions."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "support",
+              "h2": "Active hiring spans customer, GTM, engineering and talent",
+              "id": "why-they-fit-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "fc7a1135-7a79-46e5-8a5e-39f9214784ea"
+                  ],
+                  "text": "Probook is listed with 30 employees."
+                },
+                {
+                  "claimIds": [
+                    "fc7a1135-7a79-46e5-8a5e-39f9214784ea"
+                  ],
+                  "text": "That is a smaller operating footprint than a large enterprise, so enterprise-scale fit is not established by these claims."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "caveat",
+              "h2": "Enterprise-scale account fit is not established",
+              "id": "why-they-fit-2",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "why-they-fit",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Why now",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "Probook published a Deployment Strategist role in Customer on 4 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "The role is still listed, making this a current customer-side hiring signal."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "A customer deployment role was published on 4 September",
+              "id": "why-now-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "57ee04b5-c378-4420-9b84-bd5a65cb4799"
+                  ],
+                  "text": "Probook published a Forward Deployed Engineer role in Customer on 26 August 2026."
+                },
+                {
+                  "claimIds": [
+                    "57ee04b5-c378-4420-9b84-bd5a65cb4799"
+                  ],
+                  "text": "The role is still listed, creating a current customer-side opening to act on this quarter."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "A customer engineering role was published on 26 August",
+              "id": "why-now-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "bb727611-ecda-4fa2-a505-096384cdfe4d",
+                    "ca5e75c2-cdf3-47bf-b2e2-4301b2c6695f"
+                  ],
+                  "text": "Probook published Senior Product Marketing Manager and Events Marketing Specialist roles in GTM on 16 July 2026."
+                },
+                {
+                  "claimIds": [
+                    "bb727611-ecda-4fa2-a505-096384cdfe4d",
+                    "ca5e75c2-cdf3-47bf-b2e2-4301b2c6695f"
+                  ],
+                  "text": "Both roles are still listed, showing an active go-to-market hiring push this quarter."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "GTM and product marketing hiring was published on 16 July",
+              "id": "why-now-3",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "why-now",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "Buying committee",
+          "items": [],
+          "key": "buying-committee",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "How to approach",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "Probook still lists a Deployment Strategist role in Customer, published 4 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87"
+                  ],
+                  "text": "That recent customer-side opening is the clearest supported reason to engage now."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Timing \u2014 customer hiring is active, with a Deployment Strategist posted 4 September 2026",
+              "id": "how-to-approach-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "how-to-approach",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "Watch-outs",
+          "items": [],
+          "key": "watch-outs",
+          "restricted": true
+        }
+      ]
+    },
+    "evidence_count": 11,
+    "failed": [],
+    "generated": [
+      "what-they-do",
+      "why-they-fit",
+      "why-now",
+      "how-to-approach"
+    ],
+    "regenerated": [],
+    "skipped_empty": [
+      "buying-committee",
+      "watch-outs"
+    ],
+    "stale_served": []
+  },
+  "total_cost_usd": "0.00633305"
+}

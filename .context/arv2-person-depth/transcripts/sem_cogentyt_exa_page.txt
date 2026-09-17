@@ -1,0 +1,27 @@
+# EXA INDEXED COPY of https://www.youtube.com/watch?v=fbn5EJagBmQ
+# title: How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast
+# chars: 2165
+
+# How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast
+
+- Channel: LangChain
+- Length: 00:50
+- Views: 1.7K
+- Likes: 46
+- Published: 2026-05-27T10:00:09-07:00
+- Category: Science & Technology
+- Keywords: AI agents, AI security, agent sandboxing, agentic AI, LangChain, defense in depth, AI infrastructure, secure AI, AI engineering, Max Agency podcast
+- Language: en
+
+## Description
+
+Gng Sng, Co-Founder and CTO of Cogent Security, breaks down how they approach defense in depth for AI agents. Their sandboxes run with read-only permissions by default, a policy engine handles access elevation, and any write action happens outside the box — fully secure and deterministic. The rule: agents should never be able to do something the system is disallowing.
+
+This clip is from Max Agency, a #podcast about how the best AI agents are actually being built. Hosted by Harrison Chase, CEO of LangChain, each episode goes deep with the builders designing, deploying, and learning from real agent systems in the wild. From architecture decisions to evals, tooling, and failure modes, Max Agency is for people who want to understand what it really takes to build useful agents.
+
+#AIAgents #AISecurity
+
+## Transcript
+
+The way we think about the architecture of anything that touches customer data requires a lot of defense in depth. You know, we do run agents and boxes, but the level of isolation that we apply to these sandboxes is very very deep. So, these sandboxes basically have many layers of permissioning where most of them basically operate at the box level with read-only permissions. And we have this kind of really interesting policy engine that allows us to like elevate access. And so, you're never ever allowed to like even if the agent solutionating to like do some kind of right action, it's one not allowed to do that. And then two, when it needs to do things like that, it actually needs to do it outside of the box in a way that is like fully secure and deterministic.
+We never want to be in a place where the agents are doing things that we're unaware of or it's capable of doing something that the system is disallowing.

@@ -50,6 +50,10 @@ import type {
 } from "@/features/design-editor/engine/webDocuments";
 import { useState, type ReactNode, type RefObject } from "react";
 import { ProjectGallery } from "@/features/gallery/components/project-gallery";
+import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
+import { ProjectDocumentSurface } from "@/features/projects/components/project-document-surface";
+import { ProjectTargetAccounts } from "@/features/accounts/components/project-target-accounts";
+import type { ChatContextRef } from "@/features/projects/model/chat-context-handoff";
 import type { GalleryArtifact } from "@/features/gallery/model/project-gallery";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { EditorShellSurface } from "../hooks/use-editor-shell-controller";
@@ -99,8 +103,13 @@ export function ArtifactStage({
   richTextBusy,
   richTextEnabled,
   richTextTheme,
+  onAddAccountsToChat,
   onCloseArtifact,
   onOpenGallery,
+  onOpenTargetAccounts,
+  documentTabs,
+  canEditDocuments = false,
+  panelOpen = true,
   onOpenGalleryArtifact,
   onPageChange,
   pages,
@@ -131,9 +140,12 @@ export function ArtifactStage({
   openArtifacts,
   overlay,
   projectTitle,
+  projectId,
   redoDisabled,
   selectedCanvasNodeId,
   surface,
+  targetAccountsBusy,
+  targetAccountsRefreshToken,
   undoDisabled,
 }: {
   activeArtifactId: string | null;
@@ -213,6 +225,19 @@ export function ArtifactStage({
   richTextTheme?: WebTheme | null;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery: () => void;
+  /** The Target accounts tab's handler. Optional (the branch's stage makes it
+   * required) because the ARTIFACT route mounts this same stage with no
+   * project in hand — absent, the tab is simply not rendered, which is the
+   * same gate the branch expresses through `projectId`. */
+  onOpenTargetAccounts?: () => void;
+  documentTabs?: ReturnType<typeof useProjectDocumentTabs>;
+  canEditDocuments?: boolean;
+  panelOpen?: boolean;
+  /** The Target accounts tab's "Add to chat" (founder request 2026-09-11):
+   * prepares the selected accounts against the open chat and lands them in
+   * its composer. Absent when no chat is in hand (the artifact route, fixture
+   * transport, a workspace without context refs) — the button is not shown. */
+  onAddAccountsToChat?: (contextRefs: readonly ChatContextRef[]) => Promise<boolean>;
   onOpenGalleryArtifact: (artifact: GalleryArtifact) => void;
   /** F5 task 18: the header's switcher reporting the page the user picked,
    * back to the web editing session that owns it. */
@@ -312,9 +337,16 @@ export function ArtifactStage({
    * what it renders, exactly as `onSceneDropImageFiles` owns no part of a drop. */
   overlay?: ReactNode;
   projectTitle?: string;
+  /** The project the Target accounts surface is scoped to. Absent (the
+   * artifact route) → no tab and no surface. */
+  projectId?: string;
   /** W3.4: empty-stack disables for the action menu's Undo/Redo. */
   redoDisabled?: boolean;
   surface: EditorShellSurface;
+  /** True while the project's discovery run is live: the Target accounts tab label spins. */
+  targetAccountsBusy?: boolean;
+  /** Bumped on every discovery poll read: the tab refetches its rows (spec 2026-09-12 §3). */
+  targetAccountsRefreshToken?: number;
   undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
@@ -393,11 +425,24 @@ export function ArtifactStage({
         onActivateArtifact={onActivateArtifact}
         onCloseArtifact={onCloseArtifact}
         onOpenGallery={onOpenGallery}
+        onOpenTargetAccounts={projectId ? onOpenTargetAccounts : undefined}
+        documentTabs={documentTabs}
         onRenameArtifact={onRenameArtifactFor}
         onToggleMaximized={onToggleMaximized}
         onTogglePanel={onTogglePanel}
         surface={surface}
+        targetAccountsBusy={targetAccountsBusy}
       />
+      {projectId ? (
+        <div className={styles.workspaceSurface} hidden={surface !== "target-accounts"}>
+          <ProjectTargetAccounts active={surface === "target-accounts"} key={projectId} onAddToChat={onAddAccountsToChat} projectId={projectId} projectTitle={projectTitle ?? "Project"} refreshToken={targetAccountsRefreshToken} />
+        </div>
+      ) : null}
+      {projectId && documentTabs ? documentTabs.visited.map((path) => (
+        <div key={path} className={styles.workspaceSurface} hidden={surface !== "plan" || documentTabs.selectedPath !== path}>
+          <ProjectDocumentSurface active={panelOpen && surface === "plan" && documentTabs.selectedPath === path} canWrite={canEditDocuments} projectId={projectId} list={documentTabs.list} documentPath={path} />
+        </div>
+      )) : null}
       {showingArtifact ? (
         <>
           <ArtifactHeader
@@ -520,13 +565,21 @@ export function ArtifactStage({
             )}
           </div>
         </>
-      ) : (
+      ) : null}
+      <div
+        className={styles.workspaceSurface}
+        hidden={showingArtifact || surface === "target-accounts" || surface === "plan"}
+      >
         <ProjectGallery
           artifacts={artifacts}
+          documents={documentTabs?.list.documents}
+          documentsLoading={documentTabs?.list.loading || documentTabs?.opening}
+          documentsError={documentTabs?.list.error || documentTabs?.error}
+          onRetryDocuments={documentTabs?.list.reload}
           onOpenArtifact={onOpenGalleryArtifact}
           projectTitle={projectTitle}
         />
-      )}
+      </div>
       {overlay}
     </section>
   );

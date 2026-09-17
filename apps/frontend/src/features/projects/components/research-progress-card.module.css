@@ -1,0 +1,122 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: var(--clue-ds-product-border-grid-width) solid var(--clue-ds-color-border-neutral);
+  border-radius: var(--radius);
+  background: var(--clue-ds-color-bg-neutral);
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  /* The one sibling the composer frame already has above the composer — the edit-target bar —
+     separates itself the same way and by the same amount. */
+  margin-bottom: 8px;
+}
+.header {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.glyph {
+  /* No colour: `ProjectIcon` renders a `next/image` <img>, not an inline SVG, so `color` would
+     style nothing. */
+  flex: none;
+  grid-column: 1;
+  grid-row: 1;
+}
+.titles {
+  /* Let the subtitle span beneath the status badge in narrow chat panes. */
+  display: contents;
+}
+.title {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  font: var(--clue-ds-typography-text-default-medium-font-weight)
+    var(--clue-ds-typography-text-default-medium-font-size) /
+    var(--clue-ds-typography-text-default-medium-line-height)
+    var(--clue-ds-typography-text-default-medium-font-family);
+  color: var(--clue-ds-color-content-neutral);
+}
+.subtitle,
+.pill,
+.line {
+  font: var(--clue-ds-typography-text-sm-font-weight)
+    var(--clue-ds-typography-text-sm-font-size) /
+    var(--clue-ds-typography-text-sm-line-height)
+    var(--clue-ds-typography-text-sm-font-family);
+}
+.subtitle {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--clue-ds-color-content-subtle);
+}
+.pill {
+  grid-column: 3;
+  grid-row: 1;
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--clue-ds-product-component-button-md-radius);
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--clue-ds-color-content-neutral);
+}
+.pill[data-pill="needs_attention"] {
+  background: var(--clue-ds-color-primitives-warning-alpha-100);
+  color: var(--clue-ds-color-content-utility-warning);
+}
+.queuedRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: var(--clue-ds-typography-text-default-font-weight)
+    var(--clue-ds-typography-text-default-font-size) /
+    var(--clue-ds-typography-text-default-line-height)
+    var(--clue-ds-typography-text-default-font-family);
+  color: var(--clue-ds-color-content-subtle);
+}
+.queuedDot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  margin-inline: 3px;
+  border-radius: 50%;
+  border: 1px solid var(--clue-ds-color-border-neutral);
+}
+.queuedCount {
+  flex: 1;
+  color: var(--clue-ds-color-content-neutral);
+}
+.queuedLabel {
+  flex: none;
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--clue-ds-color-bg-neutral-hover);
+  overflow: hidden;
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--clue-ds-color-bg-brand);
+  transition: width 400ms ease-out;
+}
+/* One row, always: the failure text behind this line is the driver's raw message, and a card
+   that grows with it would push the composer down again. The fold clips the string at 140
+   characters; this clips whatever still does not fit the width. */
+.line {
+  min-width: 0;
+  margin: 0;
+  color: var(--clue-ds-color-content-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

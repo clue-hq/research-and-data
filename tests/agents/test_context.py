@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import pytest
+import structlog.testing
 
 from clue_agents.context import (
     CompiledContextCard,
@@ -147,7 +148,14 @@ def test_context_assembly_is_deterministic_body_free_and_exactly_seven_layers() 
     assert "layer 7" not in dump
 
 
-def test_context_budget_excludes_atomic_items_with_stable_reason() -> None:
+def test_context_budget_records_an_over_budget_layer_and_keeps_every_item() -> None:
+    """A layer well over its budget assembles whole, and says so once (ruling 2026-09-14).
+
+    Five hundred bytes twice against a four-hundred-byte L3: both candidates are included, in
+    canonical order, the manifest reports the layer's true 1,000-byte cost, and the only
+    consequence of the overrun is one structured warning naming the layer and both numbers.
+    """
+
     sources = list(_sources())
     sources[2] = _Source(
         layer=ContextLayer.L3_PROJECT,
@@ -155,33 +163,55 @@ def test_context_budget_excludes_atomic_items_with_stable_reason() -> None:
             ContextCandidate(
                 stable_key="a-first",
                 ref=domain_ref("first"),
-                body="1234",
+                body="1" * 500,
             ),
             ContextCandidate(
                 stable_key="b-second",
                 ref=domain_ref("second"),
-                body="5678",
+                body="2" * 500,
             ),
         ),
     )
     receipts = _Receipts()
-    assembled = asyncio.run(
-        DeterministicAgentContextAssembler(
-            sources=sources,
-            policy=_policy(l3_budget=4),
-            receipts=receipts,
-            clock=lambda: NOW,
-        ).assemble(request=request(), profile=profile(), history=())
-    )
+    with structlog.testing.capture_logs() as events:
+        assembled = asyncio.run(
+            DeterministicAgentContextAssembler(
+                sources=sources,
+                policy=_policy(l3_budget=400),
+                receipts=receipts,
+                clock=lambda: NOW,
+            ).assemble(request=request(), profile=profile(), history=())
+        )
 
     layer = assembled.manifest.layers[2]
-    assert layer.source_refs == (domain_ref("first"),)
-    assert layer.excluded_refs == (domain_ref("second"),)
-    assert layer.exclusion_reason_codes == ("layer_budget_exceeded",)
-    assert layer.token_count == 4
+    assert layer.source_refs == (domain_ref("first"), domain_ref("second"))
+    assert layer.excluded_refs == ()
+    assert layer.exclusion_reason_codes == ()
+    assert layer.token_count == 1_000
+
+    l3_refs = [ref for ref in receipts.values[0].refs if ref.layer is ContextLayer.L3_PROJECT]
+    assert [ref.disposition for ref in l3_refs] == ["included", "included"]
+    assert [ref.token_count for ref in l3_refs] == [500, 500]
+    assert receipts.values[0].budgets == _policy(l3_budget=400).budgets
+
+    over = [item for item in events if item["event"] == "agent_turn.context_layer_over_budget"]
+    assert len(over) == 1
+    assert over[0]["layer"] == "l3_project"
+    assert over[0]["token_count"] == 1_000
+    assert over[0]["token_budget"] == 400
+    assert over[0]["policy_version"] == "opening-context-v1"
+    assert over[0]["log_level"] == "warning"
 
 
-def test_required_authority_fails_instead_of_running_with_truncated_context() -> None:
+def test_required_authority_over_budget_assembles_instead_of_failing_the_turn() -> None:
+    """The reverse of the old gate: a required candidate that does not fit is carried anyway.
+
+    This is the v54 failure in miniature — a resolved system prompt a few hundred bytes past L1
+    used to raise ``required l1_identity context exceeds its hard layer budget`` and take down
+    every turn on that profile. The founder's ruling (2026-09-14) is that no budget may do that:
+    the identity arrives intact, its true cost is on the receipt, and the overrun is a log line.
+    """
+
     sources = list(_sources())
     sources[0] = _Source(
         layer=ContextLayer.L1_IDENTITY,
@@ -205,15 +235,24 @@ def test_required_authority_fails_instead_of_running_with_truncated_context() ->
             )
         }
     )
-    with pytest.raises(ValueError, match="required l1_identity"):
-        asyncio.run(
+    receipts = _Receipts()
+    with structlog.testing.capture_logs() as events:
+        assembled = asyncio.run(
             DeterministicAgentContextAssembler(
                 sources=sources,
                 policy=policy,
-                receipts=_Receipts(),
+                receipts=receipts,
                 clock=lambda: NOW,
             ).assemble(request=request(), profile=profile(), history=())
         )
+
+    layer = assembled.manifest.layers[0]
+    assert layer.source_refs == (domain_ref("identity"),)
+    assert layer.token_count == len(b"required identity")
+    assert "required identity" in [str(message.content) for message in assembled.messages]
+
+    over = [item for item in events if item["event"] == "agent_turn.context_layer_over_budget"]
+    assert [(item["layer"], item["token_budget"]) for item in over] == [("l1_identity", 1)]
 
 
 def test_context_assembly_rejects_cross_workspace_source() -> None:
@@ -454,3 +493,57 @@ def test_utf8_byte_counter_is_conservative_and_versioned() -> None:
     counter = Utf8ByteTokenCounter()
     assert counter.version == "utf8-bytes-v1"
     assert counter.count("é") == 2
+
+
+@pytest.mark.parametrize("over_budget", [True, False])
+def test_interrupted_history_and_its_notice_are_counted_as_one_item(over_budget: bool) -> None:
+    """The notice and the unfinished body are one candidate, so they are counted — and emitted —
+    together, whether or not the pair fits L6. Budgets no longer separate them, or anything."""
+
+    from clue_agents.context import HistoryLayerSource
+    from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
+
+    body = "Exact unfinished `answer"
+    ref = artifact("partial.txt")
+    history = (
+        HistoryMessageRef(
+            message_id=TURN_ID,
+            turn_id=TURN_ID,
+            sequence=1,
+            role="assistant",
+            body_ref=ref,
+            interrupted=True,
+        ),
+    )
+    source = HistoryLayerSource(_ArtifactReader({ref.artifact_key: body.encode()}))
+    sources = tuple(source if s.layer is ContextLayer.L6_CONVERSATION else s for s in _sources())
+    full_cost = len((INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + body).encode())
+    policy = _policy().model_copy(
+        update={
+            "budgets": tuple(
+                LayerBudget(
+                    layer=b.layer,
+                    max_tokens=(len(body) if over_budget else full_cost)
+                    if b.layer is ContextLayer.L6_CONVERSATION
+                    else b.max_tokens,
+                )
+                for b in _policy().budgets
+            )
+        }
+    )
+    assembled = asyncio.run(
+        DeterministicAgentContextAssembler(
+            sources=sources,
+            policy=policy,
+            receipts=_Receipts(),
+            clock=lambda: NOW,
+        ).assemble(request=request(), profile=profile(), history=history)
+    )
+    contents = [m.content for m in assembled.messages]
+    assert body in contents
+    assert INTERRUPTED_ASSISTANT_NOTICE in contents
+    index = contents.index(body)
+    assert contents[index - 1] == INTERRUPTED_ASSISTANT_NOTICE
+    assert assembled.messages[index - 1].type == "system"
+    assert assembled.messages[index].type == "ai"
+    assert assembled.manifest.layers[5].token_count == full_cost

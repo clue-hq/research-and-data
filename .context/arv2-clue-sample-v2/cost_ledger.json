@@ -1,0 +1,342 @@
+[
+  {
+    "provider": "exa",
+    "label": "d1_vertical_ai_practices",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.7,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "d2_vertical_ai_smb_services",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.4,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "d3_gtm_hiring_outbound",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.7,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "d4_domain_lock",
+    "op": "fast",
+    "http": 200,
+    "elapsed_s": 0.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "apollo_org_enrich_lassie_ai",
+    "op": "GET /organizations/enrich",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "999",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "account_deep_lassie",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 47.3,
+    "cost_usd": 0.028,
+    "cost_breakdown": {
+      "total": 0.028
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "account_deep_lassie_retry",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 43.7,
+    "cost_usd": 0.021,
+    "cost_breakdown": {
+      "total": 0.021
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "g1_seed_round",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "g2_ashby_postings",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.006,
+    "cost_breakdown": {
+      "total": 0.006,
+      "contents": {
+        "text": 0.006
+      }
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "g3_customers_team",
+    "op": "auto",
+    "http": 200,
+    "elapsed_s": 2.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "apollo_people_by_org",
+    "op": "POST /mixed_people/api_search",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "credits": 0,
+    "rate_headers": {
+      "x-24-hour-requests-left": "49996",
+      "x-hourly-requests-left": "5996",
+      "x-minute-requests-left": "199",
+      "x-rate-limit-24-hour": "50000",
+      "x-rate-limit-hourly": "6000",
+      "x-rate-limit-minute": "200"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "apollo_people_by_domain",
+    "op": "POST /mixed_people/api_search",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "credits": 0,
+    "rate_headers": {
+      "x-24-hour-requests-left": "49995",
+      "x-hourly-requests-left": "5995",
+      "x-minute-requests-left": "198",
+      "x-rate-limit-24-hour": "50000",
+      "x-rate-limit-hourly": "6000",
+      "x-rate-limit-minute": "200"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "apollo_match_primary",
+    "op": "POST /people/match",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "999",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "apollo",
+    "label": "apollo_match_secondary",
+    "op": "POST /people/match",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "credits": 1,
+    "rate_headers": {
+      "x-minute-requests-left": "998",
+      "x-rate-limit-24-hour": "",
+      "x-rate-limit-hourly": "",
+      "x-rate-limit-minute": "1000"
+    }
+  },
+  {
+    "provider": "exa",
+    "label": "contact_deep_steijn",
+    "op": "deep-reasoning",
+    "http": 200,
+    "elapsed_s": 46.4,
+    "cost_usd": 0.03,
+    "cost_breakdown": {
+      "total": 0.03
+    }
+  },
+  {
+    "provider": "openrouter",
+    "label": "structure_z-ai_glm-4_7",
+    "op": "z-ai/glm-4.7",
+    "http": 200,
+    "elapsed_s": 169.3,
+    "usage": {
+      "prompt_tokens": 17968,
+      "completion_tokens": 9572,
+      "total_tokens": 27540,
+      "cost": 0.02547136,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.02547136,
+        "upstream_inference_prompt_cost": 0.00862464,
+        "upstream_inference_completions_cost": 0.01684672
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 6277,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.02547136
+  },
+  {
+    "provider": "openrouter",
+    "label": "structure_openai_gpt-5-mini",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 54.2,
+    "usage": {
+      "prompt_tokens": 17466,
+      "completion_tokens": 6955,
+      "total_tokens": 24421,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0182765,
+        "upstream_inference_prompt_cost": 0.0043665,
+        "upstream_inference_completions_cost": 0.01391
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4672,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0
+  },
+  {
+    "provider": "openrouter",
+    "label": "structure_openai_gpt-5-mini_reason_minimal",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 32.1,
+    "usage": {
+      "prompt_tokens": 17466,
+      "completion_tokens": 3742,
+      "total_tokens": 21208,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0118505,
+        "upstream_inference_prompt_cost": 0.0043665,
+        "upstream_inference_completions_cost": 0.007484
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0
+  },
+  {
+    "provider": "openrouter",
+    "label": "byo_synthesis_gpt5mini_minimal",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 79.6,
+    "usage": {
+      "prompt_tokens": 28429,
+      "completion_tokens": 8639,
+      "total_tokens": 37068,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.02438525,
+        "upstream_inference_prompt_cost": 0.00710725,
+        "upstream_inference_completions_cost": 0.017278
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0
+  },
+  {
+    "provider": "exa",
+    "label": "account_deep_lite_lassie",
+    "op": "deep",
+    "http": 200,
+    "elapsed_s": 44.5,
+    "cost_usd": 0.023,
+    "cost_breakdown": {
+      "total": 0.023
+    }
+  }
+]

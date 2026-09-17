@@ -1,5 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
+import { useArtifactRename } from "../hooks/use-artifact-rename";
 import {
   useEditorShellController,
   type EditorShellInitialState,
@@ -108,6 +111,29 @@ export function EditorSurface({
   // — the canvas branch inside the stage picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+
+  // The header's rename is a document write (the design API stores it and
+  // advances the version), so the tab takes the title the backend stored and
+  // both lanes reload through the SAME seam an inspector write uses. The page
+  // also fetches this route's gallery feed server-side, so `router.refresh()`
+  // is what re-reads it — without it the gallery card would keep the old name.
+  const router = useRouter();
+  const setArtifactTitleFor = controller.setArtifactTitleFor;
+  const reloadWebCanvas = session.onWriteReload;
+  const reloadSceneCanvas = sceneSession.onWriteReload;
+  const onArtifactRenamed = useCallback(
+    (artifactId: string, persisted: string) => {
+      setArtifactTitleFor(artifactId, persisted);
+      reloadWebCanvas();
+      reloadSceneCanvas();
+      router.refresh();
+    },
+    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+  );
+  const renameArtifact = useArtifactRename({
+    documentIds,
+    onRenamed: onArtifactRenamed,
+  });
 
   // W2.3 (completing the W2 exit gate): while EDITING a real document, the
   // inspector docks beside the canvas — the dummy's own editing arrangement
@@ -309,15 +335,17 @@ export function EditorSurface({
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
+            kind: artifact.source?.type === "website" ? "web" : "ad",
             title: artifact.title,
           })
         }
         onRenameArtifact={(title) => {
           if (controller.activeArtifactId) {
-            controller.setArtifactTitleFor(controller.activeArtifactId, title);
+            renameArtifact(controller.activeArtifactId, title);
           }
         }}
+        // The tab strip's rename of a NON-active tab is unchanged local state
+        // (it carries no document handle of its own here).
         onRenameArtifactFor={controller.setArtifactTitleFor}
         onToggleMaximized={controller.toggleArtifactMaximized}
         onTogglePanel={() => undefined}

@@ -1,0 +1,383 @@
+{
+  "requestId": "4ebb832033e644cabd2ed38050e12dbc",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/varinderkaur",
+      "publishedDate": "2026-07-08T00:00:00.000Z",
+      "text": "# Vari Kaur\n\nDemand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth\n\nEaston, Pennsylvania, United States (US)\n\n500 connections \u2022 2,553 followers\n\n## About\n\nResults-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition. I specialize in full-funnel strategy development\u2014from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Hands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.\n\nTotal Experience: 20 years and 1 month\n\n## Experience\n\n### Head of Growth Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nMay 2025 - Present (1 year and 3 months) in New York, United States\n\nDepartment: Research\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distri",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQGz4bKms87erA/profile-displayphoto-scale_200_200/B4DZzTH0kzKYAc-/0/1773068569609?e=2147483647&v=beta&t=WNZOGn9BIQgmMJFT81R3j4OAeH-qcq9IRj46ytsSeHQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Easton, Pennsylvania, United States",
+            "workHistory": [
+              {
+                "title": "Head of Growth Marketing",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2025-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Director, Demand Generation & Technology",
+                "location": null,
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/sjv34jtkp38",
+                  "name": "Secureworks"
+                }
+              },
+              {
+                "title": "Director Demand Generation",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wk8smddfsny",
+                  "name": "ReSource Pro"
+                }
+              },
+              {
+                "title": "Director Demand Generation and Technology",
+                "location": "New York",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dw23h2b0f43",
+                  "name": "Axiom"
+                }
+              },
+              {
+                "title": "Director Digital Marketing",
+                "location": "Parsippany, NJ",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2019-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3lpyggky4c8",
+                  "name": "Tangoe"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Salt Lake City Metropolitan Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2015-03-01",
+                  "to": "2017-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Manager, Global Marketing",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2015-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2011-02-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2011-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Grazitti"
+                }
+              },
+              {
+                "title": "SEO Analyst and Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2006-01-01",
+                  "to": "2008-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yq7klqngdfs",
+                  "name": "Milestone Global Solutions"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A) Marketing",
+                "dates": {
+                  "from": "2008",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              },
+              {
+                "degree": "Master of Computer Application (M.C.A)",
+                "dates": {
+                  "from": "2001",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/zql872bqv1v",
+      "title": "Nick Fisher",
+      "url": "https://www.linkedin.com/in/nicholastfisher",
+      "publishedDate": "2026-08-22T00:00:00.000Z",
+      "text": "# Nick Fisher\n\nVP Marketing at Zafran Security\n\nNew York, New York, United States (US)\n\n500 connections \u2022 6,997 followers\n\n## About\n\nFull-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale\n\nTotal Experience: 17 years and 11 months\n\n## Experience\n\n### VP of Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nApr 2024 - Present (2 years and 4 months) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany. Has $136M in total funding, with 4 prior funding rounds.\n\n### Vice President Product Marketing - [Sysdig](https://www.linkedin.com/company/sysdig)\n\nSep 2021 - Apr 2024 (2 years and 7 months) in San Francisco Bay Area\n\nLead product, tech, and alliance marketing across Sysdig\u2019s portfolio of cloud security and DevOps solutions, powered by Sage GenAI\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nSysdig is a Computer and Network Security company. Sysdig is a cloud security company that provides runtime insights to help businesses protect their cloud, containers, and workloads. They offer solutions back real-time cloud security, cloud-native application protection platform (cnapp), unified cloud security, and threat detection & response (cdr) to protect cloud, containers, and",
+      "image": "https://media.licdn.com/dms/image/v2/C4D03AQH3CV6Ye-QKFA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1639519676211?e=2147483647&v=beta&t=PSHejEo9XoQ-xHqIm4gQcBJBOh2wYrMhInQf_IUJYsU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/zql872bqv1v",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Nick Fisher",
+            "firstName": "Nick",
+            "lastName": "Fisher",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "VP of Marketing",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2024-04-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Vice President Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2021-09-01",
+                  "to": "2024-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qhhss4xbvs5",
+                  "name": "Sysdig"
+                }
+              },
+              {
+                "title": "Senior Director Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-02-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w582fdblq93",
+                  "name": "Okta, Inc."
+                }
+              },
+              {
+                "title": "Director, Enterprise Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2014-09-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/l3w78g322nm",
+                  "name": "Lookout"
+                }
+              },
+              {
+                "title": "Senior Product Marketing Manager",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2013-08-01",
+                  "to": "2014-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/stblbl2zr5v",
+                  "name": "Huddle"
+                }
+              },
+              {
+                "title": "Product Manager MBA Intern",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2012-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/8lq4tph6r48",
+                  "name": "Zynga"
+                }
+              },
+              {
+                "title": "Director - Product Marketing & Analytics, Capital Markets",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2006-07-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h40s0z6zty3",
+                  "name": "Ipreo"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "MBA Exchange",
+                "dates": {
+                  "from": "2012",
+                  "to": "2012"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/q02jtbkgvrn",
+                  "name": "University of California, Berkeley, Haas School of Business"
+                }
+              },
+              {
+                "degree": "MBA",
+                "dates": {
+                  "from": "2011",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/jmwwfr8yblt",
+                  "name": "Columbia Business School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.zafran.io/about",
+      "title": "About Zafran Security",
+      "url": "https://www.zafran.io/about",
+      "text": "Zafran Security | About Zafran Security\n\n# Our Story\n\nZafran was founded by experienced cybersecurity leaders who directly investigated breaches resulting from known vulnerabilities that were not remediated in time\n\nZafran asked hundreds of security leaders - and they all agreed: Patching everything, all the time is impossible; we need a new approachWe teamed up with leading investors, enlisted the best security experts, put together a dream team of R&D and enterprise security talent, and now, we're excited to deliver our innovative Threat Exposure Management Platform\n\n## Why We Started Zafran\n\n## Leadership\n\n### Sanaz Yashar\n\nCo-Founder & CEO\n\n### Ben Seri\n\nCo-Founder & CTO\n\n### Rotem Peled-Dvir\n\nSVP Finance\n\n### Tom Anthony\n\nSVP Sales\n\n### Nick Fisher\n\nVP Marketing\n\n### Hadas Bergman\n\nVP Business Operations\n\n### Racheli Barouch-Haik\n\nVP HR & Operations\n\n### Itay Nachum\n\nVP Product Management\n\n### Christopher Phillips\n\nVP Customer Success\n\n## Board of Directors\n\n### Doug Leone\n\nPartner at Sequoia Capital\n\n### Lior Simon\n\nGeneral Partner at Cyberstarts\n\n### Rama Sekhar\n\nPartner at Menlo Ventures\n\n## Backed By\n\nJoin Us\n\nWe\u2019re looking for amazing talent to join our growing global team at Zafran. Help us empower organizations to defuse threats.\n\nExplore Jobs\n\nSee Zafran in Action\n\nPrioritize and fix what is truly exploitable using risk context from your existing security tools\n\nGet a Demo\n\nGet a Demo\n\nRequired fields are marked with an asterisk *",
+      "image": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/683a2e0c6e76020e5ddb494b_zafran-og.png",
+      "favicon": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/6841885d7e6a1a4de805dab1__zafran-favicon.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "title": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "publishedDate": "2026-05-18T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur \u00b7 LinkedIn \u00b7 2026-05-18\n\n**Vari Kaur**: Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years 1 month of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nOur marketing team at [Zafran Security](https://linkedin.com/company/zafran-security) is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\n\nLooking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk.\n\nExcellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw\n\n## Comments\n\n**[Jaime Oliver](https://linkedin.com/in/jmwheeler11)** \u00b7 2026-05-18\n> Exciting times Vari!!! Sounds like everything is going well!!\n\n**[CyberExecConnect](https://linkedin.com/company/cyberexecconnect)** \u00b7 2026-05-27\n> Exciting growth at Zafran Security. The alignment between ABM, integrated campaigns, and sales execution continues to become increasingly important for cybersecurity companies scaling in competitive markets. Strong opportunity for the right marketing leader.\n\n## Engagement\n\n- Reactions: 61"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/nicholastfisher_head-of-growth-marketing-at-zafran-activity-7300514961829638144-hoPy",
+      "title": "\ud83d\udd25 HOT JOB ALERT \u2013 HEAD OF GROWTH \ud83d\udd25 | Nick Fisher",
+      "url": "https://www.linkedin.com/posts/nicholastfisher_head-of-growth-marketing-at-zafran-activity-7300514961829638144-hoPy",
+      "publishedDate": "2025-02-26T00:00:00.000Z",
+      "author": "Nick Fisher",
+      "text": "# \ud83d\udd25 HOT JOB ALERT \u2013 HEAD OF GROWTH \ud83d\udd25 | Nick Fisher \u00b7 LinkedIn \u00b7 2025-02-26\n\n**Nick Fisher**: VP of Marketing at Zafran Security for 2 years 4 months with 17 years 10 months of total professional experience. Previous roles include Vice President Product Marketing at Sysdig, Senior Director Product Marketing at Okta, Inc., and Director, Enterprise Product Marketing at Lookout. Based in New York, New York, United States [US].\n\n---\n\n\ud83d\udd25 HOT JOB ALERT \u2013 HEAD OF GROWTH \ud83d\udd25\n\nZafran is on fire. We're scaling fast, making waves, and now we need to crank things up to 11.\n\nI\u2019m looking for a Head of Growth Marketing to build and own demand generation, scale revenue, and optimize our GTM strategy. This role is for a true player-coach who knows how to experiment, iterate, and drive revenue at an early-stage startup.\n\n\ud83d\udd39 Full-funnel growth: from pipeline to conversion, paid to organic, lifecycle to outbound\n\ud83d\udd39 Demand-gen powerhouse: proven ability to scale revenue through hypergrowth phase\n\ud83d\udd39 Data-driven & AI-enabled: leveraging automation, personalization, and cutting-edge tools to drive scale\n\nIf you (or someone brilliant you know) is ready to build something massive, let\u2019s talk. No recruiters please.\n\nhttps://lnkd.in/gxdz8ynB\n\n## Comments\n\n**[Ashlee Lam](https://linkedin.com/in/ashleejoni)** \u00b7 2025-02-26 \u00b7 1 reaction\n> Demand gen friends, I know some of you wouldn't want to miss checking this out! \ud83d\udc40\n\n**[Rachel Barouch-Haik](https://linkedin.com/in/rachel-barouch-haik-10762b)** \u00b7 2025-02-26\n> A great opportunity, to be a part of a hyper growing Sequoia backed startup.\n\n**[Andy Price](https://linkedin.com/in/andyprice1)** \u00b7 2025-02-26 \u00b7 2 reactions\n> Go !!!! And !!!! Love it.\n\n**[Yehuda Strauss](https://linkedin.com/in/yehuda-strauss)** \u00b7 2025-02-27\n> I've got some great candidates "
+    },
+    {
+      "id": "https://theorg.com/org/zafran-security/org-chart/varinder-kaur",
+      "title": "Varinder Kaur - Head Of Growth Marketing at Zafran Security | The Org",
+      "url": "https://theorg.com/org/zafran-security/org-chart/varinder-kaur",
+      "text": "Zafran Security | The Org\n\n# Zafran Security\n\n0 followers\n\n\u200c\n\nZafran's new approach to Risk Mitigation mobilizes existing security controls to protect organizations during critical exploitation windows. The Risk & Mitigation platform determines vulnerability exploitability, correlating control configuration, runtime, internet exposure, and threat exploit anal... Read more\n\nIndustries\n\nCyber Security, Risk & Compliance\n\nHeadquarters\n\nNew York, New York, United States\n\nEmployees\n\n11-50\n\nLinks\n\nView on linkedIn View the website\n\nOrg chart\n\nTeams\n\nOffices\n\nPositions (125)\n\nUnverified\n\n---\n\n## Org chart\n\nSY\n\nSanaz Yashar\n\nCo-founder & CEO\n\n64\n\nSY\n\nSanaz Yashar\n\nCollapse\n\nBen Seri\n\nCo-founder & CTO\n\n18\n\nSnir Havdala\n\nCo-founder & CPO\n\n3\n\nNF\n\nNick Fisher\n\nVP Of Marketing\n\n3\n\nHadar Amedy\n\nDirector Of HR & Operations\n\n5\n\nRotem Peled-Dvir\n\nSvp, Finance\n\n1\n\nHadas Bergman\n\nVP Business Operations\n\n7\n\nTA\n\nTom Anthony\n\nSVP, Global Sales\n\n18\n\nRB\n\nRachel Barouch-Haik\n\nVP of HR\n\n0\n\nAviv Cohen\n\nExecutive Assistant and Office Admin\n\n0\n\n---\n\n## Teams\n\n### Sales Operations\n\n18 people \u00b7 0 jobsAR14\n\n### Software Development\n\n15 people \u00b7 0 jobsASDO11\n\n### Solutions Development\n\n6 people \u00b7 0 jobs2\n\n### Executive Leadership\n\n5 people \u00b7 0 jobsSY1\n\n### Product Management\n\n3 people \u00b7 0 jobsCGYZ\n\n### Business Development\n\n4 people \u00b7 0 jobsAM\n\nExpand (23)\n\n---\n\n## Offices\n\n- HQ12 people \u00b7 0 jobsAM8\n\n## Related companies\n\nIANS3 followers\n\nCrowdstrike135 followers\n\nSentinelOne52 followers\n\nArctic Wolf Networks18 followers\n\nKnowBe420 followers\n\nChainguard16 followers\n\nSANS Institute8 followers\n\nYubico8 followers\n\nCisco2096 followers\n\nCHEQ7 followers\n\nCensys5 followers\n\nView more",
+      "image": "https://cdn.theorg.com/og/org?data=JTdCJTIybmFtZSUyMiUzQSUyMlphZnJhbiUyMFNlY3VyaXR5JTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0ElMjJodHRwcyUzQSUyRiUyRmNkbi50aGVvcmcuY29tJTJGMGQ5ZDM5NWMtODJlMC00YmM2LTg1YWQtYjczOGM5OTk4NDdmX3NtYWxsLmpwZyUyMiUyQyUyMnBlb3BsZSUyMiUzQSU1QiU3QiUyMm5hbWUlMjIlM0ElMjJTYW5heiUyMFlhc2hhciUyMiUyQyUyMnRpdGxlJTIyJTNBJTIyQ28tZm91bmRlciUyMCUyNiUyMENFTyUyMiUyQyUyMmltYWdlU3JjJTIyJTNBbnVsbCUyQyUyMmNoaWxkQ291bnQlMjIlM0E2NCU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJCZW4lMjBTZXJpJTIyJTJDJTIydGl0bGUlMjIlM0ElMjJDby1mb3VuZGVyJTIwJTI2JTIwQ1RPJTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0ElMjJodHRwcyUzQSUyRiUyRmNkbi50aGVvcmcuY29tJTJGYTU4MGQ4NzgtOTU0Yy00MzhkLWIyM2UtOGU3MDFmOTQ0ZDdkX3NtYWxsLmpwZyUyMiUyQyUyMmNoaWxkQ291bnQlMjIlM0ExOCU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJTbmlyJTIwSGF2ZGFsYSUyMiUyQyUyMnRpdGxlJTIyJTNBJTIyQ28tZm91bmRlciUyMCUyNiUyMENQTyUyMiUyQyUyMmltYWdlU3JjJTIyJTNBJTIyaHR0cHMlM0ElMkYlMkZjZG4udGhlb3JnLmNvbSUyRjZjNTgxYjU1LTQxNGUtNGRjMi1iZjAyLTg3NzI2Y2FmODlmM19zbWFsbC5qcGclMjIlMkMlMjJjaGlsZENvdW50JTIyJTNBMyU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJOaWNrJTIwRmlzaGVyJTIyJTJDJTIydGl0bGUlMjIlM0ElMjJWUCUyME9mJTIwTWFya2V0aW5nJTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0FudWxsJTJDJTIyY2hpbGRDb3VudCUyMiUzQTMlN0QlNUQlN0Q=&slug=zafran-security",
+      "favicon": "https://theorg.com/_next/static/media/apple-touch-icon.64259cfd.png"
+    },
+    {
+      "id": "https://www.builtinnyc.com/job/head-growth-marketing/4236001",
+      "title": "Head of Growth Marketing - Zafran Security | Built In NYC",
+      "url": "https://www.builtinnyc.com/job/head-growth-marketing/4236001",
+      "text": "Head of Growth Marketing - Zafran Security | Built In NYC\n\n## Zafran Security\n\n# Head of Growth Marketing\n\n Sorry, this job was removed at 08:20 p.m. (EST) on Thursday, May 22, 2025\n\nRemote\n\nHiring Remotely in US\n\nRemote\n\nNew York, NY, USA\n\nUnited States\n\nTop Skills: Chatgpt Claude Cms Platforms Gemini Geo (Generative Engine Optimization) Google Analytics 4 (Ga4) Google Workspace Hubspot Hubspot Ai Jasper Linkedin Ads Linkedin Insights Make N8N Perplexity Seo Zapier\n\n## Head of Developer Growth Marketing\n\n15 Days Ago\n\nRemote\n\nUnited States\n\nSenior level\n\nSenior level\n\nInformation Technology \u2022 Productivity \u2022 Software\n\nLead developer-focused demand generation and PLG growth: own paid and organic acquisition, instrument the signup-to-paid funnel, define PQLs, orchestrate multi-channel developer marketing (content, community, social, SEO, LLM optimization), build the brand, hire and lead a lean team, and establish rigorous planning, measurement, and GTM with product and sales.\n\nTop Skills: Ai Agents Amplitude Automations Llms Posthog Seo\n\nDescription \n\nThe Area Vice President (AVP) of Sales, East will be responsible for driving hyper-growth customer acquisition and bookings through effective leadership of the regional sales organization. This leader will play a crucial role in talent acquisition, team development, and strategic partnership management while ensuring consistent pipeline generation and revenue achievement.\n\n About Zafran \n\nOur Mission: To stop the exploitations of vulnerabilities, everywhere.\n\nWhat makes us different: Zafran de-risks 90% of critical vulnerabilities overnight across your hybrid environment and uses your existing security tools to rapidly mitigate and remediate the 10% most likely to be exploited.\n\n\u200b\u200bWho\u2019s behind us: Zafran is backed by Sequoia ",
+      "image": "https://static.builtin.com/dist/images/9-white-compact.svg"
+    },
+    {
+      "id": "https://rocketreach.co/zafran-security-marketing-department_b73dd8fcc7fe923d",
+      "title": "Zafran Security Marketing Department | Zafran Security Marketing Team",
+      "url": "https://rocketreach.co/zafran-security-marketing-department_b73dd8fcc7fe923d",
+      "text": "# Zafran Security Marketing Department \n\n Zafran Security's Marketing department is led by Nick Fisher (VP of Marketing) and has 9 employees. \n\n#### Recent Zafran Security Marketing Hires\n\n- \n- Kelly Whelan\n- Senior Manager Marketing Operations\n- 1 2 \n- \n- Molly S\n- Director of Product Marketing\n- 2 1 \n- \n- Matheus Turle\n- Field Marketing Manager - Central\n- 2 1 \n- \n- Bridget Armbrust\n- Senior Field Marketing Manager - East\n- 3 4 \n- \n- Karlyanna Burton\n- Director, Events and Field Marketing\n- 1 6 \n- \n- Jules Gross\n- Product Marketing Manager - MBA Intern\n- 1 \n- \n- Vari Kaur\n- Head of Growth Marketing\n- 2 6 \n- \n- Alexandra Hall\n- Event Marketing Specialist\n- 4 4 \n- \n- Nick Fisher\n- VP of Marketing\n- 2 6 \n\n## Top Zafran Security Marketing Employees",
+      "image": "https://d1hbpr09pwz0sk.cloudfront.net/logo_url/zafran-security-d04539ed"
+    }
+  ],
+  "searchTime": 1981.1,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.11,
+  "_request": {
+    "query": "Zafran Security marketing team Head of Growth Marketing Nick Fisher VP Marketing LinkedIn who leads demand generation zafran.io",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1800
+      }
+    }
+  }
+}

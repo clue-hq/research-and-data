@@ -1,0 +1,294 @@
+{
+  "requestId": "a06038589a8c28ae6b5772a3cb776675",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/organization/5gylpr5qwrl",
+      "title": "BeyondTrucks",
+      "url": "https://linkedin.com/company/beyondtrucks",
+      "text": "# BeyondTrucks (BeyondTrucks Inc.)\n\nBeyondTrucks is a Transportation, Logistics, Supply Chain and Storage company. BeyondTrucks is a Transportation Management System providing software for shippers & trucking companies looking to automate workflows and reduce administrative overhead. BeyondTrucks employs 25 people, founded in 2019. Headquartered in San Francisco, California, United States, with an office in San Mateo. Its workforce is distributed across United States, Philippines, and China. Has $4M in total funding, with 2 prior funding rounds.\n\n## About\n\nBeyondTrucks serves large private and specialty fleets with a configurable and connected platform (TMS) for process automation and optimization. Fleets turn to BeyondTrucks to replace legacy TMS software, bolt-on solutions, and manual processes to become more efficient and make better decisions.\n\n## Company Details\n- Industry: Transportation, Logistics, Supply Chain and Storage\n- Type: Privately Held\n- Headquarters: San Francisco, United States\n- Founded Year: 2019\n- Homepage: beyondtrucks.com\n- Status: active\n- Aliases: beyondtrucks\n- SEC CIK: 0002040287\n- EIN: 000000000\n- LinkedIn: linkedin.com/company/beyondtrucks\n- Linkedin Followers: 2,740 (Monthly: +1.7%)\n- Phone: (205) 881-3975\n\n## Financials\n- Fiscal Year End: 1231\n- Total Funding: USD 4,000,000\n  - Seed Round (2022-06-01): USD 4.0M - 9 investors\n  - Series A (2024-09-30) - 2 investors\n  - Pre Seed Round (2020-03-01) - 3 investors, led by Pear VC\n\n## Workforce\n- Employees: 25\n  - Monthly Growth: +5.7%\n- Key Executives:\n  - Hans Galland: CEO Founder\n  - \u674e\u6210: Design Lead\n  - Bourne Zheng: Head of China R&D\n  - Matias Oberpaur: Director of Business Development\n  - Paul Xie: COO & Founder\n  - Mahriah Alf: Head of Product\n  - Olivia White: Head of Community\n  - Natasha Martinez: Head of Carrier Success\n  - \u90d1\u9cb2: Head of Engineering\n- Breakdown:\n  - By Country: United States: 15 (41%), Philippines: 6 (16%), China: 4 (11%)\n  - By Department: Sales: 6 (16%), General Management: 4 (11%), Marketing: 3 (8%), Other Department: 3 (8%), Product: 3 (8%), Research: 3 (8%), Design: 2 (5%), Technical: 2 (5%), Operations: 1 (3%)\n  - By Seniority: Other Management: 7 (19%), Specialist: 6 (16%), Head: 5 (14%), Manager: 5 (14%), Founder: 2 (5%), Director: 1 (3%), Senior: 1 (3%)\n- Talent Sources: Swim Stroke Doctor, LLC (1), Amazon (1), EmergeTech (1), Poplar Homes (3), DataKitchen (1), Evernest (1), Pacific Eagle (1), Motive (1), Retail Technology Asia (1)\n- Alumni Go To: VMW Express (1), LiftOne (1), PAY2DAY Inc. (1), Oxonian Ventures (1), Backhaus (1), Crescent Park Management, L.P. (1), Coastal Ridge Real Estate (1), Assist World (1), SANT\u00c9 (1), Erikson Grain Mill Inc (1)\n\n## Products & Technology\n- Tech Stack: github actions, playwright, dart, typescript, github, flutter, amp, c, well\n\n## Web Presence\n- Monthly Visits: 2,389\n  - Traffic Growth: Monthly: -7.3%, Yearly: +205.9%\n- Global Rank: #6,291,022\n- Bounce Rate: 0.4%\n- Pages per Visit: 2.0\n- Top Countri",
+      "image": "https://media.licdn.com/dms/image/v2/D4E0BAQHAhaD7gGT6jQ/company-logo_200_200/company-logo_200_200/0/1712155677062/beyondtrucks_logo?e=2147483647&v=beta&t=-KYYKOlPoPL4cdzac6QtRKSH198nMqR8Ul93-No53Co",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/5gylpr5qwrl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "BeyondTrucks",
+            "foundedYear": 2019,
+            "description": "BeyondTrucks serves large private and specialty fleets with a configurable and connected platform (TMS) for process automation and optimization. Fleets turn to BeyondTrucks to replace legacy TMS software, bolt-on solutions, and manual processes to become more efficient and make better decisions.",
+            "workforce": {
+              "total": 25
+            },
+            "headquarters": {
+              "address": "945 Market St, San Francisco, California 94103, US",
+              "city": "San Francisco",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 4000000,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 2389,
+              "countryRank": 2864247,
+              "avgDurationSeconds": 54,
+              "history": [
+                {
+                  "value": 3834,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 4005,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 4180,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 2578,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2578,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2389,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.crunchbase.com/organization/beyondtrucks",
+      "title": "BeyondTrucks - Crunchbase Company Profile & Funding",
+      "url": "https://www.crunchbase.com/organization/beyondtrucks",
+      "text": "BeyondTrucks - Crunchbase Company Profile & Funding\n[![](https://images.crunchbase.com/image/upload/v1528136300/clientapp/logo_crunchbase_dark.svg)](https://www.crunchbase.com/)\nSearch Crunchbase\nAdvanced\n[Start Free Trial](https://www.crunchbase.com/buy/select-product)\nSolutions\nProducts\nResources\n[\nPricing\n](https://www.crunchbase.com/buy/select-product)\nResources\n[\nLog In\n](https://www.crunchbase.com/login?redirect_to=/organization/beyondtrucks)\nOrganization\n# BeyondTrucks\nConnect to CRM\nSave\n## About\nBeyondTrucks is a configurable cloud-based TMS.\n* [San Mateo](https://www.crunchbase.com/search/organizations/field/organizations/location_identifiers/san-mateo-california),[California](https://www.crunchbase.com/search/organizations/field/organizations/location_identifiers/california-united-states),[United States](https://www.crunchbase.com/search/organizations/field/organizations/location_identifiers/united-states)\n* [51-100](https://www.crunchbase.com/search/people/field/organizations/num_employees_enum/beyondtrucks)\n* [Series A](https://www.crunchbase.com/search/funding_rounds/field/organizations/last_funding_type/beyondtrucks)\n* Private\n* [www.beyondtrucks.com](https://www.beyondtrucks.com)\n* [10,950](https://www.crunchbase.com/search/organization.companies/field/organizations/rank_org_company/10950)\n## Highlights\nobfuscated\nTotal FundingAmount\nUnlock for free\n[\nContacts3\n](https://www.crunchbase.com/organization/beyondtrucks/people)\n[\nEmployeeProfiles2\n](https://www.crunchbase.com/organization/beyondtrucks/people)\n[\nInvestors9\n](https://www.crunchbase.com/organization/beyondtrucks/company_financials)\n[\nSimilarCompanies9\n](https://www.crunchbase.com/organization/beyondtrucks/org_similarity_overview)\n## Recent News & Activity\nNews\u2022Dec 23, 2024\nPRWeb \u2014[BeyondTrucks Streamlines EDI Transaction Management Processes with Orderful Partnership](https://www.prweb.com/releases/beyondtrucks-streamlines-edi-transaction-management-processes-with-orderful-partnership-302338443.html)\nNews\u2022Dec 11, 2024\nPRWeb \u2014[D.G. Coleman Selects BeyondTrucks Transportation Management System](https://www.prweb.com/releases/dg-coleman-selects-beyondtrucks-transportation-management-system-302328519.html)\nFunding Round\u2022Sep 30, 2024\n[BeyondTrucks](https://www.crunchbase.com/organization/beyondtrucks)raised an undisclosed amount/[Series A](https://www.crunchbase.com/funding_round/beyondtrucks-series-a--f3eaff22)from[Alumni Ventures](https://www.crunchbase.com/organization/alumni-ventures-group)\n[Discover more funding rounds](https://www.crunchbase.com/discover/funding_rounds)\n[View All](https://www.crunchbase.com/organization/beyondtrucks/company_overview/overview_timeline)\nFind More Contacts for BeyondTrucks\nProtected Content\nCEO, Founder\nNon-Management, ExecutiveManagement\n1 email found1 phone number found\nView contacts for BeyondTrucks to access new leads and connect with decision-makers.\n[View All Contacts](https://www.crunchbase.com/organization/beyondtrucks/people)\n## De",
+      "image": "https://images.crunchbase.com/image/upload/c_pad,h_256,w_256,f_auto,q_auto:eco,dpr_1/wowjarww9nhlt6sirobw",
+      "favicon": "https://www.crunchbase.com/favicon.ico?v=2.0"
+    },
+    {
+      "id": "https://www.cbinsights.com/company/beyondtrucks",
+      "title": "BeyondTrucks - Products, Competitors, Financials, Employees, Headquarters Locations",
+      "url": "https://www.cbinsights.com/company/beyondtrucks",
+      "publishedDate": "2024-10-07T08:07:17.000Z",
+      "text": "BeyondTrucks - Products, Competitors, Financials, Employees, Headquarters Locations\n\n## Founded Year\n\n2020\n\n## Stage\n\nSeries A | Alive\n\n## Total Raised\n\n$14.35M\n\n## Last Raised\n\n$10.35M | 2 yrs ago\n\n## Mosaic Score The Mosaic Score is an algorithm that measures the overall financial health and market potential of private companies.\n\n-60 points in the past 30 days\n\n## About BeyondTrucks\n\nBeyondTrucks specializes in transportation management systems (TMS) within the technology sector, focusing on the trucking and logistics industry. The company offers a cloud-based SaaS TMS that integrates with existing systems and leverages AI for process automation and optimization. BeyondTrucks primarily serves large private and specialty fleets. BeyondTrucks was formerly known as Haulistix. It was founded in 2020 and is based in San Francisco, California.\n\n## Headquarters Location\n\n1 Ferry Building Suite 201\n\nSan Francisco, California, 94111,\n\nUnited States\n\n205-881-3975\n\nLoading...\n\n## BeyondTrucks's Products & Differentiators\n\nLoad Ingestion\n\nDigitize and automate order and load entry\n\nLoading...\n\n## Expert Collections containing BeyondTrucks\n\nExpert Collections are analyst-curated lists that highlight the companies you need to know in the most important technology spaces.\n\nBeyondTrucks is included in 1 Expert Collection, including Supply Chain & Logistics Tech.\n\nS\n\n# Supply Chain & Logistics Tech\n\n4,716 items\n\nCompanies offering technology-driven solutions that serve the supply chain & logistics space (e.g. shipping, inventory mgmt, last mile, trucking).\n\nLearn more by requesting a demo\n\n## Latest BeyondTrucks News\n\nBeyondTrucks Digitizes Customer-Directed Transportation Operations\n\nJun 17, 2026\n\nSAN FRANCISCO June 17, 2026 /PRNewswire/ -- BeyondTrucks, provider of a platform for AI-powered truck dispatch planning and management for operationally complex fleets, today announced Field Dispatch. The new capability designed for dedicated fleets eliminates paperwork and creates a shared operational record between the driver, the carrier, and the customer. \"In many real-world transportation environments, the people determining what work gets performed are often customer personnel, site managers, field supervisors, or even drivers responding to conditions in the field,\" said Hans Galland, CEO of BeyondTrucks. \"Field Dispatch addresses the disconnect between the work being performed and the systems used to manage it by enabling transportation providers to capture and manage work regardless of where dispatch decisions originate. It gives carriers the ability to capture work as it happens, creating visibility, accountability, and operational alignment.\" Field Dispatch, while allowing customers to continue operating exactly as they do today, eliminates gaps in information management and process coordination by allowing drivers to digitally capture customer-directed work the moment it is assigned. This challenge is especially prevalent in specialized transportation, wh",
+      "image": "https://s3-us-west-2.amazonaws.com/cbi-image-service-prd/modified/b1ed3647-843a-4422-9213-c5c1d47b534c.png",
+      "favicon": "https://public-pages.cbinsights.com/public-site/658528/_next/static/public/favicon.ico"
+    },
+    {
+      "id": "https://www.beyondtrucks.com/",
+      "title": "Transportation Management Software. Book a demo today",
+      "url": "https://www.beyondtrucks.com/",
+      "text": "---\ntitle: Smart TMS to Fit Your Fleet\ndescription: \"Without a doubt, the most advanced replacement for your Legacy TMS. BeyondTrucks is a Transportation Management System providing software for shippers & trucking companies looking to automate workflows and reduce administrative overhead.\"\npublished: \"Jun 12, 2026, 6:22 AM UTC\"\n---\n\n# Work Smarter\n\nBuilt for people in fleets to work, decide, and perform better. \n\n[Learn more]\n\n[Get in touch](./contact-us) \n\nand more...\n\n## Operations are complex. Let\u2019s make them simpler, smarter, and safer.\n\n**Order Intake**\n\nDispatch Planning\n\nDispatch Management\n\nFinance & Analytics\n\n### Order Intake\n\nUsing AI-Powered load ingestion and embedded RateAgents, the platform automatically captures order details from emails, documents, spreadsheets, and connected systems, then applies dynamic customer-specific rating logic directly inside the System. The result is faster order processing, fewer manual errors, more accurate billing, and dispatch-ready loads created.\n\n**Featuring:**\n\nAI-Powered Load Ingestion\n\nRate Agents\n\n# The work you do is mission-critical. Your tools weren't built for it. There's a smarter way to run your fleet.\n\n# AI-powered dispatch planning and orchestration for the fleets that move industry. We power your dispatchers and drivers so they can deliver what makes you different.\n\nSolutions\n\n## Built for mission-critical fleets most TMS vendors walk away from \n\nSpecialty operations demand specialized intelligence. BeyondTrucks is configured for your complexity. \n\n[Oil & Gas](./#petroleum)\n\n[Chemical](./#hazmat-chemical)\n\n[Construction Materials](./#construction-materials)\n\n[Agriculture](./#agriculture)\n\n[Food & Beverage](./#food-beverage)\n\n[Trucking & Logistics](./#trucking-logistics)\n\n### Oil & Gas\n\nCompartment management\n\nMulti-product delivery\n\nCompliance handled natively\n\nLearn more\n\n### Chemical\n\nHazmat routing restrictions\n\nPayload validation, Multi-product manifests, Contamination management, Purpose-built, Learn more\n\n### Construction Materials\n\nDynamic job sites, last-minute changes, and equipment constraints - optimized in real time. \n\nLearn more\n\n### Agriculture \n\nSeasonal demand\n\nTight delivery windows\n\nBulk payloads managed in real time\n\nLearn more\n\n### Food & Beverage \n\nTemperature compliance, Delivery windows, Route efficiency, Learn more\n\n### Trucking & Logistics \n\nWhether you move 50 trucks or 500, BeyondTrucks gives every dispatcher the intelligence of your best load planner. \n\nLearn more\n\nTestimonials\n\n## Trusted by owners ofthese mission-critical fleets \n\n- **\"Beyond trucks is a game-changer\"**BeyondTrucks has proven to be an exceptional transportation management solution for our operation. The software is not only powerful and reliable, but also extremely flexible to fit our specific needs. Their team has been outstanding to work with-responsive, knowledgeable, and willing to go above and beyond to customize features that align perfectly with our workflow.Robert M.Kalmbach Feed",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/5gylpr5qwrl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "BeyondTrucks",
+            "foundedYear": 2019,
+            "description": "BeyondTrucks serves large private and specialty fleets with a configurable and connected platform (TMS) for process automation and optimization. Fleets turn to BeyondTrucks to replace legacy TMS software, bolt-on solutions, and manual processes to become more efficient and make better decisions.",
+            "workforce": {
+              "total": 25
+            },
+            "headquarters": {
+              "address": "945 Market St, San Francisco, California 94103, US",
+              "city": "San Francisco",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 4000000,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 2389,
+              "countryRank": 2864247,
+              "avgDurationSeconds": 54,
+              "history": [
+                {
+                  "value": 3834,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 4005,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 4180,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 2578,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2578,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2389,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+      "title": "",
+      "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+      "text": "---\ntitle: BeyondTrucks Celebrates Strongest Sales Quarter in Company History\ndescription: \"BeyondTrucks announced it recorded its strongest new revenue performance in company history during Q1 2026, with growth expected to accelerate further in Q2, exceeding more than 250% year-over-year.\"\npublished: \"Aug 6, 2026, 6:41 PM UTC\"\n---\n\n# BeyondTrucks Celebrates Strongest Sales Quarter in Company History\n\nAcceleration in Q1 2026 performance reflects how specialized fleets are increasingly turning to AI-driven, multi-tenant TMS platforms to drive revenue growth and sharpen their service advantage\n\n**SAN FRANCISCO, April 30, 2026** - BeyondTrucks, provider of a platform for AI-powered truck dispatch planning and management for operationally complex fleets, today announced it recorded its strongest new revenue performance in company history during Q1 2026, with growth expected to accelerate further in Q2 exceeding more than 250% year-over-year.\n\n\"The strongest quarter in our company's history is not just a milestone,\" said Hans Galland, CEO of BeyondTrucks. \"It reflects a market shift toward transportation management platforms that use AI to unlock new value for fleets. But algorithms aren't the only story. New platforms are architected around data and processes that AI needs. Once native real-time inputs and digitized workflows are presented in a single interface, they can be overlaid with decision intelligence like optimization algorithms and guidance for complex, high-stakes tasks. In today's market, few platforms, if any, can deliver this. Almost all TMS in the market were built as systems of record, telling you what happened after someone entered the data.\n\n\"BeyondTrucks was founded to build an AI-powered multi-tenant platform that functions as a system of action, one that uses real-time data to orchestrate processes and enable better decisions,\" Galland continued. \"Our platform empowers fleets to unlock value not just in the back office, but in the field, where costs are incurred and service is delivered. That is the driving force behind our ongoing success. Value is no longer about cost efficiency alone, but about generating more revenue with the same resources and sharpening the service advantage that comes with specialization.\"\n\nGrowth at BeyondTrucks is also reflected in the complex, specialized enterprise fleets moving away from other platforms to handle their most vital, high-stakes freight with BeyondTrucks. In Q1 2026, new BeyondTrucks customers include:\n- **Southern Pines Cryogenics\u2014 **a specialized transporter of cryogenic gases, including liquid nitrogen, oxygen, argon, carbon dioxide, hydrogen, helium, LNG, and CNG, used in industrial production, aerospace, and healthcare.\n- **XNG \u2014** a leading natural gas virtual pipeline company serving municipalities, utilities, data centers, RNG producers, manufacturing, Schools and hospitals, paper and textile mills, asphalt production, and agricultural and food processing industries.\n- **Double D"
+    },
+    {
+      "id": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-streamlines-edi-transaction-management-processes-with-orderful-partnership",
+      "title": "",
+      "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-streamlines-edi-transaction-management-processes-with-orderful-partnership",
+      "text": "---\ntitle: BeyondTrucks streamlines EDI transaction management processes with Orderful partnership\ndescription: BeyondTrucks has announced a partnership with Orderful to embed their Electronic Data Interchange (EDI) Platform in the company\u2019s multi-tenant SaaS Transportation Management System (TMS).\npublished: \"Aug 3, 2026, 4:11 PM UTC\"\n---\n\n# BeyondTrucks streamlines EDI transaction management processes with Orderful partnership\n\nOrderful and BeyondTrucks have partnered their Electronic Data Interchange (EDI) Platform and multi-tenant SaaS Transportation Management System (TMS)\n\n#### **San Mateo, California - Dec. 23, 2024**\n\nBeyondTrucks, a transportation management system provider that delivers streamlined operations to private and specialty fleets through a connected and configurable platform, has announced a partnership with Orderful to embed their Electronic Data Interchange (EDI) Platform in the company\u2019s multi-tenant SaaS Transportation Management System (TMS).\u201cEDI of the past is opaque, time-consuming, expensive and just simply outdated,\u201d said Hans Galland, chief executive officer at BeyondTrucks. \u201cNow with Orderful as our partner, our customers can elect to use the Orderful portal to manage EDI transactions in a rapid intuitive manner for all transactions and all trading partners. We are eliminating the need for a custom integration into BeyondTrucks with each and every partner.\u201d\n\nEmbedded in the BeyondTrucks TMS, the Orderful EDI Platform seamlessly builds EDI connections between shippers and carriers by converting EDI data via an API. The integration provides users with real-time data synchronization, instant visibility, automated compliance checks, and intuitive error handling.\n\nBeyondTrucks is also offering their fleet customers access to the Orderful portal for visibility into EDI data from shippers. The optional capability provides an interface where fleets can see when shippers make changes to load information but don\u2019t communicate them or they are not passed through to the TMS. The carrier can then respond manually to avoid loads being missed or the shipper being poorly serviced.\n\n\"BeyondTrucks\u2019 commitment to simplifying fleet operations aligns perfectly with Orderful\u2019s mission to modernize EDI,\u201d said Jonathan Kish, chief revenue officer at Orderful. \u201cBy embedding our platform, BeyondTrucks customers gain real-time visibility and faster connections, eliminating the headaches of traditional EDI and enabling them to operate more efficiently.\"\n\nThe BeyondTrucks flexible, multi-tenant SaaS solution combines system integrations, proprietary modules, and adaptable configurations in a seamless platform to unify data and workflows for automation and optimization of fleet operations. Advanced capabilities of the cloud-based platform include order intake automation, smart load planning, dispatch communication, configurable driver workflows, and flexible automation of invoicing and driver payroll.\n\n## **About BeyondTrucks**\n\nSan Francisco, "
+    }
+  ],
+  "searchTime": 1229.1,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "output": {
+    "content": {
+      "reasoning": "The company's own press release from April 30, 2026, uses a San Francisco, California dateline, confirming its United States headquarters.",
+      "evidence_quote": "SAN FRANCISCO, April 30, 2026 - BeyondTrucks, provider of a platform for AI-powered truck dispatch planning and management for operationally complex fleets, today announced it recorded its strongest new revenue performance in company history during Q1 2026",
+      "verdict": "pass",
+      "evidence_url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+      "evidence_date": "2026-04-30"
+    },
+    "grounding": [
+      {
+        "field": "reasoning",
+        "citations": [
+          {
+            "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+            "title": ""
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_quote",
+        "citations": [
+          {
+            "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+            "title": ""
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "verdict",
+        "citations": [
+          {
+            "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+            "title": ""
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_url",
+        "citations": [
+          {
+            "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+            "title": ""
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_date",
+        "citations": [
+          {
+            "url": "https://www.beyondtrucks.com/press/press-release-of-beyondtrucks/beyondtrucks-celebrates-strongest-sales-quarter-in-company-history",
+            "title": ""
+          }
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 2.9,
+  "_request": {
+    "query": "Company: BeyondTrucks (website https://beyondtrucks.com).\nTest to verify: US-headquartered.\nHow it is tested: The HQ city and state on the company's own site, its LinkedIn page, or its funding announcement dateline is in the United States.\nDecide pass, fail or unclear for THIS company today, citing the freshest relevant source.",
+    "type": "auto",
+    "numResults": 6,
+    "contents": {
+      "text": {
+        "maxCharacters": 3000
+      }
+    },
+    "systemPrompt": "Today is 2026-09-10. You are verifying one qualification test for one specific company. Use only what the sources say. The most recent dated announcement of an event is the authority on the company's current state; older announcements are history; company profile pages (LinkedIn, Crunchbase, CB Insights, Tracxn) are secondary to the company's own pages and to dated news. Never confuse the company with a same-name company on a different website. Answer pass only when a source states the fact; fail only when a source contradicts the test; otherwise unclear. The evidence_quote must be copied verbatim from the cited source.",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "reasoning",
+        "evidence_quote",
+        "evidence_url",
+        "evidence_date"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unclear"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "One or two sentences: what the freshest relevant source says and how it decides the test."
+        },
+        "evidence_quote": {
+          "type": "string",
+          "description": "A verbatim sentence or fragment from the cited source that decides the verdict; empty if unclear."
+        },
+        "evidence_url": {
+          "type": "string",
+          "description": "The URL the quote comes from; empty if unclear."
+        },
+        "evidence_date": {
+          "type": "string",
+          "description": "The date of that source as shown on it (YYYY-MM-DD if known); empty if unknown."
+        }
+      }
+    }
+  }
+}

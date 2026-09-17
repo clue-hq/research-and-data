@@ -3,7 +3,9 @@
 import { ApplicationShell } from "@/components/shell/application-shell";
 import { useBrandContextController } from "../hooks/use-brand-context-controller";
 import { useBrandKitActions } from "../hooks/use-brand-kit-actions";
+import { useKnowledgeRefresh } from "../hooks/use-knowledge-refresh";
 import type { BrandContextInitialState, BrandContextWorkspace } from "../model/brand-context";
+import type { OnboardingStatus } from "../model/brand-knowledge";
 import type { BrandKitMeta } from "../model/brand-kit-actions";
 import { AssetDetailDialog, AssetsHeader, AssetsPanel } from "./assets-panel";
 import { BrandContextHeader } from "./brand-context-header";
@@ -16,13 +18,22 @@ import { NewStyleDialog, NewTypefaceDialog, TypographyPanel } from "./typography
 export function BrandContextScreen({
   initial,
   kit,
+  onboarding,
   workspace,
+  scopeKey,
+  canWriteKnowledge,
 }: {
   initial: BrandContextInitialState;
   kit: BrandKitMeta | null;
+  onboarding: OnboardingStatus | null;
   workspace: BrandContextWorkspace;
+  scopeKey: string;
+  canWriteKnowledge: boolean;
 }) {
-  const controller = useBrandContextController({ initial, workspace });
+  // Progressive fill: while onboarding is still publishing, re-read the server page as each
+  // step lands so Knowledge fills in rather than waiting for the whole run.
+  useKnowledgeRefresh({ initial: onboarding });
+  const controller = useBrandContextController({ initial, workspace, scopeKey, canWriteKnowledge });
   const brandKitActions = useBrandKitActions(kit);
 
   return (

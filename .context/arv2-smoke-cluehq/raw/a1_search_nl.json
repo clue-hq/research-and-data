@@ -1,0 +1,73 @@
+{
+  "requestId": "aacdaa5b251e3419927dfa3b7a4b2f9a",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://cluehq.ai/",
+      "title": "Clue - Agentic ABM for modern GTM teams",
+      "url": "https://cluehq.ai/"
+    },
+    {
+      "id": "https://factorshq.space/",
+      "title": "Factors.ai: The AI ABM Platform For GTM Teams",
+      "url": "https://factorshq.space/"
+    },
+    {
+      "id": "https://abmatic.ai/platform",
+      "title": "Account-based Marketing | Abmatic AI",
+      "url": "https://abmatic.ai/platform"
+    },
+    {
+      "id": "https://www.gr0.ai/agents/abm",
+      "title": "Account-Based Marketing (ABM) Agent - Named accounts, coordinated across every channel.",
+      "url": "https://www.gr0.ai/agents/abm",
+      "author": "gr0.ai"
+    },
+    {
+      "id": "https://amyagent.ai/",
+      "title": "Amy | 50+ AI Agents for B2B GTM Teams",
+      "url": "https://amyagent.ai/"
+    },
+    {
+      "id": "https://www.octavehq.com/ai-features/enterprise-abm-orchestration",
+      "title": "Octave | Your Agentic GTM Brain",
+      "url": "https://www.octavehq.com/ai-features/enterprise-abm-orchestration",
+      "publishedDate": "2026-05-22T00:00:00.000Z"
+    },
+    {
+      "id": "https://thesmarketers.com/ai-agents/ai-abm-agent/",
+      "title": "AI ABM Agent | Autonomous Account-Based Marketing | The Smarketers",
+      "url": "https://thesmarketers.com/ai-agents/ai-abm-agent/",
+      "publishedDate": "2026-05-22T00:00:00.000Z"
+    },
+    {
+      "id": "https://caimpare.ai/tool/72905",
+      "title": "Seam AI | cAImpare",
+      "url": "https://caimpare.ai/tool/72905"
+    },
+    {
+      "id": "https://clearcue.ai/",
+      "title": "Clearcue - The GTM Signal Engine | Real-Time Buyer Intent",
+      "url": "https://clearcue.ai/"
+    },
+    {
+      "id": "https://www.clari.com/products/revenue-ai-agents-for-enterprise/",
+      "title": "Revenue AI Agents for Enterprise | Clari",
+      "url": "https://www.clari.com/products/revenue-ai-agents-for-enterprise/"
+    }
+  ],
+  "searchTime": 1088.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.16,
+  "_request": {
+    "query": "Clue cluehq.ai agentic ABM platform AI agents for account-based marketing",
+    "type": "auto",
+    "numResults": 10
+  }
+}

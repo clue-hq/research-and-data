@@ -1,0 +1,355 @@
+{
+  "requestId": "e397b4a02d3bbbc5a120fedfad65d242",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.probook.ai/company",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/company",
+      "image": "https://www.probook.ai/v5/company/wall-team-1.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+      "title": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins. | Lewis Z.",
+      "url": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+      "publishedDate": "2025-10-23T00:00:00.000Z",
+      "author": "Lewis Z.",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQFcf1NpGthnuA/feedshare-shrink_800/B56ZoOzpXBHIAg-/0/1761185015052?e=2147483647&v=beta&t=YK0wiZH4RYs3VC_ourus07VI9nApqQoXqRLhwglGP9I"
+    },
+    {
+      "id": "https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/",
+      "title": "Partnering with Probook: AI for the Trades | Sequoia Capital",
+      "url": "https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Konstantine Buhler"
+    },
+    {
+      "id": "https://exa.ai/library/person/r47kz76z72m",
+      "title": "lewis z. | Co-Founder CTO",
+      "url": "https://www.linkedin.com/in/lewisfzhang",
+      "author": "Exa",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/r47kz76z72m",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Lewis Z.",
+            "firstName": "Lewis",
+            "lastName": "Z.",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Co-Founder CTO",
+                "location": null,
+                "dates": {
+                  "from": "2024-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Senior ML Engineer",
+                "location": null,
+                "dates": {
+                  "from": "2021-01-01",
+                  "to": "2024-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dq4rxyb63fk",
+                  "name": "Roblox"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2021-03-01",
+                  "to": "2021-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n9m2kx297gp",
+                  "name": "Confluent"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-12-01",
+                  "to": "2021-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hx0ssfw4ld9",
+                  "name": "Rubrik, Inc."
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2020-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/4983q1gb4nh",
+                  "name": "Tesla"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-05-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2fc38pxgjv8",
+                  "name": "Intel Corporation"
+                }
+              },
+              {
+                "title": "Research Intern",
+                "location": null,
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": "2020-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fx84qf1lp3n",
+                  "name": "Berkeley Artificial Intelligence Research"
+                }
+              },
+              {
+                "title": "Research Intern",
+                "location": null,
+                "dates": {
+                  "from": "2018-06-01",
+                  "to": "2019-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/12jzvmdv31x",
+                  "name": "Stanford University"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "2019",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/gfn06r334ys",
+                  "name": "Bellarmine College Preparatory"
+                }
+              },
+              {
+                "degree": "Bachelor of Science, EECS",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/kvpy8f9k554",
+                  "name": "University of California, Berkeley"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/zachary-stack-_a-year-ago-i-got-a-calendar-invite-for-a-activity-7475210012257255425-_PV3",
+      "title": "A year ago, I got a calendar invite for a 15-minute call with a founder named Lewis Z.. | Zachary Stack",
+      "url": "https://www.linkedin.com/posts/zachary-stack-_a-year-ago-i-got-a-calendar-invite-for-a-activity-7475210012257255425-_PV3",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Zachary Stack",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQHOp6ycA74iAg/feedshare-shrink_800/B4EZ71H48VJgAg-/0/1782228947278?e=2147483647&v=beta&t=kPLLNgonZYpU-l1haZ2tu_xhEoL0RQhz82_CoGHYFik"
+    },
+    {
+      "id": "https://exa.ai/library/person/9xlz3ljxtvn",
+      "title": "Lewis Zhang",
+      "url": "https://www.linkedin.com/in/lewisz",
+      "publishedDate": "2026-07-10T19:30:17.000Z",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/9xlz3ljxtvn",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Lewis Zhang",
+            "firstName": "Lewis",
+            "lastName": "Zhang",
+            "location": "United States",
+            "workHistory": [
+              {
+                "title": "Investment Banking Associate",
+                "location": null,
+                "dates": {
+                  "from": "2025-07-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6pdl60cyfsy",
+                  "name": "Bank of America"
+                }
+              },
+              {
+                "title": "Investment Banking Summer Associate",
+                "location": "United States",
+                "dates": {
+                  "from": "2024-06-01",
+                  "to": "2024-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6pdl60cyfsy",
+                  "name": "Bank of America"
+                }
+              },
+              {
+                "title": "Investment Banking Associate",
+                "location": "Hong Kong SAR",
+                "dates": {
+                  "from": "2020-01-01",
+                  "to": "2023-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zf94zzr8c54",
+                  "name": "CLSA"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Business Administration - BBA Accounting and Finance",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/5v1n9rcbqwl",
+                  "name": "The University of Hong Kong"
+                }
+              },
+              {
+                "degree": "Master of Business Administration - MBA",
+                "dates": {
+                  "from": "2023",
+                  "to": "2025"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/jmwwfr8yblt",
+                  "name": "Columbia Business School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.probook.ai/careers",
+      "title": "Probook",
+      "url": "https://www.probook.ai/careers",
+      "image": "https://www.probook.ai/probook.svg",
+      "favicon": "https://www.probook.ai/icon.svg?1f6a6a7b2a3160a7"
+    },
+    {
+      "id": "https://www.probook.ai/letter",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/letter",
+      "image": "https://www.probook.ai/v5/letter/byline-founders.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://ojs.aaai.org/index.php/AAAI/article/view/4525",
+      "title": "Learning to Communicate and Solve Visual Blocks-World Tasks\n\t\t\t\t\t\t\t| Proceedings of the AAAI Conference on Artificial Intelligence",
+      "url": "https://ojs.aaai.org/index.php/AAAI/article/view/4525",
+      "image": "https://ojs.aaai.org/public/journals/2/cover_issue_246_en_US.jpg"
+    },
+    {
+      "id": "https://arxiv.org/html/2410.18806v1",
+      "title": "A Combinatorial Approach to Neural Emergent Communication",
+      "url": "https://arxiv.org/html/2410.18806v1",
+      "image": "https://arxiv.org/html/2410.18806v1/x1.png"
+    }
+  ],
+  "searchTime": 31883.7,
+  "costDollars": {
+    "total": 0.015
+  },
+  "output": {
+    "content": {
+      "report": "# Lewis Zhang \u2014 Co-Founder / CTO, Probook ## Scope and evidence limits This profile is limited to professionally public, non-sensitive information available as of 2026-08-27. I omitted sensitive material covered by the requested compliance exclusions; no omitted sensitive details are repeated here. Where the public record does not establish a fact, I mark it NOT FOUND rather than infer it. ## 1. Identity confirmation - Probook\u2019s own company page names \u201cLewis Zhang\u201d as \u201cCo-Founder & CTO.\u201d Quote: \u201cLewis Zhang \u2014 Co-Founder & CTO.\u201d URL: https://www.probook.ai/company\n- The subject\u2019s LinkedIn profile identifies \u201cLewis Z.\u201d as \u201cCo-Founder CTO at Probook.\u201d Quote: \u201cCo-Founder & CTO at Probook.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- LinkedIn\u2019s indexed employment record dates the Probook role \u201cJan 2024 - Present.\u201d Quote: \u201cCo-Founder CTO - Probook (Current) Jan 2024 - Present.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Probook\u2019s investor, Sequoia, independently identifies \u201cLewis Zhang\u201d as a Probook co-founder. Quote: \u201che and co-founders Lewis Zhang and Ben Cervantez launched Probook.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- A June 23, 2026 financing report also identifies the leadership team. Quote: \u201cLed by Co-founders George Eliadis (CEO), Ben Cervantez, and Lewis Zhang.\u201d URL: https://www.finsmes.com/2026/06/probook-raises-40m-in-seed-and-series-a-financing.html Same-name/similar-name people encountered and discarded:\n- Lewis Zhang, LinkedIn URL https://www.linkedin.com/in/lewisz \u2014 discarded because the indexed profile says \u201cInvestment Banking Associate\u201d at Bank of America and previously CLSA, with University of Hong Kong and Columbia Business School; that does not match the target\u2019s Probook/Roblox/UC Berkeley EECS history. Quote: \u201cInvestment Banking Associate \u2014 Bank of America\u201d and \u201cInvestment Banking Associate \u2014 CLSA.\u201d URL: https://www.linkedin.com/in/lewisz\n- Zheyuan Zhang \u2014 discarded as a different person, not the target Lewis Zhang. The publication result lists the author as \u201cZheyuan Zhang.\u201d Quote: \u201cAUTHOR: Zheyuan Zhang.\u201d URL: https://aclanthology.org/2025.coling-main.112.pdf\n- \u201cLewis\u201d Zhang references in papers about the \u201cLewis signaling game\u201d were not attributed to this person and were excluded. For example, the AAAI result lists authors \u201cQi Zhang, Richard Lewis, Satinder Singh, & Edmund Durfee,\u201d not Lewis Zhang. Quote: \u201cZhang, Q., Lewis, R., Singh, S., & Durfee, E.\u201d URL: https://ojs.aaai.org/index.php/AAAI/article/view/4525 ## 2. Career ### Probook\n- Organisation/title: Probook \u2014 Co-Founder & CTO.\n- Dates: January 2024\u2013present, according to the indexed LinkedIn record. Quote: \u201cCo-Founder CTO - Probook (Current) Jan 2024 - Present.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Responsibilities: NOT FOUND as a person-specific formal job description. Publicly documented company scope includes \u201cdispatch,\u201d \u201cintake,\u201d and \u201cautomating from intake to dispatch and beyond.\u201d Quote: \u201cbuilt around dispatch ... automating from intake to dispatch and beyond.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Publicly evidenced technical/product building: Probook describes itself as \u201cthe AI Operating System for Home Services,\u201d and says its platform is built around dispatch. Quote: \u201cProbook \u2014 The AI Operating System for Home Services.\u201d URL: https://www.probook.ai/company\n- Outbound sales, demand generation, ABM, target-account list building, or sales-development GTM tooling owned personally by Zhang: NOT FOUND. The company page only says, at team level, \u201cOur GTM and CS teams came up at Procore, Zocdoc, and other vertical leaders.\u201d URL: https://www.probook.ai/company ### Roblox\n- Organisation/title: Roblox \u2014 Senior ML Engineer.\n- Dates: January 2021\u2013January 2024. Quote: \u201cSenior ML Engineer - Roblox\u201d and \u201cJan 2021 - Jan 2024.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Responsibility specifically reported by Sequoia: work on \u201cthe critical player-server matching team.\u201d Quote: \u201cwas part of the critical player-server matching team at Roblox.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Sales/GTM responsibility: NOT FOUND. ### Internships and research\nThe following dates and titles come from the indexed LinkedIn profile; the snippets do not provide complete responsibility descriptions for every role. - Confluent \u2014 Software Engineer Intern, March\u2013May 2021. Quote: \u201cSoftware Engineer Intern - Confluent ... Mar 2021 - May 2021.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Rubrik, Inc. \u2014 Software Engineer Intern, December 2020\u2013March 2021. Quote: \u201cSoftware Engineer Intern - Rubrik, Inc. ... Dec 2020 - Mar 2021.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Tesla \u2014 Software Engineer Intern, August\u2013October 2020. Quote: \u201cSoftware Engineer Intern - Tesla ... Aug 2020 - Oct 2020.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Intel Corporation \u2014 Software Engineer Intern, May\u2013August 2020. Quote: \u201cSoftware Engineer Intern - Intel Corporation ... May 2020 - Aug 2020.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Berkeley Artificial Intelligence Research \u2014 Research Intern, August 2019\u2013May 2020. The indexed profile says he worked in Professor Trevor Darrell\u2019s lab on Scalabel.ai. Quote: \u201cWorked in Professor Trevor Darrell's lab, contributing to open source project Scalabel.ai, a web annotation tool for autonomous driving datasets.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Stanford University \u2014 Research Intern, June 2018\u2013August 2019. The indexed profile says he developed a neural-network simulation model concerning grant-funding policy. Quote: \u201cDeveloped a deep neural network simulation model with Professor Jay Bhattacharya ... to discover optimal policies for grant funding allocation.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Any outbound-sales, demand-generation, ABM, target-account-list, or sales-development tooling responsibility in these roles: NOT FOUND. ## 3. Education - University of California, Berkeley \u2014 Bachelor of Science in Electrical Engineering and Computer Sciences (EECS). The indexed profile lists \u201cBachelor of Science, EECS at University of California, Berkeley.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Probook says he completed Berkeley EECS in two years with a 4.0. Quote: \u201cLewis breezed through Berkeley EECS in two years with a 4.0.\u201d URL: https://www.probook.ai/company\n- Sequoia likewise says he \u201cearned degrees in Electrical Engineering and Computer Science from Berkeley in two years.\u201d Quote: \u201cearned degrees in Electrical Engineering and Computer Science from Berkeley in two years.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Bellarmine College Preparatory \u2014 the indexed profile lists \u201cBellarmine College Preparatory\u201d with \u201c2019,\u201d but does not state a credential. Quote: \u201cBellarmine College Preparatory ... 2019.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Post-graduate professional programmes: NOT FOUND. ## 4. Public writing, talks and podcasts Publicly attributable items found: - LinkedIn post, \u201cI'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins,\u201d LinkedIn, October 23, 2025. Quote: \u201cI'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.\u201d URL: https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d\n- LinkedIn post by Zachary Stack describing joining Probook after a call with Lewis, June 23, 2026. This is not authored by Zhang, but is a public reference to a conversation with him. Quote: \u201cA year ago, I got a calendar invite for a 15-minute call with a founder named Lewis Z.\u201d URL: https://www.linkedin.com/posts/zachary-stack-_a-year-ago-i-got-a-calendar-invite-for-a-activity-7475210012257255425-_PV3\n- First-person articles, bylines, webinars, panels, podcasts, and conference talks by Lewis Zhang: NOT FOUND in the searched public results. Most substantive attributable quote found: \u201cI'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.\u201d URL: https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d ## 5. What they own at Probook today - Title and broad ownership: Co-Founder & CTO. Quote: \u201cLewis Zhang \u2014 Co-Founder & CTO.\u201d URL: https://www.probook.ai/company\n- Product/technical domain publicly associated with Probook: an AI operating system for home-services businesses, centered on dispatch and connected customer context. Quote: \u201ca single platform that shares context across the entire customer experience, automating from intake to dispatch and beyond.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Engineering organisation: Probook publicly lists engineering openings for \u201cSoftware Engineer (Backend),\u201d \u201cSoftware Engineer (Machine Learning),\u201d and \u201cSoftware Engineer (Product).\u201d Quote: \u201cSoftware Engineer (Backend) ... Software Engineer (Machine Learning) ... Software Engineer (Product).\u201d URL: https://www.probook.ai/careers\n- Which open roles explicitly report to Lewis: NOT FOUND. The careers page lists roles but does not state reporting lines. URL: https://www.probook.ai/careers\n- Who reports to Lewis: NOT FOUND. No public org chart or person-specific reporting list was found.\n- Publicly stated hiring/technical ambition: Probook says its engineering team includes \u201cmultiple ICPC World Finalists and IMO Gold Medalists.\u201d Quote: \u201cOur engineering team includes multiple ICPC World Finalists and IMO Gold Medalists.\u201d URL: https://www.probook.ai/company\n- Publicly stated product ambition: \u201ctransforming the home services industry.\u201d Quote: \u201cfocused on transforming the home services industry.\u201d URL: https://www.probook.ai/careers ## 6. How they think and buy Direct evidence about Zhang\u2019s software-evaluation or purchasing process, tools he has praised or criticised, procurement criteria, buying committee behavior, or advocated methodologies: NOT FOUND. Evidence about product philosophy from public company/investor material, which should not be over-attributed to Zhang personally:\n- Probook emphasizes a unified context layer rather than disconnected tools. Quote: \u201ca single platform that shares context across the entire customer experience.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- The company frames the problem around operational impact in the trades and \u201ctaking the drudgery out of their work.\u201d Quote: \u201cobsessed with taking the drudgery out of their work.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Communication style evidence from Zhang himself is concise, self-deprecating, and oriented toward incremental results. Quote: \u201cway better at math\u201d and \u201cshare the small wins.\u201d URL: https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d\n- Stated metrics personally attributed to Zhang: NOT FOUND. Publicly reported Probook customer metrics exist, but are not attributed to Zhang in the located source. A third-party summary reports \u201c~12% sales increase\u201d and \u201c~19% flip-rate increase,\u201d but this is aggregator evidence and should not be treated as Zhang\u2019s stated metric. Quote: \u201cReported average outcomes of ~12% sales increase and ~19% flip-rate increase.\u201d URL: https://yespress.io/probook ## 7. Non-sensitive personal hooks - Early coding interest: Sequoia says \u201cLewis started coding when he was 7.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/\n- Academic achievement: Probook says he had \u201ca perfect score on the AMC 12\u201d and completed Berkeley EECS \u201cin two years with a 4.0.\u201d URL: https://www.probook.ai/letter\n- Open-source/research hook: his Berkeley research internship involved Scalabel.ai, described as \u201ca web annotation tool for autonomous driving datasets.\u201d URL: https://www.linkedin.com/in/lewisfzhang\n- Publicly stated hobbies, sports, volunteering, awards beyond the AMC 12 statement, side projects, and other non-sensitive interests: NOT FOUND. ## 8. Three grounded conversation openers 1. Exact hook: Scalabel.ai and autonomous-driving dataset tooling. Opener: \u201cYou worked in Trevor Darrell\u2019s lab on Scalabel.ai, described as a web annotation tool for autonomous-driving datasets\u2014what did that experience teach you about building reliable data workflows for Probook?\u201d Evidence quote: \u201ccontributing to open source project Scalabel.ai, a web annotation tool for autonomous driving datasets.\u201d URL: https://www.linkedin.com/in/lewisfzhang 2. Exact hook: Probook\u2019s dispatch-centered product architecture. Opener: \u201cSequoia describes Probook as sharing context across the customer experience and automating from intake to dispatch and beyond\u2014what was the hardest context boundary to eliminate?\u201d Evidence quote: \u201ca single platform that shares context across the entire customer experience, automating from intake to dispatch and beyond.\u201d URL: https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/ 3. Exact hook: Zhang\u2019s stated intention to share incremental wins publicly. Opener: \u201cYou wrote that you planned to \u2018share the small wins\u2019\u2014which recent Probook engineering win has changed your mind most about the product?\u201d Evidence quote: \u201cstart to be more active on LinkedIn and share the small wins.\u201d URL: https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d ## Source-quality note Primary/near-primary sources used include Probook\u2019s company, careers, and letter pages; Zhang\u2019s LinkedIn profile and post; and Sequoia\u2019s partner article. LinkedIn details are indexed/profile evidence rather than independently verified employment records. RocketReach and YesPress are aggregators and were not used as the sole basis for identity; the indexed RocketReach snippet merely says \u201cLewis Zhang is the Co-Founder and CTO of Probook.\u201d URL: https://rocketreach.co/probook-profile_b6d7dc12c74238a4"
+    },
+    "grounding": [
+      {
+        "field": "report",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+            "title": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins. | Lewis Z."
+          },
+          {
+            "url": "https://sequoiacap.com/article/partnering-with-probook-ai-for-the-trades/",
+            "title": "Partnering with Probook: AI for the Trades | Sequoia Capital"
+          },
+          {
+            "url": "https://www.linkedin.com/in/lewisfzhang",
+            "title": "lewis z. | Co-Founder CTO"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/zachary-stack-_a-year-ago-i-got-a-calendar-invite-for-a-activity-7475210012257255425-_PV3",
+            "title": "A year ago, I got a calendar invite for a 15-minute call with a founder named Lewis Z.. | Zachary Stack"
+          },
+          {
+            "url": "https://www.linkedin.com/in/lewisz",
+            "title": "Lewis Zhang"
+          },
+          {
+            "url": "https://www.probook.ai/careers",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://ojs.aaai.org/index.php/AAAI/article/view/4525",
+            "title": "Learning to Communicate and Solve Visual Blocks-World Tasks\n\t\t\t\t\t\t\t| Proceedings of the AAAI Conference on Artificial Intelligence"
+          },
+          {
+            "url": "https://arxiv.org/html/2410.18806v1",
+            "title": "A Combinatorial Approach to Neural Emergent Communication"
+          }
+        ],
+        "confidence": "medium"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 32.1,
+  "_request": {
+    "query": "Produce an exhaustive, cited markdown profile of Lewis Zhang (Co-Founder / CTO at Probook):\n\n1. IDENTITY CONFIRMATION \u2014 the primary sources that tie this exact person to Probook and this\n   exact title, with dates. List the same-name people you excluded.\n2. CAREER \u2014 every role with organisation, title and start/end dates, and what they were\n   responsible for at each. Highlight anything to do with outbound sales, demand generation,\n   account-based marketing, target-account list building, sales development or GTM tooling.\n3. EDUCATION \u2014 institutions, degrees, dates, and any post-graduate or professional programmes.\n4. PUBLIC WRITING, TALKS AND PODCASTS \u2014 every post, article, byline, webinar, panel or podcast\n   appearance you can find, with title, venue, date and URL. Quote the most substantive one.\n5. WHAT THEY OWN AT PROBOOK TODAY \u2014 scope of the role, who reports to them, which open Probook\n   roles report into them, and what they have publicly said about what they are building.\n6. HOW THEY THINK AND BUY \u2014 evidence about how they evaluate and purchase software: tools they\n   have publicly praised or criticised, methodologies they advocate, their stated metrics, and\n   their communication style (quote them).\n7. NON-SENSITIVE PERSONAL HOOKS \u2014 publicly stated interests, hobbies, sports, schools, awards,\n   volunteering, side projects. Nothing from the compliance exclusion list.\n8. THREE GROUNDED CONVERSATION OPENERS \u2014 each must name the exact hook it uses and the URL that\n   evidences it. No opener may rest on an unsourced fact.\n",
+    "type": "deep-reasoning",
+    "systemPrompt": "You are researching ONE named professional for a B2B buying-committee dossier.\n\nTARGET LOCK \u2014 the ONLY subject is:\n  Lewis Zhang, currently Co-Founder / CTO at Probook (probook.ai), the AI operating system for home-services\n  businesses (plumbing / HVAC / electrical), headquartered in New York, NY.\n  LinkedIn: https://www.linkedin.com/in/lewisfzhang\n  Known employment history (already verified, use it to disambiguate): Probook (co-founder & CTO, since 2024), Roblox (Senior ML Engineer, 2021\u20132024), internships at Confluent, Rubrik, Tesla and Intel; UC Berkeley EECS; Berkeley AI Research and Stanford research internships\n\nAny person with the same or a similar name who does NOT match that employment history is a\nDIFFERENT PERSON. Name every same-name person you encountered and discarded, and say why.\n\nCOMPLIANCE CHARTER \u2014 hard exclusions. Do NOT collect, report, quote or allude to: health or\nmedical information, religion or religious activity, political opinions or affiliation, sexual\norientation, racial or ethnic origin, trade-union membership, criminal matters, family or\nbereavement details, home address, personal phone number or personal email address, or anything\nabout their children. If a source contains such material, skip it and say you skipped it. Only\nprofessionally-public and clearly non-sensitive personal material is in scope.\n\nRULES: every assertion carries a verbatim quote and its URL. Write \"NOT FOUND\" rather than\nguessing. Prefer the person's own words (their posts, talks, interviews, bylines) over third-party\nprofiles. Aggregator/people-directory pages are the weakest evidence and must be labelled as such.\n",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "type": "string",
+          "description": "The exhaustive cited markdown profile answering every numbered section, with a verbatim quote and URL behind every assertion and explicit NOT FOUND markers."
+        }
+      }
+    }
+  }
+}

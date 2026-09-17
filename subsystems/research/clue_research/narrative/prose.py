@@ -65,6 +65,10 @@ from clue_core import (
     contact_claim,
     revalidate_with,
 )
+from clue_core.research_profile import (
+    COMPREHENSIVE_ACCOUNT_FIELDS,
+    COMPREHENSIVE_CONTACT_FIELDS,
+)
 from clue_db import ConnFactory, transaction
 from clue_obs.otel import (
     ATTR_COST_CENTS,
@@ -128,40 +132,12 @@ _PROSE_SOURCE_URL = "clue://narrative/prose"
 
 # --- the account evidence allowlist -----------------------------------------------------------
 # The ABOUT-routed + INSIGHTS-routed account surface: what the company does, how big it is, where
-# it is, how it is funded, what it is dealing with, and how it feels from the outside.
-#
-# Deliberately EXCLUDED, and why:
-#   * ``core.company_email`` / ``core.company_phone`` / ``core.work_email`` / ``core.direct_phone``
-#     — contact channels (PII). A neutral summary never needs them and a tier-4 model must never be
-#     handed them.
-#   * ``account.scoring.fit`` / ``account.scoring.intent`` — client-relative by construction
-#     (reserved ``tenant_private``). Feeding them in would make the "world fact" summary a function
-#     of one client's ICP, contradicting PROJECT_NEUTRAL (§7-D2).
-#   * ``account.crm_relationship_status`` — the client's private relationship with the account, not
-#     a fact about the account.
-PROSE_ACCOUNT_FIELDS: tuple[str, ...] = (
-    "core.account_name",
-    "core.industry",
-    "core.company_about",
-    "core.employee_count",
-    "core.employee_range",
-    "core.hq_location",
-    "core.annual_revenue",
-    "core.revenue_band",
-    "core.primary_tech_stack",
-    "core.company_linkedin_url",
-    "account.total_funding",
-    "account.recent_funding",
-    "account.hiring_velocity_eng",
-    "account.operational_pain",
-    "account.strategic_moves",
-    "account.resonance.culture",
-    "account.resonance.employee_sentiment",
-    "account.resonance.attrition_signal",
-    "account.resonance.eng_blog_tone",
-    "account.resonance.public_frustrations",
-    "account.resonance.buying_culture",
-)
+# it is, how it is funded, what it is dealing with, and how it feels from the outside. The list
+# itself is the fixed comprehensive account profile (contract §3.1) — a cross-milestone platform
+# contract that lives in ``clue_core.research_profile`` (with the exclusion rationale) so that
+# directive validation and this synthesis allowlist can never drift; the ``PROSE_`` name is the
+# narrative plane's local vocabulary for the same tuple.
+PROSE_ACCOUNT_FIELDS: tuple[str, ...] = COMPREHENSIVE_ACCOUNT_FIELDS
 
 # --- the contact evidence allowlist (E2) -------------------------------------------------------
 # The professional-signals + facet contact surface: who the person is professionally, and the
@@ -186,25 +162,11 @@ PROSE_ACCOUNT_FIELDS: tuple[str, ...] = (
 # extraction (``profiling/contact/use_class.py``), so a static denylist would either leak the
 # sensitive ones or discard the benign ones. Claim-level G6 is exactly what lets a de-escalated
 # ``causes`` claim be legitimate material while its sensitive sibling is totally absent.
-PROSE_CONTACT_FIELDS: tuple[str, ...] = (
-    # committee-worker professional facts (born STRONG by construction)
-    "contact.current_title",
-    "contact.job_function",
-    "contact.job_level",
-    "contact.team_membership",
-    "contact.current_location",
-    "contact.organization_relationship",
-    # M8D contact-research facets (tier-4; WEAK is dropped pre-write, so these are born STRONG)
-    "contact.facet.career_history",
-    "contact.facet.publications",
-    "contact.facet.public_appearances",
-    "contact.facet.communication_style",
-    "contact.facet.alma_mater",
-    "contact.facet.stated_interests",
-    "contact.facet.nickname",
-    "contact.facet.causes",
-    "contact.facet.recent_post",
-)
+# The first six rows are committee-worker professional facts (born STRONG by construction); the
+# nine facets are M8D contact research (tier-4; WEAK is dropped pre-write, so these are born
+# STRONG). The tuple is the fixed comprehensive contact profile (contract §7.1) from
+# ``clue_core.research_profile`` — same one-definition rule as the account list above.
+PROSE_CONTACT_FIELDS: tuple[str, ...] = COMPREHENSIVE_CONTACT_FIELDS
 
 # The employer context a contact overview may mention: the account's name and one-line about, read
 # from the parent account. It is optional garnish — it never counts toward ``min_facts`` and never

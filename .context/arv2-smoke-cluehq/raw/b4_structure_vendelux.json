@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788163047-Wh9F9E7SagLXJThOpSGI",
+  "object": "chat.completion",
+  "created": 1788163047,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"account_claims\": [\n    {\n      \"field_key\": \"core.account_name\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"Vendelux\",\n      \"evidence_span\": \"Vendelux | AI-Native Event Marketing Platform\",\n      \"source_url\": \"https://www.vendelux.com\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.primary_domain\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"vendelux.com\",\n      \"evidence_span\": \"Vendelux | AI-Native Event Marketing Platform\",\n      \"source_url\": \"https://www.vendelux.com\",\n      \"confidence\": 0.95,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_about\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"Vendelux turns in-person events into a predictable, pipeline-generating engine - before you even step on the show floor.\",\n      \"evidence_span\": \"Vendelux turns in-person events into a predictable, pipeline-generating engine - before you even step on the show floor.\",\n      \"source_url\": \"https://www.vendelux.com\",\n      \"confidence\": 0.9,\n      \"priority\": 3\n    },\n    {\n      \"field_key\": \"core.employee_count\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"int\",\n      \"value_json\": 60,\n      \"evidence_span\": \"60+ full-time employees based at our NYC HQ and globally\",\n      \"source_url\": \"https://vendelux.com/about\",\n      \"confidence\": 0.8,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.hq_location\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_json\": {\n        \"raw\": \"NYC HQ\",\n        \"city\": \"New York\",\n        \"region\": \"New York\",\n        \"country\": \"United States\",\n        \"country_code\": \"US\"\n      },\n      \"evidence_span\": \"60+ full-time employees based at our NYC HQ and globally\",\n      \"source_url\": \"https://vendelux.com/about\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_linkedin_url\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"https://linkedin.com/company/vendelux\",\n      \"evidence_span\": \"https://linkedin.com/company/vendelux\",\n      \"source_url\": \"https://vendelux.com\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.primary_tech_stack\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"list[str]\",\n      \"value_json\": [\n        \"HubSpot\",\n        \"Salesforce\",\n        \"Outreach\",\n        \"Salesloft\",\n        \"Apollo\"\n      ],\n      \"evidence_span\": \"Every booked meeting flows continuously into HubSpot or Salesforce.\",\n      \"source_url\": \"https://vendelux.com/event-marketing\",\n      \"confidence\": 0.8,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_json\": {\n        \"amount_usd\": 50000000,\n        \"round\": \"Series B\"\n      },\n      \"evidence_span\": \"Today, we\\u00039re thrilled to share that Vendelux has raised a $50M Series B, led by our friends at Tribeca Venture Partners\",\n      \"source_url\": \"https://vendelux.com/blog/series-b\",\n      \"confidence\": 0.95,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.total_funding\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_json\": {\n        \"amount_usd\": 71000000,\n        \"estimate_kind\": \"reported\"\n      },\n      \"evidence_span\": \"This brings our total funding to $71M.\",\n      \"source_url\": \"https://vendelux.com/blog/series-b\",\n      \"confidence\": 0.9,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.strategic_moves\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"Expand event intelligence and meeting automation: build attendee intelligence, add human-led Meetings that book qualified meetings, and connect CRM attribution to drive measurable ROI.\",\n      \"evidence_span\": \"they\\u00039ve used AI to turn that data asset into something genuinely actionable... one of the largest event intelligence data repositories... used AI to turn that data asset into something genuinely actionable\",\n      \"source_url\": \"https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.operational_pain\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"Digital channels are saturated and AI automates email/paid outreach, creating a shift toward in-person GTM and the need to measure and attribute event ROI.\",\n      \"evidence_span\": \"digital channels saturate and AI automates email and paid outreach\",\n      \"source_url\": \"https://vendelux.com/blog/series-b\",\n      \"confidence\": 0.8,\n      \"priority\": 3\n    },\n    {\n      \"field_key\": \"core.industry\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_json\": \"Event marketing / B2B event intelligence\",\n      \"evidence_span\": \"Vendelux | AI-Native Event Marketing Platform\",\n      \"source_url\": \"https://www.vendelux.com\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.employee_range\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_json\": {\n        \"label\": \"60+\",\n        \"min\": 60\n      },\n      \"evidence_span\": \"60+ full-time employees based at our NYC HQ and globally\",\n      \"source_url\": \"https://vendelux.com/about\",\n      \"confidence\": 0.8,\n      \"priority\": 2\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"core.annual_revenue\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"amount\",\n          \"currency\",\n          \"as_of\",\n          \"estimate_kind\"\n        ],\n        \"properties\": {\n          \"amount\": {\n            \"type\": \"number\"\n          },\n          \"currency\": {\n            \"type\": \"string\"\n          },\n          \"as_of\": {\n            \"type\": \"string\"\n          },\n          \"estimate_kind\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"reported\",\n              \"provider_estimate\",\n              \"third_party_estimate\"\n            ]\n          }\n        }\n      },\n      \"description\": \"Exact annual revenue is not reported in the supplied sources; the dossier contains automated estimates but no company-reported ARR.\",\n      \"reuse_scope\": \"account:vendelux\",\n      \"hypothesis\": \"An ABM platform benefits from knowing exact or banded revenue to size opportunity and prioritize accounts; since Vendelux's ARR is not reported, an annual_revenue claim cannot be sourced here.\",\n      \"example_value\": {\n        \"amount\": 1200000,\n        \"currency\": \"USD\",\n        \"as_of\": \"2025-12-31\",\n        \"estimate_kind\": \"third_party_estimate\"\n      },\n      \"example_evidence_span\": \"Annual Revenue: USD 1,200,000\",\n      \"example_source_url\": \"https://linkedin.com/company/vendelux\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.annual_revenue\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"amount\",\n          \"currency\",\n          \"as_of\",\n          \"estimate_kind\"\n        ],\n        \"properties\": {\n          \"amount\": {\n            \"type\": \"number\"\n          },\n          \"currency\": {\n            \"type\": \"string\"\n          },\n          \"as_of\": {\n            \"type\": \"string\"\n          },\n          \"estimate_kind\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"reported\",\n              \"provider_estimate\",\n              \"third_party_estimate\"\n            ]\n          }\n        }\n      },\n      \"description\": \"Company-reported ARR was not found; an automated LinkedIn/Exa estimate exists but is not company-reported and therefore should be captured as a proposed field for future verification.\",\n      \"reuse_scope\": \"account:vendelux\",\n      \"hypothesis\": \"Revenue banding or exact ARR would help prioritize outreach cadence and packaging choices; because only automated estimates exist, capture as proposed to validate later.\",\n      \"example_value\": {\n        \"amount\": 1200000,\n        \"currency\": \"USD\",\n        \"as_of\": \"2026-01-01\",\n        \"estimate_kind\": \"third_party_estimate\"\n      },\n      \"example_evidence_span\": \"Annual Revenue: USD 1,200,000\",\n      \"example_source_url\": \"https://linkedin.com/company/vendelux\",\n      \"priority\": 2\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTPo4HumhEmHDfSLJjdXXObgeUNBwfm38Razi6-v6wl40UMyTOuR1RElfItgeldhyOR3MPNoB8Xn4t_EKBTZiW6_RmK4oRZWyY3qZQUUxp3-XI_r7twB1VT7d8hLYri-WOAET47sr3t6LDI6WqIwmVINVel3MHDx0IKdV_EsiNlr-2H4sH36FQfoUGlsLo5Du-U0OXjH3MIECjq5xghVtmqK5m6QpredY01FU8yO_4Sm60C0iQzdj87fFMCFrFUY27icdkb4BP6ecFSQSc5rfI9oZNVVqRpCTemIrTu63ASI4NNVzYZiiA1hOKSmWEF_PsjSOKURVEmvkiwoefHQ_nPyv8uAPhuItsU9hpcETRFtnEOZ5FErkRshZt9Ec3-X-vft5WD7IZMtNWBaw30hznbtelLEYm70uejk5pigiMKiNRtvBthCqaFBLphViWJeoT2FbRvf-UP6bqHzlfobSoxAk1sM2ceDOCuKAKDbYNLIp4TJvE6vbz52tdIfd2900HJfEf0h_Y6dstFoeuREepBJieKZVC107QazscBcBqAmxMfF0zTc72LLyX3qc7SsLASogJVs9oZoz-IfLRSzAZ-3kJ5lwE04xpwbSf7txl9PQmOr1ye7YahcpvLBIW1aBrSddZL1PMxbUsW09V7NJA3sYJSisb4NmN5GLizfAL27_G2vpzJX7mzmKPtAJZLjPFTiPKqS_4x2GPqWXcz8o2P4yzU5Lq7Qz1i86PnV5uewhs8u2IXhVTrrwU7tDhKSXrnLlyoyAIorf-7gMTDqfJLGhs2lvdSLQPWM9cECqw2jfs19hJwG6B0M7NX_tmLKyVddFXsAtEYPWBLaLmS93wbmxwhbetxEywqD1L30x0ASmpB9EuhcrEXQgLh791xw0EB5WGGDe2V_zf3aYS0HpZs9ZT4Omn5kzA3My0dpfwQZMypcmjJejfRHmtb8nN4Loq-9Dj1qHK6yTq4Y1xVyG4_0kl1P7b1BqwnSowBqU8F77UUR88wZquMa5HxIUKQDMvWItRrHhIFD7YVDb-Y1vnqbg7FCZcxiyzWt1q48ooolJh_WP_VLjR8Qlr6qPNA_EAlK8VuUAiPjwcNaptSQu-U6Qp2dgA9Wq-ZYG4S36hhBgK2pf6BZkhwcGyWa0JuNiuKbJbBn7pnJaFh82j0Wt5IjuSp_gwbnS-_JS8rlLYfruAnurxnOffFfQa9l2d1F1h_oddVsMQspK6SrL35teJU3GB8dZOtONVMRngFYs2ii7C5yTVqvahf6l1R5CHa_mUqWgbbh712c_9CWKPoQdtpTmcMv_iof4LPLhZLZpLZobxGFiWOedrwPAcqtQJ-5BwwW0iv45pqhNqWX3eR7yM1RzUFw15s0ZGbsBmEEySxZkJpetglbeURzlhbMX0tM77pk.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0d463002c023076d016a9533e818f087d0aebb50d61dccc2c1",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 14783,
+    "completion_tokens": 2159,
+    "total_tokens": 16942,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 2816,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00738015,
+      "upstream_inference_prompt_cost": 0.00306215,
+      "upstream_inference_completions_cost": 0.004318
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 19.06,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 65921,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}
