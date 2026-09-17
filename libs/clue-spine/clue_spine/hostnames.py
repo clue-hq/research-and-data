@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Collection, Iterator
+from datetime import datetime
 from itertools import count
 from typing import Literal
 
@@ -205,12 +206,12 @@ def validate_custom_hostname(value: str, *, system_suffix: str) -> str:
 
 
 def validate_label(label: str) -> str:
-    """A Clue-address label an admin picks by hand (spec §4.1 A1): 3-40 of ``[a-z0-9-]``, no edge
+    """A Clue-address label an admin picks by hand (spec §4.1 A1): 3–40 of ``[a-z0-9-]``, no edge
     hyphen, not reserved."""
     if not _LABEL_SHAPE.fullmatch(label):
         raise HostnameRefused(
             "label_invalid",
-            "Use 3-40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
+            "Use 3–40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
         )
     if label in RESERVED_LABELS:
         raise HostnameRefused("label_reserved", f"{label!r} is reserved.")
@@ -333,3 +334,172 @@ async def backfill_system_hostnames(
             written += 1
     off_suffix = await system_hostnames_off_suffix(conn, suffix)
     return {"missing": len(missing), "written": written, "off_suffix": len(off_suffix)}
+
+
+# --- custom hostnames: DAL (spec §4.1, §7) -----------------------------------
+_CUSTOM_ROW = (
+    "hostname, workspace_id, status, cf_custom_hostname_id, cname_target, ownership_txt_name, "
+    "ownership_txt_value, observed_cname, observed_txt_present, last_checked_at, last_error_code, "
+    "last_error_detail, created_at, updated_at, activated_at"
+)
+
+
+class CustomHostname(BaseModel):
+    """A ``custom`` ``workspace_hostname`` row — the whole Cloudflare lifecycle (spec §7)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    hostname: str
+    workspace_id: str
+    status: HostnameStatus
+    cf_custom_hostname_id: str | None
+    cname_target: str
+    ownership_txt_name: str
+    ownership_txt_value: str
+    observed_cname: str | None
+    observed_txt_present: bool | None
+    last_checked_at: UtcDatetime | None
+    last_error_code: str | None
+    last_error_detail: str | None
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+    activated_at: UtcDatetime | None
+
+
+async def get_custom_hostname(conn: AsyncConnection, workspace_id: str) -> CustomHostname | None:
+    result = await conn.execute(
+        text(
+            f"SELECT {_CUSTOM_ROW} FROM workspace_hostname "
+            "WHERE workspace_id = :w AND kind = 'custom'"
+        ),
+        {"w": workspace_id},
+    )
+    row = result.mappings().first()
+    return CustomHostname(**dict(row)) if row is not None else None
+
+
+async def hostname_exists(conn: AsyncConnection, hostname: str) -> bool:
+    result = await conn.execute(
+        text("SELECT 1 FROM workspace_hostname WHERE hostname = :h"), {"h": hostname}
+    )
+    return result.first() is not None
+
+
+async def insert_custom_hostname(
+    conn: AsyncConnection, *, workspace_id: str, hostname: str, cname_target: str
+) -> CustomHostname:
+    """The connect insert (spec §7.3): ``pending_dns`` with placeholder ownership columns so the
+    ``workspace_hostname_custom_columns`` CHECK holds until Cloudflare answers. The primary key and
+    the one-custom-per-workspace index are the arbiters — a loser gets ``IntegrityError``."""
+    result = await conn.execute(
+        text(
+            "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, cname_target, "
+            "ownership_txt_name, ownership_txt_value) VALUES (:h, :w, 'custom', 'pending_dns', :t, "
+            f"'pending', 'pending') RETURNING {_CUSTOM_ROW}"
+        ),
+        {"h": hostname, "w": workspace_id, "t": cname_target},
+    )
+    return CustomHostname(**dict(result.mappings().one()))
+
+
+async def set_custom_hostname_provider(
+    conn: AsyncConnection,
+    *,
+    hostname: str,
+    cf_custom_hostname_id: str,
+    ownership_txt_name: str,
+    ownership_txt_value: str,
+) -> None:
+    """Stamp what Cloudflare answered with (its id and the ownership TXT record to publish)."""
+    await conn.execute(
+        text(
+            "UPDATE workspace_hostname SET cf_custom_hostname_id = :i, ownership_txt_name = :n, "
+            "ownership_txt_value = :v, updated_at = now() WHERE hostname = :h AND kind = 'custom'"
+        ),
+        {
+            "i": cf_custom_hostname_id,
+            "n": ownership_txt_name,
+            "v": ownership_txt_value,
+            "h": hostname,
+        },
+    )
+
+
+async def record_custom_hostname_check(
+    conn: AsyncConnection,
+    *,
+    hostname: str,
+    status: HostnameStatus,
+    observed_cname: str | None,
+    observed_txt_present: bool | None,
+    last_error_code: str | None,
+    last_error_detail: str | None,
+    checked_at: datetime,
+) -> CustomHostname:
+    """Record one status derivation (spec §7.4). ``activated_at`` is stamped the FIRST time the
+    hostname reaches ``active`` and never moved again."""
+    result = await conn.execute(
+        text(
+            "UPDATE workspace_hostname SET status = :s, observed_cname = :c, "
+            "observed_txt_present = :p, last_checked_at = :at, last_error_code = :ec, "
+            "last_error_detail = :ed, updated_at = now(), activated_at = CASE WHEN :s = 'active' "
+            "THEN COALESCE(activated_at, now()) ELSE activated_at END "
+            f"WHERE hostname = :h AND kind = 'custom' RETURNING {_CUSTOM_ROW}"
+        ),
+        {
+            "s": status,
+            "c": observed_cname,
+            "p": observed_txt_present,
+            "at": checked_at,
+            "ec": last_error_code,
+            "ed": last_error_detail,
+            "h": hostname,
+        },
+    )
+    return CustomHostname(**dict(result.mappings().one()))
+
+
+async def set_custom_hostname_status(
+    conn: AsyncConnection, *, hostname: str, status: HostnameStatus
+) -> None:
+    await conn.execute(
+        text(
+            "UPDATE workspace_hostname SET status = :s, updated_at = now() "
+            "WHERE hostname = :h AND kind = 'custom'"
+        ),
+        {"s": status, "h": hostname},
+    )
+
+
+async def delete_custom_hostname(conn: AsyncConnection, *, hostname: str) -> bool:
+    """Disconnect (spec §7): the row goes, the hostname is free. ``False`` when nothing matched."""
+    result = await conn.execute(
+        text("DELETE FROM workspace_hostname WHERE hostname = :h AND kind = 'custom'"),
+        {"h": hostname},
+    )
+    return bool(result.rowcount)
+
+
+async def replace_system_label(
+    conn: AsyncConnection, *, workspace_id: str, label: str, suffix: str
+) -> WorkspaceHostname:
+    """Label change (spec §4.1, A1): delete the old system row and insert the new one in ONE
+    transaction. The old label is free immediately; there is no redirect."""
+    validate_label(label)
+    hostname = f"{label}.{suffix}"
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text("DELETE FROM workspace_hostname WHERE workspace_id = :w AND kind = 'system'"),
+                {"w": workspace_id},
+            )
+            result = await conn.execute(
+                text(
+                    "INSERT INTO workspace_hostname (hostname, workspace_id, kind, status, "
+                    f"activated_at) VALUES (:h, :w, 'system', 'active', now()) RETURNING {_ROW}"
+                ),
+                {"h": hostname, "w": workspace_id},
+            )
+    except IntegrityError as error:
+        raise HostnameRefused("label_taken", f"{label!r} is already in use.") from error
+    return WorkspaceHostname(**dict(result.mappings().one()))
