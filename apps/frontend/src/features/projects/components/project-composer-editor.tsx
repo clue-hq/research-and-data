@@ -50,6 +50,7 @@ import {
 } from "../model/project-composer-editor";
 import type { ProjectEntity } from "../model/project-workspace";
 import { EntityPicker } from "./entity-picker";
+import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
 export interface ProjectComposerEditorHandle {
@@ -84,6 +85,16 @@ function withMentions(editor: ProjectComposerEditorInstance) {
   return editor;
 }
 
+const MENTION_TYPE_LABELS: Record<
+  ProjectComposerMentionElement["entityType"],
+  string
+> = {
+  account: "Account",
+  contact: "Contact",
+  design_document: "Design",
+  project_document: "File",
+};
+
 function ComposerMention({
   attributes,
   children,
@@ -95,7 +106,7 @@ function ComposerMention({
   return (
     <span
       {...attributes}
-      aria-label={`${element.entityType === "account" ? "Account" : "Contact"} context: ${element.label}`}
+      aria-label={`${MENTION_TYPE_LABELS[element.entityType]} context: ${element.label}`}
       className={[
         styles.composerMention,
         selected && focused ? styles.composerMentionSelected : "",
@@ -109,16 +120,20 @@ function ComposerMention({
       <div className={styles.composerMentionContent} contentEditable={false}>
         {children}
         <span className={styles.composerMentionVisual}>
-          <Image
-            alt=""
-            aria-hidden="true"
-            className={
-              element.entityType === "contact" ? styles.composerMentionAvatar : ""
-            }
-            height={16}
-            src={element.imagePath ?? "/logos/clue.svg"}
-            width={16}
-          />
+          {element.icon ? (
+            <ProjectIcon name={element.icon} size={14} />
+          ) : (
+            <Image
+              alt=""
+              aria-hidden="true"
+              className={
+                element.entityType === "contact" ? styles.composerMentionAvatar : ""
+              }
+              height={16}
+              src={element.imagePath ?? "/logos/clue.svg"}
+              width={16}
+            />
+          )}
           <span>{element.label}</span>
         </span>
       </div>
