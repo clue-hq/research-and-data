@@ -16,14 +16,26 @@ The advertiser's references determine the visual system and remaining compositio
 
 ## 1. Select original variants and their shared surface
 
-Use advertiser kit assets and `fetch_logo(domain, company_name)` for the target.
-Fetch the exact advertiser too when its kit only has an unsuitable social avatar.
+Start with advertiser kit assets and the current workspace's `source_assets.json`.
+Search that catalog by the target's name, domain and logo labels; a truncated
+opening excerpt is not the complete catalog. Inspect matching original assets
+with their `view_target` and provenance before acquiring replacements. Previously
+fetched originals and traceable crops remain usable; a prior generated ad is not
+logo authority. Then use `fetch_logo(domain, company_name)` for missing or
+unsuitable variants. Fetch the exact advertiser too when its kit only has an
+unsuitable social avatar.
 On a pageless scene, compile page dimensions only, fetch and view sources, then
 validate the complete direction before creative nodes or imagery spend.
 Inspect returned provenance, missing cells, `cache_hit` and visible identity.
 Refresh only under the tool's wrong/outdated-logo condition. `needs_review`
 registers nothing. View relevant returned lockups with `view(target="asset:<id>")`;
 parent, product, corporate and loyalty-program identities are not interchangeable.
+If acquisition fails, check uninspected catalog candidates before declaring the
+identity unavailable. A failed fresh fetch does not invalidate stored originals.
+Do not repeat equivalent domains after an identity refusal or rate limit, relax
+the identity match, or substitute native account text for required paired logos.
+Name-only fallback requires permission in the actual request or supplied brief;
+the agent's own direction cannot grant it.
 
 Choose variants together on the intended advertiser surface. For a dark restrained
 field, compare the authentic reversed target lockup with the advertiser's reversed
@@ -63,9 +75,20 @@ height. View the pair in the full composition and at detail scale before accepti
 
 Size the headline and support as one message group before reserving artwork space.
 Support must be a comfortable second read in the compact preview; choose its
-measure, resolved type size, wrapping and brand-supported legible ink together. An accent token
-is not automatically the support color. Reflow dependent spacing after size
-changes. Read `knowledge/scene/components.md` for checked layout/measurement.
+measure, resolved type size, wrapping and brand-supported legible ink together.
+For a restrained neutral-text reference, use the matching neutral text ink for
+headline and support; select an accent for copy only when that emphasis is part
+of the inspected treatment. Token availability alone is not that evidence.
+Read `knowledge/scene/components.md` for checked layout/measurement.
+
+Treat copy and imagery as dependent regions. Measure the wrapped headline and
+support first; place an adjacent artwork region after the support's actual last
+line plus the intended breathing room. Recompute that boundary after resizing
+either region. An image's pale or transparent-looking pixels still occupy its
+whole rectangle: for text-over-image, put the image behind the text and verify
+local contrast; for separate regions, keep their content clear. Match a generated
+image's ground to the neighboring field, or use a deliberate frame/bleed supported
+by the references. View their boundary in the composite before accepting it.
 Satisfy the caller-selected review profile as well as visual hierarchy. Its floor
 is a rejection threshold, not the final size or proof that every face reads well.
 

@@ -249,3 +249,65 @@ in its separate worktree; no new ingestion agent in this task.
   Previously blocked goal was explicitly resumed; blocker audit starts fresh,
   no new goal or false completion. Preserve all prior artifacts/user edits and
   the separate brand-intelligence worktree.
+
+### Approved Flare retry: eight live results and identity recovery
+
+- User explicitly approved transmission of internal skill instructions, prepared
+  briefs and selected four-workspace assets to the existing OpenRouter models.
+  Individual key access recovered after its cap changed; no provider/key bypass.
+  Scope receipt and all raw evidence stay ignored under
+  evaluation/skill-family-v1/flare-20260916. No production change or new account.
+- Completed two real Home-to-design rounds in the four existing authenticated
+  local workspaces (3021 Clue,3022 AWS,3023 Google Cloud,3024 Conduit). Ordinary
+  square account-ad requests plus normal confirmation; no skill names, asset IDs,
+  prescribed headlines, geometry or image prompt supplied in user chat. The
+  runtime selected reference assets and supplied their actual bytes itself.
+- All eight traces prove a fresh reference-conditioned GPT Image2.5Flare call
+  through the Images API. Logos remain original asset layers, not image-model
+  inventions. Round1 Conduit substituted native target text incorrectly; Round2
+  recovered the authentic Hyatt original from the existing workspace catalog.
+- Round1 design seconds (Clue/AWS/Google/Conduit):449.237/496.913/518.322/620.707.
+  Round2:538.549/421.028/532.428/481.866. These exclude preceding Home handoff.
+  Zero of eight met240seconds. Model calls dominate latency, with25–38 calls
+  and1.85–3.41million input tokens including repeated context per creative.
+  New image model alone does not solve latency or whole-ad quality.
+- Initial broad tool-free planning probe was invalid: the prompt required tools
+  that were unavailable. It is not skill-quality evidence. A separate narrow
+  decision probe (five control/five candidate) found both versions knew the main
+  rules when explicit failure evidence was supplied; candidate avoided needless
+  retry suggestions. No overall creative-quality improvement is established by
+  that probe. Live rounds share existing asset catalogs, not a strict isolated A/B.
+- Updated account-identity-composition guidance: inspect the complete asset catalog
+  before replacing originals; a failed fetch does not invalidate stored originals;
+  no self-authorized name-only substitution; neutral copy ink needs reference
+  evidence; measure wrapped text before artwork boundaries and inspect final ground.
+- Fixed logo-fetch error propagation. A provider identity refusal followed by an
+  official-site429 previously surfaced only the429. The combined error preserves
+  the original capture code and a fixed, safe provider category. No relaxed
+  identity matching, tenancy, cache or download policy. Tests cover the exact
+  Hyatt Hotels/Hyatt mismatch, reverse qualification, wrong host and secret-shaped
+  vendor exceptions. Verified red/green before implementation; final four-file
+  regression/skill suite passed92 checks. No Rust/frontend source change.
+- Idle-only API/four-worker reload installed this candidate before Round2. No
+  active run was killed. Frontends, DB, asset storage and user edits preserved.
+  Round2 trace confirms the combined failure then autonomous catalog recovery.
+- Independent review differs from runtime acceptance (runtime accepted7/8):
+  Round1 Clue retains unwanted peach support; AWS text touches image boundary;
+  Google has occlusion and correctly remains unresolved; Conduit lacks authentic
+  target lockup. Round2 AWS spacing and visual idea improve; Conduit has a coherent
+  original-logo pair and readable copy; Google fixes overlap/white ground but has
+  weak repetitive account copy; Clue still chooses peach support. No user approval
+  of these new outputs and no full quality/latency goal pass claimed.
+- All eight saved originals export SVG/PNG without document-version mutation;
+  PNG pixels exactly match their final previews. Latest four SVGs have three native
+  text nodes and three independent image layers. Browser checks confirm all four
+  latest correct-workspace artifacts are available; tabs retained as deliverables.
+  On NEW Round1 Clue only, changed support38→37 through editor, reloaded, confirmed
+  persistence, restored38 and exported SVG. Restored PNG matches first delivery.
+  Reload lands on Gallery and requires reopening the artifact; record this UX gap.
+  Do not claim browser edit/reload coverage across all eight from one check.
+- Eight-case assessment.json, export-parity receipts and frozen first-terminal
+  traces are the evidence. Do not overwrite them during future fixes. Next work:
+  carry user-approved brand preferences into review, improve account propositions,
+  and reduce repeated context/sequential calls while preserving visual inspection.
+  Goal remains active/incomplete; this checkpoint is not a production qualification.

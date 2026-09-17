@@ -40,6 +40,22 @@ JsonObject = Dict[str, Any]
 # brand assets without re-deriving it from provenance.
 LOGO_TAGS = ("target-account", "logo-ladder")
 
+# Failure envelopes expose only our fixed provider explanations, never a vendor
+# network exception or download note that may carry credential-bearing URLs.
+_VENDOR_FAILURE_DIAGNOSTICS = {
+    "identity_mismatch": (
+        "vendor identity_mismatch: exact host or company/product name differs"
+    ),
+    "identity_unverified": (
+        "vendor identity_unverified: exact host and company/product identity remain ambiguous"
+    ),
+    "quota": "vendor quota: provider rate or quota limit reached",
+    "auth": "vendor auth: check BRANDFETCH_API_KEY configuration",
+    "timeout": "vendor timeout: lookup timed out",
+    "http": "vendor http: lookup failed",
+    "malformed": "vendor malformed: invalid provider response",
+}
+
 __all__ = [
     "CELL_NAMES",
     "LOGO_TAGS",
@@ -132,7 +148,7 @@ def fetch_logo_family(
     Raises `CaptureError` from the ladder rung (a blocked or unreachable site) only
     when the vendor filled no cell at all; when the vendor already answered at least
     one cell that same failure is recorded as a note and the partial family stands.
-    Every vendor failure is a typed degrade recorded in the outcome notes.
+    Vendor failures survive in outcome notes or a safe combined failure message.
     """
     from lumen_ingestion import logo_ladder
     from lumen_ingestion.capture.net import CaptureError
@@ -161,14 +177,19 @@ def fetch_logo_family(
     vendor_extras: list = []
     notes: List[str] = []
     vendor_notes: List[str] = []
+    vendor_failure = "vendor supplied no eligible logo cells"
     try:
         vendor_cells, extras, provider_notes = _vendor_rung(site, company_name)
         vendor_extras.extend(extras)
         vendor_notes.extend(provider_notes)
     except VendorCredentialsMissing:
         notes.append("vendor rung disabled: no BRANDFETCH_API_KEY configured")
+        vendor_failure = "vendor disabled: no BRANDFETCH_API_KEY configured"
     except VendorLookupFailed as error:
         notes.append(f"vendor rung degraded ({error.code}): {error.message}")
+        vendor_failure = _VENDOR_FAILURE_DIAGNOSTICS.get(
+            error.code, "vendor lookup failed: no verified provider logo available"
+        )
     for name, cell in vendor_cells.items():
         cells_by_source[name].append(cell)
 
@@ -180,9 +201,14 @@ def fetch_logo_family(
     except CaptureError as error:
         # A blocked or unreachable site cannot un-answer what the vendor already
         # served, so a vendor-only family stands. With no vendor candidate to
-        # keep, that failure IS the answer -- re-raise.
+        # keep, retain both failure reasons under the original capture code.
         if not vendor_cells:
-            raise
+            raise CaptureError(
+                error.code,
+                f"{vendor_failure}; official-site ladder failed ({error.code}): "
+                f"{error.message}. Verify the exact company/product identity; use an "
+                "original logo from a verified official source or user upload.",
+            ) from error
         notes.append(
             f"ladder unavailable ({error.code}): {error.message}; vendor candidates only"
         )

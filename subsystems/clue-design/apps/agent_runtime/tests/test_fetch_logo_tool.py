@@ -843,6 +843,89 @@ def test_dispatch_reraises_a_blocked_ladder_when_the_vendor_had_nothing(monkeypa
     assert cache.stored == {}
 
 
+@pytest.mark.parametrize(
+    ("requested_name", "provider_domain", "provider_name", "provider_code"),
+    [
+        ("Hyatt Hotels", "hyatt.com", "Hyatt", "identity_mismatch"),
+        ("Hyatt", "hyatt.com", "Hyatt Hotels", "identity_unverified"),
+        ("Hyatt", "world.hyatt.com", "Hyatt", "identity_mismatch"),
+    ],
+)
+def test_dispatch_retains_identity_refusal_when_official_site_is_rate_limited(
+    monkeypatch, requested_name, provider_domain, provider_name, provider_code
+):
+    """A website failure must not hide why the provider's logo was refused."""
+    import httpx
+    from lumen_ingestion.capture.net import CaptureError
+    from lumen_ingestion.logo_vendor import fetch_vendor_family
+
+    requests = []
+
+    def provider(request):
+        requests.append(request.url.path)
+        return httpx.Response(200, json={
+            "domain": provider_domain,
+            "name": provider_name,
+            "logos": [{"type": "logo", "theme": "dark", "formats": [{
+                "format": "svg", "src": "https://asset.brandfetch.io/original.svg",
+            }]}],
+        })
+
+    website_error = CaptureError(
+        "LUMI0503", "page fetch failed for https://hyatt.com/: HTTP 429"
+    )
+
+    def blocked(site, company):
+        raise website_error
+
+    cache = _RecordingCache()
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
+    with httpx.Client(transport=httpx.MockTransport(provider)) as client:
+        monkeypatch.setattr(
+            logo_fetch, "_vendor_rung",
+            lambda site, company: fetch_vendor_family(
+                site, company_name=company, api_key="test-secret-key",
+                base_url="https://vendor.test", client=client,
+            ),
+        )
+        with pytest.raises(CaptureError) as failure:
+            logo_fetch.fetch_logo_family("hyatt.com", company_name=requested_name, cache=cache)
+
+    assert failure.value.code == "LUMI0503"
+    assert website_error.message in failure.value.message
+    assert provider_code in failure.value.message
+    assert "company/product" in failure.value.message
+    assert "verified official source" in failure.value.message
+    assert "test-secret-key" not in failure.value.message
+    assert requests == ["/v2/brands/domain/hyatt.com"]  # rejected before asset download
+    assert cache.stored == {}
+
+
+def test_dispatch_failure_diagnostic_never_reflects_vendor_network_details(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+    from lumen_ingestion.logo_vendor import VendorLookupFailed
+
+    def failed(site, company):
+        raise VendorLookupFailed(
+            "http", "request failed https://operator:private-password@vendor.test/"
+            "?api_key=private-key Authorization: Bearer private-token"
+        )
+
+    def blocked(site, company):
+        raise CaptureError("LUMI0503", "page fetch failed: HTTP 429")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", failed)
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
+    with pytest.raises(CaptureError) as failure:
+        logo_fetch.fetch_logo_family("acme.com")
+
+    assert "vendor" in failure.value.message
+    assert "http" in failure.value.message
+    assert "HTTP 429" in failure.value.message
+    assert "private-" not in failure.value.message
+    assert "vendor.test" not in failure.value.message
+
+
 def test_dispatch_freshcontext_replay(monkeypatch):
     """The case that forced the rule (freshcontext.ai, measured 2026-09-02).
 
