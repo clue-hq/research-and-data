@@ -18,6 +18,25 @@ import {
 } from "../model/artifact-sharing";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 
+/** The share menu's per-document transient state, stamped with the document it
+ * was captured for so a switched document never inherits it. */
+interface ShareSession {
+  forDocumentId: string | null;
+  publishState: WebPublishState | null;
+  publishStatus: ArtifactPublishStatus;
+  statusMessage: string;
+}
+
+/** What a document with no share activity yet shows. Its `null` stamp matches
+ * no web document, so a web artifact always starts empty; an ad (which has no
+ * document and no publish backend) matches it and stays at these values. */
+const EMPTY_SESSION: ShareSession = {
+  forDocumentId: null,
+  publishState: null,
+  publishStatus: "draft",
+  statusMessage: "",
+};
+
 export function useArtifactSharingController({
   kind,
   title,
@@ -39,15 +58,12 @@ export function useArtifactSharingController({
   const [lastExportFormat, setLastExportFormat] =
     useState<ArtifactShareExportFormat | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [publishState, setPublishState] = useState<WebPublishState | null>(null);
-  const [publishStatus, setPublishStatus] =
-    useState<ArtifactPublishStatus>("draft");
+  const [session, setSession] = useState<ShareSession>(EMPTY_SESSION);
   const [regenerateDescriptionOnPublish, setRegenerateDescriptionOnPublish] =
     useState(false);
   const [shareTitle, setShareTitle] = useState(title);
   const [slug, setSlug] = useState(() => slugifyArtifactTitle(title));
   const [slugDraft, setSlugDraft] = useState(slug);
-  const [statusMessage, setStatusMessage] = useState("");
   const [view, setView] = useState<ArtifactShareView>("main");
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,17 +72,57 @@ export function useArtifactSharingController({
   // host segment stays empty and Publish stays inert.
   const webDocumentId = kind === "web" ? (documentId ?? null) : null;
 
+  // A switched document must not inherit the previous one's publish state. The
+  // session is STAMPED with the document it was captured for and DERIVED against
+  // the current one, rather than reset synchronously in an effect
+  // (react-hooks/set-state-in-effect) — the same idiom as
+  // `useWebArtifactSelection` / `useCustomComponentArtifact`. A stale document's
+  // leftovers are simply never served, and the first write after a switch starts
+  // from the empty session. The slug is deliberately NOT part of this: the fetch
+  // overwrites it from the backend when the new document is published, and an
+  // unpublished one keeps its title-derived slug, exactly as before.
+  const activeSession =
+    session.forDocumentId === webDocumentId ? session : EMPTY_SESSION;
+  const publishState = activeSession.publishState;
+  const publishStatus = activeSession.publishStatus;
+  const statusMessage = activeSession.statusMessage;
+
+  const updateSession = useCallback(
+    (
+      patch:
+        | Partial<Omit<ShareSession, "forDocumentId">>
+        | ((live: ShareSession) => Partial<Omit<ShareSession, "forDocumentId">>),
+    ) => {
+      setSession((live) => {
+        const base = live.forDocumentId === webDocumentId ? live : EMPTY_SESSION;
+        return {
+          ...base,
+          forDocumentId: webDocumentId,
+          ...(typeof patch === "function" ? patch(base) : patch),
+        };
+      });
+    },
+    [webDocumentId],
+  );
+
+  const setStatusMessage = useCallback(
+    (message: string) => updateSession({ statusMessage: message }),
+    [updateSession],
+  );
+
   useEffect(() => {
     if (!menuOpen || !webDocumentId) return;
     let cancelled = false;
     void fetchWebPublishInfo(designBffConfig(), webDocumentId)
       .then((state) => {
         if (cancelled) return;
-        setPublishState(state);
+        updateSession({
+          publishState: state,
+          ...(state.published && state.slug ? { publishStatus: "published" as const } : {}),
+        });
         if (state.published && state.slug) {
           setSlug(state.slug);
           setSlugDraft(state.slug);
-          setPublishStatus("published");
         }
       })
       .catch(() => {
@@ -75,7 +131,7 @@ export function useArtifactSharingController({
     return () => {
       cancelled = true;
     };
-  }, [menuOpen, webDocumentId]);
+  }, [menuOpen, updateSession, webDocumentId]);
 
   const shareHost = publicLinkHost(
     publishState?.customOrigin ?? publishState?.publicOrigin ?? null,
@@ -151,42 +207,44 @@ export function useArtifactSharingController({
     setSlug(nextSlug);
     setSlugDraft(nextSlug);
     setEditingSlug(false);
-    setPublishStatus("draft");
-    setStatusMessage("Publishing link updated");
-  }, [slugDraft]);
+    updateSession({ publishStatus: "draft", statusMessage: "Publishing link updated" });
+  }, [slugDraft, updateSession]);
 
   const publishAsset = useCallback(() => {
     if (!webDocumentId) return; // ads have no publish backend; the button stays inert
-    setPublishStatus("publishing");
-    setStatusMessage("Publishing asset");
+    updateSession({ publishStatus: "publishing", statusMessage: "Publishing asset" });
     void publishWebDocument(designBffConfig(), webDocumentId, slug)
       .then((result) => {
-        setPublishState((current) => ({
-          published: true,
-          slug: result.slug,
-          url: result.url,
-          customUrl: result.customUrl,
-          publicOrigin: result.publicOrigin ?? current?.publicOrigin ?? null,
-          customOrigin: result.customOrigin ?? current?.customOrigin ?? null,
-          docVersion: result.docVersion,
-          status: "active",
-          previousAvailable: result.previousAvailable,
-          updatedAt: current?.updatedAt ?? null,
-          publishId: result.publishId,
-          manifestDigest: result.manifestDigest,
-          packageDigest: result.packageDigest,
-          htmlDigest: result.htmlDigest,
+        updateSession((live) => ({
+          publishState: {
+            published: true,
+            slug: result.slug,
+            url: result.url,
+            customUrl: result.customUrl,
+            publicOrigin: result.publicOrigin ?? live.publishState?.publicOrigin ?? null,
+            customOrigin: result.customOrigin ?? live.publishState?.customOrigin ?? null,
+            docVersion: result.docVersion,
+            status: "active",
+            previousAvailable: result.previousAvailable,
+            updatedAt: live.publishState?.updatedAt ?? null,
+            publishId: result.publishId,
+            manifestDigest: result.manifestDigest,
+            packageDigest: result.packageDigest,
+            htmlDigest: result.htmlDigest,
+          },
+          publishStatus: "published",
+          statusMessage: "Asset published",
         }));
         setSlug(result.slug);
         setSlugDraft(result.slug);
-        setPublishStatus("published");
-        setStatusMessage("Asset published");
       })
       .catch((error: unknown) => {
-        setPublishStatus("draft");
-        setStatusMessage(error instanceof Error ? error.message : "Publishing failed");
+        updateSession({
+          publishStatus: "draft",
+          statusMessage: error instanceof Error ? error.message : "Publishing failed",
+        });
       });
-  }, [slug, webDocumentId]);
+  }, [slug, updateSession, webDocumentId]);
 
   const copyLink = useCallback(async () => {
     if (!shareUrl) {
@@ -207,7 +265,7 @@ export function useArtifactSharingController({
     setStatusMessage("Link copied");
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
-  }, [kind, shareUrl]);
+  }, [kind, setStatusMessage, shareUrl]);
 
   const previewExternally = useCallback(() => {
     if (!shareUrl) {
@@ -220,7 +278,7 @@ export function useArtifactSharingController({
       }),
     );
     setStatusMessage("External preview requested");
-  }, [kind, shareUrl]);
+  }, [kind, setStatusMessage, shareUrl]);
 
   const saveAdvancedSettings = useCallback(() => {
     window.dispatchEvent(
@@ -228,10 +286,9 @@ export function useArtifactSharingController({
         detail: { kind, settings },
       }),
     );
-    setPublishStatus("draft");
-    setStatusMessage("Publishing settings saved");
+    updateSession({ publishStatus: "draft", statusMessage: "Publishing settings saved" });
     setView("main");
-  }, [kind, settings]);
+  }, [kind, settings, updateSession]);
 
   const requestDescriptionGeneration = useCallback(() => {
     window.dispatchEvent(
@@ -240,7 +297,7 @@ export function useArtifactSharingController({
       }),
     );
     setStatusMessage("Description generation requested");
-  }, [kind, shareTitle]);
+  }, [kind, setStatusMessage, shareTitle]);
 
   const requestExport = useCallback(
     (format: ArtifactShareExportFormat) => {
@@ -252,7 +309,7 @@ export function useArtifactSharingController({
         }),
       );
     },
-    [kind],
+    [kind, setStatusMessage],
   );
 
   return {
