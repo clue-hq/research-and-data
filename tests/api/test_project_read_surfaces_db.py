@@ -87,10 +87,10 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["agent_profiles"] == [
                 {
                     "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                    "label": "GPT-5.6 Terra",
-                    "short_label": "GPT-5.6 Terra",
-                    "description": "Clue's governed GPT-5.6 Terra conversation profile",
-                    "model_id": "openai/gpt-5.6-terra",
+                    "label": "Grok 4.6",
+                    "short_label": "Grok 4.6",
+                    "description": "Clue's governed Grok 4.6 conversation profile",
+                    "model_id": "x-ai/grok-4.6",
                 }
             ]
             assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID
@@ -171,6 +171,8 @@ def test_composer_context_prepares_an_existing_active_thread(require_chat_db: No
                         "secondary_label": "existing-thread.example",
                         "image_url": None,
                         "version": 1,
+                        "account_id": None,
+                        "account_name": None,
                     }
                 ],
             }
