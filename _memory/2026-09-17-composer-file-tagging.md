@@ -114,3 +114,12 @@ copied lane DB holds no design documents, so ads and microsites were not exercis
 `scripts/dev_stack_hangzhou.sh` brought up on 3050 / 8090 / 8091 / 8092 (the port knobs added to
 `dev_stack.sh`); `clue_hangzhou` is a copy of `clue_san-salvador` plus a copy of its `.artifacts`;
 one `auth_identity` row was inserted on the lane DB so the dev login maps to the workspace owner.
+
+### Final-review fix (2026-09-17, after Task 8)
+- `6db54fdf1` — the `project_document` focus card now reads the document with `servable_only=False`
+  (same ruling as the transcript echo), so a replayed turn whose tagged version was later superseded
+  still carries the tagged title; pinned by an added assertion in
+  `tests/api/test_project_document_context_refs_db.py`. The "deferred minor" about this above is closed.
+- Whole-branch gates re-run by the controller after all eight tasks: 7 backend suites 61 passed, ruff +
+  mypy clean on the 7 changed modules, one alembic head `9289d41e9a60`; frontend 2295/2295, lint 0
+  errors, build green. The hangzhou stack was left running for the owed live proofs.
