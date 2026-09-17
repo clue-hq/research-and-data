@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { readProjectDocument, readProjectDocuments } from "../data/project-document-queries";
 import { planDocumentOf, type ProjectDocument, type ProjectDocumentDetail } from "../model/project-documents";
 
+/** One stable empty list, so a consumer that memoizes on `documents` is not handed a new
+ * identity on every render while the first read is still in flight. */
+const NO_DOCUMENTS: ProjectDocument[] = [];
+
 /** Reads on opening/reopening and on plan arrival; failed reads never become empty lists. */
 export function useProjectDocuments(projectId: string, { active, refreshToken = 0 }: { active: boolean; refreshToken?: number }) {
   const [result, setResult] = useState<{ projectId: string; requestKey: string; documents: ProjectDocument[]; error: string | null }>();
@@ -26,7 +30,7 @@ export function useProjectDocuments(projectId: string, { active, refreshToken = 
     return () => controller.abort();
   }, [active, projectId, requestKey]);
 
-  const documents = current?.documents ?? [];
+  const documents = current?.documents ?? NO_DOCUMENTS;
   return { documents, plan: planDocumentOf(documents), loading: active && current?.requestKey !== requestKey, error: current?.error, reload };
 }
 

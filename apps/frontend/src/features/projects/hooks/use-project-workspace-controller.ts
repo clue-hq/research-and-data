@@ -78,9 +78,17 @@ export function useProjectWorkspaceController(
   const [focusPane, setFocusPane] = useState<ProjectWorkspaceFocusPane>(() =>
     initialWorkspaceFocusPane(workspace.artifacts.length, initial.focusPane),
   );
+  // The picker's catalog (Gallery files, microsites, accounts) is assembled by
+  // the chat surface from the same feeds the Gallery draws and handed down
+  // here, so the composer, the chips and the send path all read one list.
+  const [catalogEntities, setCatalogEntities] = useState<ProjectEntity[]>([]);
   const composerEntities = useMemo(
-    () => mergeComposerContextEntities(workspace.entities, selectedEntities),
-    [selectedEntities, workspace.entities],
+    () =>
+      mergeComposerContextEntities(
+        mergeComposerContextEntities(workspace.entities, catalogEntities),
+        selectedEntities,
+      ),
+    [catalogEntities, selectedEntities, workspace.entities],
   );
   const selectedEntityIds = useMemo(
     () => selectedEntities.map((entity) => entity.id),
@@ -213,6 +221,7 @@ export function useProjectWorkspaceController(
       setSelectedModelId(modelId);
       setModelPickerOpen(false);
     },
+    setCatalogEntities,
     setPrompt,
     showSplitWorkspace() {
       setFocusPane("split");
