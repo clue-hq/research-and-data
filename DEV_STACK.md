@@ -53,6 +53,7 @@ prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must nam
 | 8010 | design API (`lumen_api.main:app`) | `CLUE_DESIGN_API_BASE_URL` points here; serves the editor, asset store, design tools. |
 | 8020 | platform API (`clue_api.projections_main:app`) | `CLUE_API_BASE_URL` in `apps/frontend/.env.local` points here — auth/session + the whole `/api/v1` surface. **Without it: "Your workspace is temporarily unavailable."** |
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
+| 8040 | page origin (`clue_page_origin.main:build_application`, uvicorn factory) | Serves published pages at `http://<label>.pages.localhost:8040/<slug>`; browsers resolve `*.localhost` to loopback with no DNS setup. |
 | — | fleet worker (`clue_api.fleet_main`) | Drives design runs. **No worker = messages accepted but nothing ever generates.** |
 
 ## `.env` keys that break everything when missing (all already set — do not remove)
@@ -65,6 +66,12 @@ prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must nam
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
+
+The page-origin keys are the one exception to "it all comes from `.env`": `.env` keeps the
+**production** defaults (`CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai`, edge-secret posture), and
+`scripts/dev_stack.sh` overrides them **per process** with `CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost`
+and `CLUE_PAGES_TRUST_HOST_HEADER=true` — there is no Cloudflare Worker in front of the origin
+locally, so it reads the `Host` header directly instead of an edge secret.
 
 ## One-time machine prerequisites
 

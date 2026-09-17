@@ -20,6 +20,11 @@
 #                                  the frontend proxies to (CLUE_API_BASE_URL).
 #   8030  platform API (2nd)     — historical twin of 8020; kept because some
 #                                  session flows were exercised against it.
+#   8040  page origin (clue_page_origin)
+#                                — the PUBLIC page origin. Serves published web
+#                                  pages by hostname at
+#                                  http://<label>.pages.localhost:8040/<slug>
+#                                  (browsers resolve *.localhost to loopback).
 #   ----  fleet worker(s)        — drive design runs and every fleet job kind;
 #                                  no port.
 #
@@ -58,6 +63,15 @@ PLATFORM_ENV=(
   CLUE_DESIGN_RUNTIME_ENABLED=1
   CLUE_DESIGN_API_BASE_URL=http://127.0.0.1:8010
   CLUE_AGENT_WORKSPACE_ROOT="$AGENT_WORKSPACE_ROOT"
+  # Custom-domain publishing S1 — the dev posture for the page origin. The suffix is
+  # `pages.localhost` (no DNS setup: browsers resolve *.localhost to loopback) and the origin
+  # trusts the Host header instead of an edge secret, because there is no Cloudflare Worker in
+  # front of it locally. The repo `.env` keeps the PRODUCTION defaults; these override per process.
+  CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost
+  CLUE_PAGES_PUBLIC_SCHEME=http
+  CLUE_PAGES_PUBLIC_PORT=8040
+  CLUE_PAGES_TRUST_HOST_HEADER=true
+  CLUE_PAGES_EDGE_SECRET=
 )
 
 load_env() { set -a; source "$ROOT/.env"; set +a; }
@@ -76,6 +90,12 @@ start_platform_api() {  # both twins; a settings change (.env) needs both restar
       > "${LOG}_platform_api.log" 2>&1 & )
 }
 
+start_page_origin() {  # public page origin — serves http://<label>.pages.localhost:8040/<slug>
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
+      "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port 8040 \
+      > "${LOG}_page_origin.log" 2>&1 & )
+}
+
 # Restart ONLY the two platform API processes — the way to pick up a changed
 # .env setting (e.g. CLUE_VERIFICATION_ENABLED, 2026-09-11) without touching the
 # frontend, the design API or the fleet workers. Workers keep their old settings
@@ -83,11 +103,14 @@ start_platform_api() {  # both twins; a settings change (.env) needs both restar
 restart_api() {
   load_env
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m uvicorn --factory clue_page_origin.main:build_application" 2>/dev/null || true
   for _ in $(seq 1 20); do
-    lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 || break
+    lsof -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1 || lsof -iTCP:8030 -sTCP:LISTEN >/dev/null 2>&1 \
+      || lsof -iTCP:8040 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
   done
   start_platform_api
+  start_page_origin
   echo "restarting platform API…"; sleep 6; status
 }
 
@@ -133,6 +156,7 @@ up() {
         > "${LOG}_design_api.log" 2>&1 & )
 
   start_platform_api
+  start_page_origin
 
   # Workers may boot together: since 2026-09-12 the registry seed takes a
   # transaction-scoped advisory lock (ledger A2), so concurrent boots queue on
@@ -156,13 +180,14 @@ up() {
 down() {
   pkill -f "$ROOT/.venv/bin/python -m uvicorn lumen_api.main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
+  pkill -f "$ROOT/.venv/bin/python -m uvicorn --factory clue_page_origin.main:build_application" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
   pkill -f "next dev.*3020" 2>/dev/null || true
   echo "stack stopped"
 }
 
 status() {
-  for spec in "3020 frontend" "8010 design-api" "8020 platform-api" "8030 platform-api-2"; do
+  for spec in "3020 frontend" "8010 design-api" "8020 platform-api" "8030 platform-api-2" "8040 page-origin"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"
