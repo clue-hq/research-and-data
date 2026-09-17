@@ -28,7 +28,7 @@ from clue_fleet.queue import (
     WorkTaskRow,
 )
 from clue_obs import bound_context, get_logger
-from clue_obs.otel import context_from_carrier, get_tracer, safe_attributes
+from clue_obs.otel import CARRIER_KEYS, context_from_carrier, get_tracer, safe_attributes
 from clue_obs.sentry import capture
 
 log = get_logger("clue_fleet.work_worker")
@@ -344,7 +344,15 @@ class LeasedWorkWorker:
             work_id=task.work_id,
             worker_id=self.worker_id,
             lease_generation=generation,
-            payload=task.payload,
+            # The W3C trace carrier belongs to the QUEUE, not to the work. ``_with_trace_carrier``
+            # stamps ``traceparent``/``tracestate`` into every enqueued payload, and a handler
+            # whose payload model forbids extra keys (``DesignTurnEnvelope`` is ``extra="forbid"``)
+            # therefore refused every QUEUED job it was ever handed — 47 ``design_job.
+            # preamble_error`` failures in one lane's logs on 2026-09-17. Stripped HERE and not at
+            # the parse: ``_handle_in_context`` reads the carrier off ``task.payload`` (the row, not
+            # this context) for the span parent, so the trace still joins the enqueue's trace while
+            # the handler sees exactly the payload its caller wrote.
+            payload={k: v for k, v in task.payload.items() if k not in CARRIER_KEYS},
             stop_requested=self._stop,
             lease_lost=lease_lost,
             task_attempt=task.attempts,
