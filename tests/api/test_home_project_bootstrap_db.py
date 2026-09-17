@@ -198,6 +198,8 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                                 client_id=_settings().brandfetch_client_id,
                             ),
                             "version": None,
+                            "account_id": None,
+                            "account_name": None,
                         }
                     ],
                     "agent_profiles": [

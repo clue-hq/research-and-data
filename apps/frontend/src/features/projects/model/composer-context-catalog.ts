@@ -96,12 +96,59 @@ export function buildComposerCatalog({
   ];
 }
 
+/** Per category, how many rows the user can open to. Accounts counts accounts, not their contacts. */
 export function composerCategoryCounts(
   catalog: readonly ProjectEntity[],
 ): Record<ComposerCategory, number> {
   const counts = { files: 0, microsites: 0, accounts: 0 };
-  for (const entity of catalog) counts[entityCategory(entity)] += 1;
+  for (const entity of catalog) {
+    if (entity.type === "contact") continue;
+    counts[entityCategory(entity)] += 1;
+  }
   return counts;
+}
+
+/** How many discovered contacts each account carries, by account id. */
+export function contactCountsByAccount(
+  catalog: readonly ProjectEntity[],
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const entity of catalog) {
+    if (entity.type !== "contact" || !entity.accountId) continue;
+    counts.set(entity.accountId, (counts.get(entity.accountId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * The Accounts list as a tree: every account in catalog order, each followed by its contacts
+ * only while it is expanded. A contact whose account is not in the catalog trails the list
+ * flat, so it stays reachable rather than vanishing.
+ */
+export function accountTreeRows(
+  catalog: readonly ProjectEntity[],
+  expandedAccountIds: ReadonlySet<string>,
+): ProjectEntity[] {
+  const accounts = catalog.filter((entity) => entity.type === "account");
+  const known = new Set(accounts.map((account) => account.id));
+  const contactsByAccount = new Map<string, ProjectEntity[]>();
+  const orphans: ProjectEntity[] = [];
+  for (const entity of catalog) {
+    if (entity.type !== "contact") continue;
+    if (entity.accountId && known.has(entity.accountId)) {
+      const siblings = contactsByAccount.get(entity.accountId) ?? [];
+      siblings.push(entity);
+      contactsByAccount.set(entity.accountId, siblings);
+    } else {
+      orphans.push(entity);
+    }
+  }
+  const rows = accounts.flatMap((account) =>
+    expandedAccountIds.has(account.id)
+      ? [account, ...(contactsByAccount.get(account.id) ?? [])]
+      : [account],
+  );
+  return [...rows, ...orphans];
 }
 
 /** Typing searches every category at once; the catalog's category order is kept. */

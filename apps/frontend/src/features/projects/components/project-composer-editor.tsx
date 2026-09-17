@@ -28,7 +28,9 @@ import {
   withReact,
 } from "slate-react";
 import {
+  accountTreeRows,
   COMPOSER_CATEGORIES,
+  contactCountsByAccount,
   detectMentionQuery,
   entityCategory,
   searchComposerCatalog,
@@ -192,6 +194,11 @@ export const ProjectComposerEditor = forwardRef<
   const [mentionCategory, setMentionCategory] = useState<ComposerCategory | null>(
     null,
   );
+  // Accounts whose contacts are unfolded beneath them in the Accounts list. Tagging an account
+  // never depends on this: open or closed, Enter on the account row tags the account.
+  const [expandedAccountIds, setExpandedAccountIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const lastEmittedPrompt = useRef(prompt);
   const lastMentionIds = useRef(selectedEntityIds);
 
@@ -200,18 +207,42 @@ export const ProjectComposerEditor = forwardRef<
     setActiveIndex(0);
     setMentionQuery("");
     setMentionCategory(null);
+    setExpandedAccountIds(new Set());
+  }, []);
+
+  const toggleAccount = useCallback((accountId: string) => {
+    setExpandedAccountIds((current) => {
+      const next = new Set(current);
+      if (next.has(accountId)) next.delete(accountId);
+      else next.add(accountId);
+      return next;
+    });
   }, []);
 
   const resolveEntities = useCallback(
-    (rawQuery: string, category: ComposerCategory | null) => {
+    (
+      rawQuery: string,
+      category: ComposerCategory | null,
+      expanded: ReadonlySet<string>,
+    ) => {
       const trimmed = rawQuery.trim();
       if (!categoriesEnabled) {
         const accounts = entities.filter(
           (entity) => entityCategory(entity) === "accounts",
         );
-        return trimmed ? searchComposerCatalog(accounts, trimmed) : accounts;
+        return trimmed
+          ? searchComposerCatalog(accounts, trimmed)
+          : accountTreeRows(accounts, expanded);
       }
+      // Typing searches flat across every category; browsing the Accounts category shows
+      // the tree (accounts, each with its contacts unfolded on demand).
       if (trimmed) return searchComposerCatalog(entities, trimmed);
+      if (category === "accounts") {
+        return accountTreeRows(
+          entities.filter((entity) => entityCategory(entity) === "accounts"),
+          expanded,
+        );
+      }
       if (category) {
         return entities.filter((entity) => entityCategory(entity) === category);
       }
@@ -222,9 +253,10 @@ export const ProjectComposerEditor = forwardRef<
 
   const query = mentionQuery.trim();
   const visibleEntities = useMemo(
-    () => resolveEntities(mentionQuery, mentionCategory),
-    [mentionCategory, mentionQuery, resolveEntities],
+    () => resolveEntities(mentionQuery, mentionCategory, expandedAccountIds),
+    [expandedAccountIds, mentionCategory, mentionQuery, resolveEntities],
   );
+  const contactCounts = useMemo(() => contactCountsByAccount(entities), [entities]);
   const browsingCategories = categoriesEnabled && !query && mentionCategory === null;
 
   const replaceDraft = useCallback(
@@ -287,7 +319,7 @@ export const ProjectComposerEditor = forwardRef<
     if (
       shouldAutoCloseMention(
         mentionQueryText,
-        resolveEntities(mentionQueryText, mentionCategory).length,
+        resolveEntities(mentionQueryText, mentionCategory, expandedAccountIds).length,
       )
     ) {
       closeMentionPicker();
@@ -307,7 +339,7 @@ export const ProjectComposerEditor = forwardRef<
     setMentionTarget(Editor.range(editor, targetStart, caret));
     setActiveIndex(0);
     setMentionQuery(mentionQueryText);
-  }, [closeMentionPicker, editor, mentionCategory, resolveEntities]);
+  }, [closeMentionPicker, editor, expandedAccountIds, mentionCategory, resolveEntities]);
 
   const insertMention = useCallback(
     (entity: ProjectEntity) => {
@@ -468,7 +500,41 @@ export const ProjectComposerEditor = forwardRef<
                   setActiveIndex(0);
                   return;
                 }
-              } else if (
+              } else if (!query) {
+                // Inside the Accounts tree: ArrowRight unfolds the highlighted account's
+                // contacts, ArrowLeft folds them (from the account or from one of its
+                // contacts, landing back on the account). Only then does ArrowLeft fall
+                // through to "back to the categories".
+                const active = visibleEntities[activeIndex];
+                if (
+                  event.key === "ArrowRight" &&
+                  active?.type === "account" &&
+                  (contactCounts.get(active.id) ?? 0) > 0 &&
+                  !expandedAccountIds.has(active.id)
+                ) {
+                  event.preventDefault();
+                  toggleAccount(active.id);
+                  return;
+                }
+                if (event.key === "ArrowLeft" && active) {
+                  const foldId =
+                    active.type === "contact" && active.accountId
+                      ? active.accountId
+                      : active.type === "account"
+                        ? active.id
+                        : undefined;
+                  if (foldId && expandedAccountIds.has(foldId)) {
+                    event.preventDefault();
+                    toggleAccount(foldId);
+                    const parentIndex = visibleEntities.findIndex(
+                      (entity) => entity.id === foldId,
+                    );
+                    if (parentIndex >= 0) setActiveIndex(parentIndex);
+                    return;
+                  }
+                }
+              }
+              if (
                 mentionCategory &&
                 !query &&
                 (event.key === "ArrowLeft" || event.key === "Backspace")
@@ -541,6 +607,8 @@ export const ProjectComposerEditor = forwardRef<
           catalog={entities}
           categoriesEnabled={categoriesEnabled}
           category={mentionCategory}
+          contactCounts={contactCounts}
+          expandedAccountIds={expandedAccountIds}
           onActiveChange={(entityId) => {
             const index = visibleEntities.findIndex(
               (entity) => entity.id === entityId,
@@ -559,6 +627,7 @@ export const ProjectComposerEditor = forwardRef<
             const entity = visibleEntities.find((item) => item.id === entityId);
             if (entity) insertMention(entity);
           }}
+          onToggleAccount={toggleAccount}
           query={mentionQuery}
           results={visibleEntities}
           selectedIds={mentionIds}

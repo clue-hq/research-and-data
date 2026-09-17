@@ -372,6 +372,10 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
     assert prepared[1].image_url is not None
     assert prepared[1].image_url.startswith("https://cdn.brandfetch.io/domain/exact.example/")
     assert prepared[0].image_url is None
+    # A contact names its account so the picker can nest it; an account names none.
+    assert prepared[0].account_id == str(ACCOUNT_A)
+    assert prepared[0].account_name == "Exact Account"
+    assert prepared[1].account_id is None
 
 
 PLAN_DOCUMENT = UUID("00000000-0000-0000-0000-00000000d0c1")

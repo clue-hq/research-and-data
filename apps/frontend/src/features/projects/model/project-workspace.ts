@@ -37,6 +37,8 @@ export function composerEntityImagePath(
 }
 
 export const ProjectEntitySchema = z.object({
+  // A contact's account, so the picker can nest it under that account's row.
+  accountId: z.string().min(1).optional(),
   accountName: z.string().optional(),
   // Absent means the legacy account/contact catalog served by the backend.
   category: ProjectEntityCategorySchema.optional(),
@@ -227,6 +229,9 @@ const ProjectHomeWireSchema = z.object({
       secondary_label: z.string().min(1),
       image_url: z.string().nullable(),
       version: z.number().int().positive().nullable().default(null),
+      // A contact's account: the id the picker nests it under, the name search shows.
+      account_id: z.string().min(1).nullable().default(null),
+      account_name: z.string().min(1).nullable().default(null),
     })),
     agent_profiles: z.array(z.object({
       id: z.string().min(1),
@@ -257,6 +262,8 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
     defaultAgentProfileId: data.default_agent_profile_id,
     defaultBrandId: data.default_brand_id,
     entities: data.context_entities.map((entity) => ({
+      ...(entity.account_id ? { accountId: entity.account_id } : {}),
+      ...(entity.account_name ? { accountName: entity.account_name } : {}),
       id: entity.object_id,
       imagePath: composerEntityImagePath(entity.image_url),
       label: entity.label,
@@ -389,6 +396,8 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
       defaultAgentProfileId: data.default_agent_profile_id,
       entities: data.context_entities.map((entity) => ({
         id: entity.object_id,
+        ...(entity.account_id ? { accountId: entity.account_id } : {}),
+        ...(entity.account_name ? { accountName: entity.account_name } : {}),
         imagePath: composerEntityImagePath(entity.image_url),
         label: entity.label,
         secondaryLabel: entity.secondary_label,

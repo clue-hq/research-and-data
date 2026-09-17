@@ -82,6 +82,10 @@ class ComposerContextEntity:
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+    #: A contact's account — the id the picker nests it under and the name search shows beside
+    #: it. Always both or neither; an account entity carries neither.
+    account_id: str | None = None
+    account_name: str | None = None
 
 
 async def _contact_subject(
@@ -172,6 +176,8 @@ async def list_composer_context_entities(
                     object_id=member.id,
                     label=member.name,
                     secondary_label=member.title or name,
+                    account_id=str(account_id),
+                    account_name=name,
                 )
             )
     return tuple(result)
@@ -589,6 +595,8 @@ async def prepare_composer_context_entities(
                 label=subject.name or "Unnamed contact",
                 secondary_label=subject.title or subject.account_name,
                 version=contact.canonical_version,
+                account_id=str(contact.account_entity_id),
+                account_name=subject.account_name,
             )
         )
     return tuple(prepared)

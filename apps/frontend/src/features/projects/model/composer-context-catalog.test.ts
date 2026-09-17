@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  accountTreeRows,
   buildComposerCatalog,
   composerCategoryCounts,
+  contactCountsByAccount,
   detectMentionQuery,
   entityCategory,
   searchComposerCatalog,
@@ -54,6 +56,30 @@ const account: ProjectEntity = {
   secondaryLabel: "lanermc.org",
   type: "account",
   version: 5,
+};
+const contact: ProjectEntity = {
+  accountId: "acct-1",
+  accountName: "Lane Regional Medical Center",
+  id: "ctc-1",
+  label: "Pat Lee",
+  secondaryLabel: "Chief Executive Officer",
+  type: "contact",
+  version: 2,
+};
+const otherAccount: ProjectEntity = {
+  id: "acct-2",
+  label: "Baylor Scott & White Health",
+  secondaryLabel: "bswhealth.com",
+  type: "account",
+  version: 1,
+};
+const strayContact: ProjectEntity = {
+  accountId: "acct-gone",
+  id: "ctc-9",
+  label: "Sam Roe",
+  secondaryLabel: "CFO",
+  type: "contact",
+  version: 1,
 };
 
 test("the catalog puts documents and ads under files, web documents under microsites", () => {
@@ -117,4 +143,35 @@ test("the mention query allows spaces, stops at a second @, and is capped", () =
   assert.equal(shouldAutoCloseMention("meet ", 0), true);
   assert.equal(shouldAutoCloseMention("meet", 0), false);
   assert.equal(shouldAutoCloseMention("meet ", 2), false);
+});
+
+test("the accounts count counts accounts, not the contacts beneath them", () => {
+  const catalog = buildComposerCatalog({
+    documents: [plan],
+    artifacts: [],
+    entities: [account, contact, otherAccount],
+  });
+  assert.deepEqual(composerCategoryCounts(catalog), { files: 1, microsites: 0, accounts: 2 });
+  assert.deepEqual([...contactCountsByAccount(catalog)], [["acct-1", 1]]);
+});
+
+test("the accounts tree unfolds an account's contacts only while it is expanded", () => {
+  const catalog = buildComposerCatalog({
+    documents: [],
+    artifacts: [],
+    entities: [account, contact, otherAccount, strayContact],
+  });
+  assert.deepEqual(
+    accountTreeRows(catalog, new Set()).map((entity) => entity.id),
+    ["acct-1", "acct-2", "ctc-9"],
+  );
+  assert.deepEqual(
+    accountTreeRows(catalog, new Set(["acct-1"])).map((entity) => entity.id),
+    ["acct-1", "ctc-1", "acct-2", "ctc-9"],
+  );
+  // Search stays flat and still reaches the contact by its account's name.
+  assert.deepEqual(
+    searchComposerCatalog(catalog, "lane regional").map((entity) => entity.id),
+    ["acct-1", "ctc-1"],
+  );
 });

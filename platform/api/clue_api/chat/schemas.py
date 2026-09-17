@@ -516,6 +516,9 @@ class ComposerContextEntityWire(_Wire):
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+    # A contact's account (id + name), so the picker can nest it and search can name it.
+    account_id: str | None = None
+    account_name: str | None = None
 
 
 class PreparedComposerContextWire(_Wire):

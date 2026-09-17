@@ -140,3 +140,28 @@ one `auth_identity` row was inserted on the lane DB so the dev login maps to the
   guidelines (so gstack browse shows `naturalWidth 0` on every Brandfetch logo, on the accounts
   list too); a real Chrome UA gets `200 image/webp`. Set `browse useragent "<Chrome UA>"` before
   any logo check. The platform's own logo route (stored marks) renders in both.
+
+### Accounts tree in the `@` picker (2026-09-17, founder ask; rulings: search stays flat, tagging an account never tags its contacts)
+- Contacts now nest under their account: the wire entity gained `account_id` + `account_name`
+  (both builders in `composer_context.py`, `ComposerContextEntityWire`, router passthrough); the
+  frontend maps them to `ProjectEntity.accountId/accountName`. `accountTreeRows(catalog, expanded)`
+  (accounts in order, each followed by its contacts only while expanded; a contact whose account
+  is not in the catalog trails flat), `contactCountsByAccount`, and `composerCategoryCounts`
+  counting accounts only. Editor state `expandedAccountIds` (reset on close): ArrowRight unfolds
+  the highlighted account (when it has contacts), ArrowLeft folds from the account or from a
+  contact (highlight lands on the account), then falls through to "back to categories";
+  Enter/click on the account row tags the account whether or not it is open; the fold control is a
+  separate button beside the row (`.entityRow`/`.entityExpand`, nested rows indented). Search
+  results stay flat with `| <account name>` beside a contact. Home composer shows the same tree.
+- Verified in the browser on the hangzhou stack: 50 accounts, 12 with fold controls; Baylor's 5
+  contacts unfold on ArrowRight and on the chevron click (no tag); Enter on the open account tags
+  the account; Enter on a nested contact tags the contact; ArrowLeft folds and lands on the
+  account, a second ArrowLeft returns to the categories; `@walter` shows one flat row with the
+  account beside it; Home shows the same tree. Also fixed the same session: the active row now
+  scrolls into view while arrowing (`c7bf3c61c`).
+- Incident: a stray Enter with the picker closed SENT "@Baylor Scott & White Health" to the
+  thread (one live Head-of-ABM turn on the lane DB); the stack was restarted for the build gate
+  while it ran, so the turn ends failed/unsaved. No other side effects.
+- Note: the platform API is not `--reload`; a backend change needs
+  `./scripts/dev_stack_hangzhou.sh restart-api` (run it in the background — a foreground timeout
+  kills the freshly started servers).

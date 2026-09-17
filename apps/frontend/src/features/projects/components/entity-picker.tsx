@@ -52,15 +52,25 @@ function EntityVisual({ entity }: { entity: ProjectEntity }) {
 
 function Option({
   active,
+  contactCount = 0,
   entity,
+  expanded = false,
+  nested = false,
   onActiveChange,
   onSelect,
+  onToggle,
   selected,
 }: {
   active: boolean;
+  /** Discovered contacts under this account row; 0 draws no fold control. */
+  contactCount?: number;
   entity: ProjectEntity;
+  expanded?: boolean;
+  /** A contact row drawn beneath its account. */
+  nested?: boolean;
   onActiveChange?: (entityId: string) => void;
   onSelect: (entityId: string) => void;
+  onToggle?: (entityId: string) => void;
   selected: boolean;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -71,27 +81,50 @@ function Option({
     if (active) ref.current?.scrollIntoView({ block: "nearest" });
   }, [active]);
   return (
-    <button
-      aria-selected={selected}
-      className={styles.entityOption}
-      data-active={active ? "true" : "false"}
-      ref={ref}
-      onMouseDown={(event) => event.preventDefault()}
-      onMouseEnter={() => onActiveChange?.(entity.id)}
-      onClick={() => onSelect(entity.id)}
-      role="option"
-      type="button"
-    >
-      <EntityVisual entity={entity} />
-      <span>
-        <strong>{entity.label}</strong>
-        <small>
-          {entity.secondaryLabel}
-          {entity.accountName ? ` | ${entity.accountName}` : ""}
-        </small>
-      </span>
-      {selected ? <ProjectIcon name="status-check" size={14} /> : null}
-    </button>
+    <div className={styles.entityRow} data-nested={nested ? "true" : "false"}>
+      <button
+        aria-selected={selected}
+        className={styles.entityOption}
+        data-active={active ? "true" : "false"}
+        ref={ref}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={() => onActiveChange?.(entity.id)}
+        onClick={() => onSelect(entity.id)}
+        role="option"
+        type="button"
+      >
+        <EntityVisual entity={entity} />
+        <span>
+          <strong>{entity.label}</strong>
+          <small>
+            {entity.secondaryLabel}
+            {!nested && entity.accountName ? ` | ${entity.accountName}` : ""}
+          </small>
+        </span>
+        {selected ? <ProjectIcon name="status-check" size={14} /> : null}
+      </button>
+      {contactCount > 0 && onToggle ? (
+        // The fold control is its own button beside the row: clicking the row tags the
+        // account, clicking the chevron only shows or hides its contacts.
+        <button
+          aria-expanded={expanded}
+          aria-label={
+            expanded
+              ? `Hide ${contactCount} contacts of ${entity.label}`
+              : `Show ${contactCount} contacts of ${entity.label}`
+          }
+          className={styles.entityExpand}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onToggle(entity.id)}
+          type="button"
+        >
+          <small>{contactCount}</small>
+          <span className={styles.entityExpandChevron}>
+            <ProjectIcon name="chevron-right" size={14} />
+          </span>
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -101,10 +134,13 @@ export function EntityPicker({
   catalog,
   categoriesEnabled,
   category,
+  contactCounts,
+  expandedAccountIds,
   onActiveChange,
   onBack,
   onOpenCategory,
   onSelect,
+  onToggleAccount,
   query,
   results,
   selectedIds,
@@ -114,10 +150,14 @@ export function EntityPicker({
   catalog: ProjectEntity[];
   categoriesEnabled: boolean;
   category: ComposerCategory | null;
+  /** Discovered contacts per account id — what draws an account's fold control. */
+  contactCounts: ReadonlyMap<string, number>;
+  expandedAccountIds: ReadonlySet<string>;
   onActiveChange?: (entityId: string) => void;
   onBack: () => void;
   onOpenCategory: (category: ComposerCategory) => void;
   onSelect: (entityId: string) => void;
+  onToggleAccount: (accountId: string) => void;
   query: string;
   selectedIds: string[];
   results: ProjectEntity[];
@@ -180,10 +220,20 @@ export function EntityPicker({
             .map((entity) => (
               <Option
                 active={activeId === entity.id}
+                // The tree only exists while browsing: search results stay flat, with a
+                // contact's account named beside its title instead.
+                contactCount={
+                  searching || entity.type !== "account"
+                    ? 0
+                    : contactCounts.get(entity.id)
+                }
                 entity={entity}
+                expanded={expandedAccountIds.has(entity.id)}
                 key={entity.id}
+                nested={!searching && entity.type === "contact" && !!entity.accountId}
                 onActiveChange={onActiveChange}
                 onSelect={onSelect}
+                onToggle={searching ? undefined : onToggleAccount}
                 selected={selectedIds.includes(entity.id)}
               />
             ))}

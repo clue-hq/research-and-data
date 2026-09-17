@@ -604,6 +604,8 @@ def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntity
         secondary_label=entity.secondary_label,
         image_url=entity.image_url,
         version=entity.version,
+        account_id=entity.account_id,
+        account_name=entity.account_name,
     )
 
 
