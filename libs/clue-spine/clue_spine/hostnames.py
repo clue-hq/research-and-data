@@ -101,7 +101,7 @@ def _cut(label: str, limit: int) -> str:
         return label
     cut = label[:limit]
     hyphen = cut.rfind("-")
-    if hyphen > 0:
+    if hyphen >= LABEL_MIN:
         cut = cut[:hyphen]
     return cut.strip("-")
 

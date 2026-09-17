@@ -7,6 +7,8 @@ from itertools import islice
 import pytest
 
 from clue_spine.hostnames import (
+    LABEL_MAX,
+    LABEL_MIN,
     RESERVED_LABELS,
     allocate_label,
     is_valid_hostname,
@@ -109,3 +111,9 @@ def test_public_origin() -> None:
     assert public_origin("acme.pages.localhost", scheme="http", port=8040) == (
         "http://acme.pages.localhost:8040"
     )
+
+
+def test_a_hyphen_cut_never_drops_below_the_minimum_length() -> None:
+    first = next(label_candidates("a-" + "b" * 50, WS))
+    assert LABEL_MIN <= len(first) <= LABEL_MAX
+    assert first == ("a-" + "b" * 50)[:LABEL_MAX]
