@@ -19,9 +19,10 @@ from urllib.parse import urlparse
 import httpx
 
 from .budget import short_url
+from .snapshot import HTML_MAX_BYTES
 
 # Response size caps (bytes) per resource class.
-PAGE_MAX_BYTES = 5 * 1024 * 1024
+PAGE_MAX_BYTES = HTML_MAX_BYTES
 CSS_MAX_BYTES = 5 * 1024 * 1024
 FONT_MAX_BYTES = 10 * 1024 * 1024
 IMAGE_MAX_BYTES = 15 * 1024 * 1024
@@ -58,6 +59,17 @@ class CaptureError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def require_complete_html(html: str) -> str:
+    """Reject oversize HTML rather than silently dropping its body or footer."""
+    if len(html.encode("utf-8")) > HTML_MAX_BYTES:
+        raise CaptureError(
+            "LUMI0507",
+            f"HTML exceeds the {HTML_MAX_BYTES}-byte capture limit; "
+            "no partial page was accepted. Capture a smaller source page.",
+        )
+    return html
 
 
 @dataclass
@@ -190,6 +202,12 @@ class BoundedFetcher:
                 await guard_url(current)
                 continue
             body, capped = _read_capped(response, PAGE_MAX_BYTES)
+            if capped:
+                raise CaptureError(
+                    "LUMI0507",
+                    f"HTML response exceeds the {PAGE_MAX_BYTES}-byte capture limit; "
+                    "no partial page was accepted. Capture a smaller source page.",
+                )
             result = FetchResult(
                 url=url,
                 kind="page",
@@ -199,9 +217,6 @@ class BoundedFetcher:
                 body=body,
                 final_url=str(response.url),
             )
-            if capped:
-                result.diagnostics.append(_size_cap_diagnostic(current, PAGE_MAX_BYTES))
-                self._diagnostics.append(result.diagnostics[-1])
             return result
         raise CaptureError("LUMI0501", f"blocked url — too many redirects: {url}")
 

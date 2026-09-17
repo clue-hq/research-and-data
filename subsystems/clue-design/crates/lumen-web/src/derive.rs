@@ -1483,6 +1483,7 @@ mod tests {
                         .into_iter()
                         .map(|(key, value)| (key.to_owned(), value))
                         .collect(),
+                    text_overrides: Default::default(),
                 },
                 classes: String::new(),
                 children: Vec::new(),

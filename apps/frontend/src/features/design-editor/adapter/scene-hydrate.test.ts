@@ -37,6 +37,8 @@ import {
   sceneSelectionFor,
 } from "./scene-hydrate";
 import { buildScenePalette } from "./scene-palette";
+import { setKitTokenMaps, setTokenColorMap } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 
 /** The dummy ad inspector's own source, read off disk: a `.tsx` cannot be
  * imported under this runner (`tsx --test`, no DOM), so the vocabulary guard
@@ -394,8 +396,8 @@ it("§1.1/§1.6: a solid fill hydrates as its hex on the solid fill type", () =>
 
 it("A16/§1.6: a TOKEN-filled text states its token name in the swatch, never a fixture", () => {
   // The harvested headline's real fill is the `$text.inverse` brand token.
-  // Leaving `textColor` unstated left the shared `DEFAULT_STATE` seed
-  // `#00F59B` on screen — the swatch claiming the headline is mint green while
+  // Leaving `textColor` unstated left the shared `DEFAULT_STATE` seed on
+  // screen — the swatch claiming the headline is the seed colour while
   // it is brand-token coloured — and unlike the gradient case this control
   // ACCEPTS a write (§1.6's ratified detach), so the lie was live, not inert.
   const state = hydrateSceneInspectorState(adTokenText(), SCENE);
@@ -464,8 +466,67 @@ it("A16/§1.4: a GRADIENT stroke states its first stop — it used to read `none
 
 // ── §1.2 Typography ────────────────────────────────────────────────────────
 
+it("rung A: the Text row reads TextNode.content verbatim — newlines included", () => {
+  assert.equal(
+    hydrateSceneInspectorState(adPlainText(), SCENE).content,
+    "3.4x faster triage",
+  );
+  assert.equal(
+    hydrateSceneInspectorState(adTokenText(), SCENE).content,
+    "Every inbound fax, routed to the right EHR queue.",
+  );
+  // The STORED content, not the painted one: `text_transform` is a paint-time
+  // concern, so an uppercasing node still states what it will be edited as.
+  const multiline = clone(SCENE);
+  const node = multiline.nodes.text_proof_stat;
+  if (node.kind.kind === "text") node.kind.content = "3.4x\nfaster triage";
+  assert.equal(
+    hydrateSceneInspectorState(node, multiline).content,
+    "3.4x\nfaster triage",
+  );
+});
+
+it("rung A: a NON-text node states no content at all — the row is text-only", () => {
+  for (const node of [adRect(), adImage(), adAutoLayout(), adGroup()]) {
+    assert.equal(hydrateSceneInspectorState(node, SCENE).content, undefined, node.id);
+  }
+});
+
 it("§1.2: the font family reads TextNode.font_family", () => {
   assert.equal(hydrateSceneInspectorState(adPlainText(), SCENE).fontFamily, "Inter");
+});
+
+it("token-styled inspector values follow the supplied kit, never another canvas's kit", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_headline;
+  assert.equal(node.kind.kind, "text");
+  if (node.kind.kind !== "text") throw new Error("expected text");
+  node.kind = { ...node.kind, font_family: "Inter", font_size: 16, font_weight: 400,
+    style_token: "type.headline", font_size_token: "type.size.6xl" };
+  const maps: KitTokenMaps = { colors: {}, typography: {
+    "type.headline": { fontFamily: "Season Mix", fontSize: 80, fontWeight: 500 },
+  }, numbers: { "type.size.6xl": 67.5 } };
+  const before = JSON.stringify(scene);
+  setKitTokenMaps({ colors: {}, typography: {
+    "type.headline": { fontFamily: "Wrong Brand", fontSize: 32, fontWeight: 900 },
+  }, numbers: {} });
+  try {
+    const state = hydrateSceneSelectionState(scene, AD_PAGE_ID, node, maps);
+    assert.equal(state?.fontFamily, "Season Mix");
+    assert.equal(state?.fontSize, "67.5");
+    assert.equal(state?.fontWeight, "500 Medium");
+    assert.equal(state?.typographyUnavailable, false);
+    const loading = hydrateSceneSelectionState(scene, AD_PAGE_ID, node, null);
+    assert.equal(loading?.fontFamily, "Inter");
+    assert.equal(loading?.fontSize, "16");
+    assert.equal(loading?.typographyUnavailable, true);
+    const incomplete = structuredClone(maps);
+    delete incomplete.typography["type.headline"];
+    assert.equal(hydrateSceneSelectionState(scene, AD_PAGE_ID, node, incomplete)?.typographyUnavailable, true);
+    assert.equal(JSON.stringify(scene), before);
+  } finally {
+    setTokenColorMap({});
+  }
 });
 
 it("§1.2: the font size is the free number as a string", () => {
@@ -1082,7 +1143,7 @@ it("§1.1: a TOKEN-filled root frame hydrates its token name, and states it in t
   // The harvested `$text.inverse` token paint on the root frame. Ruling A15.1:
   // the swatch states the token NAME — the fact the document carries — exactly
   // as §1.2's stroke row already does for a token stroke. Leaving it unstated
-  // showed the shared `DEFAULT_STATE` seed `#00F59B`, a colour of the dummy's.
+  // showed the shared `DEFAULT_STATE` seed, a colour of the dummy's.
   const state = hydrateSceneCanvasState(
     withRootFills([...adTokenText().fills]),
     AD_PAGE_ID,

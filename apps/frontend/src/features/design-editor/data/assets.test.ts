@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { uploadWebAsset, WebAssetUploadError } from "./assets";
+import type { AssetRecord } from "../engine/asset-types";
+import {
+  IMAGE_ASSET_KINDS,
+  listImageAssets,
+  uploadWebAsset,
+  WebAssetListError,
+  WebAssetUploadError,
+} from "./assets";
 
 // W4.2 (§1 row 12, lane B): the asset-store upload behind the Replace-image
 // flow. The endpoint is reached ONLY through the authenticated BFF mount.
@@ -128,4 +135,62 @@ test("the default fetch is the global one, called with the BFF path", async () =
   } finally {
     globalThis.fetch = original;
   }
+});
+
+// Task 1 (Replace-image / asset-library lane): the registry list read behind the
+// picker — every non-archived image kind, through the same authenticated BFF.
+
+function record(id: string, kind: "raster_image" | "vector" | "logo" = "raster_image"): AssetRecord {
+  return { id, kind, label: id, status: "ready", source: { kind: "uploaded", filename: `${id}.png`, uploaded_by: null } };
+}
+
+function listStub(pages: Record<string, AssetRecord[][]>) {
+  const calls: string[] = [];
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "http://x");
+    calls.push(`${url.pathname}${url.search}`);
+    const kind = url.searchParams.get("kind") ?? "";
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const page = pages[kind]?.[offset / 200] ?? [];
+    return new Response(JSON.stringify({ assets: page, count: page.length, limit: 200, offset }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+test("listImageAssets reads every image kind, archived excluded, in kind order then server order", async () => {
+  const { calls, fetchImpl } = listStub({
+    raster_image: [[record("r1"), record("r2")]],
+    vector: [[record("v1", "vector")]],
+    logo: [[record("l1", "logo")]],
+  });
+  const records = await listImageAssets({ fetchImpl });
+  assert.deepEqual(records.map((r) => r.id), ["r1", "r2", "v1", "l1"]);
+  assert.deepEqual(IMAGE_ASSET_KINDS, ["raster_image", "vector", "logo"]);
+  for (const kind of IMAGE_ASSET_KINDS) {
+    assert.ok(calls.includes(`/api/clue/design/assets?kind=${kind}&include_archived=false&limit=200&offset=0`), kind);
+  }
+});
+
+test("listImageAssets pages while a page is full", async () => {
+  const full = Array.from({ length: 200 }, (_, i) => record(`r${i}`));
+  const { calls, fetchImpl } = listStub({ raster_image: [full, [record("r200")]], vector: [[]], logo: [[]] });
+  const records = await listImageAssets({ fetchImpl });
+  assert.equal(records.length, 201);
+  assert.ok(calls.some((c) => c.includes("kind=raster_image") && c.includes("offset=200")));
+  assert.ok(!calls.some((c) => c.includes("kind=raster_image") && c.includes("offset=400")));
+});
+
+test("listImageAssets refuses with the API's words on a non-ok response", async () => {
+  const fetchImpl = (async () =>
+    new Response(JSON.stringify({ detail: { code: "auth.workspace", message: "workspace header missing" } }), {
+      status: 401, headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+  await assert.rejects(listImageAssets({ fetchImpl }), (error: unknown) => {
+    assert.ok(error instanceof WebAssetListError);
+    assert.equal(error.message, "workspace header missing");
+    assert.equal(error.status, 401);
+    return true;
+  });
 });

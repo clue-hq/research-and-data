@@ -1172,6 +1172,7 @@ test("the selection outline follows the preview box while a gesture runs", () =>
     width: 1056,
     height: 676,
     rotation: 0,
+    frame: null,
   });
   assert.deepEqual(
     at({
@@ -1179,7 +1180,15 @@ test("the selection outline follows the preview box while a gesture runs", () =>
       box: { x: 112, y: 482, width: 1056, height: 676 },
       rotation: 0,
     }),
-    { nodeId: "image_hero", x: 112, y: 482, width: 1056, height: 676, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 112,
+      y: 482,
+      width: 1056,
+      height: 676,
+      rotation: 0,
+      frame: null,
+    },
   );
   // A preview for some OTHER node never moves this outline.
   assert.deepEqual(
@@ -1188,7 +1197,15 @@ test("the selection outline follows the preview box while a gesture runs", () =>
       box: { x: 0, y: 0, width: 10, height: 10 },
       rotation: 0,
     }),
-    { nodeId: "image_hero", x: 72, y: 452, width: 1056, height: 676, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 72,
+      y: 452,
+      width: 1056,
+      height: 676,
+      rotation: 0,
+      frame: null,
+    },
   );
 });
 
@@ -1210,7 +1227,15 @@ test("the preview outline honours `unitScale` the same way the document box does
       selectedNodeId: "image_hero",
       viewport: UNIT_VIEWPORT,
     }),
-    { nodeId: "image_hero", x: 96, y: 192, width: 960, height: 480, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 96,
+      y: 192,
+      width: 960,
+      height: 480,
+      rotation: 0,
+      frame: null,
+    },
   );
 });
 

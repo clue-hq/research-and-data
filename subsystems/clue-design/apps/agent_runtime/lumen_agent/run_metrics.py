@@ -389,11 +389,15 @@ def emit_run_metrics(
     if metrics is None:
         return None
     try:
+        solo_rounds = getattr(tools, "solo_rounds_executed", None)
         summary = metrics.snapshot(
             outcome=outcome,
             status=status,
             stop_reason=stop_reason,
-            rounds_total=count_round_dirs(rounds_dir) if rounds_dir is not None else 0,
+            rounds_total=(
+                solo_rounds if solo_rounds is not None
+                else count_round_dirs(rounds_dir) if rounds_dir is not None else 0
+            ),
         )
     except Exception as error:  # noqa: BLE001 - never fail a turn on its own metrics
         _log.warning("run_metrics_snapshot_failed", error=f"{type(error).__name__}: {error}")

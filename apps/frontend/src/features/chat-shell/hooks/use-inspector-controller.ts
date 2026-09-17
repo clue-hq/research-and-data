@@ -113,6 +113,12 @@ export interface InspectorPresentationState {
   backgroundColor: string;
   backgroundFill: InspectorBackgroundFill;
   buttonLabel: string;
+  /** Rung A (rich-text plan, 2026-08-24): what a text node SAYS — its stored
+   * `TextNode.content`, which the ad text schema's first Typography row edits.
+   * The dummy schemas never authored a content control, so its default below is
+   * the honest empty string rather than invented copy; only a text node
+   * hydrates it. Multiline is real: the row is a textarea, not an input. */
+  content: string;
   /** AD4.0 §1.1 row 1: the Custom size preset's H input (px). Ruling 14 parked
    * this pair with no state field while the control was inert; binding it to
    * the write seam is what gives it one. */
@@ -218,7 +224,9 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   alignX: "Space between",
   alignY: "Center",
   altText: "",
-  backgroundColor: "#00F59B",
+  // Founder ruling 2026-09-04: neutral seeds — a page with no theme renders
+  // white on black, and nothing here may be a sample site's brand colour.
+  backgroundColor: "#FFFFFF",
   backgroundFill: {
     angle: 0,
     stops: [
@@ -230,6 +238,7 @@ export const DEFAULT_STATE: InspectorPresentationState = {
     type: "radial-gradient",
   },
   buttonLabel: "Primary",
+  content: "",
   // The dummy's own Custom W/H seeds, moved here verbatim from the local
   // `useState` pair they used to live in (`image-inspector.tsx`).
   customHeight: "1200",
@@ -261,7 +270,7 @@ export const DEFAULT_STATE: InspectorPresentationState = {
   sizePreset: "Linkedin square (1:1) - 1200x1200",
   strokeColor: "none",
   strokeWidth: "1",
-  textColor: "#00F59B",
+  textColor: "#000000",
   textStyle: "Body",
   lineSpacing: "normal",
   tokenBackgroundColor: "White",
@@ -292,8 +301,9 @@ export interface InspectorEventAddressing {
   selectionId: string | null;
 }
 
-/** Exported for the addressing unit test; production callers go through the
- * controller hooks. */
+/** Exported for the addressing unit test and for the ad text inspector's
+ * Fit-to-text button (a one-shot property change with no state key of its
+ * own); every other production caller goes through the controller hooks. */
 export function dispatchInspectorEvent(
   name: string,
   detail: Record<string, unknown>,

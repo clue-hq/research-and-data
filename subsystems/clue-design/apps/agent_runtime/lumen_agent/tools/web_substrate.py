@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import threading
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +37,7 @@ from selectolax.parser import HTMLParser
 
 from py_lumen_obs import bind_run_id, get_logger
 
-from lumen_api.agent_account_logos import AccountLogoRefused, is_ladder_fetched
+from lumen_api.agent_account_logos import AccountLogoRefused, is_fetched_logo
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -119,7 +120,7 @@ from ..web_retokenize import build_web_retokenize_operations, summarize_class_pa
 from . import logo_fetch
 from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
-from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _text_block
+from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _image_observation_label, _text_block
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -172,24 +173,57 @@ _ASSET_REFERENCE_RE = re.compile(r"""[^"'()\s]*asset-store/[0-9a-f]{64}""")
 # dead origin is a connection refusal (instant) and a live one is a loopback GET.
 _ASSET_PREFLIGHT_TIMEOUT_S = 5.0
 
-# The page every P0 WebDoc carries (a single "home" page at route "/"). Website
-# mode is single-page for now; the id is fixed so the tools never guess.
+# The page every WebDoc is born with (a "home" page at route "/"). A document
+# may now carry more (F5 Task 6, `add_page`), but this one is always there and
+# its id is fixed, so the tools never guess at the starting page.
 HOME_PAGE_ID = "home"
 
+#: The publish-surface route grammar, a Python mirror of the engine's
+#: `lumen_web::validate::route_is_valid` (F5, Task 1). It lives here so a bad
+#: route comes back to the model as a plain sentence rather than an engine code.
+#: `/` or `/seg(/seg)*`, a segment being `[a-z0-9]+(-[a-z0-9]+)*`.
+_ROUTE_RE = re.compile(r"^/$|^(/[a-z0-9]+(?:-[a-z0-9]+)*)+$")
 
-def has_existing_content(web_doc: JsonObject, page_id: str = HOME_PAGE_ID) -> bool:
+#: Never the FIRST segment of a route: both are served beside a published site
+#: and a page there would shadow them (same rule, same reason, as the engine).
+_RESERVED_FIRST_SEGMENTS = frozenset({"p-assets", "asset-store"})
+
+
+def _route_is_valid(route: Any) -> bool:
+    """Mirror of the engine's route grammar — see `_ROUTE_RE`.
+
+    `manifest.json` needs no clause of its own: a dot is not in the segment
+    alphabet, so the regex already refuses it (as the engine's does)."""
+    if not isinstance(route, str) or len(route) > 128:
+        return False
+    if _ROUTE_RE.match(route) is None:
+        return False
+    if route == "/":
+        return True
+    return route[1:].split("/")[0] not in _RESERVED_FIRST_SEGMENTS
+
+
+def has_existing_content(
+    web_doc: JsonObject, page_id: Optional[str] = None
+) -> bool:
     """True when the page already carries authored content (any node beyond the
-    empty root).
+    empty root). `page_id=None` asks about ANY page in the document.
 
     ONE predicate, two consumers, and they must never disagree: `harness_web`
-    tells the orchestrator whether it is continuing someone's page, and
+    tells the orchestrator whether it is continuing someone's site, and
     `LumenWebTools` uses the same answer to decide whether the geometry
     retokenizer may touch these classes at all (resolution-once — an existing
     page's classes are a human's or an earlier turn's decision).
     """
     for page in web_doc.get("pages") or []:
-        if isinstance(page, dict) and page.get("id") == page_id:
-            return len(page.get("nodes") or {}) > 1
+        if not isinstance(page, dict):
+            continue
+        if page_id is not None and page.get("id") != page_id:
+            continue
+        if len(page.get("nodes") or {}) > 1:
+            return True
+        if page_id is not None:
+            return False
     return False
 
 # The fixed semantic web token names the theme compiler always emits, in
@@ -309,7 +343,12 @@ _GEOMETRY_UNSET = object()
 # tells the author to end its round. Sized against real healthy rounds (a full
 # page install + several patch repairs + a few surgical ops ≈ 11); the
 # pathological round this guards against burned 20+ (2026-07-29 blind churn).
-_ROUND_MUTATION_BUDGET = 14
+# 14 -> 75 (founder ruling 2026-09-04, the solo-mode wave): the original value forced a
+# from-empty ABM build (shells + ~7 bands x compose+insert + assets > 14 mutations) to
+# yield mid-build by construction, and each forced yield cost minutes of re-discovery in
+# the next pass. 75 keeps the guard's real job — a runaway that edits blind forever still
+# dies — while never interrupting an honest build; the render reset below is unchanged.
+_ROUND_MUTATION_BUDGET = 75
 
 # Consecutive failed capture passes before render_web_preview stops
 # re-attempting and instructs the orchestrator to finalize honestly. The
@@ -399,6 +438,25 @@ _REVIEW_SCHEMA_VERSION = 2
 #: brings its own padding, background and rhythm (that is what makes it a clone), so a wrapper
 #: that imposed the platform's section rhythm on top would double it.
 _CLONED_SECTION_WRAPPER_CLASSES = "w-full"
+
+
+def pin_display_name(resolved: Mapping[str, Any]) -> str:
+    """The name a pinned clone is born with — `"{Role} — {label}"` (ruling R-A5).
+
+    Exactly the words the editor derives for an UNNAMED clone from `fragment_meta`, so a page
+    the agent pinned and the same page read back by a human call every band the same thing.
+    Degrades to whichever half exists, and to a plain noun when the registry row carries
+    neither — an honest generic name beats a node id in a layers panel.
+    """
+    role = resolved.get("section_role")
+    label = resolved.get("label")
+    role_text = role.strip().capitalize() if isinstance(role, str) and role.strip() else None
+    label_text = label.strip() if isinstance(label, str) and label.strip() else None
+    if role_text and label_text:
+        return f"{role_text} — {label_text}"
+    return role_text or label_text or "Cloned section"
+
+
 _GROUNDED_SOURCE_MAX = 64
 _GROUNDED_PAGE_SOURCE_MAX = 8
 _GROUNDED_CITATION_MAX = 100
@@ -747,6 +805,21 @@ def _split_non_error_diagnostics(
     return warnings, advice
 
 
+def _escape_route_advice(fragment_id: str, section_role: Any) -> str:
+    """What the walk thinks of a cloned nav or site footer on a campaign page — as a SENTENCE.
+
+    FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free, so this is the whole of the
+    consequence. It names the fragment, says what it is, says what it does to a campaign page,
+    and says that the call is the author's. The words matter: "usually poor practice", never
+    "forbidden" — the walk pinned the thing it is describing.
+    """
+    role = str(section_role or "").strip().lower() or "section"
+    return (
+        f"{fragment_id} is a cloned {role} — its links leave this page; on a campaign page "
+        "that is usually poor practice (R-F5-8: allowed, not recommended)"
+    )
+
+
 def _extract_grounded_page(
     *,
     requested_url: str,
@@ -885,6 +958,16 @@ class LumenWebTools:
         )
         self.event_sink = event_sink
         self._record_lock = threading.Lock()
+        # Serializes every TOOL CALL against this substrate (found live 2026-09-04, the third
+        # solo Ramp run): the agent batched `assemble_cloned_sections` with two `asset`
+        # registrations in ONE response, langgraph ran them in parallel threads, and the asset
+        # tools — which had read `self.web_doc` BEFORE the assembly landed — committed their
+        # pre-assembly snapshot 27ms after it, erasing four pinned bands (a lost update; the
+        # agent then saw an empty page and spent minutes re-pinning). Every tool the harness
+        # hands the model is wrapped to hold this lock (`harness_web.serialize_tool_calls`), so
+        # a batched response executes its calls one at a time in order. Re-entrant, because
+        # tools call sibling methods internally.
+        self.tool_lock = threading.RLock()
         self.prompt = prompt
         self.run_id = new_run_id()
         self.page_id = HOME_PAGE_ID
@@ -1645,7 +1728,8 @@ class LumenWebTools:
     def author_web_page(self, html: str, custom_css: str = "") -> str:
         """Install a COMPLETE page from constrained HTML. `html` is the full
         section markup (header/section/footer top-level elements); `custom_css`
-        is optional page-scoped CSS. The whole page is replaced.
+        is optional page-scoped CSS. The whole page is replaced, which drops
+        every pinned cloned section.
 
         On any error-severity diagnostic NOTHING is stored — fix every
         diagnostic (each carries a code, node id, and hint) and resend the
@@ -1789,6 +1873,22 @@ class LumenWebTools:
             return self._rejected(diagnostics)
 
         self.web_doc = response["web_doc"]
+        # Registered assets survive a full-page ingest (found live 2026-09-04, the Ramp solo
+        # run): ``web_ingest_html`` rebuilds the document and can DROP an asset that was
+        # registered mid-turn but not referenced by the new markup, while the append-only
+        # operations ledger keeps its ``upsert_asset`` — so the API's replay-equality commit
+        # gate refused the whole turn (``web_turn.operations_incomplete``: replay carried the
+        # asset, the final doc did not). The page-replacement ops below deliberately express
+        # only children + custom CSS; the asset map must therefore be carried forward here so
+        # doc and replay agree. An unplaced registered asset is turn library state, not
+        # garbage — the trio lane never tripped this only because its authors placed every
+        # asset they registered; fetch_logo's family registration (place one cell of eight)
+        # makes the drop near-certain.
+        carried_assets = before.get("assets")
+        if isinstance(carried_assets, dict):
+            new_assets = self.web_doc.setdefault("assets", {})
+            for asset_id, asset_record in carried_assets.items():
+                new_assets.setdefault(asset_id, asset_record)
         self._record_operations(
             self._page_replacement_operations(before, self.web_doc)
         )
@@ -1821,7 +1921,9 @@ class LumenWebTools:
         return json.dumps(result, indent=2)
 
     def author_web_subtree(self, node_id: str, html: str) -> str:
-        """Scoped edit: replace ONE top-level section with new markup.
+        """Scoped edit: replace ONE top-level composed section with new markup.
+        (A cloned section is edited through its slots or `repair_cloned_section`,
+        not with this.)
 
         v0 scoped edits operate at SECTION granularity — a section is a direct
         child of the page root ("root"). `node_id` is resolved to its enclosing
@@ -2275,6 +2377,270 @@ class LumenWebTools:
             n for n in frag_nodes if isinstance(n, dict) and n.get("id") in ids
         ]
 
+    # --- pages (F5) ---------------------------------------------------------
+
+    def _page_listing(self) -> List[JsonObject]:
+        """Every page of this document, in document order, as the model reads it."""
+        listing: List[JsonObject] = []
+        for page in self.web_doc.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            page_id = page.get("id")
+            listing.append(
+                {
+                    "id": page_id,
+                    "name": page.get("name") or page_id,
+                    "route": page.get("route"),
+                    "sections": web_doc_page_section_count(self.web_doc, page_id),
+                }
+            )
+        return listing
+
+    def _page_ids(self) -> List[str]:
+        return [
+            page["id"]
+            for page in (self.web_doc.get("pages") or [])
+            if isinstance(page, dict) and isinstance(page.get("id"), str)
+        ]
+
+    def _apply_page_operations(
+        self, operations: List[JsonObject], tool_name: str, input_summary: str
+    ) -> Optional[str]:
+        """Apply page-level operations through the engine.
+
+        Returns a refusal envelope, or None once the working document has been
+        replaced by the accepted one. The CoreError split is `web_ops`': a
+        `helper.*` code is a plumbing fault (helper_error), anything else is the
+        checked apply refusing the caller's ops, which is a `rejected`.
+        """
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            diagnostics = list(error.diagnostics or [])
+            code = getattr(error, "code", "") or ""
+            if code.startswith("helper."):
+                self.record(
+                    "author",
+                    f"web_{tool_name}_rejected",
+                    input_summary=input_summary,
+                    output_summary=f"helper error: {error.message}",
+                    diagnostics=diagnostics,
+                )
+                return self._tool_error(
+                    f"{tool_name}.helper_error", error.message, diagnostics=diagnostics
+                )
+            if not diagnostics:
+                diagnostics = [
+                    {
+                        "code": code or "op.rejected",
+                        "message": error.message,
+                        "severity": "error",
+                    }
+                ]
+            self.record(
+                "author",
+                f"web_{tool_name}_rejected",
+                input_summary=input_summary,
+                output_summary=f"batch rejected: {error.message}",
+                diagnostics=diagnostics,
+            )
+            return self._rejected(diagnostics)
+
+        # Defensive: a non-raising ok:false path (raise_on_error is on today, so
+        # this mirrors web_ops' belt-and-braces reject guard).
+        if not response.get("ok"):
+            return self._rejected(response.get("diagnostics"))
+
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        return None
+
+    def list_pages(self) -> str:
+        """List the pages of this site and say which one you are editing.
+
+        Returns {"active_page": id, "pages": [{id, name, route, sections}]}.
+        Every authoring, view and render tool works on the ACTIVE page — use
+        switch_page to move to another one. This tool only reads: it changes
+        nothing and costs no edit budget."""
+        return json.dumps(
+            {"active_page": self.page_id, "pages": self._page_listing()}, indent=2
+        )
+
+    def add_page(self, page_id: str, name: str, route: str) -> str:
+        """Add a new empty page to the site and start editing it.
+
+        `page_id` is a short handle you will use in later ops (lowercase
+        letters, digits, '-' or '_', starting with a letter — e.g. "pricing").
+        `name` is what a person calls it ("Pricing"). `route` is the path it
+        will be published at: "/" or lowercase segments like "/pricing" or
+        "/about/team" — no capitals, no spaces, no trailing slash.
+
+        The page arrives EMPTY (a bare root); author it exactly as you author
+        the home page. The active page becomes this new page, so the very next
+        author_web_page writes into it — call list_pages if you lose track, and
+        switch_page to go back.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. A page id or
+        route that is already taken, or a route that is not a valid site path,
+        is refused and nothing is added."""
+        refusal = self._consume_round_budget("add_page")
+        if refusal is not None:
+            return refusal
+        clean_id = (page_id or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", clean_id):
+            return self._tool_error(
+                "add_page.bad_id",
+                "page_id must be lowercase letters, digits, '-' or '_' "
+                "(start with a letter).",
+            )
+        clean_route = route.strip() if isinstance(route, str) else route
+        if not _route_is_valid(clean_route):
+            return self._tool_error(
+                "add_page.bad_route",
+                f"route {route!r} is not a valid site route: use '/' or "
+                "'/lowercase-segments/like-this' (no trailing slash, no "
+                "'manifest.json', not starting with 'p-assets' or "
+                "'asset-store').",
+            )
+        root_id = f"root_{clean_id}"
+        page: JsonObject = {
+            "id": clean_id,
+            "name": (name or clean_id).strip(),
+            "route": clean_route,
+            "root": root_id,
+            "nodes": {
+                root_id: {
+                    "id": root_id,
+                    "kind": "container",
+                    "classes": "",
+                    "children": [],
+                }
+            },
+        }
+        operations: List[JsonObject] = [{"kind": "add_page", "page": page}]
+        refusal = self._apply_page_operations(
+            operations, "add_page", f"{clean_id} {clean_route}"
+        )
+        if refusal is not None:
+            return refusal
+        # Only now that the engine has taken it: the new page is where the
+        # author works next, and the standing previews are of the old one.
+        self.page_id = clean_id
+        self._preview_by_width = {}
+        self._state_captures = []
+        self.record(
+            "author",
+            "web_page_added",
+            input_summary=f"{clean_id} {clean_route}",
+            output_summary=f"page `{clean_id}` added at {clean_route}",
+            payload={"page_id": clean_id, "route": clean_route},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": clean_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
+    def remove_page(self, page_id: str) -> str:
+        """Delete a page and everything on it.
+
+        `page_id` is the page's handle (see list_pages). A site keeps at least
+        one page, so removing the last one is refused. If you delete the page
+        you were editing, the first remaining page becomes the active one —
+        the reply tells you which.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. This cannot be
+        undone from here, so read list_pages first if you are unsure."""
+        refusal = self._consume_round_budget("remove_page")
+        if refusal is not None:
+            return refusal
+        clean_id = (page_id or "").strip()
+        known = self._page_ids()
+        if clean_id not in known:
+            return self._tool_error(
+                "remove_page.unknown_page",
+                f"there is no page {clean_id!r}. This site has: "
+                f"{', '.join(known)}.",
+                pages=self._page_listing(),
+            )
+        operations: List[JsonObject] = [
+            {"kind": "remove_page", "page_id": clean_id}
+        ]
+        refusal = self._apply_page_operations(operations, "remove_page", clean_id)
+        if refusal is not None:
+            return refusal
+        if self.page_id == clean_id:
+            remaining = self._page_ids()
+            self.page_id = remaining[0] if remaining else HOME_PAGE_ID
+            # The standing previews are pixels of a page that no longer exists.
+            self._preview_by_width = {}
+            self._state_captures = []
+        self.record(
+            "author",
+            "web_page_removed",
+            input_summary=clean_id,
+            output_summary=f"page `{clean_id}` removed; active page {self.page_id}",
+            payload={"page_id": clean_id, "active_page": self.page_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": self.page_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
+    def switch_page(self, page_id: str) -> str:
+        """Move to another page of the site — every following tool call works
+        on it.
+
+        `page_id` is the page's handle (see list_pages). Switching changes
+        nothing in the document; it only changes which page you are editing.
+        The standing previews are dropped, because a screenshot belongs to the
+        page it was taken of: render_web_preview again to see this one. Your
+        edit budget starts fresh, so a switch begins a clean round on the new
+        page.
+
+        Returns {"status":"ok","active_page":id,"pages":[...]}. An unknown page
+        is refused, with the list of the pages that do exist."""
+        clean_id = (page_id or "").strip()
+        known = self._page_ids()
+        if clean_id not in known:
+            return self._tool_error(
+                "switch_page.unknown_page",
+                f"there is no page {clean_id!r}. This site has: "
+                f"{', '.join(known)}.",
+                pages=self._page_listing(),
+            )
+        self.page_id = clean_id
+        # Previews (and the interactive state captures taken with them) belong
+        # to a page; and a switch is the start of a fresh page round, so the
+        # between-renders edit budget opens again.
+        self._preview_by_width = {}
+        self._state_captures = []
+        self._mutations_since_render = 0
+        self._round_budget_event_recorded = False
+        self.record(
+            "author",
+            "web_page_switched",
+            input_summary=clean_id,
+            output_summary=f"active page is now `{clean_id}`",
+            payload={"page_id": clean_id},
+        )
+        return json.dumps(
+            {
+                "status": "ok",
+                "active_page": clean_id,
+                "pages": self._page_listing(),
+            },
+            indent=2,
+        )
+
     def web_ops(self, operations_json: str) -> str:
         """Apply a small batch of surgical operations to the page — the repair
         ladder's bottom rung, for one-or-a-few-line fixes.
@@ -2284,7 +2650,9 @@ class LumenWebTools:
         `[{"kind":"remove_node","page_id":"home","id":"sec_news"}]`.
         Writing the op name under any other field (`op`, `type`, `action`)
         rejects the whole batch with `missing field 'kind'`. The op grammar
-        (page_id is ALWAYS "home" in v0):
+        (page_id names the page the op applies to — see list_pages; the
+        active page is the one you were briefed on, and every example
+        below writes it out as "home"):
           - set_node_classes {page_id:"home", id, classes} — replace a node's
             class string wholesale (it is NOT merged with the old one).
           - set_text {page_id:"home", id, content} — replace a text node's
@@ -3306,27 +3674,46 @@ class LumenWebTools:
         )
         return json.dumps({"status": "ok", **page}, indent=2)
 
-    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
-        """Fetch a company's REAL logo from its website and register it here.
+    def fetch_logo(
+        self,
+        domain: str,
+        company_name: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Fetch a company's REAL logo family and register it here.
 
         Use this whenever the page shows a company that is not us — the target
         account on an ABM page, a named customer, a partner. Pass their domain
         (`goodmancampbell.com`) or any URL on their site; pass `company_name`
         too when you know it, because it sharpens the identity check.
 
-        Returns the asset ids it registered, one per slot it could fill:
-        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
-        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them like
-        any other asset. A slot is missing when the brand publishes nothing for
-        it — that is a real answer, not a failure, and it is never filled by
-        recoloring another slot.
+        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:
+        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x
+        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).
+        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and
+        `dark_mark`. Place them like any other asset. A cell is missing when the
+        brand publishes nothing for it — that is a real answer, not a failure,
+        and it is never filled by recoloring another cell.
+
+        Each cell is the best PROVEN asset from two sources — Brandfetch and a
+        scrape of the company's own site — judged by measured ink colour for the
+        surface, completeness, format and size. Every asset says which source
+        served it. `alternatives` lists every other real asset found for the
+        company (a vendor icon, a short form, a losing candidate), each
+        registered too and each saying why it is not in a cell. Use a cell
+        first; reach for an alternative only when the cell does not fit the
+        placement — for example when the dark lockup turns out to be only a
+        symbol — and say so. Results
+        are cached per workspace+company, so asking twice in a project costs
+        one fetch — pass `force_refresh=True` only when the user says the logo
+        is wrong or outdated, which refetches and replaces the cached family.
 
         If it comes back `needs_review`, nothing was registered because no asset
         could be attributed to that company with confidence. Say so and ask for
         the file. Never draw, recolor or approximate a logo.
 
-        Static fetch only: a site that builds its header in JavaScript has no
-        logo to read here, and reports that plainly.
+        Static fetch only on the ladder fallback: a site that builds its header
+        in JavaScript has no logo to read there, and reports that plainly.
         """
         requested = (domain or "").strip()
         if not requested:
@@ -3338,7 +3725,10 @@ class LumenWebTools:
             return budget_error
         try:
             outcome = logo_fetch.fetch_logo_family(
-                requested, company_name=(company_name or "").strip() or None
+                requested,
+                company_name=(company_name or "").strip() or None,
+                force_refresh=force_refresh,
+                cache=getattr(self.config, "logo_family_cache", None),
             )
         except ValueError as error:
             return self._tool_error("logo_fetch.bad_request", str(error))
@@ -3371,7 +3761,7 @@ class LumenWebTools:
                 "agent",
                 "web_logo_fetch_needs_review",
                 input_summary=requested[:500],
-                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no cell filled")[:500],
             )
             return json.dumps(logo_fetch.review_payload(outcome), indent=2)
 
@@ -3382,7 +3772,7 @@ class LumenWebTools:
             ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
             if not ingest.get("ok"):
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
-                failures.append({"slot": prepared.slot, "error": detail})
+                failures.append({"cell": prepared.cell, "error": detail})
                 continue
             record = (ingest.get("asset") or {}).get("record") or {}
             registered = self._register_asset_record(
@@ -3390,14 +3780,15 @@ class LumenWebTools:
                 origin="logo_ladder",
                 label=prepared.label,
                 alt=f"{outcome.company or prepared.label} logo",
-                extra={"slot": prepared.slot},
+                extra={"cell": prepared.cell},
             )
             # `_register_asset_record` returns a tool-error envelope when the
             # checked op path rejects the batch; surface it verbatim.
             if '"status": "ok"' not in registered:
                 return registered
             placed.append({
-                "slot": prepared.slot,
+                "cell": prepared.cell,
+                "source": prepared.source,
                 "asset_id": prepared.asset_id,
                 **prepared.evidence,
             })
@@ -3409,25 +3800,60 @@ class LumenWebTools:
                 failures=failures,
             )
 
+        # The other real assets found for this company, registered the same way.
+        # A failed alternative is dropped and named; only `placed` decides success.
+        alternatives: List[JsonObject] = []
+        failed_alternatives: List[JsonObject] = []
+        for prepared in outcome.alternatives:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failed_alternatives.append({"cell": prepared.cell, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            registered = self._register_asset_record(
+                record,
+                origin="logo_ladder",
+                label=prepared.label,
+                alt=f"{outcome.company or prepared.label} logo",
+                extra={"cell": prepared.cell, "alternative": True},
+            )
+            if '"status": "ok"' not in registered:
+                failed_alternatives.append(
+                    {"cell": prepared.cell, "error": "registration refused"}
+                )
+                continue
+            alternatives.append({
+                "asset_id": prepared.asset_id,
+                "source": prepared.source,
+                "competed_for": prepared.evidence.get("competed_for"),
+                "reason": prepared.evidence.get("reason"),
+                **prepared.evidence,
+            })
+
         self._register_fetched_logo_custody(outcome)
         payload: JsonObject = {
             "status": outcome.status,
             "site": outcome.site,
             "identity": outcome.identity,
             "lockup_completeness": outcome.lockup_completeness,
+            "cache_hit": outcome.cache_hit,
             "logos": placed,
+            "alternatives": alternatives,
             "notes": outcome.notes[:4],
         }
         if failures:
-            payload["failed_slots"] = failures
+            payload["failed_cells"] = failures
+        if failed_alternatives:
+            payload["failed_alternatives"] = failed_alternatives
         self.record(
             "agent",
             "web_logo_fetched",
             input_summary=requested[:500],
             output_summary=(
-                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+                f"{outcome.site}: " + ", ".join(p["cell"] for p in placed)
             )[:500],
-            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+            payload={"site": outcome.site, "cells": [p["cell"] for p in placed]},
         )
         return json.dumps(payload, indent=2)
 
@@ -3482,11 +3908,12 @@ class LumenWebTools:
                 "ask for the file. An empty account logo is CORRECT; never draw, recolour or "
                 "approximate one.",
             )
-        if not is_ladder_fetched(record):
+        if not is_fetched_logo(record):
             return self._tool_error(
                 "account_logo.not_a_fetched_logo",
-                f"'{asset}' was not fetched from that company's own website, so it cannot "
-                "become their logo. Only a mark the logo ladder retrieved and attributed binds "
+                f"'{asset}' was not fetched from that company's own website or logo vendor, "
+                "so it cannot become their logo. "
+                "Only a mark the logo ladder retrieved and attributed binds "
                 "here — a generated image, a placeholder or a section's own artwork is not a "
                 "company's logo. Call fetch_logo with their domain; if it finds nothing, an "
                 "empty account logo is CORRECT.",
@@ -4601,6 +5028,110 @@ class LumenWebTools:
             "Compose the section instead.",
         )
 
+    def _fragment_text_overrides(self, fragment_id: str) -> List[JsonObject]:
+        """Every human text override on every pin of this clone, across every page.
+
+        The overrides live on the DOCUMENT's fragment NODE, not on the artifact: the artifact is
+        immutable and shared, an override is one person's edit to one instance. So this reads
+        the working doc rather than the registry, and the same clone pinned twice reports two
+        (possibly different) sets. Ordered by page, node and path so the listing is stable
+        between turns.
+        """
+        found: List[JsonObject] = []
+        doc = self.web_doc if isinstance(self.web_doc, dict) else {}
+        for page in doc.get("pages") or []:
+            if not isinstance(page, dict):
+                continue
+            page_id = page.get("id") if isinstance(page.get("id"), str) else ""
+            nodes = page.get("nodes")
+            if not isinstance(nodes, dict):
+                continue
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict) or node.get("kind") != "fragment":
+                    continue
+                if node.get("fragment_id") != fragment_id:
+                    continue
+                overrides = node.get("text_overrides")
+                if not isinstance(overrides, dict):
+                    continue
+                for path, override in overrides.items():
+                    if not isinstance(path, str) or not isinstance(override, dict):
+                        continue
+                    found.append(
+                        {
+                            "page_id": page_id,
+                            "node_id": node_id,
+                            "path": path,
+                            "text": override.get("text"),
+                            "bold": bool(override.get("bold")),
+                            "italic": bool(override.get("italic")),
+                            "underline": bool(override.get("underline")),
+                            # A step, not a value, and genuinely optional: `null` means the
+                            # clone's own type size stands.
+                            "size": override.get("size"),
+                        }
+                    )
+        found.sort(key=lambda entry: (entry["page_id"], entry["node_id"], entry["path"]))
+        return found
+
+    def inspect_cloned_section(self, fragment_id: str) -> str:
+        """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
+        its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
+        raw composition (`compose_web_section`) remix — the client's actual class names,
+        spacing constants, gradients and type scale. Call it on the band you are about to
+        adapt, or on the ancestor of a band you are about to compose, BEFORE writing any
+        markup; `view("cloned_section:<id>")` shows the picture, this shows the bytes.
+        The clone's source lives in the library, never in the workspace filesystem —
+        searching files for it finds nothing. Long sources are truncated; the response
+        says so and gives the full sizes.
+
+        `text_overrides` lists the HUMAN's own edits to individual elements of the pins of this
+        clone on the page — the one interior change a person may make to a cloned band — and
+        they are to be respected, never rewritten: re-binding a slot preserves them (the engine
+        keeps an override across `set_node_props`), and nothing you author should undo the
+        marketer's words."""
+        clean_id = (fragment_id or "").strip()
+        if not clean_id:
+            return self._tool_error(
+                "cloned_section.bad_request", "inspect_cloned_section requires a fragment id."
+            )
+        registry = self._cloned_section_registry()
+        try:
+            source = registry.read_source(clean_id)
+        except Exception as error:  # noqa: BLE001 - an honest not-found beats a dead turn
+            return self._tool_error(
+                "cloned_section.not_found",
+                f"cloned section {clean_id!r} could not be read: {error}",
+                fragment_id=clean_id,
+            )
+        cap = 12_000
+        html = source.get("html") or ""
+        css = source.get("css") or ""
+        payload: JsonObject = {
+            "status": "ok",
+            "fragment_id": clean_id,
+            "section_role": source.get("section_role"),
+            "label": source.get("label"),
+            "source_url": source.get("source_url"),
+            "fragment_status": source.get("status"),
+            "derived_from": source.get("derived_from"),
+            "slots": source.get("slots"),
+            "text_overrides": self._fragment_text_overrides(clean_id),
+            "html_chars": len(html),
+            "html_truncated": len(html) > cap,
+            "html": html[:cap],
+            "css_chars": len(css),
+            "css_truncated": len(css) > cap,
+            "css": css[:cap],
+        }
+        self.record(
+            "author",
+            "cloned_section_inspected",
+            input_summary=clean_id,
+            output_summary=f"{len(html)} html chars, {len(css)} css chars",
+        )
+        return json.dumps(payload, indent=2)
+
     def search_cloned_sections(
         self, q: str = "", role: Optional[str] = None, limit: int = 8
     ) -> str:
@@ -4992,7 +5523,7 @@ class LumenWebTools:
             position = min(index, len(siblings))
 
         section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-            clean_id, slots, set(nodes)
+            clean_id, slots, set(nodes), name=pin_display_name(resolved)
         )
         operations = [
             {
@@ -5375,7 +5906,7 @@ class LumenWebTools:
             if slot_error is not None:
                 return slot_error
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, slots, taken
+                fragment_id, slots, taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             operations.append(
@@ -5767,7 +6298,7 @@ class LumenWebTools:
             if slot_error is not None:
                 return slot_error
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, slots, taken
+                fragment_id, slots, taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             operations.append(
@@ -6096,7 +6627,7 @@ class LumenWebTools:
             index = children.index(old_section) if old_section in children else len(children)
             slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                new_id, {}, set(nodes)
+                new_id, {}, set(nodes), name=pin_display_name(resolved)
             )
             operations: List[JsonObject] = [
                 {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
@@ -6909,8 +7440,11 @@ class LumenWebTools:
     # --- the ABM assembly walk (clone-fidelity F4.2) -------------------------------------------
     #
     # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
-    # the seller's campaign chrome around a personalized hero, with the new sections composed by
-    # the ordinary authoring vocabulary in between. Two of that shape's properties are the whole
+    # the seller's campaign chrome around a personalized hero, with the page's other bands
+    # between them — pinned clones with marker-bound slots, derived variants, and raw
+    # compositions remixing real ancestors (the vocabulary lane last, for attribute-bearing
+    # bands only; the 2026-09-04 Ramp run read an older "ordinary authoring vocabulary" wording
+    # here as the expected lane and built a generic page). Two of that shape's properties are the whole
     # reason this is a tool rather than a paragraph of prompt:
     #
     #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
@@ -6931,19 +7465,22 @@ class LumenWebTools:
     ) -> str:
         """Put the ABM page's chrome on: campaign header FIRST, campaign footer LAST.
 
-        Call this on an account page AFTER `author_web_page` has composed the page's own
-        sections — a whole-page rewrite cannot carry a pinned cloned section, so chrome pinned
-        before it would simply be dropped.
+        Call this on an account page AFTER the page's own sections stand — pinned clones with
+        marker-bound slot values, derived variants, raw compositions; `author_web_page` only for
+        the rare attribute-bearing band, and never after this, because a whole-page rewrite
+        cannot carry a pinned cloned section and would drop the chrome this pins.
 
         WHAT IT PINS. The workspace's released CAMPAIGN SHELLS (`mint_campaign_shells` makes
         them) as the first and last sections of the page, and — when you name one — a released
         cloned HERO between them. Everything else on the page stays where it is.
 
-        IT NEVER PINS THE CLIENT'S NAV OR SITE FOOTER. Every link in a nav is a way off the one
-        page written for this account. A workspace with no released shells is REFUSED
-        (`abm.no_campaign_shells`) and told to mint them; naming a `nav`- or `footer`-role clone
-        as the hero is REFUSED (`abm.escape_route_chrome`); and a page that already carries one
-        stops the assembly before anything lands. There is no fallback to the cloned nav.
+        THE SHELLS ARE WHAT IT REACHES FOR. They are this page's chrome, so a workspace with no
+        released shells is REFUSED (`abm.no_campaign_shells`) and told to mint them — a missing
+        input, not a matter of taste; the walk does not quietly wear the client's cloned
+        navigation in their place. You can still pin a cloned `nav` or `footer` yourself: name
+        one as the hero and it goes on with a note in `advice`, and a page that already carries
+        one is assembled around and noted the same way (founder ruling R-F5-8: allowed, not
+        recommended). The judgement is yours.
 
         THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. The header's `prepared_for` and
         `target_logo` are bound to `{{account.name}}` and `{{account.logo}}`, which the account
@@ -7037,15 +7574,24 @@ class LumenWebTools:
                 + " or ".join(missing)
                 + " shell"
                 + (f" for brand kit {kit_id}" if kit_id else "")
-                + ", and an ABM page wears its own chrome — never the client's cloned "
-                "navigation, because every link in a nav is a way off the one page written for "
-                "this account. Call mint_campaign_shells to compose them from the brand kit, "
-                "then a human releases them by re-approving the brand kit. Nothing was pinned.",
+                + ", and the shells are the chrome this walk reaches for — it will not put the "
+                "client's cloned navigation there instead of them. Call mint_campaign_shells to "
+                "compose them from the brand kit, then a human releases them by re-approving the "
+                "brand kit. (You can still pin a cloned nav or footer yourself by name; it comes "
+                "with advice — R-F5-8: allowed, not recommended.) Nothing was pinned.",
                 missing_shell_roles=missing,
                 brand_kit=kit_id,
             )
 
-        # --- the escape-route rule, over the PAGE and over this call's arguments ---------------
+        # --- the escape-route ADVICE, over the PAGE and over this call's arguments --------------
+        #
+        # FOUNDER RULING R-F5-8 (2026-09-02): links are structurally free. The DETECTION below is
+        # exactly the one R24-1 shipped — `is_escape_route_role` is unchanged, and it still spots
+        # the client's own nav and site footer wherever they arrive from — but a cloned nav is now
+        # PINNED when it is asked for, and what the walk thinks of it rides back in `advice`. The
+        # sentences say "usually poor practice", because that is what it is: this page belongs to
+        # the human running the campaign, not to this tool.
+        escape_route_advice: List[str] = []
         page = self._home_page()
         nodes = page.get("nodes") or {}
         root_id = page.get("root")
@@ -7055,31 +7601,23 @@ class LumenWebTools:
         for fragment_id in sorted(pinned_now):
             row = by_id.get(fragment_id)
             if row is None:
-                # Fail CLOSED (fix-round M1): a pinned fragment absent from the bounded,
-                # approved-only listing — retired since it was pinned, or beyond the listing
-                # cap — is one this walk cannot classify, and "I don't know what this is" must
-                # never read as "it's fine": the review pinned a nav, dropped its row, and the
-                # walk assembled campaign chrome around it.
-                return self._tool_error(
-                    "abm.unresolved_pinned_fragment",
-                    f"this page pins {fragment_id}, which is not in the released cloned-"
-                    "section listing this walk reads (it may have been retired since it was "
-                    "pinned, or the workspace's listing is larger than the walk's bound) — so "
-                    "the walk cannot tell whether it is an escape route. Remove it from the "
-                    "page, or release it so it lists, then run this again. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # ADVISE, don't refuse (founder ruling R-F5-8, 2026-09-02). The DETECTION is the
+                # one fix-round M1 shipped — a pinned fragment absent from the bounded,
+                # approved-only listing is one this walk cannot classify — but "I cannot tell
+                # what this links to" is no longer a reason to stop the assembly: links are
+                # structurally free, so the walk says what it does not know and carries on.
+                escape_route_advice.append(
+                    f"{fragment_id} is pinned on this page but is not in the released cloned-"
+                    "section listing this walk reads (retired since it was pinned, or beyond "
+                    "the listing's bound) — the walk could not check what it links to; judge "
+                    "it yourself (R-F5-8: allowed, not recommended)"
                 )
+                continue
             if is_escape_route_role(row.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"this page already carries {fragment_id} — the client's own "
-                    f"{row.get('section_role')} — and every link in it is a way off the one page "
-                    "written for this account. Remove it before assembling the ABM chrome; the "
-                    "campaign shells replace it. Nothing was pinned.",
-                    fragment_id=fragment_id,
-                    section_role=row.get("section_role"),
-                    section_node_ids=list(pinned_now[fragment_id]),
+                # Already on the page, put there by an earlier call: the walk builds its chrome
+                # around it and says what it thinks, rather than refusing to assemble at all.
+                escape_route_advice.append(
+                    _escape_route_advice(fragment_id, row.get("section_role"))
                 )
 
         hero: Optional[JsonObject] = None
@@ -7115,14 +7653,10 @@ class LumenWebTools:
                     section_role=hero.get("section_role"),
                 )
             if is_escape_route_role(hero.get("section_role")):
-                return self._tool_error(
-                    "abm.escape_route_chrome",
-                    f"{clean_hero} is the client's own {hero.get('section_role')}, and an ABM "
-                    "page never wears one: every link in it is a way off the one page written "
-                    "for this account. The campaign shells are this page's chrome. Nothing was "
-                    "pinned.",
-                    fragment_id=clean_hero,
-                    section_role=hero.get("section_role"),
+                # Asked for by name as the hero. It is pinned — the caller may have a reason the
+                # walk cannot see — and the note goes with it.
+                escape_route_advice.append(
+                    _escape_route_advice(clean_hero, hero.get("section_role"))
                 )
             if raw_hero_slots:
                 # The AUTHORITATIVE kinds, out of the artifact. Fail LOUD rather than soft here,
@@ -7233,7 +7767,7 @@ class LumenWebTools:
                     fragment_id=fragment_id,
                 )
             section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                fragment_id, entry["slots"], taken
+                fragment_id, entry["slots"], taken, name=pin_display_name(resolved)
             )
             taken.update({section_id, node_id})
             index = {"first": 0, "after_header": 1}.get(entry["place"], length)
@@ -7313,6 +7847,13 @@ class LumenWebTools:
             warnings=warnings,
             advice=advice,
         )
+        if escape_route_advice:
+            # FIRST in the bucket: it is the thing about this page an author is least likely to
+            # have thought about, and it is about the page rather than about one operation. The
+            # engine's own advice entries are dicts; these are sentences, which is what a ruling
+            # about practice has to say — there is no code for "your client's nav is on your
+            # campaign page and that is your call".
+            result["advice"] = escape_route_advice + list(result["advice"])
         self._note_degraded_pins(result, degraded_pins)
         self.record(
             "author",
@@ -7576,7 +8117,7 @@ class LumenWebTools:
             return None
         index = children.index(section_node_id)
         wrapper_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-            repair_id, {}, set(nodes)
+            repair_id, {}, set(nodes), name=pin_display_name(resolved)
         )
         batch = [
             {"kind": "remove_node", "page_id": self.page_id, "id": section_node_id},
@@ -7627,7 +8168,12 @@ class LumenWebTools:
         return None
 
     def _cloned_section_pin_nodes(
-        self, fragment_id: str, slots: JsonObject, taken: set
+        self,
+        fragment_id: str,
+        slots: JsonObject,
+        taken: set,
+        *,
+        name: Optional[str] = None,
     ) -> tuple[str, str, List[JsonObject]]:
         """The `(wrapper section, fragment leaf)` pair one pinned clone occupies on the page.
 
@@ -7637,6 +8183,9 @@ class LumenWebTools:
         Shared by the single pin and the whole-page recreate so the two cannot produce different
         shapes for the same act. ``taken`` is the caller's running set of ids, so a batch that
         pins ten sections at once still mints ten distinct pairs.
+
+        ``name`` is the human name both nodes are BORN with (R-A5) — pass
+        ``pin_display_name(resolved)`` from the registry entry this pin resolved through.
         """
         section_id, node_id = self._cloned_section_node_ids(taken)
         section_node: JsonObject = {
@@ -7653,6 +8202,11 @@ class LumenWebTools:
             "fragment_id": fragment_id,
             "slots": slots,
         }
+        if name:
+            # R-A5: born human-readable. The name rides INSIDE the `insert_node` payload, so
+            # the commit gate's replay reproduces it without a second operation to keep in step.
+            section_node["name"] = name
+            fragment_node["name"] = name
         return section_id, node_id, [section_node, fragment_node]
 
     def _cloned_section_node_ids(self, taken: set) -> tuple[str, str]:
@@ -7919,7 +8473,9 @@ class LumenWebTools:
             output_summary="cloned_section_viewed",
         )
         return [
-            _text_block(f"view: cloned section {fragment_id} — {label}"),
+            _text_block(_image_observation_label(
+                Path(preview_path), f"view: cloned section {fragment_id} — {label}"
+            )),
             # G5: every web view image rides the many-image ceiling — these accumulate in the
             # same conversation as the page captures.
             _image_block(Path(preview_path), max_px=_VISION_MANY_IMAGE_MAX_PX),
@@ -8748,6 +9304,10 @@ class LumenWebTools:
         self.iteration += 1
         iter_dir = self.trace_dir / f"iter_{self.iteration}"
         iter_dir.mkdir(parents=True, exist_ok=True)
+        # Which page these screenshots are OF. A multi-page run captures the same
+        # widths under several pages, and an iteration directory that does not say
+        # which one it holds is a trace nobody can read back.
+        (iter_dir / "page.txt").write_text(self.page_id + "\n", encoding="utf-8")
 
         try:
             html, diagnostics, tailwind_missing = self._render_page_html()
@@ -8824,10 +9384,12 @@ class LumenWebTools:
             "orchestrator",
             "web_preview_rendered",
             output_summary=(
-                f"iteration {self.iteration}: {len(paths)} screenshot(s), "
+                f"iteration {self.iteration}: page `{self.page_id}`, "
+                f"{len(paths)} screenshot(s), "
                 f"{len(self._state_captures)} state capture(s)"
             ),
             diagnostics=diagnostics,
+            payload={"page_id": self.page_id},
         )
         return json.dumps(result, indent=2)
 
@@ -9152,9 +9714,9 @@ class LumenWebTools:
                 "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
             )
             return [
-                _text_block(
-                    f"view: latest preview at {width}px (iteration {self._preview_iteration})"
-                ),
+                _text_block(_image_observation_label(
+                    Path(path), f"view: latest preview at {width}px (iteration {self._preview_iteration})"
+                )),
                 # G5: web review is many-image by construction (three widths per
                 # render, state captures, and every image the orchestrator has
                 # already viewed rides the same request), so every image attached
@@ -9313,9 +9875,10 @@ class LumenWebTools:
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )
         return [
-            _text_block(
-                f"view: asset {asset_id} — {label} ({', '.join(details)})"
-            ),
+            _text_block(_image_observation_label(
+                path, f"view: asset {asset_id} — {label} ({', '.join(details)})",
+                source_mime=(record.get("media") or {}).get("mime_type"),
+            )),
             # G5 (see the preview branch): every web view image rides the
             # many-image ceiling, kit assets included — they accumulate in the
             # same conversation as the page captures.
@@ -9374,10 +9937,10 @@ class LumenWebTools:
             "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
         )
         return [
-            _text_block(
-                f"view: state capture {index} — {capture.get('kind')}"
+            _text_block(_image_observation_label(
+                Path(path), f"view: state capture {index} — {capture.get('kind')}"
                 f"{node_note} at {capture.get('width')}px"
-            ),
+            )),
             # G5: same many-image ceiling as the preview blocks above — a state
             # capture rides the identical accumulating request.
             _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
@@ -9427,6 +9990,12 @@ class LumenWebTools:
             "summary": summary,
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
+            # Informational only — what this site ended up being. NO gate reads
+            # it: a one-page site is as finishable as a ten-page one.
+            "pages": [
+                {"id": page["id"], "route": page["route"], "sections": page["sections"]}
+                for page in self._page_listing()
+            ],
         }
         if gap:
             payload["ladder_gap"] = gap

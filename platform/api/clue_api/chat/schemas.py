@@ -201,6 +201,11 @@ class ContextRefRequest(_Request):
     per-message selection inside that exact document scene. ``design_asset`` identifies one ready
     image in the design asset library for reference conditioning. ``project_document`` is a
     Gallery file (a row of ``brand_knowledge_document`` with a project), always version-pinned.
+
+    ``note`` is the marketer's own words about *this* ref — the annotation written onto one
+    element in the web editor ("1. Make this shorter"). It rides the ref rather than the message
+    so the instruction stays bound to the thing it is about; optional, because most refs are a
+    plain selection.
     """
 
     object_type: Literal[
@@ -208,6 +213,7 @@ class ContextRefRequest(_Request):
     ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
+    note: str | None = Field(default=None, max_length=2_000)
 
 
 MAX_CONTEXT_REFS_PER_TURN = 100

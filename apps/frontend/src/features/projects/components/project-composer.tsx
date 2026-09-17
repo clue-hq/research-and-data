@@ -43,6 +43,7 @@ export function ProjectComposer({
   stopping = false,
   prompt,
   sendDisabled = false,
+  submittableWithoutPrompt = false,
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
@@ -70,6 +71,11 @@ export function ProjectComposer({
   stopping?: boolean;
   prompt: string;
   sendDisabled?: boolean;
+  /** Web annotations (slice 2, R-A2): the caller is carrying context that IS
+   * the message — numbered annotation chips above the composer — so an empty
+   * box is a legitimate send, and the turn's text is the caller's to decide.
+   * Defaults false: every other composer keeps its "type something" rule. */
+  submittableWithoutPrompt?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
@@ -80,7 +86,8 @@ export function ProjectComposer({
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const [submitting, setSubmitting] = useState(false);
   const action = composerAction({ running: running && Boolean(onStop), stopping,
-    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments),
+    // An annotation-only turn (web lane) is a draft even with an empty prompt.
+    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments) || submittableWithoutPrompt,
     disabled, sendDisabled, submitting });
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
@@ -99,7 +106,10 @@ export function ProjectComposer({
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!hasComposerDraft(currentPrompt, currentEntityIds, attachments)) {
+      if (
+        !hasComposerDraft(currentPrompt, currentEntityIds, attachments) &&
+        !submittableWithoutPrompt
+      ) {
         return;
       }
 
@@ -112,7 +122,16 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [attachments, disabled, onSubmit, prompt, sendDisabled, submitting, stopping],
+    [
+      attachments,
+      disabled,
+      onSubmit,
+      prompt,
+      sendDisabled,
+      stopping,
+      submittableWithoutPrompt,
+      submitting,
+    ],
   );
 
   return (

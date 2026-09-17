@@ -35,6 +35,8 @@ from typing import Any
 
 from py_lumen_obs import get_logger
 
+from lumen_api.qa_render_ua import qa_render_context_kwargs
+
 from .walk import (
     DOCUMENT_HEIGHT_SCRIPT,
     STYLES_READY_TIMEOUT_MS,
@@ -196,6 +198,8 @@ def _open(
     context = browser.new_context(
         viewport={"width": viewport.width, "height": viewport.height},
         reduced_motion="reduce" if reduced_motion else "no-preference",
+        # A normal Chrome UA when the flag is on — see `qa_render_ua.py`.
+        **qa_render_context_kwargs(),
     )
     page = context.new_page()
     page.set_default_timeout(WALK_TIMEOUT_MS)

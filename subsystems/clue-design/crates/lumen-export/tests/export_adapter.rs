@@ -451,6 +451,7 @@ fn svg_export_uses_computed_xy_for_layouted_children() {
             width: 80.0,
             height: 32.0,
         },
+        text_lines: Vec::new(),
     });
 
     let result = adapter
@@ -490,6 +491,7 @@ fn svg_export_scales_a_library_icon_to_its_node_box() {
             width: 48.0,
             height: 48.0,
         },
+        text_lines: Vec::new(),
     });
 
     let result = adapter

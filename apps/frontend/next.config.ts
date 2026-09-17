@@ -1,11 +1,18 @@
 import type { NextConfig } from "next";
+import { localWorkspaceInstance } from "./src/auth/local-workspace";
 
 // canvaskit-wasm's glue requires Node built-ins (`fs`/`path`/`crypto`) and probes for the optional
 // `canvas` package on code paths that never run in the browser. Both bundlers must be told to stub
 // them, and they use different mechanisms — webpack `resolve.fallback`, Turbopack `resolveAlias`.
 const CANVASKIT_STUB = "./src/features/design-editor/engine/scene/empty-module.ts";
+const localInstance = localWorkspaceInstance();
 
 const nextConfig: NextConfig = {
+  // Parallel local instances must not share Next's compiler cache or dev lock.
+  distDir: localInstance?.distDir ?? ".next",
+  typescript: {
+    tsconfigPath: localInstance ? `tsconfig.local-${localInstance.port}.json` : "tsconfig.json",
+  },
   // Railway's runtime image copies only Next's traced production server rather
   // than the full dependency tree. `next start` remains available locally.
   output: "standalone",

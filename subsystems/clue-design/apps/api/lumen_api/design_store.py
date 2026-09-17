@@ -115,6 +115,7 @@ from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
 from clue_design import web_fragments as design_web_fragments
+from clue_design import workspace_handles as design_workspace_handles
 from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
@@ -1358,6 +1359,71 @@ class HybridRepository:
             )
         )
 
+    def get_web_publish_page(self, slug: str, route: str) -> Optional[JsonObject]:
+        """One served route of a multi-page site (F5), or ``None``.
+
+        ``None`` also covers a pre-F5 publish, which has no page rows at all — the caller falls
+        back to the publish row's own ``html`` for ``/`` and 404s elsewhere."""
+        return self._bridge._run(
+            lambda conn: design_publishes.get_web_publish_page(
+                conn, workspace_id=self.workspace_id, slug=slug, route=route
+            )
+        )
+
+    def list_web_publish_pages(self, slug: str) -> list[JsonObject]:
+        """Every route the site currently serves (route/page_id/html_digest, no html)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.list_web_publish_pages(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
+    # --- workspace handle (F5 task 14, ruling R-F5-5) -----------------------------------------
+    # The DNS label this workspace's published sites hang off. Derived from the workspace name,
+    # editable until the first publish, frozen after — see `clue_design.workspace_handles`.
+
+    def get_workspace_handle(self) -> Optional[JsonObject]:
+        """This workspace's handle row, or ``None`` if it has never had one."""
+        return self._bridge._run(
+            lambda conn: design_workspace_handles.get_workspace_handle(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def ensure_workspace_handle(self) -> JsonObject:
+        """The handle, minting the name-derived default the first time. Never overwrites."""
+        return self._bridge._run(
+            lambda conn: design_workspace_handles.ensure_workspace_handle(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def set_workspace_handle(self, handle: str) -> JsonObject:
+        """Choose the handle. ``ValueError`` carries the refusal:
+        ``handle_locked`` / ``handle_invalid`` / ``handle_taken``."""
+        return self._bridge._run(
+            lambda conn: design_workspace_handles.set_workspace_handle(
+                conn, workspace_id=self.workspace_id, handle=handle
+            )
+        )
+
+    def lock_workspace_handle(self) -> JsonObject:
+        """Freeze the handle at a successful publish. Idempotent; mints one if absent."""
+        return self._bridge._run(
+            lambda conn: design_workspace_handles.lock_workspace_handle(
+                conn, workspace_id=self.workspace_id
+            )
+        )
+
+    def get_workspace_by_handle(self, handle: str) -> Optional[str]:
+        """``handle -> workspace_id``, the public host router's reverse lookup (Task 15).
+
+        Cross-workspace ON PURPOSE — it answers *which* tenant a host belongs to, so it is the
+        one store method whose result is not scoped to ``self.workspace_id``."""
+        return self._bridge._run(
+            lambda conn: design_workspace_handles.get_workspace_by_handle(conn, handle=handle)
+        )
+
     # --- custom-component registry (D2.4B) ----------------------------------------------------
 
     def register_custom_component_artifact(self, artifact: JsonObject) -> JsonObject:
@@ -1996,6 +2062,21 @@ class HybridRepository:
         documents because only half the join had been ported)."""
         return self._bridge._run(
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
+        )
+
+    def active_design_run_for_document(self, document_id: str) -> Optional[str]:
+        """The run id of a design run currently DRIVING this document, or ``None``.
+
+        The write lock's one read (scene live-streaming, rung A): while a design run is in flight
+        on a document, the manual scene-write routes refuse with 409 ``document.agent_run_active``
+        and name this run, so a human edit can never interleave with the run's own commits. The
+        agent's own writes go through the governed tools, never those routes, so they are
+        untouched by it. See :func:`clue_design.runs.active_run_for_document` for what counts as
+        driving."""
+        return self._bridge._run(
+            lambda conn: design_runs.active_run_for_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
         )
 
     # --- cross-domain reads over the Postgres document feed ----------------------------------

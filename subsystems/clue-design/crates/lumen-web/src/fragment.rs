@@ -1,4 +1,5 @@
-//! Slot substitution inside a rendered fragment (clone-fidelity F1.4).
+//! Slot substitution inside a rendered fragment (clone-fidelity F1.4), and the
+//! text-override pass that runs after it (R-A6).
 //!
 //! A fragment artifact is sanitized ONCE, at creation, and frozen. This walk
 //! is what makes the frozen thing personalizable: it copies the artifact's
@@ -21,11 +22,18 @@
 //!    Image node arm performs — so only a digest-derived URL ever reaches
 //!    `src`; no free text from a slot value can.
 //!
+//! `apply_fragment_text_overrides` is the SECOND walk, over the first one's
+//! output: the one interior edit a human may make to a clone (R-A6), addressed
+//! by structural path rather than by a marker the artifact planted. Its own
+//! doc comment carries the rules; the same escape-it-here reasoning applies,
+//! because an override's text is typed into the inspector and never meets the
+//! sanitizer either.
+//!
 //! Nothing here mutates the stored document or the stored artifact. The output
 //! exists only in the rendered HTML, and every marker survives it, so a
 //! rendered fragment can be rendered again from the same two inputs.
 
-use crate::doc::{FragmentSlotValue, WebDoc};
+use crate::doc::{FragmentSlotValue, FragmentTextOverride, WebDoc};
 use crate::render::{asset_src, FragmentSlotKind};
 use crate::util::{escape_attr, escape_text, href_is_allowed};
 use lumen_core::{AssetId, Diagnostic, DiagnosticSubject, NodeId, Phase};
@@ -310,7 +318,14 @@ fn apply_marker(
                 out.push_str(source);
                 return;
             }
-            out.push_str(&rewrite_tag(start, name, empty, &[("href", target)], &[]));
+            out.push_str(&rewrite_tag(
+                start,
+                name,
+                empty,
+                &[("href", target)],
+                &[],
+                &[],
+            ));
         }
         (FragmentSlotKind::Image, FragmentSlotValue::Asset(asset_id)) => {
             // Only a digest-derived URL ever reaches `src`: the slot value
@@ -342,6 +357,7 @@ fn apply_marker(
                 name,
                 empty,
                 &[("src", &src)],
+                &[],
                 STALE_IMAGE_ATTRS,
             ));
         }
@@ -441,17 +457,308 @@ fn value_tag(value: &FragmentSlotValue) -> &'static str {
     }
 }
 
-/// Re-emit one start tag with `replacements` applied and `drops` removed.
+// --- text overrides (R-A6) --------------------------------------------------
+
+/// Apply this node's `text_overrides` to already-slot-substituted `html`.
 ///
-/// Only ever called on an element the artifact itself marked, so the
-/// normalization this performs (attribute values re-escaped into canonical
-/// double-quoted form) is confined to a marker — everything else in the
-/// artifact is copied through as source bytes.
+/// The second and last walk of a fragment render. Ruling R-A6 (founder,
+/// 2026-09-04) amends D-F3 — a fragment is opaque below its root — by exactly
+/// one axis: the TEXT of one element, addressed by structural path. Everything
+/// else about the clone is still untouchable here, and the artifact itself is
+/// never rewritten: an override is a per-instance substitution that exists only
+/// in the rendered bytes, so clearing it restores the clone exactly.
+///
+/// It runs AFTER the slot pass, on the slot pass's output, for two reasons: the
+/// marketer's own words outrank the agent's personalization on the one element
+/// they edited, and the markup the editor measured the path against is the
+/// rendered markup — the slot pass's output — not the stored artifact.
+///
+/// **The path's origin is the clone WRAPPER.** `render.rs` emits the artifact
+/// inside `<div class="lumen-fragment …" data-fragment-root>`, so that
+/// wrapper's element children are the stored HTML's top-level elements. The
+/// walk wraps the same HTML in `<lumen-fragment-walk>`, which puts the origin
+/// in exactly the same place: a first `:nth-child(n)` step names the n-th
+/// TOP-LEVEL element of the artifact. Two other implementations count from that
+/// same origin and must agree with this one step for step — the editor bridge
+/// (`web_bridge.py`'s `elementPath`, counting `firstElementChild` /
+/// `nextElementSibling` from `data-fragment-root`) and the server-side resolver
+/// (`apps/api/lumen_api/fragments/paths.py`, walking from `body`).
+///
+/// Never mutates anything. With no override the return value is the input, byte
+/// for byte, without even parsing it.
+pub(crate) fn apply_fragment_text_overrides(
+    html: &str,
+    overrides: &BTreeMap<String, FragmentTextOverride>,
+    node_id: &NodeId,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> String {
+    if overrides.is_empty() {
+        return html.to_owned();
+    }
+
+    let wrapped = format!("<{WALK_ROOT}>{html}</{WALK_ROOT}>");
+    let mut reader = Reader::from_str(&wrapped);
+    let config = reader.config_mut();
+    config.trim_text(false);
+    // Same reasons as the slot walk: this is HTML, not XML, and a parse error
+    // would abandon the whole pass.
+    config.check_end_names = false;
+    config.allow_unmatched_ends = true;
+
+    let mut out = String::with_capacity(html.len() + 256);
+    let mut applied: BTreeSet<String> = BTreeSet::new();
+    // One counter per OPEN depth, counting ELEMENT children only. The last
+    // entry is the index of the element being read and every entry before it is
+    // an ancestor's, frozen at its own index for as long as it stays open — so
+    // the stack IS the path, and no separate bookkeeping can drift from it.
+    let mut counters: Vec<usize> = vec![0];
+    let mut skip: Option<Skip> = None;
+
+    loop {
+        let pos_before = reader.buffer_position() as usize;
+        let event = reader.read_event();
+        let pos_after = reader.buffer_position() as usize;
+        let source = &wrapped[pos_before..pos_after];
+        match event {
+            Ok(event @ (Event::Start(_) | Event::Empty(_))) => {
+                let empty = matches!(event, Event::Empty(_));
+                let start = match &event {
+                    Event::Start(start) | Event::Empty(start) => start,
+                    _ => unreachable!("matched above"),
+                };
+                let name = tag_name(start);
+                if name == WALK_ROOT {
+                    continue;
+                }
+                if let Some(state) = skip.as_mut() {
+                    // Inside a replaced subtree nothing is counted and nothing
+                    // is emitted; the name stack only has to know which `End`
+                    // closes the overridden element.
+                    if !empty && !is_void(&name) {
+                        state.depth.push(name);
+                    }
+                    continue;
+                }
+                if let Some(index) = counters.last_mut() {
+                    *index += 1;
+                }
+                let path = current_path(&counters);
+                match overrides.get(&path) {
+                    // A void or self-closing element has no content to replace,
+                    // and inventing a container the artifact never had is not
+                    // the answer — an `<img>` has no text.
+                    Some(_) if empty || is_void(&name) => {
+                        applied.insert(path.clone());
+                        diagnostics.push(override_on_void(node_id, &path, &name));
+                        out.push_str(source);
+                    }
+                    Some(over) => {
+                        applied.insert(path.clone());
+                        out.push_str(&override_tag(start, &name, &path, over));
+                        out.push_str(&override_content(over));
+                        // The original subtree is consumed exactly as a text
+                        // slot's is. Deliberately no `counters.push`: the walk
+                        // does not descend, and the `End` that closes this
+                        // element is taken by the skip branch without a pop, so
+                        // this element's own counter survives for its siblings.
+                        skip = Some(Skip {
+                            depth: Vec::new(),
+                            close: Some(format!("</{name}>")),
+                            owner: path,
+                        });
+                    }
+                    None => {
+                        out.push_str(source);
+                        if !empty && !is_void(&name) {
+                            counters.push(0);
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(end)) => {
+                let name = String::from_utf8_lossy(end.name().as_ref()).into_owned();
+                if name == WALK_ROOT {
+                    continue;
+                }
+                if let Some(state) = skip.as_mut() {
+                    if is_void(&name) {
+                        continue;
+                    }
+                    if state.depth.pop().is_some() {
+                        continue;
+                    }
+                    // This closes the overridden element itself.
+                    if let Some(close) = state.close.take() {
+                        out.push_str(&close);
+                    }
+                    skip = None;
+                    continue;
+                }
+                // A void element never opened a depth, and an unmatched `</div>`
+                // (the reader is told to allow them) must not pop past the root.
+                if !is_void(&name) && counters.len() > 1 {
+                    counters.pop();
+                }
+                out.push_str(source);
+            }
+            Ok(Event::Eof) => break,
+            // Text, comments, CDATA, PIs: copied through, and never counted —
+            // the bridge counts elements, so counting these would address a
+            // different element than the one the marketer clicked.
+            Ok(_) => {
+                if skip.is_none() {
+                    out.push_str(source);
+                }
+            }
+            // Same answer as the slot walk: emit the input unchanged rather
+            // than a half-edited page.
+            Err(_) => return html.to_owned(),
+        }
+    }
+
+    for path in overrides.keys() {
+        if !applied.contains(path) {
+            diagnostics.push(override_path_unresolved(node_id, path));
+        }
+    }
+
+    out
+}
+
+/// The stack of element-child indices as the `:nth-child(n) > …` address it is.
+fn current_path(counters: &[usize]) -> String {
+    counters
+        .iter()
+        .map(|index| format!(":nth-child({index})"))
+        .collect::<Vec<_>>()
+        .join(" > ")
+}
+
+/// Relative size steps → an `em` multiplier on the artifact's own scale.
+///
+/// A step, not a font size: the clone owns its type scale and this only walks
+/// it, so `em` — relative to what the element already inherits — is the only
+/// unit that cannot fight the artifact's own CSS. The multipliers are literal
+/// strings rather than formatted floats because `0.8125` through a float
+/// formatter is exactly the kind of trailing-digit noise that shows up in a
+/// diff of rendered HTML and in nothing else.
+fn size_em(step: i8) -> Option<&'static str> {
+    Some(match step {
+        -3 => "0.75",
+        -2 => "0.8125",
+        -1 => "0.875",
+        0 => "1",
+        1 => "1.125",
+        2 => "1.25",
+        3 => "1.5",
+        // Validation refuses a step outside the ramp at the door (LUMW0443), so
+        // this is only reachable on a document that never passed it. The
+        // artifact's own size is the honest answer; a panic is not.
+        _ => return None,
+    })
+}
+
+/// The overridden element's start tag: its own attributes, then ours.
+///
+/// `data-lumen-override` always (it is how the editor finds an edited element
+/// again in a fresh render), `data-lumen-size` only when the override carries a
+/// step, and the size itself as an inline `font-size` appended to whatever
+/// `style` the clone already had.
+fn override_tag(
+    start: &BytesStart<'_>,
+    name: &str,
+    path: &str,
+    over: &FragmentTextOverride,
+) -> String {
+    let step = over.size.map(|step| step.to_string());
+    let font_size = over
+        .size
+        .and_then(size_em)
+        .map(|em| format!("font-size:{em}em"));
+    let mut replacements: Vec<(&str, &str)> = vec![("data-lumen-override", path)];
+    if let Some(step) = step.as_deref() {
+        replacements.push(("data-lumen-size", step));
+    }
+    let appends: Vec<(&str, &str)> = match font_size.as_deref() {
+        Some(font_size) => vec![("style", font_size)],
+        None => Vec::new(),
+    };
+    rewrite_tag(start, name, false, &replacements, &appends, &[])
+}
+
+/// The override's text as element content: escaped, then wrapped in the marks
+/// it carries, `strong > em > u` outermost-first.
+///
+/// The text never met the sanitizer — it is typed by a human into the inspector
+/// and lands straight on the document node — so it is escaped HERE, into text
+/// context, or not at all. The three marks are the whole vocabulary: an
+/// override is a nudge, not a second rich-text document.
+fn override_content(over: &FragmentTextOverride) -> String {
+    let mut open = String::new();
+    let mut close = String::new();
+    for (present, tag) in [
+        (over.bold, "strong"),
+        (over.italic, "em"),
+        (over.underline, "u"),
+    ] {
+        if present {
+            open.push_str(&format!("<{tag}>"));
+            close.insert_str(0, &format!("</{tag}>"));
+        }
+    }
+    format!("{open}{}{close}", escape_text(&over.text))
+}
+
+/// The markup an edit was made against can legitimately have moved on — a later
+/// turn regenerated the band — and the honest answer is to say the address is
+/// dead and leave the clone's own words standing, never to guess at the nearest
+/// heading and put words in the marketer's mouth.
+fn override_path_unresolved(node_id: &NodeId, path: &str) -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Web,
+        "LUMW0444",
+        format!(
+            "fragment node `{node_id}` carries a text override at `{path}`, which does not \
+             resolve to an element in this artifact; the clone's own text was kept"
+        ),
+        Some(DiagnosticSubject::Node(node_id.clone())),
+    )
+    .with_hint(
+        "The band was probably regenerated after the edit was made; clear the override and make \
+         it again against the markup that is there now.",
+    )
+}
+
+fn override_on_void(node_id: &NodeId, path: &str, name: &str) -> Diagnostic {
+    Diagnostic::warning(
+        Phase::Web,
+        "LUMW0444",
+        format!(
+            "fragment node `{node_id}` carries a text override at `{path}`, which lands on \
+             `{name}` — an element that holds no text; the override was not applied"
+        ),
+        Some(DiagnosticSubject::Node(node_id.clone())),
+    )
+    .with_hint("A text override addresses an element that holds words, not an image or a break.")
+}
+
+/// Re-emit one start tag with `replacements` applied, `appends` merged onto the
+/// artifact's own value, and `drops` removed.
+///
+/// Only ever called on an element the artifact itself marked, or one a text
+/// override addresses, so the normalization this performs (attribute values
+/// re-escaped into canonical double-quoted form) is confined to those —
+/// everything else in the artifact is copied through as source bytes.
+///
+/// An attribute the element already carries keeps its SOURCE position whether
+/// it is replaced or appended to; a new one is written after every original, in
+/// the order given (replacements first, then appends).
 fn rewrite_tag(
     start: &BytesStart<'_>,
     name: &str,
     empty: bool,
     replacements: &[(&str, &str)],
+    appends: &[(&str, &str)],
     drops: &[&str],
 ) -> String {
     let mut out = format!("<{name}");
@@ -463,42 +770,59 @@ fn rewrite_tag(
             continue;
         }
         written.insert(lower.clone());
-        match replacements
+        // The injected value is the untrusted half: it is escaped.
+        if let Some((_, replacement)) = replacements
             .iter()
             .find(|(replaced, _)| *replaced == lower)
         {
-            // The injected value is the untrusted half: it is escaped.
-            Some((_, replacement)) => {
-                out.push_str(&format!(" {key}=\"{}\"", escape_attr(replacement)));
-            }
-            // Every OTHER attribute is carried over as the sanitizer wrote it,
-            // without an unescape/re-escape round trip. Round-tripping would
-            // turn `alt="A &nbsp; B"` into a literal `&amp;nbsp;` (quick_xml
-            // resolves only the five XML entities), which is this walk
-            // normalizing markup it was told not to touch. The artifact is
-            // serialized with double quotes and `"` escaped, so a raw value
-            // cannot close the attribute — and if one ever did, it is escaped
-            // instead of emitted.
-            // A bare boolean attribute (`disabled`, `hidden`) re-emits as
-            // `disabled=""`, which is the same HTML. Safe here for the same
-            // upstream reason: lexbor re-serialized this markup at
-            // sanitization, so every attribute already arrives quoted and
-            // normalized, and quick_xml hands back an empty value rather than
-            // the ragged shapes raw harvested HTML can carry.
-            None => {
-                let raw = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
-                if raw.contains('"') {
-                    out.push_str(&format!(" {key}=\"{}\"", escape_attr(&raw)));
+            out.push_str(&format!(" {key}=\"{}\"", escape_attr(replacement)));
+            continue;
+        }
+        // Every OTHER attribute is carried over as the sanitizer wrote it,
+        // without an unescape/re-escape round trip. Round-tripping would
+        // turn `alt="A &nbsp; B"` into a literal `&amp;nbsp;` (quick_xml
+        // resolves only the five XML entities), which is this walk
+        // normalizing markup it was told not to touch. The artifact is
+        // serialized with double quotes and `"` escaped, so a raw value
+        // cannot close the attribute — and if one ever did, it is escaped
+        // instead of emitted.
+        // A bare boolean attribute (`disabled`, `hidden`) re-emits as
+        // `disabled=""`, which is the same HTML. Safe here for the same
+        // upstream reason: lexbor re-serialized this markup at
+        // sanitization, so every attribute already arrives quoted and
+        // normalized, and quick_xml hands back an empty value rather than
+        // the ragged shapes raw harvested HTML can carry.
+        let raw = String::from_utf8_lossy(attr.value.as_ref()).into_owned();
+        let carried = if raw.contains('"') {
+            escape_attr(&raw)
+        } else {
+            raw
+        };
+        match appends.iter().find(|(appended, _)| *appended == lower) {
+            // An APPEND keeps the artifact's own value and adds to it, because
+            // the clone's own `style="color:red"` is part of what makes it look
+            // like the clone; replacing it would strip the declaration a
+            // relative size step was meant to sit on top of.
+            Some((_, addition)) => {
+                let separator = if carried.is_empty() || carried.trim_end().ends_with(';') {
+                    ""
                 } else {
-                    out.push_str(&format!(" {key}=\"{raw}\""));
-                }
+                    ";"
+                };
+                out.push_str(&format!(
+                    " {key}=\"{carried}{separator}{}\"",
+                    escape_attr(addition)
+                ));
             }
+            None => out.push_str(&format!(" {key}=\"{carried}\"")),
         }
     }
     // An element the manifest calls an href/image slot normally has the
     // attribute already (the annotator refuses one that does not), but a
-    // hand-built artifact might not — append rather than silently no-op.
-    for (key, value) in replacements {
+    // hand-built artifact might not — append rather than silently no-op. An
+    // override's own `data-lumen-*` attributes are new by construction and
+    // land here too.
+    for (key, value) in replacements.iter().chain(appends.iter()) {
         if !written.contains(*key) {
             out.push_str(&format!(" {key}=\"{}\"", escape_attr(value)));
         }
@@ -1033,5 +1357,409 @@ mod tests {
         for key in ["headline", "logo", "cta"] {
             assert!(out.contains(&format!("data-lumen-slot=\"{key}\"")), "{out}");
         }
+    }
+
+    // --- text overrides (R-A6) ----------------------------------------------
+
+    fn over(
+        text: &str,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        size: Option<i8>,
+    ) -> FragmentTextOverride {
+        FragmentTextOverride {
+            text: text.to_owned(),
+            bold,
+            italic,
+            underline,
+            size,
+        }
+    }
+
+    fn overrides(
+        entries: Vec<(&str, FragmentTextOverride)>,
+    ) -> BTreeMap<String, FragmentTextOverride> {
+        entries
+            .into_iter()
+            .map(|(path, value)| (path.to_owned(), value))
+            .collect()
+    }
+
+    fn run_overrides(
+        html: &str,
+        overrides: &BTreeMap<String, FragmentTextOverride>,
+    ) -> (String, Vec<String>) {
+        let mut diagnostics = Vec::new();
+        let out = apply_fragment_text_overrides(
+            html,
+            overrides,
+            &NodeId::from("frg_hero"),
+            &mut diagnostics,
+        );
+        let codes = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        (out, codes)
+    }
+
+    #[test]
+    fn an_override_replaces_text_and_wraps_marks_and_size() {
+        let html = "<section><div><h2 data-lumen-slot=\"headline\">Old <em>words</em></h2>\
+                    <p>Body</p></div></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1) > :nth-child(1)",
+                over("New & better", true, false, true, Some(1)),
+            )]),
+        );
+        // The element's own attributes first, in source order, then ours; the
+        // text is escaped and wrapped outermost-first (`strong > em > u`), and
+        // the whole original subtree — the `<em>words</em>` included — is gone.
+        assert_eq!(
+            out,
+            "<section><div><h2 data-lumen-slot=\"headline\" \
+             data-lumen-override=\":nth-child(1) &gt; :nth-child(1) &gt; :nth-child(1)\" \
+             data-lumen-size=\"1\" style=\"font-size:1.125em\">\
+             <strong><u>New &amp; better</u></strong></h2><p>Body</p></div></section>"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn the_path_origin_is_the_clone_wrapper_not_the_artifact_root() {
+        // `render.rs` emits the artifact INSIDE its `data-fragment-root` wrapper,
+        // so the wrapper's element children are the stored HTML's top-level
+        // elements and a first step names one of those. One step SHORTER than
+        // the headline's path therefore names the headline's parent `<div>`, and
+        // the override replaces that whole block. This is the same origin the
+        // editor bridge counts from and the same one the server-side mirror
+        // (`apps/api/lumen_api/fragments/paths.py`) walks — pinned here as a
+        // test rather than trusted as a comment.
+        let html = "<section><div><h2 data-lumen-slot=\"headline\">Old <em>words</em></h2>\
+                    <p>Body</p></div></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("Whole block", false, false, false, None),
+            )]),
+        );
+        assert_eq!(
+            out,
+            "<section><div data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\">\
+             Whole block</div></section>"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn only_element_children_count_toward_a_path() {
+        // Text runs, comments and PIs are not children — the bridge counts
+        // `firstElementChild`/`nextElementSibling` and `paths.py` filters the
+        // same set. A walk that counted them would address a different element
+        // than the one the marketer clicked.
+        let html = "<section>lead <!-- note --><h2>First</h2> tail <h3>Second</h3></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(2)",
+                over("Second, edited", false, false, false, None),
+            )]),
+        );
+        assert_eq!(
+            out,
+            "<section>lead <!-- note --><h2>First</h2> tail \
+             <h3 data-lumen-override=\":nth-child(1) &gt; :nth-child(2)\">Second, edited</h3>\
+             </section>"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn a_dead_override_path_leaves_the_element_and_says_so() {
+        let html = "<section><p>Body</p></section>";
+        let overrides = overrides(vec![(
+            ":nth-child(4)",
+            over("x", false, false, false, None),
+        )]);
+        let (out, codes) = run_overrides(html, &overrides);
+        assert_eq!(out, html);
+        assert_eq!(codes, vec!["LUMW0444"]);
+
+        // The path is named, so an operator can see WHICH edit stopped
+        // applying, and the sentence reads as one.
+        let mut diagnostics = Vec::new();
+        apply_fragment_text_overrides(
+            html,
+            &overrides,
+            &NodeId::from("frg_hero"),
+            &mut diagnostics,
+        );
+        let message = &diagnostics[0].message;
+        assert!(message.contains(":nth-child(4)"), "{message}");
+        assert!(message.contains("frg_hero"), "{message}");
+        assert!(!message.contains("  "), "{message}");
+        let hint = diagnostics[0].hint.as_deref().unwrap_or_default();
+        assert!(!hint.contains("  "), "{hint}");
+    }
+
+    #[test]
+    fn an_override_on_a_void_element_is_refused_not_applied() {
+        // An `<img>` has no text content, so there is nothing to replace and
+        // inventing a container the artifact never had is not the answer.
+        for html in [
+            "<section><img src=\"/asset-store/a\"><p>Body</p></section>",
+            "<section><img src=\"/asset-store/a\"/><p>Body</p></section>",
+        ] {
+            let (out, codes) = run_overrides(
+                html,
+                &overrides(vec![(
+                    ":nth-child(1) > :nth-child(1)",
+                    over("Words", false, false, false, None),
+                )]),
+            );
+            assert_eq!(out, html);
+            assert_eq!(codes, vec!["LUMW0444"], "{html}");
+        }
+    }
+
+    #[test]
+    fn an_artifact_with_no_override_is_emitted_byte_for_byte() {
+        // The same shape the slot walk is pinned on: a comment, an unclosed
+        // void element, a single-quoted attribute, an entity, an uppercase tag.
+        let html = "<!-- hero --><SECTION class='hero' data-x=\"a&amp;b\">\
+                    <h1 data-lumen-slot=\"headline\">Care &amp; comfort</h1><br>\
+                    <img src=\"/asset-store/abc\"></SECTION>";
+        let (out, codes) = run_overrides(html, &overrides(vec![]));
+        assert_eq!(out, html);
+        assert!(codes.is_empty(), "{codes:?}");
+
+        // …and with an override bound elsewhere, everything the walk does not
+        // own still copies through unchanged.
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("New", false, false, false, None),
+            )]),
+        );
+        assert!(out.contains("<!-- hero -->"), "{out}");
+        assert!(out.contains("data-x=\"a&amp;b\""), "{out}");
+        assert!(out.contains("class='hero'"), "{out}");
+        assert!(out.contains("<img src=\"/asset-store/abc\">"), "{out}");
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    /// SECURITY RED CASE. An override is written by a human through the
+    /// inspector and lands straight on the node: it never meets the sanitizer,
+    /// so it is escaped HERE or not at all.
+    #[test]
+    fn override_text_bound_to_markup_renders_inert() {
+        let html = "<section><h2>Care</h2></section>";
+        let (out, _) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over(
+                    "<script>alert(1)</script><img src=x onerror=alert(2)>",
+                    true,
+                    false,
+                    false,
+                    None,
+                ),
+            )]),
+        );
+        assert!(!out.contains("<script"), "{out}");
+        assert!(!out.contains("<img"), "{out}");
+        assert!(
+            out.contains(
+                "<strong>&lt;script&gt;alert(1)&lt;/script&gt;\
+                 &lt;img src=x onerror=alert(2)&gt;</strong>"
+            ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn every_size_step_walks_the_em_ramp() {
+        let html = "<section><h2>Old</h2></section>";
+        for (step, em) in [
+            (-3i8, "0.75"),
+            (-2, "0.8125"),
+            (-1, "0.875"),
+            (0, "1"),
+            (1, "1.125"),
+            (2, "1.25"),
+            (3, "1.5"),
+        ] {
+            let (out, codes) = run_overrides(
+                html,
+                &overrides(vec![(
+                    ":nth-child(1) > :nth-child(1)",
+                    over("New", false, false, false, Some(step)),
+                )]),
+            );
+            assert!(
+                out.contains(&format!(
+                    "data-lumen-size=\"{step}\" style=\"font-size:{em}em\""
+                )),
+                "{out}"
+            );
+            assert!(codes.is_empty(), "{codes:?}");
+        }
+
+        // No step at all is no size attribute and no inline style: the
+        // artifact's own scale, untouched.
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("New", false, false, false, None),
+            )]),
+        );
+        assert!(!out.contains("data-lumen-size"), "{out}");
+        assert!(!out.contains("style="), "{out}");
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn a_step_outside_the_ramp_renders_without_a_font_size_rather_than_panicking() {
+        // Validation refuses -3..=3 at the door (LUMW0443), so this cannot come
+        // from a checked write — but a document loaded from storage may never
+        // have been validated, and the honest answer is the artifact's own size.
+        let html = "<section><h2>Old</h2></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("New", false, false, false, Some(99)),
+            )]),
+        );
+        assert!(!out.contains("font-size"), "{out}");
+        assert!(out.contains(">New</h2>"), "{out}");
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn an_existing_style_is_kept_and_the_size_appended_to_it() {
+        // The clone's own declaration is what makes it look like the clone. It
+        // keeps its source position too, so only the size is new.
+        let html = "<section><h2 style=\"color:red\">A</h2><h3 style=\"color:red;\">B</h3>\
+                    </section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![
+                (
+                    ":nth-child(1) > :nth-child(1)",
+                    over("A2", false, false, false, Some(1)),
+                ),
+                (
+                    ":nth-child(1) > :nth-child(2)",
+                    over("B2", false, false, false, Some(-1)),
+                ),
+            ]),
+        );
+        assert!(
+            out.contains(
+                "<h2 style=\"color:red;font-size:1.125em\" \
+                 data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\" \
+                 data-lumen-size=\"1\">A2</h2>"
+            ),
+            "{out}"
+        );
+        // Already terminated: no second semicolon.
+        assert!(
+            out.contains(
+                "<h3 style=\"color:red;font-size:0.875em\" \
+                 data-lumen-override=\":nth-child(1) &gt; :nth-child(2)\" \
+                 data-lumen-size=\"-1\">B2</h3>"
+            ),
+            "{out}"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn a_void_element_inside_an_overridden_subtree_does_not_swallow_the_page() {
+        // `<br>` has no end tag. A depth counter that counted it would never
+        // come back down and everything after the edit would vanish.
+        let html = "<section><h1>a<br>b</h1><p>after</p></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("New", false, false, false, None),
+            )]),
+        );
+        assert_eq!(
+            out,
+            "<section><h1 data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\">New</h1>\
+             <p>after</p></section>"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn a_sibling_after_an_overridden_element_still_counts_from_the_right_place() {
+        // The walk does not descend into a replaced subtree, so the counter at
+        // the element's own depth has to survive the skip intact.
+        let html = "<section><h1>a<span>x</span></h1><h2>b</h2><h3>c</h3></section>";
+        let (out, codes) = run_overrides(
+            html,
+            &overrides(vec![
+                (
+                    ":nth-child(1) > :nth-child(1)",
+                    over("A", false, false, false, None),
+                ),
+                (
+                    ":nth-child(1) > :nth-child(3)",
+                    over("C", false, false, false, None),
+                ),
+            ]),
+        );
+        assert_eq!(
+            out,
+            "<section><h1 data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\">A</h1>\
+             <h2>b</h2>\
+             <h3 data-lumen-override=\":nth-child(1) &gt; :nth-child(3)\">C</h3></section>"
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+    }
+
+    #[test]
+    fn an_override_wins_over_a_slot_value_on_the_same_element() {
+        // Two writers, one element: the agent binds the slot, the marketer
+        // overrules it by hand. The override runs on the slot pass's OUTPUT —
+        // which is the markup the editor addressed the path against — so the
+        // human's words are what remain, and the marker survives so the slot
+        // can still be re-bound later.
+        let html = "<section><h2 data-lumen-slot=\"headline\">Old</h2></section>";
+        let doc = doc_with(&[]);
+        let (substituted, codes) = run(
+            html,
+            &slots(vec![(
+                "headline",
+                FragmentSlotValue::Text("Slot copy".to_owned()),
+            )]),
+            &kinds(&[("headline", FragmentSlotKind::Text)]),
+            &doc,
+        );
+        assert!(codes.is_empty(), "{codes:?}");
+        assert!(substituted.contains("Slot copy"), "{substituted}");
+
+        let (out, codes) = run_overrides(
+            &substituted,
+            &overrides(vec![(
+                ":nth-child(1) > :nth-child(1)",
+                over("Human copy", false, false, false, None),
+            )]),
+        );
+        assert!(out.contains(">Human copy</h2>"), "{out}");
+        assert!(!out.contains("Slot copy"), "{out}");
+        assert!(out.contains("data-lumen-slot=\"headline\""), "{out}");
+        assert!(codes.is_empty(), "{codes:?}");
     }
 }

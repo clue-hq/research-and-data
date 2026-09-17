@@ -112,6 +112,7 @@ rather than a generic ``tool_*`` event.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Optional
 
@@ -255,6 +256,24 @@ def _sanitize_content(content: Any) -> Any:
 def _message_to_dict(message: Any) -> dict:
     out: dict[str, Any] = {"role": getattr(message, "type", "unknown")}
     out["content"] = _sanitize_content(getattr(message, "content", ""))
+    if out["role"] == "system":
+        # Ephemeral advice must not become a second memory store through DEBUG
+        # model-input logging. Keep ordinary guidance; only omit this data block.
+        def redact_preferences(value):
+            if isinstance(value, str):
+                return re.sub(
+                    r"<scoped_preference_data>.*?(?:</scoped_preference_data>|$)",
+                    "<scoped_preference_data>[omitted; see scoped selection receipt]"
+                    "</scoped_preference_data>",
+                    value, flags=re.DOTALL,
+                )
+            if isinstance(value, list):
+                return [redact_preferences(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact_preferences(item) for key, item in value.items()}
+            return value
+
+        out["content"] = redact_preferences(out["content"])
     name = getattr(message, "name", None)
     if name:
         out["name"] = name

@@ -427,27 +427,35 @@ def test_frozen_contract_json_schema_digests() -> None:
     # above it. The field is optional and defaulted, so a finalization recorded before it existed
     # still validates on replay. The ritual is performed here, in the `head-of-abm@v56` mint,
     # because Task 7 landed the delta without it.
+    # Contract revision 2026-09-04 (web-editor annotations): ``DomainObjectRef`` gains an
+    # optional, bounded ``note`` — the marketer's own words about that one reference, written
+    # onto an element in the web editor. Every digest below except ``ValidatedPlan`` moved,
+    # because every one of these shapes embeds a domain ref somewhere; ``ValidatedPlan`` does
+    # not. The durable column landed in the same change (migration 4cbfa56e52a8), and the
+    # default keeps every existing construction valid.
+    # Merge 2026-09-17 (codex/design-agent-v1 into research-streaming): both ``note`` and
+    # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
     assert actual == {
-        "AgentProfile": "f96dadf75a3bdb1b27a77aaff4a4e2b07f73bc244c735d28cc8fa7eb507dda45",
-        "SkillBundle": "d9450a85d5db839b0c61affc04e94d5408079e18608404be8d4fb3703c3b5279",
+        "AgentProfile": "163055da1d4ea52c1627ce9beb845d8786e165a0c0d973654aa581a4160423f2",
+        "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("1412542826971ca1513851d9ee63939548ea8c9282cb34b0bfd0b0a6e27526e6"),
-        "AgentTurnRequest": ("73dafed6373bd624f4c87fab8b9c26ea037aa173336b77836abe07f1788a6135"),
-        "AgentPlan": "883abc57af6fb248000b954b4e8cd7d09f0da32132558b79ad6cc308e63b662b",
+        "AgentConstitution": ("2f8f8f77d7c9e19d58f900824383d18f681a7fd273f785a3d9ea29f0399a4e92"),
+        "AgentTurnRequest": ("ad4400829caad0526206e81cafbe57582951934ad5fe347d9ec3d1f8883ee1d1"),
+        "AgentPlan": "d9b94061c8d49d073ac055293b1e3dc095975cb20cadcd0327a42177f6ffed62",
         "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("eb668a452768b5baf182291d73789928bc2f8723c416e314881ef7cae127d0c7"),
-        "DelegationResult": ("ad6660fa585a9c82fbacc157a2a07c55ca3073d35e89764b078709acb6a82ba6"),
+        "DelegationRequest": ("f5ae983ec69fe98f1fb1ebe7d551d6a88d7018e546f48d31aa22c3de9a3216d2"),
+        "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
         "SpecialistTaskEnvelope": (
-            "eb9313d3fe8525be55ae2e3be649b8140d64dffb2581328f46ff236a2baf133d"
+            "44f25aed2767854897c76f30aff7e002032880379ea77dc404fbc8156d3d3e05"
         ),
         "ContextBundleManifest": (
-            "5322dbc2d6bdb055d6642d0b2db2cfc9d9ecc992bb20b38fad9fd1d176f6d32a"
+            "3d4bcf33bedda5d6d88a90b4c86917561d27c7d542c2b9c953b4991b739ca0ea"
         ),
         "AgentFinalizeEnvelope": (
-            "aa4bece6a27451114161e6da024c8361945ad79f115013b8f85c6cd022f0960b"
+            "9c946fd10396d7dd002acc638a2e27f8729b62bd3b52a5bf188babe787c8dabe"
         ),
     }

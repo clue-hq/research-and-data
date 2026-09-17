@@ -173,6 +173,30 @@ def partition_export_diagnostics(
     return blocking, advisory
 
 
+def draft_verification_note(verification: object) -> str:
+    """Describe a retained draft only from runtime evidence, including legacy gaps.
+
+    This is presentation of receipts, not an export or persistence gate. Missing
+    metadata cannot certify validity or make historical review feedback current.
+    """
+    data = verification if isinstance(verification, dict) else {}
+    evidence = {
+        name: data[name] if isinstance(data.get(name), dict) else {}
+        for name in ("preflight", "preview", "review")
+    }
+    parts = ["Draft retained without design acceptance."]
+    preflight = evidence["preflight"]
+    if preflight.get("status") != "current" or not isinstance(preflight.get("has_blocking_errors"), bool):
+        parts.append("Current draft preflight is unverified.")
+    elif preflight["has_blocking_errors"]:
+        parts.append("Current draft has blocking preflight errors.")
+    if evidence["preview"].get("status") != "current":
+        parts.append("Current draft preview is unverified.")
+    if evidence["review"].get("status") != "current":
+        parts.append("Current draft awaits review.")
+    return " ".join(parts)
+
+
 def export_warning_views(diagnostics: List[JsonObject]) -> List[JsonObject]:
     """The ``warnings`` payload carried on an export response.
 

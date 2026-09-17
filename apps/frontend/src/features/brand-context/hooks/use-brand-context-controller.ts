@@ -22,6 +22,7 @@ const assetFilterOptions: ReadonlyArray<{ label: string; value: "all" | BrandAss
   { label: "Logos", value: "logo" },
   { label: "Backgrounds", value: "background" },
   { label: "Mockups", value: "mockup" },
+  { label: "Uploads", value: "upload" },
   { label: "AI-generated images", value: "ai-generated" },
 ];
 
@@ -74,14 +75,12 @@ export function useBrandContextController({
       : null,
   );
   const [assetEditingField, setAssetEditingField] = useState<AssetEditingField>(null);
-  const [assetDrafts, setAssetDrafts] = useState(() =>
-    Object.fromEntries(
-      workspace.assets.map((asset) => [
-        asset.id,
-        { description: asset.description, name: asset.name },
-      ]),
-    ),
-  );
+  // Keep only local edits: ingestion refreshes the server props without
+  // remounting this hook, so newly imported assets need their current metadata.
+  const [assetDrafts, setAssetDrafts] = useState<Record<string, {
+    description?: string;
+    name?: string;
+  }>>({});
   const [dialog, setDialog] = useState<BrandDialog>(null);
   const [addedTypefaces, setAddedTypefaces] = useState<BrandTypeface[]>([]);
   const [removedTypefaceIds, setRemovedTypefaceIds] = useState<Set<string>>(() => new Set());
@@ -314,7 +313,11 @@ export function useBrandContextController({
 
   return {
     addCustomFont,
-    assetDraft: selectedAsset ? assetDrafts[selectedAsset.id] : null,
+    assetDraft: selectedAsset ? {
+      description: selectedAsset.description,
+      name: selectedAsset.name,
+      ...assetDrafts[selectedAsset.id],
+    } : null,
     assetEditingField,
     assetFilterOpen,
     assetFilterOptions,

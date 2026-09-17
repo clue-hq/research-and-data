@@ -101,6 +101,7 @@ from clue_api.design_fleet import (
     start_design_reaper,
 )
 from clue_api.design_leg_wiring import build_design_leg_finisher
+from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -1112,6 +1113,19 @@ async def _serve() -> None:
         # conversation turn (profiles, models, workspaces, artifacts, turn journal), so the one
         # composition is shared by both switches rather than duplicated per surface.
         agent_turn_handler: AgentTurnWorkHandler | None = None
+        memory = (
+            memory_assembly_factory(settings, transaction)
+            if settings.chat_enabled
+            or (settings.design_runtime_enabled and settings.design_preference_context_enabled)
+            else None
+        )
+        design_preference_resolver_factory = (
+            build_configured_design_preference_resolver_factory(
+                settings=settings, memory=memory, conn_factory=transaction
+            )
+            if memory is not None
+            else None
+        )
         platform_components: AgentPlatformComponents | None = None
         if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
@@ -1122,6 +1136,7 @@ async def _serve() -> None:
                 tools=registry,
             )
         if settings.chat_enabled and platform_components is not None:
+            assert memory is not None
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
                 tools=registry,
@@ -1131,7 +1146,7 @@ async def _serve() -> None:
                 recipes=recipe_reader,
                 starter=starter,
                 parameters=execution_parameters,
-                memory=memory_assembly_factory(settings, transaction),
+                memory=memory,
                 queue=work_queue,
                 # ARV2 onboarding O6: the same backend the onboarding synthesis seam receives —
                 # the turn reads its pinned brand-knowledge documents from it.
@@ -1139,7 +1154,10 @@ async def _serve() -> None:
                 # P3.4: the design-leg lane. Same switch as the design_job handler below —
                 # a worker that drains design work can also drive a leg's design turns
                 # inline; one that does not composes the fail-loud unavailable lane.
-                design_lane=build_design_leg_lane_driver(enabled=settings.design_runtime_enabled),
+                design_lane=build_design_leg_lane_driver(
+                    enabled=settings.design_runtime_enabled,
+                    preference_resolver_factory=design_preference_resolver_factory,
+                ),
                 # P3.7: the §2.2 exit bridge — the design role's own catalog model judges
                 # each leg message pre-dispatch, and the governed finish tool executes a
                 # finish verdict. Same switch as the lane: without the design runtime the
@@ -1153,6 +1171,7 @@ async def _serve() -> None:
                     else None
                 ),
                 design_leg_finisher=build_design_leg_finisher(invoker=tool_invoker),
+                design_preference_context_enabled=settings.design_preference_context_enabled,
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,
@@ -1281,7 +1300,10 @@ async def _serve() -> None:
             arv2_account_research_handler=arv2_account_research_handler,
             arv2_discovery_handler=arv2_discovery_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
-            design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
+            design_handler=build_design_job_handler(
+                enabled=settings.design_runtime_enabled,
+                preference_resolver_factory=design_preference_resolver_factory,
+            ),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)

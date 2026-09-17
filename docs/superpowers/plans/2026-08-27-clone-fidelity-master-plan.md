@@ -1,6 +1,30 @@
 # Clone-Fidelity Master Plan — verbatim fragments, Ploy-grade output (Phases F0–F5)
 
-> **STATUS 2026-08-29 (latest) — PHASE F4 / CHECKPOINT 2 CLOSED (engineering); founder
+> **STATUS 2026-09-03 — PHASE F5 BUILT (engineering); CP3 live walk + founder review OPEN.**
+> Executed via SDD on `design/website-multi-page` (22-task execution plan
+> `docs/superpowers/plans/2026-09-02-f5-multipage-sites-and-publishing.md`; Opus implementers,
+> every diff reviewed and every task re-verified first-hand by the orchestrating session, no
+> reviewer subagents per founder rule). Tasks 1–21 + one fix wave landed, local only. Engine:
+> route grammar LUMW0036 + AddPage/RemovePage. API: page-aware render, N-page publish served by
+> route (`design_web_publish_revision_page` + materialized `design_web_publish_page`,
+> migration `6893f29b6973`), PublicSiteAddress from env, workspace handle (`5456c0770de8`),
+> Host-matched public pages app. Agent: active page + page tools, one-brief-per-page law,
+> R-F5-8 advisory demotions. Shell: real Publish (repository seam), page switcher, page/route
+> section, in-editor navigation; dev-shell parity. OPEN: the CP3 acceptance walk (needs a
+> live stack + a migrated dev DB: heads must be `5456c0770de8`), the founder review items in
+> the ledger (prompt/skill wording; two FLAGGED UI slots; per-page links placement; unpublish
+> control; handle default R-F5-5; bare-host root), and the deployment/domain work ruled out of
+> scope for now. Ledger: `.superpowers/sdd/2026-09-02-f5-multipage-sites-and-publishing/progress.md`.
+>
+> **STATUS 2026-09-02 — PHASE F5 SCOPE RE-RATIFIED on `design/website-multi-page`.** Fresh
+> scout of the post-F4 tree + founder rulings R-F5-1..5 (URL shape, publish unit, slug/route,
+> indexing, workspace handle default). F5 now owns the default-domain serving (Part-IV item 5
+> is no longer a gate) and the shell Publish wiring (today a timer-faked dummy). Six lanes
+> F5.0–F5.5 replace the four-blocker list; three standing assumptions await ruling at dispatch.
+> Execution plan WRITTEN 2026-09-02: `docs/superpowers/plans/2026-09-02-f5-multipage-sites-and-publishing.md`
+> (22 tasks across the six lanes, engine first); awaiting founder review, nothing dispatched.
+>
+> **STATUS 2026-08-29 — PHASE F4 / CHECKPOINT 2 CLOSED (engineering); founder
 > acceptance OPEN.** Executed via SDD (Tasks 22–26 = F4.0–F4.4 + Task 27, the founder-rulings
 > wave; Opus primaries + Opus-only reviewers; ALL fix rounds orchestrator-implemented per the
 > standing split; every round independently reviewed), commits `df09a9d2b..e8355d034`, local
@@ -229,6 +253,18 @@ default. A dedicated fragment inspector card (slot values from the manifest) lan
   resized; a drop target for ordinary nodes; internally re-laid-out; or detached into editable
   nested elements. Mechanically: `Fragment` joins `movable_kinds`, stays out of
   `resizable_kinds`/`parent_kinds` (`web_bridge.py:1199-1240`), remains a leaf in the engine.
+
+  **Amended 2026-09-04 (R-A6, founder):** a human may also edit the TEXT of ONE element inside a
+  clone — its plain text, bold/italic/underline, and a −3…+3 relative size step — and nothing
+  else. Mechanically this is not a hole in Option A: the edit is a per-instance `text_overrides`
+  entry ON the fragment node, keyed by the element's structural path inside the clone, applied at
+  render AFTER slot values; the harvested artifact is never rewritten, and no other instance of
+  the same clone is touched. The fragment stays a leaf, stays out of
+  `resizable_kinds`/`parent_kinds`, and is otherwise still movable-only — nothing inside it
+  becomes a selectable, draggable, or re-layoutable node. So the ruling now reads: a clone moves
+  as a whole and exposes slot values AND per-element text overrides; nothing else inside it is
+  editable. Spec:
+  `docs/superpowers/specs/2026-09-04-web-editor-annotations-and-clone-text-edits-design.md` §3.6.
 - **D-F4 — sanitizer strictness: ADOPTED BY DEFAULT (not explicitly ruled; reversible on founder
   word):** strip `script`, `on*` handlers, `iframe/object/embed/form/meta/base/link`,
   `javascript:`/`data:` hrefs; every `src/srcset/url()` must resolve to a rehosted digest —
@@ -410,7 +446,94 @@ walk under the shared rubric in BOTH flag states (D-F7); homepage remains re-der
 - **F4.4** CP2 acceptance walk: pick 3 real accounts → 3 published pages, each co-branded,
   noindex, reachable only by URL, passing the F3.3 coherence gate against the seller reference.
 
-## Phase F5 — CHECKPOINT 3 provision: true multi-page (deliberately last)
+## Phase F5 — CHECKPOINT 3: true multi-page + real publishing (SCOPE RE-RATIFIED 2026-09-02)
+
+> **Supersedes the 2026-08-27 provision below (kept for the record).** Re-scouted 2026-09-02 on
+> `design/website-multi-page` against the post-F4 tree; founder ruled the five publishing
+> decisions the same day. F5 is **no longer gated on Part-IV item 5** — the default-domain
+> serving IS an F5 lane now. Own dispatch-depth execution plan follows; nothing dispatched yet.
+
+**Charter.** A web document is ONE SITE with N pages. The user (or the agent) adds pages, edits
+each page's route, and clicks Publish in the platform shell; the whole site goes live on our
+own domain at `{workspace-handle}.pages.cluehq.ai/{site-slug}{page-route}`. Custom domains are a
+named follow-on (premium), designed for but not built.
+
+**Founder rulings 2026-09-02 (LAW):**
+- **R-F5-1 URL shape:** tenant subdomain per workspace (re-affirms the Part-IV tenant-subdomain
+  v1 ruling); site slug + page route as the path. Public base comes from CONFIG (env-parity
+  rule), never from the request host.
+- **R-F5-2 Publish unit = the SITE.** One Publish publishes every page under one slug, each
+  live at its own route. No per-page publish state.
+- **R-F5-3 Slug vs route:** the share dialog's slug field IS the site slug; the home page's
+  route stays `/`, so the site answers at the bare slug.
+- **R-F5-4 Indexing:** existing law holds — ABM pages `noindex` and durable (R-F1); ordinary
+  sites follow the dialog's indexing toggle.
+- **R-F5-5 Workspace handle — DEFAULT SET BY THE PLAN, founder to confirm at dispatch:**
+  auto-derived from the workspace/brand name, owner-editable until the first publish,
+  immutable after (a rename after first publish is a future redirect feature, not a v1 knob).
+
+**Further founder rulings 2026-09-02 (LAW):**
+- **R-F5-6 CP3 v1 product target = the per-account ABM microsite** — a landing page plus
+  supporting pages, site-internal nav, still `noindex`. Reuses every CP2 mechanism.
+- **R-F5-7 Page material:** new pages are composed from the homepage section library plus
+  token-lawful new sections. **Multi-page CAPTURE of the client's real subpages is a separate
+  follow-on on a separate branch** — never part of F5.
+
+- **R-F5-8 Links: structural freedom, guidance only (RULED 2026-09-02).** In the structural
+  and mechanical sense a page may link to ANY page — site-internal routes and off-site
+  destinations alike. No gate refuses a link by destination. The agent is only PROMPTED and
+  EXPLAINED (skills + tool strings) that actively linking off an ABM campaign page is not good
+  practice: one visitor, one argument, one CTA. Consequences for the F4 machinery, to land in
+  F5.4: the by-role refusal of cloned `nav`/`footer` on ABM pages (`ESCAPE_ROUTE_ROLES`, R24-1)
+  and the campaign-shell one-anchor shape gate (`fragment.shell_escape_route`, R23-3) are
+  DEMOTED from refusals to advisory notes in the tool result; the publish-manifest escape-route
+  audit stays exactly as it is (it already only reports). Unchanged: `noindex` stays durable
+  law (R-F1), the sanitizer's scheme rules (`javascript:`/`data:` still stripped) are security,
+  not policy, and stay.
+
+**The six lanes (replaces the four-blocker list):**
+- **F5.0 Engine page ops.** `AddPage` / `RemovePage` (invertible, envelope-ready, in
+  `crates/lumen-web/src/ops.rs` beside the existing `SetPageMeta`), a route GRAMMAR in
+  `validate.rs` (leading `/`, lowercase segments, no trailing slash, reserved names such as
+  `manifest.json` refused; today only duplicates are refused). wasm + `lumen-api-helper` rebuild
+  ritual. (The old blocker (b), the replay gate, is NOT separate work: ops carry `page_id` and
+  the gate replays whatever the engine accepts.)
+- **F5.1 Page-aware render / preview / review.** `page_id` on `GET /documents/{id}/web/render`,
+  the editor iframe fetch (`engine/webDocuments.ts::fetchWebRenderHtml`), `render_web_preview`
+  (all three widths + state captures) and `review_cloned_page`; the `"home"` literals in
+  `main.py` (render ~3594–3686, turn targets ~8672, turn fragment package ~8840) and the bridge
+  default (`web_bridge.py:1250`) go; the thumbnail stays first-page.
+- **F5.2 N-page publish + serving.** The publish package renders every page; storage keyed
+  `(workspace, slug, route)` (a page table beside `design_web_publish`, one-step rollback
+  preserved); serving at `/{slug}` and `/{slug}{route}`; site-internal hrefs rewritten to the
+  served path; the manifest lists pages; `HOME_PAGE_ID` leaves `web_export.py`.
+- **F5.3 Shell publish + default domain.** The DESIGNED share menu (slug, indexing toggle,
+  description, custom-HTML tab — presentation truth already exists) stops faking: a platform BFF
+  proxy for publish / unpublish / state read, the `clue:artifact-publish-request` timer replaced
+  by the real call, publish state read back per artifact. Then the domain: workspace handle
+  (R-F5-5), config-sourced public base, a host→workspace RESOLVER TABLE in front of the existing
+  serving route (so a custom domain later is one more row + verification + TLS), wildcard DNS +
+  TLS. Ships shell-wiring-first on the interim `/w/{ws}/p/{slug}` route, domain second.
+- **F5.4 Agent page vocabulary.** `LumenWebTools.page_id` becomes an ACTIVE page (one
+  assignment; ~40 tool sites already read `self.page_id`); add/list/switch-page tools; the
+  "page_id is ALWAYS home" tool strings and the single-page skill text (create-website,
+  edit-website, campaign-page-workflow) amended; **one author delegation per page and the
+  mutation budget reset per page render** (the 14-per-round budget and delegation state loss
+  measured on the 2026-09-01 OpenAI run would otherwise multiply per page).
+- **F5.5 Route editor.** A page-route control in the shell inspector (needs a designed slot per
+  the presentation-truth rule — flagged for the dummy frontend) wired to `SetPageMeta`; dev-shell
+  parity.
+
+**Acceptance (CP3):** from a project chat, the agent builds a ≥3-page ABM microsite for one
+real account in one leg; the user edits one page's route in the inspector; Publish in the
+platform shell puts the whole site live at `{handle}.pages.cluehq.ai/{slug}` with every page at
+its route, site-internal nav working, ABM pages `noindex`; unpublish takes it down; the F3.3
+behavioural gate runs on every page.
+
+**Deferred, named:** custom domains (premium; resolver table receives them); multi-page
+capture of the client's real subpages; workspace-handle rename with redirects.
+
+### Original 2026-08-27 provision (superseded, kept for the record)
 
 Scope-ratified only; own execution plan when its turn comes, and **gated on Part-IV item 5**
 (tenant-subdomain serving) for real routes. The four independent blockers to clear, enumerated by

@@ -447,6 +447,11 @@ def build_agent_platform_components(
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
     profiles = build_agent_profile_registry(tools)
+    design_run_purger = None
+    if settings.design_runtime_enabled:
+        from lumen_api.runtime_privacy import build_runtime_workspace_purger
+
+        design_run_purger = build_runtime_workspace_purger()
     # A DSAR erasure takes an interview quote out of the project library's ``decisions.md`` — a
     # compiled rendering beside the threads, which no tombstone reaches — so the privacy service
     # rewrites the library of every project it touched once the erasure has committed.
@@ -468,6 +473,7 @@ def build_agent_platform_components(
             storage=storage,
             workspaces=workspaces,
             conn_factory=conn_factory,
+            design_run_purger=design_run_purger,
             library=library,
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),

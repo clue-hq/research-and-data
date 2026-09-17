@@ -123,18 +123,16 @@ pub(crate) fn wrap_layout_width(wrap: &TextWrap, max_width: Option<f64>) -> f64 
 /// font set could and could not supply:
 /// - `LUMS0100` — the whole requested family is not loaded and shaping fell
 ///   back to the default family (from `FamilyResolution::diagnostic`).
-/// - `LUMS0103` — the resolved family is missing individual glyphs that
-///   per-glyph fallback substituted from another loaded face (kills tofu).
+/// Glyph diagnostics are collected separately from the actual laid-out paragraph.
 ///
 /// `subject` is stamped onto every returned diagnostic (the node under paint,
 /// or `None` for a document-scoped measurement). Returns empty when the family
-/// resolves cleanly and covers every glyph.
+/// and requested face style resolve cleanly.
 pub(crate) fn font_diagnostics(
     fonts: &FontManager,
     requested_family: &str,
     weight: i32,
     italic: bool,
-    content: &str,
     subject: Option<DiagnosticSubject>,
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -188,7 +186,76 @@ pub(crate) fn font_diagnostics(
         }
     }
 
-    let substituted = fonts.substituted_chars(requested_family, weight, italic, content);
+    diagnostics
+}
+
+/// Read glyph outcomes from the paragraph actually measured or painted, with
+/// its effective span styles and direction. A base-style probe can both reject
+/// a valid bold-only glyph and conceal one missing from a regular span.
+pub(crate) fn glyph_diagnostics(
+    fonts: &FontManager,
+    request: &ParagraphRequest<'_>,
+    paragraph: &mut Paragraph,
+    subject: Option<DiagnosticSubject>,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let content = match &request.segments {
+        Some(segments) => std::borrow::Cow::Owned(
+            segments.iter().map(|segment| segment.text.as_str()).collect::<String>(),
+        ),
+        None => std::borrow::Cow::Borrowed(request.content),
+    };
+    // SkParagraph can report an empty unresolved-codepoint set on a repeated
+    // shape with tofu. Glyph IDs and UTF-8 starts are the actual paint data.
+    let mut unresolved = std::collections::BTreeSet::new();
+    paragraph.visit(|_, info| {
+        if let Some(info) = info {
+            for (&glyph, &start) in info.glyphs().iter().zip(info.utf8_starts()) {
+                if glyph == 0 {
+                    if let Some(ch) = content.get(start as usize..).and_then(|text| text.chars().next()) {
+                        if !ch.is_control() && !ch.is_whitespace() {
+                            unresolved.insert(ch);
+                        }
+                    }
+                }
+            }
+        }
+    });
+    let mut substituted = Vec::new();
+    let mut collect_substitutions = |content: &str, weight: u16, italic: bool| {
+        for ch in fonts.substituted_chars(request.font_family, weight as i32, italic, content) {
+            if !unresolved.contains(&ch) && !substituted.contains(&ch) {
+                substituted.push(ch);
+            }
+        }
+    };
+    match &request.segments {
+        Some(segments) => {
+            for segment in segments {
+                collect_substitutions(&segment.text, segment.font_weight, segment.italic);
+            }
+        }
+        None => collect_substitutions(request.content, request.font_weight, request.italic),
+    }
+    if !unresolved.is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                Phase::Layout,
+                "LUMS0106",
+                format!(
+                    "font family \"{}\" and the loaded fallback chain cannot render {}",
+                    request.font_family,
+                    unresolved
+                        .iter()
+                        .map(|ch| format!("U+{:04X}", *ch as u32))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+                subject.clone(),
+            )
+            .with_hint("Load a font face that supplies these characters or revise the text; unresolved glyphs render as missing-glyph boxes."),
+        );
+    }
     if !substituted.is_empty() {
         let chars = substituted
             .iter()
@@ -201,7 +268,7 @@ pub(crate) fn font_diagnostics(
                 "LUMS0103",
                 format!(
                     "font family \"{}\" is missing glyphs for {}; they shape from a fallback loaded face",
-                    resolution.family, chars
+                    request.font_family, chars
                 ),
                 subject,
             )
@@ -225,6 +292,7 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
     // gate here covers every path — base, stacked, and A6b/A7b segments (spans
     // cannot change family, so one family-level answer is correct per request).
     let family_has_italic = fonts.has_italic_face(request.font_family);
+    let families = fonts.fallback_families(request.font_family);
     fonts.with_collection(|collection| {
         // One style factory for the base style and every A6b segment style, so
         // family/size/letter-spacing/line-height are identical across runs and
@@ -232,7 +300,7 @@ pub(crate) fn build_paragraph(request: &ParagraphRequest<'_>, fonts: &FontManage
         let make_style = |font_weight: u16, italic: bool, underline: bool, strikethrough: bool, fg: &SkPaint| {
             let italic = italic && family_has_italic;
             let mut text_style = TextStyle::new();
-            text_style.set_font_families(&[request.font_family]);
+            text_style.set_font_families(&families);
             text_style.set_font_size(request.font_size as f32);
             // A7b D2/D3: italic selects the italic face via the FontStyle slant
             // (the gate above guarantees a real face exists — no synthetic shear).
@@ -357,7 +425,7 @@ impl SkiaTextMeasurer {
         max_width: Option<f64>,
         line_height_px: f64,
         paragraph_gap: f64,
-        diagnostics: Vec<Diagnostic>,
+        mut diagnostics: Vec<Diagnostic>,
     ) -> TextMeasureOutput {
         let layout_width = wrap_layout_width(&input.wrap, max_width) as f32;
         let mut lines: Vec<TextLineBox> = Vec::new();
@@ -366,31 +434,30 @@ impl SkiaTextMeasurer {
             if index > 0 {
                 cursor_y += paragraph_gap;
             }
-            let mut paragraph = build_paragraph(
-                &ParagraphRequest {
-                    content: paragraph_text,
-                    font_family: family,
-                    font_size: input.font_size,
-                    font_weight: input.font_weight,
-                    line_height: input.line_height,
-                    letter_spacing: input.letter_spacing,
-                    // Per-paragraph shaping is unbounded on lines; total-line
-                    // truncation and the ellipsis are applied to the merged set.
-                    max_lines: None,
-                    direction: input.direction.clone(),
-                    align: SkTextAlign::Left,
-                    foreground: default_foreground(),
-                    underline: false,
-                    strikethrough: false,
-                    // A7b D3: stacked-paragraph measurement honors block italic
-                    // (it changes advances); spans don't reach this path.
-                    italic: input.italic,
-                    truncate: false,
-                    segments: None,
-                },
-                &self.fonts,
-            );
+            let request = ParagraphRequest {
+                content: paragraph_text,
+                font_family: family,
+                font_size: input.font_size,
+                font_weight: input.font_weight,
+                line_height: input.line_height,
+                letter_spacing: input.letter_spacing,
+                // Per-paragraph shaping is unbounded on lines; total-line
+                // truncation and the ellipsis are applied to the merged set.
+                max_lines: None,
+                direction: input.direction.clone(),
+                align: SkTextAlign::Left,
+                foreground: default_foreground(),
+                underline: false,
+                strikethrough: false,
+                // A7b D3: stacked-paragraph measurement honors block italic
+                // (it changes advances); spans don't reach this path.
+                italic: input.italic,
+                truncate: false,
+                segments: None,
+            };
+            let mut paragraph = build_paragraph(&request, &self.fonts);
             paragraph.layout(layout_width);
+            diagnostics.extend(glyph_diagnostics(&self.fonts, &request, &mut paragraph, None));
             let utf16_to_byte = utf16_byte_offsets(paragraph_text);
             let paragraph_top = cursor_y;
             for metrics in paragraph.get_line_metrics() {
@@ -569,7 +636,7 @@ impl SkiaTextMeasurer {
         input: &TextMeasureInput,
         family: &str,
         line_height_px: f64,
-        diagnostics: Vec<Diagnostic>,
+        mut diagnostics: Vec<Diagnostic>,
     ) -> TextMeasureOutput {
         let (normalized, map) = normalize_content_mapped(&input.content);
         let boundaries: Vec<(usize, usize)> = input
@@ -646,29 +713,28 @@ impl SkiaTextMeasurer {
             };
         }
 
-        let mut paragraph = build_paragraph(
-            &ParagraphRequest {
-                content: &concatenated,
-                font_family: family,
-                font_size: input.font_size,
-                font_weight: input.font_weight,
-                line_height: input.line_height,
-                letter_spacing: input.letter_spacing,
-                max_lines: input.max_lines,
-                direction: input.direction.clone(),
-                align: SkTextAlign::Left,
-                foreground: default_foreground(),
-                underline: false,
-                strikethrough: false,
-                // Ignored when segments are set (each run carries its resolved
-                // italic); mirror the block value for honesty.
-                italic: input.italic,
-                truncate: false,
-                segments: Some(para_segments),
-            },
-            &self.fonts,
-        );
+        let request = ParagraphRequest {
+            content: &concatenated,
+            font_family: family,
+            font_size: input.font_size,
+            font_weight: input.font_weight,
+            line_height: input.line_height,
+            letter_spacing: input.letter_spacing,
+            max_lines: input.max_lines,
+            direction: input.direction.clone(),
+            align: SkTextAlign::Left,
+            foreground: default_foreground(),
+            underline: false,
+            strikethrough: false,
+            // Ignored when segments are set (each run carries its resolved
+            // italic); mirror the block value for honesty.
+            italic: input.italic,
+            truncate: false,
+            segments: Some(para_segments),
+        };
+        let mut paragraph = build_paragraph(&request, &self.fonts);
         paragraph.layout(wrap_layout_width(&input.wrap, max_width) as f32);
+        diagnostics.extend(glyph_diagnostics(&self.fonts, &request, &mut paragraph, None));
 
         let utf16_to_byte = utf16_byte_offsets(&concatenated);
         let mut lines: Vec<TextLineBox> = Vec::new();
@@ -792,12 +858,11 @@ impl TextMeasurer for SkiaTextMeasurer {
         let max_width = input.max_width.filter(|width| *width > 0.0);
         // Font-resolution diagnostics from the actual shaping font set —
         // document-scoped here; the layout engine re-subjects them to the node.
-        let diagnostics = font_diagnostics(
+        let mut diagnostics = font_diagnostics(
             &self.fonts,
             &input.font_family,
             input.font_weight as i32,
             input.italic,
-            &content,
             None,
         );
 
@@ -863,33 +928,32 @@ impl TextMeasurer for SkiaTextMeasurer {
         // for the SVG/PDF markup that consume `lines[].text`, the ellipsis is
         // appended to the last visible line below (SkParagraph's line metrics
         // index the ORIGINAL source and never surface the injected glyph).
-        let mut paragraph = build_paragraph(
-            &ParagraphRequest {
-                content: &content,
-                font_family: &resolution.family,
-                font_size: input.font_size,
-                font_weight: input.font_weight,
-                line_height: input.line_height,
-                letter_spacing: input.letter_spacing,
-                max_lines: input.max_lines,
-                direction: input.direction.clone(),
-                // Measurement always lays out left-aligned: alignment moves
-                // lines inside the box but never changes break positions.
-                align: SkTextAlign::Left,
-                foreground: default_foreground(),
-                // Decoration + ellipsis never change measured line geometry;
-                // only the renderer paints them.
-                underline: false,
-                strikethrough: false,
-                // A7b D3: italic DOES change geometry (italic face advances), so
-                // the measured paragraph must carry it — unlike the decorations.
-                italic: input.italic,
-                truncate: false,
-                segments: None,
-            },
-            &self.fonts,
-        );
+        let request = ParagraphRequest {
+            content: &content,
+            font_family: &resolution.family,
+            font_size: input.font_size,
+            font_weight: input.font_weight,
+            line_height: input.line_height,
+            letter_spacing: input.letter_spacing,
+            max_lines: input.max_lines,
+            direction: input.direction.clone(),
+            // Measurement always lays out left-aligned: alignment moves
+            // lines inside the box but never changes break positions.
+            align: SkTextAlign::Left,
+            foreground: default_foreground(),
+            // Decoration + ellipsis never change measured line geometry;
+            // only the renderer paints them.
+            underline: false,
+            strikethrough: false,
+            // A7b D3: italic DOES change geometry (italic face advances), so
+            // the measured paragraph must carry it — unlike the decorations.
+            italic: input.italic,
+            truncate: false,
+            segments: None,
+        };
+        let mut paragraph = build_paragraph(&request, &self.fonts);
         paragraph.layout(wrap_layout_width(&input.wrap, max_width) as f32);
+        diagnostics.extend(glyph_diagnostics(&self.fonts, &request, &mut paragraph, None));
 
         let utf16_to_byte = utf16_byte_offsets(&content);
         let mut lines = Vec::new();
@@ -1019,6 +1083,8 @@ mod glyph_fallback_tests {
 
     fn input(content: &str, family: &str) -> TextMeasureInput {
         TextMeasureInput {
+            node_id: None,
+            font_size_override: None,
             content: content.to_owned(),
             font_family: family.to_owned(),
             font_size: 32.0,
@@ -1038,13 +1104,180 @@ mod glyph_fallback_tests {
         }
     }
 
+    fn paragraph(content: &str, family: &str, weight: u16, fonts: &FontManager) -> Paragraph {
+        let mut paragraph = build_paragraph(
+            &ParagraphRequest {
+                content,
+                font_family: family,
+                font_size: 32.0,
+                font_weight: weight,
+                line_height: 1.2,
+                letter_spacing: 0.0,
+                max_lines: None,
+                direction: LumenTextDirection::Ltr,
+                align: SkTextAlign::Left,
+                foreground: default_foreground(),
+                underline: false,
+                strikethrough: false,
+                italic: false,
+                truncate: false,
+                segments: None,
+            },
+            fonts,
+        );
+        paragraph.layout(1000.0);
+        paragraph
+    }
+
     #[test]
-    fn missing_glyphs_shape_from_fallback_no_tofu() {
+    fn subset_arrow_shapes_with_loaded_fallback_without_replacing_primary_text() {
         let fonts = subset_manager();
-        // Shaped-glyph evidence that fallback kills tofu: the resolved subset
-        // face maps each gap character to glyph 0 (.notdef), while the loaded
-        // fallback face (bundled Inter) maps it to a REAL, non-zero glyph — so
-        // per-glyph fallback paints a glyph, never a tofu box.
+        for weight in [400, 500] {
+            let mut paragraph = paragraph("Get the guide →", "SubsetFace", weight, &fonts);
+            assert_eq!(paragraph.unresolved_glyphs(), Some(0), "weight {weight}");
+            let mut families = Vec::new();
+            let mut arrow_found = false;
+            paragraph.visit(|_, info| {
+                if let Some(info) = info {
+                    let face = info.font().typeface();
+                    let family = face.family_name();
+                    assert!(!info.glyphs().contains(&0), "tofu in {family}");
+                    if family == "Inter" {
+                        arrow_found |= info.glyphs().contains(&face.unichar_to_glyph('→' as i32));
+                    }
+                    families.push(family);
+                }
+            });
+            assert!(
+                arrow_found,
+                "the arrow must shape from loaded Inter: {families:?}"
+            );
+            assert!(
+                families.iter().any(|family| family == "SubsetFace"),
+                "covered text must keep its primary face"
+            );
+        }
+    }
+
+    #[test]
+    fn fallback_arrow_paints_the_same_pixels_as_its_loaded_supplier() {
+        let fonts = subset_manager();
+        let pixels = |family, weight| {
+            let paragraph = paragraph("→", family, weight, &fonts);
+            let mut surface = skia_safe::surfaces::raster_n32_premul((80, 60)).unwrap();
+            surface.canvas().clear(SkColor::WHITE);
+            paragraph.paint(surface.canvas(), (4.0, 4.0));
+            let info = skia_safe::ImageInfo::new_n32_premul((80, 60), None);
+            let mut pixels = vec![0; info.compute_min_byte_size()];
+            assert!(surface.image_snapshot().read_pixels(
+                &info,
+                &mut pixels,
+                info.min_row_bytes(),
+                (0, 0),
+                skia_safe::image::CachingHint::Disallow,
+            ));
+            assert!(pixels.chunks_exact(4).any(|p| p != [255, 255, 255, 255]));
+            pixels
+        };
+        for weight in [400, 500] {
+            assert_eq!(pixels("SubsetFace", weight), pixels("Inter", weight));
+        }
+    }
+
+    #[test]
+    fn unrelated_loaded_family_is_not_an_implicit_native_fallback() {
+        let (fonts, errors) = FontManager::bundled_with(vec![(
+            include_bytes!("../tests/fixtures/subset-face-bold.ttf").to_vec(),
+            None,
+        )]);
+        assert!(errors.is_empty());
+        // SVG's coverage query remains available without promising that native
+        // shaping or the editor will select an unrelated loaded brand family.
+        assert_eq!(fonts.substituted_chars("Inter", 400, false, "\u{e123}"), vec!['\u{e123}']);
+        let mut paragraph = paragraph("guide \u{e123}", "Inter", 400, &fonts);
+        assert_eq!(paragraph.unresolved_glyphs(), Some(1));
+        let out = SkiaTextMeasurer::new(Arc::new(fonts)).measure(&input("guide \u{e123}", "Inter"));
+        assert_eq!(
+            out.diagnostics.iter().filter(|d| d.code == "LUMS0106").count(),
+            1,
+        );
+        assert!(!out.diagnostics.iter().any(|d| d.code == "LUMS0103"));
+    }
+
+    #[test]
+    fn uncovered_glyph_is_an_error_instead_of_silent_or_claimed_fallback() {
+        let measurer = SkiaTextMeasurer::new(Arc::new(subset_manager()));
+        let out = measurer.measure(&input("guide → \u{10fffd}", "SubsetFace"));
+        let missing = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "LUMS0106")
+            .unwrap_or_else(|| {
+                panic!("missing unresolved-glyph diagnostic: {:?}", out.diagnostics)
+            });
+        assert_eq!(missing.severity, lumen_core::DiagnosticSeverity::Error);
+        assert!(missing.message.contains("U+10FFFD"));
+        let substituted = out
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "LUMS0103")
+            .expect("the covered arrow still reports substitution");
+        assert!(substituted.message.contains('→'));
+        assert!(!substituted.message.contains('\u{10fffd}'));
+    }
+
+    fn span_coverage_measurement(base_weight: u16, span_weight: u16) -> TextMeasureOutput {
+        let (fonts, errors) = FontManager::bundled_with(vec![
+            (include_bytes!("../tests/fixtures/subset-face.ttf").to_vec(), None),
+            (include_bytes!("../tests/fixtures/subset-face-bold.ttf").to_vec(), None),
+        ]);
+        assert!(errors.is_empty());
+        assert_eq!(
+            fonts.match_typeface("SubsetFace", 400, false).unwrap().unichar_to_glyph(0xE123),
+            0,
+        );
+        assert_ne!(
+            fonts.match_typeface("SubsetFace", 700, false).unwrap().unichar_to_glyph(0xE123),
+            0,
+        );
+        let mut request = input("A\u{e123}", "SubsetFace");
+        request.font_weight = base_weight;
+        request.direction = LumenTextDirection::Rtl;
+        request.spans = vec![lumen_core::TextSpan {
+            start: 1,
+            end: request.content.len(),
+            font_weight: Some(span_weight),
+            fill: None,
+            underline: None,
+            strikethrough: None,
+            italic: None,
+        }];
+        SkiaTextMeasurer::new(Arc::new(fonts)).measure(&request)
+    }
+
+    #[test]
+    fn rich_span_that_supplies_a_glyph_does_not_inherit_base_face_error() {
+        let out = span_coverage_measurement(400, 700);
+        assert!(
+            !out.diagnostics.iter().any(|d| d.code == "LUMS0106"),
+            "{:?}", out.diagnostics,
+        );
+    }
+
+    #[test]
+    fn rich_span_missing_a_glyph_is_not_hidden_by_base_face_coverage() {
+        let out = span_coverage_measurement(700, 400);
+        assert!(
+            out.diagnostics.iter().any(|d| d.code == "LUMS0106" && d.message.contains("U+E123")),
+            "{:?}", out.diagnostics,
+        );
+    }
+
+    #[test]
+    fn subset_gaps_have_loaded_coverage_for_svg_embedding() {
+        let fonts = subset_manager();
+        // Coverage evidence for the SVG embedder; the paragraph and raster
+        // tests above separately verify actual shaping and painted fallback.
         let subset_face = fonts
             .match_typeface("SubsetFace", 400, false)
             .expect("subset face");
@@ -1061,8 +1294,7 @@ mod glyph_fallback_tests {
                 "the loaded fallback face must supply a real glyph for {ch}"
             );
         }
-        // The coverage query — which build_paragraph shapes through the same
-        // fallback-enabled collection — agrees on exactly that substituted set.
+        // The SVG coverage query agrees on exactly these supplier gaps.
         assert_eq!(
             fonts.substituted_chars("SubsetFace", 400, false, &normalize_content("1/10 ×2 —")),
             vec!['/', '×', '—']

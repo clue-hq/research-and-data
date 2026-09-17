@@ -10,6 +10,7 @@ import {
   composeTranscript,
   emptyTranscriptState,
   mergeThreadMessages,
+  seedDesignLeg,
   turnsAwaitingRehydration,
   type TranscriptMessage,
   type TranscriptState,
@@ -536,6 +537,53 @@ test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
   assert.deepEqual(cold[1].parts, []);
 });
 
+for (const durableState of ["cancelled", "running"] as const) {
+  test(`a replayed crash reconciles with durable ${durableState} without losing partial text`, () => {
+    // Older design Stop attempts emitted turn.failed before turn.cancelled. The
+    // SSE reader closes on the first terminal, so only the durable turn read can
+    // prove that the user cancelled after the generic crash unwinder ran.
+    const stream = apply(emptyTranscriptState(), [
+      frame({ type: "turn.started" }),
+      frame({ type: "text.start", part_id: "text:partial", part_kind: "text" }),
+      frame({ type: "text.delta", part_id: "text:partial", delta_index: 0, delta: "Draft started" }),
+      frame({ type: "turn.failed", failure_code: "design_leg_turn_crashed" }),
+    ]);
+    const messages = composeTranscript({
+      messages: [],
+      turns: [{
+        turnId: TURN,
+        threadId: "t1",
+        projectId: "p1",
+        state: durableState,
+        requestedAt: "2026-09-13T00:00:00Z",
+        lastEventId: null,
+        generationAttempts: 1,
+        submissionMessage: null,
+      }],
+      stream,
+    });
+    const assistant = messages.find((message) => message.role === "assistant");
+    assert.ok(assistant);
+    assert.equal(assistant.state, durableState === "cancelled" ? "cancelled" : "failed");
+    assert.equal(assistant.failureCode, durableState === "cancelled" ? null : "design_leg_turn_crashed");
+    assert.equal(assistant.live, false);
+    const partial = assistant.parts.find((part) => part.kind === "text");
+    assert.ok(partial?.kind === "text");
+    assert.equal(partial.text, "Draft started");
+    assert.equal(partial.failed, true);
+  });
+}
+
+test("a cancellation frame clears an earlier crash notice", () => {
+  const stream = apply(emptyTranscriptState(), [
+    frame({ type: "turn.failed", failure_code: "design_leg_turn_crashed" }),
+    frame({ type: "turn.cancelled", reason: "stop_requested" }),
+  ]);
+  const [assistant] = composeTranscript({ messages: [], turns: [], stream });
+  assert.equal(assistant.state, "cancelled");
+  assert.equal(assistant.failureCode, null);
+});
+
 /**
  * Rule 6 — the dev-lens raw reasoning trace.
  *
@@ -838,6 +886,7 @@ test("a reopen names its own delegating turn and reopens the leg", () => {
     legFrame({ type: "leg.reopened", leg_id: "leg-9" }, "turn-reopen"),
   ]);
   assert.deepEqual(state.designLeg, {
+    known: true,
     open: true,
     legId: "leg-9",
     openedByTurnId: "turn-reopen",
@@ -853,10 +902,80 @@ test("an awaiting frame keeps the leg open without stealing the opener", () => {
     legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }, "turn-design"),
   ]);
   assert.deepEqual(state.designLeg, {
+    known: true,
     open: true,
     legId: "leg-9",
     openedByTurnId: "turn-open",
   });
+});
+
+/* --------------------------------------------------------------------------
+ * The durable seed (task 4 fix round 1, finding I1)
+ *
+ * The frame backlog reaches back only a few turns, so a leg opened before it
+ * is invisible to the stream. The thread wire's speaker projection knows, and
+ * seeding from it is what stops "no frame said so" reading as "there is no
+ * leg".
+ * ----------------------------------------------------------------------- */
+
+test("the durable seed answers a leg no frame in the backlog mentions", () => {
+  const state = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  assert.deepEqual(state.designLeg, {
+    known: true,
+    open: true,
+    legId: "leg-9",
+    // No frame named the delegating turn, and the wire does not carry one.
+    openedByTurnId: null,
+  });
+});
+
+test("a seed that says there is no leg is still KNOWLEDGE", () => {
+  const state = seedDesignLeg(emptyTranscriptState(), {
+    legId: null,
+    open: false,
+  });
+  assert.equal(state.designLeg.known, true);
+  assert.equal(state.designLeg.open, false);
+});
+
+test("nothing observed and nothing seeded is UNKNOWN, not closed", () => {
+  assert.equal(emptyTranscriptState().designLeg.known, false);
+  assert.equal(emptyTranscriptState().designLeg.open, false);
+});
+
+test("a seed never overwrites what the stream has already observed", () => {
+  // The wire is a snapshot taken when the thread list was read; the frames are
+  // live. A leg the stream watched close must stay closed.
+  const observed = apply(emptyTranscriptState(), [
+    legFrame({ type: "leg.opened", leg_id: "leg-9" }, "turn-open"),
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+  ]);
+  const seeded = seedDesignLeg(observed, { legId: "leg-9", open: true });
+  assert.equal(seeded, observed);
+  assert.equal(seeded.designLeg.open, false);
+});
+
+test("a frame still outranks a seed that landed first", () => {
+  const seeded = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  const state = apply(seeded, [
+    legFrame({ type: "leg.closed", leg_id: "leg-9", reason: "locked" }, "turn-a"),
+  ]);
+  assert.equal(state.designLeg.open, false);
+  assert.equal(state.designLeg.known, true);
+});
+
+test("seeding twice is idempotent and allocates nothing", () => {
+  const once = seedDesignLeg(emptyTranscriptState(), {
+    legId: "leg-9",
+    open: true,
+  });
+  assert.equal(seedDesignLeg(once, { legId: "leg-9", open: true }), once);
 });
 
 test("stream.reset drops parts but keeps the leg lines it cannot re-read", () => {
@@ -869,6 +988,165 @@ test("stream.reset drops parts but keeps the leg lines it cannot re-read", () =>
   assert.ok(turn);
   assert.equal(turn.parts.length, 0);
   assert.equal(turn.legNotices.size, 1);
+});
+
+// --- mid-run checkpoints (scene live-streaming rung A) --------------------
+
+test("a design checkpoint parses the mark the design run committed", () => {
+  const event = legFrame({
+    type: "design.checkpoint",
+    document_id: "doc-7",
+    version: 12,
+    operations: 43,
+    preflight_clean: true,
+  });
+  assert.equal(event.type, "design.checkpoint");
+  assert.deepEqual(event.checkpoint, {
+    documentId: "doc-7",
+    version: 12,
+    operations: 43,
+    preflightClean: true,
+  });
+});
+
+test("a checkpoint whose payload is missing or wrong-typed still reloads", () => {
+  // The forwarder copies across only the keys the design event actually
+  // carried, so a partial payload is a normal frame, not a broken one — and
+  // the reload decision needs nothing but the type. Refusing the frame would
+  // trade a whole missing feature for an unreadable field.
+  for (const payload of [
+    {},
+    { document_id: 4, version: "twelve", operations: null, preflight_clean: "no" },
+  ]) {
+    const parsed = parseChatStreamEvent({
+      schema_version: "1",
+      event_id: 9001,
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "design.checkpoint",
+      ...payload,
+    });
+    assert.ok(parsed.ok, "a malformed checkpoint payload must not drop the frame");
+    assert.deepEqual(parsed.event.checkpoint, {
+      documentId: null,
+      version: null,
+      operations: null,
+      preflightClean: null,
+    });
+  }
+});
+
+test("only a checkpoint frame carries a checkpoint", () => {
+  assert.equal(legFrame({ type: "leg.awaiting_user", leg_id: "leg-9" }).checkpoint, null);
+  assert.equal(frame({ type: "turn.started" }).checkpoint, null);
+});
+
+test("a checkpoint writes no transcript line and moves no turn state", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    legFrame({ type: "design.checkpoint", document_id: "doc-7", version: 3 }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.state, "running");
+  assert.equal(turn.parts.length, 0);
+  assert.equal(turn.legNotices.size, 0);
+  assert.equal(state.designLeg.open, false);
+});
+
+// --- streamed op batches (scene live-streaming rung B) --------------------
+
+test("an op batch parses the operations, the ledger position, and the iteration", () => {
+  const event = legFrame({
+    type: "design.op_batch",
+    document_id: "doc-7",
+    operations: [{ kind: "remove_node", node_id: "n1" }],
+    operations_total: 44,
+    iteration: 3,
+  });
+  assert.equal(event.type, "design.op_batch");
+  assert.deepEqual(event.opBatch, {
+    documentId: "doc-7",
+    operations: [{ kind: "remove_node", node_id: "n1" }],
+    operationsTotal: 44,
+    iteration: 3,
+  });
+});
+
+test("a POSITION-ONLY op batch parses with its operations absent", () => {
+  // The forwarder drops an oversize `operations` and keeps the position, on
+  // purpose: half a batch applied to a canvas is a corrupted document, a bare
+  // position is honest. The reader must carry that shape through, not refuse it.
+  const event = legFrame({
+    type: "design.op_batch",
+    document_id: "doc-7",
+    operations_total: 44,
+    iteration: 3,
+  });
+  assert.deepEqual(event.opBatch, {
+    documentId: "doc-7",
+    operations: null,
+    operationsTotal: 44,
+    iteration: 3,
+  });
+});
+
+test("an op batch with an unreadable payload is read as absent, never dropped", () => {
+  // Same discipline as the checkpoint above: a malformed member must not break
+  // the stream. It reads as no operations, which the cursor turns into a wait
+  // for the next checkpoint — never into a guess at what was meant.
+  for (const operations of [
+    "not-a-list",
+    7,
+    {},
+    [],
+    [null],
+    [{ node_id: "n1" }],
+    [{ kind: "remove_node" }, "second"],
+  ]) {
+    const parsed = parseChatStreamEvent({
+      schema_version: "1",
+      event_id: 9101,
+      project_id: "p1",
+      thread_id: "t1",
+      turn_id: TURN,
+      type: "design.op_batch",
+      document_id: "doc-7",
+      operations,
+      operations_total: 44,
+    });
+    assert.ok(parsed.ok, "a malformed op batch must not drop the frame");
+    assert.deepEqual(parsed.event.opBatch, {
+      documentId: "doc-7",
+      operations: null,
+      operationsTotal: 44,
+      iteration: null,
+    });
+  }
+});
+
+test("only an op-batch frame carries an op batch", () => {
+  assert.equal(legFrame({ type: "design.checkpoint", document_id: "d" }).opBatch, null);
+  assert.equal(frame({ type: "turn.started" }).opBatch, null);
+});
+
+test("an op batch writes no transcript line and moves no turn state", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({ type: "turn.started" }),
+    legFrame({
+      type: "design.op_batch",
+      document_id: "doc-7",
+      operations: [{ kind: "remove_node", node_id: "n1" }],
+      operations_total: 1,
+    }),
+  ]);
+  const turn = state.turns.get(TURN);
+  assert.ok(turn);
+  assert.equal(turn.state, "running");
+  assert.equal(turn.parts.length, 0);
+  assert.equal(turn.legNotices.size, 0);
+  assert.equal(state.designLeg.open, false);
 });
 
 // --- C5: newest-first pages merging backward ------------------------------------------------

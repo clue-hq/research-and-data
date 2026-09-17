@@ -54,6 +54,7 @@ MAX_LIST = 8
 #: card bloat; anything beyond it gets an explicit truncation line (no-silent-
 #: caps) rather than vanishing.
 MAX_IMAGE_LIST = 16
+MAX_TYPE_SIZE_LIST = 32
 #: How many missing glyphs a font-gap note spells out before summarizing the
 #: rest as "(+N more)" — keeps the note short on heavily-subset faces.
 MAX_GLYPHS_IN_NOTE = 16
@@ -75,6 +76,23 @@ COLOR_ROLE_NOTE = (
     "for what exists."
 )
 
+SCENE_COLOR_ROLE_NOTE = (
+    "Use the exact `token` in native Scene DSL, e.g. fill($surface.brand) "
+    "or fill($text.primary). Preserve dots; CSS utility names are not scene "
+    "tokens. Values shown are kit defaults; preflight resolves the active mode."
+)
+
+SCENE_TYPE_SIZE_NOTE = (
+    "These are concrete size steps declared by this kit, in the listed units. "
+    "Choose a supplied token from measured copy and reference proportions; these "
+    "values are not minimum sizes. Keep the typography role for family/weight "
+    "with style($type.display) and set font_size($<token>) using an exact key "
+    "below. The size token survives role resolution; a raw font_size(n) beside "
+    "style(...) can be replaced by the role's default during preflight. "
+    "Values shown are kit defaults. If no suitable step is supplied, record "
+    "the gap instead of inventing a token."
+)
+
 
 def build_brand_card(
     brand_kit: Optional[JsonObject],
@@ -84,6 +102,7 @@ def build_brand_card(
     include_brief: bool = False,
     include_grammar_audit: bool = False,
     asset_manifest: Optional[JsonObject] = None,
+    scene_dsl: bool = False,
 ) -> Optional[JsonObject]:
     """The compact card, or None when the run has no attached kit.
 
@@ -108,6 +127,10 @@ def build_brand_card(
     the pixel dimensions the author needs to tell a 2460px panel from a 296px
     crop exist ONLY on those records. Omitted → the rows simply carry no size,
     exactly as before.
+
+    ``scene_dsl`` exposes native token handles and the kit's numeric type-size
+    steps. Only the candidate scene substrate opts in; the default keeps the
+    established website and legacy card serialization unchanged.
     """
     if not isinstance(brand_kit, dict) or not brand_kit.get("id"):
         return None
@@ -122,8 +145,14 @@ def build_brand_card(
     for role in CARD_COLOR_ROLES:
         resolved = _resolve_color(role, colors)
         if resolved:
-            roles[role] = {"token": sanitize_token_name(role), "value": resolved}
-    color_roles = {"note": COLOR_ROLE_NOTE, "roles": roles}
+            roles[role] = {
+                "token": role if scene_dsl else sanitize_token_name(role),
+                "value": resolved,
+            }
+    color_roles = {
+        "note": SCENE_COLOR_ROLE_NOTE if scene_dsl else COLOR_ROLE_NOTE,
+        "roles": roles,
+    }
 
     accent = _brightest_accent(colors)
 
@@ -140,10 +169,27 @@ def build_brand_card(
         # The taste-critical fact: the kit's most vivid brand color. CTAs and
         # emphasis reach for THIS (see brand-application.md), not ink.
         "accent": accent,
-        "type_roles": _type_roles(typography),
+        "type_roles": _type_roles(typography, include_font_asset=scene_dsl),
         "logos": _logo_inventory(assets.get("logos") or {}, manifest),
         "images": _image_inventory(assets.get("images") or {}, manifest),
     }
+    if scene_dsl:
+        card["color_catalog"] = {
+            "path": "brand_colors.json",
+            "count": len(colors),
+            "note": (
+                "The compact roles are a shortlist, not the entire palette. "
+                "Read this file in the run workspace when their values do not "
+                "fit the inspected reference; it contains the pinned kit's "
+                "other color tokens, aliases and modes. Choose by actual value "
+                "and purpose. Preflight resolves the active mode; token names "
+                "alone do not establish visual fidelity or logo compatibility."
+            ),
+        }
+        card["type_sizes"] = _scene_type_sizes(
+            (brand_kit.get("tokens") or {}).get("numbers") or {}
+        )
+        card["font_bindings"] = _scene_font_bindings(assets.get("fonts") or {})
     # Font honesty: subset webfaces silently lack glyphs (× / — …). Surface the
     # ingestion audit so the author chooses copy with open eyes. Omitted when no
     # face reports a gap, and tolerant of old kits that predate the audit field.
@@ -178,6 +224,32 @@ def build_brand_card(
                 "char_budget": GRAMMAR_AUDIT_CHAR_BUDGET,
             }
     return card
+
+
+def _scene_type_sizes(numbers: JsonObject) -> JsonObject:
+    steps: JsonObject = {}
+    for name, entry in numbers.items():
+        if not name.startswith("type.size.") or not isinstance(entry, dict):
+            continue
+        default = (entry.get("value") or {}).get("default") or {}
+        value = default.get("value")
+        if (
+            default.get("kind") == "number"
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value > 0
+            and default.get("unit") in {"px", "pt"}
+        ):
+            steps[name] = {"value": value, "unit": default["unit"]}
+    ordered = sorted(steps, key=lambda name: (steps[name]["value"], name))
+    result: JsonObject = {
+        "note": SCENE_TYPE_SIZE_NOTE,
+        "tokens": {name: steps[name] for name in ordered[:MAX_TYPE_SIZE_LIST]},
+    }
+    if len(ordered) > MAX_TYPE_SIZE_LIST:
+        result["omitted_count"] = len(ordered) - MAX_TYPE_SIZE_LIST
+    return result
 
 
 #: The card keys whose value is PROSE, in the order they are appended below.
@@ -233,7 +305,62 @@ def _font_gaps(fonts: JsonObject) -> list[str]:
     return notes
 
 
-def _type_roles(typography: JsonObject) -> JsonObject:
+def _scene_font_bindings(fonts: JsonObject) -> JsonObject:
+    """Declared kit bindings, not a duplicate of the engine's font resolver.
+
+    The image/logo manifest deliberately excludes fonts. Neither its absence
+    nor an empty kit face list establishes actual runtime font availability.
+    Glyph metrics describe one representative face and a limited probe set.
+    """
+    entries = {
+        name: font for name, font in fonts.items() if isinstance(font, dict)
+    } if isinstance(fonts, dict) else {}
+    inventory: JsonObject = {}
+    for name, font in list(entries.items())[:MAX_LIST]:
+        faces = [
+            face for face in (font.get("faces") or [])
+            if isinstance(face, dict)
+            and isinstance(face.get("asset_id"), str)
+            and face["asset_id"].strip()
+        ]
+        row: JsonObject = {
+            "family": font.get("family"),
+            "declared_face_count": len(faces),
+            "declared_faces": [
+                {key: face.get(key) for key in ("asset_id", "weight", "style")}
+                for face in faces[:MAX_LIST]
+            ],
+            "glyph_coverage": "not_established",
+        }
+        if len(faces) > MAX_LIST:
+            row["omitted_faces"] = len(faces) - MAX_LIST
+        metrics = font.get("metrics")
+        missing = metrics.get("missing_glyphs") if isinstance(metrics, dict) else None
+        if isinstance(missing, list) and missing:
+            row["known_missing_glyphs"] = missing[:MAX_GLYPHS_IN_NOTE]
+            if len(missing) > MAX_GLYPHS_IN_NOTE:
+                row["omitted_missing_glyphs"] = len(missing) - MAX_GLYPHS_IN_NOTE
+        inventory[name] = row
+    result: JsonObject = {
+        "note": (
+            "Raw kit declarations, not loaded-font verification. The role's "
+            "font_asset is a raw reference; a resolved font slot can override "
+            "the role's family. Preflight resolves aliases, active modes, "
+            "actual font bytes and weight substitutions. Zero kit faces may "
+            "still be supplied by bundled/library fonts; declared faces may "
+            "fail to load. Known missing glyphs are a representative-face "
+            "audit, not coverage for every face or character. No recorded gap "
+            "does not prove coverage. Inspect the rendered copy; use a "
+            "separate native vector for an unsupported decorative symbol."
+        ),
+        "assets": inventory,
+    }
+    if len(entries) > MAX_LIST:
+        result["omitted_font_assets"] = len(entries) - MAX_LIST
+    return result
+
+
+def _type_roles(typography: JsonObject, *, include_font_asset: bool = False) -> JsonObject:
     roles: JsonObject = {}
     for role in CARD_TYPE_ROLES:
         value = (typography.get(role) or {}).get("value") or {}
@@ -244,6 +371,8 @@ def _type_roles(typography: JsonObject) -> JsonObject:
                 "size": default.get("font_size"),
                 "weight": default.get("font_weight"),
             }
+            if include_font_asset:
+                roles[role]["font_asset"] = default.get("font_asset")
     return roles
 
 

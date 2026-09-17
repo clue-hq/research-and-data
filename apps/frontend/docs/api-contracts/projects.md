@@ -2416,3 +2416,45 @@ PUT body   = { body: string (1…1_000_000), expected_revision: int ≥ 1 }
   at mount; only new or changed files from the active chat auto-open, once per update.
 - Scope stays with the existing three-kind Markdown API and design documents. Arbitrary file
   formats, dynamic backend kinds and document rename require a separate contract amendment.
+
+### Scene editor canonical render context (2026-09-15, Task 40)
+
+The existing `GET /api/clue/design/documents/{documentId}` scene response now adds a
+read-only `render_context` beside `scene`. Web documents do not receive this field.
+It contains `context_key`, `document_id`, `document_version`, `scene_brand_ref`,
+`scene_medium`, `source`, full selected `brand_kit` JSON (or null), selected `mode`
+(or null), and `diagnostics`. The context key hashes the complete selected inputs.
+The document-store adapter validates the document/version identity and payload
+shape; the shared Rust resolver validates token semantics and supported modes.
+
+The API selects these inputs with the same helpers as normal export: an attached
+kit takes precedence, followed by the scene's exact kit reference, then the normal
+export fallback. Selection provenance remains explicit. If a selected kit differs
+from a scene pin, the response carries a blocking diagnostic, including when an
+unavailable pin led export to a fallback. No same-ID latest version is substituted
+as an exact pin. Historical effective-brand metadata is not current selection
+authority. This response does not persist a kit, rebind a document, or change its
+version/history.
+
+The platform WASM engine retains authored state separately from its resolved
+presentation. Canonical token resolution and scene-medium normalization run before
+layout on that presentation. Painting, hit testing, effective inspector spacing,
+and all measurement passes consume the paired presentation; writes and undo keep
+authored values and bindings. Optimistic/streamed frames carry their own paired
+presentation, and document/context/revision fences discard stale font and
+measurement completions. Missing, malformed, or unsupported context is visible
+through diagnostics and does not claim canonical-ready geometry.
+
+An explicit numeric gap edit now removes only its gap binding. A one-side padding
+edit first materializes all four effective sides, then replaces the shared padding
+binding, leaving sibling sides unchanged. Bound padding without a valid effective
+tuple refuses the edit with a visible explanation. This intentionally replaces the
+older token-preserving numeric-edit expectation: retaining the binding made a
+successful-looking numeric edit ineffective. Unrelated bindings and authored undo
+values remain intact.
+
+This migration applies to the platform scene editor. The standalone editor retains
+its legacy no-context engine behavior; its separate loader/UI is not migrated.
+Equal spacing semantics do not establish pixel-identical text across browser and
+server font engines; font/measurement diagnostics and rendered qualification remain
+required.

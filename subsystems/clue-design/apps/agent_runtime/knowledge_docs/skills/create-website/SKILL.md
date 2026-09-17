@@ -5,6 +5,17 @@ description: Author a complete branded website page in the constrained-HTML wire
 
 # Create a Website Page
 
+**This skill is the VOCABULARY lane's contract — and in a workspace with released
+cloned sections, the vocabulary lane is the LAST RESORT, never the first idea.** The
+client's real bands come first: pin them (`assemble_cloned_sections` /
+`insert_cloned_section`), personalize through slot values (the `{{account.*}}` markers
+ride there), derive a variant when the shape must change
+(`repair_cloned_section(..., css=…)` edits the original's real HTML and CSS), and
+compose a missing band in the raw lane (`compose_web_section`, remixing a real
+ancestor's CSS). Reach for what follows only for a band that must carry
+`data-var`/`data-slot-when` attributes or stay deeply inspector-editable — and know
+it completely, because when you do need it, it must be done right.
+
 You author **one complete page per call** to `author_web_page(html, custom_css?)`.
 The markup is parsed into a typed tree; **any error rejects the whole batch and
 nothing is stored** — you then repair with `patch_web_page` (see Repairing
@@ -192,6 +203,22 @@ specific to our editor, brands, and formats.
   `rounded-button` (a `data-button` already lands with the brand's radius —
   only a hand-built control needs the class).
 - Exactly ONE `h1` (the hero). Heading levels never skip.
+
+## Multi-page sites
+
+A site is one document with many pages. Each page has an id, a name and a route.
+The home page's route is `/`. Other routes look like `/pricing` or `/security/soc-2`:
+lowercase words joined by dashes, no trailing slash.
+
+- The director creates pages and switches the active page before briefing you.
+  You author the active page. Every op you write names its `page_id`.
+- `list_pages` tells you which page is active and what routes the others answer
+  on. It only reads; the director is who adds, removes and switches pages.
+- Link between pages by route: `<a href="/pricing">`. Publishing turns the route
+  into the live address.
+- You may link off the site. On a campaign page that is rarely a good idea — every
+  link away is a visitor who stops reading the argument. Prefer the site's own
+  pages and the one CTA. If you link away, say why in your summary.
 
 ## Responsive (mobile-first, no scripts)
 

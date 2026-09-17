@@ -450,3 +450,35 @@ test("a streaming-start text part is representable — empty text, empty parts",
   const empty = { kind: "text" as const, partId: "text:a", revision: 1, text: "", streaming: true, failed: false, failureReason: null };
   assert.equal(empty.text, "");
 });
+
+test("a context ref's note rides the wire only when present", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "message",
+      message: "fix",
+      contextRefs: [
+        { objectId: "doc_1", objectType: "design_document", version: 3 },
+        {
+          objectId: "frg_a#:nth-child(2)",
+          objectType: "design_node",
+          version: 3,
+          note: "1. Make this shorter",
+        },
+      ],
+    }),
+    {
+      message: "fix",
+      context_refs: [
+        { object_type: "design_document", object_id: "doc_1", version: 3 },
+        {
+          object_type: "design_node",
+          object_id: "frg_a#:nth-child(2)",
+          version: 3,
+          note: "1. Make this shorter",
+        },
+      ],
+      attachment_refs: [],
+      agent_profile_id: null,
+    },
+  );
+});

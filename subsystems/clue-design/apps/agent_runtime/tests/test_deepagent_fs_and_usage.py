@@ -215,6 +215,7 @@ def test_write_deny_globs_target_the_readonly_virtual_trees():
     assert len(perms) == 1
     perm = perms[0]
     assert set(perm.paths) == {
+        "/.materialize.lock",
         "/.deepagent/**",
         "/knowledge_docs/**",
         "/custom_components",
@@ -222,6 +223,31 @@ def test_write_deny_globs_target_the_readonly_virtual_trees():
     }
     assert perm.operations == ["write"]
     assert perm.mode == "deny"
+
+
+@pytest.mark.parametrize("alias", ["virtual", "relative", "host", "legacy", "dot"])
+@pytest.mark.parametrize("operation", ["write", "edit"])
+def test_backend_denies_materialization_lock_writes_through_aliases(ws_backend, alias, operation):
+    root, backend = ws_backend
+    lock = root / ".materialize.lock"
+    key = {
+        "virtual": "/.materialize.lock",
+        "relative": ".materialize.lock",
+        "host": str(lock),
+        "legacy": "/.lumen-runs/.materialize.lock",
+        "dot": "/./.materialize.lock",
+    }[alias]
+    if operation == "write":
+        denied = backend.write(key, "agent-written")
+        assert denied.error is not None
+        assert not lock.exists()
+    else:
+        lock.touch()
+        inode = lock.stat().st_ino
+        denied_edit = backend.edit(key, "", "agent-written")
+        assert denied_edit.error is not None
+        assert lock.read_bytes() == b""
+        assert lock.stat().st_ino == inode
 
 
 def test_custom_component_projection_has_public_paths_and_typed_writes_only(

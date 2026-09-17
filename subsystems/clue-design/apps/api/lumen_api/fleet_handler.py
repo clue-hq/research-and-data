@@ -142,6 +142,9 @@ class DesignTurnHost:
     #: settings, which is exactly what a detached worker has; the embedded worker passes
     #: ``app.state.engine_cache_root`` so worker and request paths mirror into the same tree.
     engine_cache_root: Any = None
+    #: Authorized envelope -> model-boundary resolver, composed by the platform.
+    #: Neither the callable nor resolved preference bodies enter the frozen job.
+    preference_resolver_factory: Any = None
 
 
 class DesignTurnJobError(RuntimeError):

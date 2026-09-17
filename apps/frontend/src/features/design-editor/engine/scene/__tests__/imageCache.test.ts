@@ -135,6 +135,38 @@ describe("CanvasKitImageCache", () => {
     await flush();
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+
+  it("retries failed bytes after publication without discarding decoded images", async () => {
+    let published = false;
+    const image = fakeImage();
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("pending") && !published) throw new Error("404");
+      return new ArrayBuffer(8);
+    });
+    const cache = new CanvasKitImageCache(fakeCk(() => image), {
+      resolveUrl: (id) => `/asset-store/${id}`, fetcher,
+    });
+    cache.get("ready");
+    cache.get("pending");
+    await flush();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(cache.get("ready")).toBe(image);
+    expect(cache.get("pending")).toBeNull();
+
+    published = true;
+    cache.retryFailed();
+    expect(cache.get("ready")).toBe(image);
+    expect(cache.get("pending")).toBeNull();
+    await flush();
+    expect(cache.get("pending")).toBe(image);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+
+    cache.retryFailed();
+    expect(cache.get("ready")).toBe(image);
+    expect(cache.get("pending")).toBe(image);
+    await flush();
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
 });
 
 // ---------------------------------------------------------------------------

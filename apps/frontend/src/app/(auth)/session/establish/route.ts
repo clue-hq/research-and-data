@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getProtectedSession } from "@/features/session/data/session-dal";
-import { WORKSPACE_COOKIE } from "@/features/session/model/session";
+import { workspaceCookieName } from "@/auth/local-workspace";
 import { providerSessionToken } from "@/auth/server";
 import { ClueAuthenticationError } from "@/auth/errors";
 import { acceptSettingsInvitations } from "@/features/settings/data/invitation.repository";
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       // the protected-session DAL can send a new user to owner provisioning.
       const accepted = await acceptSettingsInvitations(token, invite);
       if (accepted.workspace_id)
-        cookieStore.set(WORKSPACE_COOKIE, accepted.workspace_id, cookieOptions);
+        cookieStore.set(workspaceCookieName(), accepted.workspace_id, cookieOptions);
     } catch (error) {
       if (error instanceof ClueAuthenticationError && error.status === 401)
         redirect("/sign-in?reason=session_expired");
@@ -49,8 +49,10 @@ export async function GET(request: Request) {
   // (401 → /sign-in, provisioning errors → /access-denied) instead of surfacing a 500.
   const session = await getProtectedSession();
   if (!session) redirect("/");
+  // The local-instance selector isolates the workspace cookie by port; otherwise this is
+  // the ordinary WORKSPACE_COOKIE.
   cookieStore.set(
-    WORKSPACE_COOKIE,
+    workspaceCookieName(),
     session.principal.workspace_id,
     cookieOptions,
   );

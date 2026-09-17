@@ -26,6 +26,8 @@ from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
+from clue_api.design_event_forwarder import _DesignEventForwarder
+from clue_api.design_memory_runtime import PreferenceResolverFactory
 from clue_db import transaction
 from clue_fleet import (
     LeaseGeneration,
@@ -51,7 +53,10 @@ class DesignRuntimeUnavailable(RuntimeError):
 
 
 def build_design_job_handler(
-    *, enabled: bool, purpose: str = "design_job_drain"
+    *,
+    enabled: bool,
+    purpose: str = "design_job_drain",
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -74,7 +79,16 @@ def build_design_job_handler(
             "install the design app (subsystems/clue-design/apps/{api,agent_runtime}) or "
             "unset CLUE_DESIGN_RUNTIME_ENABLED"
         ) from error
-    handler: Any = _build()
+    if preference_resolver_factory is None:
+        handler: Any = _build()
+    else:
+        from lumen_api.fleet_handler import DesignTurnHost
+
+        handler = _build(
+            host_provider=lambda: DesignTurnHost(
+                preference_resolver_factory=preference_resolver_factory
+            )
+        )
     if handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise DesignRuntimeUnavailable("the design handler does not own design_job tasks")
     log.info(
@@ -92,8 +106,9 @@ class InlineDesignLaneDriver:
     sense that matters — the same :class:`~lumen_api.fleet_handler.DesignJobWorkHandler`, the
     same claim CAS, the same generation fences, the same run-event stream — but it is *driven by
     the agent-turn worker* instead of queued as a second fleet task. The platform fleet drains
-    one task at a time per worker, so an ``AGENT_TURN`` handler that enqueued a ``design_job``
-    and awaited it would deadlock a single-worker deployment against itself; holding the design
+    one task per drain slot (``CLUE_FLEET_WORKER_CONCURRENCY``; exactly one by default),
+    so an ``AGENT_TURN`` handler that enqueued a ``design_job`` and awaited it would deadlock a
+    deployment whose slots are all busy against itself; holding the design
     work lease and calling the handler directly keeps single-flight, stop and fencing semantics
     without that hazard.
 
@@ -126,6 +141,7 @@ class InlineDesignLaneDriver:
         heartbeat_interval_s: float | None = None,
         join_poll_interval_s: float = 5.0,
         join_timeout_s: float = 1800.0,
+        checkpoint_poll_interval_s: float = 1.0,
     ) -> None:
         self._handler = handler
         self._conn_factory = conn_factory
@@ -137,11 +153,65 @@ class InlineDesignLaneDriver:
         )
         self._join_poll_interval_s = join_poll_interval_s
         self._join_timeout_s = join_timeout_s
+        #: How often the checkpoint tail reads the design run's outbox. Faster than the join
+        #: poll on purpose — the join is a rare recovery path, whereas this cadence is the
+        #: latency a marketer sees between the agent committing a round and the canvas showing
+        #: it. Slower than the design editor's own 4 Hz stream: rung B's op batches land once
+        #: per mutation and rung A's checkpoints once per authoring round (tens of seconds) —
+        #: neither is a per-compile-frame cadence, so a 1 Hz tail loses nothing but latency.
+        self._checkpoint_poll_interval_s = checkpoint_poll_interval_s
+        self._forwarder: _DesignEventForwarder | None = None
         #: Successful renewals across this driver's lifetime — observable, so a test (or an
         #: operator counter) can prove the beat is real rather than infer it from silence.
         self.renewals = 0
 
+    @property
+    def frames_forwarded(self) -> int:
+        """Design frames — checkpoints and op batches alike — the current (or most recent) drive
+        has put on the thread.
+
+        Live rather than summed at the end, for the same reason :attr:`renewals` is: the tail's
+        whole claim is that it announces work *while* the turn runs, and a counter that only
+        settles afterwards could not tell that apart from a drain.
+        """
+
+        return 0 if self._forwarder is None else self._forwarder.forwarded
+
     async def drive(self, *, envelope: Any) -> None:
+        """Drive the run terminal, tailing its progress onto the leg's thread as it goes.
+
+        The tail runs for the whole drive rather than on the join loop's tick, because the join
+        loop only runs when this lane is NOT the one driving: in the ordinary case the handler
+        holds the coroutine for the entire turn and the join never spins at all. A background
+        poller is therefore the only placement from which a checkpoint can be announced *while*
+        the turn is still running, which is the entire point (see
+        :class:`~clue_api.design_event_forwarder._DesignEventForwarder` for why every one of its
+        failures is swallowed).
+
+        One final drain follows the drive: the last checkpoint of a fast turn can land between
+        the tail's last poll and the terminal row, and a frame arriving a beat late is worth
+        much more than a frame lost.
+        """
+
+        forwarder = _DesignEventForwarder(
+            envelope=envelope,
+            conn_factory=self._conn_factory,
+            poll_interval_s=self._checkpoint_poll_interval_s,
+        )
+        self._forwarder = forwarder
+        tail = asyncio.create_task(forwarder.run())
+        try:
+            await self._drive_to_terminal(envelope=envelope)
+        finally:
+            tail.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await tail
+            # Unguarded on purpose: ``drain`` swallows its own failures, so the only thing this
+            # can raise is the ``CancelledError`` of a drive the caller is stopping — which must
+            # keep propagating rather than be absorbed into a silent normal return.
+            await forwarder.drain()
+
+    async def _drive_to_terminal(self, *, envelope: Any) -> None:
         """Drive the run terminal — actively (MED-6, adversarial-review fix).
 
         The old shape parked in a blind bounded join whenever it did not hold the lease —
@@ -346,7 +416,9 @@ class InlineDesignLaneDriver:
             await asyncio.sleep(self._join_poll_interval_s)
 
 
-def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | None:
+def build_design_leg_lane_driver(
+    *, enabled: bool, preference_resolver_factory: PreferenceResolverFactory | None = None
+) -> InlineDesignLaneDriver | None:
     """The design-leg lane for :func:`build_agent_turn_work_handler`, or ``None`` when off.
 
     Same switch, same lazy import, same fail-loud stance as :func:`build_design_job_handler` —
@@ -354,7 +426,11 @@ def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | N
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
     """
-    handler = build_design_job_handler(enabled=enabled, purpose="design_leg_inline_lane")
+    handler = build_design_job_handler(
+        enabled=enabled,
+        purpose="design_leg_inline_lane",
+        preference_resolver_factory=preference_resolver_factory,
+    )
     if handler is None:
         return None
     return InlineDesignLaneDriver(handler=handler)

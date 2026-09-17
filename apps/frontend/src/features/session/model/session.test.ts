@@ -79,3 +79,28 @@ test("multiple memberships require an explicit workspace selection", () => {
     "ws_two",
   );
 });
+
+test("a pinned local instance ignores another tab's selected workspace", () => {
+  const session = AuthenticatedSessionSchema.parse({
+    user_id: "usr_owner",
+    has_inactive_memberships: false,
+    memberships: [
+      { membership_id: "wsm_aws", workspace_id: "ws_aws", role_key: "owner", permissions: [] },
+      { membership_id: "wsm_conduit", workspace_id: "ws_conduit", role_key: "owner", permissions: [] },
+    ],
+  });
+  for (const cookie of [null, "ws_aws", "ws_conduit", "ws_stale"]) {
+    assert.equal(resolveWorkspaceMembership(session, cookie, "ws_aws")?.workspace_id, "ws_aws");
+  }
+});
+
+test("a local pin never grants missing membership or falls back to another brand", () => {
+  const session = AuthenticatedSessionSchema.parse({
+    user_id: "usr_owner",
+    has_inactive_memberships: true,
+    memberships: [
+      { membership_id: "wsm_conduit", workspace_id: "ws_conduit", role_key: "owner", permissions: [] },
+    ],
+  });
+  assert.equal(resolveWorkspaceMembership(session, "ws_conduit", "ws_revoked"), null);
+});

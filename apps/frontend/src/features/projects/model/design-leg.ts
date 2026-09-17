@@ -35,14 +35,36 @@ export function isDesignLegEvent(type: string): type is DesignLegEventType {
 }
 
 /**
- * The honest wait sentence (founder requirement 4, verbatim).
+ * One committed design checkpoint, mid-run (scene live-streaming rung A).
+ *
+ * Not a leg frame: it announces no transition and closes nothing. It says a
+ * *version* of the leg's document was committed while the run is still going,
+ * which is the whole point — the canvas can now show work in progress instead
+ * of a blank wait until `leg.awaiting_user`.
+ */
+export const DESIGN_CHECKPOINT_EVENT_TYPE = "design.checkpoint";
+
+/**
+ * One streamed batch of operations, mid-mutation (scene live-streaming rung B).
+ *
+ * Weaker than a checkpoint and deliberately so: it announces work that is NOT
+ * yet durable, so it refreshes NOTHING here. A canvas may render it
+ * optimistically — that decision, and the cursor arithmetic that makes it safe,
+ * live in `design-editor/adapter/scene-stream-cursor`. Refreshing the feed or
+ * reloading the canvas on one would re-read the durable document several times
+ * a second to show it a version it does not yet have.
+ */
+export const DESIGN_OP_BATCH_EVENT_TYPE = "design.op_batch";
+
+/**
+ * The shared wait sentence for ad and website design sessions.
  *
  * Generation is minutes long and its duration is genuinely unknown, so the
- * surface states the range it has actually observed and stops there. A
+ * surface states that clearly without claiming a duration for every format. A
  * percentage or an ETA would be invented, and requirement 5 forbids both.
  */
 export const DESIGN_GENERATION_WAIT_NOTICE =
-  "Website generation often takes 5–15 minutes.";
+  "Design generation can take several minutes.";
 
 const LEG_CLOSED_NOTICES: Readonly<Record<string, string>> = {
   locked: "Design session closed — the page is locked in.",
@@ -141,9 +163,8 @@ export function designTurnFailureNotice(code: string | null): string | null {
     case "design_leg_account_unresolved":
       return "This page's target account could not be resolved, so the turn was refused. Nothing was generated.";
     case "design_leg_turn_failed":
-      return "Design couldn't finish this page. Nothing was saved — send another message to try again.";
     case "design_leg_turn_crashed":
-      return "The design turn stopped unexpectedly. Nothing was saved — send another message to try again.";
+      return "Design stopped before completion. Any saved draft remains available.";
     default:
       return code;
   }
@@ -199,6 +220,18 @@ export function designRefreshForEvent(
     case "leg.opened":
     case "leg.reopened":
       return { refetchFeed: true, reloadCanvas: false };
+    case DESIGN_CHECKPOINT_EVENT_TYPE:
+      // The canvas, and only the canvas. A checkpoint is a new *version* of a
+      // document that already has its gallery card, so a feed refetch would
+      // re-run the rail's read several times a minute for a list that cannot
+      // have changed. The reload itself is throttled by the consumer — the
+      // rate is transport, this is the policy.
+      return { refetchFeed: false, reloadCanvas: true };
+    case DESIGN_OP_BATCH_EVENT_TYPE:
+      // Nothing. Stated as a case rather than left to fall through `default`,
+      // because "an op batch refreshes nothing" is a DECISION (see the
+      // constant's docstring), not an unhandled frame.
+      return NO_REFRESH;
     default:
       return NO_REFRESH;
   }

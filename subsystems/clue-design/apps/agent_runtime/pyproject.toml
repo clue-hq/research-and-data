@@ -43,6 +43,8 @@ license = { text = "Proprietary" }
 dependencies = [
     # The version treaty: the platform's exact deepagents pin, not the design tree's old floor.
     "deepagents==0.6.12",
+    # Preserve DeepAgents glob semantics when constraining scene searches to one run.
+    "wcmatch>=11,<12",
     "langchain>=1.3,<2",
     "langchain-core>=1.5,<2",
     # Provider packages `langchain.chat_models.init_chat_model` resolves at runtime.

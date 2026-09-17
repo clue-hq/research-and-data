@@ -17,6 +17,7 @@ Notes:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -117,6 +118,24 @@ class Settings(BaseSettings):
     # A typo must fail at startup rather than silently seat the other page, so it is
     # enum-validated below.
     lumen_degraded_repair_selection: str = "keep_flagged"
+    # Whether the two automated QA renderers — the page thumbnail and the clone-review walk —
+    # present a normal Chrome User-Agent instead of the headless one. Brandfetch's logo CDN
+    # refuses any User-Agent containing `HeadlessChrome`, so a hotlinked decorative logo renders
+    # EMPTY there and the review cannot judge the page as a visitor sees it. FOUNDER DECISION
+    # (2026-09-02, plan D11): default ON; `0` restores the headless User-Agent, which is the
+    # switch to reach for if the vendor objects. It reaches those two renderers only — never the
+    # editor, never publish, never fragment isolation. See `lumen_api/qa_render_ua.py`.
+    lumen_qa_render_ua_override: bool = True
+
+    # Whether the in-house logo ladder (the target-logo scrape that runs as the second rung
+    # behind Brandfetch) fetches with a real Chrome TLS/HTTP fingerprint — curl_cffi
+    # `impersonate="chrome"`, the engine under scrapling's Fetcher. Cloudflare-walled sites
+    # score the TLS/HTTP2 handshake, not the User-Agent string, so plain httpx gets a 403
+    # challenge page (openai.com) and the rung reports "blocked" no matter what UA we send.
+    # FOUNDER DECISION (2026-09-02): default ON; `0` restores the plain httpx transport.
+    # It reaches the LADDER's own client only — the brand-kit ingestion capture keeps httpx.
+    # See `lumen_ingestion/capture/impersonate.py`.
+    lumen_ladder_impersonate_chrome: bool = True
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
@@ -235,6 +254,17 @@ class Settings(BaseSettings):
     pdl_api_key: str = ""
     pdl_base_url: str = "https://api.peopledatalabs.com"
     pdl_timeout_s: float = 30.0
+
+    # -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----
+    # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
+    # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
+    brandfetch_api_key: str = ""
+    # Logo API *client id* (PUBLIC — appears in published-page <img> URLs). Powers the
+    # hotlink lane only; blank = the hotlink prompt guidance is omitted.
+    brandfetch_client_id: str = ""
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = 20.0
+
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"
@@ -295,6 +325,14 @@ class Settings(BaseSettings):
     # OpenRouter values are latency|throughput|price, but this is not enum-validated
     # here — an unknown value is forwarded and OpenRouter rejects it loudly.
     lumen_agent_provider_sort: str | None = "latency"
+    # Route NON-OpenAI agent models (x-ai/grok-4.6 is the default) over OpenRouter's
+    # chat-completions endpoint instead of its /responses bridge — the platform lane's own
+    # ruling (`openrouter_chat_completions_fallback`), now mirrored here. Live 2026-09-04: a
+    # 136-second grok generation on /responses died mid-stream with a server-side
+    # `Auth context expired` and took a six-minute solo run with it. OpenAI-family ids are
+    # unaffected either way (the gateway applies the switch to non-`openai/` ids only).
+    # Env: LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS. 0 restores the /responses path.
+    lumen_agent_openrouter_chat_completions: bool = True
     # P3.2: OPTIONAL fallback model id (bare OpenRouter id) tried when the primary
     # errors — rides GatewayConfig.fallback_model with truthful answering-model
     # attribution. Must be vision-capable (the loop is mandatory-multimodal).
@@ -326,6 +364,15 @@ class Settings(BaseSettings):
     # the production loop — proven live across the reference-ads acceptance
     # runs. Set LUMEN_AGENT_FAST_LOOP=0 to fall back to the legacy loop.
     lumen_agent_fast_loop: bool = True
+    # Scene-only knowledge selection; separate workspace roots prevent mixing
+    # knowledge during concurrent control/candidate runs. Website is unchanged.
+    lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Optional caller-owned viewing profile from the candidate manifest. Empty
+    # means no numeric native-copy floor. Never inferred from page units/brand.
+    lumen_agent_scene_review_profile: str = ""
+    # Default-off single-agent scene experiment. Requires candidate knowledge
+    # and the fast loop at scene construction; has no effect on website turns.
+    lumen_agent_scene_solo: bool = False
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the
@@ -351,6 +398,16 @@ class Settings(BaseSettings):
     # web fast loop. Meaningless (and ignored) when that flag is off — the reviewer is always
     # dispatched there.
     lumen_agent_web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): ONE web deepagent — director, designer and
+    # reviewer in a single model loop. Both subagents (`lumen-web-author`,
+    # `lumen-web-reviewer`) are QUARANTINED (not registered; tool-absence enforcement, the
+    # D-F7 pattern), the orchestrator carries the full authoring toolset, and the merged
+    # solo prompt replaces direction-by-delegation with plan -> build -> render -> self-review.
+    # Motive: the 2026-09-01 OpenAI-CFO diagnostic run measured ~20+ minutes of pure trio
+    # coordination overhead (per-delegation skill re-reads, brief writing, discovery loss)
+    # in a 57-minute page build. Overrides the two web flags above when on: there are no
+    # subagents to quarantine selectively.
+    lumen_agent_web_solo: bool = False
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #

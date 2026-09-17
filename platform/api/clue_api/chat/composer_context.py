@@ -28,7 +28,11 @@ from clue_api.arv2.project_documents import (
 )
 from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.design_leg_wiring import project_design_documents
-from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
+from clue_api.design_turn_targets import (
+    DesignTurnTargetError,
+    resolve_scene_targets,
+    validate_web_targets,
+)
 from clue_api.frontend_read.accounts_list import read_spine_page
 from clue_api.frontend_read.v1_shared import account_logo_path
 from clue_config import Settings
@@ -255,10 +259,11 @@ async def validated_context_refs(
                 "CONTEXT_REF_NOT_FOUND",
                 "the targeted design document is not available in this workspace",
             ) from exc
-        if target_document.get("doc_kind") != "scene":
+        target_doc_kind = target_document.get("doc_kind")
+        if target_doc_kind not in {"scene", "web"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "design node targets require a scene document",
+                "design node targets require a scene or web document",
             )
         if target_document_ref.version != target_document.get("current_version"):
             raise ContextReferenceError(
@@ -266,10 +271,19 @@ async def validated_context_refs(
                 "the targeted design document no longer names the current version",
             )
         try:
-            resolve_scene_targets(
-                target_document.get("scene") or {},
-                tuple(ref.object_id for ref in design_nodes),
-            )
+            # A scene target must resolve to ONE page (the scene runtime edits a page at a
+            # time); a web target only has to exist somewhere in the document, and may carry
+            # an inner ``#`` path naming the annotated element inside its node.
+            if target_doc_kind == "scene":
+                resolve_scene_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
+            else:
+                validate_web_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
         except DesignTurnTargetError as exc:
             raise ContextReferenceError(exc.code, exc.message) from exc
 

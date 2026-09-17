@@ -12,8 +12,8 @@ from selectolax.parser import HTMLParser
 
 from .budget import MAX_ASSET_BYTES, budget_diagnostic
 from .candidates import collect_asset_candidates
-from .net import BoundedFetcher, FetchRequest
-from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
+from .net import BoundedFetcher, FetchRequest, require_complete_html
+from .snapshot import Download, SiteSnapshot, Stylesheet
 
 #: Same defect class as the ``url()`` readers ``cssurl`` consolidated — it stops at an
 #: escaped ``)``, never unescapes, and truncates a quoted token at its first space. It is
@@ -36,17 +36,8 @@ async def fetch_static(
     page = await fetcher.fetch_page(url)
     final_url = page.final_url or url
     html_bytes = page.body or b""
-    html = html_bytes.decode("utf-8", errors="replace")
+    html = require_complete_html(html_bytes.decode("utf-8", errors="replace"))
     diagnostics: list[dict] = list(page.diagnostics)
-    if len(html.encode("utf-8")) > HTML_MAX_BYTES:
-        html = html.encode("utf-8")[:HTML_MAX_BYTES].decode("utf-8", errors="ignore")
-        diagnostics.append(
-            {
-                "code": "LUMI0507",
-                "severity": "warning",
-                "message": "html truncated to 2 MB",
-            }
-        )
 
     tree = HTMLParser(html)
 

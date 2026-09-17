@@ -642,3 +642,35 @@ drafts must return to valid Rich text before Save; editing itself may normalize 
 Code blocks stay monospaced without a language picker or line numbers and retain their
 fence metadata. Typography, colors and radii use Clue tokens; DM Mono is loaded locally.
 Long inline code, URLs and source wrap; wide tables scroll inside the document.
+
+> **Merge note (2026-09-17, PR #62 ← `research-streaming`).** The backport below was
+> written while this branch lacked the ARV2 backend. After the merge the sections above
+> govern: the Knowledge folders are served from the platform document store, and the
+> Lane 2 shared Markdown editor replaces the read-only `react-markdown` panel. The
+> asset-registry union and typeface `faces` handling from the backport remain in use.
+
+## Local backport (2026-09-13) — Brand Context presentation
+
+Adapted Aryan's `3903ae73`, `769b4994` and `79330214` changes from
+`origin/brand-context-polish` onto Design Agent V1. The existing authenticated
+brand-kit and asset read contracts remain in use; no onboarding API is added.
+
+- Asset dialogs contain the full image within a larger responsive preview and
+  keep long names/descriptions readable in the details column.
+- Typeface mapping preserves the kit's `faces` (weight, style, asset ID and source
+  URL). Stored faces use `/api/clue/design/assets/{id}/bytes`; remote fallback
+  accepts HTTP(S) only. Font-family registration is namespaced by kit/version/role.
+  A sample appears after the actual font loads, with explicit loading/unavailable
+  states instead of a silent fallback. Refreshing the kit refreshes its typefaces.
+- Knowledge uses `react-markdown` and `remark-gfm` for headings, lists, tables,
+  links and code. Existing client-local drafts are still previewable. This does
+  **not** persist edits or change the structured Design brief.
+
+The newer onboarding Knowledge tree, polling and version-checked Markdown saves
+(`2c100e8a`) depend on the upstream ARV2 backend/document store, absent on this
+branch. They are not part of this backport. Importing the full upstream branch is
+a separate contract and migration integration, not a presentation update.
+
+Presentation changes do not rerun ingestion or increase source coverage. Current
+website capture visits the entry URL plus explicitly supplied `page_urls`; it
+does not discover linked pages. Ad-library harvesting remains a separate job.

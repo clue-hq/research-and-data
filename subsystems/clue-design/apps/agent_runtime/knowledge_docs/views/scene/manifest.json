@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "skills": [
+    "scene-brief-copy",
+    "account-adaptation",
+    "account-identity-composition",
+    "type-led-positioning",
+    "authentic-product",
+    "attributed-proof",
+    "workflow-contrast",
+    "create-design",
+    "plan-design",
+    "reference-image-direction",
+    "reference-conditioned-ads",
+    "generative-imagery",
+    "brand-imagery",
+    "visual-review",
+    "repair-design",
+    "brand-and-tokens",
+    "effects",
+    "tools",
+    "problem-solution",
+    "feature-deep-dive",
+    "product-in-use",
+    "launch-announcement",
+    "comparison-alternatives",
+    "case-study-narrative",
+    "objection-handling",
+    "offer-conversion",
+    "event-webinar",
+    "integration-ecosystem",
+    "educational-guide",
+    "visual-metaphor",
+    "customer-spotlight",
+    "editorial-pov"
+  ],
+  "playbooks": [
+    "type-led-positioning",
+    "authentic-product",
+    "attributed-proof",
+    "workflow-contrast",
+    "problem-solution",
+    "feature-deep-dive",
+    "product-in-use",
+    "launch-announcement",
+    "comparison-alternatives",
+    "case-study-narrative",
+    "objection-handling",
+    "offer-conversion",
+    "event-webinar",
+    "integration-ecosystem",
+    "educational-guide",
+    "visual-metaphor",
+    "customer-spotlight",
+    "editorial-pov"
+  ],
+  "knowledge": [
+    "knowledge/scene/direction-contract.md",
+    "knowledge/scene/components.md",
+    "knowledge/scene/references.md",
+    "knowledge/scene/review.md",
+    "knowledge/lumen-dsl/grammar.md",
+    "knowledge/lumen-dsl/text.md",
+    "knowledge/lumen-dsl/colors.md",
+    "knowledge/lumen-dsl/layout.md",
+    "knowledge/lumen-dsl/directives.md",
+    "knowledge/lumen-dsl/diagnostics.md",
+    "knowledge/design/artboard-frame-authoring.md",
+    "knowledge/design/font-library.md",
+    "knowledge/design-systems/brand-kits.md",
+    "knowledge/design-systems/token-taxonomy.md",
+    "knowledge/design-systems/brand-validation.md",
+    "knowledge/design-systems/modes.md",
+    "knowledge/export/print-geometry.md",
+    "knowledge/export/preview-quality.md",
+    "knowledge/loop/layout-cluster-repair.md",
+    "knowledge/scene/image-grammar.md",
+    "knowledge/scene/placement.md"
+  ],
+  "pinned_knowledge": [
+    "knowledge/lumen-dsl/grammar.md",
+    "knowledge/lumen-dsl/directives.md",
+    "knowledge/design/artboard-frame-authoring.md",
+    "knowledge/scene/components.md"
+  ],
+  "section_overrides": {
+    "knowledge/lumen-dsl/grammar.md": [
+      {
+        "start": "## Images, icons & the scrim idiom",
+        "end": "## Two ways to change an existing scene",
+        "replacement": "knowledge/scene/image-grammar.md"
+      }
+    ]
+  },
+  "review_profiles": {
+    "compact-feed-v1": {
+      "display_width_px": 360,
+      "minimum_nominal_em_px": 8
+    },
+    "legible-feed-v1": {
+      "display_width_px": 360,
+      "minimum_nominal_em_px": 10
+    }
+  },
+  "playbook_requirements": {
+    "authentic-product": {
+      "source_role": "product"
+    },
+    "attributed-proof": {
+      "claim_kinds": [
+        "quote",
+        "statistic"
+      ],
+      "attribution": true
+    }
+  }
+}

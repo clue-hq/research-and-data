@@ -19,11 +19,13 @@ Design:
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from py_lumen_config import settings
 
@@ -40,11 +42,11 @@ DEFAULT_MAX_RETRIES = 2
 # separate catalogues.
 #
 # OpenRouter serves image generation from TWO endpoints with DISJOINT model
-# catalogues, and this adapter talks to the first one:
+# catalogues. IMAGE_MODEL_API_STYLE selects the transport:
 #
-#   * `/chat/completions` with `modalities: ["image","text"]`  ← WE USE THIS.
+#   * `chat`: `/chat/completions` with `modalities: ["image","text"]`.
 #     Catalogue: `GET /api/v1/models` (418 models; 11 with image output).
-#   * `/images` — the dedicated Image API.
+#   * `images`: `/images` — the dedicated Image API.
 #     Catalogue: `GET /api/v1/images/models` (43 models).
 #
 # `openai/gpt-image-2` IS a real OpenRouter model — but ONLY on the Image API.
@@ -61,7 +63,12 @@ DEFAULT_IMAGE_MODEL_ID = "openai/gpt-5.4-image-2"
 # Chat-path image ids that are really Image-API-only ids — a `404 No endpoints
 # found` on one of these is a configuration mistake, not an outage, so we say so.
 _IMAGE_API_ONLY_MODEL_IDS = frozenset(
-    {"openai/gpt-image-2", "openai/gpt-image-1", "openai/gpt-image-1-mini"}
+    {
+        "openai/gpt-image-2.5-flare",
+        "openai/gpt-image-2",
+        "openai/gpt-image-1",
+        "openai/gpt-image-1-mini",
+    }
 )
 
 # W1.7(a) — exactly ONE automatic retry when the model answers with text and no
@@ -90,6 +97,13 @@ STYLE_REFERENCE_FRAMING = (
     "(palette, texture, mood, edge character) but generate a NEW image; do not "
     "copy, crop, or edit them."
 )
+
+ReferenceRole = Literal["source", "treatment", "composition"]
+_REFERENCE_ROLE_DIRECTIONS = {
+    "source": "use the depicted subject/content as guidance for a new image",
+    "treatment": "use the palette, texture, mood and rendering treatment",
+    "composition": "use the layout, spatial hierarchy and framing",
+}
 
 # --- OpenRouter Images API (IMAGE_MODEL_API_STYLE=images) constants ---------
 # Straight from the founder-supplied OpenRouter reference for openai/gpt-image-2
@@ -153,6 +167,11 @@ class ImageGenerationResult:
     requested_aspect_ratio: Optional[str] = None
     requested_width: Optional[int] = None
     requested_height: Optional[int] = None
+    # The aspect actually sent in the provider request, after snapping. It is
+    # not evidence that the provider honored it; width/height remain measured.
+    effective_aspect_ratio: Optional[str] = None
+    provider_api_style: Optional[str] = None
+    request_receipt: Optional[dict] = None
 
     @property
     def aspect_ratio_honored(self) -> Optional[bool]:
@@ -239,6 +258,9 @@ def generate(
     reference_asset_ids: Optional[List[str]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
     request_id: Optional[str] = None,
+    reference_roles: Optional[List[ReferenceRole]] = None,
+    reference_framing: Optional[str] = None,
+    operation: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Generate one raster image. Provider-agnostic orchestration:
     config → dimension resolution → prompt assembly → retrying HTTP adapter →
@@ -254,7 +276,12 @@ def generate(
     those ids into `reference_images`, the bytes channel: (bytes, mime) pairs that ride
     the model call as STYLE references (multimodal content, images first then the
     instruction, framed so the model synthesizes a NEW image rather than editing the
-    attachments). No references → the request body is byte-identical to a bare
+    attachments). Optional `reference_roles` assigns source/treatment/composition
+    to each image in order; `reference_framing` replaces the legacy style-only
+    instruction. Neither adds provider capabilities or guarantees exact logo/UI
+    pixels: use the existing edit or placement path for source preservation.
+    `operation` is a caller intent label in the receipt, never a routing override.
+    No references → the request body is byte-identical to a bare
     text-to-image call. Raises `ImageGenerationError` (typed) on misconfiguration or
     provider failure. This is the function the route calls and tests patch.
     """
@@ -264,6 +291,9 @@ def generate(
             "a non-empty prompt is required for image generation",
             status_code=400,
         )
+    effective_framing = resolve_reference_framing(
+        reference_images or [], reference_roles, reference_framing,
+    )
     config = ImageModelConfig.from_env()
     width, height = resolve_dimensions(width, height, aspect_ratio, image_size)
     full_prompt = _compose_prompt(prompt, brand_notes or [])
@@ -276,6 +306,7 @@ def generate(
         image_size=image_size,
         transparent_background=transparent_background,
         reference_images=reference_images or None,
+        reference_framing=effective_framing,
     )
     actual_width, actual_height = sniff_dimensions(image_bytes)
     provenance = _generated_provenance(config.model_id, request_id)
@@ -294,6 +325,16 @@ def generate(
         requested_aspect_ratio=aspect_ratio,
         requested_width=width,
         requested_height=height,
+        effective_aspect_ratio=(
+            _snap_aspect_ratio(aspect_ratio, width, height)
+            if config.api_style == "images" else api_aspect_ratio(aspect_ratio)
+        ),
+        provider_api_style=config.api_style,
+    )
+    _record_request_receipt(
+        result, provider_operation="generate", operation=operation,
+        images=reference_images or [], reference_roles=reference_roles,
+        reference_framing=reference_framing, effective_framing=effective_framing,
     )
     if actual_width and actual_height:
         provenance.setdefault("notes", []).append(
@@ -321,6 +362,7 @@ def edit(
     brand_notes: Optional[List[str]] = None,
     transparent_background: Optional[bool] = None,
     request_id: Optional[str] = None,
+    operation: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Edit an existing raster image with a text instruction (Phase 3b).
 
@@ -356,7 +398,7 @@ def edit(
         source_images=source_images,
     )
     edit_width, edit_height = sniff_dimensions(image_bytes)
-    return ImageGenerationResult(
+    result = ImageGenerationResult(
         image_bytes=image_bytes,
         mime_type=mime_type or DEFAULT_MIME,
         model=config.model_id,
@@ -364,6 +406,108 @@ def edit(
         license=_generated_license(),
         width=edit_width,
         height=edit_height,
+        provider_api_style=config.api_style,
+    )
+    _record_request_receipt(
+        result, provider_operation="edit", operation=operation,
+        images=source_images, reference_roles=["source"] * len(source_images),
+        reference_framing=None, effective_framing=None,
+    )
+    return result
+
+
+def image_request_receipt_fields(record: dict) -> dict:
+    """Project the persisted provider receipt identically on fresh and cache hits.
+
+    Legacy assets have no receipt. Keep their response shape unchanged, and do
+    not substitute a current request or transient provider result for stored
+    provenance (a concurrent ledger winner may be a different result).
+    """
+    notes = (record.get("provenance") or {}).get("notes") or []
+    for note in reversed(notes):
+        if not isinstance(note, str) or not note.startswith("image_request="):
+            continue
+        try:
+            receipt = json.loads(note.removeprefix("image_request="))
+        except ValueError:
+            continue
+        if isinstance(receipt, dict):
+            return {"image_request_receipt": receipt}
+    return {}
+
+
+def resolve_reference_framing(
+    images: List[Tuple[bytes, str]],
+    roles: Optional[List[ReferenceRole]],
+    framing: Optional[str],
+) -> Optional[str]:
+    """Validate and describe ordered inputs without inventing wire capabilities."""
+    if roles is not None and (
+        len(roles) != len(images) or any(role not in _REFERENCE_ROLE_DIRECTIONS for role in roles)
+    ):
+        raise ImageGenerationError(
+            "image_model.invalid_reference_roles",
+            "reference_roles must match reference_images in order and length, using "
+            "only source, treatment or composition",
+            status_code=400,
+        )
+    if framing is not None and (not framing.strip() or not images):
+        raise ImageGenerationError(
+            "image_model.invalid_reference_framing",
+            "reference_framing requires reference images and a non-empty instruction",
+            status_code=400,
+        )
+    if not images:
+        return None
+    if roles is None:
+        return framing.strip() if framing is not None else STYLE_REFERENCE_FRAMING
+    lines = ["Generate a NEW image guided by these ordered references:"]
+    lines.extend(
+        f"Reference {index} ({role}): {_REFERENCE_ROLE_DIRECTIONS[role]}."
+        for index, role in enumerate(roles, 1)
+    )
+    if framing is not None:
+        lines.append(framing.strip())
+    return "\n".join(lines)
+
+
+def _record_request_receipt(
+    result: ImageGenerationResult,
+    *,
+    provider_operation: str,
+    operation: Optional[str],
+    images: List[Tuple[bytes, str]],
+    reference_roles: Optional[List[ReferenceRole]],
+    reference_framing: Optional[str],
+    effective_framing: Optional[str],
+) -> None:
+    """Structured runtime receipt, also preserved in schema-compatible notes."""
+    result.request_receipt = {
+        "provider_operation": provider_operation,
+        "operation": operation if operation is not None else provider_operation,
+        "reference_roles": list(reference_roles) if reference_roles is not None else None,
+        "reference_framing": reference_framing,
+        "effective_reference_framing": effective_framing,
+        "reference_inputs": [
+            {
+                "index": index + 1,
+                "role": (
+                    reference_roles[index] if reference_roles is not None
+                    else "treatment" if reference_framing is None else None
+                ),
+                "mime_type": mime or DEFAULT_MIME,
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+            for index, (data, mime) in enumerate(images)
+        ],
+        "requested_canvas": {"width": result.requested_width, "height": result.requested_height},
+        "requested_aspect_ratio": result.requested_aspect_ratio,
+        "effective_aspect_ratio": result.effective_aspect_ratio,
+        "provider_api_style": result.provider_api_style,
+        "output_dimensions": {"width": result.width, "height": result.height},
+    }
+    result.provenance.setdefault("notes", []).append(
+        "image_request=" + json.dumps(result.request_receipt, sort_keys=True, separators=(",", ":"))
     )
 
 
@@ -550,6 +694,7 @@ def _invoke_with_retries(
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_framing: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     """Transport retries (`config.max_retries`) plus W1.7(a)'s ONE extra attempt
     on a text-only answer.
@@ -581,6 +726,7 @@ def _invoke_with_retries(
                 transparent_background=transparent_background,
                 source_images=source_images,
                 reference_images=reference_images,
+                reference_framing=reference_framing,
             )
         except ImageGenerationError as error:
             if error.code != "image_model.no_image" or no_image_retries_left <= 0:
@@ -597,7 +743,8 @@ def _invoke_with_retries(
             attempt += 1
     raise ImageGenerationError(
         "image_model.unavailable",
-        f"image model did not return an image after {config.max_retries + 1} attempt(s): {last_error}",
+        f"image model did not return an image after {config.max_retries + 1} "
+        f"attempt(s): {last_error}",
         status_code=502,
     )
 
@@ -613,6 +760,7 @@ def _invoke_model(
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_framing: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     """ADAPTER SEAM — OpenRouter (raw HTTP), two transports.
 
@@ -632,6 +780,7 @@ def _invoke_model(
             transparent_background=transparent_background,
             source_images=source_images,
             reference_images=reference_images,
+            reference_framing=reference_framing,
         )
     return _invoke_chat_completions(
         config,
@@ -641,6 +790,7 @@ def _invoke_model(
         transparent_background=transparent_background,
         source_images=source_images,
         reference_images=reference_images,
+        reference_framing=reference_framing,
     )
 
 
@@ -668,6 +818,7 @@ def _invoke_chat_completions(
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_framing: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     """Transport A — OpenRouter chat-completions with an image modality.
 
@@ -729,7 +880,10 @@ def _invoke_chat_completions(
     elif reference_images:
         content = [
             *_image_content_parts(reference_images),
-            {"type": "text", "text": f"{STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"},
+            {
+                "type": "text",
+                "text": f"{reference_framing or STYLE_REFERENCE_FRAMING}\n\n{user_prompt}",
+            },
         ]
     else:
         content = user_prompt
@@ -774,10 +928,9 @@ def _warn_if_model_not_found(model_id: str, status_code: int, detail: str) -> No
     if model_id in _IMAGE_API_ONLY_MODEL_IDS:
         logger.error(
             "IMAGE_MODEL_ID=%r is an OpenRouter IMAGE-API model id and is NOT served "
-            "on the chat-completions image modality this provider uses — every "
-            "generation will 404. Set IMAGE_MODEL_ID=%s (verified working) instead.",
+            "on the configured chat-completions transport. Set "
+            "IMAGE_MODEL_API_STYLE=images to keep this model and use the Images API.",
             model_id,
-            DEFAULT_IMAGE_MODEL_ID,
         )
         return
     logger.error(
@@ -837,6 +990,7 @@ def _invoke_images_api(
     transparent_background: Optional[bool],
     source_images: Optional[List[Tuple[bytes, str]]] = None,
     reference_images: Optional[List[Tuple[bytes, str]]] = None,
+    reference_framing: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     """Transport B — OpenRouter's dedicated Images endpoint.
 
@@ -875,7 +1029,7 @@ def _invoke_images_api(
     if reference_images:
         # Same distinction the chat path draws: a GENERATION's references are
         # style anchors ("make a NEW image"), an EDIT's source is the subject.
-        user_prompt = f"{STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"
+        user_prompt = f"{reference_framing or STYLE_REFERENCE_FRAMING}\n\n{user_prompt}"
 
     body: dict = {
         "model": config.model_id,

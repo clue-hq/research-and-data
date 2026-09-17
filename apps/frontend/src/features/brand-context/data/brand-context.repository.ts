@@ -11,8 +11,10 @@ import {
 import {
   BrandKitDetailSchema,
   BrandKitSummaryListSchema,
+  DesignAssetListRecordSchema,
   DesignAssetRecordSchema,
   type BrandKitSummary,
+  type DesignAssetListRecord,
   type DesignAssetRecord,
 } from "../model/brand-kit";
 import {
@@ -138,10 +140,33 @@ async function readWorkspace(
     }),
   );
 
+  // The Assets section is the kit UNION the workspace registry: a picture
+  // uploaded in the editor belongs to this brand too. One page per image kind
+  // is enough for a review surface (the editor's own library pages further,
+  // because a picker must be complete); a refusal costs the uploads, never the
+  // kit's own assets, so the page never blanks over a registry hiccup.
+  const registryRecords: DesignAssetListRecord[] = [];
+  for (const kind of ["raster_image", "vector", "logo"]) {
+    try {
+      const page = (await read(
+        `/assets?kind=${kind}&include_archived=false&limit=200&offset=0`,
+      )) as { assets?: unknown[] };
+      for (const raw of page.assets ?? []) {
+        const parsed = DesignAssetListRecordSchema.safeParse(raw);
+        if (parsed.success) registryRecords.push(parsed.data);
+      }
+    } catch (error) {
+      console.warn(
+        `[brand-context] registry read for ${kind} failed; kit assets only:`,
+        error,
+      );
+    }
+  }
+
   return {
     kit: toBrandKitMeta(kit),
     workspace: withPlatformFolders(
-      toBrandContextWorkspace(kit, { assetRecords }),
+      toBrandContextWorkspace(kit, { assetRecords, registryRecords }),
       await platformFolders,
     ),
   };

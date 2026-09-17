@@ -467,6 +467,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `contactDisplay` |
 | `contactDisplay` | DisplayBlock (`page: "contact"`) | optional | omitted when the contact page has not been generated |
 | `lastModifiedAt` | ISO-8601 datetime | required | the **contact's** own latest `verifiedAt` (R8) |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | as E1, keyed to the contact's own registry claims |
 
 The four non-Nick fixture contact pages synthesize an "Account context" section (ruling R10); that
 is fixture-only — a production page's sections come from `contactDisplay` and nothing else.

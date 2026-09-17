@@ -64,7 +64,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DB_URL="${DEV_STACK_DB_URL:-postgresql+psycopg://aryankeshri@localhost/clue_istanbul_dev}"
 WORKERS="${DEV_STACK_WORKERS:-1}"
 WORKER_CONCURRENCY="${DEV_STACK_WORKER_CONCURRENCY:-1}"
-AGENT_WORKSPACE_ROOT="${DEV_STACK_AGENT_WORKSPACE_ROOT:-/private/tmp/clue-agent-workspaces}"
+# The lane wrapper's knob wins; otherwise honour a CLUE_AGENT_WORKSPACE_ROOT already in the
+# shell (the co-founder's local setup exports it), and only then the historical default.
+AGENT_WORKSPACE_ROOT="${DEV_STACK_AGENT_WORKSPACE_ROOT:-${CLUE_AGENT_WORKSPACE_ROOT:-/private/tmp/clue-agent-workspaces}}"
 LOG="${DEV_STACK_LOG_PREFIX:-/tmp/browser}"
 FRONTEND_PORT="${DEV_STACK_FRONTEND_PORT:-3020}"
 DESIGN_PORT="${DEV_STACK_DESIGN_PORT:-8010}"
@@ -161,7 +163,9 @@ up() {
   # 2026-08-30/31). A cold route compile costs seconds; a corrupted cache costs
   # a debugging session. Always start the frontend from a clean cache.
   rm -rf "$ROOT/apps/frontend/.next"
-  ( cd "$ROOT/apps/frontend" && npm run dev -- --port "$FRONTEND_PORT" \
+  # --hostname 127.0.0.1: bind IPv4 loopback explicitly so a browser (and the BFF's
+  # loopback checks) reach the app on http://127.0.0.1:<port> as well as localhost.
+  ( cd "$ROOT/apps/frontend" && npm run dev -- --hostname 127.0.0.1 --port "$FRONTEND_PORT" \
       > "${LOG}_frontend.log" 2>&1 & )
 
   echo "starting…"; sleep 8; status

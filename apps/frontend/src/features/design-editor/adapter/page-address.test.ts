@@ -25,6 +25,7 @@ function loaded(pages: LoadedWebDocument["webDoc"]): LoadedWebDocument {
     isTemplate: false,
     templateDocumentId: null,
     accountId: "acc_403fa12213464a9cbb2a9a1dab3663db",
+    fragmentMeta: {},
   };
 }
 

@@ -47,4 +47,5 @@ htmlcov/
 !.context/
 
 # SDD ledgers, review packages and research scratch (never committed; durable copies go under docs/superpowers/)
+# gstack/superpowers scratch (brainstorm mockups, SDD ledgers)
 .superpowers/

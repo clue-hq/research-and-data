@@ -579,6 +579,19 @@ describe("render adapter", () => {
       expect(resolveTokenNumber("radius.ghost")).toBeNull();
     });
 
+    it("typography roles override leading and tracking tokens as the export resolver does", () => {
+      setKitTokenMaps({ colors: {}, typography: {
+        "type.headline": { lineHeight: 1.12, letterSpacing: -0.6 },
+      }, numbers: { "type.leading": 1.4, "type.tracking": 2 } });
+      const text = { font_family: "Inter", font_size: 16, font_weight: 400,
+        style_token: "type.headline", line_height_token: "type.leading",
+        letter_spacing_token: "type.tracking" };
+      expect(resolvedTextFields(text).lineHeight).toBe(1.12);
+      expect(resolvedTextFields(text).letterSpacing).toBe(-0.6);
+      expect(resolvedTextFields({ ...text, style_token: null }).lineHeight).toBe(1.4);
+      expect(resolvedTextFields({ ...text, style_token: null }).letterSpacing).toBe(2);
+    });
+
     it("K0.5: direct oklch scene colors paint as hex (CanvasKit parseColor cannot read oklch)", () => {
       const color: Color = {
         kind: "oklch",

@@ -103,6 +103,11 @@ pub struct PagePatch {
 pub struct NodePatch {
     pub name: OptionalFieldPatch<String>,
     pub kind: FieldPatch<NodeKind>,
+    /// Token channels deliberately addressed by a text-kind replacement,
+    /// including reapplying the same token. Absent on legacy/full-kind raw
+    /// inspector edits, which retain value-difference staleness inference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explicit_text_tokens: Option<ExplicitTextTokens>,
     pub transform: FieldPatch<Transform>,
     pub size: FieldPatch<SizeSpec>,
     pub fills: FieldPatch<Vec<Fill>>,
@@ -280,7 +285,9 @@ impl Scene {
         })
     }
 
-    fn apply_operation_in_place(&mut self, operation: Operation) -> OperationResult<()> {
+    /// Internal mutation for disposable drafts. On error the caller must stop
+    /// and discard the draft; public operation entry points remain atomic.
+    pub(crate) fn apply_operation_in_place(&mut self, operation: Operation) -> OperationResult<()> {
         if self.is_finalized() && !operation.is_finalization() {
             return Err(OperationError::new(
                 "op.finalized_scene",
@@ -573,6 +580,15 @@ impl Scene {
             )
         })?;
 
+        if patch.explicit_text_tokens.is_some()
+            && !matches!(&patch.kind, FieldPatch::Set(NodeKind::Text(_)))
+        {
+            return Err(OperationError::new(
+                "op.text_token_intent",
+                "explicit text token intent requires a text-kind replacement",
+            ));
+        }
+
         let next_kind = match &patch.kind {
             FieldPatch::Unchanged => current.kind.clone(),
             FieldPatch::Set(kind) => kind.clone(),
@@ -603,15 +619,18 @@ impl Scene {
             matches!(&patch.fills, FieldPatch::Set(fills) if *fills != current.fills);
         let fills_detach_style = fills_changing && fills_edit_detaches_style_token(current, &patch);
 
+        let authored = patch.explicit_text_tokens.unwrap_or_default();
         let node = self.nodes.get_mut(node_id).expect("node checked above");
         apply_optional_patch(&mut node.name, patch.name);
         apply_field_patch(&mut node.kind, patch.kind);
         if let (Some(before), NodeKind::Text(after)) = (previous_text, &mut node.kind) {
             let explicit = ExplicitTextTokens {
-                style: after.style_token != before.style_token,
-                font_size: after.font_size_token != before.font_size_token,
-                line_height: after.line_height_token != before.line_height_token,
-                letter_spacing: after.letter_spacing_token != before.letter_spacing_token,
+                style: authored.style || after.style_token != before.style_token,
+                font_size: authored.font_size || after.font_size_token != before.font_size_token,
+                line_height: authored.line_height
+                    || after.line_height_token != before.line_height_token,
+                letter_spacing: authored.letter_spacing
+                    || after.letter_spacing_token != before.letter_spacing_token,
             };
             after.clear_stale_tokens(&before, explicit);
             if fills_changing && !explicit.style {
@@ -1173,6 +1192,11 @@ impl Scene {
                     && fills_edit_detaches_style_token(node, patch)
                 {
                     inverse.kind = FieldPatch::Set(node.kind.clone());
+                }
+                // Replaying an explicit reapplication backwards must retain
+                // that intent too. Legacy inverses keep their wire shape.
+                if matches!(&inverse.kind, FieldPatch::Set(NodeKind::Text(_))) {
+                    inverse.explicit_text_tokens = patch.explicit_text_tokens;
                 }
                 if !matches!(patch.transform, FieldPatch::Unchanged) {
                     inverse.transform = FieldPatch::Set(node.transform.clone());

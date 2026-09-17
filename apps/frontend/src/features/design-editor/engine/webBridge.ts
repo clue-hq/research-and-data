@@ -15,7 +15,7 @@
  * hook (`useWebBridgeSelection`) owns the listener + nonce lifecycle around it.
  */
 
-import type { RichTextDocument } from "./webDocuments";
+import type { RichTextDocument, WebFragmentTextOverride } from "./webDocuments";
 
 export const WEB_BRIDGE_CHANNEL = "lumen-web-bridge";
 
@@ -155,6 +155,137 @@ export interface WebNodeInfo {
 
 export type WebSelection = WebNodeInfo;
 
+/**
+ * Spec §3.1 — the ONE element-address grammar every consumer shares.
+ *
+ * `nodeId` is the WebDoc node that owns the DOM subtree; `path` is a structural
+ * `:nth-child(…)` chain from that node's rendered root down to the exact
+ * element, and exists ONLY for an element inside a cloned band (a vocabulary
+ * node's descendants have no path — see the bridge's `addressOf`). `slot` is
+ * the element's `data-lumen-slot` key when it carries one, and `tag` is display
+ * only.
+ */
+export interface WebElementAddress {
+  nodeId: string;
+  path?: string;
+  slot?: string;
+  tag: string;
+}
+
+/** Ruling R-A1: one click in Edit mode reports the exact element under the
+ * cursor — a SECOND, finer report beside the ordinary `select` of the owning
+ * node. `textLike` says the element carries editable copy (the comment box's
+ * "Edit text" quick action); `geometry` anchors the box to the element. */
+export interface WebAnnotateEvent {
+  address: WebElementAddress;
+  name: string;
+  textLike: boolean;
+  geometry: WebNodeGeometry;
+}
+
+/** The bridge's own path grammar (`elementPath` in `web_bridge.py`). Anything
+ * else is not a path this shell can hand back for resolution, so it is dropped
+ * rather than carried — the address then addresses the owning node, which is
+ * always resolvable. */
+const ELEMENT_PATH_PATTERN = /^(:nth-child\(\d+\)( > )?)+$/;
+
+/** Coerce the bridge's `address` payload into a {@link WebElementAddress}.
+ * Shared by every element-addressed message (`annotate`, the clone text-edit
+ * pair) so the three can never disagree about what a valid address is. A
+ * malformed path is DROPPED rather than failing the whole address — the address
+ * then names the owning node, which is always resolvable. */
+function coerceAddress(raw: unknown): WebElementAddress | null {
+  const address = (raw ?? null) as Partial<WebElementAddress> | null;
+  if (
+    !address ||
+    typeof address !== "object" ||
+    typeof address.nodeId !== "string" ||
+    address.nodeId.length === 0 ||
+    typeof address.tag !== "string" ||
+    address.tag.length === 0
+  ) {
+    return null;
+  }
+  const path =
+    typeof address.path === "string" && ELEMENT_PATH_PATTERN.test(address.path)
+      ? address.path
+      : undefined;
+  const slot =
+    typeof address.slot === "string" && address.slot.length > 0
+      ? address.slot
+      : undefined;
+  return { nodeId: address.nodeId, path, slot, tag: address.tag };
+}
+
+/** R-A6: an override's text is ONE line of plain copy, and the server stores it
+ * as UTF-8 — so the cap is measured in bytes, not code units. */
+const MAX_OVERRIDE_TEXT_BYTES = 8192;
+
+/** Truncate to at most {@link MAX_OVERRIDE_TEXT_BYTES} UTF-8 bytes, by CODE
+ * POINT: a multi-byte character straddling the cap is dropped whole rather than
+ * split into a lone surrogate or a dangling continuation byte. */
+function capOverrideText(text: string): string {
+  const encoder = new TextEncoder();
+  if (encoder.encode(text).length <= MAX_OVERRIDE_TEXT_BYTES) {
+    return text;
+  }
+  let out = "";
+  let bytes = 0;
+  for (const point of Array.from(text)) {
+    const size = encoder.encode(point).length;
+    if (bytes + size > MAX_OVERRIDE_TEXT_BYTES) {
+      break;
+    }
+    out += point;
+    bytes += size;
+  }
+  return out;
+}
+
+/** Coerce the bridge's `override` payload into a {@link WebFragmentTextOverride}.
+ * The frame is untrusted, so only a literal `true` is a mark; `size` is a STEP
+ * on the engine's own −3…+3 ramp and is OMITTED when it is 0 (the engine's field
+ * is optional, and 0 means "the clone's own type size stands"). */
+function coerceFragmentTextOverride(
+  raw: unknown
+): WebFragmentTextOverride | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const source = raw as Record<string, unknown>;
+  if (typeof source.text !== "string") {
+    return null;
+  }
+  const override: WebFragmentTextOverride = {
+    text: capOverrideText(source.text),
+    bold: source.bold === true,
+    italic: source.italic === true,
+    underline: source.underline === true
+  };
+  if (typeof source.size === "number" && Number.isFinite(source.size)) {
+    const step = Math.max(-3, Math.min(3, Math.trunc(source.size)));
+    if (step !== 0) {
+      override.size = step;
+    }
+  }
+  return override;
+}
+
+/** The address's stable identity within a render — `${nodeId}#${path ?? ""}`.
+ * Used to key annotations; the trailing `#` keeps a node-level address from
+ * ever colliding with an inner-element one. */
+export function addressKey(a: WebElementAddress): string {
+  return `${a.nodeId}#${a.path ?? ""}`;
+}
+
+/** Spec §3.5 — the `design_node` context-ref `object_id` an annotation submits:
+ * the bare node id, or `${nodeId}#${path}` for an element inside a clone. `#`
+ * is illegal in both a node id and the path grammar, so the split is
+ * unambiguous on the server. */
+export function addressObjectId(a: WebElementAddress): string {
+  return a.path ? `${a.nodeId}#${a.path}` : a.nodeId;
+}
+
 export interface WebCustomComponentRuntimeState {
   nodeId: string;
   artifactId: string;
@@ -198,7 +329,30 @@ export type WebBridgeInbound =
   | {
       type: "custom-component-runtime";
       runtime: WebCustomComponentRuntimeState;
-    };
+    }
+  /** F5 task 20: a click on a site-internal link. The bridge swallows every
+   * anchor click (the canvas must never navigate the iframe); when the raw
+   * href matches one of the document's routes it re-posts the click as this
+   * intent, and the shell switches the active page. */
+  | { type: "navigate"; pageId: string }
+  /** Slice 2 (R-A1): a single click in Edit mode, reported at ELEMENT
+   * granularity so a headline inside a cloned band — which has no node id of
+   * its own — can still be commented on. Arrives alongside the ordinary
+   * `select` for the owning node. */
+  | { type: "annotate"; event: WebAnnotateEvent }
+  /** Slice 3 (R-A6): the human retyped one element inside a cloned band and
+   * settled the in-frame editor. The address ALWAYS carries a path — a clone
+   * edit has no meaning on a vocabulary node, whose copy is the engine's own
+   * and is edited through the rich-text session instead. */
+  | {
+      type: "clone-text-commit";
+      address: WebElementAddress;
+      override: WebFragmentTextOverride;
+    }
+  /** The same session abandoned (Escape). The frame has already restored its
+   * own DOM; the shell needs no write, only the chance to drop any local
+   * editing state it was holding. */
+  | { type: "clone-text-cancel"; address: WebElementAddress };
 
 /** Coerce the bridge's `node` payload into a {@link WebSelection}, tolerating a
  * missing/partial shape. Returns `null` for an absent node (a cleared
@@ -283,6 +437,19 @@ function coerceComputedStyle(value: unknown): WebNodeComputedStyle {
   ) as unknown as WebNodeComputedStyle;
 }
 
+/** The bridge's `{viewport, document}` rect pair, tolerant of a missing or
+ * partial shape (every absent number folds to 0, as `coerceRect` does). Shared
+ * by the node-info snapshot and the element-level `annotate` report, so the two
+ * can never disagree about what a geometry payload means. */
+function coerceGeometry(value: unknown): WebNodeGeometry {
+  const record =
+    value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    viewport: coerceRect(record.viewport),
+    document: coerceRect(record.document)
+  };
+}
+
 function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   if (!node || typeof node !== "object") {
     return null;
@@ -292,10 +459,6 @@ function coerceNodeInfo(node: unknown): WebNodeInfo | null {
   if (!nodeId) {
     return null;
   }
-  const geometry =
-    record.geometry && typeof record.geometry === "object"
-      ? (record.geometry as Record<string, unknown>)
-      : {};
   return {
     nodeId,
     tag: typeof record.tag === "string" ? record.tag : "",
@@ -306,10 +469,7 @@ function coerceNodeInfo(node: unknown): WebNodeInfo | null {
     childNodeIds: Array.isArray(record.childNodeIds)
       ? record.childNodeIds.filter((value): value is string => typeof value === "string")
       : [],
-    geometry: {
-      viewport: coerceRect(geometry.viewport),
-      document: coerceRect(geometry.document)
-    },
+    geometry: coerceGeometry(record.geometry),
     computedStyle: coerceComputedStyle(record.computedStyle)
   };
 }
@@ -545,6 +705,52 @@ export function validateBridgeMessage(
     }
     return { type: "resize-node", nodeId, widthPx, heightPx };
   }
+  // F5 task 20: the bridge's `lumen:navigate` — a site-internal link click it
+  // already prevented, translated to the page it points at. Admitted under the
+  // very same source/origin/channel/nonce checks as every selection message
+  // above, so a message from a torn-down render can never move the page.
+  if (data.type === "lumen:navigate") {
+    const pageId = typeof data.pageId === "string" ? data.pageId : "";
+    return pageId ? { type: "navigate", pageId } : null;
+  }
+  // Slice 2 (R-A1): the element-level click report. Admitted under the very
+  // same source/origin/channel/nonce checks as every message above.
+  if (data.type === "annotate") {
+    const address = coerceAddress(data.address);
+    if (!address) {
+      return null;
+    }
+    return {
+      type: "annotate",
+      event: {
+        address,
+        // A nameless report falls back to the tag — the label is display copy,
+        // never an identity, so an absent one must not drop the annotation.
+        name:
+          typeof data.name === "string" && data.name.length > 0
+            ? data.name
+            : address.tag,
+        textLike: data.textLike === true,
+        geometry: coerceGeometry(data.geometry)
+      }
+    };
+  }
+  // Slice 3 (R-A6): the clone text-edit session's two settlements. Admitted
+  // under the very same source/origin/channel/nonce checks as every message
+  // above, and BOTH require a structural path: an override addresses one
+  // element inside somebody else's markup, so an address without a path is not
+  // an override's address at all.
+  if (data.type === "clone-text-commit" || data.type === "clone-text-cancel") {
+    const address = coerceAddress(data.address);
+    if (!address || !address.path) {
+      return null;
+    }
+    if (data.type === "clone-text-cancel") {
+      return { type: "clone-text-cancel", address };
+    }
+    const override = coerceFragmentTextOverride(data.override);
+    return override ? { type: "clone-text-commit", address, override } : null;
+  }
   if (data.type === "custom-component-runtime") {
     const nodeId = typeof data.nodeId === "string" ? data.nodeId : "";
     const artifactId =
@@ -611,6 +817,40 @@ export function webBridgeClearMessage(nonce: string): {
   type: "clear";
 } {
   return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "clear" };
+}
+
+/** Slice 2 (R-A1): the numbered annotation badges posted INTO the iframe. The
+ * SHELL owns the numbering; the frame only draws it — and an empty `items` list
+ * IS the clear, so a settled turn erases every badge through this one message.
+ * Same nonce-tagging as {@link webBridgeClearMessage}. */
+export function webBridgeAnnotationsMessage(
+  nonce: string,
+  items: { address: WebElementAddress; n: number }[]
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "annotations";
+  items: { address: WebElementAddress; n: number }[];
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "annotations", items };
+}
+
+/** Slice 3 (R-A6): start the in-frame text editor on one addressed element
+ * programmatically — the comment box's "Edit text" quick action, which is the
+ * same gesture as a double-click on that element. An address WITH a path opens
+ * the constrained clone editor; one without opens the ordinary rich-text
+ * session on the owning node. Same nonce-tagging as
+ * {@link webBridgeClearMessage}. */
+export function webBridgeEditTextMessage(
+  nonce: string,
+  address: WebElementAddress
+): {
+  channel: typeof WEB_BRIDGE_CHANNEL;
+  nonce: string;
+  type: "edit-text";
+  address: WebElementAddress;
+} {
+  return { channel: WEB_BRIDGE_CHANNEL, nonce, type: "edit-text", address };
 }
 
 /** The `component-preview` message posted INTO the iframe to open/close a

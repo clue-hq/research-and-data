@@ -149,3 +149,90 @@ def test_approval_themes_only_documents_created_after_it(client: TestClient) -> 
     # These values distinguish the compiled client kit from the platform-default theme.
     assert theme["tokens"]["primary"].lower() != "#111827"
     assert "Source Sans 3" in theme["display_family"]
+
+
+def _empty_page(page_id: str, route: str, name: str = "Pricing") -> dict:
+    """The smallest legal WebPage: its root Container alone, no children."""
+    root = f"root_{page_id}"
+    return {
+        "id": page_id,
+        "name": name,
+        "route": route,
+        "root": root,
+        "nodes": {root: {"id": root, "kind": "container", "classes": "", "children": []}},
+    }
+
+
+def test_add_page_operation_round_trips(client: TestClient) -> None:
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}],
+            "base_version": document["current_version"],
+            "intent": "add pricing page",
+        },
+    )
+    assert response.status_code == 200, response.text
+    # The route answers with the document HEADER only (id/current_version/doc_kind),
+    # never the scene — so the page is proven by reading the document back.
+    scene = client.get(f"/documents/{document['id']}").json()["scene"]
+    routes = [page["route"] for page in scene["pages"]]
+    assert routes == ["/", "/pricing"]
+
+
+def test_add_page_with_a_bad_route_is_refused_whole(client: TestClient) -> None:
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("x", "/Bad Route")}]},
+    )
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    # The route flattens EVERY checked-apply rejection to one envelope code and
+    # keeps the engine's own sentence as the message, so the engine's
+    # `op.route_invalid` reaches the client as prose, not as a code. This
+    # message is emitted by that branch alone (`ops.rs`, AddPage → route_is_valid),
+    # so asserting it verbatim pins the engine's route refusal, not merely "a 422".
+    assert detail["code"] == "web_operations.invalid"
+    assert detail["message"] == "route `/Bad Route` is not a valid site route"
+    # ...and the engine's own refusal code rides alongside the flattened
+    # envelope code, so a client can branch on WHICH refusal this was.
+    assert detail["engine_code"] == "op.route_invalid"
+
+    # Refused WHOLE: the mutated document is never returned nor persisted.
+    again = client.get(f"/documents/{document['id']}").json()
+    assert len(again["scene"]["pages"]) == 1
+    assert again["current_version"] == document["current_version"]
+
+
+def test_render_targets_the_requested_page(client: TestClient) -> None:
+    document = create_web_document(client)
+    client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={"operations": [{"kind": "add_page", "page": _empty_page("pricing", "/pricing")}]},
+    )
+    home = client.get(
+        f"/documents/{document['id']}/web/render", params={"runtime_src": "/x.js"}
+    )
+    pricing = client.get(
+        f"/documents/{document['id']}/web/render",
+        params={"runtime_src": "/x.js", "page_id": "pricing"},
+    )
+    assert home.status_code == 200, home.text
+    assert pricing.status_code == 200, pricing.text
+    # Editor mode instruments every node with `data-node-id` (see
+    # test_web_turns.py::test_web_render_editor_contains_node_ids), so the
+    # pricing page's root node id is the proof that the render targeted it.
+    assert 'data-node-id="root_pricing"' in pricing.json()["html"]
+    assert 'data-node-id="root_pricing"' not in home.json()["html"]
+
+
+def test_render_unknown_page_is_a_typed_404(client: TestClient) -> None:
+    document = create_web_document(client)
+    response = client.get(
+        f"/documents/{document['id']}/web/render",
+        params={"runtime_src": "/x.js", "page_id": "nope"},
+    )
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"]["code"] == "web_render.page_missing"

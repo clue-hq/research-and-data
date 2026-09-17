@@ -100,6 +100,9 @@ from clue_core import (
     AssemblyRequest,
     ExecutionId,
     MemoryBundle,
+    MemorySelectionPin,
+    MemorySelectionStale,
+    MemorySelectionUnavailable,
     operation_id_from_key,
 )
 from clue_db import ConnFactory, transaction
@@ -440,9 +443,23 @@ class OnboardingSynthesisStepPinProvider(StepPinProvider):
 
 
 class _NoMemoryContext:
+    """The memory seam with memory switched off: no bodies, no pins, no journal."""
+
     async def assemble(self, request: AssemblyRequest) -> MemoryBundle | None:
         del request
         return None
+
+    async def select(
+        self, request: AssemblyRequest
+    ) -> MemorySelectionPin | MemorySelectionUnavailable:
+        del request
+        return MemorySelectionUnavailable(reason="memory_disabled")
+
+    async def resolve(
+        self, request: AssemblyRequest, pin: MemorySelectionPin
+    ) -> MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable:
+        del request, pin
+        return MemorySelectionUnavailable(reason="memory_disabled")
 
 
 def onboarding_synthesis_context_policy() -> ContextAssemblyPolicy:

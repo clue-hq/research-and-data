@@ -38,6 +38,7 @@ exit; a turn ending keeps the leg ``open_awaiting_user``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -65,17 +66,29 @@ from clue_agents import (
     ProjectContextArtifact,
 )
 from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
+from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnScopePinRow
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.agent_turn_wiring import (
+    DbAgentContextReceiptStore,
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
+    is_agent_turn_privacy_tombstoned,
 )
 from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
-from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
+from clue_api.design_memory import (
+    DesignMemoryScopeError,
+    freeze_design_memory,
+    selection_dependency_receipt,
+)
+from clue_api.design_turn_targets import (
+    DesignTurnTargetError,
+    resolve_scene_targets,
+    resolve_web_targets,
+)
 from clue_api.turn_action import derive_turn_action_ref
-from clue_core import ExecutionId, operation_id_from_key
+from clue_core import ContextAssembly, ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
 from clue_design import ad_assets as design_ad_assets
@@ -144,6 +157,7 @@ DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
 #: body: editing something OTHER than what the user pointed at would be worse than
 #: asking them to say it again against the scene as it now stands.
 DESIGN_LEG_TARGET_UNRESOLVED = "design_leg_target_unresolved"
+DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED = "design_leg_memory_scope_unresolved"
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -653,17 +667,43 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     Derived from the run's terminal result — never invented. Part IV owns the rich rendering
     (the canvas preview, the proposal card); the durable message is the honest minimum.
 
-    The two turn kinds carry their reason under different keys, so the text is derived per
-    kind: a scene turn's ``stop_reason`` (the reviewer's verdict), a web turn's ``summary``
-    (the orchestrator's own note — the web result shape has no ``stop_reason``). A web turn
-    edits a durable artifact rather than proposing a scene, so its sentence names the
-    document it changed and the version it landed.
+    Scene acceptance comes from ``acceptance_scope``, not the operational status or
+    ``stop_reason``: an accepted design and an unaccepted draft can both exceed the
+    time target. Web turns keep their own summary and document/version semantics.
     """
 
     result = run.get("result") or {}
     if str(result.get("doc_kind") or "") == "web":
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
+    if status == "proposed":
+        scope = result.get("acceptance_scope")
+        if scope == "design":
+            outcome = "Design saved and accepted by the design review."
+        elif scope == "edit":
+            outcome = "Requested edit saved; the whole design has not been accepted by this turn."
+        else:
+            outcome = "Design saved as a draft; it has not been accepted."
+        reason = result.get("stop_reason")
+        reason_text = (
+            {
+                "target_exceeded": "Generation exceeded its time target.",
+                "budget_exhausted_wall_clock": "Generation stopped at its time limit.",
+                "budget_exhausted_llm_calls": "Generation stopped at its model-call limit.",
+                "cancelled_by_request": "Generation was stopped at your request.",
+            }.get(reason, "")
+            if isinstance(reason, str)
+            else ""
+        )
+        note = result.get("summary")
+        parts = [outcome]
+        if reason_text:
+            parts.append(reason_text)
+        if isinstance(note, str) and note.strip():
+            parts.append(note.strip())
+        elif isinstance(reason, str) and reason.strip() and not reason_text:
+            parts.append(reason.strip())
+        return " ".join(parts)
     reason = result.get("stop_reason")
     if isinstance(reason, str) and reason.strip():
         return f"Design turn {status}: {reason.strip()}"
@@ -717,6 +757,7 @@ class DesignLegTurnRunner:
         lane: DesignLegLaneDriver,
         exit_judge: DesignLegExitJudge | None = None,
         finisher: DesignLegFinisher | None = None,
+        memory: ContextAssembly | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self._profiles = profiles
@@ -730,6 +771,7 @@ class DesignLegTurnRunner:
         # direct ``finish_design_leg`` invocation.
         self._exit_judge = exit_judge
         self._finisher = finisher
+        self._memory = memory
         self._conn_factory = conn_factory
 
     async def run_leg_turn(
@@ -741,6 +783,7 @@ class DesignLegTurnRunner:
         focus_refs: tuple[DomainObjectRef, ...],
         card_payload: dict[str, JsonValue],
         stream: TurnStreamEmitter | None,
+        scope_pin: AgentTurnScopePinRow | None = None,
     ) -> DesignLegTurnResult:
         workspace_id = submission.workspace_id
         leg_id = str(leg["id"])
@@ -749,10 +792,27 @@ class DesignLegTurnRunner:
         execution_id = design_leg_execution_id(turn_id)
         resolved = self._profiles.resolve(AgentRole.DESIGN)
 
+        if scope_pin is not None:
+            scope_pin.assert_supported_policy()
+            if (
+                scope_pin.turn_id != turn_id
+                or scope_pin.workspace_id != workspace_id
+                or scope_pin.project_id != submission.project_id
+            ):
+                raise AgentTurnScopePinConflict("the design turn and its trusted scope pin differ")
+
         async with self._conn_factory() as conn:
-            project = await get_project(conn, submission.project_id)
-            if project is None or project.workspace_id != workspace_id:
-                raise ValueError("the design-leg submission names no project in its workspace")
+            if await is_agent_turn_privacy_tombstoned(
+                conn, workspace_id=workspace_id, turn_id=turn_id
+            ):
+                raise DesignMemoryScopeError("design turn is privacy_tombstoned")
+            if scope_pin is None:
+                project = await get_project(conn, submission.project_id)
+                if project is None or project.workspace_id != workspace_id:
+                    raise ValueError("the design-leg submission names no project in its workspace")
+                brand_id, product_id = project.brand_id, project.product_id
+            else:
+                brand_id, product_id = scope_pin.brand_id, scope_pin.product_id
             # §2.4: the leg history the envelope carries is everything BEFORE this turn.
             prior_history = await load_design_leg_history(
                 self._conn_factory,
@@ -849,8 +909,8 @@ class DesignLegTurnRunner:
                 # from the durable submission row.
                 actor_id=submission.submitted_by_user_id,
                 role=AgentRole.DESIGN,
-                brand_id=project.brand_id,
-                product_id=project.product_id,
+                brand_id=brand_id,
+                product_id=product_id,
                 # No platform workspace lease: the design runtime's virtual workspace is keyed
                 # to its run. The root records the leg address honestly instead.
                 workspace_root_id=f"design-leg:{leg_id}",
@@ -1013,6 +1073,15 @@ class DesignLegTurnRunner:
                     account_card=account_card,
                     focus_refs=focus_refs,
                     workspace_id=workspace_id,
+                    scope_pin=scope_pin,
+                    turn_request=request,
+                )
+            except DesignMemoryScopeError:
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED,
+                    stream=stream,
                 )
             except DesignTurnTargetError as exc:
                 # Raised while BUILDING the envelope (before any run row or leg-state
@@ -1121,6 +1190,11 @@ class DesignLegTurnRunner:
                 assistant_message=assistant_message,
                 replayed=False,
             )
+        except asyncio.CancelledError:
+            # The watched-turn owner distinguishes user Stop from process/lease
+            # cancellation. Emitting a crash terminal here would close SSE before
+            # that owner can publish the actual cancellation.
+            raise
         except BaseException:
             await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
             raise
@@ -1374,28 +1448,49 @@ class DesignLegTurnRunner:
         account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
+        scope_pin: AgentTurnScopePinRow | None,
+        turn_request: AgentTurnRequest,
     ) -> dict[str, Any]:
         """Create (or re-join) the derived design run and drive it terminal."""
 
         run_id = design_leg_run_id(submission.turn_id)
         async with self._conn_factory() as conn:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
-        if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
-            return run  # a crashed attempt already finished the design work; re-join it
-
-        envelope = await self._envelope(
-            submission=submission,
-            leg=leg,
-            leg_id=leg_id,
-            execution_id=execution_id,
-            run_id=run_id,
-            user_message_ref=user_message_ref,
-            prior_history=prior_history,
-            pinned_document=pinned_document,
-            account_card=account_card,
-            focus_refs=focus_refs,
-            workspace_id=workspace_id,
-        )
+        if run is not None:
+            async with self._conn_factory() as conn:
+                job = await design_runs.get_run_by_work_id(
+                    conn, work_id=design_runs.work_id_for_run(run_id)
+                )
+            if job is None or job["workspace_id"] != workspace_id:
+                raise ValueError("the existing design run has no authoritative workspace envelope")
+            if run["status"] in _TERMINAL_RUN_STATUSES and "design_memory" not in job[
+                "payload"
+            ].get("config", {}):
+                return run  # preserve terminal legacy re-join without inventing new context
+            envelope = DesignTurnEnvelope.model_validate(job["payload"])
+            if (
+                envelope.workspace_id != workspace_id
+                or envelope.run_id != run_id
+                or envelope.work_id != design_runs.work_id_for_run(run_id)
+                or envelope.checkpoint_thread_id != run_id
+            ):
+                raise ValueError("the stored design envelope has different run authority")
+        else:
+            envelope = await self._envelope(
+                submission=submission,
+                leg=leg,
+                leg_id=leg_id,
+                execution_id=execution_id,
+                run_id=run_id,
+                user_message_ref=user_message_ref,
+                prior_history=prior_history,
+                pinned_document=pinned_document,
+                account_card=account_card,
+                focus_refs=focus_refs,
+                workspace_id=workspace_id,
+                scope_pin=scope_pin,
+                turn_request=turn_request,
+            )
         if run is None:
             async with self._conn_factory() as conn:
                 await lock_turn_control(conn, workspace_id=workspace_id, turn_id=submission.turn_id)
@@ -1424,6 +1519,19 @@ class DesignLegTurnRunner:
                     leg_id=leg_id,
                     execution_id=UUID(str(execution_id)),
                 )
+        if "design_memory" in envelope.config:
+            receipt = selection_dependency_receipt(
+                envelope.config["design_memory"], request=turn_request
+            )
+            if receipt is not None:
+                await DbAgentContextReceiptStore(conn_factory=self._conn_factory).record(
+                    request=turn_request,
+                    receipt=receipt,
+                )
+        if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
+            # A separately claimed queued run may have completed before a crashed producer
+            # wrote its selection dependencies. Repair that receipt, but never rerun the design.
+            return run
         await self._lane.drive(envelope=envelope)
         async with self._conn_factory() as conn:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
@@ -1445,6 +1553,8 @@ class DesignLegTurnRunner:
         account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
+        scope_pin: AgentTurnScopePinRow | None = None,
+        turn_request: AgentTurnRequest | None = None,
     ) -> DesignTurnEnvelope:
         bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
         message_text = (await self._artifacts.read(user_message_ref)).decode()
@@ -1470,11 +1580,6 @@ class DesignLegTurnRunner:
         reference_asset_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
         )
-        resolved_targets = (
-            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
-            if target_node_ids
-            else None
-        )
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
         # scene document (or no pinned document at all — nothing to read a kind from) keeps
@@ -1482,6 +1587,16 @@ class DesignLegTurnRunner:
         kind: Literal["agent_turn", "web_turn"] = (
             "web_turn" if document.get("doc_kind") == "web" else "agent_turn"
         )
+        # Targets are resolved with the runtime that will consume them, never before the
+        # branch: a web document's ``scene`` column holds a WEB document (pages carry their
+        # own ``nodes``), so running the scene page-resolver over it would refuse every web
+        # annotation as unreachable.
+        resolved_targets = (
+            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
+            if target_node_ids and kind == "agent_turn"
+            else None
+        )
+        web_targets = resolve_web_targets(focus_refs) if kind == "web_turn" else None
         request: dict[str, JsonValue]
         if kind == "web_turn":
             request = {
@@ -1491,10 +1606,24 @@ class DesignLegTurnRunner:
                 # stored document stays the authority on staleness: a turn that lost the race
                 # comes back conflicted rather than clobbering a newer human edit.
                 "base_version": int(document.get("current_version") or 0),
-                # v1 (plan F4): no scoped targets, no model override, no account — the design
-                # request model defaults each of them, and a fabricated value here would be a
-                # platform guess. ``previous_turn_outcome`` has no WebTurnRequest field at all;
-                # the clarification echo is a scene-path contract.
+                # Only when the human actually pointed at something. A targetless web turn
+                # keeps the plan-F4 v1 request byte-for-byte (prompt + base_version): the
+                # design request model defaults both keys, and sending them unconditionally
+                # would break that freeze. No model override and no account here either —
+                # a fabricated value would be a platform guess.
+                **(
+                    {
+                        "target_node_ids": list(web_targets.target_node_ids),
+                        "target_notes": [
+                            {"target": note.target, "path": note.path, "note": note.note}
+                            for note in web_targets.target_notes
+                        ],
+                    }
+                    if web_targets is not None
+                    else {}
+                ),
+                # ``previous_turn_outcome`` has no WebTurnRequest field at all; the
+                # clarification echo is a scene-path contract.
             }
         else:
             request = {
@@ -1573,6 +1702,16 @@ class DesignLegTurnRunner:
             # at all takes the claim-time fallback. Scene turns only: the web executor never
             # consumes the lane.
             config["ad_lane"] = await self._frozen_ad_lane(workspace_id)
+            if scope_pin is not None and self._memory is not None:
+                assert turn_request is not None
+                async with self._conn_factory() as conn:
+                    config["design_memory"] = await freeze_design_memory(
+                        conn,
+                        memory=self._memory,
+                        scope_pin=scope_pin,
+                        turn_request=turn_request,
+                        leg=leg,
+                    )
         return DesignTurnEnvelope(
             kind=kind,
             work_id=design_runs.work_id_for_run(run_id),

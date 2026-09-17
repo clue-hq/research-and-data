@@ -52,6 +52,9 @@ from clue_core import (
     EntityId,
     ExecutionId,
     MemoryBundle,
+    MemorySelectionPin,
+    MemorySelectionStale,
+    MemorySelectionUnavailable,
     MemoryType,
     ProjectRunId,
     RunId,
@@ -153,9 +156,23 @@ def account_research_card_payload(
 
 
 class _NoMemoryContext:
+    """The memory seam with memory switched off: no bodies, no pins, no journal."""
+
     async def assemble(self, request: AssemblyRequest) -> MemoryBundle | None:
         del request
         return None
+
+    async def select(
+        self, request: AssemblyRequest
+    ) -> MemorySelectionPin | MemorySelectionUnavailable:
+        del request
+        return MemorySelectionUnavailable(reason="memory_disabled")
+
+    async def resolve(
+        self, request: AssemblyRequest, pin: MemorySelectionPin
+    ) -> MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable:
+        del request, pin
+        return MemorySelectionUnavailable(reason="memory_disabled")
 
 
 def account_research_context_policy() -> ContextAssemblyPolicy:

@@ -624,6 +624,7 @@ async def _validated_submission_context(
             object_type=ref.object_type,
             object_id=ref.object_id,
             version=ref.version,
+            note=ref.note,
         )
         for ref in refs
     )
@@ -1309,6 +1310,7 @@ def build_chat_router(
                     object_type=ref.object_type,
                     object_id=ref.object_id,
                     version=ref.version,
+                    note=ref.note,
                 )
                 for ref in body.context_refs
             )
@@ -2294,6 +2296,7 @@ def build_chat_router(
                         object_type=ref.object_type,
                         object_id=ref.object_id,
                         version=ref.version,
+                        note=ref.note,
                     )
                     for ref in body.context_refs
                 )
