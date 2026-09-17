@@ -755,6 +755,13 @@ class Settings(BaseSettings):
     # The port `python -m clue_page_origin.main` listens on when Railway's PORT is absent.
     # Env: ``CLUE_PAGES_ORIGIN_PORT``.
     pages_origin_port: int = Field(default=8040, gt=0, lt=65536)
+    # The CNAME value a customer points their subdomain at (spec §3 item 4, §7.2). Normally the
+    # Cloudflare for SaaS fallback-origin record in our zone. Env: ``CLUE_PAGES_CNAME_TARGET``.
+    pages_cname_target: str = "pages.cluehq.ai"
+    # The Cloudflare zone that holds our DNS and the SaaS custom hostnames (spec §7.7). None = the
+    # custom-domain control plane is not configured (connect answers 503).
+    # Env: ``CLUE_CLOUDFLARE_ZONE_ID``.
+    cloudflare_zone_id: str | None = None
 
     # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
     # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which

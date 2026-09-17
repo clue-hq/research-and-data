@@ -19,8 +19,10 @@ PAGES_SETTING_DEFAULTS: dict[str, object] = {
     "pages_public_port": None,
     "pages_trust_host_header": False,
     "pages_origin_port": 8040,
+    "pages_cname_target": "pages.cluehq.ai",
+    "cloudflare_zone_id": None,
 }
-PAGES_SECRET_FIELDS = ("pages_edge_secret",)
+PAGES_SECRET_FIELDS = ("pages_edge_secret", "cloudflare_api_token")
 
 
 def _env_name(field_name: str) -> str:

@@ -25,6 +25,10 @@ dependencies = [
     "httpx>=0.28",
     # ARV2 onboarding (O2): YAML front matter on the knowledge documents.
     "pyyaml>=6,<7",
+    # Custom-domain publishing S2: DNS lookups for the CNAME verification check.
+    "dnspython>=2.6,<3",
+    # Custom-domain publishing S2: multipart form parsing on the Settings → Pages uploads.
+    "python-multipart>=0.0.9,<1",
 ]
 
 [build-system]
