@@ -172,6 +172,7 @@ class DesignJobWorkHandler:
         host_provider: Any = None,
         checkpointer_factory: Any = None,
         spend_drain: Any = None,
+        turn_callbacks_factory: Any = None,
     ) -> None:
         # Callables, not values: the embedded worker's host reads ``app.state`` at execution
         # time, so a test that swaps ``app.state.agent_turn_runner`` between turns is honoured.
@@ -181,6 +182,11 @@ class DesignJobWorkHandler:
         # nothing else); the platform composes one that also records a provider incident, so that
         # bookkeeping is written once on its side rather than once per design executor.
         self._spend_drain = spend_drain
+        # Lane 3 slice 5: a factory, not a value — the platform's Langfuse handler and its
+        # run-id registry are PER TURN, so a shared instance would cross-attribute one turn's
+        # model calls onto another's observation. Called once per turn envelope; ingestion
+        # takes none (it is a pipeline, not a graph).
+        self._turn_callbacks_factory = turn_callbacks_factory
 
     @property
     def task_capabilities(self) -> "tuple[TaskCapability, ...]":
@@ -369,6 +375,7 @@ class DesignJobWorkHandler:
             host,
             self._checkpointer_factory,
             spend_drain=self._spend_drain,
+            turn_callbacks_factory=self._turn_callbacks_factory,
         )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
@@ -541,6 +548,7 @@ def _execute_turn(
     checkpointer_factory: Any,
     *,
     spend_drain: Any = None,
+    turn_callbacks_factory: Any = None,
 ) -> str:
     """Run ONE design turn to a terminal result. Synchronous by nature; called via to_thread.
 
@@ -584,6 +592,9 @@ def _execute_turn(
             if envelope.kind == DesignRunKind.AGENT_TURN.value
             else execute_web_turn_job
         )
+        # Lane 3 slice 5: ONE call per turn. The factory mints this turn's Langfuse handler and
+        # the registry it fills; the executor adds the receipt collector to them.
+        callbacks = turn_callbacks_factory() if turn_callbacks_factory is not None else None
         status, response, event_type, event_data = executor(
             envelope,
             store=store,
@@ -594,6 +605,7 @@ def _execute_turn(
             # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
             lease_generation=generation,
             spend_drain=spend_drain,
+            callbacks=callbacks,
         )
 
     try:
@@ -664,17 +676,24 @@ def build_design_job_handler(
     host_provider: Any = None,
     checkpointer_factory: Any = postgres_design_checkpointer,
     spend_drain: Any = None,
+    turn_callbacks_factory: Any = None,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
     ``checkpointer_factory=None`` runs turns without durable graph state (what the design API's
     stubbed-runner tests want: the stub never builds a graph, so a saver would only add a
     connection per turn). Ingestion never has one — it is a pipeline, not a graph.
+
+    ``turn_callbacks_factory`` (lane 3 slice 5) is called once per TURN envelope and returns that
+    turn's ``lumen_agent.usage_collector.TurnCallbacks``. The platform composes one that opens a
+    Langfuse observation for the design leg; the design API's own embedded worker passes none,
+    so its runs still collect receipts into ``result_json`` without the platform's cost update.
     """
     return DesignJobWorkHandler(
         host_provider=host_provider,
         checkpointer_factory=checkpointer_factory,
         spend_drain=spend_drain,
+        turn_callbacks_factory=turn_callbacks_factory,
     )
 
 

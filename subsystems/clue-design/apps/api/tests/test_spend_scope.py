@@ -150,3 +150,89 @@ def test_drain_awaits_the_scopes_own_drain_fn() -> None:
 def test_a_scope_with_no_drain_fn_defaults_to_drain_provider_calls() -> None:
     with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
         assert scope.drain_fn is not None
+
+
+def _collected_call(**overrides):
+    """One receipt as `lumen_agent.usage_collector` builds it from the gateway's stamps."""
+    from datetime import UTC, datetime
+
+    from lumen_agent.usage_collector import CollectedModelCall
+
+    fields = {
+        "run_id": uuid4(),
+        "sequence": 1,
+        "requested_model": "x-ai/grok-4.6",
+        "answering_model": "x-ai/grok-4.6",
+        "status": "completed",
+        "role": "ingestion-brief",
+        "input_tokens": 1200,
+        "output_tokens": 340,
+        "cache_read_input_tokens": 900,
+        "cost_cents": Decimal("2.50"),
+        "cost_source": "metered",
+        "langfuse_trace_id": "trace-1",
+        "langfuse_observation_id": "obs-1",
+        "latency_ms": 1234.5,
+        "error_code": None,
+        "started_at": datetime.now(UTC),
+        "completed_at": datetime.now(UTC),
+    }
+    fields.update(overrides)
+    return CollectedModelCall(**fields)
+
+
+def test_a_collected_model_call_lands_one_result_row_in_usd() -> None:
+    call = _collected_call()
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
+        spend.record_collected_model_call(
+            scope, call, operation="design.ingestion.brief", label="brief"
+        )
+    (row,) = scope.ledger.rows
+    assert row.phase == "result" and row.outcome == "ok" and row.attempts == 1
+    assert row.provider == "openrouter" and row.operation == "design.ingestion.brief"
+    assert row.label == "brief" and row.call_id == str(call.run_id)
+    # The gateway settles CENTS; the ledger holds USD.
+    assert row.cost_usd == Decimal("0.025")
+    assert row.latency_ms == 1234 and row.http_status is None
+    assert row.recorded_at == call.completed_at
+    assert row.extras == {
+        "model": "x-ai/grok-4.6",
+        "prompt_tokens": 1200,
+        "completion_tokens": 340,
+        "cached_prompt_tokens": 900,
+        "cost_source": "metered",
+        "langfuse_trace_id": "trace-1",
+        "langfuse_observation_id": "obs-1",
+    }
+
+
+def test_an_unpriced_call_is_an_estimate_row_with_no_measured_cost() -> None:
+    """The gateway's `unpriced` is NOT the ledger's `free` — the model is on no price sheet, so
+    the row says `estimate`, keeps its estimate columns at zero, and leaves `cost_usd` NULL."""
+    call = _collected_call(cost_cents=None, cost_source="unpriced")
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
+        spend.record_collected_model_call(
+            scope, call, operation="design.ingestion.brief", label="brief"
+        )
+    (row,) = scope.ledger.rows
+    assert row.extras["cost_source"] == "estimate"
+    assert row.cost_usd is None
+    assert row.estimate_usd == Decimal(0) and row.estimate_credits == Decimal(0)
+    assert row.estimate_media_seconds == 0
+
+
+def test_a_failed_call_lands_a_client_error_row_with_its_code() -> None:
+    call = _collected_call(
+        status="failed",
+        answering_model=None,
+        cost_cents=None,
+        cost_source=None,
+        error_code="timeout_error",
+    )
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
+        spend.record_collected_model_call(
+            scope, call, operation="design.ingestion.brief", label="brief"
+        )
+    (row,) = scope.ledger.rows
+    assert row.outcome == "client_error" and row.error_code == "timeout_error"
+    assert row.cost_usd is None and row.extras["cost_source"] == "estimate"

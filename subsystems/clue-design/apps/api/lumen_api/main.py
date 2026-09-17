@@ -9216,6 +9216,7 @@ def run_agent_turn_preview(
     cancel_requested: Any = None,
     scoped_preferences: Any = None,
     runtime_workspace_guard: Any = None,
+    callbacks: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -9415,6 +9416,10 @@ def run_agent_turn_preview(
             # THROUGH — the synchronous preview route holds the request open and has no id a
             # second caller could name.
             cancel_requested=cancel_requested,
+            # Lane 3 slice 5: the platform's injected handlers and the executor's receipt
+            # collector, attached by the harness at the graph's invoke config. None on every
+            # non-fleet path, which still collects — the harness always opens a collector.
+            callbacks=callbacks,
             **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
             **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
         )
@@ -9745,6 +9750,7 @@ def run_web_agent_turn(
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
     cancel_requested: Any = None,
+    callbacks: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -9988,6 +9994,8 @@ def run_web_agent_turn(
             # `failed` with nothing applied — website mode persists once at the end, so there
             # is no partial work a stop could keep.
             cancel_requested=cancel_requested,
+            # Lane 3 slice 5: see run_agent_turn_preview.
+            callbacks=callbacks,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -10285,6 +10293,43 @@ def _drain_spend(scope: Any) -> None:
         api_logger.error("spend.drain_failed", error=str(error), exc_info=True)
 
 
+def _turn_model_call_collector(callbacks: Any) -> Tuple[Any, Any]:
+    """The turn's ONE model-call collector, and the ``TurnCallbacks`` to hand the harness.
+
+    Lane 3 slice 5. The collector is opened HERE, at the executor, rather than inside the harness,
+    because this is the only frame that sees every terminal-status return — including the ones
+    that REPLACE the harness's response dict (a pageless proposal, an un-replayable web operation
+    history). A turn that spent money and then failed validation must still come back with its
+    receipts.
+
+    Returns ``(None, callbacks)`` when the agent runtime is not importable in this process: the
+    design API is deployed without it in some shapes, and a missing collector must degrade to "no
+    receipts", never to a failed turn.
+    """
+    try:
+        from lumen_agent.usage_collector import ModelCallCollector, TurnCallbacks
+    except Exception:  # pragma: no cover - deployment shape, not logic
+        return None, callbacks
+    langfuse_ids = getattr(callbacks, "langfuse_ids", None)
+    collector = ModelCallCollector(langfuse_ids=langfuse_ids)
+    injected = tuple(getattr(callbacks, "handlers", ()) or ())
+    return collector, TurnCallbacks(
+        handlers=(collector, *injected), langfuse_ids=langfuse_ids
+    )
+
+
+def _with_model_calls(response: JsonObject, collector: Any) -> JsonObject:
+    """Stamp the turn's per-call receipts onto the dict that becomes the run's ``result_json``.
+
+    Always present when a collector exists, even as ``[]`` — "this turn made no model calls" is a
+    fact a cost reader needs to be able to read, and an absent key would be indistinguishable
+    from an executor that forgot.
+    """
+    if collector is None or not isinstance(response, dict):
+        return response
+    return {**response, "model_calls": [call.as_json() for call in collector.calls]}
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -10294,6 +10339,7 @@ def execute_agent_turn_job(
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
     spend_drain: Any = None,
+    callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn under its own spend scope — see :func:`_execute_agent_turn_job`.
 
@@ -10301,19 +10347,27 @@ def execute_agent_turn_job(
     this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
     ``spend_drain`` is the injected drain (PRE-1b): the platform passes one that also records a
     provider incident, so that bookkeeping lives once on its side.
+
+    ``callbacks`` (lane 3 slice 5) is the platform's injected ``TurnCallbacks`` — its Langfuse
+    handler and the run-id registry that handler fills. This frame adds the turn's own
+    ``ModelCallCollector`` to them and stamps what it collected onto the response, which is what
+    ``complete_run`` persists as the run's ``result_json``.
     """
     from . import spend as _spend
 
+    collector, turn_callbacks = _turn_model_call_collector(callbacks)
     with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
         try:
-            return _execute_agent_turn_job(
+            status, response, event_type, event_data = _execute_agent_turn_job(
                 envelope,
                 store=store,
                 host=host,
                 event_sink=event_sink,
                 checkpointer=checkpointer,
                 lease_generation=lease_generation,
+                callbacks=turn_callbacks,
             )
+            return status, _with_model_calls(response, collector), event_type, event_data
         finally:
             _drain_spend(scope)
 
@@ -10326,6 +10380,7 @@ def _execute_agent_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
@@ -10528,6 +10583,9 @@ def _execute_agent_turn_job(
                 # doomed W5 run was a plain editor turn, and "you can only stop it if it came
                 # from chat" would be an arbitrary line to draw through a paid run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
+                # Lane 3 slice 5: the platform's handlers plus this turn's receipt collector,
+                # attached at the graph's invoke config by the harness.
+                callbacks=callbacks,
                 **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
                 **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
             )
@@ -10947,20 +11005,29 @@ def execute_web_turn_job(
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
     spend_drain: Any = None,
+    callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
-    """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`."""
+    """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`.
+
+    ``callbacks`` (lane 3 slice 5): the platform's injected ``TurnCallbacks``. Same treatment as
+    the scene executor — the turn's own collector is added here and its receipts are stamped onto
+    whatever response this frame returns, which is what lands in ``result_json``.
+    """
     from . import spend as _spend
 
+    collector, turn_callbacks = _turn_model_call_collector(callbacks)
     with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
         try:
-            return _execute_web_turn_job(
+            status, response, event_type, event_data = _execute_web_turn_job(
                 envelope,
                 store=store,
                 host=host,
                 event_sink=event_sink,
                 checkpointer=checkpointer,
                 lease_generation=lease_generation,
+                callbacks=turn_callbacks,
             )
+            return status, _with_model_calls(response, collector), event_type, event_data
         finally:
             _drain_spend(scope)
 
@@ -10973,6 +11040,7 @@ def _execute_web_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    callbacks: Any = None,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn, executed from its frozen envelope.
 
@@ -11087,6 +11155,8 @@ def _execute_web_turn_job(
                 # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
                 # route can honestly stop either kind of design run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
+                # Lane 3 slice 5: see the scene executor.
+                callbacks=callbacks,
             )
         if response.get("status") == "applied":
             operations = response.get("operations")

@@ -426,8 +426,10 @@ def test_a_non_leg_scene_turn_persists_nothing_and_stays_byte_identical(
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    # Byte-identical: the runner's own envelope, no `current_version` grafted on.
-    assert response == expected
+    # Byte-identical: the runner's own envelope, no `current_version` grafted on. The one
+    # addition every executor makes is lane 3 slice 5's `model_calls` receipts key, which is
+    # present on EVERY terminal return — empty here, because the stub runner spends nothing.
+    assert response == {**expected, "model_calls": []}
     assert "current_version" not in response
     # Nothing was committed — the editor still owns that commit.
     stored = store.require_document(document["id"])
@@ -958,7 +960,8 @@ def test_a_leg_scene_turn_proposing_nothing_on_a_content_bearing_document_still_
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    assert response == proposing_runner([])(None, None)
+    # Plus the executor's `model_calls` receipts key — see the (a) byte-identity pin.
+    assert response == {**proposing_runner([])(None, None), "model_calls": []}
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 0
     assert store.list_envelopes(document["id"]) == []
@@ -1134,7 +1137,8 @@ def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    assert response == expected
+    # Plus the executor's `model_calls` receipts key — see the (a) byte-identity pin.
+    assert response == {**expected, "model_calls": []}
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 0
     assert stored["scene"]["pages"] == {}

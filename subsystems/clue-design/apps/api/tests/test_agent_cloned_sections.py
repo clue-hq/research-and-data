@@ -905,6 +905,7 @@ def test_a_web_turn_is_handed_the_workspaces_cloned_section_capability(
         checkpointer,
         thread_id,
         cancel_requested=None,
+        callbacks=None,
     ):
         captured["config"] = config
         return {

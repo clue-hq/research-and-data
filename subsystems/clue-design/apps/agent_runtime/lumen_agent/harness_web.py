@@ -18,7 +18,7 @@ import functools
 import json
 import threading
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
@@ -46,6 +46,9 @@ from .tools.web_substrate import (
     make_web_view_tool,
     web_theme_token_names,
 )
+
+if TYPE_CHECKING:  # the collector pulls in the platform gateway/obs libs; keep it lazy
+    from .usage_collector import TurnCallbacks
 
 logger = get_logger("lumen_agent.harness_web")
 
@@ -577,6 +580,7 @@ def run_deepagent_web_turn(
     checkpointer: Any = None,
     thread_id: str | None = None,
     cancel_requested=None,
+    callbacks: "TurnCallbacks | None" = None,
 ) -> dict:
     """Create + invoke + guarantee an honest finalize.
 
@@ -593,7 +597,12 @@ def run_deepagent_web_turn(
     `cancel_requested` (A3, defect R3-D): the run's cancellation probe. A cancelled web turn ends
     `failed` with nothing applied and a summary that says a human stopped it — which is the whole
     truth here, because website mode persists once at the end and so a stopped turn has nothing
-    partial to keep. See `create_web_deepagent`."""
+    partial to keep. See `create_web_deepagent`.
+
+    `callbacks` (lane 3 slice 5): the platform's injected LangChain handlers and run-id registry,
+    attached at the invoke config exactly as the scene harness attaches them — see
+    `harness.run_deepagent_turn`. The turn's per-call receipts ride back on the returned dict's
+    `model_calls` key, on every terminal path."""
     agent, tools = create_web_deepagent(
         prompt,
         config=config,
@@ -615,9 +624,16 @@ def run_deepagent_web_turn(
         )
 
         initial_state = {"messages": [{"role": "user", "content": prompt}]}
+        # Lane 3 slice 5: the turn's receipts and the platform's injected handlers ride the
+        # INVOKE CONFIG — see `harness.run_deepagent_turn` for why config-level, not
+        # instance-level.
+        from .usage_collector import turn_collector
+
+        collector, turn_handlers = turn_collector(callbacks)
         invoke_config = {
             "recursion_limit": 200,
             "configurable": {"thread_id": thread_id or tools.run_id},
+            "callbacks": turn_handlers,
         }
 
         exception_text: Optional[str] = None
@@ -683,4 +699,7 @@ def run_deepagent_web_turn(
             "grounding": tools.grounding_report(),
             "preview_paths": list(tools.preview_paths),
             "outcome": outcome,
+            # Lane 3 slice 5: what this turn actually spent, on the ONE terminal return this
+            # harness has (an honest failure comes back through here too).
+            "model_calls": [call.as_json() for call in collector.calls],
         }

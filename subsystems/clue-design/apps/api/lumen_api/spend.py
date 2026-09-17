@@ -262,6 +262,66 @@ def _generation_lookup():
     )
 
 
+#: How the gateway's cost-source vocabulary maps onto the ledger's. They are ALMOST the same
+#: three words and deliberately not quite: ``clue_gateway.metadata.CostSource`` is
+#: ``metered | estimate | unpriced``, while ``clue_spend.CostSource`` is
+#: ``metered | estimate | free``. ``unpriced`` means "this model is on no price sheet", which is
+#: NOT the ledger's ``free`` ("nobody was ever going to charge for this") — reading it as free
+#: would quietly declare an unmeasured call to have cost nothing. It therefore maps to
+#: ``estimate``, and the row carries the estimate columns at their zero default with
+#: ``cost_usd`` NULL: an honest "we do not know", never a measured zero.
+_LEDGER_COST_SOURCE = {"metered": "metered", "estimate": "estimate", "unpriced": "estimate"}
+
+
+def record_collected_model_call(
+    scope: SpendScope, call, *, operation: str, label: str
+) -> None:
+    """Turn one collected model call into this scope's ledger row.
+
+    ``call`` is a ``lumen_agent.usage_collector.CollectedModelCall`` — a receipt the design
+    runtime's callback COPIED off the governed gateway's own stamps. Nothing is priced here: the
+    cents the gateway settled become USD, and an unsettled call lands with ``cost_usd`` NULL.
+
+    The shape mirrors ``clue_spend.calls.ProviderCaller._settle``'s result row, because a cost
+    dashboard must not be able to tell which of the two wrote a row: one ``result``-phase row per
+    call, ``attempts=1`` (the gateway client owns its own retries, and a receipt describes the
+    answer, not the attempts behind it), ``http_status`` NULL (this path never saw the wire), and
+    the token counts, the answering model and the Langfuse ids in ``extras`` beside the
+    ``cost_source`` marker every result row carries.
+    """
+    import uuid
+
+    from clue_spend import LedgerRow
+
+    cost_source = _LEDGER_COST_SOURCE.get(call.cost_source or "", "estimate")
+    scope.ledger.record(
+        LedgerRow(
+            row_id=str(uuid.uuid4()),
+            call_id=str(call.run_id),
+            phase="result",
+            provider="openrouter",
+            operation=operation,
+            label=label,
+            recorded_at=call.completed_at,
+            http_status=None,
+            latency_ms=int(call.latency_ms),
+            attempts=1,
+            cost_usd=None if call.cost_cents is None else call.cost_cents / 100,
+            outcome="ok" if call.status == "completed" else "client_error",
+            error_code=call.error_code,
+            extras={
+                "model": call.answering_model,
+                "prompt_tokens": call.input_tokens,
+                "completion_tokens": call.output_tokens,
+                "cached_prompt_tokens": call.cache_read_input_tokens,
+                "cost_source": cost_source,
+                "langfuse_trace_id": call.langfuse_trace_id,
+                "langfuse_observation_id": call.langfuse_observation_id,
+            },
+        )
+    )
+
+
 async def drain(scope: SpendScope, conn) -> DrainReport:
     """Land this scope's buffered rows through whatever drain it was opened with."""
     return await scope.drain_fn(conn, scope.raw, scope.ledger, scope.stamp)
@@ -304,6 +364,7 @@ __all__ = [
     "drain_sync",
     "image_generation_cost_reader",
     "openrouter_call",
+    "record_collected_model_call",
     "reset_unscoped_for_tests",
     "spend_scope",
 ]
