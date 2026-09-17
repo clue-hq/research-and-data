@@ -253,6 +253,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
+    from clue_api.frontend_read.settings_pages import register_settings_pages_routes
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
@@ -307,6 +308,15 @@ def build_frontend_read_router(
     )
     # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
     register_artifact_routes(router, conn_factory=conn_factory)
+    # Settings → Pages: page defaults, the Clue address label, the custom hostname (spec §7).
+    register_settings_pages_routes(
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        secrets=secrets,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+    )
     register_contact_routes(
         router,
         conn_factory=conn_factory,
