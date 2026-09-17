@@ -40,5 +40,7 @@ export async function fetchMutation(
       },
     );
   }
+  // A `204 No Content` (e.g. DELETE) carries no body: `json()` would throw on it.
+  if (response.status === 204) return null;
   return response.json();
 }

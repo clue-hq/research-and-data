@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { PagesSettingsReadSchema, connectionView, stepIndex } from "./pages";
+
+const base = {
+  settings: { fallbackUrl: null, pageTitle: null, pageDescription: null, faviconUrl: null, socialPreviewUrl: null },
+  systemHostname: { hostname: "acme.pages.cluehq.ai", label: "acme", url: "https://acme.pages.cluehq.ai" },
+  customHostname: null,
+};
+
+test("the read shape parses and a missing custom hostname is not connected", () => {
+  const parsed = PagesSettingsReadSchema.parse(base);
+  assert.equal(connectionView(parsed.customHostname), "not_connected");
+});
+
+test("connecting, active and error views follow the status", () => {
+  const records = [
+    { type: "CNAME", name: "go.acme.com", required: "pages.cluehq.ai", observed: null, ok: false },
+    { type: "TXT", name: "_cf-custom-hostname.go.acme.com", required: "tok", observed: null, ok: false },
+  ];
+  const connecting = PagesSettingsReadSchema.parse({ ...base, customHostname: { hostname: "go.acme.com", status: "verifying_ownership", records, lastCheckedAt: null, error: null, url: null } });
+  assert.equal(connectionView(connecting.customHostname), "connecting");
+  assert.equal(stepIndex("verifying_ownership"), 1);
+  const active = PagesSettingsReadSchema.parse({ ...base, customHostname: { hostname: "go.acme.com", status: "active", records, lastCheckedAt: "2026-09-17T12:00:00Z", error: null, url: "https://go.acme.com" } });
+  assert.equal(connectionView(active.customHostname), "active");
+  const errored = PagesSettingsReadSchema.parse({ ...base, customHostname: { hostname: "go.acme.com", status: "error", records, lastCheckedAt: null, error: { code: "caa_blocked", detail: "CAA" }, url: null } });
+  assert.equal(connectionView(errored.customHostname), "error");
+  assert.equal(stepIndex("error"), -1);
+});
