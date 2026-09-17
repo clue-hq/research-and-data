@@ -36,6 +36,7 @@ from .errors import (
     ProviderTransportError,
     RawParseError,
     RawScrubFailed,
+    SpendError,
 )
 from .ledger import (
     ArtifactRefLike,
@@ -128,6 +129,7 @@ __all__ = [
     "RawSink",
     "ScriptedTransport",
     "SpendEstimate",
+    "SpendError",
     "SpendTotals",
     "Transport",
     "TransportFailure",

@@ -1,4 +1,4 @@
-"""The ARV2 lane's typed failures.
+"""The provider-caller seam's typed failures.
 
 Every one of these is raised by :mod:`clue_spend.calls`, the single wrapper every provider
 call goes through. A client module never invents its own failure type: a supervisor that has to
@@ -16,14 +16,20 @@ __all__ = [
     "ProviderTransportError",
     "RawParseError",
     "RawScrubFailed",
+    "SpendError",
 ]
 
 
-class Arv2Error(Exception):
-    """Base class for every failure the ARV2 lane raises."""
+class SpendError(Exception):
+    """Base class for every failure the provider-caller seam raises."""
 
 
-class ProviderHalted(Arv2Error):
+#: The name this base carried while the seam lived in ``clue_api.arv2``. Kept as an alias, not a
+#: subclass, so ``except Arv2Error`` and ``except SpendError`` catch the same object.
+Arv2Error = SpendError
+
+
+class ProviderHalted(SpendError):
     """A provider is refusing to sell (master plan §2 item 3: money truth *blocks*).
 
     Raised when a call's ``halt_rule`` recognises an unknown-spend or out-of-credit state (a 402
@@ -52,7 +58,7 @@ class ProviderHalted(Arv2Error):
         self.latched = latched
 
 
-class ProviderTransportError(Arv2Error):
+class ProviderTransportError(SpendError):
     """Every attempt failed below the HTTP layer (Appendix A law 2's ``2·(n+1)`` s backoff).
 
     No response ever arrived, so there is no raw record for the last attempt and spend is
@@ -66,7 +72,7 @@ class ProviderTransportError(Arv2Error):
         self.last_error = last_error
 
 
-class RawScrubFailed(Arv2Error):
+class RawScrubFailed(SpendError):
     """Appendix A law 3's scrubber raised, so no body could be safely persisted or returned.
 
     The scrubber runs *before* anything else sees the body, and its output replaces the response
@@ -84,7 +90,7 @@ class RawScrubFailed(Arv2Error):
         self.reason = reason
 
 
-class RawParseError(Arv2Error):
+class RawParseError(SpendError):
     """A saved raw body could not be parsed as the caller expected.
 
     Carries the ``raw_ref`` of the record that *was* written (Appendix A law 1 saves the raw body

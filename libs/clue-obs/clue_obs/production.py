@@ -29,7 +29,7 @@ __all__ = [
     "production_tracing_lifespan",
 ]
 
-log = get_logger("clue_api.tracing")
+log = get_logger("clue_obs.production")
 
 #: Test seam: an exporter handed to the SDK instead of the host (never set in production).
 _span_exporter_override: Any | None = None
