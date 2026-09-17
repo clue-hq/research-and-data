@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { useEffect, useRef } from "react";
 import {
   COMPOSER_CATEGORIES,
   composerCategoryCounts,
@@ -62,11 +63,19 @@ function Option({
   onSelect: (entityId: string) => void;
   selected: boolean;
 }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  // The listbox scrolls (max-height + overflow-y) but the active row is chosen by index, so
+  // arrowing past the fold would move the highlight out of sight. "nearest" only scrolls when
+  // the row is actually clipped, so a hover-activated row never jumps the list.
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
   return (
     <button
       aria-selected={selected}
       className={styles.entityOption}
       data-active={active ? "true" : "false"}
+      ref={ref}
       onMouseDown={(event) => event.preventDefault()}
       onMouseEnter={() => onActiveChange?.(entity.id)}
       onClick={() => onSelect(entity.id)}
