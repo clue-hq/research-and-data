@@ -120,10 +120,22 @@ export function usePagesSettings(initial: PagesSettingsRead): PagesSettingsContr
    * which is also what retries a removal the provider left stuck in `disconnecting`.
    */
   const remove = useCallback(async () => {
-    await run(async () => {
-      await removeCustomHostname();
-      return checkCustomHostname();
-    }).catch(() => undefined);
+    try {
+      await run(async () => {
+        await removeCustomHostname();
+        return checkCustomHostname();
+      });
+    } catch (error) {
+      // The backend marks the row `disconnecting` BEFORE it calls the provider, so a provider
+      // failure leaves a row this screen must show as removing (and poll to completion).
+      if (error instanceof ClueApiError && error.status === 502) {
+        setState((current) =>
+          current.customHostname
+            ? { ...current, customHostname: { ...current.customHostname, status: "disconnecting" } }
+            : current,
+        );
+      }
+    }
   }, [run]);
 
   const view = connectionView(state.customHostname);

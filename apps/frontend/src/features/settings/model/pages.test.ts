@@ -28,3 +28,22 @@ test("connecting, active and error views follow the status", () => {
   assert.equal(connectionView(errored.customHostname), "error");
   assert.equal(stepIndex("error"), -1);
 });
+
+test("a disconnecting hostname reads as connecting, with no step marked", () => {
+  // The screen relies on both halves: a failed removal is shown by marking the row
+  // `disconnecting`, which must flip the view to "connecting" so the 5 s poll starts,
+  // and the stepper must mark no step because `disconnecting` is not a provisioning step.
+  const disconnecting = PagesSettingsReadSchema.parse({
+    ...base,
+    customHostname: {
+      hostname: "go.acme.com",
+      status: "disconnecting",
+      records: [],
+      lastCheckedAt: "2026-09-17T12:00:00Z",
+      error: null,
+      url: "https://go.acme.com",
+    },
+  });
+  assert.equal(connectionView(disconnecting.customHostname), "connecting");
+  assert.equal(stepIndex("disconnecting"), -1);
+});
