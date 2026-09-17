@@ -107,6 +107,10 @@ class Secrets(BaseSettings):
     # the one ARV2 model call that bypasses OpenRouter (OpenRouter serves neither the transcribe
     # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
     gemini_api_key: SecretStr | None = None
+    # Env: CLUE_PAGES_EDGE_SECRET. Shared with the Cloudflare Worker `pages-edge`; the page origin
+    # refuses page traffic that does not carry it in X-Clue-Edge-Auth (spec §5.2). Empty only in
+    # dev, together with CLUE_PAGES_TRUST_HOST_HEADER=true.
+    pages_edge_secret: SecretStr | None = None
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).

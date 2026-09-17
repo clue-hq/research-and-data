@@ -735,6 +735,27 @@ class Settings(BaseSettings):
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
     self_serve_provisioning_enabled: bool = False
+
+    # --- Public pages: hostnames and delivery (custom-domain publishing spec 2026-09-17 §9) ---
+    # The suffix every workspace's permanent system hostname ends in (`<label>.<suffix>`). The
+    # registry rows are written under it, so it must match the rows a database holds; the page
+    # origin and the backfill warn loudly when they do not. Dev stack: `pages.localhost`.
+    # Env: ``CLUE_PAGES_SYSTEM_SUFFIX``.
+    pages_system_suffix: str = "pages.cluehq.ai"
+    # Scheme and optional port for public page URLs the design API mints (og:image, publish `url`).
+    # Production: https and no port; dev stack: http + 8040. Env: ``CLUE_PAGES_PUBLIC_SCHEME`` /
+    # ``CLUE_PAGES_PUBLIC_PORT`` (empty string = unset).
+    pages_public_scheme: Literal["http", "https"] = "https"
+    pages_public_port: int | None = None
+    # Local development only: the page origin skips the edge-secret gate and reads the public
+    # hostname from the Host header. The origin refuses to start with this on while
+    # CLUE_PAGES_EDGE_SECRET is set, so the two can never both be live in a deployment.
+    # Env: ``CLUE_PAGES_TRUST_HOST_HEADER``.
+    pages_trust_host_header: bool = False
+    # The port `python -m clue_page_origin.main` listens on when Railway's PORT is absent.
+    # Env: ``CLUE_PAGES_ORIGIN_PORT``.
+    pages_origin_port: int = Field(default=8040, gt=0, lt=65536)
+
     # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
     # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
     # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
@@ -920,6 +941,11 @@ class Settings(BaseSettings):
             for field, value in INTEGRATION_PILOT_OVERLAY.items():
                 data.setdefault(field, value)
         return data
+
+    @field_validator("pages_public_port", mode="before")
+    @classmethod
+    def _empty_port_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and value.strip() == "" else value
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod
