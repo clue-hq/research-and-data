@@ -492,3 +492,40 @@ def test_connect_without_a_configured_provider_is_503(tmp_path: Any) -> None:
             assert (r.status_code, r.json()["error"]["code"]) == (503, "PROVIDER_NOT_CONFIGURED")
 
     run_async(scenario())
+
+
+def test_check_now_retries_a_stuck_removal_even_inside_the_rate_limit(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = await _workspace(conn)
+            cf, dns, clock = FakeCloudflare(), FakeResolver(), TickingClock()
+            app = _app(conn, tmp_path, role="admin", cloudflare=cf, resolver=dns, clock=clock)
+            headers = {"X-Workspace-Id": ws}
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                await client.post(
+                    f"{BASE}/custom-hostname",
+                    json={"hostname": "go.stuck.example"},
+                    headers=headers,
+                )
+                # stamps last_checked_at
+                await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                clock.frozen = True  # every later clock read is within 5 s of that stamp
+                cf.delete_error = CloudflareError("down", status=503, retryable=True)
+                assert (
+                    await client.delete(f"{BASE}/custom-hostname", headers=headers)
+                ).status_code == 502
+                cf.delete_error = None
+                # a passive GET must not retry (row stays disconnecting, no provider call)
+                calls_before = len(cf.calls)
+                assert (await client.get(BASE, headers=headers)).json()["customHostname"][
+                    "status"
+                ] == "disconnecting"
+                assert len(cf.calls) == calls_before
+                # Check now retries despite the rate limit and completes the removal
+                done = await client.post(f"{BASE}/custom-hostname/check", headers=headers)
+                assert done.status_code == 200 and done.json()["customHostname"] is None
+                assert cf.calls[-1] == ("delete", "cf_go.stuck.example")
+
+    run_async(scenario())

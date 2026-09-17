@@ -367,21 +367,25 @@ class PagesSettingsService:
 
         ``force`` is what separates the explicit "Check now" button from the passive GET refresh:
         only a forced check retries a stuck ``disconnecting`` delete (and so only a forced check
-        can answer 502). Both honour the ``CHECK_INTERVAL_S`` rate limit.
+        can answer 502). The ``CHECK_INTERVAL_S`` rate limit governs the DNS/provider *observation*
+        only — it never defers that removal retry.
         """
         now = self._clock()
         async with self._conn_factory() as conn:
             row = await get_custom_hostname(conn, workspace_id)
         if row is None:
             return await self.read(workspace_id)
+        # A stuck removal is retried ABOVE the rate limit: the retry is a provider call the user
+        # explicitly asked for, not a DNS observation, so a Check now within 5 s of the failed
+        # removal must still complete it rather than silently answer "disconnecting".
+        if row.status == "disconnecting":
+            if force:
+                await self._finish_remove(row)
+            return await self.read(workspace_id)
         if (
             row.last_checked_at is not None
             and (now - row.last_checked_at).total_seconds() < CHECK_INTERVAL_S
         ):
-            return await self.read(workspace_id)
-        if row.status == "disconnecting":
-            if force:
-                await self._finish_remove(row)
             return await self.read(workspace_id)
         resolver = self._resolver or PublicDnsResolver()
         observation = await asyncio.to_thread(
