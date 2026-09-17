@@ -4327,8 +4327,9 @@ def test_w14_blank_or_sentinel_model_id_resolves_to_the_verified_working_model(
     assert "openai/gpt-image-2" in image_provider._IMAGE_API_ONLY_MODEL_IDS
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, model_id: str
 ) -> None:
     """W1.4: a wrong IMAGE_MODEL_ID surfaces as a generic 'no endpoints found'
     404 that reads like a provider outage (it cost the Apollo POC a restart to
@@ -4336,7 +4337,7 @@ def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
 
     The typed error still propagates unchanged — this adds a diagnostic, not a
     behavior change."""
-    _image_model_env(monkeypatch, "openai/gpt-image-2")
+    _image_model_env(monkeypatch, model_id)
     body = (
         '{"error":{"message":"No endpoints found that support the requested '
         'output modalities: image, text"}}'
@@ -4353,9 +4354,10 @@ def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
 
     assert excinfo.value.code == "image_model.http_error"
     logged = caplog.text
-    assert "openai/gpt-image-2" in logged
+    assert model_id in logged
     assert "IMAGE-API" in logged.upper()
-    assert "openai/gpt-5.4-image-2" in logged  # names the fix
+    assert "IMAGE_MODEL_API_STYLE=images" in logged
+    assert "Set IMAGE_MODEL_ID=" not in logged  # preserve the selected model
 
 
 def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
@@ -4912,8 +4914,10 @@ def _capture_images_api_post(
     return captured
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_image_provider_images_api_generation_body(
     monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
 ) -> None:
     # The founder's generation sample, minus `stream` (we are synchronous):
     # top-level prompt + structured aspect_ratio + quality + background. No
@@ -4923,6 +4927,7 @@ def test_image_provider_images_api_generation_body(
     # test_image_provider_images_api_transparency_is_prose_only). "auto" is what
     # both founder sample bodies carry; do not "tidy up" the default away.
     _images_api_settings(monkeypatch)
+    monkeypatch.setattr(settings, "image_model_id", model_id)
     out_png = _tiny_png(8, 8, rgba=(3, 3, 3, 255))
     captured = _capture_images_api_post(monkeypatch, out_png)
 
@@ -4934,11 +4939,11 @@ def test_image_provider_images_api_generation_body(
     )
     assert result.image_bytes == out_png
     assert result.mime_type == "image/png"
-    assert result.model == "openai/gpt-image-2"
+    assert result.model == model_id
 
     assert captured["url"] == "https://openrouter.ai/api/v1/images"
     assert captured["json"] == {
-        "model": "openai/gpt-image-2",
+        "model": model_id,
         "prompt": "a calm clinic waiting room\n\nBrand/style direction: warm palette",
         "aspect_ratio": "16:9",
         "quality": "high",
@@ -5051,13 +5056,16 @@ def test_image_provider_images_api_square_default_is_sent_structurally(
     assert captured["json"]["aspect_ratio"] == "1:1"
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_image_provider_images_api_input_references_match_the_founder_sample(
     monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
 ) -> None:
     # Reference-conditioned generation: `input_references` typed dicts in caller
-    # order. The founder's sample used https URLs; we send base64 data: URLs,
-    # which is the one thing the first live call must confirm.
+    # order. The founder's sample used https URLs; we send base64 data: URLs.
+    # This verifies transport serialization, not live provider support or quality.
     _images_api_settings(monkeypatch)
+    monkeypatch.setattr(settings, "image_model_id", model_id)
     ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
     ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
     captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
@@ -5068,6 +5076,7 @@ def test_image_provider_images_api_input_references_match_the_founder_sample(
         reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
     )
     body = captured["json"]
+    assert body["model"] == model_id
     assert body["input_references"] == [
         {
             "type": "image_url",

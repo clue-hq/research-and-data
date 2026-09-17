@@ -42,11 +42,11 @@ DEFAULT_MAX_RETRIES = 2
 # separate catalogues.
 #
 # OpenRouter serves image generation from TWO endpoints with DISJOINT model
-# catalogues, and this adapter talks to the first one:
+# catalogues. IMAGE_MODEL_API_STYLE selects the transport:
 #
-#   * `/chat/completions` with `modalities: ["image","text"]`  ← WE USE THIS.
+#   * `chat`: `/chat/completions` with `modalities: ["image","text"]`.
 #     Catalogue: `GET /api/v1/models` (418 models; 11 with image output).
-#   * `/images` — the dedicated Image API.
+#   * `images`: `/images` — the dedicated Image API.
 #     Catalogue: `GET /api/v1/images/models` (43 models).
 #
 # `openai/gpt-image-2` IS a real OpenRouter model — but ONLY on the Image API.
@@ -63,7 +63,12 @@ DEFAULT_IMAGE_MODEL_ID = "openai/gpt-5.4-image-2"
 # Chat-path image ids that are really Image-API-only ids — a `404 No endpoints
 # found` on one of these is a configuration mistake, not an outage, so we say so.
 _IMAGE_API_ONLY_MODEL_IDS = frozenset(
-    {"openai/gpt-image-2", "openai/gpt-image-1", "openai/gpt-image-1-mini"}
+    {
+        "openai/gpt-image-2.5-flare",
+        "openai/gpt-image-2",
+        "openai/gpt-image-1",
+        "openai/gpt-image-1-mini",
+    }
 )
 
 # W1.7(a) — exactly ONE automatic retry when the model answers with text and no
@@ -923,10 +928,9 @@ def _warn_if_model_not_found(model_id: str, status_code: int, detail: str) -> No
     if model_id in _IMAGE_API_ONLY_MODEL_IDS:
         logger.error(
             "IMAGE_MODEL_ID=%r is an OpenRouter IMAGE-API model id and is NOT served "
-            "on the chat-completions image modality this provider uses — every "
-            "generation will 404. Set IMAGE_MODEL_ID=%s (verified working) instead.",
+            "on the configured chat-completions transport. Set "
+            "IMAGE_MODEL_API_STYLE=images to keep this model and use the Images API.",
             model_id,
-            DEFAULT_IMAGE_MODEL_ID,
         )
         return
     logger.error(

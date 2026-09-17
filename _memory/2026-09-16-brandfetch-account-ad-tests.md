@@ -212,3 +212,40 @@ in its separate worktree; no new ingestion agent in this task.
 - Resume after the user restores the key limit or configures an approved replacement.
   A replacement key needs an idle runtime reload. Do not repeat failed generation
   batches, narrow the quality goal, or claim304 local tests establish ad quality.
+
+
+### Flare selection and resumed budget check (September 16 evening)
+
+- User selected openai/gpt-image-2.5-flare and reported a higher weekly budget.
+  Verified the model's official OpenRouter page: dedicated Images API. Updated
+  root/subsystem env examples and local ignored env to this model with API style
+  images. Agent text model remains unchanged. Existing cache keys already include
+  the configured image model, separating old-model output from new generations.
+- Added Flare to known Images-API IDs and parametrized request/body/reference-byte
+  tests for old2 and Flare. Wrong-transport diagnostic now recommends setting
+  IMAGE_MODEL_API_STYLE=images, preserving the selected model rather than advising
+  a different one. Diagnostic regressions failed before their fixes; final focused
+  suite:27 passed,136 deselected; /tmp/flare-model-final-tests.log. Diff check clean.
+- Broader test selection inadvertently included five DB-backed route tests. They
+  failed connecting to sandbox-blocked localhost5432 before writes. Did not rerun
+  against the shared live DB. Focused adapter tests above are DB-independent;
+  no live generation/quality or DB-persistence acceptance claimed from them.
+- Guarded reload checked235 fleet tasks done and123 terminal design runs, then
+  restarted only the existing design API and four fleet workers. Verified each
+  running process's model ID and API style without displaying other environment
+  values. API OpenAPI route200; four frontends' unauthenticated requests followed
+  normal redirects to sign-in200. This is availability, not authenticated proof.
+  Initial root-path assertion expected200 incorrectly: API root404 and frontend
+  roots307. Corrected route/redirect checks; no product/auth changes needed.
+- Fresh key metadata still reports individual key weekly limit200, weekly usage
+  200.70, remaining0. User then supplied screenshot with WORKSPACE budget500;
+  another minimal actual model call still returned403, key weekly limit exceeded.
+  Asked user to raise the individual key cap as well. Workspace and key limits
+  must not be conflated. Both image and text service use that same current key.
+- Ignored evidence: evaluation/skill-family-v1/flare-20260916 includes runtime
+  receipt and dated access check. No new image, planning sample or live creative
+  generated. Pending: fresh planning comparison and two four-brand rounds with
+  Flare provenance, whole-ad review, edit/save/export and240-second measurement.
+  Previously blocked goal was explicitly resumed; blocker audit starts fresh,
+  no new goal or false completion. Preserve all prior artifacts/user edits and
+  the separate brand-intelligence worktree.
