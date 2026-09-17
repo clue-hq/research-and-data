@@ -7,6 +7,7 @@ carrying a ``project_document`` ref can be inserted and re-read exactly as the f
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -17,14 +18,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.contracts import DomainObjectRef
+from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
 from clue_api.agent_turn_submission import insert_submission, submission_context_refs
-from clue_api.arv2.project_documents import ProjectPlanWrite, write_project_plan
+from clue_api.arv2.project_documents import (
+    DEFAULT_DOCUMENT_KIND,
+    ProjectPlanWrite,
+    write_project_plan,
+)
 from clue_api.chat.composer_context import ContextReferenceError, validated_context_refs
 from clue_db import db_lifespan
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
 from tests.claimstore.conftest import migrated_db, require_claimstore_db  # noqa: F401
 from tests.db.conftest import run_async
+from tests.profiling.conftest import conn_session_factory
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
@@ -223,6 +230,60 @@ def test_validated_context_refs_project_document_semantics(tmp_path: Path) -> No
                     project_id=seeds["project_id"],
                 )
             assert stale.value.code == "CONTEXT_REF_STALE"
+            await txn.rollback()
+
+    run_async(scenario())
+
+
+def test_project_document_focus_card_names_the_mounted_path(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            storage = FsStorage(tmp_path)
+            seeds = await _seed(conn, storage)
+            plan = seeds["plan"]
+            factory = conn_session_factory(conn)
+
+            with_storage = DbCompiledContextCardReader(conn_factory=factory, storage=storage)
+            card = await with_storage.read(
+                workspace_id=seeds["ws"],
+                object_type="project_document",
+                object_id=str(plan.document_id),
+            )
+            assert card is not None
+            assert card.ref.version == plan.version
+            body = json.loads(card.body)
+            assert body["path"] == "project/plan.md"
+            assert body["title"] == "Q4 expansion plan"
+            # The plan body declares no front-matter ``kind``, so the row carries the default one
+            # and the card echoes it rather than a name invented for the plan.
+            assert body["kind"] == DEFAULT_DOCUMENT_KIND
+            assert body["version"] == plan.version
+            assert body["document_id"] == str(plan.document_id)
+            assert "artifact_key" not in body
+
+            without_storage = DbCompiledContextCardReader(conn_factory=factory)
+            bare = await without_storage.read(
+                workspace_id=seeds["ws"],
+                object_type="project_document",
+                object_id=str(plan.document_id),
+            )
+            assert bare is not None
+            assert json.loads(bare.body)["title"] == "plan"
+
+            assert (
+                await with_storage.read(
+                    workspace_id="ws_someone_else",
+                    object_type="project_document",
+                    object_id=str(plan.document_id),
+                )
+                is None
+            )
+            assert (
+                await with_storage.read(
+                    workspace_id=seeds["ws"], object_type="project_document", object_id="nope"
+                )
+                is None
+            )
             await txn.rollback()
 
     run_async(scenario())

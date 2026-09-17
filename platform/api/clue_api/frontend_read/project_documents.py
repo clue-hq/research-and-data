@@ -31,13 +31,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-# The ICP title rule, imported rather than restated so a document's title cannot read one way in
-# the ICP gate and another way in this list. ``ICP_KIND`` is its module's public name; ``_title``
-# is private there only because the gate is its single caller until now.
-from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
+# The title rule, imported rather than restated so a document's title cannot read one way in this
+# list and another way in the agent's focus card or the ICP gate.
 from clue_api.arv2.project_documents import (
     ProjectDocumentRefused,
     ProjectDocumentRow,
+    document_title,
     list_project_documents,
     read_project_document,
     save_project_document,
@@ -123,11 +122,6 @@ class ProjectDocumentUpdateV1(BaseModel):
     expected_revision: int = Field(ge=1, strict=True)
 
 
-def _file_name(path: str) -> str:
-    name = path.rsplit("/", 1)[-1]
-    return name[:-3] if name.endswith(".md") else name
-
-
 def _title(row: ProjectDocumentRow, *, front: Mapping[str, Any], body: str) -> str:
     """What this document is called on screen: its own words, and only its own words.
 
@@ -137,7 +131,7 @@ def _title(row: ProjectDocumentRow, *, front: Mapping[str, Any], body: str) -> s
     the one place in the product where a document is called something it never called itself.
     """
 
-    return _titled_by_its_own_text(front, body, icp_key=_file_name(row.path))
+    return document_title(front, body, path=row.path)
 
 
 def _wire(row: ProjectDocumentRow, *, front: Mapping[str, Any], body: str) -> ProjectDocumentV1:

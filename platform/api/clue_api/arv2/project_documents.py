@@ -53,6 +53,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.icp_confirmation import _title as _titled_by_its_own_text
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_api.arv2.onboarding_documents import KnowledgeDocument, render_markdown
 from clue_storage import (
@@ -292,6 +293,19 @@ def workspace_path_of(path: str) -> str:
     """
 
     return _PROJECT_INPUT_PREFIX + path.removeprefix(_PROJECT_INPUT_PREFIX)
+
+
+def document_title(front: Mapping[str, Any], body: str, *, path: str) -> str:
+    """What this document is called on screen: front matter's title, first heading, else file name.
+
+    One rule for every surface that names a project document — the Gallery list, the transcript
+    chip, the agent's focus card — so the same file is never called two things.
+    """
+
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(".md"):
+        name = name[:-3]
+    return _titled_by_its_own_text(front, body, icp_key=name)
 
 
 def _icp_key_of(path: str) -> str | None:

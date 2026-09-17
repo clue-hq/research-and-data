@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid5
 
 from pydantic import JsonValue
@@ -189,8 +190,9 @@ class DbCompiledContextCardReader:
         storage: StorageBackend | None = None,
     ) -> None:
         self._conn_factory = conn_factory
-        # Only the ``brand_knowledge_document`` type needs blob bytes; every other type compiles
-        # from durable rows alone, so a reader built without storage still serves them all.
+        # Only the ``brand_knowledge_document`` and ``project_document`` types use blob bytes (the
+        # latter only for the title); every other type compiles from durable rows alone, so a
+        # reader built without storage still serves them all.
         self._storage = storage
 
     async def read(
@@ -279,6 +281,65 @@ class DbCompiledContextCardReader:
                 )
                 value = None
                 body = data.decode()
+                version = int(row["version"])
+            elif object_type == "project_document":
+                # A Gallery file the user tagged. The card is a typed summary that says WHERE
+                # the file is in the agent's workspace — the body already sits under the
+                # read-only ``project`` mount — never the body itself (that is the
+                # ``brand_knowledge_document`` branch's job for onboarding knowledge).
+                from clue_api.arv2.project_documents import (
+                    document_title,
+                    read_project_document,
+                    workspace_path_of,
+                )
+
+                try:
+                    document_id = UUID(object_id)
+                except ValueError:
+                    return None
+                row = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT document_id, project_id, path, kind, version, status, "
+                                "updated_at, artifact_key FROM brand_knowledge_document "
+                                "WHERE document_id = :document_id "
+                                "  AND workspace_id = :workspace_id "
+                                "  AND project_id IS NOT NULL"
+                            ),
+                            {"document_id": document_id, "workspace_id": workspace_id},
+                        )
+                    )
+                    .mappings()
+                    .first()
+                )
+                if row is None or row["artifact_key"] is None:
+                    return None
+                front: dict[str, Any] = {}
+                text_body = ""
+                if self._storage is not None:
+                    read = await read_project_document(
+                        conn,
+                        self._storage,
+                        workspace_id=workspace_id,
+                        project_id=str(row["project_id"]),
+                        document_id=document_id,
+                    )
+                    if read is not None:
+                        _, front, text_body = read
+                value = None
+                body = json.dumps(
+                    {
+                        "document_id": str(row["document_id"]),
+                        "path": workspace_path_of(str(row["path"])),
+                        "title": document_title(front, text_body, path=str(row["path"])),
+                        "kind": row["kind"],
+                        "version": int(row["version"]),
+                        "status": row["status"],
+                        "updated_at": row["updated_at"].isoformat(),
+                    },
+                    sort_keys=True,
+                )
                 version = int(row["version"])
             elif object_type == "contact":
                 try:
