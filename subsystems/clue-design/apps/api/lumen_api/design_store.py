@@ -59,13 +59,16 @@ tenant's* data, and every request-path bug of that shape is invisible until it i
 incident. ``default_workspace_id()`` survives only for DIRECT store constructions (scripts, the
 startup sweep, tests) that have no request to read a header from.
 
-One surface genuinely cannot send a header, and names its tenant in the URL instead:
+One surface genuinely could not send a header, and named its tenant in the URL instead:
 
 * **Public publish serving** — an anonymous visitor sends no headers at all. O6b (ratified:
-  option (a)) puts the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
-  main.py's ``public_repository`` dependency, which builds this store with
-  ``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an
-  unknown tenant through the fail-closed workspace-scoped reads.
+  option (a)) put the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
+  main.py's ``public_repository`` dependency. **Custom-domain publishing S1 deleted that whole
+  surface**: the page origin serves published pages, resolving the tenant from the request
+  HOSTNAME through the hostname registry, and this app has no public route left. What survives
+  here is the ``ensure_workspace=False`` constructor flag the page origin (and the test helpers
+  that read a publish row) still build this store with — an anonymous read must never write, so
+  an unknown tenant reads nothing through the fail-closed workspace-scoped reads.
 
 (The run-event SSE stream used to be a second: ``EventSource`` cannot set request headers, so
 ``GET /agent/runs/{id}/events`` took ``?workspace_id=``. **D7 closed it.** The stream is now opened
@@ -74,7 +77,7 @@ with a single-use token minted through a normal header-authenticated ``POST
 that could not carry a header no longer carries a *claim* either. See ``lumen_api.run_stream``.)
 
 The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes
-that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
+that scaffolding. (The interim ``/w/{workspace_id}/p/...`` route is already gone; see above.)
 """
 
 from __future__ import annotations

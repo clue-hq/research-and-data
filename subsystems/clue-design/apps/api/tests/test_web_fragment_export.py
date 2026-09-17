@@ -38,7 +38,7 @@ from fastapi.testclient import TestClient
 
 from clue_design.storage import SOURCE_KEY_ASSET
 
-from conftest import make_blob_store, make_client
+from conftest import make_blob_store, make_client, published_html, published_manifest
 from PIL import Image
 
 from lumen_api.design_store import DesignStoreBridge, HybridRepository
@@ -206,11 +206,7 @@ def _publish(
         f"/documents/{document_id}/web/publish", json={"slug": slug}
     )
     assert published.status_code == 200, published.text
-    served = client.get(f"/w/{workspace_id}/p/{slug}")
-    assert served.status_code == 200, served.text
-    manifest = client.get(f"/w/{workspace_id}/p/{slug}/manifest.json")
-    assert manifest.status_code == 200, manifest.text
-    return served.text, manifest.json()
+    return published_html(workspace_id, slug), published_manifest(workspace_id, slug)
 
 
 def _fragment_region(html: str, fragment_id: str) -> str:

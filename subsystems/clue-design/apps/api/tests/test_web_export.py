@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from clue_design.storage import SOURCE_KEY_ASSET
 
-from conftest import make_blob_store, make_client
+from conftest import is_served, make_blob_store, make_client, published_html, published_manifest
 from PIL import Image
 
 from lumen_api.design_store import HybridRepository
@@ -272,9 +272,7 @@ def test_publish_html_carries_brand_geometry(
         f"/documents/{document['id']}/web/publish", json={"slug": "geometry-page"}
     )
     assert published.status_code == 200, published.text
-    served = client.get(f"/w/{workspace_id}/p/geometry-page")
-    assert served.status_code == 200, served.text
-    html = served.text
+    html = published_html(workspace_id, "geometry-page")
     assert "--radius-button" in html
     assert "border-width: var(--border-width-card)" in html
 
@@ -480,9 +478,7 @@ def test_the_publish_manifest_stops_discarding_the_font_exclusions(
     )
     assert published.status_code == 200, published.text
 
-    manifest = client.get(f"/w/{workspace_id}/p/font-exclusions/manifest.json")
-    assert manifest.status_code == 200, manifest.text
-    body = manifest.json()
+    body = published_manifest(workspace_id, "font-exclusions")
 
     assert {"family": "Locked Display", "reason": "license not embeddable"} in body[
         "font_families_excluded"
@@ -490,8 +486,7 @@ def test_the_publish_manifest_stops_discarding_the_font_exclusions(
     assert "Export Sans" in body["font_families_included"]
     # The included family's faces really are on the page (the gate let them through), and its
     # @font-face points at the digest route.
-    served = client.get(f"/w/{workspace_id}/p/font-exclusions")
-    assert f"/asset-store/{ofl_digest}" in served.text
+    assert f"/asset-store/{ofl_digest}" in published_html(workspace_id, "font-exclusions")
 
 
 def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
@@ -528,7 +523,7 @@ def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
         f"/documents/{document['id']}/web/publish", json={"slug": "font-basis"}
     )
     assert published.status_code == 200, published.text
-    body = client.get(f"/w/{workspace_id}/p/font-basis/manifest.json").json()
+    body = published_manifest(workspace_id, "font-basis")
 
     assert "Workspace Brand Sans" in body["font_families_included"]
     assert {
@@ -586,12 +581,14 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
-    # Served page: inlined style + canonical, no external stylesheet link.
-    served = client.get(f"/w/{workspace_id}/p/{slug}")
-    assert served.status_code == 200, served.text
-    assert 'id="lumen-static-css"' in served.text
-    assert '<link rel="canonical"' in served.text
-    assert '<link rel="stylesheet" href="site.css">' not in served.text
+    # Published page: inlined style, no external stylesheet link. The package is HOST-FREE
+    # since custom-domain publishing S1 (the page origin knows the hostname, the package does
+    # not), so it carries a relative icon link and NO canonical.
+    html = published_html(workspace_id, slug)
+    assert 'id="lumen-static-css"' in html
+    assert '<link rel="icon" href="/favicon.ico">' in html
+    assert '<link rel="canonical"' not in html
+    assert '<link rel="stylesheet" href="site.css">' not in html
 
     # Edit a text marker, republish → doc_version bumps + previous available.
     text_id = find_node(get_document(client, document["id"])["scene"], "text")
@@ -615,25 +612,25 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert republished.status_code == 200, republished.text
     assert republished.json()["doc_version"] == 2
     assert republished.json()["previous_available"] is True
-    assert "MARKER_TWO" in client.get(f"/w/{workspace_id}/p/{slug}").text
+    assert "MARKER_TWO" in published_html(workspace_id, slug)
 
     # Rollback → serves the previous publish, doc_version back to 1.
     rolled = client.post(f"/web/publishes/{slug}/rollback")
     assert rolled.status_code == 200, rolled.text
     assert rolled.json()["doc_version"] == 1
     assert rolled.json()["status"] == "active"
-    assert "MARKER_TWO" not in client.get(f"/w/{workspace_id}/p/{slug}").text
+    assert "MARKER_TWO" not in published_html(workspace_id, slug)
 
     # GET publish state reflects the document.
     state = client.get(f"/documents/{document['id']}/web/publish").json()
     assert state["published"] is True
     assert state["slug"] == slug
 
-    # Unpublish → /p 404.
+    # Unpublish → nothing is served at that slug any more.
     unpub = client.delete(f"/web/publishes/{slug}")
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
-    assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
+    assert not is_served(workspace_id, slug)
 
 
 def test_publish_slug_validation(client: TestClient) -> None:

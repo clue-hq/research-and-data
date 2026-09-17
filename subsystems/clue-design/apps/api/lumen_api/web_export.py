@@ -32,12 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
-from clue_design.publishes import (
-    PUBLISH_ASSET_MEDIA_TYPES,
-    PublishAssetMismatch,
-    check_publish_asset,
-    delivery_csp,
-)
+from clue_design.publishes import PUBLISH_ASSET_MEDIA_TYPES, delivery_csp
 from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
 
 from .asset_custody import read_asset_bytes
@@ -72,8 +67,8 @@ PUBLISH_ASSET_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 # served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime), now
 # imported from `clue_design.publishes` — the page origin serves these same assets and may not
 # import `lumen_api`, so the extension↔media-type contract has ONE home (custom-domain
-# publishing §6.2). `persist_publish_assets` refuses a record that disagrees with it, and
-# `resolve_publish_asset` refuses to serve a blob whose recorded media type is not the one the
+# publishing §6.2). `persist_publish_assets` refuses a record that disagrees with it, and the
+# page origin's reader refuses to SERVE a blob whose recorded media type is not the one the
 # requested extension names.
 #
 # Stored on a delivery asset the manifest does not describe: it is durable, but nothing can
@@ -202,7 +197,7 @@ def persist_publish_assets(
     (one row, one blob) rather than a collision check.
 
     An asset with no manifest record is still stored, under an opaque media type: nothing can
-    honestly claim its extension, so :func:`resolve_publish_asset` will refuse to serve it —
+    honestly claim its extension, so the page origin's asset reader will refuse to serve it —
     exactly what the missing sidecar used to do.
     """
 
@@ -236,27 +231,6 @@ def persist_publish_assets(
         blobs.register(
             data, media_type=media_type, source_key=SOURCE_KEY_PUBLISH_ASSET
         )
-
-
-def resolve_publish_asset(
-    blobs: DesignBlobStore, digest: str, extension: str
-) -> Tuple[bytes, str]:
-    """Read and integrity-check one immutable publish asset (the check itself lives in
-    ``clue_design.publishes.check_publish_asset``, shared with the page origin)."""
-
-    if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
-        raise WebExportError("invalid publish asset digest")
-    try:
-        media_type, data = blobs.read_blob(digest)
-    except (NotFoundError, ValueError) as error:
-        raise WebExportError("publish asset is missing") from error
-    try:
-        served = check_publish_asset(
-            data=data, media_type=media_type, digest=digest, extension=extension
-        )
-    except PublishAssetMismatch as error:
-        raise WebExportError(str(error)) from error
-    return data, served
 
 
 @dataclass

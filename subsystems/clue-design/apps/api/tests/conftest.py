@@ -169,6 +169,40 @@ def make_client(app: FastAPI) -> TestClient:
 
 @pytest.fixture()
 def workspace_id(_isolated_design_workspace: str) -> str:
-    """This test's workspace — needed by the O6b public publish routes, whose tenant comes from
-    the PATH (``/w/{workspace_id}/p/{slug}``) because a public visitor sends no header."""
+    """This test's workspace — the tenant a publish row is written under and read back with."""
     return _isolated_design_workspace
+
+
+# --- Reading a publish the way the page origin does -------------------------------------------
+# Custom-domain publishing S1 DELETED the design API's interim O6b serving routes
+# (``/w/{ws}/p-assets/{name}``, ``/w/{ws}/p/{slug}/manifest.json``, ``/w/{ws}/p/{slug}``): the
+# page origin serves published pages now, and its own suite (``tests/page_origin/test_routes.py``)
+# owns the serving contract. The design suites still need to assert WHAT was published, so they
+# read the durable publish row directly instead of GETting a route that no longer exists.
+
+
+def published(workspace_id: str, slug: str) -> dict | None:
+    """The publish row as the page origin would read it (custom-domain publishing S1 deleted the
+    design API's interim `/w/{ws}/p/{slug}` serving routes; suites read the row instead)."""
+    from lumen_api.design_store import HybridRepository
+
+    return HybridRepository(workspace_id=workspace_id, ensure_workspace=False).get_web_publish(slug)
+
+
+def is_served(workspace_id: str, slug: str) -> bool:
+    row = published(workspace_id, slug)
+    return row is not None and row["status"] == "active"
+
+
+def published_html(workspace_id: str, slug: str) -> str:
+    row = published(workspace_id, slug)
+    assert row is not None and row["status"] == "active", f"no active publish at {slug!r}"
+    return str(row["html"])
+
+
+def published_manifest(workspace_id: str, slug: str) -> dict:
+    row = published(workspace_id, slug)
+    assert row is not None and row["status"] == "active", f"no active publish at {slug!r}"
+    manifest = row.get("manifest")
+    assert isinstance(manifest, dict)
+    return manifest

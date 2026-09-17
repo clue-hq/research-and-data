@@ -38,7 +38,6 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
-    HTMLResponse,
     JSONResponse,
     Response,
     StreamingResponse,
@@ -1017,34 +1016,19 @@ def create_app(
         """
         return DesignBlobStore(app.state.storage, repo.workspace_id)
 
-    def public_blob_store(workspace_id: str) -> DesignBlobStore:
-        """The O6b analogue of ``public_repository``: an anonymous publish-asset GET names its
-        tenant in the PATH and must never create a workspace row."""
-        return DesignBlobStore(
-            app.state.storage, workspace_id, ensure_workspace=False
-        )
-
     def repository(request: Request) -> HybridRepository:
         # D2.5B: SQLite is deleted; every store domain is Postgres via clue_design. The O4 seam is
         # STRICT — resolve_workspace_id 401s when X-Workspace-Id is absent instead of falling
-        # back to the dev workspace. Three routes are exempt because they cannot receive a
-        # header and take no tenant state: /build-info (engine handshake), /asset-store/{digest}
+        # back to the dev workspace. Two routes are exempt because they cannot receive a
+        # header and take no tenant state: /build-info (engine handshake) and /asset-store/{digest}
         # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
-        # iframe load — a custom header there would fail CORS preflight), and the
-        # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
+        # iframe load — a custom header there would fail CORS preflight). A third — the
+        # /w/{workspace_id}/... O6b public serving group — is GONE: custom-domain publishing S1
+        # deleted it, and the page origin serves published pages now.
         # The run-event SSE stream WAS a fourth ("?workspace_id=", because EventSource cannot send
         # headers); D7 closed it — the stream is opened with a single-use token minted through this
         # very dependency, and its workspace is read off the token row.
         return HybridRepository(workspace_id=resolve_workspace_id(request))
-
-    def public_repository(workspace_id: str) -> HybridRepository:
-        # O6b (RATIFIED 2026-08-08, option (a); PD-part2-design-substrate §6). The public
-        # publish routes serve anonymous visitors, who send no X-Workspace-Id header — so the
-        # tenant comes from the PATH instead. `ensure_workspace=False`: an anonymous GET must
-        # never create a workspace row, so an unknown tenant reads nothing and 404s through the
-        # fail-closed workspace-scoped reads. INTERIM AND DISPOSABLE: Part-IV item 5 owns real
-        # public routing and DELETES this whole surface.
-        return HybridRepository(workspace_id=workspace_id, ensure_workspace=False)
 
     # --- D6: the ONE shim from a design route to the governed write path ------------------- #
 
@@ -5472,97 +5456,6 @@ def create_app(
         batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
-
-    # --- O6b interim public serving surface ------------------------------- #
-    # RATIFIED 2026-08-08 (option (a)), docs/specs/PD-part2-design-substrate.md §6: publish
-    # slugs became workspace-LOCAL when design_web_publish gained PK (workspace_id, slug) — O6 —
-    # so a bare /p/{slug} is genuinely AMBIGUOUS across tenants and is DELETED (404), not kept
-    # as a fallback. The workspace comes from the PATH because a public visitor sends no header.
-    # Part-IV item 5 (design-integration-master-plan.md) owns the real public routing and
-    # DELETES these three routes when it ships.
-
-    @app.get("/w/{workspace_id}/p-assets/{asset_name}")
-    def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
-        # D4: per-tenant byte custody is real, so the workspace segment is no longer decorative —
-        # it IS the storage scope this read resolves against (`{workspace}/design/{sha256}`).
-        # Another tenant's digest simply has no row here and 404s, the same refusal an unknown
-        # digest gets. `ensure_workspace=False`: an anonymous GET must never create a workspace.
-        match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
-        if match is None:
-            return Response(status_code=404)
-        digest, extension = match.groups()
-        try:
-            data, media_type = web_export.resolve_publish_asset(
-                public_blob_store(workspace_id), digest, extension
-            )
-        except web_export.WebExportError:
-            return Response(status_code=404)
-        return Response(
-            content=data,
-            media_type=media_type,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=31536000, immutable",
-                "ETag": f'"sha256-{digest}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}/manifest.json")
-    def serve_publish_manifest(
-        workspace_id: str, slug: str, repo: HybridRepository = Depends(public_repository)
-    ) -> Response:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return Response(status_code=404)
-        manifest = publish.get("manifest")
-        if not isinstance(manifest, dict):
-            return Response(status_code=404)
-        return Response(
-            content=json.dumps(
-                manifest,
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            media_type="application/json",
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("manifest_digest")}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}")
-    def serve_published_page(
-        workspace_id: str,
-        slug: str,
-        request: Request,
-        repo: HybridRepository = Depends(public_repository),
-    ) -> HTMLResponse:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return HTMLResponse(
-                content=(
-                    "<!doctype html><html><head><meta charset=\"utf-8\">"
-                    "<title>Not found</title></head><body><h1>404</h1>"
-                    "<p>No published page at this address.</p></body></html>"
-                ),
-                status_code=404,
-            )
-        return HTMLResponse(
-            content=publish["html"],
-            status_code=200,
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("html_digest")}"',
-                "Content-Security-Policy": web_export._delivery_csp(
-                    str(request.base_url).rstrip("/")
-                ),
-                "X-Content-Type-Options": "nosniff",
-                "Referrer-Policy": "no-referrer",
-            },
-        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(
