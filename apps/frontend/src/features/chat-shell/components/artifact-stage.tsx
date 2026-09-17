@@ -288,6 +288,7 @@ export function ArtifactStage({
       {showingArtifact ? (
         <>
           <ArtifactHeader
+            documentId={activeDocumentId}
             editing={editing}
             exportPreview={exportPreview}
             exportStatus={exportStatus}

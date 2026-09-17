@@ -1841,11 +1841,16 @@ export function suggestPublishSlug(title: string, documentId: string): string {
 
 /** The document's current publish state (`GET /documents/{id}/web/publish`).
  * `published: false` is the unpublished case; the slug/url/version fields carry
- * values only when `published` is true. */
+ * values only when `published` is true. `publicOrigin`/`customOrigin` are the
+ * workspace's public hosts and are served in both states (S1 leaves
+ * `customUrl`/`customOrigin` null until custom domains land). */
 export interface WebPublishState {
   published: boolean;
   slug: string | null;
   url: string | null;
+  customUrl: string | null;
+  publicOrigin: string | null;
+  customOrigin: string | null;
   docVersion: number | null;
   status: string | null;
   previousAvailable: boolean;
@@ -1874,6 +1879,9 @@ export async function fetchWebPublishInfo(
     published?: unknown;
     slug?: unknown;
     url?: unknown;
+    custom_url?: unknown;
+    public_origin?: unknown;
+    custom_origin?: unknown;
     doc_version?: unknown;
     status?: unknown;
     previous_available?: unknown;
@@ -1887,6 +1895,9 @@ export async function fetchWebPublishInfo(
     published: payload.published === true,
     slug: typeof payload.slug === "string" ? payload.slug : null,
     url: typeof payload.url === "string" ? payload.url : null,
+    customUrl: typeof payload.custom_url === "string" ? payload.custom_url : null,
+    publicOrigin: typeof payload.public_origin === "string" ? payload.public_origin : null,
+    customOrigin: typeof payload.custom_origin === "string" ? payload.custom_origin : null,
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     status: typeof payload.status === "string" ? payload.status : null,
     previousAvailable: payload.previous_available === true,
@@ -1903,6 +1914,9 @@ export interface WebPublishResult {
   schemaVersion: number | null;
   slug: string;
   url: string;
+  customUrl: string | null;
+  publicOrigin: string | null;
+  customOrigin: string | null;
   docVersion: number | null;
   runtimeVersion: string | null;
   previousAvailable: boolean;
@@ -1940,6 +1954,9 @@ export async function publishWebDocument(
     schema_version?: unknown;
     slug?: unknown;
     url?: unknown;
+    custom_url?: unknown;
+    public_origin?: unknown;
+    custom_origin?: unknown;
     doc_version?: unknown;
     runtime_version?: unknown;
     previous_available?: unknown;
@@ -1952,6 +1969,9 @@ export async function publishWebDocument(
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
     slug: typeof payload.slug === "string" ? payload.slug : "",
     url: typeof payload.url === "string" ? payload.url : "",
+    customUrl: typeof payload.custom_url === "string" ? payload.custom_url : null,
+    publicOrigin: typeof payload.public_origin === "string" ? payload.public_origin : null,
+    customOrigin: typeof payload.custom_origin === "string" ? payload.custom_origin : null,
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     runtimeVersion:
       typeof payload.runtime_version === "string"

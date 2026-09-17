@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { designBffConfig } from "@/features/design-editor/data/design-bff";
 import {
+  fetchWebPublishInfo,
+  publishWebDocument,
+  type WebPublishState,
+} from "@/features/design-editor/engine/webDocuments";
+import {
+  publicLinkHost,
   slugifyArtifactTitle,
   type ArtifactAdvancedTab,
   type ArtifactPublishSettings,
@@ -11,14 +18,16 @@ import {
 } from "../model/artifact-sharing";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 
-const SHARE_HOST = "share.cluehq.ai";
-
 export function useArtifactSharingController({
   kind,
   title,
+  documentId,
 }: {
   kind: ChatShellArtifactKind;
   title: string;
+  /** The active web document, so the share menu reads and writes its real
+   * publish state. Ads have no publish backend and pass nothing. */
+  documentId?: string | null;
 }) {
   const [advancedTab, setAdvancedTab] =
     useState<ArtifactAdvancedTab>("page");
@@ -30,6 +39,7 @@ export function useArtifactSharingController({
   const [lastExportFormat, setLastExportFormat] =
     useState<ArtifactShareExportFormat | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [publishState, setPublishState] = useState<WebPublishState | null>(null);
   const [publishStatus, setPublishStatus] =
     useState<ArtifactPublishStatus>("draft");
   const [regenerateDescriptionOnPublish, setRegenerateDescriptionOnPublish] =
@@ -41,9 +51,43 @@ export function useArtifactSharingController({
   const [view, setView] = useState<ArtifactShareView>("main");
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const shareUrl = useMemo(() => `https://${SHARE_HOST}/${slug}`, [slug]);
+  // Only a web artifact has a publish backend; an ad passes no document, so the
+  // host segment stays empty and Publish stays inert.
+  const webDocumentId = kind === "web" ? (documentId ?? null) : null;
+
+  useEffect(() => {
+    if (!menuOpen || !webDocumentId) return;
+    let cancelled = false;
+    void fetchWebPublishInfo(designBffConfig(), webDocumentId)
+      .then((state) => {
+        if (cancelled) return;
+        setPublishState(state);
+        if (state.published && state.slug) {
+          setSlug(state.slug);
+          setSlugDraft(state.slug);
+          setPublishStatus("published");
+        }
+      })
+      .catch(() => {
+        // Leave the local state as it is; the publish action reports errors.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [menuOpen, webDocumentId]);
+
+  const shareHost = publicLinkHost(
+    publishState?.customOrigin ?? publishState?.publicOrigin ?? null,
+  );
+
+  const shareUrl = useMemo(
+    () =>
+      publishState?.customUrl ??
+      publishState?.url ??
+      (publishState?.publicOrigin ? `${publishState.publicOrigin}/${slug}` : null),
+    [publishState, slug],
+  );
 
   const settings = useMemo<ArtifactPublishSettings>(
     () => ({
@@ -84,7 +128,6 @@ export function useArtifactSharingController({
       document.removeEventListener("pointerdown", dismissOnPointerDown);
       document.removeEventListener("keydown", dismissOnEscape);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      if (publishTimerRef.current) clearTimeout(publishTimerRef.current);
     };
   }, [closeMenu]);
 
@@ -113,21 +156,43 @@ export function useArtifactSharingController({
   }, [slugDraft]);
 
   const publishAsset = useCallback(() => {
+    if (!webDocumentId) return; // ads have no publish backend; the button stays inert
     setPublishStatus("publishing");
     setStatusMessage("Publishing asset");
-    window.dispatchEvent(
-      new CustomEvent("clue:artifact-publish-request", {
-        detail: { kind, settings },
-      }),
-    );
-    if (publishTimerRef.current) clearTimeout(publishTimerRef.current);
-    publishTimerRef.current = setTimeout(() => {
-      setPublishStatus("published");
-      setStatusMessage("Asset published");
-    }, 650);
-  }, [kind, settings]);
+    void publishWebDocument(designBffConfig(), webDocumentId, slug)
+      .then((result) => {
+        setPublishState((current) => ({
+          published: true,
+          slug: result.slug,
+          url: result.url,
+          customUrl: result.customUrl,
+          publicOrigin: result.publicOrigin ?? current?.publicOrigin ?? null,
+          customOrigin: result.customOrigin ?? current?.customOrigin ?? null,
+          docVersion: result.docVersion,
+          status: "active",
+          previousAvailable: result.previousAvailable,
+          updatedAt: current?.updatedAt ?? null,
+          publishId: result.publishId,
+          manifestDigest: result.manifestDigest,
+          packageDigest: result.packageDigest,
+          htmlDigest: result.htmlDigest,
+        }));
+        setSlug(result.slug);
+        setSlugDraft(result.slug);
+        setPublishStatus("published");
+        setStatusMessage("Asset published");
+      })
+      .catch((error: unknown) => {
+        setPublishStatus("draft");
+        setStatusMessage(error instanceof Error ? error.message : "Publishing failed");
+      });
+  }, [slug, webDocumentId]);
 
   const copyLink = useCallback(async () => {
+    if (!shareUrl) {
+      setStatusMessage("Publish to get a link");
+      return;
+    }
     try {
       await navigator.clipboard.writeText(shareUrl);
     } catch {
@@ -145,6 +210,10 @@ export function useArtifactSharingController({
   }, [kind, shareUrl]);
 
   const previewExternally = useCallback(() => {
+    if (!shareUrl) {
+      setStatusMessage("Publish to get a link");
+      return;
+    }
     window.dispatchEvent(
       new CustomEvent("clue:artifact-preview-request", {
         detail: { kind, url: shareUrl },
@@ -215,7 +284,7 @@ export function useArtifactSharingController({
       setShareTitle,
       setSlugDraft,
       setView,
-      shareHost: SHARE_HOST,
+      shareHost,
       shareTitle,
       shareUrl,
       slug,

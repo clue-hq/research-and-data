@@ -43,6 +43,7 @@ const PREVIEW_DEVICE_ICONS = {
 const ZOOM_LEVELS = Array.from({ length: 29 }, (_, index) => `${10 + index * 5}%`);
 
 export function ArtifactHeader({
+  documentId,
   editing,
   exportPreview,
   exportStatus,
@@ -56,6 +57,9 @@ export function ArtifactHeader({
   undoDisabled,
   zoom,
 }: {
+  /** The active web document, so the share menu reads and writes its real
+   * publish state. */
+  documentId?: string | null;
   editing: boolean;
   /** AD4.D step 3: the ad session's render for the export menu's designed
    * preview region, with the element that hosts it. Absent on every other
@@ -110,7 +114,7 @@ export function ArtifactHeader({
   const {
     controller: sharingController,
     menuRef: sharingMenuRef,
-  } = useArtifactSharingController({ kind, title });
+  } = useArtifactSharingController({ kind, title, documentId });
   const {
     controller: imageExportController,
     menuRef: imageExportMenuRef,

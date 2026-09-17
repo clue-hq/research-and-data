@@ -146,7 +146,7 @@ function ShareMainView({ controller }: { controller: ShareController }) {
 
         <div className={styles.shareLinkField}>
           <ShareMenuIcon name="link" />
-          <span className={styles.shareLinkHost}>{shareHost}/</span>
+          {shareHost ? <span className={styles.shareLinkHost}>{shareHost}/</span> : null}
           {editingSlug ? (
             <input
               aria-label="Publishing link path"
