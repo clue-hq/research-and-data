@@ -6,6 +6,7 @@ from clue_spine.hostnames import (
     WorkspaceHostname,
     active_custom_hostname,
     allocate_label,
+    backfill_system_hostnames,
     ensure_system_hostname,
     is_valid_hostname,
     label_candidates,
@@ -96,4 +97,5 @@ __all__ = [
     "resolve_active_hostname",
     "workspaces_without_system_hostname",
     "system_hostnames_off_suffix",
+    "backfill_system_hostnames",
 ]

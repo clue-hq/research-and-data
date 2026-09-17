@@ -254,3 +254,17 @@ async def system_hostnames_off_suffix(conn: AsyncConnection, suffix: str) -> lis
         {"pattern": f"%.{suffix}"},
     )
     return [str(r[0]) for r in result.all()]
+
+
+async def backfill_system_hostnames(
+    conn: AsyncConnection, *, suffix: str, dry_run: bool = False
+) -> dict[str, int]:
+    """Give every workspace without a system row one (idempotent; safe to re-run at deploy)."""
+    missing = await workspaces_without_system_hostname(conn)
+    written = 0
+    if not dry_run:
+        for workspace_id, name in missing:
+            await ensure_system_hostname(conn, workspace_id=workspace_id, name=name, suffix=suffix)
+            written += 1
+    off_suffix = await system_hostnames_off_suffix(conn, suffix)
+    return {"missing": len(missing), "written": written, "off_suffix": len(off_suffix)}
