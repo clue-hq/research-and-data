@@ -4,23 +4,26 @@ Two ledgers, summed once each, never recomputed:
 
 * ``provider_call_ledger`` — every paid call ARV2 makes through ``ProviderCaller`` (Exa, AI Ark,
   Gemini media, structuring, the ATS fetches) **and** the ARV2 research agent's own model rounds
-  (``provider='openrouter'``). Only ``phase='result'`` rows are money; an ``estimate`` row is a
+  (``provider='openrouter'``) **and**, since slice 5, every paid call the design subsystem makes
+  through the same caller (text-to-image, the ingestion models, ad-DNA, the logo and ad-library
+  vendors). Only ``phase='result'`` rows are money; an ``estimate`` row is a
   reservation written before the wire. ``extras_json->>'cost_source'`` labels each row
   ``metered`` / ``estimate`` / ``free`` / ``unpriced``.
-* ``agent_model_call`` — every conversation-turn model call (Head of ABM and its delegates), with
-  the gateway-measured ``cost_usd`` beside the still-zero ``cost_millicredits``. A NULL
-  ``cost_usd`` is an unpriced model or a row older than the cost columns; it counts as 0 and as
-  ``unpriced``, never as a measured zero.
+* ``agent_model_call`` — every conversation-turn model call (Head of ABM and its delegates, and
+  since slice 5 the design trio's calls, re-keyed onto the design leg's turn with
+  ``role='design'``), with the gateway-measured ``cost_usd`` beside the still-zero
+  ``cost_millicredits``. A NULL ``cost_usd`` is an unpriced model or a row older than the cost
+  columns; it counts as 0 and as ``unpriced``, never as a measured zero.
 
 The two tables never hold the same call, so ``total_usd = provider_usd + turn_model_usd``. The
 ``models`` section shows the research ledger's model rounds beside the turn receipts for a
 per-model view; those research lines are a subset of ``providers`` and are not added to any total.
 A ``research_ledger`` line reuses ``role`` to carry the ledger ``operation``.
 
-What this read cannot see is named in ``not_covered`` on every report: the design subsystem's
-own providers are held (design note R12); turn rows before the cost columns are blank. Every
-other paid call — ARV2 research, discovery, onboarding, the display prewrite, the persona-evidence
-tool — is on ``provider_call_ledger`` since slice 1b.
+What this read cannot see is named in ``not_covered`` on every report: turn rows written before
+the cost columns existed are blank. Every other paid call — ARV2 research, discovery, onboarding,
+the display prewrite, the persona-evidence tool (slice 1b) and the design subsystem (slice 5) —
+is on one of these two ledgers.
 
 Every query is workspace-scoped and read-only (the projections package writes nothing).
 """
@@ -55,9 +58,9 @@ _CREDITS = Decimal("0.001")
 #: The spend this read cannot see. Constant and printed on every report so a partial total is
 #: never mistaken for a whole one. Each entry names the ledger and the reason. (Slice 1b routed
 #: the onboarding lane, the display prewrite and the persona-evidence tool onto
-#: provider_call_ledger, so they are no longer listed.)
+#: provider_call_ledger, so they are no longer listed. Slice 5 put the design subsystem's
+#: providers and the design trio's receipts on the ledgers.)
 NOT_COVERED: tuple[str, ...] = (
-    "design subsystem providers (text-to-image, ad-DNA model): no ledger rows yet (R12 hold)",
     "conversation-turn model calls recorded before agent_model_call.cost_usd existed: blank, "
     "counted as unpriced",
 )

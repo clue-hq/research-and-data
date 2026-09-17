@@ -58,10 +58,15 @@ async def drain_provider_calls(
     *,
     raw: BufferedRawSink,
     ledger: BufferedLedger,
-    artifacts: ArtifactSink,
+    artifacts: ArtifactSink | None,
     stamp: LedgerStamp,
 ) -> DrainReport:
     """The shared drain, plus the platform's provider-incident bookkeeping.
+
+    ``artifacts=None`` is the design lane (lane 3 slice 5): its bodies are not persisted to the
+    platform's artifact store, so its rows land citing nothing there — but its failures still open
+    and close provider incidents under the same ARV2 rule, which is the whole point of routing the
+    design drain through this shim rather than the bare library one.
 
     Every stamped failure lands on an incident as the rows are drained, and a provider closes its
     incidents only when its **last word in this batch** was a success.

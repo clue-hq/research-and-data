@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from clue_spend import DrainReport, HttpRequest, HttpResponse, LedgerStamp, ProviderHalted
@@ -150,6 +150,30 @@ def test_drain_awaits_the_scopes_own_drain_fn() -> None:
 def test_a_scope_with_no_drain_fn_defaults_to_drain_provider_calls() -> None:
     with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=_Transport([])) as scope:
         assert scope.drain_fn is not None
+
+
+def test_a_turn_stamps_the_project_the_envelope_carries() -> None:
+    """T3-1: the platform freezes the turn's project onto the envelope; the stamp reads it.
+
+    ``getattr`` at the stamp, and the assertion on an envelope WITHOUT the field, because this
+    executor also replays envelopes frozen from rows written before the field existed.
+    """
+    from clue_design.envelopes import DesignTurnEnvelope
+    from lumen_api.main import _turn_spend_stamp
+
+    run_id = str(uuid4())
+    common = {
+        "kind": "agent_turn",
+        "work_id": uuid4(),
+        "workspace_id": "ws_t",
+        "run_id": run_id,
+        "checkpoint_thread_id": run_id,
+    }
+    stamped = _turn_spend_stamp(DesignTurnEnvelope(**common, project_id="project-7"))
+    assert stamped == LedgerStamp(
+        workspace_id="ws_t", project_id="project-7", job_id=UUID(run_id)
+    )
+    assert _turn_spend_stamp(DesignTurnEnvelope(**common)).project_id is None
 
 
 def _collected_call(**overrides):

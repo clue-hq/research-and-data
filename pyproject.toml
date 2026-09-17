@@ -115,8 +115,11 @@ ignore_missing_imports = true
 # Same stance as the SDK boundaries above: the handler is duck-typed at the seam against the
 # `WorkHandler` protocol, whose kind is re-checked at construction, so nothing is silently
 # unchecked — the protocol conformance is enforced at runtime instead of statically.
+# `lumen_agent.*` joined it in lane 3 slice 5: the leg lane lazy-imports
+# `lumen_agent.usage_collector.TurnCallbacks` to hand the design side its per-turn Langfuse
+# handler — same tree, same missing marker, same duck-typed seam.
 [[tool.mypy.overrides]]
-module = ["lumen_api.*"]
+module = ["lumen_agent.*", "lumen_api.*"]
 follow_imports = "skip"
 ignore_missing_imports = true
 

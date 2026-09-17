@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -21,12 +22,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_agents.contracts import AgentRole
+from clue_agents import AgentTurnRequest
+from clue_agents.contracts import AgentRole, ResourceKind
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus
 from clue_api.agent_turn_wiring import DbAgentTurnJournal
+from clue_api.design_leg_wiring import receipts_from_design_run
 from clue_core import ExecutionId
 from clue_db import db_lifespan
 from tests._workspace import seed_project
+from tests.agents.conftest import artifact, constitution, domain_ref, resource
 from tests.api.conftest import migrated_db  # noqa: F401 -- fixture re-export
 from tests.design.conftest import run_async
 
@@ -152,6 +156,83 @@ def test_role_persists_and_replay_treats_it_as_immutable(migrated_db: bool) -> N
             mutated = labelled.model_copy(update={"role": AgentRole.HEAD_OF_ABM})
             with pytest.raises(ValueError, match="different immutable receipt"):
                 await journal.record_model_call(receipt=mutated)
+            await txn.rollback()
+
+    run_async(scenario())
+
+
+def test_a_design_run_receipt_lands_with_its_role_and_gateway_cost(
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Lane 3 slice 5: the design trio's collected calls become rows on the design leg's turn.
+
+    Same journal, same immutable receipt — ``receipts_from_design_run`` only re-keys the design
+    side's collected call onto the platform's turn, so the row it writes must be indistinguishable
+    from one the platform's own recorder wrote.
+    """
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            seeds = await _seed_turn(conn)
+            journal = DbAgentTurnJournal(conn_factory=_conn_factory(conn))
+            request = AgentTurnRequest(
+                turn_id=seeds["turn_id"],
+                thread_id=f"thr_p32_{uuid4().hex[:10]}",
+                constitution=constitution(
+                    workspace_id=seeds["ws"],
+                    execution_id=ExecutionId(seeds["execution_id"]),
+                    role=AgentRole.DESIGN,
+                    profile_ref=resource(ResourceKind.PROFILE, "design"),
+                    project_card_ref=artifact("project-card.json", workspace_id=seeds["ws"]),
+                    budget_envelope_ref=artifact("budget.json", workspace_id=seeds["ws"]),
+                    resource_manifest_ref=artifact("manifest.json", workspace_id=seeds["ws"]),
+                    focus_refs=(domain_ref("account-1", workspace_id=seeds["ws"]),),
+                ),
+                user_message_artifact_ref=artifact("message.txt", workspace_id=seeds["ws"]),
+                requested_at=NOW,
+            )
+            (receipt,) = receipts_from_design_run(
+                {
+                    "model_calls": [
+                        {
+                            "run_id": str(uuid4()),
+                            "sequence": 7,
+                            "requested_model": "x-ai/grok-4.6",
+                            "answering_model": "x-ai/grok-4.6",
+                            "status": "completed",
+                            "role": "design_author",
+                            "input_tokens": 120,
+                            "output_tokens": 9,
+                            "cache_read_input_tokens": 40,
+                            "cost_cents": "0.87",
+                            "cost_source": "metered",
+                            "langfuse_trace_id": "t1",
+                            "langfuse_observation_id": "o7",
+                            "latency_ms": 812.5,
+                            "error_code": None,
+                            "started_at": NOW.isoformat(),
+                            "completed_at": NOW.isoformat(),
+                        }
+                    ]
+                },
+                request=request,
+            )
+            await journal.record_model_call(receipt=receipt)
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT role, cost_usd, cost_source, langfuse_observation_id "
+                        "FROM agent_model_call WHERE id = :id"
+                    ),
+                    {"id": receipt.model_call_id},
+                )
+            ).one()
+            assert row.role == "design"
+            assert row.cost_usd == Decimal("0.008700")
+            assert row.cost_source == "metered"
+            assert row.langfuse_observation_id == "o7"
             await txn.rollback()
 
     run_async(scenario())

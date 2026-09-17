@@ -10245,11 +10245,15 @@ def _empty_page_steering_note(scene: Any) -> Optional[str]:
 def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
     """The ledger stamp for one design turn.
 
-    ``DesignTurnEnvelope`` carries no project id (see ``clue_design.envelopes``), so a turn stamps
-    its workspace and its run — the run id in the ``job_id`` column, whose documented meaning is
-    "the job that spent". A run id that is not a UUID stamps the workspace alone rather than
-    failing the turn: an unstampable row is still a row, and losing the money trail to a parse
-    error would be the worse answer.
+    A turn stamps its workspace, its project when the offerer froze one onto the envelope
+    (``DesignTurnEnvelope.project_id`` — absent on a pre-slice-5 envelope and on a design-API
+    turn that has no platform project), and its run — the run id in the ``job_id`` column, whose
+    documented meaning is "the job that spent". A run id that is not a UUID stamps without the
+    job rather than failing the turn: an unstampable row is still a row, and losing the money
+    trail to a parse error would be the worse answer.
+
+    ``getattr`` rather than an attribute read because this executor also runs envelopes replayed
+    verbatim from rows frozen before the field existed.
     """
     from clue_spend import LedgerStamp
 
@@ -10257,7 +10261,11 @@ def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
         job_id = UUID(str(envelope.run_id))
     except (TypeError, ValueError):
         job_id = None
-    return LedgerStamp(workspace_id=envelope.workspace_id, job_id=job_id)
+    return LedgerStamp(
+        workspace_id=envelope.workspace_id,
+        project_id=getattr(envelope, "project_id", None),
+        job_id=job_id,
+    )
 
 
 @contextmanager
