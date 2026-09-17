@@ -196,12 +196,16 @@ class GateResponseRequest(_Request):
 class ContextRefRequest(_Request):
     """An ordered, workspace-scoped domain-object reference.
 
-    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
-    the ordered, per-message selection inside that exact document scene. ``design_asset``
-    identifies one ready image in the design asset library for reference conditioning.
+    ``design_document`` (P3.1) pins the open leg's document, or — with no nodes beside it — is a
+    plain mention of a microsite or ad from the Gallery. ``design_node`` is the ordered,
+    per-message selection inside that exact document scene. ``design_asset`` identifies one ready
+    image in the design asset library for reference conditioning. ``project_document`` is a
+    Gallery file (a row of ``brand_knowledge_document`` with a project), always version-pinned.
     """
 
-    object_type: Literal["account", "contact", "design_document", "design_node", "design_asset"]
+    object_type: Literal[
+        "account", "contact", "design_document", "design_node", "design_asset", "project_document"
+    ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
 
