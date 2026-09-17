@@ -25,3 +25,13 @@
 - Founder says when to execute (SDD: Opus implementers, Fable plans/reviews/verifies).
 - Owed after execution: live proof of the L5 card in a real turn; live microsite mention
   answered without a leg (Task 8 extends this note).
+
+## 2026-09-17 (later) — hangzhou lane ports
+- This checkout (`hangzhou`, branch `research-streaming-v3`, cut from `research-streaming`) is the
+  execution lane for the plan. Its `.env` / `apps/frontend/.env.local` were repointed so the stack
+  can run beside san-salvador's live 3020/8010/8020/8030 stack: **frontend 3050, platform API 8090,
+  design API 8091** (`CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, `CLUE_API_BASE_URL`,
+  `LUMEN_API_BASE_URL`, `CLUE_APP_ORIGIN`; 3050 added to `LUMEN_API_CORS_ORIGINS` and
+  `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`). DB stays `clue_hangzhou` on :55040. `scripts/dev_stack.sh`
+  hardcodes 3020/8010/8020/8030 and has no port knob, so this lane's five processes are started by
+  hand (the colombo pattern) or need a hangzhou wrapper that overrides the ports — not written yet.
