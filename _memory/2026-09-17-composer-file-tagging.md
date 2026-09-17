@@ -123,3 +123,4 @@ one `auth_identity` row was inserted on the lane DB so the dev login maps to the
 - Whole-branch gates re-run by the controller after all eight tasks: 7 backend suites 61 passed, ruff +
   mypy clean on the 7 changed modules, one alembic head `9289d41e9a60`; frontend 2295/2295, lint 0
   errors, build green. The hangzhou stack was left running for the owed live proofs.
+- 2026-09-17 (later): founder ruling 'stick to grok-4.6 only' — the pre-existing red `test_home_read_is_real_scoped_and_capability_honest` was expectation drift; it now expects the Grok 4.6 profile (label/short_label/description/model_id `x-ai/grok-4.6`). Commit follows f71e33239.
