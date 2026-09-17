@@ -114,6 +114,10 @@ def publish_web_document(
 
     noindex = bool(noindex) or bool(document.get("web_noindex"))
     public_origin = system_public_origin(repository)
+    # Workspace page defaults (custom-domain publishing §4.2), read here — at the ONE publish
+    # write path — so every route that publishes picks them up, and so a default set today
+    # reaches a page on its next republish rather than only through the screen that set it.
+    defaults = repository.pages_defaults()
     package = web_export.build_publish_package(
         core,
         repository,
@@ -122,6 +126,8 @@ def publish_web_document(
         slug=slug,
         public_origin=public_origin,
         workspace_id=repository.workspace_id,
+        default_description=defaults["page_description"],
+        default_social_preview_sha256=defaults["social_preview_sha256"],
         node_bin=node_bin,
         noindex=noindex,
     )

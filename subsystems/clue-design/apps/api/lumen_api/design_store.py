@@ -105,6 +105,7 @@ from clue_db import create_engine
 from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
 from clue_spine.hostnames import ensure_system_hostname
 from clue_spine.hostnames import system_hostname as _system_hostname
+from clue_spine.pages_settings import get_pages_settings
 from py_lumen_obs import get_logger
 from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
@@ -1361,6 +1362,22 @@ class HybridRepository:
 
     def active_custom_hostname(self) -> str | None:
         return self._bridge._run(lambda conn: _active_custom_hostname(conn, self.workspace_id))
+
+    def pages_defaults(self) -> dict[str, str | None]:
+        """Workspace page defaults applied at publish time (custom-domain publishing §4.2).
+
+        They FILL IN, never override: the description is used only when the page derives an
+        empty one, and the social preview only when the page carries no image node.
+        """
+
+        async def _read(conn: AsyncConnection) -> dict[str, str | None]:
+            row = await get_pages_settings(conn, self.workspace_id)
+            return {
+                "page_description": row.page_description,
+                "social_preview_sha256": row.social_preview_sha256,
+            }
+
+        return self._bridge._run(_read)
 
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         return self._bridge._run(

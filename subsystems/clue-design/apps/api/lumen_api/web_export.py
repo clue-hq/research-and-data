@@ -1444,6 +1444,8 @@ def build_publish_package(
     slug: str,
     public_origin: str,
     workspace_id: str,
+    default_description: Optional[str] = None,
+    default_social_preview_sha256: Optional[str] = None,
     node_bin: str = "node",
     noindex: bool = False,
 ) -> PublishPackage:
@@ -1460,6 +1462,12 @@ def build_publish_package(
     ``og:image``: unfurlers require an absolute URL, so it points at
     ``public_origin``, the always-live system hostname (custom-domain publishing
     §6.1), which stays reachable even after a custom domain is removed.
+
+    ``default_description`` / ``default_social_preview_sha256`` are the WORKSPACE's page
+    defaults (custom-domain publishing §4.2). They fill in, they never override: the
+    description applies only when the page derives an empty one, and the social preview only
+    when the page carries no image node, so a page that says something for itself keeps saying
+    it after a workspace default is set.
 
     ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
     ``<meta name="robots" content="noindex">``. It is a per-page option and it
@@ -1549,12 +1557,17 @@ def build_publish_package(
     # As on the export path: the page's picture is an image node's asset, not a background
     # wash and not a cloned section's logo.
     og_source = next((image for image in images if image.origin == "image"), None)
-    og_image = (
-        f"{origin}/asset-store/{og_source.digest}" if og_source is not None else None
-    )
+    if og_source is not None:
+        og_image = f"{origin}/asset-store/{og_source.digest}"
+    elif default_social_preview_sha256:
+        og_image = f"{origin}/asset-store/{default_social_preview_sha256}"
+    else:
+        og_image = None
     head = _seo_snippet(
         title=document["title"],
-        description=_seo_description(web_doc, document["title"]),
+        description=(
+            _seo_description(web_doc, document["title"]) or (default_description or "")
+        ),
         og_image=og_image,
     )
     head += '<link rel="icon" href="/favicon.ico">\n'
@@ -1634,6 +1647,8 @@ def build_publish_html(
     slug: str,
     public_origin: str,
     workspace_id: str,
+    default_description: Optional[str] = None,
+    default_social_preview_sha256: Optional[str] = None,
     node_bin: str = "node",
 ) -> Tuple[str, Optional[int], List[str]]:
     """Compatibility wrapper for callers that only need the publish HTML."""
@@ -1646,6 +1661,8 @@ def build_publish_html(
         slug=slug,
         public_origin=public_origin,
         workspace_id=workspace_id,
+        default_description=default_description,
+        default_social_preview_sha256=default_social_preview_sha256,
         node_bin=node_bin,
     )
     return package.html, package.runtime_version, package.warnings
