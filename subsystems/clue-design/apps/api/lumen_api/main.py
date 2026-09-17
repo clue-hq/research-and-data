@@ -222,7 +222,17 @@ from lumen_ingestion.pipeline import (
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
+
+from clue_config import Secrets, load_settings
 from clue_db import db_lifespan, get_engine
+from clue_obs.production import (
+    install_production_langfuse,
+    install_production_sentry,
+    install_production_tracing,
+    production_tracing_lifespan,
+)
 from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
@@ -710,6 +720,14 @@ def create_app(
         # traffic. Cancelled on shutdown and awaited, so nothing outlives the app.
         worker = _build_embedded_fleet_worker(_app)
         async with contextlib.AsyncExitStack() as stack:
+            # Lane 3 slice 5: OUTERMOST, so the provider is flushed and stopped only after the
+            # embedded worker and the reaper are done producing spans. Entered only when THIS
+            # app owns a runtime — an app built by `create_app()` directly (a test, or a host
+            # embedding it) installed nothing, and `production_tracing_lifespan`'s exit calls the
+            # PROCESS-GLOBAL `shutdown_langfuse()`, which such an app must not do to its host.
+            _tracing_runtime = getattr(_app.state, "tracing_runtime", None)
+            if _tracing_runtime is not None:
+                await stack.enter_async_context(production_tracing_lifespan(_tracing_runtime))
             task = None
             reaper = None
             if worker is not None:
@@ -7932,7 +7950,44 @@ def create_app(
     return app
 
 
+def install_design_api_telemetry(app: FastAPI) -> Any:
+    """OTel + Sentry + Langfuse at this root, from the same .env the fleet reads.
+
+    The dev stack sources the repo-root .env for this process; the CLUE_OTEL_*/CLUE_SENTRY_*/
+    CLUE_LANGFUSE_* keys are the fleet's. Missing Langfuse keys skip with a warning; Sentry off by
+    default; no OTLP endpoint means spans are created and dropped — same as the fleet.
+
+    Called once, on the module-level ``app`` below — the object `uvicorn lumen_api.main:app`
+    serves. NOT inside ``create_app()``: OTel takes one global provider per process and the httpx
+    instrumentation is process-wide, so a suite that builds hundreds of apps would install
+    hundreds of providers, Langfuse clients and exporters.
+    """
+
+    settings = load_settings()
+    secrets = Secrets()
+    runtime = install_production_tracing(settings, secrets, service_name="clue-design-api")
+    install_production_sentry(settings, secrets, service_name="clue-design-api")
+    install_production_langfuse(settings, secrets, runtime=runtime, service_name="clue-design-api")
+    if settings.otel_instrument_fastapi:
+        runtime.instrument_app(app)
+    app.state.tracing_runtime = runtime
+    return runtime
+
+
 app = create_app()
+
+# Installed only when THIS module is the process ROOT — i.e. nothing has claimed the process's
+# tracer provider yet. `uvicorn lumen_api.main:app` reaches here first and installs.
+#
+# The guard is not defensive dressing: `lumen_api.fleet_handler` lazily imports `.main` to execute
+# a design job, and that handler runs inside the PLATFORM fleet worker, which has already
+# installed its own provider, Sentry and Langfuse client under `clue-worker-fleet`. A second
+# install there would re-point `clue_obs.otel.tracing`, re-instrument httpx and replace the
+# process's Langfuse client mid-run — the fleet's own traces would start reporting as
+# `clue-design-api`. OTel's global provider is the exact question "does this process already have
+# a root?", so it is what is asked.
+if not isinstance(otel_trace.get_tracer_provider(), SdkTracerProvider):
+    install_design_api_telemetry(app)
 
 
 def store_workspace_id(repo: HybridRepository) -> str:

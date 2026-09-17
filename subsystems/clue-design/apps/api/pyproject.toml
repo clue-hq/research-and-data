@@ -54,6 +54,15 @@ dependencies = [
     # libs/clue-db's own entry, so the workspace keeps one asyncpg version story.
     "asyncpg",
     "clue-design",
+    # Lane 3 slice 5: this app's root installs the platform's OTel/Sentry/Langfuse composition
+    # (`clue_obs.production`) from `clue_config`'s settings, and the design run/turn paths meter
+    # provider spend through `clue_spend`. `clue_gateway` is the one LLM caller behind them.
+    # They resolved transitively through clue-design until now; direct imports get direct
+    # declarations.
+    "clue-obs",
+    "clue-config",
+    "clue-gateway",
+    "clue-spend",
     # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
     "py-lumen-obs",
     "py-lumen-config",
@@ -68,5 +77,9 @@ packages = ["lumen_api", "lumen_ingestion"]
 
 [tool.uv.sources]
 clue-design = { workspace = true }
+clue-obs = { workspace = true }
+clue-config = { workspace = true }
+clue-gateway = { workspace = true }
+clue-spend = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }

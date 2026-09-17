@@ -2132,6 +2132,9 @@ name = "lumen-agent-runtime"
 version = "0.0.0"
 source = { editable = "subsystems/clue-design/apps/agent_runtime" }
 dependencies = [
+    { name = "clue-gateway" },
+    { name = "clue-obs" },
+    { name = "clue-spend" },
     { name = "deepagents" },
     { name = "httpx" },
     { name = "langchain" },
@@ -2151,6 +2154,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "clue-gateway", editable = "libs/clue-gateway" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "clue-spend", editable = "libs/clue-spend" },
     { name = "deepagents", specifier = "==0.6.12" },
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "langchain", specifier = ">=1.3,<2" },
@@ -2175,7 +2181,11 @@ source = { editable = "subsystems/clue-design/apps/api" }
 dependencies = [
     { name = "asyncpg" },
     { name = "brotli" },
+    { name = "clue-config" },
     { name = "clue-design" },
+    { name = "clue-gateway" },
+    { name = "clue-obs" },
+    { name = "clue-spend" },
     { name = "fastapi" },
     { name = "fonttools" },
     { name = "httpx" },
@@ -2198,7 +2208,11 @@ dependencies = [
 requires-dist = [
     { name = "asyncpg" },
     { name = "brotli", specifier = ">=1.1,<2" },
+    { name = "clue-config", editable = "libs/clue-config" },
     { name = "clue-design", editable = "subsystems/design" },
+    { name = "clue-gateway", editable = "libs/clue-gateway" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "clue-spend", editable = "libs/clue-spend" },
     { name = "fastapi", specifier = ">=0.111,<1" },
     { name = "fonttools", specifier = ">=4.53,<5" },
     { name = "httpx", specifier = ">=0.27,<1" },
