@@ -14,7 +14,10 @@ from sqlalchemy import text
 from clue_api import build_tool_invoker, create_projections_app
 from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.chat import RequestPrincipal
-from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+)
 from clue_api.chat.router import _first_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
@@ -208,7 +211,8 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                             "label": "Grok 4.6",
                             "short_label": "Grok 4.6",
                             "description": "Clue's governed Grok 4.6 conversation profile",
-                            "model_id": "x-ai/grok-4.6",
+                            # The wire echoes the constant; which model it names is not asserted.
+                            "model_id": PROJECT_CONVERSATION_MODEL_ID,
                         }
                     ],
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,

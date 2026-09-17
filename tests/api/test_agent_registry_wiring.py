@@ -33,6 +33,7 @@ from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_MODEL_ID,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from tests._model_ids import assert_well_formed_model_id
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.conftest import hermetic_flag_env
 
@@ -925,5 +926,6 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     assert available == {pin.address for pin in resolved.profile.tools}
 
     assert resolved.profile.delegation_roles == ()
-    assert resolved.profile.model.model_id == "x-ai/grok-4.6"
+    # The pin is well-formed (one vendor segment); which model it names is an env setting.
+    assert_well_formed_model_id(resolved.profile.model.model_id)
     assert resolved.profile.max_delegation_depth == 0

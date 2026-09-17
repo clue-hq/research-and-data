@@ -10,19 +10,33 @@ import pytest
 from pydantic import SecretStr
 
 from clue_config import Secrets, Settings
+from tests._model_ids import assert_well_formed_model_id
 from tests.arv2.conftest import require_secret
 
 REPO = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = REPO / ".env.example"
 
+#: Which model a step uses is an env setting, never a test expectation: these entries are
+#: checked for a well-formed id, not for a particular model (``tests/_model_ids.py``).
+MODEL_ID = object()
+#: The model fields that are OpenRouter-routed (``vendor/model``); the transcription model is
+#: addressed provider-natively, without a vendor segment.
+ROUTED_MODEL_FIELDS: dict[str, bool] = {
+    "arv2_structuring_model": True,
+    "arv2_media_short_model": True,
+    "arv2_media_transcribe_model": False,
+    "arv2_embedding_model": True,
+    "arv2_display_model": True,
+}
+
 #: Every ARV2 setting and the default the lane ships with.
 ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_account_research_enabled": True,
     "arv2_ai_ark_min_gap_s": 10.5,
-    "arv2_structuring_model": "openai/gpt-5-mini",
-    "arv2_media_short_model": "google/gemini-3.5-flash-lite",
-    "arv2_media_transcribe_model": "gemini-3.5-transcribe",
-    "arv2_embedding_model": "google/gemini-embedding-2",
+    "arv2_structuring_model": MODEL_ID,
+    "arv2_media_short_model": MODEL_ID,
+    "arv2_media_transcribe_model": MODEL_ID,
+    "arv2_embedding_model": MODEL_ID,
     "arv2_media_seconds_ceiling": 9000,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
@@ -38,7 +52,7 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "unevidenced_row_purge_enabled": False,
     "interview_entailment_check": "off",
     "sensitivity_floor_enabled": True,
-    "arv2_display_model": "openai/gpt-5.6-luna",
+    "arv2_display_model": MODEL_ID,
     "arv2_display_timeout_s": 240.0,
     "arv2_display_max_parallel": 8,
     "arv2_display_client_pitch": (
@@ -71,6 +85,11 @@ def unset_arv2_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_every_arv2_setting_has_its_shipped_default(unset_arv2_env: None) -> None:
     settings = Settings(_env_file=None)
     for field_name, expected in ARV2_SETTING_DEFAULTS.items():
+        if expected is MODEL_ID:
+            assert_well_formed_model_id(
+                getattr(settings, field_name), routed=ROUTED_MODEL_FIELDS[field_name]
+            )
+            continue
         assert getattr(settings, field_name) == expected, field_name
 
 
@@ -118,6 +137,13 @@ def test_env_example_documents_each_setting_with_its_default() -> None:
         value = documented.group(1).strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        if default is MODEL_ID:
+            # The example documents whatever the code default is today, and both are well-formed;
+            # neither this test nor the example pins which model that is.
+            code_default = Settings.model_fields[field_name].default
+            assert_well_formed_model_id(value, routed=ROUTED_MODEL_FIELDS[field_name])
+            assert value == code_default, field_name
+            continue
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
         assert value == shipped, field_name
 
