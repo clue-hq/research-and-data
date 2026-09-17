@@ -1,5 +1,16 @@
 """clue-spine — workspace-owned brands/projects and brand-owned products (A3.2)."""
 
+from clue_spine.hostnames import (
+    DEFAULT_PAGES_SYSTEM_SUFFIX,
+    RESERVED_LABELS,
+    WorkspaceHostname,
+    allocate_label,
+    is_valid_hostname,
+    label_candidates,
+    normalize_hostname,
+    public_origin,
+    slugify_label,
+)
 from clue_spine.spine import (
     Brand,
     Product,
@@ -64,4 +75,13 @@ __all__ = [
     "current_project_product_set",
     "list_project_product_sets",
     "set_project_name",
+    "DEFAULT_PAGES_SYSTEM_SUFFIX",
+    "RESERVED_LABELS",
+    "WorkspaceHostname",
+    "slugify_label",
+    "label_candidates",
+    "allocate_label",
+    "normalize_hostname",
+    "is_valid_hostname",
+    "public_origin",
 ]
