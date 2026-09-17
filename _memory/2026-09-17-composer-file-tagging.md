@@ -32,6 +32,11 @@
   can run beside san-salvador's live 3020/8010/8020/8030 stack: **frontend 3050, platform API 8090,
   design API 8091** (`CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, `CLUE_API_BASE_URL`,
   `LUMEN_API_BASE_URL`, `CLUE_APP_ORIGIN`; 3050 added to `LUMEN_API_CORS_ORIGINS` and
-  `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`). DB stays `clue_hangzhou` on :55040. `scripts/dev_stack.sh`
-  hardcodes 3020/8010/8020/8030 and has no port knob, so this lane's five processes are started by
-  hand (the colombo pattern) or need a hangzhou wrapper that overrides the ports — not written yet.
+  `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`). DB stays `clue_hangzhou` on :55040.
+- `scripts/dev_stack.sh` gained four port knobs (`DEV_STACK_FRONTEND_PORT` / `_DESIGN_PORT` /
+  `_PLATFORM_PORT` / `_PLATFORM2_PORT`, defaults = the runbook ports, so istanbul and every other
+  wrapper are unchanged) and **`scripts/dev_stack_hangzhou.sh`** sets them to 3050/8091/8090/8092,
+  one worker × one slot, logs `/tmp/hangzhou_*.log`. The wrapper refuses to start unless `.env` and
+  `apps/frontend/.env.local` name the same ports (proven in a sandbox: matching env execs; a
+  drifted `CLUE_APP_ORIGIN` or a missing 3050 in the Clerk parties exits 2). Runbook section added
+  to `DEV_STACK.md`. The stack has NOT been brought up yet.
