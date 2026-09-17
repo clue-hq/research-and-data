@@ -552,3 +552,4 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-09-14-lane2-plan-tab-preview.md` — Lane 2 step 4 visual preview; Plan-tab production wiring awaits review.
 - `2026-09-14-lane2-shared-markdown-knowledge.md` — Lane 2 Task 5 shared editor, Knowledge lifecycle and live acceptance.
 - `2026-09-16-provider-incidents.md` — provider incidents end to end (classifier, `provider_incident` table + Sentry open/close, the drain and chat-turn writers, three inline surfaces); rulings PI-1..PI-5, the live Exa refusal→recovery proof, and what the founder's browser walk still owes.
+- `2026-09-17-composer-file-tagging.md` — composer `@` tagging of Gallery files, microsites and accounts: the clipped-picker fix (`89f34dd4e`), the approved spec and the 8-task plan; execution not started (founder ruling); rulings and the one spec deviation recorded.

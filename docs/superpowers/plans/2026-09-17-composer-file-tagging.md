@@ -2010,7 +2010,7 @@ git commit -m "feat(frontend): two-level @ picker — Files, Microsites, Account
 - Modify: `apps/frontend/src/features/projects/components/project-composer-editor.tsx:79-119` (`ComposerMention`)
 - Modify: `apps/frontend/src/features/projects/components/chat-transcript.tsx:105-140`
 - Modify: `apps/frontend/docs/api-contracts/projects.md` (the `context_refs` paragraphs at ~`:946-990` and the message `refs` description near `:1182`)
-- Create: `_memory/2026-09-17-composer-file-tagging.md`; add one row to `_memory/README.md`
+- Modify: `_memory/2026-09-17-composer-file-tagging.md` (exists from the planning session; extend it); add one row to `_memory/README.md`
 
 **Interfaces:**
 - Consumes: `ProjectComposerMentionElement.icon/imagePath/entityType`; `ChatMessageRef.label/kind`.
@@ -2049,7 +2049,7 @@ At the message `refs` description add: "Echoed `context` refs of type `project_d
 
 - [ ] **Step 4: Memory note**
 
-Create `_memory/2026-09-17-composer-file-tagging.md` with: the rulings (copy the spec's status paragraph), the commit list of Tasks 1–8, the migration id, what was verified in the browser and by which tests, and the two owed items: a live turn proving the L5 card lands in the agent's `context/focus/` (read the turn's context-refs receipt) and a live microsite mention showing Head-of-ABM answering without a leg. Add a one-line row to `_memory/README.md`'s index.
+Extend `_memory/2026-09-17-composer-file-tagging.md` with: the rulings (copy the spec's status paragraph), the commit list of Tasks 1–8, the migration id, what was verified in the browser and by which tests, and the two owed items: a live turn proving the L5 card lands in the agent's `context/focus/` (read the turn's context-refs receipt) and a live microsite mention showing Head-of-ABM answering without a leg. Add a one-line row to `_memory/README.md`'s index.
 
 - [ ] **Step 5: Gate**
 
