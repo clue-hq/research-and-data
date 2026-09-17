@@ -340,10 +340,14 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
     async def committee_members(_conn: object, **_kwargs: object):
         return [_member(CONTACT_A, account_id=ACCOUNT_A, name="", account_name="Exact Account")]
 
+    async def account_logo_urls(_conn: object, **_kwargs: object):
+        return {}
+
     monkeypatch.setattr(composer_context, "validated_context_refs", validate)
     monkeypatch.setattr(composer_context, "get_account", get_account)
     monkeypatch.setattr(composer_context, "get_contact", get_contact)
     monkeypatch.setattr(composer_context, "committee_members", committee_members)
+    monkeypatch.setattr(composer_context, "_account_logo_urls", account_logo_urls)
 
     refs = (_ref("contact", CONTACT_A), _ref("account", ACCOUNT_A))
     prepared = asyncio.run(
@@ -351,6 +355,7 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
             object(),  # type: ignore[arg-type]
             workspace_id="ws-r8-context",
             refs=refs,
+            settings=SimpleNamespace(brandfetch_client_id="cid"),  # type: ignore[arg-type]
         )
     )
     assert [(item.object_type, item.object_id) for item in prepared] == [
@@ -362,6 +367,11 @@ def test_context_preparation_hydrates_exact_records_beyond_the_bounded_catalog(
     assert prepared[0].version == 11
     assert prepared[1].label == "Exact Account"
     assert prepared[1].version == 8
+    # The account carries the same logo the accounts screens show — Brandfetch's Logo API for
+    # its domain when no mark is stored; a contact carries none (the composer draws initials).
+    assert prepared[1].image_url is not None
+    assert prepared[1].image_url.startswith("https://cdn.brandfetch.io/domain/exact.example/")
+    assert prepared[0].image_url is None
 
 
 PLAN_DOCUMENT = UUID("00000000-0000-0000-0000-00000000d0c1")

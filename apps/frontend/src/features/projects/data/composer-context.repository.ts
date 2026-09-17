@@ -1,3 +1,4 @@
+import { composerEntityImagePath } from "../model/project-workspace";
 import { z } from "zod";
 import {
   PreparedComposerContextSchema,
@@ -25,9 +26,7 @@ const PreparedComposerContextWireSchema = z.object({
     threadId: data.thread_id,
     entities: data.context_entities.map((entity) => ({
       id: entity.object_id,
-      imagePath: entity.image_url?.startsWith("/")
-        ? entity.image_url
-        : "/logos/clue.svg",
+      imagePath: composerEntityImagePath(entity.image_url),
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,

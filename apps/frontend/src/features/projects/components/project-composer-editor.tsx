@@ -50,6 +50,7 @@ import {
 } from "../model/project-composer-editor";
 import type { ProjectEntity } from "../model/project-workspace";
 import { EntityPicker } from "./entity-picker";
+import { ContactAvatar } from "@/features/accounts/components/contact-avatar";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -84,6 +85,8 @@ function withMentions(editor: ProjectComposerEditorInstance) {
 
   return editor;
 }
+
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 const MENTION_TYPE_LABELS: Record<
   ProjectComposerMentionElement["entityType"],
@@ -122,15 +125,20 @@ function ComposerMention({
         <span className={styles.composerMentionVisual}>
           {element.icon ? (
             <ProjectIcon name={element.icon} size={14} />
+          ) : element.entityType === "contact" ? (
+            <ContactAvatar
+              className={styles.composerMentionAvatar}
+              name={element.label}
+              size={16}
+              src={element.imagePath}
+            />
           ) : (
             <Image
               alt=""
               aria-hidden="true"
-              className={
-                element.entityType === "contact" ? styles.composerMentionAvatar : ""
-              }
               height={16}
-              src={element.imagePath ?? "/logos/clue.svg"}
+              src={element.imagePath ?? ACCOUNT_GLYPH_PATH}
+              unoptimized={element.imagePath != null}
               width={16}
             />
           )}

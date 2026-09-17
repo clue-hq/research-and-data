@@ -19,13 +19,30 @@ export const ProjectEntityCategorySchema = z.enum([
 ]);
 export const ProjectEntityIconSchema = z.enum(["file-text", "image", "web"]);
 
+/**
+ * The two shapes an entity image may take: a rooted path the BFF serves (the platform's own
+ * logo route, a local asset) or Brandfetch's embed-only Logo API URL, which the accounts screens
+ * already hand the browser directly. Anything else is no image, never a placeholder path.
+ */
+const BRANDFETCH_LOGO_ORIGIN = "https://cdn.brandfetch.io/";
+
+export function isComposerEntityImagePath(value: string): boolean {
+  return value.startsWith("/") || value.startsWith(BRANDFETCH_LOGO_ORIGIN);
+}
+
+export function composerEntityImagePath(
+  value: string | null | undefined,
+): string | undefined {
+  return value && isComposerEntityImagePath(value) ? value : undefined;
+}
+
 export const ProjectEntitySchema = z.object({
   accountName: z.string().optional(),
   // Absent means the legacy account/contact catalog served by the backend.
   category: ProjectEntityCategorySchema.optional(),
   icon: ProjectEntityIconSchema.optional(),
   id: z.string().min(1),
-  imagePath: z.string().startsWith("/").optional(),
+  imagePath: z.string().refine(isComposerEntityImagePath).optional(),
   label: z.string().min(1),
   secondaryLabel: z.string().min(1),
   type: ProjectEntityTypeSchema,
@@ -241,9 +258,7 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
     defaultBrandId: data.default_brand_id,
     entities: data.context_entities.map((entity) => ({
       id: entity.object_id,
-      imagePath: entity.image_url?.startsWith("/")
-        ? entity.image_url
-        : "/logos/clue.svg",
+      imagePath: composerEntityImagePath(entity.image_url),
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,
@@ -374,9 +389,7 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
       defaultAgentProfileId: data.default_agent_profile_id,
       entities: data.context_entities.map((entity) => ({
         id: entity.object_id,
-        imagePath: entity.image_url?.startsWith("/")
-          ? entity.image_url
-          : "/logos/clue.svg",
+        imagePath: composerEntityImagePath(entity.image_url),
         label: entity.label,
         secondaryLabel: entity.secondary_label,
         type: entity.object_type,

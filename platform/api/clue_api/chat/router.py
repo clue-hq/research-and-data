@@ -791,6 +791,7 @@ def build_chat_router(
             brands = await list_brands_for_workspace(conn, who.workspace_id)
             context_entities = await list_composer_context_entities(
                 conn,
+                settings=settings,
                 workspace_id=who.workspace_id,
             )
         return HomeResponse(
@@ -1212,6 +1213,7 @@ def build_chat_router(
                 if project is None
                 else await list_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                 )
             )
@@ -1311,6 +1313,7 @@ def build_chat_router(
             try:
                 prepared = await prepare_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                     refs=requested,
                     project_id=project_id,

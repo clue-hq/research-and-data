@@ -5,9 +5,12 @@ import {
   entityCategory,
   type ComposerCategory,
 } from "../model/composer-context-catalog";
+import { ContactAvatar } from "@/features/accounts/components/contact-avatar";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
+
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 function EntityVisual({ entity }: { entity: ProjectEntity }) {
   if (entity.icon) {
@@ -17,13 +20,30 @@ function EntityVisual({ entity }: { entity: ProjectEntity }) {
       </span>
     );
   }
+  if (entity.type === "contact") {
+    // A contact has no stored image; the avatar draws the name's initials (and an image if
+    // one is ever served).
+    return (
+      <ContactAvatar
+        className={styles.entityAvatar}
+        name={entity.label}
+        size={24}
+        src={entity.imagePath}
+      />
+    );
+  }
+  // The account's mark: the same logo the accounts screens show (the platform's logo route
+  // or Brandfetch's embed-only Logo API URL), else the building glyph. The optimizer is off
+  // for a served logo for the reason the accounts table gives: the route is session-bound and
+  // the CDN refuses programmatic fetches.
   return (
     <Image
       alt=""
       aria-hidden="true"
-      className={entity.type === "contact" ? styles.entityAvatar : styles.entityLogo}
+      className={styles.entityLogo}
       height={24}
-      src={entity.imagePath ?? "/logos/clue.svg"}
+      src={entity.imagePath ?? ACCOUNT_GLYPH_PATH}
+      unoptimized={entity.imagePath != null}
       width={24}
     />
   );

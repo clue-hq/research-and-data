@@ -30,7 +30,10 @@ from clue_api.client_context_binding import workspace_client_entity_id
 from clue_api.design_leg_wiring import project_design_documents
 from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
 from clue_api.frontend_read.accounts_list import read_spine_page
+from clue_api.frontend_read.v1_shared import account_logo_path
+from clue_config import Settings
 from clue_core import EntityId
+from clue_research.claimstore import WorkspaceScope, current_values
 from clue_research.identity import get_account, get_contact
 from clue_storage import StorageBackend
 
@@ -98,13 +101,35 @@ async def _contact_subject(
     return next((member for member in members if member.id == str(contact.id)), None)
 
 
+async def _account_logo_urls(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
+) -> dict[EntityId, Any]:
+    """Each account's stored ``core.logo_url`` under the workspace scope, in one read."""
+
+    if not account_ids:
+        return {}
+    values = await current_values(
+        conn,
+        list(account_ids),
+        ("core.logo_url",),
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    return {entity_id: current.value_json for (entity_id, _field), current in values.items()}
+
+
 async def list_composer_context_entities(
     conn: AsyncConnection,
     *,
     workspace_id: str,
+    settings: Settings | None = None,
 ) -> tuple[ComposerContextEntity, ...]:
     """Return a bounded real account/contact catalog: the workspace's newest accounts, each with
-    the contacts its research has actually written about."""
+    the contacts its research has actually written about.
+
+    An account's ``image_url`` is the same logo the accounts screens show (``account_logo_path``:
+    the platform's logo route for a stored mark, else Brandfetch's Logo API for the domain when
+    ``settings`` carries a client id). Contacts carry no image; the composer draws their initials.
+    """
 
     _total, rows, _has_more = await read_spine_page(
         conn,
@@ -113,6 +138,11 @@ async def list_composer_context_entities(
         limit=_MAX_CONTEXT_ACCOUNTS,
         cursor=None,
         page_number=None,
+    )
+    logo_urls = await _account_logo_urls(
+        conn,
+        workspace_id=workspace_id,
+        account_ids=[EntityId(UUID(str(row[0]))) for row in rows],
     )
     result: list[ComposerContextEntity] = []
     for account_id, canonical_name, primary_domain, _created_at, _updated_at in rows:
@@ -123,6 +153,12 @@ async def list_composer_context_entities(
                 object_id=str(account_id),
                 label=name,
                 secondary_label=primary_domain or "Account",
+                image_url=account_logo_path(
+                    account_id,
+                    logo_urls.get(EntityId(UUID(str(account_id)))),
+                    domain=primary_domain,
+                    settings=settings,
+                ),
             )
         )
         for member in await committee_members(
@@ -484,6 +520,7 @@ async def prepare_composer_context_entities(
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
     project_id: str | None = None,
+    settings: Settings | None = None,
 ) -> tuple[ComposerContextEntity, ...]:
     """Validate and hydrate an exact draft set without relying on the bounded mention catalog.
 
@@ -513,12 +550,21 @@ async def prepare_composer_context_entities(
                     "CONTEXT_REF_NOT_FOUND",
                     "an account context reference is not available in this workspace",
                 )
+            logo_urls = await _account_logo_urls(
+                conn, workspace_id=workspace_id, account_ids=(entity_id,)
+            )
             prepared.append(
                 ComposerContextEntity(
                     object_type="account",
                     object_id=str(account.id),
                     label=account.canonical_name,
                     secondary_label=account.primary_domain or "Account",
+                    image_url=account_logo_path(
+                        account.id,
+                        logo_urls.get(entity_id),
+                        domain=account.primary_domain,
+                        settings=settings,
+                    ),
                     version=account.canonical_version,
                 )
             )
