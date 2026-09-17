@@ -132,7 +132,10 @@
   min-width: 0;
   min-height: 0;
   flex: 1 1 0;
-  overflow: hidden;
+  /* The editor below is the scroll container for long drafts. The shell must stay
+     visible: the `@` entity picker is positioned above it and was clipped when the
+     shell hid overflow. */
+  overflow: visible;
 }
 
 .composerEditor {

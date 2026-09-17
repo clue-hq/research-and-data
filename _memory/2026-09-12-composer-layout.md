@@ -7,3 +7,11 @@
 - Cleared temporary browser drafts by reloading; the browser fill-empty helper did not clear Slate reliably. No message was sent. Returned to Home. No runtime configuration, backend, database or sibling workspace changes.
 - Verification: design-system build, frontend lint and production build passed. Lint retains the two existing unused-variable warnings in design engine canvasOperations.ts. Diff whitespace check passed.
 - Closing state: live on Semarang frontend 3040; scoped commit/push follows the founder's standing instruction. No unresolved layout defect in this slice.
+
+## 2026-09-17 — `@` picker was clipped by the editor shell
+`.composerEditorShell { overflow: hidden }` clipped the `@` entity picker: the listbox is absolutely
+positioned above the shell (`bottom: calc(100% + 10px)`, up to 360px tall) inside a 72px shell, so
+it mounted with all 105 options and rendered as a grey sliver. Fixed by `overflow: visible` on the
+shell; `.composerEditor` (`overflow-y: auto`, `flex: 1 1 0`, `min-height: 0`) is the real scroll
+container for long drafts, so the hidden overflow on the shell was not load-bearing. Verified in the
+browser: picker visible above the composer, filtering on `@lane` → 1 option, Escape closes it.
