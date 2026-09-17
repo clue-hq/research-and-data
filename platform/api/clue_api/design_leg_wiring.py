@@ -1490,6 +1490,24 @@ class DesignLegTurnRunner:
 
     # -- dispatch ------------------------------------------------------------------------------
 
+    async def _record_design_receipts(
+        self, run: dict[str, Any], *, request: AgentTurnRequest
+    ) -> None:
+        """Land a terminal design run's collected model calls on the leg's own turn.
+
+        Called before EVERY terminal return of :meth:`_dispatch`, not only after a drive
+        (ruling T5-1): the run's money is real whichever worker drove it, so a run this
+        dispatch merely re-joins must still put its calls on ``agent_model_call``. Safe to
+        repeat — ``record_model_call`` is idempotent on the model-call id and refuses only a
+        *different* receipt under the same id.
+
+        ``get_run`` serves the design API's shipped DTO, whose ``result`` key IS the row's
+        ``result_json`` — the column the design executor stamped ``model_calls`` onto.
+        """
+
+        for call in receipts_from_design_run(run.get("result") or {}, request=request):
+            await self._turns.record_model_call(receipt=call)
+
     async def _dispatch(
         self,
         *,
@@ -1521,7 +1539,10 @@ class DesignLegTurnRunner:
             if run["status"] in _TERMINAL_RUN_STATUSES and "design_memory" not in job[
                 "payload"
             ].get("config", {}):
-                return run  # preserve terminal legacy re-join without inventing new context
+                # Preserve terminal legacy re-join without inventing new context — but record
+                # the run's receipts: its money is real whichever worker drove it.
+                await self._record_design_receipts(run, request=turn_request)
+                return run
             envelope = DesignTurnEnvelope.model_validate(job["payload"])
             if (
                 envelope.workspace_id != workspace_id
@@ -1586,6 +1607,9 @@ class DesignLegTurnRunner:
         if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
             # A separately claimed queued run may have completed before a crashed producer
             # wrote its selection dependencies. Repair that receipt, but never rerun the design.
+            # Its model calls are recorded here too: the run's money is real whichever worker
+            # drove it, and this is the only dispatch that owns the platform turn they belong to.
+            await self._record_design_receipts(run, request=turn_request)
             return run
         document_id = str((pinned_document or {}).get("id") or "")
         doc_kind = str((pinned_document or {}).get("doc_kind") or "")
@@ -1617,10 +1641,7 @@ class DesignLegTurnRunner:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
         if run is None or run["status"] not in _TERMINAL_RUN_STATUSES:
             raise RuntimeError("the design lane returned without a terminal design run")
-        # ``get_run`` serves the design API's shipped DTO, whose ``result`` key IS the row's
-        # ``result_json`` — the column the design executor stamped ``model_calls`` onto.
-        for call in receipts_from_design_run(run.get("result") or {}, request=turn_request):
-            await self._turns.record_model_call(receipt=call)
+        await self._record_design_receipts(run, request=turn_request)
         return run
 
     async def _envelope(
