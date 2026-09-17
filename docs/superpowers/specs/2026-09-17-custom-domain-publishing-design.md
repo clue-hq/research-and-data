@@ -8,6 +8,7 @@ day. The Part IV ruling of 2026-08-17 ("tenant subdomain only, custom domains no
 superseded by this spec; its five-piece decomposition is kept and built here.
 **Research record:** `_memory/2026-09-17-custom-domain-publishing-research.md` (what the tree serves
 today, how Notion / Mutiny / Ploy do it, provider comparison, Railway's per-service domain cap).
+**Implementation:** S1 landed on `research-streaming-v3` (commits 2835e8175..4ffd7d3da, 2026-09-17); S0 runbook: `docs/specs/pages-hosting-runbook.md`; session record: `_memory/2026-09-17-custom-domain-publishing-s1.md`.
 
 ---
 
