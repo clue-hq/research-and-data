@@ -1071,21 +1071,31 @@ Idempotency is scoped to the authenticated workspace and this operation:
 
 Missing/blank keys return `400 IDEMPOTENCY_KEY_REQUIRED`.
 
-### 4. Deterministic first-thread title
+### 4. Generated names (since 2026-09-18)
 
-For the Home-created thread, the server:
+The Home-created thread is born with `title: null`; the project is born as
+`"Untitled project"`. Both are placeholders. After the thread's first
+**completed** turn (status `completed` or `awaiting_input`, with a non-empty
+reply) the server makes one auxiliary model call and writes:
 
-1. trims leading/trailing Unicode whitespace from `message`;
-2. collapses each internal Unicode-whitespace run to one ASCII space;
-3. if the normalized value is at most 80 Unicode code points, uses it exactly;
-4. otherwise takes a word-boundary prefix that fits within 79 code points and
-   appends `…`, for a maximum of 80 code points. If the first 79 code points
-   contain no word boundary, it uses those 79 code points plus `…`.
+- the thread's `title` — 2 to 5 words naming the task of the chat — only if
+  the title is still `null`;
+- the project's `title` — 2 to 5 words naming the marketing motion — only if
+  it is still `"Untitled project"`.
 
-Because Home rejects a blank message, this title is non-null. `New chat` is
-only a presentation fallback for a separately created unnamed thread; it is
-not the Home-created thread's stored title. A later manual rename is never
-overwritten by automatic title derivation.
+A manual rename (`PATCH …/threads/:id` or `PATCH /projects/:id`) is never
+overwritten: the generated write is conditional on the placeholder. A failed
+or slow naming call leaves the placeholder; the next completed turn tries
+again. The frontend shows `New chat` / `Untitled project` until a name lands
+and refetches the sidebar and project shell on the terminal turn event (and,
+while a placeholder is still visible, every 5 s for at most 60 s).
+
+Replaying `POST /projects` with the same key after naming or a manual rename
+returns `200` with the current names; the title is not part of the replay
+identity.
+
+Historical note: until 2026-09-18 the first thread's title was the message's
+first 80 code points (the "R0" rule). Retired.
 
 ### 5. Project and sidebar reads
 
@@ -1130,6 +1140,9 @@ project shell:
   }
 }
 ```
+
+`title` reads `"Untitled project"` until the first completed turn names the
+project (§4).
 
 The project response does not contain fixture-only `prompt`, `phase`, `plan`,
 `questionnaire`, `previewTimeline`, `reasoningTrace`, or client-manufactured

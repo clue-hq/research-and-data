@@ -292,7 +292,8 @@ const ProjectBootstrapWireSchema = z.object({
     }),
     thread: z.object({
       id: z.string().min(1),
-      title: z.string().min(1),
+      // Born untitled; the conversation namer titles it after the first completed turn.
+      title: z.string().min(1).nullable(),
       href: z.string().startsWith("/projects/"),
       status: z.literal("running"),
       pinned: z.boolean(),

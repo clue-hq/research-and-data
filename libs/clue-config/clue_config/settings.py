@@ -509,6 +509,17 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_FIT_MEDIUM_THRESHOLD``.
     arv2_fit_medium_threshold: float = 0.40
 
+    # --- Conversation naming (spec 2026-09-18-conversation-naming-design §4.8) ---------------
+    # One cheap call names the chat (and, on the Home path, the project) once the first agent
+    # reply exists. Off keeps the placeholders. Env: ``CLUE_CONVERSATION_NAMING_ENABLED``.
+    conversation_naming_enabled: bool = True
+    # OpenRouter model id for the naming call. Env: ``CLUE_CONVERSATION_NAMING_MODEL``.
+    conversation_naming_model: str = "openai/gpt-5.6-luna"
+    # The naming call's HTTP timeout. The turn never waits this long — the engine waits
+    # ``NAMING_GRACE_S`` and lets a slower call finish detached (§4.1).
+    # Env: ``CLUE_CONVERSATION_NAMING_TIMEOUT_S``.
+    conversation_naming_timeout_s: float = 60.0
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is

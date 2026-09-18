@@ -21,6 +21,7 @@ local session file; production reads durable project state), so each surface bui
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -28,6 +29,7 @@ from typing import Any
 from uuid import UUID, uuid5
 
 from clue_agents import (
+    AgentExecutionStatus,
     AgentFinalizeEnvelope,
     AgentRole,
     AgentTurnOutcome,
@@ -57,6 +59,15 @@ from clue_api.agent_runtime_wiring import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.conversation_naming import (
+    ConversationNamer,
+    NamingOutcome,
+    NamingRequest,
+    TurnNamingLauncher,
+)
+from clue_api.conversation_naming import (
+    log as naming_log,
+)
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
@@ -245,6 +256,7 @@ class ConversationTurnEngine:
         runtime: HeadOfAbmStage0Runtime,
         captured_turns: CapturedTurnBinder,
         plans: DbAgentPlanJournal,
+        namer: ConversationNamer | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.surface = surface
@@ -258,6 +270,9 @@ class ConversationTurnEngine:
         self._runtime = runtime
         self._captured_turns = captured_turns
         self._plans = plans
+        # Conversation naming (2026-09-18 §4.1): a service step beside the turn, never inside it.
+        # Without a namer the launcher is a no-op and every chat keeps its placeholder name.
+        self._naming = TurnNamingLauncher(namer=namer)
         self._conn_factory = conn_factory
 
     @property
@@ -431,6 +446,7 @@ class ConversationTurnEngine:
             thread_id=request.thread_id,
             stream=stream,
             replayed=committed is not None,
+            naming_scope=(request.constitution.project_id, request.user_message_artifact_ref),
         )
 
     async def _result_from_outcome(
@@ -442,8 +458,14 @@ class ConversationTurnEngine:
         thread_id: str,
         stream: TurnStreamEmitter | None,
         replayed: bool,
+        naming_scope: tuple[str, ArtifactRef] | None = None,
     ) -> ConversationTurnResult:
-        """Resolve one durable outcome into its canonical message and optional projection."""
+        """Resolve one durable outcome into its canonical message and optional projection.
+
+        ``naming_scope`` is what conversation naming needs and this method does not otherwise
+        read: the turn's project and the artifact holding what the human wrote. Only ``execute``
+        passes it — a replayed turn was already named by the process that first completed it.
+        """
 
         assistant_message: str | None = None
         envelope: AgentFinalizeEnvelope | None = None
@@ -463,6 +485,40 @@ class ConversationTurnEngine:
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
+        naming_task = None
+        if (
+            naming_scope is not None
+            and not replayed
+            and assistant_message
+            and outcome.status
+            in (AgentExecutionStatus.COMPLETED, AgentExecutionStatus.AWAITING_INPUT)
+        ):
+            # §4.10: nothing on the naming path may raise into the turn — and this read is on
+            # the turn's own path, ahead of the launcher's own guard. A turn that already
+            # produced its reply must not fail because the message it was answering could not be
+            # re-read; it simply goes unnamed.
+            try:
+                project_id, user_message_ref = naming_scope
+                user_message = (await self.components.artifacts.read(user_message_ref)).decode()
+                naming_task = self._naming.start(
+                    NamingRequest(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                    )
+                )
+            except Exception:  # noqa: BLE001 — a naming failure is a skip, never a turn error
+                naming_log.warning(
+                    "conversation_naming.skipped",
+                    reason="user_message_unreadable",
+                    turn_id=str(turn_id),
+                    thread_id=thread_id,
+                    exc_info=True,
+                )
+                naming_task = None
         if stream is not None:
             await self._project_turn_close(
                 stream=stream,
@@ -470,6 +526,7 @@ class ConversationTurnEngine:
                 envelope=envelope,
                 assistant_message=assistant_message,
                 replayed=replayed,
+                naming_task=naming_task,
             )
         return ConversationTurnResult(
             outcome=outcome,
@@ -485,6 +542,7 @@ class ConversationTurnEngine:
         envelope: AgentFinalizeEnvelope | None,
         assistant_message: str | None,
         replayed: bool,
+        naming_task: asyncio.Task[NamingOutcome] | None = None,
     ) -> None:
         """Project the finalization's durable refs, reconcile the text, then close the turn.
 
@@ -539,6 +597,12 @@ class ConversationTurnEngine:
             await stream.rehydrate(reason="turn_replayed")
         else:
             await stream.reconcile_text(assistant_message=assistant_message)
+        # §4.1: a fast namer lands before the terminal event (one refetch shows the names); a
+        # slow one keeps running detached. The terminal event never waits longer than the grace.
+        # (``wait_grace(None)`` is already a no-op; the guard keeps this projection callable
+        # unbound, as the D5 close-projection tests call it.)
+        if naming_task is not None:
+            await self._naming.wait_grace(naming_task)
         await stream.turn_finished(
             status=outcome.status.value,
             failure_code=outcome.failure_code,
@@ -558,6 +622,7 @@ def build_conversation_turn_engine(
     requested_memory_types: tuple[MemoryType, ...],
     context_policy: ContextAssemblyPolicy,
     child_runner: FreshWakeChildRunner | None = None,
+    namer: ConversationNamer | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ConversationTurnEngine:
     """Compose one conversation engine for one declared capability surface.
@@ -612,5 +677,6 @@ def build_conversation_turn_engine(
         runtime=runtime,
         captured_turns=captured_turns,
         plans=DbAgentPlanJournal(conn_factory=conn_factory),
+        namer=namer,
         conn_factory=conn_factory,
     )
