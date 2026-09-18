@@ -154,6 +154,27 @@ def test_count_round_dirs(tmp_path):
     assert count_round_dirs(rounds) == 2
 
 
+def test_count_round_dirs_above_a_base(tmp_path: Path) -> None:
+    """Session continuity: a turn reports the rounds IT ran, not the session's
+    whole history, so the count starts above the round base it inherited."""
+    for n in (1, 2, 3):
+        (tmp_path / f"round_{n}").mkdir()
+    assert count_round_dirs(tmp_path) == 3
+    assert count_round_dirs(tmp_path, above=2) == 1
+
+
+def test_metrics_json_lands_in_the_turn_folder(tmp_path):
+    """``metrics.json`` is a per-TURN artifact: it sits next to that turn's
+    ``final.json``, which under a session lives in ``turn_dir``."""
+    tools = _FakeTools(tmp_path / "session")
+    tools.turn_dir = tmp_path / "session" / "turns" / "run_fake"
+    tools.turn_dir.mkdir(parents=True)
+    summary = emit_run_metrics(tools, outcome="accepted", status="accepted")
+    assert summary is not None
+    assert (tools.turn_dir / METRICS_FILENAME).is_file()
+    assert not (tools.trace_dir / METRICS_FILENAME).exists()
+
+
 # --------------------------------------------------------------------------- #
 # 2. the tracer feeds the accumulator — same events, now aggregated
 # --------------------------------------------------------------------------- #

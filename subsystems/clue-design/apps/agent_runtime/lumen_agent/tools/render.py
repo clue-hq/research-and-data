@@ -65,7 +65,9 @@ def _reusable_preview_bundle(tools: LumenDesignTools) -> dict | None:
     iteration = getattr(tools, "_preview_rendered_iteration", None)
     if iteration is None:
         return None
-    bundle_path = tools.trace_dir / "iterations" / f"{iteration:03d}" / "preview_bundle.json"
+    # The substrate's own attribute, not a hand-rebuilt path: iterations belong to
+    # the TURN, which is the run folder unless the run is part of a design session.
+    bundle_path = tools.iterations_dir / f"{iteration:03d}" / "preview_bundle.json"
     try:
         payload = json.loads(bundle_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("debug_only") is not False:

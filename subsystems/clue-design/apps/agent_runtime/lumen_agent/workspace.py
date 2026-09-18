@@ -377,12 +377,19 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
             _render_references_md(tools), encoding="utf-8"
         )
 
-    (rounds / "index.md").write_text(
-        f"# Rounds — run {tools.run_id}\n\n"
+    # The index belongs to the SESSION, not the turn: a second turn scaffolding into
+    # a workspace that survived appends its own heading instead of erasing what the
+    # earlier turns wrote (the rounds beneath it are never deleted either).
+    index = rounds / "index.md"
+    header = (
+        "# Rounds — this design session\n\n"
         "One line per round: round number, verdict, and the one mistake the next "
-        "round must not repeat.\n",
-        encoding="utf-8",
+        "round must not repeat.\n"
     )
+    if not index.exists():
+        index.write_text(header, encoding="utf-8")
+    with index.open("a", encoding="utf-8") as handle:
+        handle.write(f"\n## Turn {tools.run_id}\n")
     logger.debug(
         "workspace_scaffolded",
         run_id=tools.run_id,
