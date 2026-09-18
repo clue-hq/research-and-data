@@ -1,8 +1,27 @@
 "use client";
 
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, startTransition, useContext, useSyncExternalStore } from "react";
 
-const DemoWorkspaceContext = createContext(false);
+export type SwitcherWorkspace = {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+};
+
+type SwitcherValue = {
+  demo: boolean;
+  workspaces: readonly SwitcherWorkspace[];
+  activeWorkspaceId: string | null;
+  onSelect: ((workspaceId: string) => void) | null;
+};
+
+const WorkspaceSwitcherContext = createContext<SwitcherValue>({
+  demo: false,
+  workspaces: [],
+  activeWorkspaceId: null,
+  onSelect: null,
+});
 const storageKey = "clue:demo-workspace:v1";
 const changeEvent = "clue:demo-workspace-change";
 const demoWorkspaces = [
@@ -45,41 +64,79 @@ function subscribeDisabled() {
 }
 
 export function WorkspaceSwitcherProvider({
+  activeWorkspaceId = null,
   children,
   demo,
+  onSelect = null,
+  workspaces = [],
 }: {
+  activeWorkspaceId?: string | null;
   children: React.ReactNode;
   demo: boolean;
+  onSelect?: ((workspaceId: string) => void) | null;
+  workspaces?: readonly SwitcherWorkspace[];
 }) {
-  return <DemoWorkspaceContext.Provider value={demo}>{children}</DemoWorkspaceContext.Provider>;
+  return (
+    <WorkspaceSwitcherContext.Provider
+      value={{ activeWorkspaceId, demo, onSelect, workspaces }}
+    >
+      {children}
+    </WorkspaceSwitcherContext.Provider>
+  );
 }
 
-export function useWorkspaceSwitcher() {
-  const demo = useContext(DemoWorkspaceContext);
+export function useWorkspaceSwitcher(): {
+  demo: boolean;
+  workspaces: readonly SwitcherWorkspace[];
+  activeWorkspace: SwitcherWorkspace | null;
+  selectWorkspace: (id: string) => void;
+} {
+  const { activeWorkspaceId, demo, onSelect, workspaces } = useContext(
+    WorkspaceSwitcherContext,
+  );
   const selectedId = useSyncExternalStore(
     demo ? subscribe : subscribeDisabled,
     demo ? getSelection : getServerSelection,
     getServerSelection,
   );
 
+  if (demo) {
+    return {
+      demo,
+      workspaces: demoWorkspaces,
+      activeWorkspace:
+        demoWorkspaces.find((workspace) => workspace.id === selectedId)
+        ?? demoWorkspaces[0]
+        ?? null,
+      selectWorkspace(id: string) {
+        if (!demoWorkspaces.some((workspace) => workspace.id === id)) return;
+        // This selection previews the switcher only: the demo build has no tenant
+        // behind it, so the choice lives in browser storage and nowhere else.
+        try {
+          localStorage.setItem(storageKey, id);
+          transientSelection = null;
+        } catch {
+          // Keep the preview usable when browser storage is unavailable.
+          transientSelection = id;
+        }
+        window.dispatchEvent(new Event(changeEvent));
+      },
+    };
+  }
+
+  // Live mode: the memberships of the signed-in user, switched on the server.
+  // Nothing is written to the browser — the workspace cookie is the only record
+  // of the choice, and only the server may set it.
   return {
     demo,
-    workspaces: demo ? demoWorkspaces : [],
-    activeWorkspace: demo
-      ? demoWorkspaces.find((workspace) => workspace.id === selectedId) ?? demoWorkspaces[0]
-      : null,
+    workspaces,
+    activeWorkspace:
+      workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     selectWorkspace(id: string) {
-      if (!demo || !demoWorkspaces.some((workspace) => workspace.id === id)) return;
-      // This selection previews the switcher only. Tenant data and permissions
-      // must be switched by the authenticated backend when it is integrated.
-      try {
-        localStorage.setItem(storageKey, id);
-        transientSelection = null;
-      } catch {
-        // Keep the preview usable when browser storage is unavailable.
-        transientSelection = id;
-      }
-      window.dispatchEvent(new Event(changeEvent));
+      if (!onSelect) return;
+      if (id === activeWorkspaceId) return;
+      if (!workspaces.some((workspace) => workspace.id === id)) return;
+      startTransition(() => onSelect(id));
     },
   };
 }

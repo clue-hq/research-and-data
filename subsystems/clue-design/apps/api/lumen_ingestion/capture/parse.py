@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import tinycss2
+from clue_core.normalize import canonical_workspace_name
 from selectolax.parser import HTMLParser
 
 from .budget import (
@@ -1754,11 +1755,5 @@ def _parse_narrative(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) 
 
 
 def _host_brand_name(base_url: str) -> str | None:
-    from urllib.parse import urlparse
-
-    host = urlparse(base_url).hostname or ""
-    host = host.removeprefix("www.")
-    stem = host.split(".")[0] if host else ""
-    if not stem:
-        return None
-    return " ".join(part.capitalize() for part in re.split(r"[-_]", stem) if part)
+    """The one canonical name-from-a-domain rule; it lives in ``clue_core.normalize``."""
+    return canonical_workspace_name(base_url)

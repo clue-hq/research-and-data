@@ -118,7 +118,8 @@ async function withRuntime(
     if (url.pathname === "/auth/v1/session") return Response.json({
       user_id: "usr_test", has_inactive_memberships: true,
       memberships: state.memberships.map((workspace_id) => ({
-        workspace_id, membership_id: `wsm_${workspace_id}`, role_key: "owner", permissions: [],
+        workspace_id, membership_id: `wsm_${workspace_id}`, workspace_name: `Workspace ${workspace_id}`,
+        role_key: "owner", permissions: [],
       })),
     });
     // The merged establish route accepts pending invitations first; an installation

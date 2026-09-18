@@ -73,6 +73,9 @@ class SessionMembershipResponse(BaseModel):
 
     membership_id: str
     workspace_id: str
+    # What the user is shown for this workspace. Always present on the wire, so no screen has to
+    # fall back to an id.
+    workspace_name: str
     role_key: str
     permissions: frozenset[str]
 
@@ -103,16 +106,28 @@ class ProvisionRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=200)
     last_name: str = Field(min_length=1, max_length=200)
     job_role: str = Field(min_length=1, max_length=200)
-    company_name: str = Field(min_length=1, max_length=200)
+    # Optional: a company name typed here wins, and a submission without one is named from
+    # ``company_website`` by the shared canonical rule. Provisioning refuses (422,
+    # ``COMPANY_NAME_REQUIRED``) only when neither can name the workspace.
+    company_name: str | None = Field(default=None, max_length=200)
     company_website: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("first_name", "last_name", "job_role", "company_name")
+    @field_validator("first_name", "last_name", "job_role")
     @classmethod
     def _strip_required(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("must contain non-whitespace characters")
         return cleaned
+
+    @field_validator("company_name")
+    @classmethod
+    def _blank_company_name_is_absent(cls, value: str | None) -> str | None:
+        """A blank or whitespace-only name is "not typed", not an error: the website names it."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
     @field_validator("company_website")
     @classmethod
@@ -346,6 +361,9 @@ def build_auth_router(
                 SessionMembershipResponse(
                     membership_id=item.membership_id,
                     workspace_id=item.workspace_id,
+                    # The database loader's join always carries the name; the fallback covers
+                    # only in-memory membership loaders (tests), which read no workspace row.
+                    workspace_name=item.workspace_name or item.workspace_id,
                     role_key=item.role_key,
                     permissions=permissions_for_role(item.role_key),
                 )
@@ -447,7 +465,9 @@ def build_auth_router(
                 job_role=provisioned.user.job_role,
                 created=provisioned.created,
                 company_name_ignored=(
-                    not provisioned.created and provisioned.workspace.name != body.company_name
+                    not provisioned.created
+                    and body.company_name is not None
+                    and provisioned.workspace.name != body.company_name
                 ),
             )
 

@@ -161,7 +161,7 @@ export function useOnboardingController({
       first_name: draft.firstName.trim(),
       last_name: draft.lastName.trim(),
       job_role: draft.role.trim(),
-      company_name: draft.companyName.trim(),
+      company_name: draft.companyName.trim() || null,
       company_website: draft.companyWebsite.trim() || null,
     };
     try {

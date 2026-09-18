@@ -64,6 +64,9 @@ class WorkspaceMembership(BaseModel):
     created_at: UtcDatetime
     activated_at: UtcDatetime | None = None
     revoked_at: UtcDatetime | None = None
+    # The workspace's display name, filled by the database loader's join; None only for loaders
+    # that do not read the workspace row. Users are shown a name, never a workspace id.
+    workspace_name: str | None = None
 
 
 class WorkspaceInvitation(BaseModel):

@@ -14,6 +14,7 @@ from clue_auth.errors import (
     IdentityConflictError,
     InvitationAddressMismatch,
     InvitationUnavailableError,
+    ProvisioningValidationError,
 )
 from clue_auth.models import AuthIdentity, PlatformUser, WorkspaceInvitation, WorkspaceMembership
 from clue_auth.store import (
@@ -31,6 +32,7 @@ from clue_auth.store import (
     update_platform_user_email,
     update_platform_user_profile,
 )
+from clue_core.normalize import canonical_workspace_name
 from clue_spine import Brand, Workspace, create_brand, create_workspace, get_brand, get_workspace
 
 
@@ -335,19 +337,12 @@ class ProvisionedSelfServeWorkspace(BaseModel):
     created: bool
 
 
-def _required(value: str, *, label: str) -> str:
-    cleaned = value.strip()
-    if not cleaned:
-        raise ValueError(f"{label} must be non-empty")
-    return cleaned
-
-
 async def provision_self_serve_workspace(
     conn: AsyncConnection,
     *,
     provider_key: str,
     provider_subject: str,
-    company_name: str,
+    company_name: str | None = None,
     first_name: str | None = None,
     last_name: str | None = None,
     job_role: str | None = None,
@@ -372,6 +367,12 @@ async def provision_self_serve_workspace(
     renamed here — the HTTP layer surfaces a divergent replayed name via
     ``company_name_ignored`` rather than pretending it was accepted.
 
+    The name itself is a typed company name when one was submitted, else the shared
+    ``canonical_workspace_name`` rule over ``company_website`` — a workspace is always named
+    something a human recognizes, and never its id. A submission carrying neither is refused
+    (``COMPANY_NAME_REQUIRED``) rather than provisioned nameless; the check runs before the
+    replay read, so a replay must submit the same minimum as a first call.
+
     Only a user who currently holds an ACTIVE membership (and has no provisioning record) is
     refused — self-serve provisioning is first-time setup, never a second-workspace factory.
     Invited/suspended/revoked memberships do not block: those are per-workspace states about
@@ -380,7 +381,13 @@ async def provision_self_serve_workspace(
     view's ``has_inactive_memberships``.
     """
     at = now or datetime.now(UTC)
-    name = _required(company_name, label="company_name")
+    typed = company_name.strip() if company_name and company_name.strip() else None
+    name = typed or canonical_workspace_name(company_website)
+    if name is None:
+        raise ProvisioningValidationError(
+            "COMPANY_NAME_REQUIRED",
+            "a company name or a website with a nameable domain is required",
+        )
     website = company_website.strip() if company_website and company_website.strip() else None
     await conn.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),

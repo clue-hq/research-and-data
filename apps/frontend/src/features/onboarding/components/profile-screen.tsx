@@ -66,7 +66,7 @@ export function ProfileScreen({
         </span>
       </ProfileField>
 
-      <ProfileField label="Company name">
+      <ProfileField hint="Leave blank to use your website's name" label="Company name">
         <input
           aria-label="Company name"
           onChange={(event) => onDraftChange("companyName", event.target.value)}
@@ -100,15 +100,18 @@ export function ProfileScreen({
 
 function ProfileField({
   children,
+  hint,
   label,
 }: {
   children: React.ReactNode;
+  hint?: string;
   label: string;
 }) {
   return (
     <label className={styles.profileField}>
       <span>{label}</span>
       {children}
+      {hint ? <small className={styles.profileFieldHint}>{hint}</small> : null}
     </label>
   );
 }

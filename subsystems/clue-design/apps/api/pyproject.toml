@@ -63,6 +63,10 @@ dependencies = [
     "clue-config",
     "clue-gateway",
     "clue-spend",
+    # The ingestion capture parser names a brand from its host through the one shared rule
+    # (`clue_core.normalize.canonical_workspace_name`), so the platform and the design lane
+    # cannot drift on what a domain is called. Also resolved transitively until now.
+    "clue-core",
     # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
     "py-lumen-obs",
     "py-lumen-config",
@@ -81,5 +85,6 @@ clue-obs = { workspace = true }
 clue-config = { workspace = true }
 clue-gateway = { workspace = true }
 clue-spend = { workspace = true }
+clue-core = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }

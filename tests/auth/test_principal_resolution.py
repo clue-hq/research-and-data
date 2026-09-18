@@ -93,7 +93,13 @@ def test_resolver_and_authorizer_emit_only_internal_principal_values() -> None:
             assert mapping.provider_subject not in principal.model_dump_json()
             assert "local_fixture" not in principal.model_dump_json()
             assert session.user_id == user.user_id
-            assert session.memberships == (membership,)
+            # The session loader is the one membership read that joins the workspace row, so
+            # its memberships carry the display name the writer-side reads do not.
+            assert session.memberships[0].workspace_name == "Auth workspace"
+            assert membership.workspace_name is None
+            assert session.memberships == (
+                membership.model_copy(update={"workspace_name": "Auth workspace"}),
+            )
 
     run_async(scenario())
 

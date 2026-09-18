@@ -9,8 +9,6 @@ import "./globals.css";
 import { AuthenticationProvider } from "@/auth/provider";
 import { localWorkspaceInstance } from "@/auth/local-workspace";
 import { LocalWorkspaceProvider } from "@/features/session/components/local-workspace-provider";
-import { WorkspaceSwitcherProvider } from "@/components/shell/workspace-switcher-context";
-import { resolveChatTransport } from "@/features/projects/data/chat-api";
 
 export function generateMetadata(): Metadata {
   const instance = localWorkspaceInstance();
@@ -30,14 +28,9 @@ export default function RootLayout({
   const instance = localWorkspaceInstance();
   const document = (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full">
-        {/* The switcher's selection is a fixture-mode preview only; live tenants are
-            switched by the backend at /select-workspace. Fixture mode is the transport
-            resolver's verdict, never an env read in a component. */}
-        <WorkspaceSwitcherProvider demo={resolveChatTransport().mode === "fixture"}>
-          {children}
-        </WorkspaceSwitcherProvider>
-      </body>
+      {/* The workspace switcher lives in the protected layout, which is where the
+          session's memberships are read; an unauthenticated page has none. */}
+      <body className="min-h-full">{children}</body>
     </html>
   );
   return (

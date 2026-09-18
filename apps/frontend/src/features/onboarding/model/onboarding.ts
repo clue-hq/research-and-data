@@ -130,7 +130,8 @@ export const ProvisionWorkspaceInputSchema = z.object({
   first_name: z.string().min(1).max(200),
   last_name: z.string().min(1).max(200),
   job_role: z.string().min(1).max(200),
-  company_name: z.string().min(1).max(200),
+  // Optional: left null, the workspace is named from the website's own name.
+  company_name: z.string().min(1).max(200).nullable(),
   company_website: z.string().max(2000).nullable(),
 });
 
@@ -164,7 +165,7 @@ export function validateProfileDraft(draft: OnboardingDraft): string | null {
     return "Please enter your first and last name.";
   }
   if (!draft.role.trim()) return "Please select your role.";
-  if (!draft.companyName.trim()) return "Please enter your company name.";
+  // The company name is optional — a blank one is filled from the website.
   if (!draft.companyWebsite.trim()) return "Please enter your company website.";
   return null;
 }

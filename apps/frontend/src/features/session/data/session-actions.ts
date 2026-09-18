@@ -31,5 +31,17 @@ export async function selectWorkspaceAndContinue(
   formData: FormData,
 ): Promise<void> {
   await selectWorkspace(formData);
-  redirect("/accounts");
+  redirect("/");
+}
+
+/**
+ * The sidebar switcher's selection. Same semantics as the chooser — the
+ * membership is re-checked, the cookie is rewritten, and the app is re-entered
+ * at its home so nothing stays on a page belonging to the previous workspace.
+ */
+export async function switchWorkspace(workspaceId: string): Promise<void> {
+  const selection = new FormData();
+  selection.set("workspaceId", workspaceId);
+  await selectWorkspace(selection);
+  redirect("/");
 }
