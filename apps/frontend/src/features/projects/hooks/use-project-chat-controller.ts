@@ -80,6 +80,7 @@ import {
 } from "../model/chat-thread";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 import { withPolledResearchTasks } from "../model/research-task";
+import { useNamingCatchUp } from "./use-naming-catch-up";
 import {
   streamTaskWakeSignature,
   useResearchTaskPoller,
@@ -251,6 +252,8 @@ export interface ProjectChatController {
   archiveThread(threadId: string): Promise<void>;
   threadStatus(threadId: string): ThreadStatus;
   threadLabelFor(thread: ChatThread): string;
+  /** Bumps on every terminal turn event of the thread this controller shows. */
+  terminalTurnRevision: number;
 }
 
 export type ChatSubmissionResult =
@@ -267,9 +270,12 @@ export interface DesignRefreshCounters {
 export function useProjectChatController({
   projectId,
   initialThreadId,
+  projectTitle,
 }: {
   projectId: string;
   initialThreadId?: string;
+  /** The project's current title; still the placeholder until naming lands. */
+  projectTitle: string;
 }): ProjectChatController {
   const router = useRouter();
   const routeQuery = useSearchParams().toString();
@@ -278,6 +284,9 @@ export function useProjectChatController({
   const { invalidate: invalidateProjectCatalog } =
     useProjectCatalogInvalidation();
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  // Conversation naming (§4.7): bumps on every terminal turn event, so the
+  // bounded catch-up poll knows a turn just ended.
+  const [terminalTurnRevision, setTerminalTurnRevision] = useState(0);
   // Seeded once from the route and never mutated: every thread change is a
   // navigation, and the workspace remount key reseeds a fresh controller
   // (single-mechanism rule, Phase R).
@@ -841,6 +850,12 @@ export function useProjectChatController({
             }
             if (isTerminalTurnState(streamedState)) {
               invalidateProjectCatalog();
+              // Conversation naming (§4.7): the header reads the thread's title from THIS
+              // controller's list, so reload it alongside the catalog, and let the bounded
+              // catch-up poll know a turn just ended. `attach` is only ever called for the
+              // thread this controller is showing, so every frame here is the active thread's.
+              void loadThreads().catch(() => undefined);
+              setTerminalTurnRevision((current) => current + 1);
             }
           }
         },
@@ -1278,6 +1293,20 @@ export function useProjectChatController({
     [activeThreadId, threads],
   );
 
+  // Conversation naming (§4.7): a name that lands after the terminal event needs a
+  // second look. Bounded, and only while a placeholder is still on screen.
+  const namingPending =
+    (activeThread !== null && activeThread.title === null) ||
+    projectTitle === "Untitled project";
+  useNamingCatchUp({
+    namingPending,
+    terminalRevision: terminalTurnRevision,
+    tick: () => {
+      invalidateProjectCatalog();
+      void loadThreads().catch(() => undefined);
+    },
+  });
+
   // Task 4 fix round 1: the leg fact the editor lock consults. The stream wins
   // once it has observed anything; the durable read answers the cold-load
   // window it cannot reach, and is the only source of "a design run is in
@@ -1353,5 +1382,6 @@ export function useProjectChatController({
       return threads.find((thread) => thread.id === threadId)?.status ?? "idle";
     },
     threadLabelFor: threadLabel,
+    terminalTurnRevision,
   };
 }

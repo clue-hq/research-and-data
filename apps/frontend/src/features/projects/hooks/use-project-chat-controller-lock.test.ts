@@ -85,7 +85,11 @@ for (const replayOrder of ["opener-first", "design-first"] as const) {
 
     const root = createRoot(dom.window.document.getElementById("root")!);
     function Probe() {
-      latest = useProjectChatController({ projectId: PROJECT, initialThreadId: THREAD });
+      latest = useProjectChatController({
+        projectId: PROJECT,
+        initialThreadId: THREAD,
+        projectTitle: "Named project",
+      });
       return null;
     }
     function controller(): ProjectChatController {

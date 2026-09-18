@@ -86,6 +86,7 @@ function LoadedProjectWorkspace({
   const chat = useProjectChatController({
     projectId: workspace.id,
     initialThreadId: initial.threadId,
+    projectTitle: workspace.title,
   });
   // Phase C (C-3): the designed chat shell is the workspace's view layer —
   // ChatSurface renders the chat pane + artifact rail around production chat.
