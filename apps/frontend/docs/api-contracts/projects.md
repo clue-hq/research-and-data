@@ -2471,3 +2471,70 @@ its legacy no-context engine behavior; its separate loader/UI is not migrated.
 Equal spacing semantics do not establish pixel-identical text across browser and
 server font engines; font/measurement diagnostics and rendered qualification remain
 required.
+
+## Chat attachments (2026-09-18)
+
+Backend as built on branch `add-attachment` (spec `docs/superpowers/specs/2026-09-18-chat-attachments-design.md`).
+Every refusal below reaches the browser as the FI-1 error envelope
+`{"error": {"code", "message", "requestId"}}` — the route raises
+`HTTPException(detail={"code","message"})` and the projections app's middleware renders the envelope.
+
+### Upload
+
+- `POST /frontend/v1/uploads`, multipart field `file` → `201 {"data": {upload_id, filename,
+  media_type, byte_count, artifact_key, sha256}}`. Workspace-scoped (`X-Workspace-Id`), requires
+  `project.write`. Post `FormData` without a hand-set `Content-Type` so the browser writes the
+  multipart boundary.
+- Accepted types: `text/markdown`, `text/plain`, `image/png`, `image/jpeg`, `image/webp`,
+  `image/gif`. The declared content type is used only if it is one of those; otherwise the
+  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`).
+- Refusals: `413 UPLOAD_TOO_LARGE`, `415 UPLOAD_UNSUPPORTED_TYPE`, `422 UPLOAD_NOT_UTF8` /
+  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_FILENAME_INVALID`, `503 STORAGE_UNAVAILABLE`.
+- `GET /frontend/v1/uploads/{upload_id}/bytes` → the bytes, workspace-scoped, `Cache-Control:
+  private`; an upload this workspace never made is `404 UPLOAD_NOT_FOUND` (absent, not "forbidden").
+  Browser path: `/api/clue/frontend/v1/uploads/{upload_id}/bytes`.
+
+### Submission
+
+- Turn and Home submissions take `attachment_refs[]`, each item
+  `{upload_id, artifact_key, sha256, media_type, byte_count, filename}` — all six required. Every
+  field is re-read from the upload row inside the submitting workspace and compared; a receipt is a
+  claim, never authority.
+- Limits (settings, all in `.env.example`): at most `CLUE_CHAT_ATTACHMENT_MAX_FILES` = 10 per
+  message, `CLUE_CHAT_ATTACHMENT_MAX_TOTAL_BYTES` = 150 MB total,
+  `CLUE_CHAT_ATTACHMENT_IMAGE_MAX_BYTES` = 10 MB per image,
+  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file.
+- Refusals: `404 ATTACHMENT_NOT_FOUND` (a receipt naming an upload this workspace never made),
+  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE` /
+  `ATTACHMENT_DOCUMENT_REFUSED`. `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists
+  only at the validator level — the submission routes are not registered without storage, so it is
+  unreachable over HTTP.
+- Acceptance is all-or-nothing: a refused attachment takes the whole turn with it.
+- `composer_capabilities.attachments` is true exactly when the deployment has artifact storage.
+
+### Transcript
+
+- Refs with `flavor: "attachment"` carry `label` (the human's filename), `media_type` and
+  `upload_id`, on both the pending-submission and the durable read, so a chip looks the same before
+  and after finalization. `object_type` is `"artifact"`, `object_id` the artifact key.
+- Image chips render from `GET /frontend/v1/uploads/{upload_id}/bytes`; text chips carry no URL.
+
+### What the agent receives
+
+- Text attachments become project documents at `attachments/<filename>` (kind `attachment`),
+  written in the submitting turn's own transaction, versioned like every project document, mounted
+  read-only at `project/attachments/<filename>`, and listed in the Gallery under Documents.
+  Re-attaching identical bytes under the same name replays the existing version; an edited file
+  appends a new version to the same chain.
+- Every attachment is named on the turn's L7 context line with where it is readable.
+- Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
+  the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;
+  `0` = no cap). Erased or tombstoned history images are skipped.
+- Uploaded images do **not** appear in the Gallery (founder ruling 2026-09-18).
+
+### Ad design leg
+
+While an ad design leg is open, images attached through `+` or dropped on the chat keep the
+existing design-reference route (design API upload, `design_asset` context refs, at most 4); text
+files take the attachment route above. The two caps apply separately; the design refusal is shown
+first.

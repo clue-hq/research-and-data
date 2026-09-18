@@ -213,3 +213,169 @@ needed (matching ruling R1).
 Token/cost note for planning: the 1710x1304 / 286 KB screenshot cost **2442 prompt tokens and
 1.029 cents** in one turn, versus 240 tokens / 0.19 cents for the 64x64 synthetic PNG. Real
 screenshots are not free, which is what `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` exists to bound.
+
+## Execution record (SDD, 2026-09-18)
+
+Plan `docs/superpowers/plans/2026-09-18-chat-attachments.md` (15 tasks), executed subagent-driven
+on branch `add-attachment` in the `damascus` worktree. Controller = Fable; implementers Opus only;
+every review done by the controller first-hand. Ledger:
+`.superpowers/sdd/2026-09-18-chat-attachments/progress.md` (per-task reports beside it).
+
+### Lane setup (controller, before Task 1)
+- Lane DB `clue_damascus` on localhost:55040, a `pg_dump` copy of `clue_san-salvador` (dumped with
+  `docker exec clue-pg-istanbul pg_dump`, because the local pg_dump is v15 against a v16 server),
+  24 projects, migrated to head `be968ae45500`.
+- `.artifacts/` copied from the san-salvador worktree (923 MB).
+- Throwaway test DB `clue_damascus_test`, migrated to head. Every DB suite ran against
+  `CLUE_DATABASE_URL=postgresql+asyncpg://clue:<pw>@localhost:55040/clue_damascus_test` only —
+  never the lane DB.
+
+### Commits per task
+- Plan: `a6e410649` docs(plan) — BASE for Task 1.
+- Task 1 (vision probe): `06febda26` probe accepts image parts; `542fc4121` open-question probe
+  with a real screenshot. Two paid calls, 1.22¢ total.
+- Task 2 (settings): `381e42df9` five `CLUE_CHAT_ATTACHMENT_*` settings + `.env.example`;
+  fix `d0c3fd392` tests isolate from the lane `.env` (`Settings(_env_file=None)`).
+- Task 3 (migration): `d54a3c77c` `chat_upload` + `agent_turn_submission_attachment`
+  (revision `d659c2d2b537` ← `be968ae45500`); fix `22c49735c` named FKs, workspace anchor +
+  composite FK, append-only UPDATE trigger, 4 DB tests.
+- Task 4 (upload validation + row): `ee4123cfd`.
+- Task 5 (`/frontend/v1/uploads` routes): `3536f4d06`.
+- Task 6 (submission takes `attachment_refs`): `dae98ffc1`; fix `f72bd947e` unknown receipts are
+  refused 404.
+- Task 7 (text attachments become project documents): `02d64e166`.
+- Task 8 (turn carries attachments; L7 names each file): `79ae370ae`.
+- Task 9 (sending turn's images ride the user message): `bddc584a0`.
+- Task 10 (history images, capped by setting): `1a346c6d5`.
+- Task 11 (transcript refs carry filename/media type/upload id; chips): `2375bcdd4`.
+- Task 12 (frontend model, upload adapter, hook, turn request refs): `1a86b73cb`.
+- Task 13 (chat and Home composers upload; ad-leg images keep the design route): `37e26d282`.
+- Task 14 (drop files on the chat; dashed composer outline): `8d45f475a`; fix `2ad23284d` drop gate
+  matches the `+` button, pure drag helpers tested.
+- Task 15 (this note + the frontend contract section): the commit carrying this entry.
+
+### Gates
+- Backend: the named suites of each task, re-run by the controller after every task, always on
+  `clue_damascus_test`. Counts as run: Task 3 4/4 DB (plus downgrade -1 / upgrade head); Task 4
+  5/5; Task 5 27; Task 6 28, then 18 after the fix; Task 7 12; Task 8 3 + 22; Task 9 6 + 27 pure +
+  6 DB; Task 10 5 + 30 pure + 6 DB; Task 11 2 DB + 47 stream. `ruff` and `mypy` clean on the
+  touched files at every task; the agent contracts suite 28 passed / 0 failed at Tasks 8, 9, 10.
+  `alembic heads` returned the single head `d659c2d2b537` after Task 3.
+- Frontend: `npm test` grew 3173 → 3178 → 3180 → 3181 → **3184 tests / 0 fail**; `npm run lint`
+  **0 errors**; `npm run build` **green** (run at Tasks 13 and 14).
+
+### Rulings taken during execution (in order)
+1. The plan named the alembic head `fffa2a8ba17c` (an mtime-sorted guess); the real single head was
+   `be968ae45500`, and Task 3's `down_revision` had to be the output of `uv run alembic heads` at
+   execution time.
+2. There is no `tests/config/`; the settings test lives at `tests/test_chat_attachment_settings.py`
+   and itself asserts every new key is in `.env.example` with its default.
+3. Task 1's first probe (synthetic red/blue PNG) printed `IMAGE NOT SEEN` on a left/right ordering
+   artifact; one more run with a real screenshot and an open question decides. It resolved to
+   IMAGE SEEN (the model transcribed the table verbatim). The controller's description of
+   `target-accounts.png` as an AI-companies table was wrong — it is a healthcare-accounts table.
+4. Task 5's test header is `X-Workspace-Id` (the plan wrote `X-Clue-Workspace-Id`).
+5. Task 7's identical-bytes replay check finds the row via `list_project_documents` filtered on
+   `path`, then `read_project_document` to compare bodies (`current_document_version` returns
+   `int|None`).
+6. `write_project_document` renders `.txt` bodies under the store's constant
+   `text/markdown`; keep the filename as-is, the path keeps the real extension.
+7. Task 8 uses `tests.agents.conftest.constitution(workspace_id=WS, ...)` as the constitution
+   builder.
+8. Filenames longer than 255 characters are REFUSED, not truncated. Task 5's route order is
+   sanitize → resolve_media_type → validate_upload_bytes → persist → record.
+9. Task 3 fix: close cross-workspace citation at the substrate, not only in the Task 6 validator —
+   `chat_upload_workspace_anchor UNIQUE (upload_id, workspace_id)` plus a composite upload FK on
+   the attachment table. Append-only UPDATE trigger on `agent_turn_submission_attachment` only; no
+   DELETE block and no trigger on `chat_upload`, so erasure can still remove upload rows.
+10. Refusal shape: the route keeps `HTTPException(detail={"code","message"})` like every sibling;
+    the projections app's envelope middleware renders `{"error": {code, message, requestId}}`. The
+    Task 15 contract note must say refusals arrive as the FI-1 envelope.
+11. Task 6 replay must also compare `tuple(a.upload_id for a in attachment_refs)` against the
+    stored `submission_attachment_refs` and raise `SubmissionConflict` on mismatch.
+12. `test_lane_d2_turn_submission_db`: first ruled "expect 503"; **withdrawn** — that app has
+    storage and the 503 branch is unreachable over HTTP (both submission routes register only with
+    storage). Final: the test expects `404 ATTACHMENT_NOT_FOUND` for a receipt the workspace never
+    made, and the §3.2 503 rule is asserted at unit level on the helper.
+13. Task 9: `_message(candidate)` → `_message(candidate, images)`; update any caller, `images`
+    defaults to `{}`. (No existing test called it.)
+14. Task 10: `AgentPlatformComponents.history_images_max` gets default 20 so trial/test builders
+    keep working. `turn_image_refs` also filters `purged_at IS NULL` and the
+    `agent_artifact_tombstone` NOT EXISTS — an unreadable history image would raise
+    `ArtifactNotFound` and kill every later turn on the thread.
+15. Task 11: `ThreadMessageWire.refs` is `tuple[dict[str, Any], ...]`, so presentation keys need no
+    schema field — the brief's "add `upload_id` to the ref wire model" step is a no-op.
+16. Task 12 absorbs the Home schema/adapter `uploadId` addition (the Home HTTP repository still
+    mapped the OLD five fields), so Task 13 only wires hooks. The upload adapter posts `FormData`
+    without a hand-set `Content-Type` and reads the FI-1 envelope on failure.
+17. Task 13: the Home controller's fixture upload timer path goes; fixture transport gets
+    `enabled:false` and any test asserting the timer moves to the hook.
+18. Task 14: the drop gate is `designReferencesEnabled || composerCapabilities.attachments`,
+    matching the `+` button — the earlier "attachments alone" ruling was narrower than the button
+    and is withdrawn. Drag-depth/drop helpers extracted into `file-drag.ts` and unit-tested (no
+    jsdom for the hook).
+
+### Deferred minors
+- **→ FINAL FIX WAVE:** add index `agent_turn_submission_attachment_artifact ON
+  agent_turn_submission_attachment (workspace_id, artifact_key)` by amending migration
+  `d659c2d2b537` in place (no second revision). The lane DB `clue_damascus` has NOT applied that
+  migration yet; only `clue_damascus_test` has, and it can be downgraded/upgraded.
+- Task 3: `chat_upload` rows cannot be deleted while an attachment cites them (no `ON DELETE`
+  rule). Fine for this plan — erasure keeps rows as audit and tombstones the artifact (spec §3.8);
+  the erasure owner decides the rule if row deletion is ever wanted.
+- Task 5: no test for the 503 (no storage) / 401 (no principal) branches of the upload route.
+- Task 5: `await file.read()` buffers the whole body before the size refusal (Starlette spools to
+  disk); an edge/ASGI body limit is wanted before a public origin. Candidate CLAUDE.md backlog
+  bullet.
+- Task 6: `insert_submission` has no early workspace guard for attachments (context refs have one);
+  fail-closed today via the composite FK. One-line hardening.
+- Task 6: the 503 branch of `_validated_submission_attachments` is unreachable over HTTP — a
+  defensive guard, unit-covered.
+- Task 8: the design-leg turn path passes no `attachment_refs`, so a text file attached while an ad
+  leg is open becomes a project document (Gallery, mounted at `project/attachments/…`) but no
+  turn's L7 names it; the user can `@`-tag it later. Accepted for v1 — spec §3.5 only promises the
+  file travels on the turn.
+- Task 9: no per-turn ceiling on total image bytes to the model beyond the upload limits (10 × 10 MB
+  worst case) — a product decision. `IMAGE_TOKEN_ALLOWANCE=1000` is a flat reporting-only guess.
+- Task 10: an erased history image vanishes silently (no placeholder); the design-leg transcript
+  loader carries no attachments, so leg turns never re-show images.
+- Task 11: `"artifact"` in `PRESENTED_REF_TYPES` triggers one extra no-row query on pages carrying
+  next_action/assumption/workspace_output refs. The label for one artifact key attached twice under
+  different filenames is the newest filename.
+- Task 13: with an ad leg open, the design cap (4 images) and the chat cap (10 files) apply
+  separately — no combined per-turn ceiling; the design error is shown first.
+- Task 14: a file dropped on the artifact/editor pane falls through to the browser default (it
+  navigates to the file); only the chat pane is a drop target.
+
+### Pre-existing reds, confirmed unrelated
+- `tests/api/test_project_read_surfaces_db.py::test_composer_context_prepares_an_existing_active_thread`
+  — differs in composer `context_entities` fields, not attachments (Task 6).
+- `tests/api/test_reference_images_contract.py::test_scene_leg_envelope_snapshots_reference_asset_ids`
+  — proven pre-existing by the implementer via a stash A/B (Task 11).
+
+### Other execution notes
+- The Opus session limit (429) was hit at the Task 13 commit and reset at 18:50 IST; implementers
+  stayed Opus-only and the Task 14 dispatch waited for the reset.
+- Task 13's implementer stalled on the stream watchdog (600 s) with edits on disk and no report;
+  the same agent was resumed (round 0, not a fix round) to finish gates, commit and report.
+- Plan defect fixed by the Task 8 implementer: the brief's L7 snippet reused the local name `body`
+  for the attachment line, which would have made the last attachment's text the final user
+  instruction.
+
+### OWED — live walk (founder-triggered; NOT run)
+Task 15 Step 2 was not executed: the walk is the founder's to trigger on the lane stack
+(`scripts/dev_stack*.sh` per `DEV_STACK.md`). Note that the lane DB `clue_damascus` has not had
+migration `d659c2d2b537` applied — migrate it (and apply the deferred index amendment first, if the
+final fix wave lands it) before walking. Six steps, in a project chat:
+1. Attach `brief.md` via `+`, send "Summarise the attached brief in three bullets." Expect: a chip
+   in the transcript, `attachments/brief.md` under Gallery → Documents, and a reply that quotes the
+   file.
+2. Attach a screenshot, send "What is in this image?" Expect: an image chip and an answer that
+   describes the image.
+3. Two messages later, ask "What colour was the button in the screenshot I sent earlier?" Expect:
+   an answer from the image, not a request to re-send.
+4. Drag a `.txt` onto the chat: a dashed outline appears, and a chip appears on drop.
+5. Upload `brief.md` again with one edited line: the Gallery shows version 2.
+6. Open an ad, attach one image: it lands as a design reference (existing chip style), not as a
+   chat attachment.
+Record each outcome and any defect here.
