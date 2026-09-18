@@ -49,9 +49,9 @@ def minimal_scene() -> dict:
     return json.loads(MINIMAL_SCENE_PATH.read_text())
 
 
-def create_document(client: TestClient) -> dict:
+def create_document(client: TestClient, scene: dict | None = None) -> dict:
     response = client.post(
-        "/documents", json={"title": "Hospital Letter", "scene": minimal_scene()}
+        "/documents", json={"title": "Hospital Letter", "scene": scene or minimal_scene()}
     )
     assert response.status_code == 200, response.text
     return response.json()["document"]
@@ -305,23 +305,133 @@ def test_a_leg_scene_turns_commit_is_labelled_with_the_users_message(
 # --- (b) the CAS loss --------------------------------------------------------
 
 
-def test_a_leg_scene_turn_on_a_moved_document_conflicts_before_the_runner(
+def _drive_leg_turn(
+    client: TestClient,
+    document: dict,
+    *,
+    base_version: int,
+    operations: list,
+    prompt: str = "Go ahead.",
+    received: dict | None = None,
+):
+    """One leg turn through the REAL executor, RECORDED on a run row the way the fleet worker
+    records it (create → execute → complete).
+
+    The recording is load-bearing for session continuity: "the version this session last wrote"
+    is read off the newest succeeded run's stamped ``current_version``, so a turn nobody
+    completed leaves no trace for the next turn to notice drift against.
+    """
+
+    from lumen_api.main import execute_agent_turn_job
+
+    store = HybridRepository()
+    envelope = _scene_envelope(
+        document["id"], store.workspace_id, _leg_config(document, base_version, prompt=prompt)
+    )
+    store.create_run(envelope.run_id, document["id"], kind="agent_turn", payload={})
+    status, response, event_type, event_data = execute_agent_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, proposing_runner(operations, received)),
+        event_sink=None,
+    )
+    store.complete_run(envelope.run_id, status, response, event_type, event_data)
+    return status, response, event_type, event_data
+
+
+def test_a_leg_scene_turn_on_a_moved_document_notes_the_drift_and_runs_anyway(
     client: TestClient,
 ) -> None:
-    """A human edit landed while the turn was queued. The turn comes back conflicted, the
-    document is untouched, and the trio never ran at all."""
+    """Session continuity (2026-09-18) replaces the pre-run conflict.
+
+    The session IS the document, so "the document moved since my last turn" is the normal
+    condition of a second turn, not a terminal failure: the executor re-reads the document,
+    tells the continued session what changed as DATA, and commits against the version it
+    actually read. The frozen envelope base is no longer the CAS base — the write-time CAS
+    (the test below) is what still protects a human edit that lands mid-run.
+    """
+
+    document = create_document(client)
+    # Turn one: the agent commits, stamping `current_version` on its succeeded run — that stamp
+    # is what makes "the version I last wrote" readable at all.
+    status, response, _, _ = _drive_leg_turn(
+        client, document, base_version=0, operations=[title_operation("Agent Title")]
+    )
+    assert (status, response["current_version"]) == ("succeeded", 1)
+
+    # The human edit between turns: the document is now at version 2, the envelope still pins 0.
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    status, response, _, _ = _drive_leg_turn(
+        client,
+        document,
+        base_version=0,
+        operations=[title_operation("Agent Title 2")],
+        received=received,
+    )
+
+    assert status == "succeeded", response
+    prompt = received["payload"].prompt
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" in prompt
+    assert "human moved the logo" in prompt
+    # It designed from the document's CURRENT scene, and committed on top of the human's edit
+    # rather than clobbering it or refusing.
+    assert received["payload"].scene["meta"]["title"] == "Human Title"
+    store = HybridRepository()
+    stored = store.require_document(document["id"])
+    assert (stored["current_version"], response["current_version"]) == (3, 3)
+    assert stored["scene"]["meta"]["title"] == "Agent Title 2"
+
+
+def test_a_leg_scene_turn_on_a_document_no_agent_has_written_gets_no_drift_note(
+    client: TestClient,
+) -> None:
+    """Drift is measured against the SESSION's own last write. With no prior agent run there
+    is no "since your last turn" to speak of, so a moved document is simply the document."""
+
+    document = create_document(client)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    status, response, _, _ = _drive_leg_turn(
+        client,
+        document,
+        base_version=0,
+        operations=[title_operation("Agent Title")],
+        received=received,
+    )
+
+    assert status == "succeeded", response
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" not in received["payload"].prompt
+    assert response["current_version"] == 2
+
+
+class _StoreWithNoReadableHistory(HybridRepository):
+    """A store whose DOCUMENT reads work and whose session-history read does not."""
+
+    def latest_agent_written_version(self, document_id):  # type: ignore[override]
+        raise RuntimeError("the history read failed")
+
+
+def test_an_unreadable_session_history_costs_a_paragraph_not_the_turn(
+    client: TestClient,
+) -> None:
+    """The drift note is advisory context. A turn that cannot read what moved still designs from
+    the document it CAN read — the alternative is killing paid work over a paragraph."""
 
     from lumen_api.main import execute_agent_turn_job
 
     document = create_document(client)
-    # The human edit: the document is now at version 1, the envelope still pins 0.
-    applied = client.post(
-        f"/documents/{document['id']}/operations",
-        json={"operations": [title_operation("Human Title")]},
-    )
-    assert applied.status_code == 200, applied.text
-
-    store = HybridRepository()
+    store = _StoreWithNoReadableHistory()
     received: dict = {}
 
     status, response, _, _ = execute_agent_turn_job(
@@ -331,21 +441,70 @@ def test_a_leg_scene_turn_on_a_moved_document_conflicts_before_the_runner(
         event_sink=None,
     )
 
-    assert status == "failed"
-    assert response["status"] == "conflicted"
-    assert response["diagnostics"][0]["code"] == "agent_turn.version_conflict"
-    assert response["base_version"] == 0
+    assert status == "succeeded", response
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" not in received["payload"].prompt
     assert response["current_version"] == 1
-    # The platform's scene summarizer renders `stop_reason` into the chat thread and nothing
-    # else, so a conflict that leaves it None reaches the marketer as a contentless "Design
-    # turn conflicted." Both user-facing strings must name BOTH versions and say the edit
-    # survived — the two facts a human needs to know what just happened.
-    _assert_conflict_is_legible(response, moved_from=0, moved_to=1)
-    # The human's edit survived, and the trio was never asked to spend a token.
-    stored = store.require_document(document["id"])
-    assert stored["current_version"] == 1
-    assert stored["scene"]["meta"]["title"] == "Human Title"
-    assert received == {}
+
+
+def test_the_scene_the_trio_designs_from_comes_from_the_document(client: TestClient) -> None:
+    """The envelope's scene was frozen when the leg was dispatched; the document is truth."""
+
+    document = create_document(client)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Fresh")]},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    store = HybridRepository()
+    config = _leg_config(document, 0)
+    # Deliberately stale, the way a queued leg envelope is.
+    config["request"]["scene"]["meta"]["title"] = "Stale"
+
+    from lumen_api.main import execute_agent_turn_job
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, config),
+        store=store,
+        host=_turn_host(client, proposing_runner([title_operation("Agent Title")], received)),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert received["payload"].scene["meta"]["title"] == "Fresh"
+    # ...and the CAS base is the version actually read, not the envelope's frozen 0.
+    assert response["current_version"] == 2
+
+
+def test_a_leg_scene_turn_runs_inside_the_documents_session(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The runtime is told which session this turn belongs to, and which run it is — the
+    session id continues the document's thread, the run id makes a RETRIED run resumable."""
+
+    import lumen_api.main as main
+
+    from clue_design.sessions import design_session_id
+
+    document = create_document(client)
+    store = HybridRepository()
+    captured: dict = {}
+
+    def run_preview(payload, _root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        return proposing_runner([])(payload, _root)
+
+    monkeypatch.setattr(main, "run_agent_turn_preview", run_preview)
+    envelope = _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0))
+    status, response, _, _ = main.execute_agent_turn_job(
+        envelope, store=store, host=_turn_host(client, None), event_sink=None
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] == design_session_id(store.workspace_id, document["id"])
+    assert captured["run_id"] == envelope.run_id
 
 
 def test_a_leg_scene_turn_that_loses_the_race_mid_run_conflicts_at_the_write(
@@ -642,7 +801,9 @@ def test_a_leg_turn_on_an_all_empty_scene_is_steered_to_fill_the_birth_page(
 ) -> None:
     from lumen_api.main import execute_agent_turn_job  # noqa: F401  (import parity)
 
-    document = create_document(client)
+    # The newborn ad's scene is the DOCUMENT's scene, not only the envelope's: since session
+    # continuity (2026-09-18) the executor designs from what the document holds.
+    document = create_document(client, empty_ad_scene())
     config = _leg_config(document, 0, prompt="Go ahead.")
     config["request"]["scene"] = empty_ad_scene()
 
@@ -665,7 +826,7 @@ def test_the_steering_block_reads_the_page_id_and_size_off_the_scene(
 ) -> None:
     """A second document, a different id and format: the block moves with the scene."""
 
-    document = create_document(client)
+    document = create_document(client, empty_ad_scene("page_deadbeefdeadbeef", 1080.0, 1920.0))
     config = _leg_config(document, 0)
     config["request"]["scene"] = empty_ad_scene("page_deadbeefdeadbeef", 1080.0, 1920.0)
 
@@ -771,8 +932,8 @@ def test_the_dsl_the_steering_block_quotes_actually_compiles_against_the_empty_p
     are orphaned. That is why the quoted line restates the page's name.)
     """
 
-    document = create_document(client)
     scene = empty_ad_scene()
+    document = create_document(client, scene)
     config = _leg_config(document, 0)
     config["request"]["scene"] = scene
 
@@ -1636,13 +1797,17 @@ def test_a_run_that_fails_after_an_accepted_round_leaves_that_round_as_the_head(
     assert response["current_version"] == 1, "a failed-but-saved turn must say what it saved"
 
 
-def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
+def test_a_redrive_after_a_checkpoint_continues_from_the_version_it_saved(
     client: TestClient,
 ) -> None:
-    """(i4) Replay semantics. A takeover restarts the agent from the FROZEN envelope scene, so its
-    fresh operation history would double-apply onto its own committed work. The redrive must
-    recognise its own checkpoint (via the durable run-event mark) and refuse — and it must not
-    tell the marketer a human moved their document, because nobody did.
+    """(i4) Replay semantics, restated by session continuity (2026-09-18).
+
+    Until this slice a redrive that found the document moved had to GUESS whether the mover was
+    a human or its own checkpoint, and refused either way (``agent_turn.interrupted_after_
+    checkpoint``, read off the durable run-event mark). It no longer has to: the turn re-reads
+    the document, so the scene it designs from and the version it CAS's on are already the ones
+    its earlier attempt left behind. The redrive simply carries on from there — and it still
+    never accuses a human of an edit nobody made.
     """
     from lumen_api.main import execute_agent_turn_job
 
@@ -1665,14 +1830,8 @@ def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
     )
     assert first_status == "failed"
     assert store.require_document(document["id"])["current_version"] == 1
-    marks = [
-        event
-        for event in store.list_run_events(envelope.run_id)
-        if event["type"] == "scene_checkpoint_committed"
-    ]
-    assert [mark["data"]["version"] for mark in marks] == [1]
 
-    # The takeover: the SAME envelope, same frozen base of 0, driven again.
+    # The takeover: the SAME envelope, its frozen base of 0 now irrelevant, driven again.
     status, response, _, _ = execute_agent_turn_job(
         envelope,
         store=store,
@@ -1683,19 +1842,14 @@ def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
         event_sink=None,
     )
 
-    assert status == "failed", response
-    diagnostic = response["diagnostics"][0]
-    assert diagnostic["code"] == "agent_turn.interrupted_after_checkpoint"
-    # Truthful about what survived, and it does NOT accuse a human of editing.
-    assert "version 1" in diagnostic["hint"]
-    assert "nothing is lost" in diagnostic["hint"]
-    assert "preserved" not in response["summary"]
-    # Nothing was applied twice: the head, its scene and its history are exactly as the first
-    # attempt left them.
+    assert status == "succeeded", response
+    # It started from the version its own checkpoint left and advanced it by its own one write —
+    # the first attempt's work is neither lost nor applied twice.
     stored = store.require_document(document["id"])
-    assert stored["current_version"] == 1
-    assert stored["scene"]["meta"]["title"] == "Saved round"
-    assert len(store.list_envelopes(document["id"])) == 1
+    assert stored["current_version"] == 2
+    assert stored["scene"]["meta"]["title"] == "Redrive round"
+    assert len(store.list_envelopes(document["id"])) == 2
+    assert "preserved" not in (response.get("summary") or "")
 
 
 def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_write(
