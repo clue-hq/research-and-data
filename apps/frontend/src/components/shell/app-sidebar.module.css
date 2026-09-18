@@ -58,6 +58,7 @@
 }
 
 .profileCollapsed {
+  width: 100%;
   justify-content: center;
 }
 
@@ -89,19 +90,22 @@
   white-space: nowrap;
 }
 
-.profileMenu {
-  position: absolute;
+.profileMenuPositioner {
   z-index: 70;
-  right: 8px;
-  bottom: calc(var(--clue-ds-product-dimension-sidebar-profile-height) + 6px);
-  left: 8px;
-  overflow: hidden;
+}
+
+.profileMenu {
+  width: var(--clue-ds-product-component-sidebar-inner-width);
+  max-width: calc(100vw - 16px);
+  max-height: var(--available-height);
+  overflow-y: auto;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 6px;
   background: var(--clue-ds-color-bg-neutral);
   box-shadow: 0 8px 24px rgb(15 23 42 / 10%), var(--clue-ds-shadow-card-subtle);
   padding: 4px;
   animation: profile-menu-enter 120ms ease-out both;
+  outline: none;
 }
 
 .profileMenuIdentity {
@@ -137,17 +141,99 @@
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-  border-radius: 4px;
+  border-radius: var(--clue-ds-product-component-sidebar-navigation-radius);
   color: var(--clue-ds-color-content-neutral);
   padding: 0 8px;
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
   text-decoration: none;
+  cursor: pointer;
+  outline: none;
 }
 
-.profileMenuItem:hover {
+.profileMenuItem:hover,
+.profileMenuItem[data-highlighted],
+.workspaceMenuItem[data-highlighted] {
   background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.profileMenuItem[data-disabled] {
+  color: var(--clue-ds-color-content-subtle);
+  cursor: default;
+}
+
+.profileTrigger:focus-visible,
+.profileCollapsed:focus-visible {
+  outline: 2px solid var(--clue-ds-color-components-focus-ring);
+  outline-offset: -2px;
+}
+
+.profileMenuChevron {
+  margin-left: auto;
+}
+
+.workspaceMenuItem {
+  composes: sidebarRegular;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--clue-ds-product-dimension-sidebar-profile-height);
+  padding: 8px;
+  border-radius: var(--clue-ds-product-component-sidebar-navigation-radius);
+  color: var(--clue-ds-color-content-neutral);
+  outline: none;
+  cursor: pointer;
+}
+
+.workspaceAvatar {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  border: var(--clue-ds-product-component-button-border-width) solid var(--clue-ds-color-border-neutral);
+  border-radius: var(--clue-ds-product-component-button-md-radius);
+  background: var(--clue-ds-color-bg-neutral);
+}
+
+.workspaceMenuDetails {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.workspaceTriggerAvatar {
+  composes: workspaceAvatar;
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  font-size: var(--clue-ds-typography-caption-font-size);
+}
+
+.workspaceTriggerName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceMenuDetails > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspaceMenuRole {
+  composes: recentLabel;
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.workspaceMenuCheck {
+  display: flex;
+  margin-left: auto;
 }
 
 @keyframes profile-menu-enter {
