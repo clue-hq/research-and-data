@@ -58,10 +58,7 @@ function mount(
   const root = createRoot(dom.window.document.getElementById("root")!);
   act(() => {
     root.render(
-      createElement(WorkspaceSwitcherProvider, {
-        ...props,
-        children: createElement(Probe),
-      }),
+      createElement(WorkspaceSwitcherProvider, props, createElement(Probe)),
     );
   });
   return root;
