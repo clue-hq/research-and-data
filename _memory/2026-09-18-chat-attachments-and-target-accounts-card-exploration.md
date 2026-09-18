@@ -157,3 +157,59 @@ after a negative), and changing the prompt after seeing the answer would be shop
 **Owed decision before Task 8/9 start:** treat this as IMAGE SEEN (transport + perception proven,
 spatial ordering unreliable), or run one disambiguating probe with an unguessable ground truth
 (e.g. a digit or an unusual colour pair rather than left/right red/blue).
+
+### Fix round 1 — open-question probe with a real screenshot — **RESOLVED: IMAGE SEEN**
+
+The round-1 ambiguity is settled. Controller ruling: rerun once with an unguessable ground truth.
+`scripts/probe_chat_image_input.py` gained an optional `--image PATH` mode (closed extension map
+png/jpg/jpeg/webp; an unknown extension exits 2 *before* spending) that asks an open question —
+"Describe what this image shows in two sentences. Name any words you can read in it." — and prints
+`RESULT: SEE REPLY` with exit 0, because no heuristic can honestly grade an open answer. The default
+synthetic-PNG colour mode and its pass/fail test are unchanged. `.text()` also became the `.text`
+property, keeping the `str(reply.content)` fallback.
+
+Command (one paid call):
+
+    set -a; source .env; set +a
+    uv run python scripts/probe_chat_image_input.py --image apps/frontend/public/projects/gallery/target-accounts.png
+
+Full output:
+
+    catalog_supports_image_input=True
+    model_call_usage cached_prompt_tokens=128 call_kind=agent_completion completion_tokens=933
+      cost_cents=Decimal('1.02900') duration_ms=17240.144 prompt_tokens=2442
+      requested_model=x-ai/grok-4.6 role=head_of_abm served_model=x-ai/grok-4.6 total_tokens=3375
+    model=x-ai/grok-4.6
+    image=apps/frontend/public/projects/gallery/target-accounts.png (286513 bytes, image/png)
+    --- reply (verbatim) ---
+    The image shows a table listing medical companies with columns for company name, contact, and
+    tier. Readable words include Capital Digestive Care LLC, Synergy Medical Group, Wilmington
+    Health PLLC, anterior_digestive_alpha, GI Alliance of Illinois, Neurological Surgery,
+    Intercolumbia, SIERRA NEUROSURGERY GROUP, Washington Gastroenterology PLLC, Richard Simpson,
+    Sofia Petrov, Amara Osei, Rachel Brooklyn, Core, Basic, and Elite.
+    --- end reply ---
+    RESULT: SEE REPLY
+
+**Verified against the actual file (read visually, no spend): every single string the model reported
+is verbatim correct, and it reported nothing that is not there.** The screenshot is a target-accounts
+table with columns `Company name` / `Contact` / `Tier`; the rows are Capital Digestive Care, LLC
+(Richard Simpson, Core); Synergy Medical Group (Basic); Wilmington Health, PLLC (Sofia Petrov,
+Elite); anterior_digestive_alpha (Amara Osei, Basic); GI Alliance of Illinois (Elite); Neurological
+Surgery (Rachel Brooklyn, Basic); Intercolumbia (Core); SIERRA NEUROSURGERY GROUP (Basic);
+Washington Gastroenterology, PLLC (Rachel Brooklyn, Elite). The model even got the three column
+headers and the odd snake_case row. Only deviation: a dropped comma in "Capital Digestive Care, LLC".
+
+**Correction to the task instruction:** the controller described this file as listing "OpenAI,
+Anthropic, Cursor, Perplexity, Mistral AI, Cohere". It does not — it lists the healthcare/GI accounts
+above. The model read the file correctly and the brief's description was wrong; anyone grading this
+reply against that description would wrongly score a perfect OCR pass as a hallucination.
+
+**Conclusion — the Task-1 gate passes.** `x-ai/grok-4.6` receives an `image_url` data-URL content
+part through the platform's own `OpenRouterAgentModelProvider` path, and it genuinely sees the
+image, down to reading small rendered text. Round 1's `IMAGE NOT SEEN` was the colour test's
+left/right ordering artifact, exactly as suspected. Tasks 8/9 are unblocked; no OCR fallback is
+needed (matching ruling R1).
+
+Token/cost note for planning: the 1710x1304 / 286 KB screenshot cost **2442 prompt tokens and
+1.029 cents** in one turn, versus 240 tokens / 0.19 cents for the 64x64 synthetic PNG. Real
+screenshots are not free, which is what `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` exists to bound.
