@@ -379,3 +379,21 @@ final fix wave lands it) before walking. Six steps, in a project chat:
 6. Open an ad, attach one image: it lands as a design reference (existing chip style), not as a
    chat attachment.
 Record each outcome and any defect here.
+
+## Closing entry (controller, 2026-09-18 evening)
+- Final whole-branch review done by the controller (read every new module and every diff); ONE
+  fix wave landed: `f3724455d` (index `agent_turn_submission_attachment_artifact`, migration
+  `d659c2d2b537` amended in place), `0ae7fd281` (bytes route 404 `UPLOAD_NOT_FOUND` on an erased
+  artifact), `c96a43829` (early workspace guard for attachment refs in `insert_submission`),
+  `208abe72f` (ruff format). Scoped re-review clean: 15 covering tests, one alembic head,
+  down/up reversible, `make lint` / `make typecheck` (871 files) / `make contracts` (28/0) clean;
+  frontend untouched by the wave (last gate 3184 tests / 0 fail, lint 0 errors, build green).
+- Lane DB `clue_damascus` migrated to `d659c2d2b537` (index present), so the owed live walk can
+  run on this lane once the stack is brought up per `DEV_STACK.md`. `.artifacts/` already holds
+  the san-salvador copy.
+- Parked at the final review (UX papercuts, not correctness): with an ad leg open the design cap
+  disables the `+` input for text files too (drop still works); no combined per-turn ceiling
+  across design refs + chat attachments; the artifact pane is not a drop target; whole-body
+  buffering before the size refusal on the upload route (edge body limit before a public
+  origin); one no-row presentation query on pages carrying next_action/assumption refs.
+- Branch `add-attachment`, 26 local commits from `1c629c040`; nothing pushed.
