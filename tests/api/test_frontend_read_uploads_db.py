@@ -27,6 +27,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read.app import build_frontend_read_router
@@ -122,3 +123,27 @@ async def _bytes_are_absent_for_another_workspace(tmp_path: Path) -> None:
         async with _client(conn, tmp_path, other) as foreign:
             absent = await foreign.get(f"/frontend/v1/uploads/{upload_id}/bytes")
         assert absent.status_code == 404
+
+
+def test_bytes_are_absent_once_the_artifact_is_erased(tmp_path: Path) -> None:
+    run_async(_bytes_are_absent_once_the_artifact_is_erased(tmp_path))
+
+
+async def _bytes_are_absent_once_the_artifact_is_erased(tmp_path: Path) -> None:
+    """An erased artifact is a 404 with the route's own code, never a 500 from the store."""
+
+    async with rollback_conn(seed_pack=False) as conn:
+        ws = await seed_workspace(conn, f"ws_upl_route_{uuid4().hex[:8]}")
+        async with _client(conn, tmp_path, ws) as client:
+            posted = await client.post(
+                "/frontend/v1/uploads", files={"file": ("gone.png", PNG, "image/png")}
+            )
+            assert posted.status_code == 201, posted.text
+            data = posted.json()["data"]
+            await conn.execute(
+                text("UPDATE artifact SET erased_at = now() WHERE storage_key = :key"),
+                {"key": data["artifact_key"]},
+            )
+            served = await client.get(f"/frontend/v1/uploads/{data['upload_id']}/bytes")
+        assert served.status_code == 404
+        assert served.json()["detail"]["code"] == "UPLOAD_NOT_FOUND"

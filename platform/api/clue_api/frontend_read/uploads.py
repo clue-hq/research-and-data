@@ -37,7 +37,7 @@ from clue_api.chat.uploads import (
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_config import Settings
 from clue_db import ConnFactory
-from clue_storage import StorageBackend
+from clue_storage import ArtifactNotFound, StorageBackend
 
 __all__ = ["UploadResponseV1", "UploadV1", "register_upload_routes"]
 
@@ -154,15 +154,26 @@ def register_upload_routes(
                 status_code=404,
                 detail={"code": "UPLOAD_NOT_FOUND", "message": "no such upload"},
             )
-        data = await store.read(
-            ArtifactRef(
-                workspace_id=workspace_id,
-                artifact_key=row.artifact_key,
-                sha256=row.sha256,
-                media_type=row.media_type,
-                byte_count=row.byte_count,
+        try:
+            data = await store.read(
+                ArtifactRef(
+                    workspace_id=workspace_id,
+                    artifact_key=row.artifact_key,
+                    sha256=row.sha256,
+                    media_type=row.media_type,
+                    byte_count=row.byte_count,
+                )
             )
-        )
+        except ArtifactNotFound as missing:
+            # The upload row survives an erasure/purge/tombstone of its bytes, so a readable
+            # receipt with unreadable content is a normal end state, not a server fault.
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "UPLOAD_NOT_FOUND",
+                    "message": "the upload's bytes are no longer available",
+                },
+            ) from missing
         # The stored name is already sanitized (no path separators, no control characters); the
         # quote strip is what keeps it from ending the header's quoted string early.
         safe_name = row.filename.replace('"', "")
