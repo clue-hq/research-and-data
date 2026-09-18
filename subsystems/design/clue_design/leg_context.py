@@ -37,11 +37,17 @@ def render_leg_turn_prompt(
     bundle: JsonObject | None,
     history: list[JsonObject] | None,
     prompt: str,
+    drift_note: str | None = None,
 ) -> str:
     """Compose the design turn's prompt from the envelope's frozen context blocks.
 
-    With neither block present the prompt is returned untouched — every non-leg path
+    With no block present the prompt is returned untouched — every non-leg path
     (editor preview route, CLI, fixtures) stays byte-identical.
+
+    ``drift_note`` (session continuity, 2026-09-18) is rendered by
+    :func:`clue_design.sessions.render_document_drift_note` and sits *after* the append-only
+    history and *before* the new message: it is the last thing that changed before this turn,
+    and putting it there leaves the growing prefix above it byte-identical for prefill caching.
     """
 
     sections: list[str] = []
@@ -74,6 +80,8 @@ def render_leg_turn_prompt(
             lines.append(f"[{role}] {text}")
         lines.append("HISTORY>>>")
         sections.append("\n".join(lines))
+    if drift_note:
+        sections.append(drift_note)
     if not sections:
         return prompt
     sections.append(prompt)
