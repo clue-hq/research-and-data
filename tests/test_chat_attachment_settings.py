@@ -30,7 +30,7 @@ def _env_name(field_name: str) -> str:
 def test_chat_attachment_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ATTACHMENT_SETTING_DEFAULTS:
         monkeypatch.delenv(_env_name(name), raising=False)
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.chat_attachment_max_files == 10
     assert settings.chat_attachment_max_total_bytes == 150 * 1024 * 1024
     assert settings.chat_attachment_image_max_bytes == 10 * 1024 * 1024
@@ -41,7 +41,7 @@ def test_chat_attachment_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_chat_attachment_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX", "0")
     monkeypatch.setenv("CLUE_CHAT_ATTACHMENT_MAX_FILES", "3")
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.chat_attachment_history_images_max == 0
     assert settings.chat_attachment_max_files == 3
 
