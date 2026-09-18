@@ -1,14 +1,18 @@
 "use client";
 
 import { useCallback, useRef, useState, type DragEvent } from "react";
-import { dragCarriesFiles } from "../model/file-drag";
+import {
+  dragCarriesFiles,
+  filesFromDrop,
+  nextDragDepth,
+} from "../model/file-drag";
 
 /**
  * Drop-target handlers for a pane that accepts files.
  *
- * `active` is driven by a nesting DEPTH, not a boolean: dragging across the
- * pane's children fires `dragleave` on the one you left before `dragenter` on
- * the one you entered, so a plain flag would flicker the outline off and on.
+ * `active` is driven by a nesting DEPTH, not a boolean (see `nextDragDepth`,
+ * where that rule and its tests live). The hook itself holds only the React
+ * wiring: the ref, the flag, and which DOM events map to which transition.
  * Drags that carry no files are ignored entirely — they neither light the
  * target nor have their default prevented, which leaves ordinary text-selection
  * drags in the transcript untouched.
@@ -30,7 +34,7 @@ export function useFileDrop({
     (event: DragEvent) => {
       if (!enabled || !dragCarriesFiles(event.dataTransfer?.types)) return;
       event.preventDefault();
-      depth.current += 1;
+      depth.current = nextDragDepth(depth.current, "enter");
       setActive(true);
     },
     [enabled],
@@ -46,7 +50,7 @@ export function useFileDrop({
   const onDragLeave = useCallback(
     (event: DragEvent) => {
       if (!enabled || !dragCarriesFiles(event.dataTransfer?.types)) return;
-      depth.current = Math.max(0, depth.current - 1);
+      depth.current = nextDragDepth(depth.current, "leave");
       if (depth.current === 0) setActive(false);
     },
     [enabled],
@@ -55,7 +59,7 @@ export function useFileDrop({
     (event: DragEvent) => {
       if (!enabled || !dragCarriesFiles(event.dataTransfer?.types)) return;
       event.preventDefault();
-      const files = Array.from(event.dataTransfer.files);
+      const files = filesFromDrop(event.dataTransfer);
       reset();
       if (files.length) onFiles(files);
     },

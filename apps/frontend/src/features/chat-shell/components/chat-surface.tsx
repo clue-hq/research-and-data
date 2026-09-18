@@ -440,9 +440,12 @@ export function ChatSurface({
   };
   // Dropping a file anywhere on the chat pane lands in the SAME intake the `+`
   // picker uses, so a dropped image still follows ruling 4's design/chat route.
+  // The gate is the button's gate, verbatim: a surface that will accept a file
+  // from the picker accepts the same file from a drop.
   const drop = useFileDrop({
-    enabled: workspace.composerCapabilities.attachments,
-    onFiles: (files) => handleAttachmentFiles(files),
+    enabled:
+      designReferencesEnabled || workspace.composerCapabilities.attachments,
+    onFiles: handleAttachmentFiles,
   });
   // Same gate as the reference images above: a `design_node` ref only means
   // anything beside the open design leg's document, and the backend refuses a
