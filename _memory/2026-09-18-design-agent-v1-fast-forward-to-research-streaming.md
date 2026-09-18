@@ -25,3 +25,17 @@
 ## State
 - `codex/design-agent-v1` == `origin/research-streaming` (`5d6254c66`); nothing to push for
   the branch itself beyond this memory commit. Any further design-agent work continues on top.
+
+## Second pull, 2026-09-18 (later the same day)
+- Merged `origin/research-streaming` again: 9 incoming commits (workspace display names
+  everywhere — canonical name rule from the website in `clue_core`, typed-name-first
+  provisioning in `clue_auth`, names on the session, sidebar workspace switcher, the
+  `backfill_workspace_names` script). Clean merge, no conflicts; merge commit `01a492f41`
+  (a true merge, since the branch carried the memory note above).
+- Verified locally: `uv sync`; focused pytest on `tests/core/test_canonical_workspace_name.py`
+  and the three touched `tests/auth/*` files green (DB-gated cases skipped); `ruff check` and
+  `ruff format --check` clean; frontend `npm run lint` 0 errors (2 pre-existing unused-var
+  warnings in `canvasOperations.ts`, identical on the target); `npm run design-system:build
+  && npm run build` exit 0.
+- Not run: DB-gated suites (`*_db.py`, incl. the backfill script test), design subsystem
+  suites. Nothing pushed.
