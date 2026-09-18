@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { SquareIcon } from "lucide-react";
 import { composerAction, hasComposerDraft } from "../model/composer-action";
+import { CHAT_ATTACHMENT_ACCEPT } from "../model/chat-attachments";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -185,10 +186,7 @@ export function ProjectComposer({
           {onAttachmentFiles ? (
             <label aria-label={attachmentLabel} className={styles.iconButton}>
               <input
-                accept={
-                  attachmentAccept ??
-                  ".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
-                }
+                accept={attachmentAccept ?? CHAT_ATTACHMENT_ACCEPT}
                 disabled={disabled || submitting || attachmentInputDisabled}
                 multiple
                 onChange={(event) => {

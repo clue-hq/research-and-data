@@ -31,6 +31,7 @@ export function ProjectHomeView({
             </label>
           ) : null}
           <ProjectComposer
+            attachmentError={controller.attachmentError}
             attachments={controller.attachments}
             entities={data.entities}
             disabled={controller.loading}
