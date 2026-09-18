@@ -227,3 +227,20 @@ def test_attachment_rows_are_append_only() -> None:
             await txn.rollback()
 
     run_async(scenario())
+
+
+def test_attachment_artifact_lookup_is_indexed() -> None:
+    """The transcript's presentation join filters on ``(workspace_id, artifact_key)``."""
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            found = await conn.execute(
+                text(
+                    "SELECT 1 FROM pg_indexes "
+                    "WHERE indexname = 'agent_turn_submission_attachment_artifact'"
+                )
+            )
+            assert found.first() is not None
+            await txn.rollback()
+
+    run_async(scenario())

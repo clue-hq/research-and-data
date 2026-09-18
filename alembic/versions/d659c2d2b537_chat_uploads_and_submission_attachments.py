@@ -85,6 +85,13 @@ def upgrade() -> None:
         )
         """
     )
+    # The transcript's presentation join reads this table by ``(workspace_id, artifact_key)`` to
+    # decide whether a cited artifact is a human attachment; the primary key is ``(turn_id,
+    # ordinal)``, so without this index that read is a sequential scan on every transcript page.
+    op.execute(
+        "CREATE INDEX agent_turn_submission_attachment_artifact "
+        "ON agent_turn_submission_attachment (workspace_id, artifact_key)"
+    )
     op.execute(
         "COMMENT ON TABLE agent_turn_submission_attachment IS 'Ordered, immutable uploads "
         "captured with one human chat submission (spec 2026-09-18).'"
@@ -103,6 +110,7 @@ def downgrade() -> None:
     # ``execution_reject_append_only_mutation()`` is NOT dropped here: it is the shared guard
     # created by 128c83d5e151 and still used by a dozen other tables. This migration adds only the
     # trigger, so only the trigger comes back out.
+    op.execute("DROP INDEX agent_turn_submission_attachment_artifact")
     op.execute(
         "DROP TRIGGER IF EXISTS agent_turn_submission_attachment_append_only "
         "ON agent_turn_submission_attachment"
