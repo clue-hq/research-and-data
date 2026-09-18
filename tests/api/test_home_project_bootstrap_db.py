@@ -18,13 +18,13 @@ from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
 )
-from clue_api.chat.router import _first_thread_title
+from clue_api.thread_store import set_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
 from clue_config import Settings, load_settings
 from clue_core import AccountStatus
 from clue_research.identity import insert_account_entity
-from clue_spine import create_brand
+from clue_spine import create_brand, set_project_name
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import fixture_membership_id, seed_principal
 from tests._workspace import seed_workspace
@@ -155,15 +155,6 @@ def _body(brand_id: str, message: str = "Start an ABM project for Northstar Labs
     }
 
 
-def test_first_thread_title_follows_the_frozen_unicode_rule() -> None:
-    assert _first_thread_title("  Plan\tNorthstar\nLabs  ") == "Plan Northstar Labs"
-    assert _first_thread_title("x" * 81) == f"{'x' * 79}…"
-    title = _first_thread_title(f"{'word ' * 18}tail")
-    assert len(title) <= 80
-    assert title.endswith("…")
-    assert not title.endswith(" …")
-
-
 def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -> None:
     del require_chat_db
 
@@ -280,9 +271,31 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
             assert replay.status_code == 200, replay.text
             first = created.json()["data"]
             second = replay.json()["data"]
+
+            # Naming (or a human rename) moves both names after the fact; an exact replay of the
+            # same key must still be the same act, not a 409.
+            await set_thread_title(
+                conn,
+                workspace_id="ws-home-create",
+                thread_id=first["thread"]["id"],
+                title="Renamed by hand",
+            )
+            await set_project_name(
+                conn,
+                workspace_id="ws-home-create",
+                project_id=first["project"]["id"],
+                name="GI outreach",
+            )
+            async with _client(app) as client:
+                after_rename = await client.post(
+                    "/api/v1/projects", headers=headers, json=request_body
+                )
+            assert after_rename.status_code == 200, after_rename.text
+            assert after_rename.json()["data"]["thread"]["title"] == "Renamed by hand"
+            assert after_rename.json()["data"]["project"]["title"] == "GI outreach"
             assert first["project"]["title"] == "Untitled project"
             assert first["project"]["brand_id"] == brand.brand_id
-            assert first["thread"]["title"] == "Start an ABM project for Northstar Labs"
+            assert first["thread"]["title"] is None
             assert first["thread"]["status"] == "running"
             assert first["turn"]["replayed"] is False
             assert second["turn"]["replayed"] is True

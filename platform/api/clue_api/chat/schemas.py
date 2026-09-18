@@ -576,8 +576,14 @@ class ProjectBootstrapProjectWire(_Wire):
 
 
 class ProjectBootstrapThreadWire(_Wire):
+    """The thread the Home composer just opened.
+
+    ``title`` is ``None`` until the conversation namer titles it after the first completed turn
+    (spec 2026-09-18-conversation-naming-design §4.7); the client shows its New chat label.
+    """
+
     id: str
-    title: str
+    title: str | None
     href: str
     status: Literal["running"] = "running"
     pinned: bool = False

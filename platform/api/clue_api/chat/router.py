@@ -25,7 +25,6 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -198,6 +197,7 @@ from clue_projections import (
 )
 from clue_research.icp import activate_icp_version
 from clue_spine import (
+    UNTITLED_PROJECT_NAME,
     confirm_project_product_set,
     create_project,
     current_project_product_set,
@@ -240,7 +240,6 @@ _REASON_STATUS: dict[str, tuple[int, str]] = {
 }
 
 _HOME_PROJECT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-home-project-bootstrap")
-_UNTITLED_PROJECT = "Untitled project"
 _HOME_SUGGESTIONS = (
     "Find target accounts for our new campaign",
     "Research the buying committee for a target account",
@@ -293,19 +292,6 @@ def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
             _framed(workspace_id, idempotency_key),
         ).hex
     )
-
-
-def _first_thread_title(message: str) -> str:
-    """Apply R0's exact Unicode-whitespace and 80-code-point title rule."""
-
-    normalized = re.sub(r"\s+", " ", message.strip())
-    if len(normalized) <= 80:
-        return normalized
-    prefix = normalized[:79]
-    boundary = prefix.rfind(" ")
-    if boundary > 0:
-        prefix = prefix[:boundary]
-    return prefix + "…"
 
 
 def chat_workspace_resolver(
@@ -856,7 +842,6 @@ def build_chat_router(
                 thread_id=thread_id,
                 idempotency_key=key,
             )
-            title = _first_thread_title(body.message)
             digest = content_address(body.message.encode())
 
             async with conn_factory() as conn:
@@ -891,13 +876,12 @@ def build_chat_router(
                         project_id=project_id,
                         workspace_id=who.workspace_id,
                         brand_id=body.brand_id,
-                        name=_UNTITLED_PROJECT,
+                        name=UNTITLED_PROJECT_NAME,
                         status="active",
                     )
                 elif (
                     project.workspace_id != who.workspace_id
                     or project.brand_id != body.brand_id
-                    or project.name != _UNTITLED_PROJECT
                     or project.status != "active"
                 ):
                     raise _refuse(
@@ -911,11 +895,15 @@ def build_chat_router(
                     thread_id=thread_id,
                     workspace_id=who.workspace_id,
                     project_id=project_id,
-                    title=title,
+                    title=None,
                     created_by_user_id=who.user_id,
                     created_via_membership_id=who.membership_id,
                 )
-                if thread.project_id != project_id or thread.title != title:
+                # The title is no longer part of the replay identity: it is born null, generated
+                # after the first completed turn, and may have been renamed by hand since (spec
+                # 2026-09-18-conversation-naming-design §4.6). The message digest on the
+                # submission is what proves the request is the same.
+                if thread.project_id != project_id:
                     raise _refuse(
                         status_code=409,
                         code="IDEMPOTENCY_CONFLICT",
@@ -1026,7 +1014,7 @@ def build_chat_router(
                     ),
                     thread=ProjectBootstrapThreadWire(
                         id=thread.id,
-                        title=title,
+                        title=thread.title,
                         href=href,
                         project_id=project_id,
                         created_at=thread.created_at.isoformat(),
