@@ -27,6 +27,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # ``chat_upload_workspace_anchor`` exists so the attachment table's upload FK can be composite:
+    # an attachment is workspace-pinned to its submission, and citing an upload from a *different*
+    # workspace is then structurally impossible rather than an application-layer promise.
     op.execute(
         """
         CREATE TABLE chat_upload (
@@ -35,10 +38,13 @@ def upgrade() -> None:
             uploaded_by_user_id  text NOT NULL,
             filename             text NOT NULL,
             media_type           text NOT NULL,
-            artifact_key         text NOT NULL REFERENCES artifact (storage_key),
+            artifact_key         text NOT NULL,
             sha256               text NOT NULL,
             byte_count           bigint NOT NULL,
             created_at           timestamptz NOT NULL DEFAULT now(),
+            CONSTRAINT chat_upload_artifact_fk
+                FOREIGN KEY (artifact_key) REFERENCES artifact (storage_key),
+            CONSTRAINT chat_upload_workspace_anchor UNIQUE (upload_id, workspace_id),
             CONSTRAINT chat_upload_sha CHECK (sha256 ~ '^[0-9a-f]{64}$'),
             CONSTRAINT chat_upload_scope CHECK (artifact_key = workspace_id || '/' || sha256),
             CONSTRAINT chat_upload_filename CHECK (
@@ -51,7 +57,8 @@ def upgrade() -> None:
     op.execute("CREATE INDEX chat_upload_workspace ON chat_upload (workspace_id, created_at DESC)")
     op.execute(
         "COMMENT ON TABLE chat_upload IS 'One file a human uploaded for a chat message: the "
-        "filename beside the content-addressed artifact the bytes live under (spec 2026-09-18).'"
+        "filename beside the content-addressed artifact the bytes live under (spec 2026-09-18). "
+        "Deliberately NOT append-only guarded: erasure paths may remove upload rows.'"
     )
     op.execute(
         """
@@ -59,7 +66,7 @@ def upgrade() -> None:
             turn_id        uuid NOT NULL,
             workspace_id   text NOT NULL,
             ordinal        integer NOT NULL,
-            upload_id      uuid NOT NULL REFERENCES chat_upload (upload_id),
+            upload_id      uuid NOT NULL,
             artifact_key   text NOT NULL,
             sha256         text NOT NULL,
             media_type     text NOT NULL,
@@ -70,6 +77,9 @@ def upgrade() -> None:
             CONSTRAINT agent_turn_submission_attachment_submission_fk
                 FOREIGN KEY (turn_id, workspace_id)
                 REFERENCES agent_turn_submission (turn_id, workspace_id),
+            CONSTRAINT agent_turn_submission_attachment_upload_fk
+                FOREIGN KEY (upload_id, workspace_id)
+                REFERENCES chat_upload (upload_id, workspace_id),
             CONSTRAINT agent_turn_submission_attachment_ordinal CHECK (ordinal >= 0),
             CONSTRAINT agent_turn_submission_attachment_once UNIQUE (turn_id, upload_id)
         )
@@ -79,9 +89,24 @@ def upgrade() -> None:
         "COMMENT ON TABLE agent_turn_submission_attachment IS 'Ordered, immutable uploads "
         "captured with one human chat submission (spec 2026-09-18).'"
     )
+    # Immutability is enforced, not merely documented — the same shape the parent
+    # ``agent_turn_submission`` uses, reusing the shared C5.1 guard function. UPDATE only: DELETE
+    # stays open so an erasure path can retract a capture along with its upload row.
+    op.execute(
+        "CREATE TRIGGER agent_turn_submission_attachment_append_only "
+        "BEFORE UPDATE ON agent_turn_submission_attachment "
+        "FOR EACH ROW EXECUTE FUNCTION execution_reject_append_only_mutation()"
+    )
 
 
 def downgrade() -> None:
+    # ``execution_reject_append_only_mutation()`` is NOT dropped here: it is the shared guard
+    # created by 128c83d5e151 and still used by a dozen other tables. This migration adds only the
+    # trigger, so only the trigger comes back out.
+    op.execute(
+        "DROP TRIGGER IF EXISTS agent_turn_submission_attachment_append_only "
+        "ON agent_turn_submission_attachment"
+    )
     op.execute("DROP TABLE agent_turn_submission_attachment")
     op.execute("DROP INDEX chat_upload_workspace")
     op.execute("DROP TABLE chat_upload")
