@@ -16,9 +16,11 @@ from sqlalchemy import text
 from clue_api.agent_turn_scope_pin import load_or_create_agent_turn_scope_pin
 from clue_api.memory_wiring import memory_assembly_factory
 from clue_core import MemoryBundle, MemorySelectionUnavailable
+from clue_design.sessions import design_session_id
 from clue_memory import WriteSeam, set_memory_enabled
 from tests.api.test_design_memory_producer_db import _kit, _run
 from tests.api.test_p34_design_leg_engine_db import (
+    _pin_document,
     _seed_leg_conversation,
     _submit_message,
     registry,  # noqa: F401 -- shared profile fixture
@@ -48,10 +50,14 @@ class _ObservedMemory:
 
 
 async def _prepared(
-    conn: Any, tmp_path: Path, registry: Any, *, off: bool = False
+    conn: Any, tmp_path: Path, registry: Any, *, off: bool = False, pin_document: bool = False
 ) -> tuple[Any, ...]:
     seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label=uuid4().hex)
     await _kit(conn, seeds)
+    if pin_document:
+        # Session continuity (2026-09-18): a pinned leg's turn names the DOCUMENT's session as
+        # its checkpoint thread, so the authorization below must accept that naming.
+        await _pin_document(conn, seeds, doc_kind="scene", version=1)
     outcome = await WriteSeam(conn, add_judge(), settings=make_settings(), caps=make_caps()).submit(
         memory_submission(seeds["workspace_id"], scope_id=seeds["project"].brand_id, body=BODY)
     )
@@ -375,5 +381,60 @@ def test_off_selection_validates_authority_but_returns_no_resolver(
                 await asyncio.to_thread(factory, forged)
             with pytest.raises(DesignMemoryRuntimeError, match="platform_loop"):
                 factory(envelope)
+
+    run_async(scenario())
+
+
+def test_a_document_pinned_turns_session_thread_is_its_own_authority(
+    tmp_path: Path,
+    migrated_db: bool,
+    registry: Any,  # noqa: F811 -- shared fixtures
+) -> None:
+    """Session continuity (2026-09-18) vs the D5 run-as-thread rule this seam used to demand.
+
+    A pinned leg turn's checkpoint thread is now ``design_session_id(workspace, document)``, so
+    the read seam must authorize THAT naming — while still refusing any other thread, which is
+    what the rule was protecting: the checkpoint namespace this turn's memory is scoped to.
+    Both halves are exercised against the STORED row (payload and column moved together), so
+    the only condition under test is the thread naming itself.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_memory_runtime import (
+        DesignMemoryRuntimeError,
+        build_design_preference_resolver_factory,
+    )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, _, memory, envelope, _ = await _prepared(
+                conn, tmp_path, registry, pin_document=True
+            )
+            assert envelope.document_id is not None
+            assert envelope.checkpoint_thread_id == design_session_id(
+                seeds["workspace_id"], str(envelope.document_id)
+            )
+            factory = build_design_preference_resolver_factory(
+                memory=memory, conn_factory=seeds["conn_factory"]
+            )
+            resolver = await asyncio.to_thread(factory, envelope)
+            assert resolver is not None
+            assert isinstance(await asyncio.to_thread(resolver), MemoryBundle)
+
+            # Some OTHER thread — here another document's session — is still refused, even
+            # when the stored row agrees with it.
+            foreign = design_session_id(seeds["workspace_id"], "doc_somebody_else")
+            payload = envelope.model_dump(mode="json")
+            payload["checkpoint_thread_id"] = foreign
+            await conn.execute(
+                text(
+                    "UPDATE design_agent_run SET payload=CAST(:payload AS jsonb),"
+                    " checkpoint_thread_id=:thread WHERE run_id=:id"
+                ),
+                {"payload": json.dumps(payload), "thread": foreign, "id": envelope.run_id},
+            )
+            with pytest.raises(DesignMemoryRuntimeError, match="turn_authority_mismatch"):
+                await asyncio.to_thread(factory, type(envelope).model_validate(payload))
 
     run_async(scenario())

@@ -35,6 +35,7 @@ from clue_core import (
 from clue_db import ConnFactory, transaction
 from clue_design.brand import get_brand_kit
 from clue_design.envelopes import DesignTurnEnvelope
+from clue_design.sessions import design_session_id
 
 type PreferenceResult = MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable
 type PreferenceResolver = Callable[[], PreferenceResult]
@@ -93,7 +94,15 @@ async def _authorize(
             or row["role"] != "design"
             or str(row["work_id"]) != str(envelope.work_id)
             or row["checkpoint_thread_id"] != envelope.checkpoint_thread_id
-            or envelope.checkpoint_thread_id != envelope.run_id
+            # Session continuity (2026-09-18): a document-pinned leg turn's checkpoint thread
+            # is the DOCUMENT's session, not this run — and that naming is the turn's own
+            # authority, derived here from the envelope's own workspace and document rather
+            # than trusted from it. A document-less turn keeps the D5 run-as-thread.
+            or envelope.checkpoint_thread_id
+            not in {
+                envelope.run_id,
+                design_session_id(envelope.workspace_id, str(envelope.document_id or "")),
+            }
             or row["document_id"] != envelope.document_id
             or box["version"] != 1
             or box["turn_id"] != str(row["turn_id"])
