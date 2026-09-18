@@ -530,4 +530,7 @@ def build_agent_context_assembler(
         ),
         policy=policy,
         receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),
+        # The assembler reads the turn's image bytes itself, at the one moment it builds the user
+        # message; the same durable store every layer source already reads through.
+        artifacts=artifacts,
     )

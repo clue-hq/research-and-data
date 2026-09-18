@@ -20,6 +20,7 @@ from clue_agents.catalog import (
     SkillResource,
 )
 from clue_agents.context import (
+    IMAGE_TOKEN_ALLOWANCE,
     AttachmentDescriber,
     AttachmentDescription,
     CompiledContextCard,
@@ -190,6 +191,7 @@ from clue_agents.workspace_policy import (
 )
 
 __all__ = [
+    "IMAGE_TOKEN_ALLOWANCE",
     "AgentArtifactSink",
     "AgentArtifactReader",
     "AgentArtifactState",
