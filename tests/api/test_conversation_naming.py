@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
+from typing import Any
+from uuid import UUID, uuid4
 
 import pytest
 
+from clue_agents import (
+    AgentExecutionStatus,
+    AgentFinalizeEnvelope,
+    AgentTurnOutcome,
+    ArtifactRef,
+    FinalizeStatus,
+)
 from clue_api.conversation_naming import (
     NAMING_INPUT_CHARS,
     NAMING_RESPONSE_FORMAT,
@@ -18,7 +27,9 @@ from clue_api.conversation_naming import (
     build_naming_messages,
     normalize_generated_name,
 )
+from clue_api.conversation_turns import ConversationTurnEngine
 from clue_config import Settings
+from clue_core import ExecutionId
 
 
 def test_naming_settings_default_on_luna_sixty_seconds() -> None:
@@ -192,5 +203,91 @@ def test_launcher_swallows_a_namer_that_raises() -> None:
         assert task is not None
         assert await launcher.wait_grace(task) is True
         assert task.result().skipped_reason == "unexpected_error"
+
+    asyncio.run(scenario())
+
+
+def _ref(key: str) -> ArtifactRef:
+    return ArtifactRef(
+        workspace_id="ws",
+        artifact_key=key,
+        sha256="0" * 64,
+        media_type="text/plain",
+        byte_count=1,
+    )
+
+
+class _ReadFailsForTheUserMessage:
+    """Artifacts that serve the turn's own reads and refuse the one naming needs."""
+
+    def __init__(self, *, envelope: AgentFinalizeEnvelope, user_message_ref: ArtifactRef) -> None:
+        self._bodies = {
+            "finalization": envelope.model_dump_json().encode(),
+            "assistant": b"Start with the GI groups.",
+        }
+        self._user_message_key = user_message_ref.artifact_key
+
+    async def read(self, ref: ArtifactRef) -> bytes:
+        if ref.artifact_key == self._user_message_key:
+            raise FileNotFoundError(ref.artifact_key)
+        return self._bodies[ref.artifact_key]
+
+
+class _NoHistory:
+    async def append(self, **kwargs: Any) -> None:
+        del kwargs
+
+
+def test_a_user_message_that_cannot_be_read_skips_naming_instead_of_failing_the_turn() -> None:
+    """§4.10: the gather is on the turn's path, so it is guarded like the call itself."""
+
+    async def scenario() -> None:
+        turn_id = uuid4()
+        user_message_ref = _ref("user-message")
+        envelope = AgentFinalizeEnvelope(
+            finalization_id=uuid4(),
+            execution_id=ExecutionId(UUID(int=7)),
+            status=FinalizeStatus.COMPLETED,
+            user_message_artifact_ref=_ref("assistant"),
+            finalized_at=datetime.now(UTC),
+        )
+        outcome = AgentTurnOutcome(
+            turn_id=turn_id,
+            execution_id=envelope.execution_id,
+            status=AgentExecutionStatus.COMPLETED,
+            finalization_ref=_ref("finalization"),
+        )
+
+        class _Components:
+            artifacts = _ReadFailsForTheUserMessage(
+                envelope=envelope, user_message_ref=user_message_ref
+            )
+            history = _NoHistory()
+
+        namer = _SlowNamer(0.0)
+
+        class _Engine:
+            components = _Components()
+            _naming = TurnNamingLauncher(namer=namer)
+
+        # Unbound, exactly as the D5 close-projection tests call this surface: the method reads
+        # only its keyword arguments and the two attributes stubbed above.
+        result = await ConversationTurnEngine._result_from_outcome(
+            _Engine(),  # type: ignore[arg-type]
+            outcome=outcome,
+            turn_id=turn_id,
+            workspace_id="ws",
+            thread_id="thr",
+            stream=None,
+            replayed=False,
+            naming_scope=("prj", user_message_ref),
+        )
+
+        # The turn still closes on its own reply …
+        assert result.assistant_message == "Start with the GI groups."
+        assert result.replayed is False
+        # … and naming simply did not happen.
+        assert namer.calls == []
+        assert _Engine._naming.pending == 0
 
     asyncio.run(scenario())

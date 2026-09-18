@@ -65,6 +65,9 @@ from clue_api.conversation_naming import (
     NamingRequest,
     TurnNamingLauncher,
 )
+from clue_api.conversation_naming import (
+    log as naming_log,
+)
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
@@ -490,18 +493,32 @@ class ConversationTurnEngine:
             and outcome.status
             in (AgentExecutionStatus.COMPLETED, AgentExecutionStatus.AWAITING_INPUT)
         ):
-            project_id, user_message_ref = naming_scope
-            user_message = (await self.components.artifacts.read(user_message_ref)).decode()
-            naming_task = self._naming.start(
-                NamingRequest(
-                    workspace_id=workspace_id,
-                    project_id=project_id,
-                    thread_id=thread_id,
-                    turn_id=turn_id,
-                    user_message=user_message,
-                    assistant_message=assistant_message,
+            # §4.10: nothing on the naming path may raise into the turn — and this read is on
+            # the turn's own path, ahead of the launcher's own guard. A turn that already
+            # produced its reply must not fail because the message it was answering could not be
+            # re-read; it simply goes unnamed.
+            try:
+                project_id, user_message_ref = naming_scope
+                user_message = (await self.components.artifacts.read(user_message_ref)).decode()
+                naming_task = self._naming.start(
+                    NamingRequest(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                    )
                 )
-            )
+            except Exception:  # noqa: BLE001 — a naming failure is a skip, never a turn error
+                naming_log.warning(
+                    "conversation_naming.skipped",
+                    reason="user_message_unreadable",
+                    turn_id=str(turn_id),
+                    thread_id=thread_id,
+                    exc_info=True,
+                )
+                naming_task = None
         if stream is not None:
             await self._project_turn_close(
                 stream=stream,
