@@ -397,3 +397,12 @@ Record each outcome and any defect here.
   buffering before the size refusal on the upload route (edge body limit before a public
   origin); one no-row presentation query on pages carrying next_action/assumption refs.
 - Branch `add-attachment`, 26 local commits from `1c629c040`; nothing pushed.
+
+## Rebase onto research-streaming (2026-09-18, after PR #64 opened)
+- `git rebase origin/research-streaming` (16 incoming commits: the conversation-naming feature,
+  PR #63, plus the trenton lane wrapper). One conflict, in `chat/router.py`'s imports (incoming
+  dropped `import re`, mine added `Sequence`); resolved to the union without `re` (unused). The
+  other ten overlapping files auto-merged; spot-checked that the Home path carries both the
+  untitled-thread birth (`title=None`) and the attachment validation/materialization, and that
+  `settings.py` / `.env.example` hold both feature blocks. Branch is still 29 commits over the
+  new base; force-push of `add-attachment` needed to update PR #64.
