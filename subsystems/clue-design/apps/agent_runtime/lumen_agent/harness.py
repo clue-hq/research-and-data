@@ -453,8 +453,12 @@ def create_design_deepagent(
     scaffold_workspace(tools, prompt)
     # W-isolation (D4): every path the model sees is workspace-virtual. The run
     # workspace is `<workspace_root>/run_<id>/workspace` on the host, which the
-    # `virtual_mode` backend serves at `/run_<id>/workspace`.
-    workspace_str = f"/{tools.run_id}/workspace"
+    # `virtual_mode` backend serves at `/run_<id>/workspace`. On a session turn
+    # (design session continuity, 2026-09-18) the scope id is
+    # `sessions/<session_id>` instead, so a continued thread's prompt names the
+    # persistent session workspace rather than a per-turn folder that no longer
+    # exists.
+    workspace_str = f"/{tools.workspace_scope_id}/workspace"
 
     # W-isolation (D1): virtual-mode backend rooted at the isolated workspace. The
     # agent's `/` IS the workspace; absolute paths re-anchor under the root (no
@@ -465,7 +469,12 @@ def create_design_deepagent(
     # `write_file`, so this backend is the invariant's only choke point.
     backend = AgentWorkspaceBackend(
         root_dir=str(runtime_config.workspace_root),
-        active_run_id=tools.run_id,
+        active_run_id=tools.workspace_scope_id,
+        # The summarization middleware compacts this thread into
+        # `/conversation_history/<thread_id>.md`; the thread IS the session, so
+        # the scoped backend admits that one file (and its media) or compaction
+        # would be refused mid-turn.
+        history_thread_id=runtime_config.session_id,
         reference_turn=bool(runtime_config.reference_assets),
         critique_observer=tools.observe_written_critique,
     )

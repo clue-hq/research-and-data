@@ -219,7 +219,7 @@ def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
     )
     logger.debug("web_workspace_scaffolded", run_id=tools.run_id, workspace=str(workspace))
-    return f"/{tools.run_id}/workspace"
+    return f"/{tools.workspace_scope_id}/workspace"
 
 
 def create_web_deepagent(
@@ -266,6 +266,10 @@ def create_web_deepagent(
     backend = AgentWorkspaceBackend(
         root_dir=str(runtime_config.workspace_root),
         custom_components_root=tools.custom_component_projection_root,
+        # Website mode keeps its unscoped workspace contract (no `active_run_id`),
+        # so this is inert today; it is passed so the thread's history stays the
+        # admitted one the moment the web backend is scoped.
+        history_thread_id=runtime_config.session_id,
     )
 
     from .llm import assert_all_role_models_support_image_input
@@ -620,7 +624,7 @@ def run_deepagent_web_turn(
             "coordinator",
             "web_turn_started",
             input_summary=prompt[:500],
-            output_summary=f"workspace=/{tools.run_id}/workspace",
+            output_summary=f"workspace=/{tools.workspace_scope_id}/workspace",
         )
 
         initial_state = {"messages": [{"role": "user", "content": prompt}]}

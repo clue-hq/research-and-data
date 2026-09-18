@@ -151,6 +151,24 @@ def test_prompts_receive_virtual_workspace_path(tmp_path, monkeypatch):
     assert virtual_ws in author["system_prompt"]
 
 
+def test_a_session_turn_prompts_the_persistent_session_workspace(tmp_path, monkeypatch):
+    """Design session continuity (2026-09-18): on a continued thread the prompt
+    must name `/sessions/<session_id>/workspace` — the folder that SURVIVES the
+    turn — and never a per-turn `/run_<id>/` path that will not exist next turn."""
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)
+
+    config = replace(runtime_config(tmp_path), session_id="dsess_prompt")
+    _agent, tools = create_design_deepagent("Make a poster", config)
+    kwargs = capture["kwargs"]
+    author = next(s for s in kwargs["subagents"] if s["name"] == "lumen-dsl-author")
+
+    assert tools.workspace_scope_id == "sessions/dsess_prompt"
+    for system_prompt in (kwargs["system_prompt"], author["system_prompt"]):
+        assert "/sessions/dsess_prompt/workspace" in system_prompt
+        assert f"/{tools.run_id}/workspace" not in system_prompt
+
+
 def test_run_artifacts_land_under_isolated_workspace(tmp_path, monkeypatch):
     """W-isolation (D9 acceptance #2): every produced artifact lands under
     `<workspace_root>/run_<id>/`, the skills + knowledge trees are materialized,

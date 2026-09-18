@@ -95,6 +95,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         reference_turn: bool = False,
         critique_observer: Callable[[Path, str], str | None] | None = None,
         active_run_id: str | None = None,
+        history_thread_id: str | None = None,
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb)
         # W1.5: whether reference assets rode this turn. Only a reference turn
@@ -113,13 +114,26 @@ class AgentWorkspaceBackend(FilesystemBackend):
         # under the harness's stubbed ``FilesystemBackend``, which does not set cwd.
         self._workspace_root = str(Path(root_dir))
         self._active_run_id = active_run_id
-        if active_run_id is not None and (
-            not active_run_id.startswith("run_")
-            or PurePosixPath(active_run_id).name != active_run_id
-            or ".." in active_run_id
-            or "\\" in active_run_id
+        if active_run_id is not None and not self._is_scope_id(active_run_id):
+            raise ValueError(
+                "active_run_id must be a run_ directory name or sessions/<session_id>"
+            )
+        # Design session continuity (2026-09-18): the deepagents summarization
+        # middleware compacts THIS thread into `/conversation_history/<id>.md`
+        # (media under `/conversation_history/media/`) through this backend. A
+        # scoped backend would refuse those paths and break compaction, so the
+        # active thread's own history is admitted — and only its own: a sibling
+        # session's history file is another tenant's conversation. The id names a
+        # file, so it is one segment — and ``PurePosixPath("..").name`` IS
+        # ``".."``, so the climb is rejected by name rather than assumed away.
+        if history_thread_id is not None and (
+            not history_thread_id
+            or history_thread_id == ".."
+            or PurePosixPath(history_thread_id).name != history_thread_id
+            or "\\" in history_thread_id
         ):
-            raise ValueError("active_run_id must be a single run_ directory name")
+            raise ValueError("history_thread_id must be a single file-name segment")
+        self._history_thread_id = history_thread_id
         self._custom_components_root: Path | None = None
         self._custom_components_internal_prefix: str | None = None
         if custom_components_root is not None:
@@ -139,6 +153,29 @@ class AgentWorkspaceBackend(FilesystemBackend):
             self._custom_components_root = projection
             self._custom_components_internal_prefix = "/" + relative.as_posix()
 
+    @staticmethod
+    def _is_scope_id(scope: str) -> bool:
+        """A scope id is one run folder (``run_<id>``) or one session folder
+        (``sessions/<session_id>``) — nothing else, and never a climb.
+
+        Requiring ``scope == "/".join(parts)`` rejects every spelling that is not
+        already canonical (a leading ``/``, a trailing ``/``, a ``.`` or ``..``
+        segment), so the id can be joined onto the workspace root verbatim.
+        """
+        parts = PurePosixPath(scope).parts
+        if "\\" in scope or scope != "/".join(parts):
+            return False
+        if len(parts) == 1:
+            return parts[0].startswith("run_")
+        return len(parts) == 2 and parts[0] == "sessions" and bool(parts[1])
+
+    def _history_roots(self) -> tuple[Path, ...]:
+        """This thread's conversation-history file and its media folder, or ()."""
+        if self._history_thread_id is None:
+            return ()
+        root = Path(self._workspace_root).resolve() / "conversation_history"
+        return (root / f"{self._history_thread_id}.md", root / "media")
+
     def _scope_roots(self) -> tuple[Path, ...]:
         assert self._active_run_id is not None
         root = Path(self._workspace_root).resolve()
@@ -147,6 +184,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
             root / "knowledge_docs",
             root / ".deepagent",
             self._custom_components_root or root / "custom_components",
+            *self._history_roots(),
         )
 
     def _check_run_scope(self, path: Path, *, allow_root: bool = False) -> None:
@@ -169,8 +207,13 @@ class AgentWorkspaceBackend(FilesystemBackend):
         lexical = Path(self._workspace_root).resolve() / self._normalize_and_map_key(key).lstrip(
             "/"
         )
-        run_root, *readonly = self._scope_roots()
-        if not resolved.is_relative_to(run_root) or any(
+        scope = self._scope_roots()
+        history = self._history_roots()
+        # The run/session folder AND this thread's own history are read-write;
+        # the shared projections stay read-only.
+        writable = (scope[0], *history)
+        readonly = [root for root in scope[1:] if root not in history]
+        if not any(resolved.is_relative_to(root) for root in writable) or any(
             candidate.is_relative_to(root) for candidate in (lexical, resolved) for root in readonly
         ):
             raise PermissionError(
@@ -306,7 +349,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         return (
             f"Path '{key}' resolves outside the workspace root and was rejected. "
             "Paths are workspace-rooted: use a '/'-rooted virtual path "
-            "(e.g. /run_<id>/workspace/..., /knowledge_docs/..., "
+            f"(e.g. /{self._active_run_id or 'run_<id>'}/workspace/..., /knowledge_docs/..., "
             "/.deepagent/skills/...) or a plain relative path; never a '..' "
             "segment that climbs above the root."
         )
