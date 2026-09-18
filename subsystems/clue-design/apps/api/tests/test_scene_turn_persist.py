@@ -1964,8 +1964,12 @@ def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_writ
 # --- (d) the session folder travels ------------------------------------------
 
 
+@pytest.mark.parametrize("scene_skill_bundle", ["legacy", "candidate"])
 def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
-    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scene_skill_bundle: str,
 ) -> None:
     """Session continuity (2026-09-18), Task 8: the session folder is not the worker's.
 
@@ -1976,6 +1980,13 @@ def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
     ``run_agent_turn_preview`` (no ``agent_turn_runner`` override) with only the runtime's own
     model call stubbed, and reads the manifest back the way the restore path will:
     ``read_blob(sha)``.
+
+    BOTH skill bundles, because the CANDIDATE bundle re-roots the whole runtime at
+    ``<trace_dir>/scene-candidate`` — that rebase is exactly what
+    ``harness.effective_runtime_config`` exists to keep in one place, and a test that knew the
+    folder by a hand-built path would pass under one bundle and lie under the other (the lane's
+    own ``.env`` sets ``candidate``). The fake below therefore resolves the folder the way the
+    real ``create_design_deepagent`` does, through that same helper.
     """
 
     from dataclasses import replace as dataclass_replace
@@ -1992,15 +2003,15 @@ def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
 
     # The runtime's workspace root is redirected into tmp_path so the turn's session folder is
     # this test's, not the checkout's `.deepagent-workspace`.
-    base_config = agent_config.AgentRuntimeConfig.from_env(REPO_ROOT)
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+        scene_skill_bundle=scene_skill_bundle,
+    )
     monkeypatch.setattr(
         agent_config.AgentRuntimeConfig,
         "from_env",
-        classmethod(
-            lambda _cls, _root=None: dataclass_replace(
-                base_config, trace_dir=tmp_path / "agent-workspace"
-            )
-        ),
+        classmethod(lambda _cls, _root=None: base_config),
     )
     # The multimodal preflight is a live model-catalogue call; the loop itself never runs here.
     monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
@@ -2013,8 +2024,13 @@ def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
     seen: dict = {}
 
     def fake_turn(_prompt, config, **_kwargs):
-        """Stand in for the trio: leave one file in the session workspace and stop."""
-        session_dir = config.session_dir()
+        """Stand in for the trio: leave one file in the session workspace and stop.
+
+        The REAL harness rebases the config inside ``create_design_deepagent`` before it touches
+        any path, so the fake has to rebase too — otherwise it writes to a folder the snapshot
+        (correctly) does not look in, and the test fails for a reason that is purely its own.
+        """
+        session_dir = agent_harness.effective_runtime_config(config).session_dir()
         seen["session_dir"] = session_dir
         (session_dir / "workspace").mkdir(parents=True, exist_ok=True)
         (session_dir / "workspace" / "brief.md").write_text("the brief", encoding="utf-8")
@@ -2040,11 +2056,11 @@ def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
     )
 
     assert status == "succeeded", response
+    # Named through the same helper the harness and the snapshot both use, so the expectation
+    # cannot drift from the rule — under `candidate` this is the `scene-candidate` sub-root.
+    expected_root = agent_harness.effective_runtime_config(base_config).trace_dir
     assert seen["session_dir"] == (
-        tmp_path
-        / "agent-workspace"
-        / "sessions"
-        / design_session_id(store.workspace_id, document["id"])
+        expected_root / "sessions" / design_session_id(store.workspace_id, document["id"])
     )
     sha = response["session_manifest_sha256"]
     assert isinstance(sha, str) and len(sha) == 64
