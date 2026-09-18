@@ -90,6 +90,12 @@
   box-shadow: var(--clue-ds-shadow-card-subtle), 0 0 0 2px white;
 }
 
+/* Ruling 5: while a file drag is over the chat, the composer is the drop
+   target — a dashed outline and nothing else (no overlay, no copy). */
+.composer[data-drop-target="true"] {
+  border: 1px dashed var(--clue-ds-color-border-neutral);
+}
+
 .composerBody {
   display: flex;
   min-width: 0;

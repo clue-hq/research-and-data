@@ -29,6 +29,7 @@ import type { Operation } from "@/features/design-editor/engine/scene/contracts"
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
+import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
 import { routeAttachmentFiles } from "../model/attachment-routing";
@@ -437,6 +438,12 @@ export function ChatSurface({
     if (design) referenceAttachments.remove(attachmentId);
     else chatAttachments.remove(attachmentId);
   };
+  // Dropping a file anywhere on the chat pane lands in the SAME intake the `+`
+  // picker uses, so a dropped image still follows ruling 4's design/chat route.
+  const drop = useFileDrop({
+    enabled: workspace.composerCapabilities.attachments,
+    onFiles: (files) => handleAttachmentFiles(files),
+  });
   // Same gate as the reference images above: a `design_node` ref only means
   // anything beside the open design leg's document, and the backend refuses a
   // submission carrying one otherwise — a canvas selection made outside an
@@ -840,7 +847,7 @@ export function ChatSurface({
             : undefined
       }
     >
-      <section className={styles.chatPane}>
+      <section className={styles.chatPane} {...drop.handlers}>
         <ChatShellHeader
           chatId={chat.activeThreadId ?? undefined}
           onArchive={() => {
@@ -1059,6 +1066,7 @@ export function ChatSurface({
               ]}
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
+              dropActive={drop.active}
               entities={controller.composerEntities}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}

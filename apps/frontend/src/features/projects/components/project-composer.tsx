@@ -28,6 +28,7 @@ export function ProjectComposer({
   attachmentLabel = "Attach files",
   attachments = [],
   disabled = false,
+  dropActive = false,
   entities = [],
   modelPickerOpen = false,
   models = [],
@@ -56,6 +57,10 @@ export function ProjectComposer({
   attachmentLabel?: string;
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
+  /** A file drag is over the surface that owns this composer (task 14, ruling
+   * 5): the only feedback is the dashed outline the CSS draws off
+   * `data-drop-target`. The drop itself is the owner's — this stays presentational. */
+  dropActive?: boolean;
   entities?: ProjectEntity[];
   modelPickerOpen?: boolean;
   models?: ProjectModelOption[];
@@ -144,6 +149,7 @@ export function ProjectComposer({
       ]
         .filter(Boolean)
         .join(" ")}
+      data-drop-target={dropActive || undefined}
       onSubmit={(event) => {
         event.preventDefault();
         void submitCurrentDraft();
