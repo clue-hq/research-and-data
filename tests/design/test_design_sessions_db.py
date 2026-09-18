@@ -179,9 +179,7 @@ def test_latest_session_manifest_reads_the_newest_succeeded_stamp() -> None:
                 )
                 # Scoped to its own document, and to its own workspace.
                 assert (
-                    await latest_session_manifest_sha256(
-                        conn, workspace_id=ws, document_id=sibling
-                    )
+                    await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=sibling)
                     == "cc"
                 )
                 assert (
