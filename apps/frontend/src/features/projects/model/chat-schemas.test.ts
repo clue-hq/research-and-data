@@ -22,6 +22,7 @@ import {
   turnRequestBody,
 } from "./chat-turn";
 import { ChatGateListResponseSchema, formatCents, isGateOpen } from "./chat-gate";
+import { parseHomeBootstrapDraft } from "./home-submission";
 import {
   fixtureGates,
   fixtureMessages,
@@ -522,4 +523,68 @@ test("a context ref's note rides the wire only when present", () => {
       agent_profile_id: null,
     },
   );
+});
+
+test("a message turn body carries every attachment ref field in snake_case", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "message",
+      message: "read this brief",
+      attachmentRefs: [
+        {
+          uploadId: "upl_1",
+          artifactKey: `ws_1/${"a".repeat(64)}`,
+          sha256: "a".repeat(64),
+          mediaType: "text/markdown",
+          byteCount: 512,
+          filename: "brief.md",
+        },
+      ],
+    }),
+    {
+      message: "read this brief",
+      context_refs: [],
+      attachment_refs: [
+        {
+          upload_id: "upl_1",
+          artifact_key: `ws_1/${"a".repeat(64)}`,
+          sha256: "a".repeat(64),
+          media_type: "text/markdown",
+          byte_count: 512,
+          filename: "brief.md",
+        },
+      ],
+      agent_profile_id: null,
+    },
+  );
+});
+
+test("a Home bootstrap draft keeps the upload id of an attachment ref", () => {
+  const parsed = parseHomeBootstrapDraft({
+    brandId: "brd_1",
+    message: "read this brief",
+    attachmentRefs: [
+      {
+        artifactKey: `ws_1/${"a".repeat(64)}`,
+        byteCount: 512,
+        filename: "brief.md",
+        mediaType: "text/markdown",
+        sha256: "a".repeat(64),
+        uploadId: "upl_1",
+      },
+    ],
+  });
+  assert.equal(parsed.success, true);
+  if (parsed.success) {
+    assert.deepEqual(parsed.request.attachmentRefs, [
+      {
+        artifactKey: `ws_1/${"a".repeat(64)}`,
+        byteCount: 512,
+        filename: "brief.md",
+        mediaType: "text/markdown",
+        sha256: "a".repeat(64),
+        uploadId: "upl_1",
+      },
+    ]);
+  }
 });

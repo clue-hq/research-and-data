@@ -85,6 +85,7 @@ import {
   streamTaskWakeSignature,
   useResearchTaskPoller,
 } from "./use-research-task-poller";
+import type { ChatAttachmentRef } from "../model/chat-attachments";
 import {
   applyTurnStateOverrides,
   EMPTY_QUEUE_CONTROL,
@@ -231,6 +232,7 @@ export interface ProjectChatController {
     text: string,
     options?: {
       contextRefs?: readonly TurnContextReference[];
+      attachmentRefs?: readonly ChatAttachmentRef[];
       agentProfileId?: string | null;
     },
   ): Promise<ChatSubmissionResult>;
@@ -940,21 +942,26 @@ export function useProjectChatController({
       text: string,
       options: {
         contextRefs?: readonly TurnContextReference[];
+        attachmentRefs?: readonly ChatAttachmentRef[];
         agentProfileId?: string | null;
       } = {},
     ) => {
       const trimmed = text.replace(/[\u200B\uFEFF]/g, "").trim();
       const contextRefs = options.contextRefs ?? [];
+      const attachmentRefs = options.attachmentRefs ?? [];
       if (stopRequestRef.current || turnsRef.current.some((turn) => turn.stopRequest?.pending && turn.state !== "cancelled")) {
         return { status: "not_submitted" } as const;
       }
-      if ((!trimmed && !contextRefs.length) || !activeThreadId) {
+      if (
+        (!trimmed && !contextRefs.length && !attachmentRefs.length) ||
+        !activeThreadId
+      ) {
         return { status: "not_submitted" } as const;
       }
       const agentProfileId = options.agentProfileId ?? null;
       const attempt = messageSubmissions.current.begin(
         activeThreadId,
-        { message: trimmed, contextRefs, agentProfileId },
+        { message: trimmed, contextRefs, attachmentRefs, agentProfileId },
         () => newIdempotencyKey("turn"),
       );
       if (!attempt) return { status: "not_submitted" } as const;
@@ -967,6 +974,7 @@ export function useProjectChatController({
             kind: "message",
             message: trimmed,
             contextRefs,
+            attachmentRefs,
             agentProfileId,
           },
           idempotencyKey: attempt.idempotencyKey,
