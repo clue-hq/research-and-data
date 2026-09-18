@@ -91,7 +91,7 @@ from clue_api.design_turn_targets import (
     resolve_web_targets,
 )
 from clue_api.turn_action import derive_turn_action_ref
-from clue_core import ContextAssembly, ExecutionId, operation_id_from_key
+from clue_core import ContextAssembly, EntityId, ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
 from clue_design import ad_assets as design_ad_assets
@@ -217,6 +217,8 @@ class DesignLegExitJudge(Protocol):
         brief: str,
         history: tuple[tuple[str, str], ...],
         message: str,
+        artifact: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None: ...
 
 
@@ -250,6 +252,99 @@ DESIGN_LEG_EXIT_SUMMARIES: dict[str, str] = {
     ),
     "abandoned": "The design session was abandoned at the user's request.",
 }
+
+
+def exit_summary(reason: str, reasoning: str | None = None) -> str:
+    """The leg summary head-of-abm resumes with: the engine's sentence for ``reason`` plus,
+    when the v2 judge supplied one, its own reasoning. Bounded to the finish tool's limit."""
+
+    base = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+    words = (reasoning or "").strip()
+    if not words:
+        return base
+    return f"{base} Exit judge: {words}"[:4_000]
+
+
+async def _exit_judge_artifact_line(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    pinned_document: dict[str, Any] | None,
+) -> str | None:
+    """One line naming the artifact this session is bound to — title, kind, account."""
+
+    if pinned_document is None:
+        return None
+    kind = "web page" if pinned_document.get("doc_kind") == "web" else "scene ad"
+    title = str(pinned_document.get("title") or "Untitled design")
+    line = f'design "{title}" ({kind})'
+    account_id = pinned_document.get("account_id")
+    if account_id:
+        account = await design_accounts.get_web_account(
+            conn, workspace_id=workspace_id, account_id=str(account_id)
+        )
+        if account is not None:
+            line += f', for account "{account["name"]}"'
+    return line
+
+
+async def _exit_judge_tag_lines(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    focus_refs: Sequence[DomainObjectRef],
+    pinned_document: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    """What the message tagged, one label per line, ids never shown.
+
+    Design documents, files and reference images resolve through the transcript's own
+    presentation reader; accounts and contacts through the identity reads the composer
+    uses. Selected elements on the canvas collapse to a count — they are on the current
+    artifact by construction.
+    """
+
+    from clue_api.chat.composer_context import context_ref_presentations
+    from clue_research.identity import get_account, get_contact
+
+    refs = tuple(focus_refs)
+    if not refs:
+        return ()
+    current_id = str(pinned_document.get("id")) if pinned_document else None
+    presentations = await context_ref_presentations(conn, workspace_id=workspace_id, refs=refs)
+    lines: list[str] = []
+    selected = sum(1 for ref in refs if ref.object_type == "design_node")
+    if selected:
+        lines.append(
+            f"{selected} selected element{'s' if selected != 1 else ''} on the current artifact"
+        )
+    for ref in refs:
+        key = (ref.object_type, str(ref.object_id))
+        if ref.object_type == "design_document":
+            shown = presentations.get(key, {})
+            label = shown.get("label") or "Design"
+            kind = "web page" if shown.get("kind") == "web" else "scene ad"
+            suffix = " (this artifact)" if str(ref.object_id) == current_id else ""
+            lines.append(f'design "{label}" ({kind}){suffix}')
+        elif ref.object_type == "project_document":
+            shown = presentations.get(key, {})
+            lines.append(f'file "{shown.get("label") or "Document"}"')
+        elif ref.object_type == "design_asset":
+            shown = presentations.get(key, {})
+            lines.append(f'reference image "{shown.get("label") or "Reference image"}"')
+        elif ref.object_type in {"account", "contact"}:
+            try:
+                entity_id = EntityId(UUID(str(ref.object_id)))
+            except ValueError:
+                continue
+            if ref.object_type == "account":
+                account = await get_account(conn, entity_id)
+                if account is not None:
+                    lines.append(f'account "{account.canonical_name}"')
+            else:
+                contact = await get_contact(conn, entity_id)
+                if contact is not None:
+                    lines.append(f'contact "{contact.full_name or "a contact"}"')
+    return tuple(lines)
 
 
 def build_design_leg_finisher(
@@ -1043,12 +1138,21 @@ class DesignLegTurnRunner:
                 # died before finalizing. The close (journal, summary message, re-delivery,
                 # ``leg.closed`` frame) committed atomically in the tool's transaction; what
                 # remains is the finalization, which converges below.
+                # The replayed close must carry the ORIGINAL summary (the finish tool's
+                # journaled operation compares its parameters), and since v2 that summary
+                # carries the judge's own words — so it is read back from the journal rather
+                # than re-rendered from the reason alone.
+                async with self._conn_factory() as conn:
+                    journaled = await self._journaled_exit_summary(
+                        conn, workspace_id=workspace_id, turn_id=turn_id
+                    )
                 return await self._exit_leg(
                     submission=submission,
                     leg_id=leg_id,
                     execution_id=execution_id,
                     reason=str(leg["close_reason"]),
                     stream=stream,
+                    summary_override=journaled,
                 )
 
             # --- the §2.2 exit bridge (P3.7): judge BEFORE designing ---------------------------
@@ -1059,15 +1163,18 @@ class DesignLegTurnRunner:
                 leg=leg,
                 prior_history=prior_history,
                 user_message_ref=user_message_ref,
+                pinned_document=pinned_document,
+                focus_refs=focus_refs,
             )
             if exit_decision is not None and exit_decision.action == "finish":
-                assert exit_decision.reason is not None  # decide_exit forbids reasonless finish
+                assert exit_decision.reason is not None  # decide_exit always maps a close
                 return await self._exit_leg(
                     submission=submission,
                     leg_id=leg_id,
                     execution_id=execution_id,
                     reason=exit_decision.reason,
                     stream=stream,
+                    reasoning=exit_decision.reasoning,
                 )
 
             # --- G1: the finalized-document gate (founder ruling, 2026-08-19) ------------------
@@ -1338,8 +1445,17 @@ class DesignLegTurnRunner:
         leg: dict[str, Any],
         prior_history: Sequence[HistoryMessageRef],
         user_message_ref: ArtifactRef,
+        pinned_document: dict[str, Any] | None = None,
+        focus_refs: Sequence[DomainObjectRef] = (),
     ) -> ExitDecision | None:
         """Run the exit judgment for this turn, or ``None`` when the bridge is not composed.
+
+        v2 (2026-09-18) shows the judge two things the message text alone cannot carry: the
+        artifact this session is bound to, and what the message tagged, resolved to labels.
+        A tagged account that is not this artifact's, or a tagged design that is not this
+        artifact, is the strongest signal that the work has moved — and the judge is told to
+        read the sentence around it, not to react to the tag itself. Label resolution is
+        best-effort: a failure leaves the judge with the text it always had.
 
         Fail-safe end to end: a judge that raises, returns garbage, or asks for a reasonless
         finish yields CONTINUE (P3.6's ``decide_exit``), and a judge without a finisher to
@@ -1364,11 +1480,28 @@ class DesignLegTurnRunner:
                 )
             history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
         message = (await self._artifacts.read(user_message_ref)).decode()
+        artifact: str | None = None
+        tags: tuple[str, ...] = ()
+        try:
+            async with self._conn_factory() as conn:
+                artifact = await _exit_judge_artifact_line(
+                    conn, workspace_id=workspace_id, pinned_document=pinned_document
+                )
+                tags = await _exit_judge_tag_lines(
+                    conn,
+                    workspace_id=workspace_id,
+                    focus_refs=focus_refs,
+                    pinned_document=pinned_document,
+                )
+        except Exception:
+            log.warning("design_leg.exit_judge_context_unresolved", exc_info=True)
         try:
             judgment: ExitJudgment | None = await self._exit_judge(
                 brief=str(bundle.get("brief") or ""),
                 history=tuple(history),
                 message=message,
+                artifact=artifact,
+                tags=tags,
             )
         except Exception:
             log.warning("design_leg.exit_judge_raised", exc_info=True)
@@ -1376,7 +1509,47 @@ class DesignLegTurnRunner:
         decision = decide_exit(judgment)
         if decision.fail_safe:
             log.info("design_leg.exit_judgment_fail_safe", leg_id=str(leg["id"]))
+        else:
+            log.info(
+                "design_leg.exit_judgment",
+                leg_id=str(leg["id"]),
+                action=decision.action,
+                reason=decision.reason,
+                reasoning=decision.reasoning,
+                tags=len(tags),
+            )
         return decision
+
+    async def _journaled_exit_summary(
+        self, conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
+    ) -> str | None:
+        """The summary text the finish tool journaled for the close this turn made, or None."""
+
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT j.summary_refs->>'summary_artifact_key' AS key, "
+                    "j.summary_refs->>'summary_sha256' AS sha256, a.media_type, a.size_bytes "
+                    "FROM design_leg_exit_journal j "
+                    "JOIN artifact a ON a.storage_key = j.summary_refs->>'summary_artifact_key' "
+                    "WHERE j.workspace_id = :ws AND j.summary_refs->>'closing_turn_id' = :turn "
+                    "LIMIT 1"
+                ),
+                {"ws": workspace_id, "turn": str(turn_id)},
+            )
+        ).first()
+        if row is None or not row.key:
+            return None
+        body = await self._artifacts.read(
+            ArtifactRef(
+                workspace_id=workspace_id,
+                artifact_key=row.key,
+                sha256=row.sha256,
+                media_type=row.media_type,
+                byte_count=int(row.size_bytes),
+            )
+        )
+        return body.decode()
 
     async def _exit_leg(
         self,
@@ -1386,17 +1559,23 @@ class DesignLegTurnRunner:
         execution_id: ExecutionId,
         reason: str,
         stream: TurnStreamEmitter | None,
+        reasoning: str | None = None,
+        summary_override: str | None = None,
     ) -> DesignLegTurnResult:
         """Close the leg through the governed tool and finalize this turn ``COMPLETED``.
 
         The bridge-time finalize shape: the leg is closed, so the envelope claims COMPLETED
         with NO open gate refs, and the runner appends no assistant message of its own — the
         finish tool's leg-summary message is the turn's one durable assistant record.
+
+        ``reasoning`` (v2 judge) is the model's own sentence for why the session ended; it
+        rides the summary so head-of-abm resumes knowing not just THAT the leg closed but
+        why, in the judge's words, and so the journal keeps it.
         """
 
         workspace_id = submission.workspace_id
         turn_id = submission.turn_id
-        summary = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+        summary = summary_override or exit_summary(reason, reasoning)
         if self._finisher is not None:
             # A crash-retried exit replays the same governed invocation (derived operation
             # id + the tool's own closing-turn journal replay) and returns the ORIGINAL
@@ -1408,7 +1587,8 @@ class DesignLegTurnRunner:
                 summary=summary,
             )
             closed_reason = str(references.get("reason") or reason)
-            summary = DESIGN_LEG_EXIT_SUMMARIES.get(closed_reason, summary)
+            if closed_reason != reason and summary_override is None:
+                summary = exit_summary(closed_reason, reasoning)
         # else: closed-leg re-entry on a worker without the bridge — the close itself
         # committed atomically with the tool's transaction, so only the finalize remains.
 

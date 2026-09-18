@@ -1,0 +1,30 @@
+{
+  "name": "newartifact-03-now-the-website",
+  "kind": "new_artifact",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [
+    {
+      "role": "user",
+      "text": "Bolder CTA."
+    },
+    {
+      "role": "assistant",
+      "text": "The CTA is now the brand's primary colour."
+    }
+  ],
+  "message": "Good. Now let's do the landing page this ad clicks through to.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "A landing page is a different artifact and format from this ad."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "Another format after this one is a new artifact even with no tag at all."
+}

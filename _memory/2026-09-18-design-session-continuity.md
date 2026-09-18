@@ -63,3 +63,21 @@ test_agent_run_write_lock.py`, — all green (106 + 74 + 66; one T8 test fixed i
 UP after. Still owed, founder-triggered: the four live proofs (spec §7) plus the redrive
 double-apply walk (T6-2) and a live erasure proof. Pre-existing reds recorded: image-model 401 test
 in `test_web_substrate.py`, `test_reference_images_contract` stale SimpleNamespace.
+
+## 2026-09-19 — exit judge v2: free reasoning, three engine actions, artifact + tags shown
+Founder ruling: no enum of user intents for the judge — the reasons to leave a session or draft
+another artifact are innumerable, and the model must reason freely. `clue_design.exit_judgment`
+v2: the model answers `close_this_session`, `hand_message_to_strategy_agent`,
+`current_artifact_accepted` and writes `reasoning` (required; blank = malformed = fail-safe
+continue; strict booleans). `decide_exit` maps to the engine's unchanged close labels (hand-on →
+`out_of_scope` re-delivery, wins over acceptance; accepted → `locked`; else `abandoned`), so the
+finish tool, DB CHECKs, journal and frontend are untouched. The prompt (v2) now shows the judge
+`<<<CURRENT_ARTIFACT>>>` (title, kind, account) and `<<<TAGS>>>` (labels resolved from
+focus_refs: designs marked "(this artifact)", accounts, contacts, files, reference images, a
+count of selected elements) and carries scenario guidance: another account / another format /
+a tagged design as the basis for something new → close and hand on; a tagged design or account
+used inside an edit or question about THIS artifact → stay. The reasoning rides the exit summary
+head-of-abm resumes with (`exit_summary(reason, reasoning)`) and the journal; the crash-window
+re-entry replays the JOURNALED summary so the governed operation's parameters match. Golden set:
+22 fixtures (+5 `new_artifact`, +2 tagged-reference stays); `make eval-design-exit` demo updated.
+Not a sub-agent of head-of-abm: one stateless model call in the fleet worker before each leg turn.

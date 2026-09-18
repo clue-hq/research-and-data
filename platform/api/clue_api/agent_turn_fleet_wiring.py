@@ -1650,7 +1650,12 @@ def build_design_leg_exit_judge(
     model_holder: list[object] = []
 
     async def judge(
-        *, brief: str, history: tuple[tuple[str, str], ...], message: str
+        *,
+        brief: str,
+        history: tuple[tuple[str, str], ...],
+        message: str,
+        artifact: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None:
         try:
             if not model_holder:
@@ -1662,7 +1667,8 @@ def build_design_leg_exit_judge(
                         max_retries=policy.max_retries,
                         # The judgment is one small JSON object; the role's generation
                         # budget would be waste here.
-                        max_output_tokens=min(policy.max_output_tokens, 200),
+                        # v2's answer carries a sentence or two of reasoning as well.
+                        max_output_tokens=min(policy.max_output_tokens, 400),
                         temperature=0.0,
                         # Lane 3 slice 5: the judge's own spend is design spend. ``role``
                         # labels every usage record and span this instance produces, so the
@@ -1671,7 +1677,9 @@ def build_design_leg_exit_judge(
                         role=AgentRole.DESIGN.value,
                     )
                 )
-            prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
+            prompt = render_exit_judgment_prompt(
+                brief=brief, history=history, message=message, artifact=artifact, tags=tags
+            )
             # Lane 3 slice 3b: the judge is an `evaluator` in its own trace, and the direct
             # model call carries the LangChain handler so its generation nests underneath.
             # The rendered prompt stays OUT of the observation — only the turn's message and
@@ -1685,7 +1693,12 @@ def build_design_leg_exit_judge(
                 observation(
                     "design-leg.exit_judge",
                     as_type="evaluator",
-                    input={"message": message, "history_turns": len(history)},
+                    input={
+                        "message": message,
+                        "history_turns": len(history),
+                        "artifact": artifact,
+                        "tags": list(tags),
+                    },
                 ) as current,
             ):
                 completion = await model_holder[0].ainvoke(prompt, **call_kwargs)  # type: ignore[attr-defined]
