@@ -679,9 +679,11 @@ def postgres_design_checkpointer(thread_id: str) -> Any:
     """Open the design turn's LangGraph saver on the platform database.
 
     Opened INSIDE the turn thread (the caller is ``_execute_turn``, itself under ``to_thread``),
-    which is what makes a synchronous saver correct here. The thread id is the design run id, per
-    the D5 ruling — see ``lumen_agent/checkpoint.py`` for what resuming that thread does and does
-    not mean today.
+    which is what makes a synchronous saver correct here. The thread is the DOCUMENT's design
+    session for a leg turn (one document = one session, 2026-09-18) and the design run id for a
+    turn that has no document — the caller decides, so a continued session's messages are here
+    under the id its earlier turns wrote. See ``lumen_agent/checkpoint.py`` for what resuming
+    that thread does and does not mean today.
     """
     from clue_db import database_url
     from langgraph.checkpoint.postgres import PostgresSaver

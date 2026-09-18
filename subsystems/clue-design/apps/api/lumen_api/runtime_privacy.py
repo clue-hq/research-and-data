@@ -15,9 +15,15 @@ import shutil
 import socket
 from pathlib import Path
 
+from py_lumen_obs import get_logger
+
 _RUN_ID = re.compile(r"run_[0-9a-f]{32}\Z")
+#: A leg turn threads on its DOCUMENT's design session; a document-less turn threads on its run id.
+_SESSION_ID = re.compile(r"dsess_[0-9a-f]{32}\Z")
 _BINDING = "run_binding.json"
 _LOCK = ".runtime-active.lock"
+
+_logger = get_logger("lumen_api.runtime_privacy")
 
 
 @contextlib.contextmanager
@@ -64,6 +70,46 @@ def _locators(target):
     if isinstance(result, dict) and result.get("trace_dir"):
         found.append({"trace_dir": result["trace_dir"], "inner_run_id": result.get("run_id")})
     return found
+
+
+def _purge_session_folders(*, workspace_id, runs, roots):
+    """Remove the persistent memory of every erased run's design session.
+
+    A run's own directory is not the whole body any more: a leg turn writes into its DOCUMENT's
+    session folder (``<root>/sessions/<session_id>/``) and the harness compacts that thread into
+    ``<root>/conversation_history/<session_id>.md``. Both outlive the run, so erasing the run
+    without them would leave the model's echoes of the subject on disk.
+
+    Only the session's own two paths go. ``conversation_history/media/`` is shared and hash-named
+    — other sessions still cite those bytes — and a symlinked session folder is refused rather
+    than followed, so custody of this host can never be used to erase something outside it.
+    """
+    for target in runs:
+        session_id = str(target.checkpoint_thread_id or "")
+        if not _SESSION_ID.fullmatch(session_id):
+            continue
+        for root in roots:
+            sessions, histories = Path(root) / "sessions", Path(root) / "conversation_history"
+            folder = sessions / session_id
+            # The two containers as well as the folder itself: a symlink anywhere on the way in
+            # would hand this host's erasure authority to a directory it does not own.
+            if sessions.is_symlink() or histories.is_symlink() or folder.is_symlink():
+                raise RuntimeError("design_privacy.session_path_outside_host")
+            existed = folder.exists()
+            if existed:
+                shutil.rmtree(folder)
+            history = histories / f"{session_id}.md"
+            # A symlink here is unlinked as the link it is; the target is never opened.
+            if history.is_symlink() or history.exists():
+                history.unlink()
+                existed = True
+            if existed:
+                _logger.info(
+                    "design_privacy.session_removed",
+                    workspace_id=workspace_id,
+                    session_id=session_id,
+                    root=str(root),
+                )
 
 
 def purge_runtime_workspaces(*, workspace_id, runs, roots):
@@ -131,6 +177,9 @@ def purge_runtime_workspaces(*, workspace_id, runs, roots):
                     raise RuntimeError("design_privacy.runtime_still_active") from None
                 shutil.rmtree(path)
             removed.add(path)
+    # After the per-run bodies, because a session folder is only safe to take once every run
+    # that could still be writing into it has been fenced and erased above.
+    _purge_session_folders(workspace_id=workspace_id, runs=runs, roots=roots)
 
 
 def build_runtime_workspace_purger():
@@ -143,9 +192,13 @@ def build_runtime_workspace_purger():
         or Path(__file__).resolve().parents[3] / ".deepagent-workspace"
     )
 
+    # The candidate-bundle harness rebases its whole runtime — session folder and compaction
+    # history included — under the `scene-candidate` sibling, so it is a root in its own right.
+    roots = [root, Path(root) / "scene-candidate"]
+
     async def purge(*, workspace_id, runs):
         await asyncio.to_thread(
-            purge_runtime_workspaces, workspace_id=workspace_id, runs=runs, roots=[root]
+            purge_runtime_workspaces, workspace_id=workspace_id, runs=runs, roots=roots
         )
 
     return purge
