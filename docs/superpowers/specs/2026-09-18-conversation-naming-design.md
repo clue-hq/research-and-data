@@ -1,8 +1,6 @@
 # Conversation naming — design
 
-**Status:** design approved in discussion with the founder 2026-09-18 (rulings: project named after
-the first agent reply; chat title at the same moment; hook inside the turn worker; call timeout
-60 s; switch defaults to on). Written spec awaiting founder review before the implementation plan.
+**Status:** approved 2026-09-18; implemented on branch research-streaming-v3 per docs/superpowers/plans/2026-09-18-conversation-naming.md.
 
 ## 1. The problem
 
