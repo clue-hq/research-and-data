@@ -254,6 +254,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.project_documents import register_project_document_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
     from clue_api.frontend_read.settings import register_settings_routes
+    from clue_api.frontend_read.uploads import register_upload_routes
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
@@ -306,6 +307,15 @@ def build_frontend_read_router(
         allow_local_mutations=allow_local_mutations,
         # The human's PUT refreshes the project library it just moved (2026-09-14).
         library=project_library,
+    )
+    # Chat attachments: the upload receipt and the bytes behind a transcript chip (spec
+    # 2026-09-18).
+    register_upload_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        settings=settings,
+        allow_local_mutations=allow_local_mutations,
     )
     # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
     register_artifact_routes(router, conn_factory=conn_factory)
