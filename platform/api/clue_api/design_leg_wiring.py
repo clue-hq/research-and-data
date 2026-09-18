@@ -106,6 +106,7 @@ from clue_design.exit_judgment import (
     ExitJudgment,
     decide_exit,
 )
+from clue_design.sessions import design_session_id
 from clue_obs import get_logger
 from clue_obs.langfuse import observation, propagate_trace, tag_entities
 from clue_spine import get_project
@@ -814,6 +815,8 @@ class DesignLegTurnRunner:
         finisher: DesignLegFinisher | None = None,
         memory: ContextAssembly | None = None,
         conn_factory: ConnFactory = transaction,
+        document_wait_poll_s: float = 2.0,
+        document_wait_timeout_s: float = 1800.0,
     ) -> None:
         self._profiles = profiles
         self._artifacts = artifacts
@@ -828,6 +831,11 @@ class DesignLegTurnRunner:
         self._finisher = finisher
         self._memory = memory
         self._conn_factory = conn_factory
+        # The same-document wait (founder ruling 2026-09-18) — see :meth:`_wait_for_document`.
+        # Parameters only so a test can run the loop in milliseconds; production keeps a poll
+        # cheap enough to leave on and a window longer than any single design turn.
+        self._document_wait_poll_s = document_wait_poll_s
+        self._document_wait_timeout_s = document_wait_timeout_s
 
     async def run_leg_turn(
         self,
@@ -1548,7 +1556,12 @@ class DesignLegTurnRunner:
                 envelope.workspace_id != workspace_id
                 or envelope.run_id != run_id
                 or envelope.work_id != design_runs.work_id_for_run(run_id)
-                or envelope.checkpoint_thread_id != run_id
+                # Both thread namings are this run's own authority: every envelope frozen
+                # before session continuity (2026-09-18) names the run, and a document-pinned
+                # one now names the document's session. A re-join must accept the value its
+                # own stored payload was born with rather than re-deciding it.
+                or envelope.checkpoint_thread_id
+                not in {run_id, design_session_id(workspace_id, str(envelope.document_id or ""))}
             ):
                 raise ValueError("the stored design envelope has different run authority")
         else:
@@ -1592,6 +1605,9 @@ class DesignLegTurnRunner:
                     # strand repair becomes a working second-chance completion path.
                     payload=envelope.model_dump(mode="json"),
                     work_id=envelope.work_id,
+                    # The row records the thread this run was dispatched on — the document's
+                    # session for a pinned leg — rather than re-deriving the D5 default.
+                    checkpoint_thread_id=envelope.checkpoint_thread_id,
                     leg_id=leg_id,
                     execution_id=UUID(str(execution_id)),
                 )
@@ -1613,6 +1629,14 @@ class DesignLegTurnRunner:
             return run
         document_id = str((pinned_document or {}).get("id") or "")
         doc_kind = str((pinned_document or {}).get("doc_kind") or "")
+        # Queue behind whoever is already designing this document — OUTSIDE the trace below,
+        # so the leg's observation measures the turn's own work rather than its queueing.
+        if envelope.document_id is not None:
+            await self._wait_for_document(
+                workspace_id=workspace_id,
+                document_id=str(envelope.document_id),
+                run_id=run_id,
+            )
         # Lane 3 slice 5: the design leg gets its OWN trace, named and scoped like the
         # head-of-abm turn's. Everything the design runtime does inside the drive — the trio's
         # model calls, through the Langfuse handler the lane injects — nests under this
@@ -1643,6 +1667,43 @@ class DesignLegTurnRunner:
             raise RuntimeError("the design lane returned without a terminal design run")
         await self._record_design_receipts(run, request=turn_request)
         return run
+
+    async def _wait_for_document(self, *, workspace_id: str, document_id: str, run_id: str) -> None:
+        """Founder ruling 2026-09-18: a second thread on a driven document QUEUES behind it.
+
+        Sessions make this a correctness rule, not a spend rule — a document's turns all
+        continue ONE LangGraph thread, and two of them running at once would interleave their
+        checkpoints into a single incoherent history (on top of the write-lock the design API
+        already enforces against a human editing a document an agent is driving).
+
+        The wait lifts by itself: only a ``running`` run holds the document, and every way a
+        run can end — success, failure, cancellation, the reaper failing an expired lease —
+        makes it terminal. The timeout is the honest end of a wait that will never lift: the
+        turn fails loudly rather than queueing forever behind a hold nobody will release.
+        """
+
+        deadline = asyncio.get_running_loop().time() + self._document_wait_timeout_s
+        announced = False
+        while True:
+            async with self._conn_factory() as conn:
+                active = await design_runs.active_run_for_document(
+                    conn, workspace_id=workspace_id, document_id=document_id
+                )
+            # Our own row is ``queued`` until a worker claims it, so this is a belt-and-braces
+            # guard rather than the common case — but a run must never wait on itself.
+            if active is None or active == run_id:
+                return
+            if not announced:
+                log.info(
+                    "design_leg.waiting_for_document",
+                    run_id=run_id,
+                    document_id=document_id,
+                    active_run_id=active,
+                )
+                announced = True
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeError("another design turn held this document past the wait window")
+            await asyncio.sleep(self._document_wait_poll_s)
 
     async def _envelope(
         self,
@@ -1679,6 +1740,13 @@ class DesignLegTurnRunner:
                 }
             )
         document = pinned_document or {}
+        document_id = leg.get("document_id")
+        # Session continuity (design note 2026-09-18): one design document = one persistent
+        # design-agent session, so the LangGraph thread a pinned turn continues is the
+        # DOCUMENT's session — the same thread the previous turn on this document wrote —
+        # rather than this run. A document-less leg has nothing to be continuous about and
+        # keeps the D5 ruling byte-for-byte: the checkpoint thread IS the run.
+        thread_id = design_session_id(workspace_id, str(document_id)) if document_id else run_id
         target_node_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_node"
         )
@@ -1764,6 +1832,10 @@ class DesignLegTurnRunner:
                 "thread_id": submission.thread_id,
                 "agent_turn_id": str(submission.turn_id),
                 "execution_id": str(execution_id),
+                # Session continuity: the design side sends the DELEGATION BRIEF block on the
+                # first turn of each leg and never re-sends the HISTORY block on a continued
+                # thread; this flag is how it knows which turn this is without a second read.
+                "first_turn_of_leg": not history_texts,
                 "brand_kit_id": leg.get("brand_kit_id"),
                 "brand_kit_version": leg.get("brand_kit_version"),
                 "document_version_guard": leg.get("document_version_guard"),
@@ -1822,8 +1894,8 @@ class DesignLegTurnRunner:
             work_id=design_runs.work_id_for_run(run_id),
             workspace_id=workspace_id,
             run_id=run_id,
-            checkpoint_thread_id=run_id,
-            document_id=leg.get("document_id"),
+            checkpoint_thread_id=thread_id,
+            document_id=document_id,
             # T3-1: the turn's project, frozen into the envelope like everything else this
             # worker decides, so the design side's spend scope can stamp it onto every
             # ``provider_call_ledger`` row without knowing the platform exists.
