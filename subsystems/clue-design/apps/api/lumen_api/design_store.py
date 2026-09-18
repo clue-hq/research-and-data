@@ -2081,6 +2081,21 @@ class HybridRepository:
             )
         )
 
+    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+        """The digest of the newest session-folder manifest this document's session stored, or
+        ``None``.
+
+        Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
+        that lands anywhere else restores it from this manifest before the agent sees its
+        workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
+        the same one-transaction bridge every other read here uses.
+        """
+        return self._bridge._run(
+            lambda conn: design_sessions.latest_session_manifest_sha256(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
     def active_design_run_for_document(self, document_id: str) -> Optional[str]:
         """The run id of a design run currently DRIVING this document, or ``None``.
 

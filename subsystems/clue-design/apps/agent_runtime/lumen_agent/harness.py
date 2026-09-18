@@ -366,6 +366,26 @@ def _create_scene_solo_graph(
     })
 
 
+def effective_runtime_config(config: AgentRuntimeConfig) -> AgentRuntimeConfig:
+    """The config the SCENE harness actually runs with — the candidate bundle's rebound root.
+
+    Shared hosts may assemble web/legacy and candidate turns concurrently, so a candidate turn's
+    derived knowledge and backend roots are kept disjoint for the whole run (not merely while the
+    materializer's initialization lock is held) by rooting it at ``<trace_dir>/scene-candidate``.
+
+    It is a FUNCTION, and public, because the rebase decides where the session folder and the
+    conversation history live (design session continuity, 2026-09-18), and the turn-end sync at
+    the API seam has to look in the same place the harness wrote. Inline, the two would disagree
+    the moment the candidate bundle was on, and a candidate session would sync an empty folder.
+    Pure, and a non-candidate config comes back UNCHANGED (the same object), so every other path
+    is byte-identical to before. NOT idempotent — it appends a segment — so apply it once per
+    config: a caller passes the ORIGINAL config on to the harness, which rebases it itself.
+    """
+    if config.scene_skill_bundle != "candidate":
+        return config
+    return replace(config, trace_dir=config.trace_dir / "scene-candidate")
+
+
 def create_design_deepagent(
     prompt: str,
     config: AgentRuntimeConfig | None = None,
@@ -428,13 +448,7 @@ def create_design_deepagent(
             "Scene solo requires the candidate skill bundle and fast_loop=True. "
             "Set LUMEN_AGENT_SCENE_SKILL_BUNDLE=candidate and LUMEN_AGENT_FAST_LOOP=1."
         )
-    if scene_candidate:
-        # Shared hosts may assemble web/legacy and candidate turns concurrently.
-        # Keep their derived knowledge and backend roots disjoint for the entire
-        # run, not merely while the materializer's initialization lock is held.
-        runtime_config = replace(
-            runtime_config, trace_dir=runtime_config.trace_dir / "scene-candidate"
-        )
+    runtime_config = effective_runtime_config(runtime_config)
 
     # W-isolation (D2): sync the repo's skills + knowledge into the isolated
     # workspace BEFORE anything the model can touch. Loud RuntimeError on failure —

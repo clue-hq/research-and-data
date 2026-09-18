@@ -9200,6 +9200,60 @@ _REFERENCES_UNRESOLVED = object()
 _BRAND_KIT_UNRESOLVED = object()
 
 
+def _stamp_session_manifest(
+    response: JsonObject,
+    *,
+    session_dir: Path | None,
+    history_file: Path | None,
+    session_id: str | None,
+    blobs: DesignBlobStore,
+    snapshot_session: Any,
+) -> JsonObject:
+    """Give this session's folder durable custody and name the manifest on the turn's result.
+
+    Session continuity (2026-09-18). ``result_json['session_manifest_sha256']`` is the ONLY
+    durable pointer to a session's memory — the next turn reads it back
+    (``latest_session_manifest_sha256``) and restores the folder wherever it happens to run.
+
+    Runs on every SESSION turn the runtime returns from — including one that returns a refusal,
+    because the workspace it left is still this session's memory of what it tried. A turn whose
+    runtime CRASHED snapshots nothing and keeps the previous turn's manifest as the session's
+    last good memory. Non-session turns (``session_dir is None``) are untouched, so every
+    editor/CLI/fixture path stays byte-identical.
+
+    BEST-EFFORT and loud: the work really happened and its result is really returned, so a
+    storage failure must not turn a finished turn into a failed one — but it must not be silent
+    either, because a swallowed snapshot is a session that will wake up with amnesia.
+    """
+    if session_dir is None:
+        return response
+    try:
+        manifest = snapshot_session(
+            session_dir,
+            register=lambda data, media_type, source_key: blobs.register(
+                data, media_type=media_type, source_key=source_key
+            ),
+            history_file=history_file,
+        )
+        manifest_bytes = json.dumps(manifest, sort_keys=True).encode()
+        # ``register`` returns a storage KEY while ``read_blob`` takes a DIGEST, so the digest is
+        # what the result carries — the key would be unreadable to the restore path.
+        blobs.register(
+            manifest_bytes,
+            media_type="application/json",
+            source_key="design-session/manifest",
+        )
+        response["session_manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    except Exception as error:  # noqa: BLE001 - a lost snapshot is never a lost turn
+        api_logger.error(
+            "design_session.snapshot_failed",
+            session_id=session_id,
+            error=str(error),
+            exc_info=True,
+        )
+    return response
+
+
 def run_agent_turn_preview(
     payload: AgentTurnPreviewRequest,
     root: Path,
@@ -9214,6 +9268,7 @@ def run_agent_turn_preview(
     thread_id: Optional[str] = None,
     session_id: str | None = None,
     run_id: str | None = None,
+    session_manifest: dict | None = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
     scene_checkpoint: Any = None,
     cancel_requested: Any = None,
@@ -9240,7 +9295,8 @@ def run_agent_turn_preview(
     )
     try:
         from lumen_agent.config import AgentRuntimeConfig
-        from lumen_agent.harness import run_deepagent_turn
+        from lumen_agent.harness import effective_runtime_config, run_deepagent_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -9409,6 +9465,31 @@ def run_agent_turn_preview(
         clarification_already_requested = (
             payload.previous_turn_outcome == "clarification_requested"
         )
+        # Session continuity (2026-09-18): WHERE this session's memory lives, resolved through the
+        # same rule the harness uses, so the candidate bundle's rebound root can never leave the
+        # two looking in different folders. Computed before the run because the restore below must
+        # happen before `materialize_agent_workspace` and the tools touch the workspace, and reused
+        # after it for the snapshot.
+        effective = effective_runtime_config(config)
+        session_dir = effective.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else effective.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            # A DIFFERENT worker ran this session's last turn (or this one's disk was reclaimed).
+            # Rebuild the folder before anything reads it, or the agent would continue a
+            # conversation about files it cannot open.
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         payload_result, tools = run_deepagent_turn(
             prompt,
             config,
@@ -9445,7 +9526,15 @@ def run_agent_turn_preview(
     # ``turn_dir``, not ``trace_dir``: since the session folder landed (2026-09-18) the
     # operations ledger and the iteration folders live under THIS turn's folder, so a
     # session turn read from the session root would report zero operations.
-    return agent_response_from_trace(payload_result, tools.turn_dir, tools.scene)
+    response = agent_response_from_trace(payload_result, tools.turn_dir, tools.scene)
+    return _stamp_session_manifest(
+        response,
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
 def _web_node_label(
@@ -9766,6 +9855,7 @@ def run_web_agent_turn(
     thread_id: Optional[str] = None,
     session_id: str | None = None,
     run_id: str | None = None,
+    session_manifest: dict | None = None,
     cancel_requested: Any = None,
     callbacks: Any = None,
 ) -> JsonObject:
@@ -9817,6 +9907,7 @@ def run_web_agent_turn(
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -10004,6 +10095,25 @@ def run_web_agent_turn(
             base_url=config.agent_base_url,
             api_key=config.agent_api_key,
         )
+        # Session continuity (2026-09-18): the WEB harness has no candidate-bundle rebase, so the
+        # session folder is exactly where this config says it is. Restored before the runtime
+        # touches the workspace; snapshotted on the way out.
+        session_dir = config.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else config.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         result = run_deepagent_web_turn(
             prompt=prompt,
             config=config,
@@ -10026,19 +10136,26 @@ def run_web_agent_turn(
             str(error),
         )
 
-    return {
-        "schema_version": 1,
-        "status": result.get("status"),
-        "outcome": result.get("outcome"),
-        "summary": result.get("summary"),
-        "web_doc": result.get("web_doc"),
-        "operations": result.get("operations", []),
-        "grounding": result.get(
-            "grounding", {"schema_version": 1, "sources": [], "citations": []}
-        ),
-        "preview_paths": result.get("preview_paths", []),
-        "doc_kind": "web",
-    }
+    return _stamp_session_manifest(
+        {
+            "schema_version": 1,
+            "status": result.get("status"),
+            "outcome": result.get("outcome"),
+            "summary": result.get("summary"),
+            "web_doc": result.get("web_doc"),
+            "operations": result.get("operations", []),
+            "grounding": result.get(
+                "grounding", {"schema_version": 1, "sources": [], "citations": []}
+            ),
+            "preview_paths": result.get("preview_paths", []),
+            "doc_kind": "web",
+        },
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
 # --- fleet turn executors (D5 Round B) --------------------------------------------------------
@@ -10391,6 +10508,37 @@ def _document_drift_note(
         return None
 
 
+def _session_manifest(
+    store: HybridRepository, blobs: DesignBlobStore, *, document_id: str
+) -> JsonObject | None:
+    """This document's session-folder manifest from its last synced turn, or ``None``.
+
+    Session continuity (2026-09-18): the runtime restores the session folder from this when the
+    turn lands on a worker that has never run this session. Read HERE, at the executor, because
+    this is the frame that has the database; the runtime is handed the manifest BY VALUE, the
+    same rule the brand kit and the asset library follow.
+
+    ``None`` means no turn has synced this session yet, or the read itself failed. A missing
+    manifest is not a failure: the runtime simply starts the session's folder fresh, which is
+    what the very first turn of every session does anyway. Shared by both executors so the two
+    can never disagree on where a session's memory comes from.
+    """
+    try:
+        sha = store.latest_session_manifest_sha256(document_id)
+        if sha is None:
+            return None
+        _, data = blobs.read_blob(sha)
+        manifest = json.loads(data)
+        return manifest if isinstance(manifest, dict) else None
+    except Exception as error:  # noqa: BLE001 - an unreadable manifest costs memory, not the turn
+        api_logger.warning(
+            "design_session.manifest_unavailable",
+            document_id=document_id,
+            error=str(error),
+        )
+        return None
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -10675,6 +10823,18 @@ def _execute_agent_turn_job(
                 # turn on the thread (ruling T5-1).
                 session_id=session_id,
                 run_id=envelope.run_id if session_id else None,
+                # ...and the memory that session left behind, so a turn on a worker that has
+                # never run it rebuilds the folder instead of opening a continued thread over
+                # an empty workspace.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, envelope.workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if session_id
+                    else None
+                ),
                 resolved_brand_kit=resolved_brand_kit,
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
@@ -11265,6 +11425,16 @@ def _execute_web_turn_job(
                     design_session_id(workspace_id, str(document_id)) if leg_block else None
                 ),
                 run_id=envelope.run_id if leg_block else None,
+                # See the scene executor: the session's synced folder, by value.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if leg_block
+                    else None
+                ),
                 # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
                 # route can honestly stop either kind of design run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),

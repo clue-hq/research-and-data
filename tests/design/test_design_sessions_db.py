@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import db_lifespan
 from clue_design import runs as design_runs
-from clue_design.sessions import latest_written_version
+from clue_design.sessions import latest_session_manifest_sha256, latest_written_version
 from tests.design.conftest import run_async
 
 
@@ -117,6 +117,79 @@ def test_latest_written_version_is_scoped_to_its_own_document_and_workspace() ->
                     is None
                 )
                 assert await latest_written_version(conn, workspace_id=ws, document_id=sibling) == 7
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_latest_session_manifest_reads_the_newest_succeeded_stamp() -> None:
+    """The session-folder manifest is read back with the same honesty as the version stamp.
+
+    Task 8 (2026-09-18): the manifest digest is the only durable pointer to a session's memory,
+    so the wrong answer here is a session that wakes up with amnesia (or, worse, with a FAILED
+    turn's folder). Same three distractors: a failed run, a succeeded run that synced nothing,
+    and another document's session.
+    """
+
+    async def scenario() -> None:
+        ws, doc = f"ws_test_sess_{uuid4().hex[:10]}", f"doc_{uuid4().hex}"
+        sibling = f"doc_{uuid4().hex}"
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                await _seed_workspace(conn, ws)
+                await _seed_document(conn, workspace_id=ws, document_id=doc)
+                await _seed_document(conn, workspace_id=ws, document_id=sibling)
+
+                # Before any turn synced, there is nothing to restore — the first turn of a
+                # session simply starts its folder fresh.
+                assert (
+                    await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=doc)
+                    is None
+                )
+
+                for status, result in (
+                    ("succeeded", '{"session_manifest_sha256": "aa"}'),
+                    ("succeeded", '{"session_manifest_sha256": "bb"}'),
+                    ("failed", '{"session_manifest_sha256": "ff"}'),
+                    ("succeeded", '{"summary": "no session"}'),
+                ):
+                    run_id = f"run_{uuid4().hex}"
+                    await design_runs.create_run(
+                        conn, workspace_id=ws, run_id=run_id, document_id=doc
+                    )
+                    await _terminalize(conn, run_id=run_id, status=status, result=result)
+
+                sibling_run = f"run_{uuid4().hex}"
+                await design_runs.create_run(
+                    conn, workspace_id=ws, run_id=sibling_run, document_id=sibling
+                )
+                await _terminalize(
+                    conn,
+                    run_id=sibling_run,
+                    status="succeeded",
+                    result='{"session_manifest_sha256": "cc"}',
+                )
+
+                assert (
+                    await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=doc)
+                    == "bb"
+                )
+                # Scoped to its own document, and to its own workspace.
+                assert (
+                    await latest_session_manifest_sha256(
+                        conn, workspace_id=ws, document_id=sibling
+                    )
+                    == "cc"
+                )
+                assert (
+                    await latest_session_manifest_sha256(
+                        conn, workspace_id=f"ws_other_{uuid4().hex[:8]}", document_id=doc
+                    )
+                    is None
+                )
             finally:
                 await trans.rollback()
 

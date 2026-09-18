@@ -56,6 +56,35 @@ async def latest_written_version(
     return None if row is None else int(row.v)
 
 
+async def latest_session_manifest_sha256(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> str | None:
+    """The digest of the newest session-folder manifest this document's session synced, or ``None``.
+
+    A session's memory lives in a folder on whichever worker ran its last turn, and fleet work is
+    not sticky — so at turn end the runtime snapshots that folder into content-addressed storage
+    and stamps the manifest's digest on the run result. This read is how the NEXT turn, possibly
+    on a different worker, finds it.
+
+    Same shape and same honesty as :func:`latest_written_version`: the newest succeeded run that
+    actually carries the stamp. A succeeded turn may legitimately have none (a non-session editor
+    turn, or a turn whose best-effort snapshot failed), and skipping over it restores the newest
+    memory that really was stored rather than declaring the session lost.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT result_json->>'session_manifest_sha256' AS sha FROM design_agent_run "
+                "WHERE workspace_id = :w AND document_id = :d AND status = 'succeeded' "
+                "AND result_json->>'session_manifest_sha256' IS NOT NULL "
+                "ORDER BY updated_at DESC LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else str(row.sha)
+
+
 def render_document_drift_note(
     *, previous_version: int, current_version: int, envelopes: list[dict[str, Any]]
 ) -> str:
@@ -77,4 +106,9 @@ def render_document_drift_note(
     return "\n".join(lines)
 
 
-__all__ = ["design_session_id", "latest_written_version", "render_document_drift_note"]
+__all__ = [
+    "design_session_id",
+    "latest_session_manifest_sha256",
+    "latest_written_version",
+    "render_document_drift_note",
+]

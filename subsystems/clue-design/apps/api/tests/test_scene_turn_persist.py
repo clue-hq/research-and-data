@@ -1959,3 +1959,102 @@ def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_writ
     stored = store.require_document(document["id"])
     assert stored["scene"]["meta"]["title"] == "Human wins"
     assert stored["current_version"] == 2
+
+
+# --- (d) the session folder travels ------------------------------------------
+
+
+def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Session continuity (2026-09-18), Task 8: the session folder is not the worker's.
+
+    A session's memory lives in a folder on whichever worker ran its last turn, and fleet work is
+    not sticky — so at turn end the agent-visible ``workspace/`` tree is registered as
+    content-addressed blobs and the manifest's DIGEST is stamped on the run result. That stamp is
+    the only durable pointer the next turn has, so this drives the REAL
+    ``run_agent_turn_preview`` (no ``agent_turn_runner`` override) with only the runtime's own
+    model call stubbed, and reads the manifest back the way the restore path will:
+    ``read_blob(sha)``.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    from clue_design.sessions import design_session_id
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    # The runtime's workspace root is redirected into tmp_path so the turn's session folder is
+    # this test's, not the checkout's `.deepagent-workspace`.
+    base_config = agent_config.AgentRuntimeConfig.from_env(REPO_ROOT)
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(
+            lambda _cls, _root=None: dataclass_replace(
+                base_config, trace_dir=tmp_path / "agent-workspace"
+            )
+        ),
+    )
+    # The multimodal preflight is a live model-catalogue call; the loop itself never runs here.
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: dict = {}
+
+    def fake_turn(_prompt, config, **_kwargs):
+        """Stand in for the trio: leave one file in the session workspace and stop."""
+        session_dir = config.session_dir()
+        seen["session_dir"] = session_dir
+        (session_dir / "workspace").mkdir(parents=True, exist_ok=True)
+        (session_dir / "workspace" / "brief.md").write_text("the brief", encoding="utf-8")
+        turn_dir = session_dir / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert seen["session_dir"] == (
+        tmp_path
+        / "agent-workspace"
+        / "sessions"
+        / design_session_id(store.workspace_id, document["id"])
+    )
+    sha = response["session_manifest_sha256"]
+    assert isinstance(sha, str) and len(sha) == 64
+    media_type, data = make_blob_store(client.app).read_blob(sha)
+    assert media_type == "application/json"
+    manifest = json.loads(data)
+    assert manifest["schema_version"] == 1
+    # The agent-visible workspace travelled; the turn's own outputs did not.
+    assert set(manifest["files"]) == {"workspace/brief.md"}
+    entry = manifest["files"]["workspace/brief.md"]
+    assert entry["sha256"] == hashlib.sha256(b"the brief").hexdigest()
+    # ...and the bytes are really in custody, which is what makes the restore possible.
+    assert make_blob_store(client.app).read(entry["sha256"]) == b"the brief"
