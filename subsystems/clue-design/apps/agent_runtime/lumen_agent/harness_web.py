@@ -22,14 +22,14 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.structured_output import ToolStrategy
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 from py_lumen_obs import get_logger
 from py_lumen_obs.config import run_log
 
 from .cancellation import CANCELLED_EVENT, CANCELLED_STOP_REASON, TurnCancelled
-from .checkpoint import invoke_turn_graph
+from .checkpoint import RUN_ID_KEY, invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
@@ -616,7 +616,7 @@ def run_deepagent_web_turn(
         cancel_requested=cancel_requested,
     )
 
-    run_log_path = tools.trace_dir / "logs" / "run.jsonl"
+    run_log_path = tools.turn_dir / "logs" / "run.jsonl"
     with run_log(tools.run_id, run_log_path):
         logger.debug("web_run_log_attached", run_id=tools.run_id, run_log_path=str(run_log_path))
 
@@ -627,7 +627,11 @@ def run_deepagent_web_turn(
             output_summary=f"workspace=/{tools.workspace_scope_id}/workspace",
         )
 
-        initial_state = {"messages": [{"role": "user", "content": prompt}]}
+        # Design session continuity: the run id rides the human message so a retry of the SAME
+        # run resumes its thread and a new run continues it — see `harness.run_deepagent_turn`.
+        initial_state = {
+            "messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: tools.run_id})]
+        }
         # Lane 3 slice 5: the turn's receipts and the platform's injected handlers ride the
         # INVOKE CONFIG — see `harness.run_deepagent_turn` for why config-level, not
         # instance-level.
@@ -652,6 +656,7 @@ def run_deepagent_web_turn(
                 invoke_config=invoke_config,
                 checkpointer=checkpointer,
                 thread_id=thread_id,
+                run_id=tools.run_id,
             )
         except TurnCancelled as error:
             # A3 (defect R3-D). Caught above the generic handler purely so the finalize below says
@@ -677,7 +682,7 @@ def run_deepagent_web_turn(
                 payload={"exception": exception_text},
             )
 
-        final_path = tools.trace_dir / "final.json"
+        final_path = tools.turn_dir / "final.json"
         if not final_path.exists():
             # The orchestrator never finalized — HONEST failure, never fabricated.
             tools.finalize_web_run(
@@ -687,7 +692,7 @@ def run_deepagent_web_turn(
         outcome = final.get("outcome", "failed")
         summary = final.get("summary", "")
 
-        final_doc_path = tools.trace_dir / "final_web_doc.json"
+        final_doc_path = tools.turn_dir / "final_web_doc.json"
         web_doc = (
             json.loads(final_doc_path.read_text(encoding="utf-8"))
             if final_doc_path.exists()

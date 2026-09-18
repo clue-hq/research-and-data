@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from py_lumen_obs import get_logger
 from py_lumen_obs.config import run_log
@@ -34,7 +35,7 @@ from .cancellation import (
     TurnCancelled,
     attach_cancellation_callback,
 )
-from .checkpoint import invoke_turn_graph
+from .checkpoint import RUN_ID_KEY, invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
 from .models.schemas import SceneVisualCritique, VisualCritique
@@ -980,9 +981,9 @@ def run_deepagent_turn(
     # Attach only this run's attributed events through finalization and metrics.
     # The shared console keeps its env/default configuration; overlapping runs
     # retain independent file handlers, which close on every exit path.
-    run_log_path = tools.trace_dir / "logs" / "run.jsonl"
+    run_log_path = tools.turn_dir / "logs" / "run.jsonl"
     guard = (
-        runtime_workspace_guard(tools.run_id, tools.trace_dir)
+        runtime_workspace_guard(tools.run_id, tools.turn_dir)
         if runtime_workspace_guard is not None else nullcontext()
     )
     with guard, run_log(
@@ -997,7 +998,14 @@ def run_deepagent_turn(
             output_summary=f"workspace={workspace_root(tools)}",
         )
 
-        initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
+        # Design session continuity: the human message carries the RUN ID that produced it, so a
+        # thread the same run retries is recognisable (resume) and a thread a NEW run lands on is
+        # continued. It survives the checkpoint round trip on `additional_kwargs`; a plain dict
+        # message would not.
+        initial_state = {
+            "messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: tools.run_id})],
+            **initial_turn_state(tools, prompt),
+        }
         # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
         # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
         # when one is, the runtime id degrades to trace-dir naming only.
@@ -1033,6 +1041,7 @@ def run_deepagent_turn(
                 invoke_config=invoke_config,
                 checkpointer=checkpointer,
                 thread_id=thread_id,
+                run_id=tools.run_id,
             )
         except TurnCancelled as error:
             # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
@@ -1083,7 +1092,7 @@ def run_deepagent_turn(
         # path would miss it. `emit_run_metrics` itself never raises.
         payload: Optional[dict] = None
         try:
-            final_path = tools.trace_dir / "final.json"
+            final_path = tools.turn_dir / "final.json"
             if final_path.exists():
                 # The API receives tools.scene, not the older final_scene.json.
                 # A later tool in the same graph batch can change that live draft
