@@ -208,6 +208,10 @@ async def insert_submission(
 
     if any(ref.workspace_id != workspace_id for ref in context_refs):
         raise ValueError("submission context refs cross the workspace boundary")
+    # The attachment table's composite upload FK would refuse this too, but the loud early raise
+    # names the boundary that was crossed instead of surfacing an opaque IntegrityError.
+    if any(item.ref.workspace_id != workspace_id for item in attachment_refs):
+        raise ValueError("submission attachment refs cross the workspace boundary")
 
     await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
     # Acceptance order, not transaction-start time, defines FIFO. This also serializes
