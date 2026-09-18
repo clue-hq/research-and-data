@@ -415,6 +415,65 @@ def test_a_leg_scene_turn_on_a_document_no_agent_has_written_gets_no_drift_note(
     assert response["current_version"] == 2
 
 
+def test_a_direct_editor_turn_joins_no_session_even_on_a_document_the_agent_wrote(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling T6-1: the session is a LEG-turn concept.
+
+    A direct editor turn (``POST /agent/turns``) pins a document but carries no ``leg`` block, and
+    the route threads it on its own run id — so it must keep its per-run runtime folder, join no
+    session, and hear nothing about drift. Proven on the hardest case: a document THIS workspace's
+    agent wrote and a human then moved, which is exactly when a leg turn would be told.
+    """
+
+    import lumen_api.main as main
+
+    document = create_document(client)
+    # A leg turn writes (and is recorded), then a human moves the document: drift now exists.
+    status, response, _, _ = _drive_leg_turn(
+        client, document, base_version=0, operations=[title_operation("Agent Title")]
+    )
+    assert (status, response["current_version"]) == ("succeeded", 1)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
+    )
+    assert applied.status_code == 200, applied.text
+
+    store = HybridRepository()
+    captured: dict = {}
+
+    def run_preview(payload, _root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        captured["prompt"] = payload.prompt
+        return proposing_runner([])(payload, _root)
+
+    monkeypatch.setattr(main, "run_agent_turn_preview", run_preview)
+    status, response, _, _ = main.execute_agent_turn_job(
+        _scene_envelope(
+            document["id"],
+            store.workspace_id,
+            {
+                "request": {
+                    "prompt": "Repair the headline",
+                    "scene": minimal_scene(),
+                    "document_id": document["id"],
+                }
+            },
+        ),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] is None
+    assert captured["run_id"] is None
+    # Byte-identical: the human's own words, no drift note, no leg blocks.
+    assert captured["prompt"] == "Repair the headline"
+
+
 class _StoreWithNoReadableHistory(HybridRepository):
     """A store whose DOCUMENT reads work and whose session-history read does not."""
 

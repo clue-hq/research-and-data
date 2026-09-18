@@ -10625,9 +10625,18 @@ def _execute_agent_turn_job(
 
     override = host.agent_turn_runner
     root = repo_root()
-    # The session this turn belongs to: one document, one design session (2026-09-18). ``None``
-    # for a document-less turn, which keeps threading on its own run id exactly as before.
-    session_id = design_session_id(workspace_id, str(document_id)) if document_id else None
+    # The session this turn belongs to: one document, one design session (2026-09-18). A SESSION IS
+    # A LEG-TURN CONCEPT (ruling T6-1): it takes both a leg block and a pinned document. A direct
+    # editor turn carries no leg block — the design API's own routes still thread it on its run id
+    # (``main.py`` /agent/turns) — so it keeps today's per-run folder, joins no session, and its
+    # prompt stays byte-identical. Note this is deliberately ONE step looser than ``leg_persist``:
+    # a legacy leg that pins a document but froze no CAS base is still that document's session,
+    # even though it commits nothing (and, reading no document, notices no drift).
+    session_id = (
+        design_session_id(workspace_id, str(document_id))
+        if (leg_block and document_id)
+        else None
+    )
     try:
         committer: Optional[_LegSceneCommitter] = None
         if leg_persist:
@@ -11176,8 +11185,14 @@ def _execute_web_turn_job(
         # only window an early check never could close.
         doc = store.require_document(document_id)
         base_version = int(doc["current_version"])
-        drift_note = _document_drift_note(
-            store, document_id=str(document_id), current_version=base_version
+        # Ruling T6-1: drift is something a SESSION is told, and only a leg turn has one. A direct
+        # BFF turn (no leg block) carries the human's words verbatim, exactly as it always has.
+        drift_note = (
+            _document_drift_note(
+                store, document_id=str(document_id), current_version=base_version
+            )
+            if leg_block
+            else None
         )
         prompt = (
             render_leg_turn_prompt(
@@ -11243,10 +11258,13 @@ def _execute_web_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
-                # Session continuity (2026-09-18): see the scene executor. A web turn is always
-                # of a document, so it always belongs to that document's session.
-                session_id=design_session_id(workspace_id, str(document_id)),
-                run_id=envelope.run_id,
+                # Session continuity (2026-09-18), ruling T6-1: a web turn is always OF a
+                # document, but only a LEG turn is of that document's session — a direct BFF turn
+                # keeps its per-run folder and its own generated id, as before.
+                session_id=(
+                    design_session_id(workspace_id, str(document_id)) if leg_block else None
+                ),
+                run_id=envelope.run_id if leg_block else None,
                 # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
                 # route can honestly stop either kind of design run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),

@@ -1162,6 +1162,100 @@ def test_a_continued_web_session_is_told_what_moved_and_re_sends_no_history(
     assert "<<<HISTORY" not in prompt and "<<<BRIEF" not in prompt
 
 
+def test_a_direct_bff_web_turn_joins_no_session_even_on_a_document_the_agent_wrote(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling T6-1, the web twin: no ``leg`` block, no session and no drift note.
+
+    The route-shaped turn is threaded on its run id by the design API's own route, so joining the
+    document's session folder would be a half-join. Proven on a document a prior (recorded) agent
+    turn wrote and a human then moved — the exact state in which a LEG turn is told about drift.
+    """
+
+    import lumen_api.main as main
+
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    store = HybridRepository()
+
+    operations = [{"kind": "set_custom_css", "css": "body { letter-spacing: 0.01em; }"}]
+    agent_doc = client.app.state.core.web_apply_ops(content, operations)["web_doc"]
+    first = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {"request": {"prompt": "Go ahead.", "base_version": 1}, "leg": {"leg_id": "leg-1"}},
+    )
+    store.create_run(first.run_id, document["id"], kind="web_turn", payload={})
+    status, response, event_type, event_data = main.execute_web_turn_job(
+        first,
+        store=store,
+        host=_turn_host(
+            client,
+            capturing_web_runner(
+                {},
+                result={
+                    "schema_version": 1,
+                    "status": "applied",
+                    "outcome": "accepted",
+                    "summary": "Built it.",
+                    "web_doc": agent_doc,
+                    "operations": operations,
+                    "preview_paths": [],
+                    "doc_kind": "web",
+                },
+            ),
+        ),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    store.complete_run(first.run_id, status, response, event_type, event_data)
+    edited = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [{"kind": "set_custom_css", "css": "body { opacity: 1; }"}],
+            "base_version": response["current_version"],
+            "intent": "human moved the logo",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    captured: dict = {}
+
+    def fake_web_turn(doc, prompt, model, root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        captured["prompt"] = prompt
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    monkeypatch.setattr(main, "run_web_agent_turn", fake_web_turn)
+    # No `leg` block, and no override runner: the (monkeypatched) runtime call is the probe.
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {"request": {"prompt": "Build a landing page", "base_version": 1}},
+        ),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] is None
+    assert captured["run_id"] is None
+    assert captured["prompt"] == "Build a landing page"
+
+
 def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
     client: TestClient,
 ) -> None:
