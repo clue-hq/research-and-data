@@ -54,12 +54,12 @@ purger rather than adding a collaborator; T1-1/T1-2/T8-2/T8-3 minor.
 
 Verified first-hand: ruff + format clean on the platform-side files; mypy 867 files clean;
 lint-imports 28/0; no-DB runtime + purger suites 433 passed (exit 0); each task's suites re-run
-after review while the DB was up (T1–T5). **OWED — the lane Postgres container
-`clue-pg-istanbul` (:55040) was stopped externally at 14:20Z and again ~14:40Z (trenton lane
-setup in progress); not restarted by the controller.** When it is back, with the stack DOWN:
+after review while the DB was up (T1–T5). The lane Postgres container `clue-pg-istanbul` (:55040) was stopped externally at 14:20Z and
+~14:40Z (trenton lane setup); the founder restarted it and the DB gate then ran with the stack DOWN:
 `tests/design/test_p37_design_entry_consumption.py`, `tests/design/test_design_sessions_db.py`,
 `tests/design/test_design_fleet_turns_db.py`, `tests/api/test_design_leg_session_db.py`,
 `subsystems/clue-design/apps/api/tests/test_scene_turn_persist.py test_web_turns.py
-test_agent_run_write_lock.py`, then stack UP. Then the four live proofs (spec §7) plus the redrive
+test_agent_run_write_lock.py`, — all green (106 + 74 + 66; one T8 test fixed in 9807aa971 to mirror the candidate rebase); stack
+UP after. Still owed, founder-triggered: the four live proofs (spec §7) plus the redrive
 double-apply walk (T6-2) and a live erasure proof. Pre-existing reds recorded: image-model 401 test
 in `test_web_substrate.py`, `test_reference_images_contract` stale SimpleNamespace.
