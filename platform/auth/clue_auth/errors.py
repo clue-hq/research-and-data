@@ -93,3 +93,19 @@ class ProvisioningConflict(PrincipalError):
 
     code = "PROVISIONING_CONFLICT"
     status_code = 409
+
+
+class ProvisioningValidationError(PrincipalError):
+    """A self-serve submission does not carry enough to provision (422).
+
+    The one refusal here whose ``code`` is per-instance rather than per-class: the submission
+    can be short of different things, and the caller names which one so the HTTP envelope
+    carries it verbatim (``COMPANY_NAME_REQUIRED``) without a class per field.
+    """
+
+    code = "PROVISIONING_INVALID"
+    status_code = 422
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code

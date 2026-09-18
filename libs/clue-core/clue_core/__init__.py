@@ -407,7 +407,7 @@ from clue_core.modality import (
     NormalizedText,
     RawArtifact,
 )
-from clue_core.normalize import normalize_host
+from clue_core.normalize import canonical_workspace_name, normalize_host
 from clue_core.observability import (
     CoverageReport,
     UnsearchedChannel,
@@ -1042,6 +1042,7 @@ __all__ = [
     "parse_value_json",
     "decode_jsonb",
     "decode_jsonb_scalar",
+    "canonical_workspace_name",
     "normalize_host",
     "by_tier_ascending",
     "first_confident_claim",

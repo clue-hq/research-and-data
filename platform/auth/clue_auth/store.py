@@ -344,11 +344,15 @@ async def get_membership(
 async def list_user_memberships(
     conn: AsyncConnection, user_id: str
 ) -> tuple[WorkspaceMembership, ...]:
+    # The only membership read that joins the workspace row: the session view it feeds is where
+    # a user picks a workspace, and they must see its name, never its id.
     rows = (
         await conn.execute(
             text(
-                f"SELECT {_MEMBERSHIP_COLUMNS} FROM workspace_membership "
-                "WHERE user_id = :user_id ORDER BY created_at, membership_id"
+                "SELECT m.membership_id, m.workspace_id, m.user_id, m.role_key, m.status, "
+                "m.created_at, m.activated_at, m.revoked_at, w.name AS workspace_name "
+                "FROM workspace_membership m JOIN workspace w USING (workspace_id) "
+                "WHERE m.user_id = :user_id ORDER BY m.created_at, m.membership_id"
             ),
             {"user_id": user_id},
         )
