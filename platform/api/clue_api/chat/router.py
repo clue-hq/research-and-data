@@ -25,7 +25,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -55,6 +55,7 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_attachment_refs,
     submission_context_refs,
     turn_id_for_submission,
 )
@@ -67,6 +68,11 @@ from clue_api.arv2.icp_confirmation import (
 )
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
+from clue_api.chat.attachments import (
+    AttachmentReferenceError,
+    ValidatedAttachment,
+    validated_attachment_refs,
+)
 from clue_api.chat.composer_context import (
     PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
@@ -106,6 +112,7 @@ from clue_api.chat.principal import (
 )
 from clue_api.chat.schemas import (
     AgentProfileOptionWire,
+    AttachmentRefRequest,
     ComposerContextEntityWire,
     CreateThreadRequest,
     DesignArtifactListItemWire,
@@ -639,10 +646,44 @@ async def _validated_submission_context(
         ) from exc
 
 
-def _composer_capabilities() -> HomeComposerCapabilitiesWire:
+async def _validated_submission_attachments(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: Sequence[AttachmentRefRequest],
+    settings: Settings,
+    storage: StorageBackend | None,
+) -> tuple[ValidatedAttachment, ...]:
+    """Prove a turn's attachment receipts, or refuse the turn. Never a partial acceptance."""
+
+    if refs and storage is None:
+        raise _refuse(
+            status_code=503,
+            code="CAPABILITY_UNAVAILABLE",
+            message="this deployment has no artifact storage for attachments",
+        )
+    try:
+        return await validated_attachment_refs(
+            conn,
+            workspace_id=workspace_id,
+            refs=refs,
+            settings=settings,
+        )
+    except AttachmentReferenceError as exc:
+        status_code = {
+            "ATTACHMENT_NOT_FOUND": 404,
+            "ATTACHMENT_LIMIT_EXCEEDED": 422,
+            "ATTACHMENT_DUPLICATE": 422,
+        }.get(exc.code, 409)
+        raise _refuse(status_code=status_code, code=exc.code, message=exc.message) from exc
+
+
+def _composer_capabilities(*, storage_available: bool) -> HomeComposerCapabilitiesWire:
+    """Attachments are offered exactly when this deployment can durably hold their bytes."""
+
     return HomeComposerCapabilitiesWire(
         context_refs=True,
-        attachments=False,
+        attachments=storage_available,
         agent_profile_selection=True,
     )
 
@@ -771,8 +812,8 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
-        durable upload-receipt endpoint exists yet.
+        the promoted Head-of-ABM Grok 4.6 profile; attachments are offered exactly when this
+        deployment composed an artifact store to hold the uploaded bytes.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
@@ -790,7 +831,7 @@ def build_chat_router(
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
                 suggestions=_HOME_SUGGESTIONS,
             )
         )
@@ -818,12 +859,6 @@ def build_chat_router(
                     status_code=400,
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="creating a project requires an Idempotency-Key header",
-                )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
                 )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
 
@@ -866,6 +901,13 @@ def build_chat_router(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
+                    storage=storage,
+                )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
                     storage=storage,
                 )
 
@@ -922,12 +964,19 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.project_id != project_id
                         or existing.thread_id != thread_id
                         or existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -973,6 +1022,7 @@ def build_chat_router(
                             message_sha256=captured.artifact_ref.sha256,
                             idempotency_key=key,
                             context_refs=context_refs,
+                            attachment_refs=attachments,
                             agent_profile_id=agent_profile_id,
                         )
                     except SubmissionConflict as exc:
@@ -1225,7 +1275,7 @@ def build_chat_router(
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
             )
         )
 
@@ -2216,12 +2266,6 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="submitting a turn requires an Idempotency-Key header",
                 )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
-                )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
             turn_id = turn_id_for_submission(
                 workspace_id=who.workspace_id,
@@ -2316,10 +2360,17 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != requested_context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -2357,6 +2408,13 @@ def build_chat_router(
                     ),
                     storage=storage,
                     project_id=project_id,
+                )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
+                    storage=storage,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
                 # approving a directive-confirmation gate atomically confirms AND launches via
@@ -2430,6 +2488,7 @@ def build_chat_router(
                         message_sha256=captured.artifact_ref.sha256,
                         idempotency_key=idempotency_key,
                         context_refs=context_refs,
+                        attachment_refs=attachments,
                         agent_profile_id=agent_profile_id,
                         # P3.1: the design-leg clarification echo (None on non-design turns;
                         # the Home bootstrap path never carries one — a first turn has no

@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -49,14 +51,19 @@ from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
 from clue_fleet import FleetTaskKind, WorkId, enqueue_task
 from clue_obs.otel import bind_and_annotate
 
+if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so the edge is typed
+    from clue_api.chat.attachments import ValidatedAttachment
+
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
     "AgentTurnSubmissionRow",
+    "SubmissionAttachmentRow",
     "SubmissionContextRefRow",
     "SubmissionConflict",
     "agent_turn_dedup_key",
     "dispatch_next_thread_turn",
     "get_submission",
+    "submission_attachment_refs",
     "submission_context_refs",
     "submission_context_refs_for_turns",
     "message_artifact_ref",
@@ -160,6 +167,17 @@ class SubmissionContextRefRow(BaseModel):
     note: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SubmissionAttachmentRow:
+    """One file the human attached to a submission, in the order they attached it."""
+
+    turn_id: UUID
+    ordinal: int
+    upload_id: UUID
+    ref: ArtifactRef
+    filename: str
+
+
 async def insert_submission(
     conn: AsyncConnection,
     *,
@@ -174,6 +192,7 @@ async def insert_submission(
     message_sha256: str,
     idempotency_key: str | None,
     context_refs: Sequence[DomainObjectRef] = (),
+    attachment_refs: Sequence[ValidatedAttachment] = (),
     agent_profile_id: str | None = None,
     previous_turn_outcome: str | None = None,
 ) -> tuple[AgentTurnSubmissionRow, bool]:
@@ -249,6 +268,26 @@ async def insert_submission(
                     "note": ref.note,
                 },
             )
+        for ordinal, item in enumerate(attachment_refs):
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_turn_submission_attachment "
+                    "(turn_id, workspace_id, ordinal, upload_id, artifact_key, sha256, "
+                    " media_type, byte_count, filename) "
+                    "VALUES (:turn, :ws, :ordinal, :upload, :key, :sha, :media, :bytes, :name)"
+                ),
+                {
+                    "turn": turn_id,
+                    "ws": workspace_id,
+                    "ordinal": ordinal,
+                    "upload": item.upload_id,
+                    "key": item.ref.artifact_key,
+                    "sha": item.ref.sha256,
+                    "media": item.ref.media_type,
+                    "bytes": item.ref.byte_count,
+                    "name": item.filename,
+                },
+            )
         return row, True
     existing = await get_submission(conn, workspace_id=workspace_id, turn_id=turn_id)
     if existing is None:
@@ -260,11 +299,18 @@ async def insert_submission(
         workspace_id=workspace_id,
         turn_id=turn_id,
     )
+    existing_attachments = await submission_attachment_refs(
+        conn,
+        workspace_id=workspace_id,
+        turn_id=turn_id,
+    )
     if (
         existing.message_sha256 != message_sha256
         or existing.thread_id != thread_id
         or existing.agent_profile_id != agent_profile_id
         or tuple(context_refs) != existing_refs
+        or tuple(item.upload_id for item in existing_attachments)
+        != tuple(item.upload_id for item in attachment_refs)
     ):
         raise SubmissionConflict(
             "this idempotency identity was already used for a different submission"
@@ -328,6 +374,42 @@ async def submission_context_refs(
             note=item.note,
         )
         for item in receipts
+    )
+
+
+async def submission_attachment_refs(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_id: UUID,
+) -> tuple[SubmissionAttachmentRow, ...]:
+    """Rehydrate a submission's attachments in the exact order the human attached them."""
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT turn_id, ordinal, upload_id, artifact_key, sha256, media_type, "
+                "byte_count, filename FROM agent_turn_submission_attachment "
+                "WHERE workspace_id = :ws AND turn_id = :turn ORDER BY ordinal"
+            ),
+            {"ws": workspace_id, "turn": turn_id},
+        )
+    ).mappings()
+    return tuple(
+        SubmissionAttachmentRow(
+            turn_id=row["turn_id"],
+            ordinal=int(row["ordinal"]),
+            upload_id=row["upload_id"],
+            ref=ArtifactRef(
+                workspace_id=workspace_id,
+                artifact_key=row["artifact_key"],
+                sha256=row["sha256"],
+                media_type=row["media_type"],
+                byte_count=int(row["byte_count"]),
+            ),
+            filename=row["filename"],
+        )
+        for row in rows
     )
 
 

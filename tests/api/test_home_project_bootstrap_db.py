@@ -209,7 +209,8 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "composer_capabilities": {
                         "context_refs": True,
-                        "attachments": False,
+                        # This app composes an artifact store, so attachments are offered.
+                        "attachments": True,
                         "agent_profile_selection": True,
                     },
                     "suggestions": [
