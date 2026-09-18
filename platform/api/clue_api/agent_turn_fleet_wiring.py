@@ -78,6 +78,7 @@ from clue_api.agent_turn_submission import (
     get_submission,
     lock_thread_queue,
     message_artifact_ref,
+    submission_attachment_refs,
     submission_context_refs,
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
@@ -417,6 +418,14 @@ class ProjectConversationTurnRunner:
                 )
             user_message_ref = await message_artifact_ref(conn, submission)
             submission_focus_refs = await submission_context_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
+            # The files the human attached to this exact message, in the order they attached
+            # them. Read here beside the focus refs because both are the same durable fact about
+            # one submission: what the person sent with their words.
+            submission_attachments = await submission_attachment_refs(
                 conn,
                 workspace_id=workspace_id,
                 turn_id=turn_id,
@@ -885,6 +894,7 @@ class ProjectConversationTurnRunner:
                 ),
                 user_message_artifact_ref=user_message_ref,
                 focus_refs=submission_focus_refs,
+                attachment_refs=tuple(item.ref for item in submission_attachments),
                 requested_at=submission.requested_at,
             )
             brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")

@@ -43,6 +43,8 @@ from clue_core import AssemblyRequest, ContextAssembly, MemoryType, ScopeStack
 from clue_obs import get_logger
 
 __all__ = [
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CompiledContextCard",
     "ContextAssemblyPolicy",
     "ContextAssemblyReceipt",
@@ -537,6 +539,27 @@ class CapturedTurnDescription(Protocol):
     async def describe(self, request: AgentTurnRequest) -> CapturedTurnIdentity | None: ...
 
 
+class AttachmentDescription(Protocol):
+    """What one attachment is called, and where its words are readable when they are."""
+
+    @property
+    def filename(self) -> str: ...
+
+    @property
+    def workspace_path(self) -> str | None: ...
+
+
+class AttachmentDescriber(Protocol):
+    """Name each attachment by its filename and, for text, where it is readable in the workspace.
+
+    Structural for the same reason :class:`CapturedTurnDescription` is: the durable rows an
+    attachment is named from live at the api composition root, and L7 only ever reads the two
+    values above. Keyed by ``artifact_key`` — the one identity a turn's attachment refs carry.
+    """
+
+    async def describe(self, request: AgentTurnRequest) -> Mapping[str, AttachmentDescription]: ...
+
+
 class TurnLayerSource:
     layer = ContextLayer.L7_TURN
 
@@ -545,9 +568,11 @@ class TurnLayerSource:
         artifacts: AgentArtifactReader,
         *,
         captured_turn: CapturedTurnDescription | None = None,
+        attachments: AttachmentDescriber | None = None,
     ) -> None:
         self._artifacts = artifacts
         self._captured_turn = captured_turn
+        self._attachments = attachments
 
     async def load(
         self,
@@ -560,17 +585,42 @@ class TurnLayerSource:
         body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
         result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
-        # may later use an authorized tool to inspect an allowed attachment.
+        # may later use an authorized tool to inspect an allowed attachment. A describer turns
+        # those pointers into the words a human would use — the file's name, and for text the
+        # workspace path its version is readable at — so the model can open what it needs instead
+        # of guessing from a hash. With no describer (or an attachment the describer does not
+        # know) the pointer line is unchanged: naming nothing is better than naming it wrong.
+        described: Mapping[str, AttachmentDescription] = (
+            await self._attachments.describe(request) if self._attachments is not None else {}
+        )
         for index, ref in enumerate(request.attachment_refs):
+            info = described.get(ref.artifact_key)
+            size = f"{ref.byte_count:,} bytes"
+            # A local of its own, never ``body``: that name already holds the words the human
+            # typed, and reusing it here would hand the model an attachment line as its own
+            # most-recent instruction.
+            description: str
+            if info is None:
+                description = (
+                    "Attachment reference only: "
+                    f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
+                    f"media_type={ref.media_type} byte_count={ref.byte_count}"
+                )
+            elif info.workspace_path is not None:
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) is readable at '
+                    f"{info.workspace_path}. Open it with read_file when the message needs it."
+                )
+            else:
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) is attached to this '
+                    "message as an image."
+                )
             result.append(
                 ContextCandidate(
                     stable_key=f"200-{index:06d}-attachment:{ref.artifact_key}",
                     ref=ref,
-                    body=(
-                        "Attachment reference only: "
-                        f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
-                        f"media_type={ref.media_type} byte_count={ref.byte_count}"
-                    ),
+                    body=description,
                     role="system",
                 )
             )

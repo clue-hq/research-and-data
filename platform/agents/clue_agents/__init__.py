@@ -20,6 +20,8 @@ from clue_agents.catalog import (
     SkillResource,
 )
 from clue_agents.context import (
+    AttachmentDescriber,
+    AttachmentDescription,
     CompiledContextCard,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
@@ -230,6 +232,8 @@ __all__ = [
     "AnchoredAgentWorkspaceBackend",
     "ArtifactRef",
     "AssembledAgentContext",
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CatalogResourcePin",
     "ClueDeepAgentState",
     "CompiledContextCard",

@@ -58,6 +58,7 @@ from clue_api.agent_runtime_wiring import (
     CompletionGuard,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.attachment_binding import DbAttachmentDescriber
 from clue_api.chat.turn_stream import TurnStreamEmitter
 from clue_api.conversation_naming import (
     ConversationNamer,
@@ -651,6 +652,9 @@ def build_conversation_turn_engine(
         requested_memory_types=requested_memory_types,
         policy=context_policy,
         captured_turns=captured_turns,
+        # L7 names this turn's attachments from the submission rows, so a file the human dropped
+        # into the conversation is a named file with a readable path rather than a bare hash.
+        attachment_describer=DbAttachmentDescriber(conn_factory=conn_factory),
         conn_factory=conn_factory,
     )
     runtime = HeadOfAbmStage0Runtime(

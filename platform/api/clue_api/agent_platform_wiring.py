@@ -17,6 +17,7 @@ from clue_agents import (
     AgentModelProvider,
     AgentProfileRegistry,
     AgentWorkspaceFactory,
+    AttachmentDescriber,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
     DeterministicAgentContextAssembler,
@@ -490,6 +491,7 @@ def build_agent_context_assembler(
     requested_memory_types: tuple[MemoryType, ...],
     policy: ContextAssemblyPolicy,
     captured_turns: CapturedTurnBinder | None = None,
+    attachment_describer: AttachmentDescriber | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
     """Compose the one exact L1-L7 production assembler for a resolved role/profile.
@@ -499,6 +501,10 @@ def build_agent_context_assembler(
     (the trial does); a caller with no execution seam of its own gets a private one. Either way the
     binding is derived from durable state, so two instances could only ever agree — sharing saves
     the second read and the second cache, not correctness.
+
+    ``attachment_describer`` is how L7 names the files on the turn. A surface whose submissions
+    carry no attachments passes none and keeps the pointer-only line, which is the honest thing to
+    say when nothing durable names the file.
     """
 
     return DeterministicAgentContextAssembler(
@@ -519,6 +525,7 @@ def build_agent_context_assembler(
                 # whose turn is not a captured onboarding input simply gets no envelope.
                 captured_turn=captured_turns
                 or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+                attachments=attachment_describer,
             ),
         ),
         policy=policy,
