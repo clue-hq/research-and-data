@@ -10,10 +10,10 @@ import { useWorkspaceProfile } from "./workspace-profile-context";
 import { useWorkspaceSwitcher } from "./workspace-switcher-context";
 
 export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
-  const { activeWorkspace, demo, selectWorkspace, workspaces } = useWorkspaceSwitcher();
-  // The protected layout supplies the authenticated profile across the app; in
-  // live mode the workspace name is the real one, and only the demo (fixture)
-  // build offers a selection. Switching a real tenant is the backend's job.
+  const { activeWorkspace, selectWorkspace, workspaces } = useWorkspaceSwitcher();
+  // The protected layout supplies the authenticated profile across the app and
+  // hands the switcher the signed-in user's memberships by name. A person with
+  // one workspace has nothing to choose, so the submenu is disabled.
   const profile = useWorkspaceProfile();
   if (!profile) return null;
   const workspaceName = activeWorkspace?.name ?? profile.workspaceName ?? "Clue workspace";
@@ -54,9 +54,13 @@ export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
                 <Menu.SubmenuTrigger
                   aria-label={`${workspaceName}, switch workspace`}
                   className={styles.profileMenuItem}
-                  disabled={!demo}
+                  disabled={workspaces.length === 0}
                   label={workspaceName}
-                  title={!demo ? "Workspace switching is not available yet" : undefined}
+                  title={
+                    workspaces.length === 0
+                      ? "Workspace switching is not available yet"
+                      : undefined
+                  }
                 >
                   <span aria-hidden="true" className={styles.workspaceTriggerAvatar}>
                     {workspaceMark}

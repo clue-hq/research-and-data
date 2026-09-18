@@ -39,7 +39,7 @@ export default async function SelectWorkspacePage() {
                 type="submit"
                 value={membership.workspace_id}
               >
-                <span>{membership.workspace_id}</span>
+                <span>{membership.workspace_name}</span>
                 <span className="text-[var(--clue-content-subtle)]">
                   {membership.role_key}
                 </span>

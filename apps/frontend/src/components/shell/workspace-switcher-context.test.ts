@@ -9,8 +9,9 @@ import {
 } from "./workspace-switcher-context";
 
 // The switcher lifted from the design build (def7344): a fixture-mode preview
-// with three demo workspaces persisted in localStorage, and nothing at all in
-// live mode, where the backend owns tenant switching at /select-workspace.
+// with three demo workspaces persisted in localStorage. In live mode the
+// provider is handed the signed-in user's real memberships and an onSelect that
+// switches the tenant on the server; the browser stores nothing.
 
 type Snapshot = ReturnType<typeof useWorkspaceSwitcher>;
 
@@ -40,7 +41,16 @@ function withDom(run: (dom: JSDOM) => Promise<void>) {
   };
 }
 
-function mount(dom: JSDOM, demo: boolean, seen: Snapshot[]): Root {
+type ProviderProps = Omit<
+  Parameters<typeof WorkspaceSwitcherProvider>[0],
+  "children"
+>;
+
+function mount(
+  dom: JSDOM,
+  props: ProviderProps,
+  seen: Snapshot[],
+): Root {
   function Probe(): ReactNode {
     seen.push(useWorkspaceSwitcher());
     return null;
@@ -48,7 +58,10 @@ function mount(dom: JSDOM, demo: boolean, seen: Snapshot[]): Root {
   const root = createRoot(dom.window.document.getElementById("root")!);
   act(() => {
     root.render(
-      createElement(WorkspaceSwitcherProvider, { demo }, createElement(Probe)),
+      createElement(WorkspaceSwitcherProvider, {
+        ...props,
+        children: createElement(Probe),
+      }),
     );
   });
   return root;
@@ -58,7 +71,7 @@ test(
   "demo mode offers three workspaces, selects one, persists it, and survives a remount",
   withDom(async (dom) => {
     const seen: Snapshot[] = [];
-    const root = mount(dom, true, seen);
+    const root = mount(dom, { demo: true }, seen);
     const first = seen.at(-1)!;
     assert.equal(first.demo, true);
     assert.deepEqual(
@@ -78,7 +91,7 @@ test(
 
     act(() => root.unmount());
     const remounted: Snapshot[] = [];
-    const again = mount(dom, true, remounted);
+    const again = mount(dom, { demo: true }, remounted);
     assert.equal(remounted.at(-1)!.activeWorkspace?.id, "acme", "the choice survives a reload");
     act(() => again.unmount());
   }),
@@ -89,13 +102,58 @@ test(
   withDom(async (dom) => {
     dom.window.localStorage.setItem("clue:demo-workspace:v1", "acme");
     const seen: Snapshot[] = [];
-    const root = mount(dom, false, seen);
+    const root = mount(dom, { demo: false }, seen);
     const live = seen.at(-1)!;
     assert.equal(live.demo, false);
     assert.deepEqual(live.workspaces, []);
     assert.equal(live.activeWorkspace, null);
     act(() => live.selectWorkspace("clue"));
     assert.equal(dom.window.localStorage.getItem("clue:demo-workspace:v1"), "acme", "no write in live mode");
+    act(() => root.unmount());
+  }),
+);
+
+test(
+  "live mode lists the signed-in user's own workspaces and switches on the server",
+  withDom(async (dom) => {
+    dom.window.localStorage.setItem("clue:demo-workspace:v1", "acme");
+    const chosen: string[] = [];
+    const workspaces = [
+      { id: "ws_insight", name: "Insight Health", initials: "IH", role: "Owner" },
+      { id: "ws_conduit", name: "Conduit", initials: "C", role: "Operator" },
+    ];
+    const seen: Snapshot[] = [];
+    const root = mount(
+      dom,
+      {
+        demo: false,
+        workspaces,
+        activeWorkspaceId: "ws_conduit",
+        onSelect: (id: string) => {
+          chosen.push(id);
+        },
+      },
+      seen,
+    );
+    const live = seen.at(-1)!;
+    assert.equal(live.demo, false);
+    assert.deepEqual(
+      live.workspaces.map((workspace) => [workspace.name, workspace.initials, workspace.role]),
+      [["Insight Health", "IH", "Owner"], ["Conduit", "C", "Operator"]],
+    );
+    assert.equal(live.activeWorkspace?.name, "Conduit");
+
+    act(() => live.selectWorkspace("ws_insight"));
+    assert.deepEqual(chosen, ["ws_insight"], "the server action ran exactly once");
+
+    act(() => seen.at(-1)!.selectWorkspace("ws_conduit"));
+    act(() => seen.at(-1)!.selectWorkspace("ws_unknown"));
+    assert.deepEqual(chosen, ["ws_insight"], "the active workspace and a stranger are both no-ops");
+    assert.equal(
+      dom.window.localStorage.getItem("clue:demo-workspace:v1"),
+      "acme",
+      "live mode never writes browser storage",
+    );
     act(() => root.unmount());
   }),
 );

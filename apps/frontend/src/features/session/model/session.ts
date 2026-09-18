@@ -10,6 +10,9 @@ export const WorkspaceRoleSchema = z.enum([
 export const SessionMembershipSchema = z.object({
   membership_id: z.string().min(1),
   workspace_id: z.string().min(1),
+  // The only workspace value a person is ever shown. The id is a routing key and
+  // a cookie value; it never reaches a screen.
+  workspace_name: z.string().min(1),
   role_key: WorkspaceRoleSchema,
   permissions: z.array(z.string().min(1)),
 }).strict();
