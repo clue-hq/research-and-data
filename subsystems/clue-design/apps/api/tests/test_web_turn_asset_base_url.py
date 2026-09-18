@@ -45,6 +45,7 @@ def _captured_turn(monkeypatch: pytest.MonkeyPatch) -> dict:
         checkpointer,
         thread_id,
         cancel_requested=None,
+        callbacks=None,
     ):
         captured["config"] = config
         return {

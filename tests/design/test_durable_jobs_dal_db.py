@@ -523,6 +523,23 @@ def test_an_unknown_kind_and_an_unknown_field_are_both_refused() -> None:
         _ENVELOPES.validate_python({**good, "targt_node_ids": ["hero"]})
 
 
+def test_the_turn_project_id_is_optional_and_round_trips() -> None:
+    """Lane 3 slice 5 (T3-1): the turn's project rides the envelope so the design side's spend
+    scope can stamp it onto every ledger row. Optional because the model is ``extra="forbid"`` —
+    an envelope frozen before the field existed must still replay verbatim."""
+    base: dict[str, Any] = {
+        "kind": "agent_turn",
+        "work_id": str(uuid4()),
+        "workspace_id": "ws_alpha",
+        "run_id": "run_x",
+        "checkpoint_thread_id": "run_x",
+    }
+    assert _ENVELOPES.validate_python(base).project_id is None
+    stamped = _ENVELOPES.validate_python({**base, "project_id": "project-7"})
+    assert stamped.project_id == "project-7"
+    assert _ENVELOPES.validate_python(stamped.model_dump(mode="json")) == stamped
+
+
 def test_an_envelope_is_frozen() -> None:
     """The envelope is the job's immutable authority — a worker that could edit it in flight
     would make a takeover replay something other than the enqueued work."""

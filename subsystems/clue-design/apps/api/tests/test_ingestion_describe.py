@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -796,6 +797,52 @@ def test_backfill_summary_and_diagnostic_carry_the_reason(tmp_path: Path) -> Non
     assert reason in failures[0]["message"]
 
 
+class _DescribeTransport:
+    """A ``clue_spend`` transport that answers from a script — the seam the description model's
+    calls go through since lane 3 slice 5 (they used to patch ``httpx.post``)."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.sent = []
+
+    def send(self, request):
+        self.sent.append(request)
+        return self.responses.pop(0)
+
+
+@contextmanager
+def _spend_scope_over(transport, *, sleep=None):
+    from clue_spend import LedgerStamp
+    from lumen_api import spend
+
+    with spend.spend_scope(
+        LedgerStamp(workspace_id="ws_describe"), transport=transport, sleep=sleep
+    ) as scope:
+        yield scope
+
+
+def _describe_scope(responses, *, sleep=None):
+    return _spend_scope_over(_DescribeTransport(responses), sleep=sleep)
+
+
+def _describe_ok(asset_id: str = "asset_a"):
+    from clue_spend import HttpResponse
+
+    content = json.dumps(
+        [
+            {
+                "asset_id": asset_id,
+                "title": "T",
+                "description": "D",
+                "usage": "U",
+                "tags": [],
+            }
+        ]
+    )
+    body = {"choices": [{"message": {"content": content}}]}
+    return HttpResponse(status=200, body=json.dumps(body).encode())
+
+
 def test_openrouter_invoke_captures_http_status_and_body(monkeypatch) -> None:
     """OpenRouterDescriber._invoke records the HTTP status + a bounded body
     excerpt on failure, so the reason is available to the orchestrator."""
@@ -808,19 +855,11 @@ def test_openrouter_invoke_captures_http_status_and_body(monkeypatch) -> None:
     describer.enabled = True
     describer.api_key = "test-key"
 
-    class _Resp:
-        status_code = 503
-        text = "upstream unavailable " + "x" * 1000
+    from clue_spend import HttpResponse
 
-        def json(self):  # pragma: no cover - not reached on the 5xx path
-            return {}
-
-    def _fake_post(*args, **kwargs):
-        return _Resp()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", _fake_post)
+    # 503 is a RETRYABLE status, so the caller spends both of describe's two attempts on it — the
+    # scope's ``sleep`` seam is what keeps the proof from paying law 2's twelve-second backoff.
+    failing = HttpResponse(status=503, body=("upstream unavailable " + "x" * 1000).encode())
     item = DescribeItem(
         asset_id="asset_a",
         kind="logo",
@@ -828,7 +867,8 @@ def test_openrouter_invoke_captures_http_status_and_body(monkeypatch) -> None:
         filename=None,
         context="brand: X",
     )
-    results = describer.describe([item])
+    with _describe_scope([failing, failing], sleep=lambda _seconds: None):
+        results = describer.describe([item])
     assert results == [None]
     assert describer.last_failure_reason is not None
     assert "HTTP 503" in describer.last_failure_reason
@@ -846,16 +886,15 @@ def test_openrouter_invoke_captures_exception(monkeypatch) -> None:
     describer.enabled = True
     describer.api_key = "test-key"
 
-    def _boom(*args, **kwargs):
-        raise ConnectionError("connection reset by peer")
+    class _Boom:
+        def send(self, request):
+            raise ConnectionError("connection reset by peer")
 
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", _boom)
     item = DescribeItem(
         asset_id="asset_a", kind="logo", image_b64="", filename=None, context="x"
     )
-    results = describer.describe([item])
+    with _spend_scope_over(_Boom()):
+        results = describer.describe([item])
     assert results == [None]
     assert describer.last_failure_reason is not None
     assert "ConnectionError" in describer.last_failure_reason
@@ -1188,48 +1227,18 @@ def test_openrouter_request_carries_the_describe_model(monkeypatch) -> None:
     monkeypatch.setattr(settings, "lumen_ingestion_brief_model", "other/brief")
     monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
 
-    captured: dict = {}
-
-    class _Resp:
-        status_code = 200
-
-        def json(self):
-            return {
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                [
-                                    {
-                                        "asset_id": "asset_a",
-                                        "title": "T",
-                                        "description": "D",
-                                        "usage": "U",
-                                        "tags": [],
-                                    }
-                                ]
-                            )
-                        }
-                    }
-                ]
-            }
-
-    def _capture(url, **kwargs):
-        captured["url"] = url
-        captured["body"] = kwargs["json"]
-        return _Resp()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", _capture)
+    transport = _DescribeTransport([_describe_ok()])
     describer = OpenRouterDescriber()
-    results = describer.describe(
-        [DescribeItem("asset_a", "logo", "", None, "brand: X")]
-    )
+    with _spend_scope_over(transport):
+        results = describer.describe(
+            [DescribeItem("asset_a", "logo", "", None, "brand: X")]
+        )
     assert results[0] is not None
-    assert captured["body"]["model"] == "probe/cheap-vision"
-    assert captured["body"]["model"] != settings.lumen_ingestion_vision_model
-    assert captured["body"]["model"] != settings.lumen_ingestion_brief_model
+    sent = json.loads(transport.sent[0].body)
+    assert transport.sent[0].url.endswith("/chat/completions")
+    assert sent["model"] == "probe/cheap-vision"
+    assert sent["model"] != settings.lumen_ingestion_vision_model
+    assert sent["model"] != settings.lumen_ingestion_brief_model
 
 
 def test_without_an_api_key_the_default_describer_is_inert(

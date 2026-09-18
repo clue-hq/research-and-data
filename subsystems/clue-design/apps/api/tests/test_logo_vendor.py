@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 
 def test_brandfetch_settings_fields_exist_with_safe_defaults(monkeypatch):
     # Fresh Settings instance so developer .env values don't leak into assertions.
@@ -290,10 +292,51 @@ def test_map_vendor_assets_refuses_undecodable_raster():
     assert any("cannot be decoded" in n for n in notes)
 
 
-def _vendor_transport(handler):
-    import httpx
+class _SpendTransport:
+    """The brand-API LOOKUP goes through the spend caller now (lane 3 slice 5), so the same
+    ``httpx.MockTransport`` handler each test already writes is adapted to ``clue_spend``'s
+    request/response shape. The ASSET DOWNLOADS still ride the injected ``httpx.Client``, which is
+    why both seams are fed one handler."""
 
-    return httpx.Client(transport=httpx.MockTransport(handler))
+    def __init__(self, handler):
+        self._handler = handler
+        self.sent = []
+
+    def send(self, request):
+        import httpx
+        from clue_spend import HttpResponse, TransportFailure
+
+        self.sent.append(request)
+        built = httpx.Request(
+            request.method,
+            request.url,
+            headers=dict(request.headers),
+            content=request.body,
+        )
+        try:
+            response = self._handler(built)
+        except (httpx.TimeoutException, httpx.TransportError) as error:
+            raise TransportFailure(f"{type(error).__name__}: {error}") from error
+        return HttpResponse(
+            status=response.status_code,
+            headers=dict(response.headers),
+            body=response.content,
+        )
+
+
+@contextmanager
+def _vendor_transport(handler):
+    """One handler, both seams: an httpx client for the asset downloads and an open spend scope
+    whose transport answers the paid brand-API lookup."""
+    import httpx
+    from clue_spend import LedgerStamp
+    from lumen_api import spend
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with spend.spend_scope(
+            LedgerStamp(workspace_id="ws_logo_vendor"), transport=_SpendTransport(handler)
+        ):
+            yield client
 
 
 def test_fetch_vendor_family_happy_path_builds_cells():

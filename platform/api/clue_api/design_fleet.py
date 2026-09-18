@@ -28,6 +28,7 @@ from uuid import uuid4
 
 from clue_api.design_event_forwarder import _DesignEventForwarder
 from clue_api.design_memory_runtime import PreferenceResolverFactory
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_db import transaction
 from clue_fleet import (
     LeaseGeneration,
@@ -52,11 +53,26 @@ class DesignRuntimeUnavailable(RuntimeError):
     """``design_runtime_enabled`` is on but the design app is not importable in this process."""
 
 
+async def _drain_design_spend(conn: Any, raw: Any, ledger: Any, stamp: Any) -> Any:
+    """Land a design unit of work's buffered provider calls — with the platform's incidents.
+
+    The shape ``lumen_api.spend.DrainFn`` names: the design side opens the connection and the
+    transaction (it runs on a synchronous executor with its own private engine) and hands them
+    here. ``artifacts=None`` because the design lane's response bodies are not persisted to the
+    platform's artifact store; the rows land citing nothing there, and the money trail is still
+    complete.
+    """
+    from clue_api.arv2.provider_ledger import drain_provider_calls
+
+    return await drain_provider_calls(conn, raw=raw, ledger=ledger, artifacts=None, stamp=stamp)
+
+
 def build_design_job_handler(
     *,
     enabled: bool,
     purpose: str = "design_job_drain",
     preference_resolver_factory: PreferenceResolverFactory | None = None,
+    turn_callbacks_factory: Any = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -68,6 +84,11 @@ def build_design_job_handler(
     (:func:`build_design_leg_lane_driver`) — so the event fires twice, ~300ms apart, by design.
     Unlabelled it read as a double registration and sent a log-duplication hunt down the wrong
     path; the real duplication was two root console handlers (see ``clue_obs.config``).
+
+    ``turn_callbacks_factory`` (lane 3 slice 5) is called once per TURN envelope on the design
+    side and returns that turn's ``lumen_agent.usage_collector.TurnCallbacks``. The drain handler
+    here takes none by default; :func:`build_design_leg_lane_driver` passes one that opens the
+    platform's Langfuse handler, so a leg's design trio reports into the leg's own trace.
     """
     if not enabled:
         return None
@@ -79,15 +100,23 @@ def build_design_job_handler(
             "install the design app (subsystems/clue-design/apps/{api,agent_runtime}) or "
             "unset CLUE_DESIGN_RUNTIME_ENABLED"
         ) from error
+    extras: dict[str, Any] = {
+        # PRE-1b: the WHOLE drain, injected, so a design 402 opens a provider incident under the
+        # ARV2 close rule — written once, here, instead of once per design executor. The design
+        # side owns the connection and the transaction; this only says what to do with them.
+        "spend_drain": _drain_design_spend,
+        "turn_callbacks_factory": turn_callbacks_factory,
+    }
     if preference_resolver_factory is None:
-        handler: Any = _build()
+        handler: Any = _build(**extras)
     else:
         from lumen_api.fleet_handler import DesignTurnHost
 
         handler = _build(
             host_provider=lambda: DesignTurnHost(
                 preference_resolver_factory=preference_resolver_factory
-            )
+            ),
+            **extras,
         )
     if handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise DesignRuntimeUnavailable("the design handler does not own design_job tasks")
@@ -425,11 +454,28 @@ def build_design_leg_lane_driver(
     a deployment that drains design work can also drive a leg's design turns; one that does not
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
+
+    Lane 3 slice 5: this lane — and only this lane — hands the design side a per-turn Langfuse
+    handler. A leg turn runs inside ``design-leg.turn`` (``design_leg_wiring._dispatch``), so the
+    trio's generations nest under that observation and each collected receipt can name the
+    generation its money belongs to. The factory is called once per turn: the handler and its
+    run-id registry are per turn, and a shared instance would cross-attribute one turn's model
+    calls onto another's observation.
     """
+
+    def turn_callbacks() -> Any:
+        from lumen_agent.usage_collector import TurnCallbacks  # lazy, like fleet_handler
+
+        built = build_langfuse_callbacks()
+        if built is None:
+            return TurnCallbacks()
+        return TurnCallbacks(handlers=(built.handler,), langfuse_ids=built.registry)
+
     handler = build_design_job_handler(
         enabled=enabled,
         purpose="design_leg_inline_lane",
         preference_resolver_factory=preference_resolver_factory,
+        turn_callbacks_factory=turn_callbacks,
     )
     if handler is None:
         return None

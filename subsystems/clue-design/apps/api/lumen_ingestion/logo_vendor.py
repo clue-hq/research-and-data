@@ -26,7 +26,9 @@ it, because shipping this backwards swaps every light/dark pairing.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -286,6 +288,13 @@ def fetch_vendor_family(
     """One Brand API lookup + asset downloads -> (cells, extras, notes). The one
     impure entry point of this module. See the module docstring for the contract."""
     import httpx
+    from clue_spend import (
+        CallSpec,
+        HttpRequest,
+        ProviderTransportError,
+        SpendEstimate,
+    )
+    from lumen_api import spend
     from py_lumen_config import settings
 
     key = (api_key if api_key is not None else settings.brandfetch_api_key).strip()
@@ -301,36 +310,56 @@ def fetch_vendor_family(
         raise VendorLookupFailed("http", f"could not read a host out of {domain!r}")
 
     def run(http: "httpx.Client"):
+        # The BRAND API LOOKUP is the paid leg (one Brandfetch credit), so it goes through the
+        # unit of work's ``ProviderCaller`` and lands on ``provider_call_ledger``. Brandfetch
+        # reports no cost of its own, so the row is ``cost_source=free`` with ``credits=1``
+        # (spec ruling 6.5). ``max_attempts=1``: a page costs a credit, and the 429 below is a
+        # typed quota REFUSAL, not something to retry into. The ASSET DOWNLOADS below stay on
+        # the injected httpx client — they are free CDN reads, not spend.
         try:
-            resp = http.get(
-                f"{base}{BRAND_PATH_PREFIX}{host}",
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "Accept": "application/json",
-                    "User-Agent": _USER_AGENT,
-                },
-                timeout=timeout,
-            )
-        except httpx.TimeoutException as error:
-            raise VendorLookupFailed("timeout", f"brand lookup timed out: {error}") from error
-        except httpx.HTTPError as error:
-            raise VendorLookupFailed("http", f"brand lookup failed: {error}") from error
-        if resp.status_code == 404:
+            resp = spend.caller().call(
+                CallSpec(
+                    provider="brandfetch",
+                    operation="design.logo.brand_api",
+                    label=f"brand:{host}",
+                    request=HttpRequest(
+                        method="GET",
+                        url=f"{base}{BRAND_PATH_PREFIX}{host}",
+                        headers={
+                            "Authorization": f"Bearer {key}",
+                            "Accept": "application/json",
+                            "User-Agent": _USER_AGENT,
+                        },
+                        timeout_s=float(timeout),
+                    ),
+                    estimate=SpendEstimate(credits=Decimal(1)),
+                    max_attempts=1,
+                )
+            ).response
+        except ProviderTransportError as error:
+            if "Timeout" in error.last_error:
+                raise VendorLookupFailed(
+                    "timeout", f"brand lookup timed out: {error.last_error}"
+                ) from error
+            raise VendorLookupFailed(
+                "http", f"brand lookup failed: {error.last_error}"
+            ) from error
+        if resp.status == 404:
             return {}, [], [f"brandfetch has no record of {host} — an answer, not an error"]
-        if resp.status_code == 429:
+        if resp.status == 429:
             raise VendorLookupFailed(
                 "quota", "brandfetch quota or throughput limit reached (HTTP 429)"
             )
-        if resp.status_code in (401, 403):
+        if resp.status in (401, 403):
             raise VendorLookupFailed(
                 "auth",
-                f"brandfetch rejected the API key (HTTP {resp.status_code}); "
+                f"brandfetch rejected the API key (HTTP {resp.status}); "
                 "check BRANDFETCH_API_KEY",
             )
-        if resp.status_code != 200:
-            raise VendorLookupFailed("http", f"brand lookup returned HTTP {resp.status_code}")
+        if resp.status != 200:
+            raise VendorLookupFailed("http", f"brand lookup returned HTTP {resp.status}")
         try:
-            payload = resp.json()
+            payload = json.loads(resp.body)
         except ValueError as error:
             raise VendorLookupFailed("malformed", "brand response was not JSON") from error
 

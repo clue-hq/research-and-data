@@ -71,6 +71,12 @@ class DesignTurnEnvelope(_DesignEnvelopeBase):
     kind: Literal["agent_turn", "web_turn"]
     run_id: str = Field(min_length=1)
     checkpoint_thread_id: str = Field(min_length=1)
+    #: The platform project this turn's spend belongs to, when the offerer has one (lane 3
+    #: slice 5). Additive and optional because the model is ``extra="forbid"`` — a frozen
+    #: pre-slice-5 envelope replays unchanged and stamps its ledger rows with the workspace
+    #: alone. The design runtime itself never reads it: it is carried for the drain's
+    #: ``LedgerStamp``, so a design turn's money joins the project it was spent for.
+    project_id: str | None = None
     #: The document the turn edits, when it names one. Nullable for the same reason the column
     #: is: the shipped async-turn route legitimately carries a document id that is not stored.
     document_id: str | None = None

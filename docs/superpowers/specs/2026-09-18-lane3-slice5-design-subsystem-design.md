@@ -1,6 +1,6 @@
 # Lane 3 slice 5 — cost, tracing and telemetry for the design subsystem (R12 lifted) — design
 
-**Status:** draft for founder review (2026-09-18). Lifts the R12 hold of the parent note
+**Status:** approved by the founder 2026-09-18 (all six §6 rulings taken as recommended; SDD execution started the same day on `lane3/slice5-design-spend`). Lifts the R12 hold of the parent note
 (`2026-09-14-telemetry-and-cost-observability-design.md` §5.4): PR #62 (`codex/design-agent-v1`,
 merged 2026-09-17) finalised the design agent's structure, which was the hold's trigger. Six
 rulings are requested in §6; the plan (`docs/superpowers/plans/2026-09-18-lane3-slice5-design-subsystem.md`)

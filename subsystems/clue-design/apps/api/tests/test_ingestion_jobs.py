@@ -107,6 +107,29 @@ def test_run_ingestion_job_failure_stores_error_and_never_raises(
     assert job["brand_kit_id"] is None
 
 
+def test_a_provider_that_refuses_to_sell_gets_its_own_failure_code(tmp_path: Path) -> None:
+    """Lane 3 slice 5: an out-of-credit OpenRouter key is not "this stage did not work".
+
+    The ingestion model clients swallow every other failure and fall back; a ``ProviderHalted``
+    is the one they re-raise, and the job's terminal code names the provider and the reason so an
+    operator reads "top up the key" rather than a generic stage failure.
+    """
+    from clue_spend import ProviderHalted
+
+    store = _store(tmp_path)
+    job_id = store.create("website", {"url": "https://x.example"})["job_id"]
+
+    def work(report):
+        raise ProviderHalted("openrouter", "payment_required", http_status=402)
+
+    run_ingestion_job(store, job_id, work)
+
+    job = store.require(job_id)
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "provider_refused:openrouter:payment_required"
+    assert job["brand_kit_id"] is None
+
+
 def test_get_missing_job_returns_none(tmp_path: Path) -> None:
     store = _store(tmp_path)
     assert store.get("ingest_nope") is None

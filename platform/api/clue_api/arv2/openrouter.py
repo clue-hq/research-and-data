@@ -2,25 +2,39 @@
 
 The platform's other OpenRouter egress (``clue_gateway``) speaks the Responses API through the
 OpenAI SDK. ARV2 does not: every ARV2 provider call, model calls included, goes over plain HTTP
-through :class:`~clue_api.arv2.calls.ProviderCaller`, so one wrapper owns the raw record, the
+through :class:`~clue_spend.calls.ProviderCaller`, so one wrapper owns the raw record, the
 ledger row and the retry arithmetic for the whole lane. That is why this module builds requests
 and reads bodies, and never sends anything itself.
 
 Base URL and key are parameters. The call site reads them from
 ``clue_config.GatewayConfig().base_url`` and ``Secrets.openrouter_api_key``.
+
+Lane 3 slice 5 moved the two provider-agnostic halves — reading OpenRouter's own metering off a
+response, and knowing when it refuses to sell — into :mod:`clue_spend.openrouter`, because the
+design subsystem reads the same numbers onto the same ledger. They are re-exported here so
+``from clue_api.arv2.openrouter import openrouter_cost_reader`` keeps working. What *builds* a
+request stays: the headers, the attribution and the model choice are this lane's.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
-from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from pydantic import SecretStr
 
-from clue_api.arv2.calls import CostReading
-from clue_api.arv2.transport import HttpRequest, HttpResponse, json_request
+from clue_spend.openrouter import openrouter_cost_reader, openrouter_halt_rule
+from clue_spend.transport import HttpRequest, json_request
+
+__all__ = [
+    "OPENROUTER_REFERER",
+    "OPENROUTER_TITLE",
+    "openrouter_chat_request",
+    "openrouter_cost_reader",
+    "openrouter_embeddings_request",
+    "openrouter_halt_rule",
+    "openrouter_message_text",
+]
 
 #: Sent on every ARV2 OpenRouter call so the provider's own dashboards attribute the spend.
 OPENROUTER_REFERER = "https://cluehq.ai/arv2"
@@ -99,79 +113,6 @@ def openrouter_embeddings_request(
     )
 
 
-def _decimal(value: object) -> Decimal | None:
-    """A provider-reported number as an exact Decimal, or ``None`` when it is not a number."""
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, Decimal):
-        return value
-    if isinstance(value, int | float | str):
-        try:
-            return Decimal(str(value))
-        except InvalidOperation:
-            return None
-    return None
-
-
-def _count(value: object) -> int:
-    """A provider-reported token count as an int, 0 when absent or not a number."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return 0
-    return int(value)
-
-
-def openrouter_cost_reader(response: HttpResponse) -> CostReading:
-    """Read OpenRouter's own metering off a chat/embeddings response (Appendix A law 1).
-
-    ``usage.cost_details.upstream_inference_cost`` is preferred over ``usage.cost`` because a BYOK
-    key reports ``cost: 0`` while the upstream provider still charged — reading ``cost`` alone
-    would record a real spend as free.
-
-    Takes the :class:`~clue_api.arv2.transport.HttpResponse` the wrapper received; a body that is
-    not JSON yields an empty reading rather than raising, because the wrapper treats an unreadable
-    cost as "the provider did not tell us", never as zero.
-
-    The model and the token counts (``prompt_tokens``, ``completion_tokens``,
-    ``prompt_tokens_details.cached_tokens``) ride ``extras`` under the same keys the research
-    agent's rows use.
-    """
-    try:
-        body = json.loads(response.body)
-    except (ValueError, AttributeError):
-        return CostReading()
-    if not isinstance(body, dict):
-        return CostReading()
-    usage = body.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    details = usage.get("cost_details")
-    details = details if isinstance(details, dict) else {}
-    cost = _decimal(details.get("upstream_inference_cost"))
-    if cost is None:
-        cost = _decimal(usage.get("cost"))
-    request_id = body.get("id")
-    # The model that answered and the token counts ride along as extras, under the same keys the
-    # research agent writes on its ``round-*`` rows, so the per-model cost breakdown reads every
-    # chat/completions row the same way. Only what the body actually said is written.
-    extras: dict[str, object] = {}
-    model = body.get("model")
-    if isinstance(model, str) and model:
-        extras["model"] = model
-    prompt_details = usage.get("prompt_tokens_details")
-    prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
-    for key, value in (
-        ("prompt_tokens", usage.get("prompt_tokens")),
-        ("completion_tokens", usage.get("completion_tokens")),
-        ("cached_prompt_tokens", prompt_details.get("cached_tokens")),
-    ):
-        if isinstance(value, int) and not isinstance(value, bool):
-            extras[key] = value
-    return CostReading(
-        cost_usd=cost,
-        provider_request_id=request_id if isinstance(request_id, str) else None,
-        extras=extras,
-    )
-
-
 def openrouter_message_text(body: object) -> str:
     """The first choice's assistant text, or ``""`` when the model returned none.
 
@@ -191,30 +132,3 @@ def openrouter_message_text(body: object) -> str:
         return ""
     content = message.get("content")
     return content if isinstance(content, str) else ""
-
-
-def openrouter_halt_rule(response: HttpResponse) -> str | None:
-    """Money truth for OpenRouter (master plan §2 item 3): does this response refuse to sell?
-
-    A 402 is the explicit refusal (key out of credit); any other non-2xx whose body names "credit"
-    or "insufficient" is the same refusal in prose. Only non-2xx bodies are inspected — a
-    successful completion about a bank names "credit" constantly, and latching the lane's model
-    provider on the content of a good answer would be a self-inflicted outage. Returning a reason
-    latches the provider in the wrapper.
-
-    **403 is deliberately not a halt here.** In OpenRouter's error vocabulary a 403 is a
-    *moderation verdict on the input*, not a refusal to sell — a per-request content decision. ARV2
-    bundles are scraped open-web prose, so one flagged bundle would otherwise latch ``openrouter``
-    process-wide and take structuring, short transcription, quote mining and embeddings down with
-    it for the rest of the run: the same self-inflicted outage, arriving through a different door.
-    Providers whose 403 really *is* denial (AI Ark's Cloudflare block, Exa's auth) keep latching on
-    it in their own rules — the halt rule is per provider precisely so this can differ.
-    """
-    if response.status == 402:
-        return "payment_required"
-    if 200 <= response.status < 300:
-        return None
-    body = response.body.decode("utf-8", "replace").lower()
-    if "credit" in body or "insufficient" in body:
-        return "credit_exhausted"
-    return None

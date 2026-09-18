@@ -19,7 +19,7 @@ import json
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.tools import StructuredTool
@@ -51,6 +51,9 @@ from .tools.render import make_render_preview_tool
 from .tools.substrate import LumenDesignTools
 from .tools.view import make_view_tool
 from .workspace import initial_turn_state, scaffold_workspace, workspace_root
+
+if TYPE_CHECKING:  # the collector pulls in the platform gateway/obs libs; keep it lazy
+    from .usage_collector import TurnCallbacks
 
 logger = get_logger("lumen_agent.harness")
 
@@ -227,11 +230,13 @@ def _instrument(
     P3.2 (PD-part3 delta 6): per-role USAGE capture moved into the governed
     gateway — the role rides ``provider.build(role=...)`` onto the instance, and
     the gateway's ``model_call_usage`` record (role-tagged, with cost and the
-    cached-prefill share) is the ONE usage authority. The design-local
-    ``attach_usage_capture`` is deliberately NOT attached anymore — attaching
-    both would double count. Trace capture (non-usage reasoning/tool telemetry)
-    stays design-local. Three instances = three roles; never deduped — the
-    gateway's attribution is per-instance too.
+    cached-prefill share) is the ONE usage authority. The design-local usage
+    capture handler is RETIRED (its module is gone) — attaching both would double
+    count. Trace capture (non-usage reasoning/tool telemetry) stays design-local.
+    Three instances = three roles; never deduped — the gateway's attribution is
+    per-instance too. Lane 3 slice 5's ``ModelCallCollector`` is a THIRD thing
+    again: it rides the turn's invoke config, not a model instance, and only
+    COPIES the gateway's stamps onto a receipt.
     `tools` only needs a `record(...)` method, so both LumenDesignTools and
     LumenWebTools work here.
 
@@ -499,11 +504,12 @@ def create_design_deepagent(
     # D10(a)+(c): build EXACTLY three model instances — one per role — bounded by
     # the shared max_tokens.
     #
-    # No dedupe: per-role usage attribution is done by appending a role-tagged
-    # UsageCaptureHandler to each model's own instance-level `.callbacks` field
-    # (see usage_capture.attach_usage_capture). Instance-level callbacks fire on
-    # THAT instance only, so a SHARED instance across roles would cross-attribute
-    # every call to all three roles. Three separate instances of the same
+    # No dedupe: per-role attribution is done at the gateway, which stamps the
+    # role the instance was BUILT for onto every answer (`_instrument` passes
+    # `role=design_<role>` into init_model), and by the instance-level trace
+    # handler, which fires on THAT instance only. A SHARED instance across roles
+    # would cross-attribute every call to all three roles. Three separate
+    # instances of the same
     # resolved id are therefore mandatory — and they cost nothing (construction
     # is a thin client object; no network until invoke). This also replaces the
     # earlier `.with_config` wrapper approach, which returned a RunnableBinding
@@ -914,6 +920,7 @@ def run_deepagent_turn(
     cancel_requested=None,
     scoped_preferences: PreferenceResolver | None = None,
     runtime_workspace_guard=None,
+    callbacks: "TurnCallbacks | None" = None,
 ) -> tuple[dict, LumenDesignTools]:
     """Create + invoke + guarantee an honest finalize payload.
 
@@ -940,6 +947,14 @@ def run_deepagent_turn(
     by the fleet path, where it reads the run row's durable cancel request; `None`
     everywhere else. A cancelled turn finalizes through the SAME graceful path the
     budget backstop uses, with `stop_reason = "cancelled_by_request"`.
+
+    `callbacks` (lane 3 slice 5) is what the PLATFORM injects into this turn: opaque LangChain
+    handlers (its Langfuse handler) plus the run-id registry that handler fills, and — when the
+    caller means to read the receipts back — its own `ModelCallCollector`. They ride the INVOKE
+    CONFIG, which is what lets one handler see every model, tool and sub-agent event in the graph
+    instead of one model instance's `on_llm_*`. None (the CLI, fixtures, the synchronous preview
+    route) still collects: the turn always opens a collector, and publishes what it collected on
+    `tools.model_calls`.
     """
     agent, tools = create_design_deepagent(
         prompt,
@@ -977,9 +992,19 @@ def run_deepagent_turn(
         # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
         # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
         # when one is, the runtime id degrades to trace-dir naming only.
+        # Lane 3 slice 5: the turn's per-call receipts, and anything the platform injected,
+        # attach HERE rather than on the model instances. Config-level callbacks see every
+        # model, tool and sub-agent event in the graph (instance-level ones see only
+        # `on_llm_*`), so one collector covers the orchestrator, the author, the reviewer and
+        # everything they delegate to — and the platform's Langfuse handler rides along so the
+        # whole design run nests under the design-leg observation with settled cost.
+        from .usage_collector import turn_collector
+
+        collector, turn_handlers = turn_collector(callbacks)
         invoke_config = {
             "recursion_limit": 200,
             "configurable": {"thread_id": thread_id or tools.run_id},
+            "callbacks": turn_handlers,
         }
 
         exception_text: Optional[str] = None
@@ -1134,6 +1159,11 @@ def run_deepagent_turn(
             payload = json.loads(raw)
             return payload, tools
         finally:
+            # Lane 3 slice 5: publish what the turn actually spent on EVERY exit path — a turn
+            # that died on a quota 403 is exactly the one whose receipts matter most. The
+            # finalize paths above make no model calls, so this list is complete wherever it is
+            # read from.
+            tools.model_calls = list(collector.calls)
             final = payload or {}
             emit_run_metrics(
                 tools,

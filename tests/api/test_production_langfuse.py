@@ -58,11 +58,13 @@ def test_enabled_with_keys_attaches_to_the_process_provider(
     runtime = _runtime()
     exporter = InMemorySpanExporter()
     runtime.provider.add_span_processor(SimpleSpanProcessor(exporter))
-    # Keep the SDK off the network: its own exporter is swapped for an in-memory one.
-    from clue_api import production_tracing
+    # Keep the SDK off the network: its own exporter is swapped for an in-memory one. The seam
+    # lives in clue_obs.production since lane 3 slice 5 (clue_api.production_tracing re-exports
+    # the functions, so patching the shim's globals would no longer reach them).
+    from clue_obs import production
 
     sink = InMemorySpanExporter()
-    monkeypatch.setattr(production_tracing, "_span_exporter_override", sink)
+    monkeypatch.setattr(production, "_span_exporter_override", sink)
     try:
         assert install_production_langfuse(settings, secrets, runtime=runtime, service_name="t")
         assert langfuse_is_installed()
@@ -76,4 +78,4 @@ def test_enabled_with_keys_attaches_to_the_process_provider(
     finally:
         shutdown_langfuse()
         LangfuseResourceManager.reset()
-        monkeypatch.setattr(production_tracing, "_span_exporter_override", None)
+        monkeypatch.setattr(production, "_span_exporter_override", None)

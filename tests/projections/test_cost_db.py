@@ -31,7 +31,14 @@ T0 = datetime(2026, 9, 14, 12, 0, tzinfo=UTC)
 SHA = "e" * 64
 
 
-async def _turn(conn: AsyncConnection, *, ws: str, project_id: str, thread_id: str) -> UUID:
+async def _turn(
+    conn: AsyncConnection,
+    *,
+    ws: str,
+    project_id: str,
+    thread_id: str,
+    role: str = "head_of_abm",
+) -> UUID:
     await conn.execute(
         text(
             "INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :p) "
@@ -64,11 +71,12 @@ async def _turn(conn: AsyncConnection, *, ws: str, project_id: str, thread_id: s
             " actor_id, role, workspace_root_id, profile_name, profile_version, profile_sha256, "
             " resource_manifest_key, resource_manifest_artifact_sha256, resource_manifest_sha256, "
             " retention_class, requested_at) "
-            "VALUES (:id, :execution, :ws, :p, :thread, 'actor-1', 'head_of_abm', 'root-1', "
+            "VALUES (:id, :execution, :ws, :p, :thread, 'actor-1', :role, 'root-1', "
             " 'head-of-abm', 'v1', :hash, :key, :sha, :hash, 'standard', :at)"
         ),
         {
             "id": turn_id,
+            "role": role,
             "execution": execution_id,
             "ws": ws,
             "p": project_id,
@@ -91,6 +99,7 @@ async def _model_call(
     cost_usd: Decimal | None,
     cost_source: str | None,
     started_at: datetime = T0,
+    role: str = "head_of_abm",
 ) -> None:
     execution_id = (
         await conn.execute(
@@ -104,10 +113,11 @@ async def _model_call(
             " output_tokens, cost_millicredits, cost_usd, cost_source, latency_ms, role, "
             " started_at, completed_at) "
             "VALUES (:id, :turn, :execution, :ws, :seq, 'x-ai/grok-4.6', 'x-ai/grok-4.6', "
-            " 'completed', 100, 40, 10, 0, :cost, :source, 5, 'head_of_abm', :at, :at)"
+            " 'completed', 100, 40, 10, 0, :cost, :source, 5, :role, :at, :at)"
         ),
         {
             "id": uuid4(),
+            "role": role,
             "turn": turn_id,
             "execution": execution_id,
             "ws": ws,
@@ -396,11 +406,58 @@ def test_time_window_applies_to_both_ledgers() -> None:
 
 
 def test_not_covered_names_only_the_ledgers_this_read_still_cannot_see() -> None:
-    """Slice 1b routed the onboarding, display and evidence ledgers onto Postgres; what is left
-    is the design subsystem (R12 hold) and the turn rows written before the cost columns."""
+    """Slice 1b routed the onboarding, display and evidence ledgers onto Postgres and slice 5 the
+    design subsystem's; what is left is the turn rows written before the cost columns."""
     _, report = _report()
     text_ = " ".join(report.not_covered)
-    assert "design" in text_ and "before" in text_
-    for word in ("onboarding", "display", "evidence"):
+    assert "before" in text_
+    for word in ("onboarding", "display", "evidence", "design"):
         assert word not in text_
-    assert len(report.not_covered) == 2
+    assert len(report.not_covered) == 1
+
+
+def test_design_spend_lands_on_both_halves_of_the_report() -> None:
+    """Slice 5: a design provider call is a provider line and a design model call is a turn
+    receipt line — the two surfaces the ``NOT COVERED`` design entry used to stand in for."""
+
+    async def scenario() -> CostReport:
+        async with rollback_conn(seed_pack=False) as conn:
+            ws = f"ws_design_cost_{uuid4().hex[:10]}"
+            project = await seed_project(conn, ws, name="design cost")
+            turn = await _turn(
+                conn,
+                ws=ws,
+                project_id=project.project_id,
+                thread_id=f"thread-{ws}",
+                role="design",
+            )
+            await _model_call(
+                conn,
+                ws=ws,
+                turn_id=turn,
+                sequence=1,
+                cost_usd=Decimal("0.0087"),
+                cost_source="metered",
+                role="design",
+            )
+            await _ledger(
+                conn,
+                ws=ws,
+                project_id=project.project_id,
+                project_run_id=str(uuid4()),
+                job_id=uuid4(),
+                provider="openrouter",
+                operation="design.ingestion.describe",
+                cost_usd=Decimal("0.0123"),
+                extras={"cost_source": "metered"},
+            )
+            return await cost_report(workspace_id=ws, conn_factory=conn_session_factory(conn))
+
+    report = run_async(scenario())
+    (provider_line,) = report.providers
+    assert provider_line.provider == "openrouter"
+    assert provider_line.operation == "design.ingestion.describe"
+    assert provider_line.cost_usd == Decimal("0.012300")
+    turn_lines = [m for m in report.models if m.source == "turn_receipts"]
+    assert [(m.role, m.cost_usd) for m in turn_lines] == [("design", Decimal("0.008700"))]
+    assert report.total_usd == Decimal("0.021000")

@@ -472,6 +472,7 @@ def test_the_web_turn_hands_the_agent_runtime_the_resolved_package(
         checkpointer,
         thread_id,
         cancel_requested=None,
+        callbacks=None,
     ):
         captured["config"] = config
         return {
@@ -530,6 +531,7 @@ def test_a_web_turn_on_a_fragmentless_document_carries_no_package(
         checkpointer,
         thread_id,
         cancel_requested=None,
+        callbacks=None,
     ):
         captured["config"] = config
         return {
@@ -710,6 +712,7 @@ def test_an_annotation_inside_a_clone_names_the_element_from_the_real_stored_htm
         checkpointer,
         thread_id,
         cancel_requested=None,
+        callbacks=None,
     ):
         captured["prompt"] = prompt
         captured["config"] = config

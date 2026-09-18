@@ -1664,6 +1664,11 @@ def build_design_leg_exit_judge(
                         # budget would be waste here.
                         max_output_tokens=min(policy.max_output_tokens, 200),
                         temperature=0.0,
+                        # Lane 3 slice 5: the judge's own spend is design spend. ``role``
+                        # labels every usage record and span this instance produces, so the
+                        # call is attributable even though it writes no durable receipt —
+                        # it runs outside any turn, so there is no turn to hang one on.
+                        role=AgentRole.DESIGN.value,
                     )
                 )
             prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)

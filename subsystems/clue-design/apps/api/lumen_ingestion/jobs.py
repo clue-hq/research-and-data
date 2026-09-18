@@ -243,7 +243,7 @@ def run_ingestion_job(
             store.fail,
             job_id,
             {
-                "code": "LUMI0401",
+                "code": _failure_code(error),
                 "message": f"{type(error).__name__}: {error}",
             },
             job_id=job_id,
@@ -259,6 +259,22 @@ def run_ingestion_job(
         job_id=job_id,
         write="complete",
     )
+
+
+def _failure_code(error: BaseException) -> str:
+    """The job's terminal failure code — ``LUMI0401`` unless a provider refused to SELL.
+
+    Lane 3 slice 5: an OpenRouter ``402``/out-of-credit latches the provider and raises
+    ``ProviderHalted`` out of the ingestion model clients (they swallow every other failure and
+    fall back). That is not "this stage did not work", it is "this deployment cannot buy" — the
+    only failure an operator fixes by topping up a key rather than by reading a traceback — so it
+    gets its own code, named after the provider and the reason it gave.
+    """
+    from clue_spend import ProviderHalted
+
+    if isinstance(error, ProviderHalted):
+        return f"provider_refused:{error.provider}:{error.reason_code}"
+    return "LUMI0401"
 
 
 def _fenced_guard(

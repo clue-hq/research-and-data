@@ -43,6 +43,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -55,6 +56,7 @@ from clue_agents import (
     AgentExecutionStatus,
     AgentFinalizeEnvelope,
     AgentHistoryStore,
+    AgentModelCallReceipt,
     AgentProfileRegistry,
     AgentRole,
     AgentTurnOutcome,
@@ -66,6 +68,7 @@ from clue_agents import (
     ProjectContextArtifact,
 )
 from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
+from clue_agents.turns import AgentModelCallStatus
 from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnScopePinRow
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.agent_turn_wiring import (
@@ -104,6 +107,7 @@ from clue_design.exit_judgment import (
     decide_exit,
 )
 from clue_obs import get_logger
+from clue_obs.langfuse import observation, propagate_trace, tag_entities
 from clue_spine import get_project
 from clue_toolbelt import ToolInvoker
 
@@ -742,6 +746,57 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
         "data": account["data"],
         "notes": account["notes"],
     }
+
+
+def receipts_from_design_run(
+    run_result: Mapping[str, Any], *, request: AgentTurnRequest
+) -> tuple[AgentModelCallReceipt, ...]:
+    """The design run's collected model calls as receipts on the leg's own turn.
+
+    The collector on the design side stamped each call from the governed gateway's metadata; this
+    only re-keys them onto the platform's turn and writes ``role=design`` (the profile role, the
+    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs.
+
+    ``cost_cents`` arrives as a STRING (the collector's ``as_json``, so the Decimal survives the
+    jsonb round trip) and becomes USD here; ``None`` stays ``None`` — an unpriced call is never a
+    measured zero.
+    """
+
+    receipts: list[AgentModelCallReceipt] = []
+    for item in run_result.get("model_calls") or ():
+        cents = item.get("cost_cents")
+        cost_usd = (
+            None
+            if cents is None
+            else (Decimal(str(cents)) / Decimal(100)).quantize(Decimal("0.000001"))
+        )
+        receipts.append(
+            AgentModelCallReceipt(
+                model_call_id=UUID(str(item["run_id"])),
+                turn_id=request.turn_id,
+                execution_id=request.constitution.execution_id,
+                workspace_id=request.constitution.workspace_id,
+                sequence=int(item["sequence"]),
+                requested_model=str(item["requested_model"]),
+                answering_model=item.get("answering_model"),
+                status=AgentModelCallStatus(item["status"]),
+                input_tokens=int(item.get("input_tokens") or 0),
+                cache_read_input_tokens=int(item.get("cache_read_input_tokens") or 0),
+                cache_creation_input_tokens=0,
+                output_tokens=int(item.get("output_tokens") or 0),
+                cost_millicredits=0,
+                cost_usd=cost_usd,
+                cost_source=item.get("cost_source"),
+                langfuse_trace_id=item.get("langfuse_trace_id"),
+                langfuse_observation_id=item.get("langfuse_observation_id"),
+                latency_ms=float(item.get("latency_ms") or 0.0),
+                error_code=item.get("error_code"),
+                role=AgentRole.DESIGN,
+                started_at=datetime.fromisoformat(item["started_at"]),
+                completed_at=datetime.fromisoformat(item["completed_at"]),
+            )
+        )
+    return tuple(receipts)
 
 
 class DesignLegTurnRunner:
@@ -1435,6 +1490,24 @@ class DesignLegTurnRunner:
 
     # -- dispatch ------------------------------------------------------------------------------
 
+    async def _record_design_receipts(
+        self, run: dict[str, Any], *, request: AgentTurnRequest
+    ) -> None:
+        """Land a terminal design run's collected model calls on the leg's own turn.
+
+        Called before EVERY terminal return of :meth:`_dispatch`, not only after a drive
+        (ruling T5-1): the run's money is real whichever worker drove it, so a run this
+        dispatch merely re-joins must still put its calls on ``agent_model_call``. Safe to
+        repeat — ``record_model_call`` is idempotent on the model-call id and refuses only a
+        *different* receipt under the same id.
+
+        ``get_run`` serves the design API's shipped DTO, whose ``result`` key IS the row's
+        ``result_json`` — the column the design executor stamped ``model_calls`` onto.
+        """
+
+        for call in receipts_from_design_run(run.get("result") or {}, request=request):
+            await self._turns.record_model_call(receipt=call)
+
     async def _dispatch(
         self,
         *,
@@ -1466,7 +1539,10 @@ class DesignLegTurnRunner:
             if run["status"] in _TERMINAL_RUN_STATUSES and "design_memory" not in job[
                 "payload"
             ].get("config", {}):
-                return run  # preserve terminal legacy re-join without inventing new context
+                # Preserve terminal legacy re-join without inventing new context — but record
+                # the run's receipts: its money is real whichever worker drove it.
+                await self._record_design_receipts(run, request=turn_request)
+                return run
             envelope = DesignTurnEnvelope.model_validate(job["payload"])
             if (
                 envelope.workspace_id != workspace_id
@@ -1531,12 +1607,41 @@ class DesignLegTurnRunner:
         if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
             # A separately claimed queued run may have completed before a crashed producer
             # wrote its selection dependencies. Repair that receipt, but never rerun the design.
+            # Its model calls are recorded here too: the run's money is real whichever worker
+            # drove it, and this is the only dispatch that owns the platform turn they belong to.
+            await self._record_design_receipts(run, request=turn_request)
             return run
-        await self._lane.drive(envelope=envelope)
+        document_id = str((pinned_document or {}).get("id") or "")
+        doc_kind = str((pinned_document or {}).get("doc_kind") or "")
+        # Lane 3 slice 5: the design leg gets its OWN trace, named and scoped like the
+        # head-of-abm turn's. Everything the design runtime does inside the drive — the trio's
+        # model calls, through the Langfuse handler the lane injects — nests under this
+        # observation, so a design turn's money is findable from the leg rather than scattered
+        # across unparented generations.
+        with (
+            propagate_trace(
+                trace_name="design-leg.turn",
+                session_id=submission.thread_id,
+                user_id=workspace_id,
+                metadata={
+                    "project_id": submission.project_id,
+                    "turn_id": str(turn_request.turn_id),
+                    "execution_id": str(execution_id),
+                    "leg_id": str(leg_id),
+                    "document_id": document_id,
+                    "doc_kind": doc_kind,
+                },
+                tags=("design", doc_kind) if doc_kind else ("design",),
+            ),
+            observation("design-leg.turn", as_type="agent", input={"doc_kind": doc_kind}),
+        ):
+            tag_entities([document_id])
+            await self._lane.drive(envelope=envelope)
         async with self._conn_factory() as conn:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
         if run is None or run["status"] not in _TERMINAL_RUN_STATUSES:
             raise RuntimeError("the design lane returned without a terminal design run")
+        await self._record_design_receipts(run, request=turn_request)
         return run
 
     async def _envelope(
@@ -1719,6 +1824,10 @@ class DesignLegTurnRunner:
             run_id=run_id,
             checkpoint_thread_id=run_id,
             document_id=leg.get("document_id"),
+            # T3-1: the turn's project, frozen into the envelope like everything else this
+            # worker decides, so the design side's spend scope can stamp it onto every
+            # ``provider_call_ledger`` row without knowing the platform exists.
+            project_id=submission.project_id,
             config=config,
         )
 

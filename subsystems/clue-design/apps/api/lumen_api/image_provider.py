@@ -471,6 +471,33 @@ def resolve_reference_framing(
     return "\n".join(lines)
 
 
+def _ledger_receipt_fields() -> dict:
+    """Name the `provider_call_ledger` row this generation was priced on, when there is one.
+
+    Read from the open spend scope's buffered ledger immediately after the call, so the last
+    ``openrouter`` result row IS this generation's. Absent (an empty dict — the receipt shape is
+    unchanged for every legacy reader) when no scope is open, when the buffer holds no result row
+    yet, or when the last row belongs to some other provider.
+    """
+    from . import spend
+
+    scope = spend.current_scope()
+    if scope is None:
+        return {}
+    results = [
+        row
+        for row in scope.ledger.rows
+        if row.phase == "result" and row.provider == "openrouter"
+    ]
+    if not results:
+        return {}
+    row = results[-1]
+    return {
+        "ledger_row_id": row.row_id,
+        "cost_usd": None if row.cost_usd is None else str(row.cost_usd),
+    }
+
+
 def _record_request_receipt(
     result: ImageGenerationResult,
     *,
@@ -505,6 +532,7 @@ def _record_request_receipt(
         "effective_aspect_ratio": result.effective_aspect_ratio,
         "provider_api_style": result.provider_api_style,
         "output_dimensions": {"width": result.width, "height": result.height},
+        **_ledger_receipt_fields(),
     }
     result.provenance.setdefault("notes", []).append(
         "image_request=" + json.dumps(result.request_receipt, sort_keys=True, separators=(",", ":"))
@@ -794,12 +822,13 @@ def _invoke_model(
     )
 
 
-def _openrouter_headers(config: ImageModelConfig) -> dict:
-    headers = {
-        "Authorization": f"Bearer {config.api_key}",
-        "Content-Type": "application/json",
-    }
-    # Optional OpenRouter attribution headers (ranking only; harmless if unset).
+def _openrouter_attribution_headers() -> dict:
+    """The optional OpenRouter attribution headers (ranking only; harmless if unset).
+
+    Authorization and Content-Type are no longer built here: `spend.openrouter_call` owns both,
+    because it owns the request. These are the only headers that are this caller's alone.
+    """
+    headers: dict = {}
     referer = settings.image_model_http_referer
     title = settings.image_model_app_title
     if referer:
@@ -850,10 +879,11 @@ def _invoke_chat_completions(
        hint (belt and braces, ~8 tokens) and why `generate()` measures and
        reports what actually came back instead of echoing the request.
 
-    `httpx` is imported lazily so the module loads without it (tests patch
-    `generate`).
+    The call goes through the turn's / request's `spend` scope, so the estimate
+    row, the raw body and the priced result row land on `provider_call_ledger`
+    like every other paid call the platform makes.
     """
-    import httpx  # lazy: only the real network path needs it
+    from . import spend  # lazy: only the real network path needs it
 
     hints = []
     if aspect_ratio:
@@ -900,19 +930,25 @@ def _invoke_chat_completions(
     wire_aspect_ratio = api_aspect_ratio(aspect_ratio)
     if wire_aspect_ratio:
         body["image_config"] = {"aspect_ratio": wire_aspect_ratio}
-    url = config.base_url.rstrip("/") + "/chat/completions"
-    response = httpx.post(
-        url, json=body, headers=_openrouter_headers(config), timeout=config.timeout_s
+    response = spend.openrouter_call(
+        operation="design.image.edit" if source_images else "design.image.generate",
+        body=body,
+        label=f"image:{config.model_id}",
+        timeout_s=config.timeout_s,
+        api_key=config.api_key,
+        base_url=config.base_url,
+        extra_headers=_openrouter_attribution_headers(),
+        extras={"api_style": "chat"},
     )
-    if response.status_code >= 400:
-        detail = response.text[:300]
-        _warn_if_model_not_found(config.model_id, response.status_code, detail)
+    if response.status >= 400:
+        detail = response.body.decode("utf-8", "replace")[:300]
+        _warn_if_model_not_found(config.model_id, response.status, detail)
         raise ImageGenerationError(
             "image_model.http_error",
-            f"image model returned HTTP {response.status_code}: {detail}",
+            f"image model returned HTTP {response.status}: {detail}",
             status_code=502,
         )
-    return _decode_openrouter_image(response.json())
+    return _decode_openrouter_image(json.loads(response.body))
 
 
 def _warn_if_model_not_found(model_id: str, status_code: int, detail: str) -> None:
@@ -1005,8 +1041,11 @@ def _invoke_images_api(
     ("keep this dog's exact face"), so our style-anchor semantics can only ride
     the prompt — which makes `STYLE_REFERENCE_FRAMING` more load-bearing here
     than on the chat path, not less.
+
+    Priced by `spend.image_generation_cost_reader`: an Images-API response carries
+    no usage block, so the cost is looked up from the generation id afterwards.
     """
-    import httpx  # lazy: only the real network path needs it
+    from . import spend  # lazy: only the real network path needs it
 
     user_prompt = prompt
     if transparent_background:
@@ -1043,17 +1082,27 @@ def _invoke_images_api(
     if references:
         body["input_references"] = _image_content_parts(references)
 
-    url = config.base_url.rstrip("/") + "/images"
-    response = httpx.post(
-        url, json=body, headers=_openrouter_headers(config), timeout=config.timeout_s
+    response = spend.openrouter_call(
+        operation="design.image.edit" if source_images else "design.image.generate",
+        body=body,
+        label=f"image:{config.model_id}",
+        timeout_s=config.timeout_s,
+        api_key=config.api_key,
+        base_url=config.base_url,
+        extra_headers=_openrouter_attribution_headers(),
+        extras={"api_style": "images"},
+        cost_reader=spend.image_generation_cost_reader,
+        path="/images",
+        include_usage=False,
     )
-    if response.status_code >= 400:
+    if response.status >= 400:
+        detail = response.body.decode("utf-8", "replace")[:300]
         raise ImageGenerationError(
             "image_model.http_error",
-            f"image model returned HTTP {response.status_code}: {response.text[:300]}",
+            f"image model returned HTTP {response.status}: {detail}",
             status_code=502,
         )
-    return _decode_images_api_response(response.json(), timeout_s=config.timeout_s)
+    return _decode_images_api_response(json.loads(response.body), timeout_s=config.timeout_s)
 
 
 def _decode_images_api_response(payload: object, *, timeout_s: float) -> Tuple[bytes, str]:

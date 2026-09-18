@@ -12,6 +12,8 @@ dependencies = [
     "clue-db",
     "clue-obs",
     "clue-storage",
+    # lane 3 slice 5: the provider-caller seam ARV2 re-exports (it used to live in clue_api.arv2)
+    "clue-spend",
     "clue-execution",
     "clue-fleet",
     "clue-toolbelt",
@@ -41,6 +43,7 @@ clue-config = { workspace = true }
 clue-db = { workspace = true }
 clue-obs = { workspace = true }
 clue-storage = { workspace = true }
+clue-spend = { workspace = true }
 clue-execution = { workspace = true }
 clue-fleet = { workspace = true }
 clue-toolbelt = { workspace = true }
