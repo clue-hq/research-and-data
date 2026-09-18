@@ -102,3 +102,58 @@ images; R3 Gallery slot for uploaded images (none designed in the dummy); R4 `+`
 ad leg is open; R5 drop-zone visual; R6 limits; R7 target-accounts card thumbnail (static mock PNG
 vs real-logo tile vs empty frame); R8 keep or drop the fixed "Target accounts" tab; R9 when the card
 appears (always vs ≥1 account).
+
+## Vision probe (Task 1) — 2026-09-18 — AMBIGUOUS, founder/controller ruling needed
+
+Command (lane `damascus`, branch `add-attachment`, one paid call):
+
+    set -a; source .env; set +a; uv run python scripts/probe_chat_image_input.py
+
+Script: `scripts/probe_chat_image_input.py`. It sends one `HumanMessage` whose content is an
+array of a text part plus an `{"type": "image_url", "image_url": {"url": "data:image/png;base64,…"}}`
+part — a 64x64 PNG, left half pure red, right half pure blue — and asks the model to name the left
+colour then the right colour.
+
+Full output:
+
+    catalog_supports_image_input=True
+    model_call_usage cached_prompt_tokens=128 call_kind=agent_completion completion_tokens=274
+      cost_cents=Decimal('0.193200') duration_ms=11828.954 prompt_tokens=240
+      requested_model=x-ai/grok-4.6 role=head_of_abm served_model=x-ai/grok-4.6 total_tokens=514
+    model=x-ai/grok-4.6
+    reply='The left color is blue and the right color is red.'
+    RESULT: IMAGE NOT SEEN
+
+**The printed verdict is a left/right-ordering artifact, not evidence of blindness.** The script's
+pass test requires "red" to appear before "blue"; the model named *both and only* the two colours
+actually in the image, but mirrored the sides. Supporting evidence that the image was transmitted
+and perceived:
+
+- The call was accepted on the wire — no `invalid_union: expected string, received array` 400. The
+  array-shaped content part survives the platform's model path end to end.
+- OpenRouter's own catalog reports `x-ai/grok-4.6` accepts image input (`supports_image_input=True`,
+  a free pre-spend catalog read).
+- Token accounting leans image, not text: the data URL is only 206 chars (137-byte PNG), so a
+  text-tokenised prompt would be roughly 105–135 tokens; 240 prompt tokens is more consistent with
+  the image being charged as image tokens.
+- Precedent already in the repo: the design subsystem sends the same data-URL shape to
+  `LUMEN_INGESTION_VISION_MODEL=x-ai/grok-4.5`.
+
+Caveat kept honest: from this one reply alone, "red and blue" is also the most likely *guess* for a
+blind model, so the reply on its own is not proof. The probe was **not** rerun (brief: do not retry
+after a negative), and changing the prompt after seeing the answer would be shopping for a pass.
+
+**Two deliberate deviations from the task brief**, both recorded at the top of the script:
+1. The provider is built from `default_gateway_config()`, not a bare `GatewayConfig()`. Only the
+   former sets `openrouter_chat_completions_fallback=True`, which is what routes a non-OpenAI model
+   off OpenRouter's `/responses` translation — the translation `agent_model.py` documents as 400ing
+   on exactly this array-shaped content. A bare `GatewayConfig()` probe would have failed on the
+   wire shape and told us nothing about vision.
+2. `max_output_tokens=1000` rather than 200. This lane runs the dev reasoning lens
+   (`CLUE_CHAT_REASONING_TRACE_MODE=raw` -> `reasoning.effort=medium`), so a tight output budget can
+   be spent on reasoning and truncate the visible answer into a false negative. The verdict logic is
+   unchanged.
+
+**Owed decision before Task 8/9 start:** treat this as IMAGE SEEN (transport + perception proven,
+spatial ordering unreliable), or run one disambiguating probe with an unguessable ground truth
+(e.g. a digit or an unusual colour pair rather than left/right red/blue).
