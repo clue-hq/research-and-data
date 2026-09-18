@@ -616,9 +616,7 @@ async def prepare_composer_context_entities(
     return tuple(prepared)
 
 
-PRESENTED_REF_TYPES = frozenset(
-    {"artifact", "design_asset", "design_document", "project_document"}
-)
+PRESENTED_REF_TYPES = frozenset({"artifact", "design_asset", "design_document", "project_document"})
 """The ref types whose read-time presentation the transcript joins."""
 
 

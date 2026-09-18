@@ -89,9 +89,7 @@ def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) 
                 family="image",
             )
             kwargs = _submission_kwargs(seeds, "describe")
-            _row, created = await insert_submission(
-                conn, attachment_refs=(brief, shot), **kwargs
-            )
+            _row, created = await insert_submission(conn, attachment_refs=(brief, shot), **kwargs)
             assert created
             # The text one is a project document from this turn on; the image never is.
             await materialize_text_attachments(
@@ -118,8 +116,7 @@ def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) 
 
             assert described[brief.ref.artifact_key].filename == "brief.md"
             assert (
-                described[brief.ref.artifact_key].workspace_path
-                == "project/attachments/brief.md"
+                described[brief.ref.artifact_key].workspace_path == "project/attachments/brief.md"
             )
             assert described[shot.ref.artifact_key].filename == "shot.png"
             assert described[shot.ref.artifact_key].workspace_path is None
