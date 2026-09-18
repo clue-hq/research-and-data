@@ -4,11 +4,9 @@ import { resolveChatTransport } from "@/features/projects/data/chat-api";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
 import { ProjectApplicationShell } from "@/components/shell/application-shell";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
-import {
-  roleLabel,
-  WorkspaceSwitcherProvider,
-} from "@/components/shell/workspace-switcher-context";
+import { WorkspaceSwitcherProvider } from "@/components/shell/workspace-switcher-context";
 import { switchWorkspace } from "@/features/session/data/session-actions";
+import { roleLabel } from "@/features/session/model/session";
 import { workspaceInitials } from "@/features/accounts/model/workspace-profile";
 import { ConfirmationProvider } from "@/components/ui/confirmation-card";
 import { getSettingsProfile } from "@/features/settings/data/profile.repository";

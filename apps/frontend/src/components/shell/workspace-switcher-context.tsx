@@ -63,11 +63,6 @@ function subscribeDisabled() {
   return () => {};
 }
 
-/** `owner` reads as `Owner` in the menu; the key itself is never shown. */
-export function roleLabel(roleKey: string): string {
-  return roleKey ? roleKey[0]!.toLocaleUpperCase() + roleKey.slice(1) : roleKey;
-}
-
 export function WorkspaceSwitcherProvider({
   activeWorkspaceId = null,
   children,

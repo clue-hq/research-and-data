@@ -7,6 +7,15 @@ export const WorkspaceRoleSchema = z.enum([
   "viewer",
 ]);
 
+/**
+ * `owner` reads as `Owner`. It lives here, beside the role schema, rather than in
+ * the switcher's client module: the protected layout is a server component, and
+ * Next refuses to call a `"use client"` module's function from the server.
+ */
+export function roleLabel(roleKey: string): string {
+  return roleKey ? roleKey[0]!.toLocaleUpperCase() + roleKey.slice(1) : roleKey;
+}
+
 export const SessionMembershipSchema = z.object({
   membership_id: z.string().min(1),
   workspace_id: z.string().min(1),

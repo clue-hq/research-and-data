@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AuthenticatedSessionSchema,
+  roleLabel,
   SessionMembershipSchema,
   RequestPrincipalSchema,
   resolveWorkspaceMembership,
@@ -132,4 +133,13 @@ test("a membership carries the workspace's display name, and must", () => {
     false,
     "an empty name would render as nothing at all",
   );
+});
+
+test("a role reads as a word, and lives where the server can call it", () => {
+  // The protected layout (a server component) labels each membership's role, so
+  // this must NOT live in the switcher's "use client" module: Next refuses to
+  // call a client module's function from the server.
+  assert.equal(roleLabel("owner"), "Owner");
+  assert.equal(roleLabel("operator"), "Operator");
+  assert.equal(roleLabel(""), "");
 });
