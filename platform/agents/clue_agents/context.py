@@ -505,8 +505,9 @@ class FocusLayerSource:
 class HistoryLayerSource:
     layer = ContextLayer.L6_CONVERSATION
 
-    def __init__(self, artifacts: AgentArtifactReader) -> None:
+    def __init__(self, artifacts: AgentArtifactReader, *, images_max: int = 20) -> None:
         self._artifacts = artifacts
+        self._images_max = images_max
 
     async def load(
         self,
@@ -516,8 +517,27 @@ class HistoryLayerSource:
         history: Sequence[HistoryMessageRef],
     ) -> Sequence[ContextCandidate]:
         del profile
+        ordered = sorted(history, key=lambda value: value.sequence)
+        # Ruling 2 (2026-09-18): a picture the user already sent stays visible for the rest of the
+        # conversation, so the model can still be asked about it three turns later. Bytes are not
+        # free, so a thread carries at most ``images_max`` of them and the newest win the cap
+        # (``0`` = no cap). Walking newest-first is what makes "newest win" true.
+        budget = None if self._images_max == 0 else self._images_max
+        kept: dict[int, tuple[ArtifactRef, ...]] = {}
+        for item in reversed(ordered):
+            images = tuple(
+                ref for ref in item.attachment_refs if ref.media_type.lower().startswith("image/")
+            )
+            if item.role != "user" or not images:
+                continue
+            if budget is None:
+                kept[item.sequence] = images
+            elif budget > 0:
+                take = images[-budget:]
+                kept[item.sequence] = take
+                budget -= len(take)
         result: list[ContextCandidate] = []
-        for item in sorted(history, key=lambda value: value.sequence):
+        for item in ordered:
             if item.body_ref.workspace_id != request.constitution.workspace_id:
                 raise ValueError("history ref crosses the turn workspace boundary")
             body = (await self._artifacts.read(item.body_ref)).decode("utf-8")
@@ -529,6 +549,7 @@ class HistoryLayerSource:
                     role=item.role,
                     origin="history",
                     interrupted=item.interrupted and item.role == "assistant",
+                    image_refs=kept.get(item.sequence, ()),
                 )
             )
         return result

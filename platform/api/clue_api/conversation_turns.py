@@ -655,6 +655,9 @@ def build_conversation_turn_engine(
         # L7 names this turn's attachments from the submission rows, so a file the human dropped
         # into the conversation is a named file with a readable path rather than a bare hash.
         attachment_describer=DbAttachmentDescriber(conn_factory=conn_factory),
+        # An image the user sent earlier stays in the conversation so it can still be asked about
+        # later; the operator's setting decides how many the thread carries (ruling 2).
+        history_images_max=components.history_images_max,
         conn_factory=conn_factory,
     )
     runtime = HeadOfAbmStage0Runtime(

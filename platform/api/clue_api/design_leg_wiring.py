@@ -91,6 +91,7 @@ from clue_api.design_turn_targets import (
     resolve_web_targets,
 )
 from clue_api.turn_action import derive_turn_action_ref
+from clue_api.turn_attachments import turn_image_refs
 from clue_core import ContextAssembly, ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
@@ -398,6 +399,14 @@ async def load_head_of_abm_history(
             ),
             {"workspace": workspace_id, "thread": thread_id},
         )
+        rows = result.mappings().all()
+        # One query for the whole page: the images a past turn carried ride its messages again
+        # (ruling 2, spec 2026-09-18); the conversation layer caps how many the thread affords.
+        images = await turn_image_refs(
+            conn,
+            workspace_id=workspace_id,
+            turn_ids=[row["turn_id"] for row in rows],
+        )
         return tuple(
             HistoryMessageRef(
                 message_id=row["id"],
@@ -412,8 +421,9 @@ async def load_head_of_abm_history(
                     media_type=row["media_type"],
                     byte_count=int(row["size_bytes"]),
                 ),
+                attachment_refs=images.get(row["turn_id"], ()),
             )
-            for row in result.mappings()
+            for row in rows
         )
 
 
