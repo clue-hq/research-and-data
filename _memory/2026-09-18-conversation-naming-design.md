@@ -73,8 +73,9 @@ Frontend: `project-home.repository.test.ts` (4), `use-naming-catch-up.test.ts` +
 pre-existing warnings in `design-editor/engine/scene/canvasOperations.ts`). `npx tsc --noEmit`
 reports no errors in the touched files (68 pre-existing errors elsewhere).
 
-**Owed:** `npm run build` with the lane dev server stopped (skipped under the lane dev-server
-rule), and the whole-branch review.
+**Done after the note was first written:** `npm run build` (exit 0, dev server down) and the
+whole-branch review (controller, no Critical/Important findings). **Owed:** the founder-triggered
+live acceptance below.
 
 ### Decisions taken during execution
 
