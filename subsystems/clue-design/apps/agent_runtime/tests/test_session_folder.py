@@ -55,6 +55,23 @@ def test_a_session_owns_one_folder_and_each_turn_a_subfolder(tmp_path, monkeypat
     assert workspace_root(first) == workspace_root(second)
 
 
+def test_a_config_supplied_run_id_is_the_turns_own_id(tmp_path, monkeypatch) -> None:
+    # A leg turn passes the PLATFORM's design run id, so a retried run lands back in the same
+    # turn folder and stamps the same `lumen_run_id` on its human message — which is what lets
+    # `checkpoint.invoke_turn_graph` recognise the retry and resume instead of re-prompting.
+    monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
+    config = replace(
+        runtime_config(tmp_path), trace_dir=tmp_path, session_id="dsess_fixed", run_id="run_fixed"
+    )
+    tools = _tools(config)
+    assert tools.run_id == "run_fixed"
+    assert tools.turn_dir == tools.trace_dir / "turns" / "run_fixed"
+    assert _tools(config).turn_dir == tools.turn_dir, "a retry reuses its own turn folder"
+    # No supplied id → a fresh one per construction, exactly as before.
+    minted = replace(config, run_id=None)
+    assert _tools(minted).run_id != _tools(minted).run_id
+
+
 def test_rounds_continue_numbering_across_turns(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     config = replace(runtime_config(tmp_path), trace_dir=tmp_path, session_id="dsess_r")
@@ -153,3 +170,14 @@ def test_web_session_turns_get_their_own_subfolder(_web_config, tmp_path) -> Non
     first.record("coordinator", "x", output_summary="y")
     assert (first.turn_dir / "trace.jsonl").is_file()
     assert not (first.trace_dir / "trace.jsonl").exists()
+
+
+def test_web_a_config_supplied_run_id_is_the_turns_own_id(_web_config, tmp_path) -> None:
+    # Same contract on the web substrate — see the scene case above.
+    config = replace(_web_config, session_id="dsess_web_fixed", run_id="run_fixed")
+    tools = _web_tools(config)
+    assert tools.run_id == "run_fixed"
+    assert tools.turn_dir == tools.trace_dir / "turns" / "run_fixed"
+    assert _web_tools(config).turn_dir == tools.turn_dir, "a retry reuses its own turn folder"
+    minted = replace(config, run_id=None)
+    assert _web_tools(minted).run_id != _web_tools(minted).run_id

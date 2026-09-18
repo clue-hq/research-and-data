@@ -969,7 +969,7 @@ class LumenWebTools:
         # tools call sibling methods internally.
         self.tool_lock = threading.RLock()
         self.prompt = prompt
-        self.run_id = new_run_id()
+        self.run_id = config.run_id or new_run_id()
         self.page_id = HOME_PAGE_ID
         # A deep copy so the caller's stored doc is never mutated in place; every
         # accepted mutation replaces this with the helper's returned doc.

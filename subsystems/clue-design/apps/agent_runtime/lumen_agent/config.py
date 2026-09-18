@@ -20,6 +20,12 @@ class AgentRuntimeConfig:
     # agent's workspace ``<trace_dir>/sessions/<session_id>/workspace`` survives across turns.
     # None keeps the per-run folder ``<trace_dir>/<run_id>`` (editor preview, CLI, fixtures).
     session_id: str | None = None
+    # Design session continuity (2026-09-18): a leg turn passes the PLATFORM's design run id here
+    # so a retried run reuses its own ``turns/<run_id>`` folder and stamps the same
+    # ``lumen_run_id`` on its human message — which is what lets `checkpoint.invoke_turn_graph`
+    # recognise the retry and resume the thread instead of re-prompting it. None mints a fresh
+    # runtime id per construction, exactly as before (editor preview, CLI, fixtures).
+    run_id: str | None = None
     # Agent LLM service. OpenRouter is the SOLE gateway for every LLM call — there
     # is no native-provider fallback. `agent_base_url` defaults to the OpenRouter API
     # and `model` must be an "openai:<openrouter-model-id>" value; `agent_api_key`

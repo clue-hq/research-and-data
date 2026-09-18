@@ -339,7 +339,7 @@ class LumenDesignTools:
         # Every scene mutation shares this per-run transaction lock; paid
         # generation/editing and remote logo fetching remain parallel outside it.
         self._scene_mutation_lock = threading.RLock()
-        self.run_id = new_run_id()
+        self.run_id = config.run_id or new_run_id()
         self.iteration = 0
         # Fast-loop v1 §7: per-run summary counters, started at the earliest
         # moment of the run so `wall_time_ms` measures the whole turn. The three
