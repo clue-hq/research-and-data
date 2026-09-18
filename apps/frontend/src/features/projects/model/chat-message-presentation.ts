@@ -90,3 +90,17 @@ export function humanizeMessageBody(body: string): string {
     .replace(/\bgate_id\s*:\s*/gi, "Proposal: ")
     .replace(/\bexpected_subject_sha256\s*:\s*/gi, "");
 }
+
+/**
+ * A chip label that stays one line: names over `max` characters keep their
+ * head and their extension around an ellipsis (`long_name…txt`), so a file is
+ * still recognisable without the chip growing past the message. The full
+ * name stays on the chip's `title`.
+ */
+export function truncateAttachmentLabel(label: string, max = 60): string {
+  if (label.length <= max) return label;
+  const dot = label.lastIndexOf(".");
+  const ext = dot > 0 && label.length - dot <= 10 ? label.slice(dot + 1) : "";
+  const head = label.slice(0, Math.max(1, max - ext.length - 1));
+  return `${head}…${ext}`;
+}

@@ -6,6 +6,7 @@ import { unavailableMessageBody } from "../model/chat-message";
 import type { GateAnswerDisplay } from "../model/chat-gate";
 import {
   chatUploadBytesUrl,
+  truncateAttachmentLabel,
   designReferenceThumbnailUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
@@ -132,7 +133,9 @@ export function ChatTranscript({
                           ) : (
                             <ProjectIcon name="file-text" size={12} />
                           )}
-                          {ref.label ?? "Attachment"}
+                          <span className={styles.messageReferenceLabel}>
+                            {truncateAttachmentLabel(ref.label ?? "Attachment")}
+                          </span>
                         </span>
                       );
                     }
@@ -174,12 +177,14 @@ export function ChatTranscript({
                             width={18}
                           />
                         ) : null}
-                        {ref.objectType === "account" ||
-                        ref.objectType === "contact" ||
-                        ref.objectType === "project_document" ||
-                        ref.objectType === "design_document"
-                          ? `@${label}`
-                          : label}
+                        <span className={styles.messageReferenceLabel}>
+                          {ref.objectType === "account" ||
+                          ref.objectType === "contact" ||
+                          ref.objectType === "project_document" ||
+                          ref.objectType === "design_document"
+                            ? `@${truncateAttachmentLabel(label)}`
+                            : truncateAttachmentLabel(label)}
+                        </span>
                       </span>
                     );
                   })}

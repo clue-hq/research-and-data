@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  truncateAttachmentLabel,
   chatUploadBytesUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
@@ -57,4 +58,19 @@ test("chat upload bytes url is the BFF upload route", () => {
     chatUploadBytesUrl("11111111-2222-3333-4444-555555555555"),
     "/api/clue/frontend/v1/uploads/11111111-2222-3333-4444-555555555555/bytes",
   );
+});
+
+test("short attachment labels are untouched", () => {
+  assert.equal(truncateAttachmentLabel("onboarding_prompts.txt"), "onboarding_prompts.txt");
+  assert.equal(truncateAttachmentLabel("x".repeat(56) + ".md"), "x".repeat(56) + ".md");
+});
+
+test("labels over the limit keep their head and extension around an ellipsis", () => {
+  const long = "a".repeat(80) + ".txt";
+  const out = truncateAttachmentLabel(long);
+  assert.equal(out.length, 60);
+  assert.equal(out.endsWith("…txt"), true);
+  assert.equal(out.startsWith("a".repeat(56)), true);
+  assert.equal(truncateAttachmentLabel("b".repeat(70)), "b".repeat(59) + "…");
+  assert.equal(truncateAttachmentLabel("c".repeat(70), 20), "c".repeat(19) + "…");
 });
