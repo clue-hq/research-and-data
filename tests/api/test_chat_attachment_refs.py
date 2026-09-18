@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from clue_api.chat import attachments as module
-from clue_api.chat.attachments import AttachmentReferenceError, validated_attachment_refs
+from clue_api.chat.attachments import (
+    AttachmentReferenceError,
+    ValidatedAttachment,
+    validated_attachment_refs,
+)
+from clue_api.chat.router import _validated_submission_attachments
 from clue_api.chat.schemas import AttachmentRefRequest
 from clue_api.chat.uploads import ChatUploadRow
 from clue_config import Settings
@@ -41,20 +48,27 @@ def _row(
 
 
 def _request(row: ChatUploadRow, **overrides: object) -> AttachmentRefRequest:
-    payload: dict[str, object] = dict(
-        upload_id=row.upload_id,
-        artifact_key=row.artifact_key,
-        sha256=row.sha256,
-        media_type=row.media_type,
-        byte_count=row.byte_count,
-        filename=row.filename,
-    )
+    payload: dict[str, object] = {
+        "upload_id": row.upload_id,
+        "artifact_key": row.artifact_key,
+        "sha256": row.sha256,
+        "media_type": row.media_type,
+        "byte_count": row.byte_count,
+        "filename": row.filename,
+    }
     payload.update(overrides)
     return AttachmentRefRequest(**payload)  # type: ignore[arg-type]
 
 
-def _run(monkeypatch, refs, rows, settings=None):
-    async def fake_get(conn, *, workspace_id, upload_ids):
+def _run(
+    monkeypatch: pytest.MonkeyPatch,
+    refs: Sequence[AttachmentRefRequest],
+    rows: Sequence[ChatUploadRow],
+    settings: Settings | None = None,
+) -> tuple[ValidatedAttachment, ...]:
+    async def fake_get(
+        conn: object, *, workspace_id: str, upload_ids: Sequence[UUID]
+    ) -> dict[UUID, ChatUploadRow]:
         return {r.upload_id: r for r in rows if r.workspace_id == workspace_id}
 
     monkeypatch.setattr(module, "get_chat_uploads", fake_get)
@@ -98,3 +112,25 @@ def test_limits_and_duplicates(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(AttachmentReferenceError) as dup:
         _run(monkeypatch, [_request(rows[0]), _request(rows[0])], rows)
     assert dup.value.code == "ATTACHMENT_DUPLICATE"
+
+
+def test_attachments_need_artifact_storage() -> None:
+    """Spec §3.2: without a store to hold the bytes the turn is refused 503, never half-accepted.
+
+    Asserted on the router helper directly because the branch is unreachable over HTTP — both
+    submission routes register only when the deployment composed a storage backend.
+    """
+
+    row = _row(uuid4())
+    with pytest.raises(HTTPException) as refusal:
+        asyncio.run(
+            _validated_submission_attachments(
+                object(),  # type: ignore[arg-type]
+                workspace_id=WS,
+                refs=(_request(row),),
+                settings=_settings(),
+                storage=None,
+            )
+        )
+    assert refusal.value.status_code == 503
+    assert refusal.value.detail["code"] == "CAPABILITY_UNAVAILABLE"  # type: ignore[index]

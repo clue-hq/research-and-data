@@ -399,6 +399,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                         **request,
                         "attachment_refs": [
                             {
+                                "upload_id": str(uuid4()),
                                 "artifact_key": "browser-local://not-durable",
                                 "sha256": "a" * 64,
                                 "media_type": "text/plain",
@@ -442,9 +443,10 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 unavailable_profile.status_code,
                 unavailable_profile.json()["error"]["code"],
             ) == (409, "AGENT_PROFILE_UNAVAILABLE")
+            # A receipt naming an upload this workspace never made is refused fail-closed.
             assert (attachment.status_code, attachment.json()["error"]["code"]) == (
-                409,
-                "CAPABILITY_UNAVAILABLE",
+                404,
+                "ATTACHMENT_NOT_FOUND",
             )
 
     run_async(scenario())
