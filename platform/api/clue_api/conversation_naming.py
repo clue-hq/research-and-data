@@ -453,3 +453,57 @@ def build_conversation_namer(
         artifacts=artifacts,
         conn_factory=conn_factory,
     )
+
+
+class TurnNamingLauncher:
+    """Starts the namer beside the turn's close projection and bounds how long the turn waits.
+
+    §4.1: the terminal turn event waits at most ``grace_s``; a slower call keeps running as a
+    task this launcher holds a reference to (so it is neither garbage-collected nor awaited by
+    the fleet handler) and writes its names when it lands. Worker shutdown cancels it — the
+    placeholder stays and the next completed turn retries.
+    """
+
+    def __init__(self, *, namer: ConversationNamer | None, grace_s: float = NAMING_GRACE_S) -> None:
+        self._namer = namer
+        self._grace_s = grace_s
+        self._pending: set[asyncio.Task[NamingOutcome]] = set()
+
+    @property
+    def pending(self) -> int:
+        return len(self._pending)
+
+    def start(self, request: NamingRequest) -> asyncio.Task[NamingOutcome] | None:
+        if self._namer is None:
+            return None
+        namer = self._namer
+
+        async def _run() -> NamingOutcome:
+            try:
+                return await namer.name(request)
+            except Exception:  # noqa: BLE001 — a namer that raises is a skip, never a turn error
+                log.warning(
+                    "conversation_naming.skipped",
+                    reason="unexpected_error",
+                    turn_id=str(request.turn_id),
+                    thread_id=request.thread_id,
+                    exc_info=True,
+                )
+                return NamingOutcome(
+                    chat_title=None, project_name=None, skipped_reason="unexpected_error"
+                )
+
+        task = asyncio.create_task(_run(), name=f"conversation-naming:{request.turn_id}")
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+        return task
+
+    async def wait_grace(self, task: asyncio.Task[NamingOutcome] | None) -> bool:
+        """``True`` when there was nothing to wait for or the namer finished inside the grace."""
+        if task is None:
+            return True
+        done, _ = await asyncio.wait({task}, timeout=self._grace_s)
+        if task in done:
+            return True
+        log.info("conversation_naming.detached", task=task.get_name(), grace_s=self._grace_s)
+        return False

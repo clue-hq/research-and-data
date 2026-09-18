@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -10,6 +12,9 @@ from clue_api.conversation_naming import (
     NAMING_INPUT_CHARS,
     NAMING_RESPONSE_FORMAT,
     NAMING_SYSTEM_PROMPT,
+    NamingOutcome,
+    NamingRequest,
+    TurnNamingLauncher,
     build_naming_messages,
     normalize_generated_name,
 )
@@ -113,3 +118,79 @@ def test_messages_carry_only_what_is_known_and_bound_the_exchange() -> None:
         "Needed: chat_title" in body
         and "project_name" not in body.split("Needed:")[1].split("\n")[0]
     )
+
+
+def _naming_request() -> NamingRequest:
+    return NamingRequest(
+        workspace_id="ws",
+        project_id="prj",
+        thread_id="thr",
+        turn_id=uuid4(),
+        user_message="u",
+        assistant_message="a",
+    )
+
+
+class _SlowNamer:
+    def __init__(self, delay_s: float) -> None:
+        self.delay_s = delay_s
+        self.calls: list[NamingRequest] = []
+
+    async def name(self, request: NamingRequest) -> NamingOutcome:
+        self.calls.append(request)
+        await asyncio.sleep(self.delay_s)
+        return NamingOutcome(chat_title="Fast title", project_name=None, skipped_reason=None)
+
+
+def test_launcher_without_a_namer_starts_nothing() -> None:
+    async def scenario() -> None:
+        launcher = TurnNamingLauncher(namer=None)
+        assert launcher.start(_naming_request()) is None
+        assert await launcher.wait_grace(None) is True
+        assert launcher.pending == 0
+
+    asyncio.run(scenario())
+
+
+def test_fast_namer_finishes_inside_the_grace() -> None:
+    async def scenario() -> None:
+        namer = _SlowNamer(0.01)
+        launcher = TurnNamingLauncher(namer=namer, grace_s=0.5)
+        task = launcher.start(_naming_request())
+        assert task is not None
+        assert await launcher.wait_grace(task) is True
+        assert task.result().chat_title == "Fast title"
+        assert launcher.pending == 0
+
+    asyncio.run(scenario())
+
+
+def test_slow_namer_is_left_running_detached_and_still_completes() -> None:
+    async def scenario() -> None:
+        namer = _SlowNamer(0.2)
+        launcher = TurnNamingLauncher(namer=namer, grace_s=0.02)
+        task = launcher.start(_naming_request())
+        assert task is not None
+        assert await launcher.wait_grace(task) is False
+        assert not task.done()
+        assert launcher.pending == 1
+        await task
+        assert task.result().chat_title == "Fast title"
+        assert launcher.pending == 0
+
+    asyncio.run(scenario())
+
+
+def test_launcher_swallows_a_namer_that_raises() -> None:
+    class _Broken:
+        async def name(self, request: NamingRequest) -> NamingOutcome:
+            raise RuntimeError("boom")
+
+    async def scenario() -> None:
+        launcher = TurnNamingLauncher(namer=_Broken(), grace_s=0.5)
+        task = launcher.start(_naming_request())
+        assert task is not None
+        assert await launcher.wait_grace(task) is True
+        assert task.result().skipped_reason == "unexpected_error"
+
+    asyncio.run(scenario())
