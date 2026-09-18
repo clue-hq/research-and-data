@@ -36,3 +36,30 @@ the solo scene graph and the web graph. Facts the plan relies on: deepagents 0.6
 history file is `/conversation_history/<thread_id>.md` under the workspace backend, which the
 `active_run_id` fence refuses today; `design_agent_run.checkpoint_thread_id` is deleted by erasure
 already; `design_edit_envelope.base_revision` exists for the drift note. No migration, no env key.
+
+## Execution (same day, SDD on `design/account-binding`, worktree san-salvador)
+Commits: ae8c1d31c (T1 sessions substrate) · 14c445be3 + 9605f3481 (T2 envelope names the session,
+same-document wait, design-memory authority fix) · cde9cfc67 (T3 session folder / turn_dir /
+round base) · fc68309a5 (T4 backend scope `sessions/<id>` + own history file admitted) · cb3a459be +
+d22a70e69 (T5 continue/resume; `AgentRuntimeConfig.run_id`) · 509ad2b9c + 99b1cc5f0 (T6 executors:
+document read, fresh CAS base, drift note, brief/history gating, session only for LEG turns) ·
+7650ae745 (T7 reasoning text in the trace) · 90a0c377a (T8 session sync/restore via the blob
+store, `effective_runtime_config`) · f6fc4ea43 (T9 purger removes session folder + history; docs) ·
+104a02000 (format). Ledger: `.superpowers/sdd/2026-09-18-design-session-continuity/progress.md`.
+
+Rulings taken during execution: T2-1 design-memory authority accepts the session thread; T5-1 the
+platform's run id is handed to the substrate so a retried run resumes; T6-1 a direct editor/BFF
+turn joins no session (per-run folder, no drift note); T9-1 erasure extends the existing runtime
+purger rather than adding a collaborator; T1-1/T1-2/T8-2/T8-3 minor.
+
+Verified first-hand: ruff + format clean on the platform-side files; mypy 867 files clean;
+lint-imports 28/0; no-DB runtime + purger suites 433 passed (exit 0); each task's suites re-run
+after review while the DB was up (T1–T5). **OWED — the lane Postgres container
+`clue-pg-istanbul` (:55040) was stopped externally at 14:20Z and again ~14:40Z (trenton lane
+setup in progress); not restarted by the controller.** When it is back, with the stack DOWN:
+`tests/design/test_p37_design_entry_consumption.py`, `tests/design/test_design_sessions_db.py`,
+`tests/design/test_design_fleet_turns_db.py`, `tests/api/test_design_leg_session_db.py`,
+`subsystems/clue-design/apps/api/tests/test_scene_turn_persist.py test_web_turns.py
+test_agent_run_write_lock.py`, then stack UP. Then the four live proofs (spec §7) plus the redrive
+double-apply walk (T6-2) and a live erasure proof. Pre-existing reds recorded: image-model 401 test
+in `test_web_substrate.py`, `test_reference_images_contract` stale SimpleNamespace.
