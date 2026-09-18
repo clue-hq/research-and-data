@@ -616,7 +616,9 @@ async def prepare_composer_context_entities(
     return tuple(prepared)
 
 
-PRESENTED_REF_TYPES = frozenset({"design_asset", "design_document", "project_document"})
+PRESENTED_REF_TYPES = frozenset(
+    {"artifact", "design_asset", "design_document", "project_document"}
+)
 """The ref types whose read-time presentation the transcript joins."""
 
 
@@ -728,6 +730,32 @@ async def context_ref_presentations(
             result[("project_document", document_id)] = {
                 "label": document_title(front, body, path=str(row.path)),
                 "kind": str(row.kind),
+            }
+
+    # An attachment ref projects as ``object_type='artifact'`` with the content-addressed storage
+    # key as its id. The key says nothing a person can read, so the filename and media type the
+    # human's upload carried are joined here — the same read-time-only discipline as above, and
+    # workspace-scoped, so a key from another tenant simply resolves to nothing.
+    artifact_keys = tuple(
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "artifact")
+    )
+    if artifact_keys:
+        attachment_rows = (
+            await conn.execute(
+                text(
+                    "SELECT DISTINCT ON (artifact_key) artifact_key, upload_id, filename, "
+                    "media_type FROM agent_turn_submission_attachment "
+                    "WHERE workspace_id = :ws AND artifact_key = ANY(:keys) "
+                    "ORDER BY artifact_key, created_at DESC"
+                ),
+                {"ws": workspace_id, "keys": list(artifact_keys)},
+            )
+        ).mappings()
+        for attachment in attachment_rows:
+            result[("artifact", str(attachment["artifact_key"]))] = {
+                "label": str(attachment["filename"]),
+                "media_type": str(attachment["media_type"]),
+                "upload_id": str(attachment["upload_id"]),
             }
 
     design_ids = tuple(

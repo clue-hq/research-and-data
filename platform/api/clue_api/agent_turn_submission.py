@@ -64,6 +64,7 @@ __all__ = [
     "dispatch_next_thread_turn",
     "get_submission",
     "submission_attachment_refs",
+    "submission_attachment_refs_for_turns",
     "submission_context_refs",
     "submission_context_refs_for_turns",
     "message_artifact_ref",
@@ -455,6 +456,60 @@ async def submission_context_refs_for_turns(
             )
         )
     return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}
+
+
+async def submission_attachment_refs_for_turns(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    turn_ids: Sequence[UUID],
+) -> dict[UUID, tuple[SubmissionAttachmentRow, ...]]:
+    """Batch ordered submission attachments for transcript/turn-list hydration.
+
+    The single-turn sibling's shape, read in one query, so a page of pending turns costs one
+    round trip rather than one per turn.
+    """
+
+    if not turn_ids:
+        return {}
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT turn_id, ordinal, upload_id, artifact_key, sha256, media_type, "
+                    "byte_count, filename FROM agent_turn_submission_attachment "
+                    "WHERE workspace_id = :workspace_id "
+                    "AND turn_id = ANY(CAST(:turn_ids AS uuid[])) "
+                    "ORDER BY turn_id, ordinal"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "turn_ids": [str(turn_id) for turn_id in turn_ids],
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    grouped: dict[UUID, list[SubmissionAttachmentRow]] = {}
+    for row in rows:
+        turn_id = UUID(str(row["turn_id"]))
+        grouped.setdefault(turn_id, []).append(
+            SubmissionAttachmentRow(
+                turn_id=turn_id,
+                ordinal=int(row["ordinal"]),
+                upload_id=row["upload_id"],
+                ref=ArtifactRef(
+                    workspace_id=workspace_id,
+                    artifact_key=row["artifact_key"],
+                    sha256=row["sha256"],
+                    media_type=row["media_type"],
+                    byte_count=int(row["byte_count"]),
+                ),
+                filename=row["filename"],
+            )
+        )
+    return {turn_id: tuple(items) for turn_id, items in grouped.items()}
 
 
 async def message_artifact_ref(

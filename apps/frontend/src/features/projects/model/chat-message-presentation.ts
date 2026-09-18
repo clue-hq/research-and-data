@@ -27,6 +27,16 @@ export function designReferenceThumbnailUrl(digest: string): string {
   return `/api/clue/design-public/asset-store/${digest}`;
 }
 
+/**
+ * Same-origin, authenticated byte route for one chat upload.
+ *
+ * An attachment ref names a content-addressed artifact key, which no browser may
+ * fetch directly; the upload id is the tenant-scoped handle the BFF will serve.
+ */
+export function chatUploadBytesUrl(uploadId: string): string {
+  return `/api/clue/frontend/v1/uploads/${encodeURIComponent(uploadId)}/bytes`;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

@@ -161,6 +161,47 @@ test("design asset context refs retain read-time filename and thumbnail metadata
     kind: null,
     mediaType: "image/webp",
     thumbnailDigest: "b".repeat(64),
+    // A design asset is not a chat upload; it has no upload route to fetch from.
+    uploadId: null,
+  });
+});
+
+test("attachment refs carry the human's filename, media type and upload id", () => {
+  const page = ChatMessageListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureMessages[0],
+        body: "Here is the screenshot.",
+        refs: [
+          {
+            flavor: "attachment",
+            workspace_id: "ws-demo",
+            object_type: "artifact",
+            object_id: "ws-demo/" + "c".repeat(64),
+            version: null,
+            ordinal: 0,
+            label: "shot.png",
+            media_type: "image/png",
+            upload_id: "11111111-2222-3333-4444-555555555555",
+          },
+        ],
+      },
+    ],
+    meta: { next_cursor: null },
+  });
+
+  assert.deepEqual(page.messages[0].refs[0], {
+    flavor: "attachment",
+    workspaceId: "ws-demo",
+    objectType: "artifact",
+    objectId: "ws-demo/" + "c".repeat(64),
+    version: null,
+    ordinal: 0,
+    label: "shot.png",
+    kind: null,
+    mediaType: "image/png",
+    thumbnailDigest: null,
+    uploadId: "11111111-2222-3333-4444-555555555555",
   });
 });
 

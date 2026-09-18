@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  chatUploadBytesUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
 } from "./chat-message-presentation";
@@ -49,4 +50,11 @@ test("assistant prose cannot repeat UUIDs, hashes, or tenant object ids", () => 
   assert.equal(display.includes("ws_fixture"), false);
   assert.match(display, /saved profile proposal/);
   assert.match(display, /current workspace/);
+});
+
+test("chat upload bytes url is the BFF upload route", () => {
+  assert.equal(
+    chatUploadBytesUrl("11111111-2222-3333-4444-555555555555"),
+    "/api/clue/frontend/v1/uploads/11111111-2222-3333-4444-555555555555/bytes",
+  );
 });

@@ -5,6 +5,7 @@ import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
 import type { GateAnswerDisplay } from "../model/chat-gate";
 import {
+  chatUploadBytesUrl,
   designReferenceThumbnailUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
@@ -97,12 +98,44 @@ export function ChatTranscript({
             </div>
           ) : null}
           <div className={styles.messageParts}>
-            {message.refs.some((ref) => ref.flavor === "context") ? (
+            {message.refs.some(
+              (ref) => ref.flavor === "context" || ref.flavor === "attachment",
+            ) ? (
               <div aria-label="Message context" className={styles.messageContextRefs}>
                 {message.refs
-                  .filter((ref) => ref.flavor === "context")
+                  .filter(
+                    (ref) =>
+                      ref.flavor === "context" || ref.flavor === "attachment",
+                  )
                   .sort((left, right) => left.ordinal - right.ordinal)
                   .map((ref) => {
+                    if (ref.flavor === "attachment") {
+                      // An attachment chip names the file the human sent. An image
+                      // shows its own bytes; anything else gets a file glyph. No
+                      // artifact key or digest is ever on the screen.
+                      const isImage = ref.mediaType?.startsWith("image/") ?? false;
+                      return (
+                        <span
+                          className={isImage ? styles.messageReferenceImage : undefined}
+                          key={`${ref.ordinal}:attachment:${ref.objectId}`}
+                          title={ref.label ?? "Attachment"}
+                        >
+                          {isImage && ref.uploadId ? (
+                            <Image
+                              alt=""
+                              className={styles.messageReferenceThumbnail}
+                              height={18}
+                              src={chatUploadBytesUrl(ref.uploadId)}
+                              unoptimized
+                              width={18}
+                            />
+                          ) : (
+                            <ProjectIcon name="file-text" size={12} />
+                          )}
+                          {ref.label ?? "Attachment"}
+                        </span>
+                      );
+                    }
                     const entity = contextEntities.find(
                       (candidate) =>
                         candidate.id === ref.objectId &&
