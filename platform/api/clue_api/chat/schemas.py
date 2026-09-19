@@ -687,6 +687,8 @@ class SidebarProjectWire(_Wire):
     id: str
     title: str
     href: str
+    pinned: bool
+    updated_at: str
     conversations: tuple[SidebarConversationWire, ...]
 
 

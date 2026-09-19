@@ -8,6 +8,7 @@ from clue_projections import (
     InvalidCursorError,
     project_directory_item,
     project_directory_page,
+    project_sidebar_page,
 )
 from clue_spine import create_brand, create_project, set_project_pinned
 from tests._identity import seed_principal
@@ -133,5 +134,60 @@ def test_directory_excludes_system_and_draft_orders_pinned_first_by_activity_and
             assert after.chat_count == 0 and after.thread_ids == ()
             assert after.updated_at == rows["Alpha"].updated_at  # the project's own stamp
             assert after.updated_at < alpha.updated_at  # the archived touch moved nothing
+
+    run_async(scenario())
+
+
+def test_sidebar_orders_pinned_first_by_activity_and_hides_system_projects():
+    """The rail and the directory sort by the SAME composite key, so they never disagree.
+
+    The system anchor seeded here is *active*, so only the ``kind = 'marketing'`` lens can keep
+    it out of the rail — an archived-only filter would serve it.
+    """
+
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+            brand, rows = await _seed(conn)
+            cf = conn_session_factory(conn)
+            await create_project(
+                conn,
+                workspace_id=WS,
+                brand_id=brand.brand_id,
+                name="Onboarding · live",
+                status="active",
+                kind="system",
+            )
+            await set_project_pinned(
+                conn, workspace_id=WS, project_id=rows["Beta"].project_id, pinned=True
+            )
+            await conn.execute(text("SELECT pg_sleep(0.01)"))
+            await create_thread(
+                conn,
+                thread_id="thr_side_alpha",
+                workspace_id=WS,
+                project_id=rows["Alpha"].project_id,
+                created_by_user_id="usr_directory",
+            )
+            # ``now()`` is frozen inside this one rolled-back transaction, so the thread would be
+            # born with the exact stamp every project carries. ``clock_timestamp()`` after the
+            # sleep reproduces the elapsed time each of these writes has in production.
+            await conn.execute(
+                text("UPDATE agent_thread SET updated_at = clock_timestamp() WHERE id = :id"),
+                {"id": "thr_side_alpha"},
+            )
+
+            page = await project_sidebar_page(workspace_id=WS, conn_factory=cf)
+            assert [p.title for p in page.items] == ["Beta", "Alpha", "Gamma"]
+            assert page.items[0].pinned is True
+            assert page.items[1].updated_at > page.items[2].updated_at
+            assert [t.thread_id for t in page.items[1].threads] == ["thr_side_alpha"]
+
+            first = await project_sidebar_page(workspace_id=WS, limit=1, conn_factory=cf)
+            assert [p.title for p in first.items] == ["Beta"]
+            rest = await project_sidebar_page(
+                workspace_id=WS, limit=5, cursor=first.next_cursor, conn_factory=cf
+            )
+            assert [p.title for p in rest.items] == ["Alpha", "Gamma"]
+            assert rest.next_cursor is None
 
     run_async(scenario())

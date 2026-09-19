@@ -1186,6 +1186,8 @@ def build_chat_router(
                     id=project.project_id,
                     title=project.title,
                     href=f"/projects/{project.project_id}",
+                    pinned=project.pinned,
+                    updated_at=project.updated_at.isoformat(),
                     conversations=tuple(
                         SidebarConversationWire(
                             id=thread.thread_id,
