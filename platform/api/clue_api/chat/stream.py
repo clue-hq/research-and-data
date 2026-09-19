@@ -59,6 +59,7 @@ from clue_api.agent_turn_submission import (
     get_submission,
     insert_submission,
     lock_thread_queue,
+    submission_attachment_refs_for_turns,
     submission_context_refs,
     submission_context_refs_for_turns,
     turn_id_for_submission,
@@ -314,6 +315,11 @@ def build_chat_stream_router(
                     workspace_id=who.workspace_id,
                     turn_ids=tuple(item.turn_id for item in pending),
                 )
+                attachments_by_turn = await submission_attachment_refs_for_turns(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    turn_ids=tuple(item.turn_id for item in pending),
+                )
                 presentations = await context_ref_presentations(
                     conn,
                     workspace_id=who.workspace_id,
@@ -322,6 +328,35 @@ def build_chat_stream_router(
                 )
             for item in pending:
                 hydrated = bodies.get(item.message_artifact_key)
+                refs: list[JsonValue] = [
+                    {
+                        "flavor": "context",
+                        "workspace_id": ref.workspace_id,
+                        "object_type": ref.object_type,
+                        "object_id": ref.object_id,
+                        "version": ref.version,
+                        "ordinal": ordinal,
+                        **presentations.get((ref.object_type, ref.object_id), {}),
+                    }
+                    for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
+                ]
+                # The attachment rows already carry their own presentation — the human's
+                # filename, the media type, and the upload the bytes are served from — so a
+                # pending turn's chips read exactly like the durable ones they become.
+                refs.extend(
+                    {
+                        "flavor": "attachment",
+                        "workspace_id": who.workspace_id,
+                        "object_type": "artifact",
+                        "object_id": attachment.ref.artifact_key,
+                        "version": None,
+                        "ordinal": attachment.ordinal,
+                        "label": attachment.filename,
+                        "media_type": attachment.ref.media_type,
+                        "upload_id": str(attachment.upload_id),
+                    }
+                    for attachment in attachments_by_turn.get(item.turn_id, ())
+                )
                 submission_messages[item.turn_id] = {
                     "id": str(uuid5(item.turn_id, "user")),
                     "turn_id": str(item.turn_id),
@@ -335,18 +370,7 @@ def build_chat_stream_router(
                         "unavailable" if hydrated is None else hydrated.reason
                     ),
                     "created_at": item.requested_at.isoformat(),
-                    "refs": [
-                        {
-                            "flavor": "context",
-                            "workspace_id": ref.workspace_id,
-                            "object_type": ref.object_type,
-                            "object_id": ref.object_id,
-                            "version": ref.version,
-                            "ordinal": ordinal,
-                            **presentations.get((ref.object_type, ref.object_id), {}),
-                        }
-                        for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
-                    ],
+                    "refs": refs,
                 }
         return {
             "data": [

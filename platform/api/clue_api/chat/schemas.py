@@ -232,6 +232,7 @@ class PrepareComposerContextRequest(_Request):
 class AttachmentRefRequest(_Request):
     """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
 
+    upload_id: UUID
     artifact_key: str = Field(min_length=1, max_length=1000)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     media_type: str = Field(min_length=1, max_length=255)
@@ -576,8 +577,14 @@ class ProjectBootstrapProjectWire(_Wire):
 
 
 class ProjectBootstrapThreadWire(_Wire):
+    """The thread the Home composer just opened.
+
+    ``title`` is ``None`` until the conversation namer titles it after the first completed turn
+    (spec 2026-09-18-conversation-naming-design §4.7); the client shows its New chat label.
+    """
+
     id: str
-    title: str
+    title: str | None
     href: str
     status: Literal["running"] = "running"
     pinned: bool = False

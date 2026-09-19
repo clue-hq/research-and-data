@@ -17,6 +17,7 @@ from clue_agents import (
     AgentModelProvider,
     AgentProfileRegistry,
     AgentWorkspaceFactory,
+    AttachmentDescriber,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
     DeterministicAgentContextAssembler,
@@ -431,6 +432,9 @@ class AgentPlatformComponents:
     replay: DbAgentReplayReader
     privacy: AgentPrivacyService
     ownership: DbAgentOwnershipRouter
+    #: How many of a thread's past images the conversation layer may re-send (0 = no cap). The
+    #: default keeps the trial and test builders, which have no Settings, working unchanged.
+    history_images_max: int = 20
 
 
 def build_agent_platform_components(
@@ -477,6 +481,7 @@ def build_agent_platform_components(
             library=library,
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
+        history_images_max=settings.chat_attachment_history_images_max,
     )
 
 
@@ -490,6 +495,8 @@ def build_agent_context_assembler(
     requested_memory_types: tuple[MemoryType, ...],
     policy: ContextAssemblyPolicy,
     captured_turns: CapturedTurnBinder | None = None,
+    attachment_describer: AttachmentDescriber | None = None,
+    history_images_max: int = 20,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
     """Compose the one exact L1-L7 production assembler for a resolved role/profile.
@@ -499,6 +506,13 @@ def build_agent_context_assembler(
     (the trial does); a caller with no execution seam of its own gets a private one. Either way the
     binding is derived from durable state, so two instances could only ever agree — sharing saves
     the second read and the second cache, not correctness.
+
+    ``attachment_describer`` is how L7 names the files on the turn. A surface whose submissions
+    carry no attachments passes none and keeps the pointer-only line, which is the honest thing to
+    say when nothing durable names the file.
+
+    ``history_images_max`` caps how many of the thread's earlier images L6 re-sends (0 = all); a
+    surface with no setting of its own keeps the default rather than deciding the budget itself.
     """
 
     return DeterministicAgentContextAssembler(
@@ -512,15 +526,21 @@ def build_agent_context_assembler(
                 requested_types=requested_memory_types,
             ),
             FocusLayerSource(cards),
-            HistoryLayerSource(artifacts),
+            # Ruling 2 (spec 2026-09-18): images the user already sent stay in the conversation,
+            # newest first, up to this many per thread.
+            HistoryLayerSource(artifacts, images_max=history_images_max),
             TurnLayerSource(
                 artifacts,
                 # PC-C8 §6b: L7 names the turn's capture so the model can reference it; a surface
                 # whose turn is not a captured onboarding input simply gets no envelope.
                 captured_turn=captured_turns
                 or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+                attachments=attachment_describer,
             ),
         ),
         policy=policy,
         receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),
+        # The assembler reads the turn's image bytes itself, at the one moment it builds the user
+        # message; the same durable store every layer source already reads through.
+        artifacts=artifacts,
     )

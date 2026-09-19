@@ -96,7 +96,8 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             assert data["composer_capabilities"] == {
                 "context_refs": True,
-                "attachments": False,
+                # This app composes an artifact store, so attachments are offered.
+                "attachments": True,
                 "agent_profile_selection": True,
             }
             for refusal in (foreign_response, missing_response):

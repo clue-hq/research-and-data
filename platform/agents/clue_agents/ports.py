@@ -80,6 +80,10 @@ class HistoryMessageRef(PortValue):
     sequence: int = Field(ge=1)
     role: Literal["system", "user", "assistant", "tool"]
     body_ref: ArtifactRef
+    #: The attachments this message was sent with (spec 2026-09-18, ruling 2). History loaders
+    #: that can read them fill this; the ones that cannot leave it empty, and the conversation
+    #: layer then carries no images for that message rather than guessing.
+    attachment_refs: tuple[ArtifactRef, ...] = ()
     interrupted: bool = False
 
 

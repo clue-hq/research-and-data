@@ -25,8 +25,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
-import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -56,6 +55,7 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_attachment_refs,
     submission_context_refs,
     turn_id_for_submission,
 )
@@ -66,8 +66,15 @@ from clue_api.arv2.icp_confirmation import (
     current_icp_document,
     pin_project_icp,
 )
+from clue_api.arv2.project_documents import ProjectDocumentRefused
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
+from clue_api.chat.attachments import (
+    AttachmentReferenceError,
+    ValidatedAttachment,
+    materialize_text_attachments,
+    validated_attachment_refs,
+)
 from clue_api.chat.composer_context import (
     PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
@@ -107,6 +114,7 @@ from clue_api.chat.principal import (
 )
 from clue_api.chat.schemas import (
     AgentProfileOptionWire,
+    AttachmentRefRequest,
     ComposerContextEntityWire,
     CreateThreadRequest,
     DesignArtifactListItemWire,
@@ -198,6 +206,7 @@ from clue_projections import (
 )
 from clue_research.icp import activate_icp_version
 from clue_spine import (
+    UNTITLED_PROJECT_NAME,
     confirm_project_product_set,
     create_project,
     current_project_product_set,
@@ -240,7 +249,6 @@ _REASON_STATUS: dict[str, tuple[int, str]] = {
 }
 
 _HOME_PROJECT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-home-project-bootstrap")
-_UNTITLED_PROJECT = "Untitled project"
 _HOME_SUGGESTIONS = (
     "Find target accounts for our new campaign",
     "Research the buying committee for a target account",
@@ -293,19 +301,6 @@ def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
             _framed(workspace_id, idempotency_key),
         ).hex
     )
-
-
-def _first_thread_title(message: str) -> str:
-    """Apply R0's exact Unicode-whitespace and 80-code-point title rule."""
-
-    normalized = re.sub(r"\s+", " ", message.strip())
-    if len(normalized) <= 80:
-        return normalized
-    prefix = normalized[:79]
-    boundary = prefix.rfind(" ")
-    if boundary > 0:
-        prefix = prefix[:boundary]
-    return prefix + "…"
 
 
 def chat_workspace_resolver(
@@ -653,10 +648,89 @@ async def _validated_submission_context(
         ) from exc
 
 
-def _composer_capabilities() -> HomeComposerCapabilitiesWire:
+async def _validated_submission_attachments(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: Sequence[AttachmentRefRequest],
+    settings: Settings,
+    storage: StorageBackend | None,
+) -> tuple[ValidatedAttachment, ...]:
+    """Prove a turn's attachment receipts, or refuse the turn. Never a partial acceptance."""
+
+    if refs and storage is None:
+        raise _refuse(
+            status_code=503,
+            code="CAPABILITY_UNAVAILABLE",
+            message="this deployment has no artifact storage for attachments",
+        )
+    try:
+        return await validated_attachment_refs(
+            conn,
+            workspace_id=workspace_id,
+            refs=refs,
+            settings=settings,
+        )
+    except AttachmentReferenceError as exc:
+        status_code = {
+            "ATTACHMENT_NOT_FOUND": 404,
+            "ATTACHMENT_LIMIT_EXCEEDED": 422,
+            "ATTACHMENT_DUPLICATE": 422,
+        }.get(exc.code, 409)
+        raise _refuse(status_code=status_code, code=exc.code, message=exc.message) from exc
+
+
+async def _wrote_attachment_documents(
+    conn: AsyncConnection,
+    *,
+    attachments: Sequence[ValidatedAttachment],
+    artifacts: DurableAgentArtifactStore | None,
+    storage: StorageBackend | None,
+    workspace_id: str,
+    brand_id: str,
+    project_id: str,
+    turn_id: UUID,
+    user_id: str,
+) -> bool:
+    """Make this turn's text attachments documents of the project, in the turn's own transaction.
+
+    Same transaction as the submission that carried them: a turn the agent will be handed cannot
+    exist without the files it was handed, and a refused write takes the whole turn with it rather
+    than accepting a message whose attachment nobody can read. Returns whether anything was
+    written, which is what tells the caller the project's library needs recompiling after commit.
+    """
+
+    if not any(item.family == "text" for item in attachments):
+        return False
+    # Guaranteed by _validated_submission_attachments: attachments without storage are refused.
+    assert storage is not None and artifacts is not None
+    try:
+        await materialize_text_attachments(
+            conn,
+            storage,
+            artifacts,
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            project_id=project_id,
+            turn_id=turn_id,
+            user_id=user_id,
+            attachments=attachments,
+        )
+    except ProjectDocumentRefused as refusal:
+        raise _refuse(
+            status_code=422,
+            code="ATTACHMENT_DOCUMENT_REFUSED",
+            message=str(refusal),
+        ) from refusal
+    return True
+
+
+def _composer_capabilities(*, storage_available: bool) -> HomeComposerCapabilitiesWire:
+    """Attachments are offered exactly when this deployment can durably hold their bytes."""
+
     return HomeComposerCapabilitiesWire(
         context_refs=True,
-        attachments=False,
+        attachments=storage_available,
         agent_profile_selection=True,
     )
 
@@ -785,8 +859,8 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
-        durable upload-receipt endpoint exists yet.
+        the promoted Head-of-ABM Grok 4.6 profile; attachments are offered exactly when this
+        deployment composed an artifact store to hold the uploaded bytes.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
@@ -804,7 +878,7 @@ def build_chat_router(
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
                 suggestions=_HOME_SUGGESTIONS,
             )
         )
@@ -833,12 +907,6 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="creating a project requires an Idempotency-Key header",
                 )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
-                )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
 
             key = idempotency_key.strip()
@@ -856,8 +924,10 @@ def build_chat_router(
                 thread_id=thread_id,
                 idempotency_key=key,
             )
-            title = _first_thread_title(body.message)
             digest = content_address(body.message.encode())
+            # Set when this first turn's text attachments became documents of the new project. A
+            # replay wrote nothing and refreshes nothing; the first attempt already did both.
+            wrote_attachment_documents = False
 
             async with conn_factory() as conn:
                 # One logical Home act owns one transaction-wide lock. It serializes concurrent
@@ -883,6 +953,13 @@ def build_chat_router(
                     refs=body.context_refs,
                     storage=storage,
                 )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
+                    storage=storage,
+                )
 
                 project = await get_project(conn, project_id)
                 if project is None:
@@ -891,13 +968,12 @@ def build_chat_router(
                         project_id=project_id,
                         workspace_id=who.workspace_id,
                         brand_id=body.brand_id,
-                        name=_UNTITLED_PROJECT,
+                        name=UNTITLED_PROJECT_NAME,
                         status="active",
                     )
                 elif (
                     project.workspace_id != who.workspace_id
                     or project.brand_id != body.brand_id
-                    or project.name != _UNTITLED_PROJECT
                     or project.status != "active"
                 ):
                     raise _refuse(
@@ -911,11 +987,15 @@ def build_chat_router(
                     thread_id=thread_id,
                     workspace_id=who.workspace_id,
                     project_id=project_id,
-                    title=title,
+                    title=None,
                     created_by_user_id=who.user_id,
                     created_via_membership_id=who.membership_id,
                 )
-                if thread.project_id != project_id or thread.title != title:
+                # The title is no longer part of the replay identity: it is born null, generated
+                # after the first completed turn, and may have been renamed by hand since (spec
+                # 2026-09-18-conversation-naming-design §4.6). The message digest on the
+                # submission is what proves the request is the same.
+                if thread.project_id != project_id:
                     raise _refuse(
                         status_code=409,
                         code="IDEMPOTENCY_CONFLICT",
@@ -934,12 +1014,19 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.project_id != project_id
                         or existing.thread_id != thread_id
                         or existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -985,6 +1072,7 @@ def build_chat_router(
                             message_sha256=captured.artifact_ref.sha256,
                             idempotency_key=key,
                             context_refs=context_refs,
+                            attachment_refs=attachments,
                             agent_profile_id=agent_profile_id,
                         )
                     except SubmissionConflict as exc:
@@ -993,6 +1081,17 @@ def build_chat_router(
                             code="IDEMPOTENCY_CONFLICT",
                             message=str(exc),
                         ) from exc
+                    wrote_attachment_documents = await _wrote_attachment_documents(
+                        conn,
+                        attachments=attachments,
+                        artifacts=artifacts,
+                        storage=storage,
+                        workspace_id=who.workspace_id,
+                        brand_id=project.brand_id,
+                        project_id=project_id,
+                        turn_id=turn_id,
+                        user_id=who.user_id,
+                    )
                     await emit_turn_event(
                         conn,
                         workspace_id=who.workspace_id,
@@ -1012,6 +1111,11 @@ def build_chat_router(
                         thread_id=thread_id,
                     )
 
+            # After the commit, never inside it: the library's compile takes this project's row
+            # lock. Best-effort by contract — a turn whose attachments are durable must not report
+            # failure because the tree they belong in could not be recompiled yet.
+            if wrote_attachment_documents and project_library is not None:
+                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             href = thread_href(project_id=project_id, thread_id=thread_id)
             if replayed:
                 response.status_code = 200
@@ -1026,7 +1130,7 @@ def build_chat_router(
                     ),
                     thread=ProjectBootstrapThreadWire(
                         id=thread.id,
-                        title=title,
+                        title=thread.title,
                         href=href,
                         project_id=project_id,
                         created_at=thread.created_at.isoformat(),
@@ -1237,7 +1341,7 @@ def build_chat_router(
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
             )
         )
 
@@ -2228,12 +2332,6 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="submitting a turn requires an Idempotency-Key header",
                 )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
-                )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
             turn_id = turn_id_for_submission(
                 workspace_id=who.workspace_id,
@@ -2252,6 +2350,9 @@ def build_chat_router(
             # transaction that wrote the pin has committed. A replayed answer pins nothing and
             # returns from inside the transaction, so it refreshes nothing either.
             pinned_project_icp = False
+            # Set when this turn's text attachments became documents of this project below, for
+            # the same reason: a new document changes what the library serves.
+            wrote_attachment_documents = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2328,10 +2429,17 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != requested_context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -2369,6 +2477,13 @@ def build_chat_router(
                     ),
                     storage=storage,
                     project_id=project_id,
+                )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
+                    storage=storage,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
                 # approving a directive-confirmation gate atomically confirms AND launches via
@@ -2442,6 +2557,7 @@ def build_chat_router(
                         message_sha256=captured.artifact_ref.sha256,
                         idempotency_key=idempotency_key,
                         context_refs=context_refs,
+                        attachment_refs=attachments,
                         agent_profile_id=agent_profile_id,
                         # P3.1: the design-leg clarification echo (None on non-design turns;
                         # the Home bootstrap path never carries one — a first turn has no
@@ -2454,6 +2570,17 @@ def build_chat_router(
                         code="IDEMPOTENCY_CONFLICT",
                         message=str(exc),
                     ) from exc
+                wrote_attachment_documents = await _wrote_attachment_documents(
+                    conn,
+                    attachments=attachments,
+                    artifacts=artifacts,
+                    storage=storage,
+                    workspace_id=who.workspace_id,
+                    brand_id=project.brand_id,
+                    project_id=project_id,
+                    turn_id=turn_id,
+                    user_id=who.user_id,
+                )
                 if gate is not None:
                     response = _gate_response(body)
                     # The receipt is derived from the turn this request just made durable — the
@@ -2713,7 +2840,7 @@ def build_chat_router(
             # After the commit, never inside it: the library's compile takes this project's row
             # lock. Best-effort by contract — an approval that confirmed and pinned must not
             # report failure because its rendering could not be written.
-            if pinned_project_icp and project_library is not None:
+            if (pinned_project_icp or wrote_attachment_documents) and project_library is not None:
                 await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(

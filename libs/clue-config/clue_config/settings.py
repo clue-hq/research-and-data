@@ -509,6 +509,17 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_FIT_MEDIUM_THRESHOLD``.
     arv2_fit_medium_threshold: float = 0.40
 
+    # --- Conversation naming (spec 2026-09-18-conversation-naming-design §4.8) ---------------
+    # One cheap call names the chat (and, on the Home path, the project) once the first agent
+    # reply exists. Off keeps the placeholders. Env: ``CLUE_CONVERSATION_NAMING_ENABLED``.
+    conversation_naming_enabled: bool = True
+    # OpenRouter model id for the naming call. Env: ``CLUE_CONVERSATION_NAMING_MODEL``.
+    conversation_naming_model: str = "openai/gpt-5.6-luna"
+    # The naming call's HTTP timeout. The turn never waits this long — the engine waits
+    # ``NAMING_GRACE_S`` and lets a slower call finish detached (§4.1).
+    # Env: ``CLUE_CONVERSATION_NAMING_TIMEOUT_S``.
+    conversation_naming_timeout_s: float = 60.0
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
@@ -666,6 +677,16 @@ class Settings(BaseSettings):
     # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
     # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
     chat_turn_stop_poll_interval_s: float = 0.25
+    # Chat attachments (spec 2026-09-18). Per-message ceilings the upload route and the
+    # submission route both enforce, and the number of prior-turn images re-sent to the model
+    # as image parts on every later turn of a thread (``0`` = no cap). Env:
+    # ``CLUE_CHAT_ATTACHMENT_MAX_FILES`` / ``_MAX_TOTAL_BYTES`` / ``_IMAGE_MAX_BYTES`` /
+    # ``_TEXT_MAX_BYTES`` / ``_HISTORY_IMAGES_MAX``.
+    chat_attachment_max_files: int = Field(default=10, ge=1)
+    chat_attachment_max_total_bytes: int = Field(default=150 * 1024 * 1024, ge=1)
+    chat_attachment_image_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    chat_attachment_text_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
+    chat_attachment_history_images_max: int = Field(default=20, ge=0)
     # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
     # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
     # pruning inside the replay horizon promises a replay the table can no longer serve (still

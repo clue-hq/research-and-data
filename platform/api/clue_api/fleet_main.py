@@ -94,6 +94,7 @@ from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.conversation_naming import build_conversation_namer
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -1137,6 +1138,15 @@ async def _serve() -> None:
             )
         if settings.chat_enabled and platform_components is not None:
             assert memory is not None
+            # Conversation naming (2026-09-18 §4.1): composed once at boot. It states its own
+            # absence — off by flag, or no OpenRouter key — and a worker without one simply
+            # leaves every chat and Home project on its placeholder name.
+            namer = build_conversation_namer(
+                settings=settings,
+                secrets=secrets,
+                artifacts=platform_components.artifacts,
+                conn_factory=transaction,
+            )
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
                 tools=registry,
@@ -1172,6 +1182,7 @@ async def _serve() -> None:
                 ),
                 design_leg_finisher=build_design_leg_finisher(invoker=tool_invoker),
                 design_preference_context_enabled=settings.design_preference_context_enabled,
+                namer=namer,
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,

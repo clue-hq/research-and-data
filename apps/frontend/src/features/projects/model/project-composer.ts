@@ -4,13 +4,19 @@ import type { ReactEditor } from "slate-react";
 import type { ProjectEntity } from "./project-workspace";
 
 export interface ProjectComposerAttachment {
+  /** Design-reference uploads only: the design asset store's record id. */
   assetId?: string;
+  /** Chat uploads (Task 12): the four durable fields a submission ref needs. */
+  artifactKey?: string;
+  byteCount?: number;
   error?: string;
   filename: string;
   id: string;
   mediaType: string;
+  sha256?: string;
   status: "failed" | "ready" | "uploading";
   type: "file";
+  uploadId?: string;
   url: string;
 }
 

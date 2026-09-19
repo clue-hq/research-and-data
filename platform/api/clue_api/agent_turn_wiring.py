@@ -59,6 +59,7 @@ from clue_agents.turns import (
 from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
 from clue_api.thread_store import ensure_platform_thread
+from clue_api.turn_attachments import turn_image_refs
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_execution.run_events import emit_design_run_event
@@ -1398,6 +1399,15 @@ class DbAgentHistoryStore(AgentHistoryStore):
                 ),
                 {"workspace": workspace_id, "thread": thread_id},
             )
+            rows = result.mappings().all()
+            # One query for the whole page, not one per message: the images a past turn carried
+            # ride its messages again (ruling 2, spec 2026-09-18), and the conversation layer caps
+            # how many of them the thread can afford.
+            images = await turn_image_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_ids=[row["turn_id"] for row in rows],
+            )
             return tuple(
                 HistoryMessageRef(
                     message_id=row["id"],
@@ -1412,8 +1422,9 @@ class DbAgentHistoryStore(AgentHistoryStore):
                         media_type=row["media_type"],
                         byte_count=int(row["size_bytes"]),
                     ),
+                    attachment_refs=images.get(row["turn_id"], ()),
                 )
-                for row in result.mappings()
+                for row in rows
             )
 
     async def append(

@@ -205,6 +205,7 @@ export const ProjectBootstrapRequestSchema = z.object({
     filename: z.string().min(1).max(255),
     mediaType: z.string().min(1).max(255),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    uploadId: z.string().min(1).max(200),
   }).strict()).default([]),
   brandId: z.string().min(1).max(200),
   contextRefs: z.array(z.object({
@@ -292,7 +293,8 @@ const ProjectBootstrapWireSchema = z.object({
     }),
     thread: z.object({
       id: z.string().min(1),
-      title: z.string().min(1),
+      // Born untitled; the conversation namer titles it after the first completed turn.
+      title: z.string().min(1).nullable(),
       href: z.string().startsWith("/projects/"),
       status: z.literal("running"),
       pinned: z.boolean(),

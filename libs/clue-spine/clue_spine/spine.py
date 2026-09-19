@@ -303,6 +303,11 @@ async def list_products(conn: AsyncConnection, brand_id: str) -> list[Product]:
 # --- project ----------------------------------------------------------------
 _PROJECT_COLUMNS = "project_id, workspace_id, brand_id, product_id, name, status, created_at"
 
+#: The name a Home-created project is born with until the conversation namer replaces it (spec
+#: 2026-09-18-conversation-naming-design §4.5). One constant: the router births it, the namer's
+#: conditional rename matches on it, and the frontend's bootstrap schema pins the same literal.
+UNTITLED_PROJECT_NAME = "Untitled project"
+
 
 async def create_project(
     conn: AsyncConnection,
@@ -378,6 +383,32 @@ async def set_project_name(
             f"RETURNING {_PROJECT_COLUMNS}"
         ),
         {"workspace_id": workspace_id, "project_id": project_id, "name": name},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
+async def set_project_name_if_untitled(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, name: str
+) -> Project | None:
+    """Replace the untitled placeholder with a generated name — and only the placeholder.
+
+    The ``name = UNTITLED_PROJECT_NAME`` predicate is the whole manual-wins rule: a human rename
+    that landed first turns this into a zero-row no-op, which the caller reads as ``None``.
+    """
+    result = await conn.execute(
+        text(
+            "UPDATE project SET name = :name "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            "AND name = :placeholder "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "name": name,
+            "placeholder": UNTITLED_PROJECT_NAME,
+        },
     )
     row = result.mappings().first()
     return Project(**dict(row)) if row is not None else None

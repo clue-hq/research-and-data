@@ -78,6 +78,7 @@ from clue_api.agent_turn_submission import (
     get_submission,
     lock_thread_queue,
     message_artifact_ref,
+    submission_attachment_refs,
     submission_context_refs,
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
@@ -101,6 +102,7 @@ from clue_api.conversation_capture import (
     CONVERSATION_CONTEXT_BINDING_KIND,
     project_client_entity_id,
 )
+from clue_api.conversation_naming import ConversationNamer
 from clue_api.conversation_turns import (
     CONVERSATION_RECIPE_KEY,
     CONVERSATION_RECIPE_VERSION,
@@ -416,6 +418,14 @@ class ProjectConversationTurnRunner:
                 )
             user_message_ref = await message_artifact_ref(conn, submission)
             submission_focus_refs = await submission_context_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
+            # The files the human attached to this exact message, in the order they attached
+            # them. Read here beside the focus refs because both are the same durable fact about
+            # one submission: what the person sent with their words.
+            submission_attachments = await submission_attachment_refs(
                 conn,
                 workspace_id=workspace_id,
                 turn_id=turn_id,
@@ -884,6 +894,7 @@ class ProjectConversationTurnRunner:
                 ),
                 user_message_artifact_ref=user_message_ref,
                 focus_refs=submission_focus_refs,
+                attachment_refs=tuple(item.ref for item in submission_attachments),
                 requested_at=submission.requested_at,
             )
             brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
@@ -1749,6 +1760,7 @@ def build_agent_turn_work_handler(
     design_exit_judge: DesignLegExitJudge | None = None,
     design_leg_finisher: DesignLegFinisher | None = None,
     design_preference_context_enabled: bool = False,
+    namer: ConversationNamer | None = None,
     conn_factory: ConnFactory = transaction,
     project_writer_conn_factory: ConnFactory = bridge_transaction,
     streaming: bool = True,
@@ -1773,6 +1785,9 @@ def build_agent_turn_work_handler(
     ``project_writer_conn_factory`` is the transaction the versioned ``project/`` mount's writes
     open. It defaults to the bridge loop's own engine because those writes happen off this
     worker's loop, and it is separate from ``conn_factory`` for exactly that reason.
+
+    ``namer`` (conversation naming, 2026-09-18) names an untitled chat/project after the first
+    completed turn; ``None`` keeps the placeholders.
     """
 
     engine = build_conversation_turn_engine(
@@ -1786,6 +1801,7 @@ def build_agent_turn_work_handler(
         requested_memory_types=(MemoryType.PREFERENCE, MemoryType.BEHAVIORAL_LEARNING),
         context_policy=project_conversation_context_policy(),
         child_runner=child_runner,
+        namer=namer,
         conn_factory=conn_factory,
     )
     design_legs_runner = DesignLegTurnRunner(

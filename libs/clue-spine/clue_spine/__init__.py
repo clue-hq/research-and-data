@@ -1,6 +1,7 @@
 """clue-spine — workspace-owned brands/projects and brand-owned products (A3.2)."""
 
 from clue_spine.spine import (
+    UNTITLED_PROJECT_NAME,
     Brand,
     Product,
     ProductStatus,
@@ -32,6 +33,7 @@ from clue_spine.spine import (
     new_workspace_id,
     rename_workspace,
     set_project_name,
+    set_project_name_if_untitled,
 )
 
 __all__ = [
@@ -66,4 +68,6 @@ __all__ = [
     "current_project_product_set",
     "list_project_product_sets",
     "set_project_name",
+    "set_project_name_if_untitled",
+    "UNTITLED_PROJECT_NAME",
 ]
