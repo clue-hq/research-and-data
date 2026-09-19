@@ -58,7 +58,7 @@ class ValidatedAttachment:
     upload_id: UUID
     ref: ArtifactRef
     filename: str
-    family: Literal["text", "image"]
+    family: Literal["text", "image", "document"]
 
 
 async def validated_attachment_refs(
