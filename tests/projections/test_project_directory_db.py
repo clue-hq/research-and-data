@@ -115,4 +115,23 @@ def test_directory_excludes_system_and_draft_orders_pinned_first_by_activity_and
                     workspace_id=WS, cursor="not-a-cursor", conn_factory=cf
                 )
 
+            # An ARCHIVED conversation is not activity. Touching it here gives it the latest
+            # ``updated_at`` in the whole workspace, yet the project's composite must fall back
+            # to the project's own stamp — the same lens ``chat_count``/``thread_ids`` apply.
+            await conn.execute(text("SELECT pg_sleep(0.01)"))
+            await conn.execute(
+                text(
+                    "UPDATE agent_thread SET status = 'archived', "
+                    "updated_at = clock_timestamp() WHERE id = :id"
+                ),
+                {"id": "thr_dir_alpha"},
+            )
+            after = await project_directory_item(
+                workspace_id=WS, project_id=rows["Alpha"].project_id, conn_factory=cf
+            )
+            assert after is not None
+            assert after.chat_count == 0 and after.thread_ids == ()
+            assert after.updated_at == rows["Alpha"].updated_at  # the project's own stamp
+            assert after.updated_at < alpha.updated_at  # the archived touch moved nothing
+
     run_async(scenario())

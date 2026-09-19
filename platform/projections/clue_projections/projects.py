@@ -55,7 +55,7 @@ class ProjectDirectoryPage(_View):
 _ITEM_SELECT = """
     WITH activity AS (
         SELECT t.project_id,
-               MAX(t.updated_at)                                      AS last_thread_at,
+               MAX(t.updated_at) FILTER (WHERE t.status = 'active') AS last_thread_at,
                COUNT(*)      FILTER (WHERE t.status = 'active')      AS chat_count,
                array_agg(t.id ORDER BY t.updated_at DESC)
                              FILTER (WHERE t.status = 'active')      AS thread_ids
