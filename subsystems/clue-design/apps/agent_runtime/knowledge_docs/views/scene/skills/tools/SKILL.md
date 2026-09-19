@@ -11,6 +11,16 @@ for construction, preflight_design and render_preview for current artifacts, and
 finalize_run only after the required review. Delegate only when the configured
 runtime exposes and calls for delegation.
 
+## Platform reads
+
+`read_project_accounts`, `read_account_research` and `read_claims` answer from the platform's
+research for this project: the accounts, one account's written overview or its claims, and a
+narrowed claims question for an account or a contact. They return JSON; a governed refusal
+returns `{"error": "refused", "reasons": [...]}` and any other failure `{"error": "<code>"}`,
+to design around. They are present on a chat-opened design session and absent in the editor's
+own agent box and the CLI. The account-adaptation skill says when and how to use them.
+`seller/index.md` lists the brand's knowledge documents written into this workspace.
+
 `render_preview` returns the complete current native-copy inventory with scene
 and preview bindings. Refresh it through `inspect(view="copy_review")` when
 needed; use those page/node IDs and full words for `direction_review`, following

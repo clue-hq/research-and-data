@@ -119,7 +119,7 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(
 ):
     virtual_skill = f"/.deepagent/skills/{skill_name}/SKILL.md"
     responses = [
-        call("read_file", {"file_path": virtual_skill}, "read"),
+        call("read_file", {"file_path": virtual_skill, "limit": 500}, "read"),
         call(
             "write_file",
             {"file_path": f"/.deepagent/skills/{skill_name}/forbidden.txt", "content": "new file"},

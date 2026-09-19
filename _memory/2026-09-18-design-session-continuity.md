@@ -93,3 +93,54 @@ the session workspace, listed like the brand card, never called optional; contac
 under the existing use-class gate; multiple accounts per leg deferred; no mode switch across
 1:1 / 1:few / generic. Skill text (account-adaptation "Reading the account", scene-brief-copy,
 tools) needs founder review before landing.
+
+## 2026-09-19 — closing: seller + target-account context shipped (SDD, `design-agent-account-context-transfer`)
+The design note above was planned and executed the same day:
+`docs/superpowers/plans/2026-09-19-design-agent-account-and-seller-context.md`, ledger
+`.superpowers/sdd/2026-09-19-design-agent-account-and-seller-context/progress.md`. Five tasks,
+Opus implementers, controller review per task, on branch `design-agent-account-context-transfer`
+(created off the merge of PR #65; ruling PRE-3).
+
+Commits: b41124757 (T1 — the three reads granted to the design role in the registry/catalog and
+the authority dict) · 7fbcf3361 + 4c6ea695c (T2 — `DesignPlatformReads` over the ARV2 read tools,
+paged, with a governed refusal reaching the design side as `refused:<codes>`) · 18c70fef9 (T3 —
+host, leg handler, lane driver and executors thread `DesignPlatformReads` into the runtime config,
+LEG turns only) · 3199204f1 (T4 — `lumen_agent/platform_reads.py`: the three tools, and the
+seller's pinned knowledge written once per pin into a read-only `workspace/seller/` with an
+`index.md`) · this commit (T5 — the skill text).
+
+Rulings taken during execution (full text in the ledger): T1-1 the grant is
+`read_account_research@2`, not `@1` — `@1` is frozen for replay and granted to nobody; T1-2 the
+version fence reads the authority dict rather than a hard-coded role; T2-1 a governed refusal is
+`refused:<reason codes>`, never `read_failed`, and `overview_not_written` is an ANSWER about a
+researched account while `account_not_researched` is a REFUSAL of `section="claims"`; T2-2 `limit`
+on the two paged reads; T2-3 the reads mint ad-hoc executions like the finisher (parenting to the
+leg's execution is a later ruling); T4-1 the `seller/` read-only fence keys on the
+`workspace/<name>/` segment pair so it holds on the unscoped web backend too; T4-2 the
+account-adaptation skill already existed and Task 5 extends it.
+
+T5 itself: `account-adaptation/SKILL.md` gains a "Reading the account" section (find the account,
+read its research, ask a narrowed claims question, bind copy to the claim id you read);
+`scene-brief-copy` names `seller/index.md` in the one gather; `tools` gains a "Platform reads"
+section naming the three tools, the two refusal shapes (`{"error": "refused", "reasons": [...]}`
+for a governed refusal, `{"error": "<code>"}` otherwise) and where they are absent (the editor's
+own agent box and the CLI). **Skill text landed pending founder review** — the standing rule; the
+full text is in the task-5 report,
+`.superpowers/sdd/2026-09-19-design-agent-account-and-seller-context/task-5-report.md`.
+
+Verified first-hand at T5: `test_format_skill_library.py` + `test_materialize_concurrency.py`
+green (153), `test_scene_solo_runtime.py` green (22) — the frontmatter and a materialized
+workspace still validate. One consequence recorded: the insert takes `account-adaptation/SKILL.md`
+from 99 to 123 lines, past the stock `read_file` default limit of 100, so a default read of that
+skill now returns a partial excerpt and the guidance-read middleware tells the agent to continue
+with `offset=100` (`account-identity-composition/SKILL.md` was already 127 lines, so the library
+already had one). The new section sits at lines 34-57, inside the first window; the tail that
+falls outside it is the file's pre-existing closing paragraphs. The solo-runtime test's read now
+passes an explicit `limit` so it still reads the whole resource.
+
+Still owed, founder-triggered: the three live acceptance proofs of the note's §6 — (1) a 1:1 ad
+for an account named only in words, whose trace shows `read_project_accounts` +
+`read_account_research` and whose direction binds copy to a claim id from that read, with the
+reads journaled under the design turn; (2) a generic creative on the same project making no
+account read while `seller/` exists in the session workspace; (3) `read_claims` for a contact
+answering under the use-class gate with nothing about that contact written into any session file.
