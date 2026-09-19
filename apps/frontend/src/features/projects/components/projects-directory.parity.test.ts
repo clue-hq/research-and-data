@@ -14,3 +14,25 @@ test("the lifted directory CSS is byte-identical to the dummy's", () => {
   );
   assert.equal(createHash("sha256").update(bytes).digest("hex"), DUMMY_CSS_SHA256);
 });
+
+/**
+ * The one sanctioned deviation from byte-identity (founder ruling R7,
+ * 2026-08-17, recorded at `chat-shell/components/chat-surface.tsx:76`): the
+ * (protected) layout's `ProjectApplicationShell` already wraps every
+ * `/projects*` route in an `ApplicationShell`, so a screen that embedded its
+ * own would mount the navigation rail twice. The dummy has no layout-level
+ * shell and therefore carries the wrapper; here it must not.
+ */
+test("the lifted screen embeds no second ApplicationShell (ruling R7)", () => {
+  const source = readFileSync(
+    new URL("./projects-screen.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /ApplicationShell/);
+  // The content inside the one shell is still the dummy's, unchanged.
+  assert.match(
+    source,
+    /<main className=\{styles\.screen\} aria-label=\{projectId \? "Project home" : "Projects"\}>/,
+  );
+  assert.match(source, /<ProjectDirectoryDialog controller=\{controller\} \/>/);
+});
