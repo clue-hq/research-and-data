@@ -2505,10 +2505,9 @@ Every refusal below reaches the browser as the FI-1 error envelope
   `CLUE_CHAT_ATTACHMENT_IMAGE_MAX_BYTES` = 10 MB per image,
   `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file.
 - Refusals: `404 ATTACHMENT_NOT_FOUND` (a receipt naming an upload this workspace never made),
-  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE` /
-  `ATTACHMENT_DOCUMENT_REFUSED`. `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists
-  only at the validator level — the submission routes are not registered without storage, so it is
-  unreachable over HTTP.
+  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE`.
+  `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists only at the validator level —
+  the submission routes are not registered without storage, so it is unreachable over HTTP.
 - Acceptance is all-or-nothing: a refused attachment takes the whole turn with it.
 - `composer_capabilities.attachments` is true exactly when the deployment has artifact storage.
 
@@ -2521,11 +2520,9 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 ### What the agent receives
 
-- Text attachments become project documents at `attachments/<filename>` (kind `attachment`),
-  written in the submitting turn's own transaction, versioned like every project document, mounted
-  read-only at `project/attachments/<filename>`, and listed in the Gallery under Documents.
-  Re-attaching identical bytes under the same name replays the existing version; an edited file
-  appends a new version to the same chain.
+- Every attached file — text, image or document alike — reaches the agent the one way: as a file
+  in the read-only `attachments/` folder of the agent's workspace (2026-09-19 ruling). No
+  attachment becomes a project document, and none is listed in the Gallery.
 - Every attachment is named on the turn's L7 context line with where it is readable.
 - Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
   the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;
