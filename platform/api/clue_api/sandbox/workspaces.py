@@ -147,15 +147,21 @@ def sandbox_mounts_for_lease(
     *,
     brand: tuple[str, str] | None,
     project_library: bool,
+    project_library_name: str = LIBRARY_DIR,
     attachments: bool,
 ) -> SandboxMounts:
     """Derive one turn's container mounts from the lease the turn already holds.
 
-    The three flags mirror the :class:`~clue_agents.workspace.MountRequest` the lease was
-    acquired with, so the script sees the same ``brand/``, ``project/`` and ``attachments/``
-    paths the model's own file tools see. ``attachments`` is the one optional directory — a
-    project nobody has uploaded to has none, which is the ordinary state of a new project — so
-    it is mounted only when it exists, exactly as the mount table treats it.
+    The arguments mirror the :class:`~clue_agents.workspace.MountRequest` the lease was acquired
+    with, so the script sees the same ``brand/``, ``project/`` and ``attachments/`` paths the
+    model's own file tools see — including ``project_library_name``, which is the tree the
+    ``project`` mount serves. A replayed turn is pinned to a superseded generation materialized
+    beside the library under its own name, and the sandbox must read *that* tree: mounting the
+    live ``library`` would show the script a project the model is not working on.
+
+    ``attachments`` is the one optional directory — a project nobody has uploaded to has none,
+    which is the ordinary state of a new project — so it is mounted only when it exists, exactly
+    as the mount table treats it.
     """
 
     thread_root = workspaces.thread_host_path(
@@ -174,7 +180,9 @@ def sandbox_mounts_for_lease(
             / validate_workspace_segment(knowledge_version, label="brand_version")
         )
     if project_library:
-        read_only["project"] = project_root / LIBRARY_DIR
+        read_only["project"] = project_root / validate_workspace_segment(
+            project_library_name, label="project_library_name"
+        )
     attachments_dir = project_root / ATTACHMENTS_DIR
     # The factory opens every mount with O_NOFOLLOW; a bind mount must not follow a link out of
     # the root either, so a link where the directory should be is treated as no directory.

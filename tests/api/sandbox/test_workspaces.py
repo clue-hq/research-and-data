@@ -188,3 +188,48 @@ def test_an_attachments_symlink_is_not_mounted(tmp_path: Path) -> None:
             lease.release()
     finally:
         factory.close()
+
+
+def test_a_pinned_project_tree_is_the_tree_the_sandbox_mounts(tmp_path: Path) -> None:
+    """A replayed turn mounts its pinned generation, never the live library.
+
+    The fleet materializes a superseded generation beside the library as ``pinned-<turn>`` and
+    passes that name on ``MountRequest.project_library_name``; the script has to read the same
+    tree the model's own file tools read, or the two would see different projects.
+    """
+
+    root, factory, _sink = make_factory(tmp_path)
+    try:
+        lease = _acquire(factory, policy())
+        try:
+            project = root / _WORKSPACE_ID / "projects" / _PROJECT_ID
+            mounts = sandbox_mounts_for_lease(
+                lease,
+                factory,
+                brand=None,
+                project_library=True,
+                project_library_name="pinned-0123456789ab",
+                attachments=False,
+            )
+            assert mounts.read_only["project"] == project / "pinned-0123456789ab"
+            # The default is the project's shared library, which is what an ordinary turn reads.
+            assert (
+                sandbox_mounts_for_lease(
+                    lease, factory, brand=None, project_library=True, attachments=False
+                ).read_only["project"]
+                == project / "library"
+            )
+            # The tree name is one validated segment, so it can never become a path.
+            with pytest.raises(WorkspaceConfigurationError):
+                sandbox_mounts_for_lease(
+                    lease,
+                    factory,
+                    brand=None,
+                    project_library=True,
+                    project_library_name="../escape",
+                    attachments=False,
+                )
+        finally:
+            lease.release()
+    finally:
+        factory.close()
