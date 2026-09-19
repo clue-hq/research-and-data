@@ -117,6 +117,7 @@ from clue_api.chat.schemas import (
     AttachmentRefRequest,
     ComposerContextEntityWire,
     CreateThreadRequest,
+    DesignArtifactAccountWire,
     DesignArtifactListItemWire,
     DesignArtifactListResponse,
     DesignArtifactResponse,
@@ -271,9 +272,26 @@ def _design_artifact_list_item(
     the document's own artifact type and page size ride the wire and a document
     that records neither yields ``None`` for both. A card then says nothing
     rather than something false; its name is its identity.
+
+    Spec 2026-09-19 §3.8: the document's account rides along too, in the artifacts
+    page's own shape, and stays ``None`` when the document names no account.
     """
 
     fields = design_document_card_fields(document)
+    account = (
+        DesignArtifactAccountWire(
+            id=str(document["account_id"]),
+            name=str(document["account_name"]),
+            domain=document["account_domain"],
+            account_entity_id=(
+                None
+                if document["account_entity_id"] is None
+                else str(document["account_entity_id"])
+            ),
+        )
+        if document.get("account_id") is not None
+        else None
+    )
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
@@ -288,6 +306,7 @@ def _design_artifact_list_item(
         artifact_type=fields["artifact_type"],
         width_px=fields["width_px"],
         height_px=fields["height_px"],
+        account=account,
     )
 
 

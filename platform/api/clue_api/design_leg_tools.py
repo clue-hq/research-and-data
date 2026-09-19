@@ -1536,6 +1536,16 @@ class FinishDesignLegTool(Tool):
                     document_version = int(document.get("current_version") or 0)
                 except DesignNotFoundError:
                     document_version = None
+            # Spec §3.2: the close records EVERY document of the leg, not just position 0.
+            # ``document_id``/``document_version`` above stay exactly what they were — the
+            # single-document readers of this journal are untouched — and this is the set.
+            leg_documents = await design_legs.list_leg_documents(
+                conn, workspace_id=ctx.workspace_id, leg_id=leg_id
+            )
+            document_versions: dict[str, JsonValue] = {
+                str(document["document_id"]): int(document["current_version"] or 0)
+                for document in leg_documents
+            }
 
             redelivered_turn_id: str | None = None
             pending_ref: str | None = None
@@ -1577,6 +1587,7 @@ class FinishDesignLegTool(Tool):
                 "summary_message_id": str(summary_message_id),
                 "document_id": leg.get("document_id"),
                 "document_version": document_version,
+                "document_versions": document_versions,
                 "redelivered_turn_id": redelivered_turn_id,
             }
             journal_id = await design_legs.close_leg(

@@ -104,12 +104,21 @@ async def _seed_leg(
     execution_id: Any,
     document_id: str,
 ) -> None:
-    await design_legs.open_leg(
+    leg = await design_legs.open_leg(
         conn,
         workspace_id=workspace_id,
         thread_id=thread_id,
         parent_execution_id=execution_id,
         document_id=document_id,
+    )
+    # Spec §3.2: the leg's document SET is what the feed derives from, and the shipped
+    # tool always writes it (position 0 for a single-document leg). The DAL writes only
+    # the column, so the seed adds the child row production guarantees.
+    await design_legs.add_leg_documents(
+        conn,
+        workspace_id=workspace_id,
+        leg_id=str(leg["id"]),
+        documents=[design_legs.LegDocumentSpec(document_id=document_id, position=0)],
     )
 
 

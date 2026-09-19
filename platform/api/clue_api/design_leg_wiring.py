@@ -606,14 +606,21 @@ async def project_design_documents(
     A design document carries a workspace, not a project, so the leg is what binds it to
     one: a document belongs to the project whose threads hold the legs that name it. One
     statement, driven from the selective side — the legs of *this project's* threads →
-    their non-null ``document_id``s, one row per document (``DISTINCT ON``, the document's
-    **latest** leg winning, leg id breaking a tie, so each document reports one origin
-    thread) → the documents behind them.
+    the documents in their ``design_leg_document`` SET, one row per document
+    (``DISTINCT ON``, the document's **latest** leg winning, leg id breaking a tie, so
+    each document reports one origin thread) → the documents behind them.
 
-    Fail-closed tenancy like every other design read: ``workspace_id`` is pinned on both
-    the leg and the document (``design_leg.document_id`` carries no foreign key, so a leg
-    naming another tenant's document resolves to nothing). A document no leg names belongs
-    to no project and is listed nowhere.
+    Spec 2026-09-19 §3.2/§3.8: the derivation reads the leg's SET, not its
+    ``design_leg.document_id`` column (which means position 0 only) — a leg that opened
+    three artboards contributes three cards, not one.
+
+    Fail-closed tenancy like every other design read: ``workspace_id`` is pinned on the
+    leg, the child row and the document. A document no leg names belongs to no project and
+    is listed nowhere.
+
+    Since §3.8 the row also carries the document's account (``design_account``, left-joined
+    so an unstamped document says nothing) in the artifacts page's own shape, so the gallery
+    card and the library cannot disagree about whose account an artifact is for.
 
     Kind-aware since AD2.1: **every** doc kind a leg names is served — ``web`` documents
     and ``scene`` (ad) documents alike — and ``doc_kind`` rides along so the caller can
@@ -631,20 +638,25 @@ async def project_design_documents(
                     # guessed downstream. Both are NULL when the document does not
                     # record them — the caller states nothing rather than inventing.
                     " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
-                    " d.current_scene_json #>> '{pages}' AS pages_json"
+                    " d.current_scene_json #>> '{pages}' AS pages_json,"
+                    " a.account_id, a.name AS account_name, a.domain AS account_domain,"
+                    " a.account_entity_id"
                     " FROM ("
-                    "   SELECT DISTINCT ON (leg.document_id)"
-                    "          leg.document_id, leg.thread_id"
-                    "   FROM design_leg leg"
+                    "   SELECT DISTINCT ON (ld.document_id)"
+                    "          ld.document_id, leg.thread_id"
+                    "   FROM design_leg_document ld"
+                    "   JOIN design_leg leg"
+                    "     ON leg.id = ld.leg_id AND leg.workspace_id = ld.workspace_id"
                     "   JOIN agent_thread t"
                     "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
-                    "   WHERE leg.workspace_id = :ws"
+                    "   WHERE ld.workspace_id = :ws"
                     "     AND t.project_id = :project"
-                    "     AND leg.document_id IS NOT NULL"
-                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    "   ORDER BY ld.document_id, leg.created_at DESC, leg.id DESC"
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    " LEFT JOIN design_account a"
+                    "   ON a.account_id = d.account_id AND a.workspace_id = :ws"
                     # Artifacts-page spec §3.5: archived documents leave the gallery, the
                     # project library and the agent's listing in one place — here.
                     " WHERE d.archived_at IS NULL"
@@ -737,12 +749,13 @@ async def workspace_design_documents(
 ) -> tuple[Mapping[str, Any], ...]:
     """Every design document any thread in the workspace worked on — the artifacts library.
 
-    The workspace-wide form of :func:`project_design_documents`: the same leg derivation
-    (latest leg wins as origin, one row per document), joined to the origin project for its
-    title, left-joined to ``design_account`` for the page's account when it has one, and
-    left-joined to the CALLER's own marks. Archived rows are included (the library partitions
-    them); keyset-paged newest-updated first. Fail-closed on workspace at the leg, the
-    document, the project and the account.
+    The workspace-wide form of :func:`project_design_documents`: the same leg-SET derivation
+    (spec §3.2 — every document of every leg, latest leg wins as origin, one row per
+    document), joined to the origin project for its title, left-joined to ``design_account``
+    for the page's account when it has one, and left-joined to the CALLER's own marks.
+    Archived rows are included (the library partitions them); keyset-paged newest-updated
+    first. Fail-closed on workspace at the leg, the child row, the document, the project and
+    the account.
     """
 
     rows = (
@@ -759,14 +772,15 @@ async def workspace_design_documents(
                     " a.account_entity_id,"
                     " COALESCE(m.saved, false) AS saved, m.last_viewed_at"
                     " FROM ("
-                    "   SELECT DISTINCT ON (leg.document_id)"
-                    "          leg.document_id, leg.thread_id, t.project_id"
-                    "   FROM design_leg leg"
+                    "   SELECT DISTINCT ON (ld.document_id)"
+                    "          ld.document_id, leg.thread_id, t.project_id"
+                    "   FROM design_leg_document ld"
+                    "   JOIN design_leg leg"
+                    "     ON leg.id = ld.leg_id AND leg.workspace_id = ld.workspace_id"
                     "   JOIN agent_thread t"
                     "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
-                    "   WHERE leg.workspace_id = :ws"
-                    "     AND leg.document_id IS NOT NULL"
-                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    "   WHERE ld.workspace_id = :ws"
+                    "   ORDER BY ld.document_id, leg.created_at DESC, leg.id DESC"
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"

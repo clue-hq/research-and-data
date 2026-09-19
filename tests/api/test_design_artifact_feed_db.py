@@ -12,7 +12,7 @@ is listed nowhere; ``scene`` documents never appear.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -170,11 +170,18 @@ async def _seed_leg(
     thread_id: str,
     document_id: str | None,
     created_at: datetime | None = None,
+    documents: Sequence[str] | None = None,
 ) -> str:
     """Open one leg on ``thread_id``, optionally naming a document and a birth time.
 
     ``created_at`` is set explicitly where a test cares which leg is the *latest*: every
     row born in one transaction shares ``now()``, so the ordering would otherwise tie.
+
+    Spec §3.2: a leg holds a SET of documents (``design_leg_document``) and its own
+    ``document_id`` column means position 0. The DAL's ``open_leg`` writes only the column,
+    so this seeder writes the child rows the shipped tool always writes — ``documents``
+    names the whole set (default: just ``document_id``), and an explicit empty sequence
+    seeds a leg whose column names a document it holds no child row for.
     """
 
     execution_id = uuid5(NAMESPACE_URL, f"gallery-feed:{workspace_id}:{thread_id}:execution")
@@ -199,6 +206,21 @@ async def _seed_leg(
         await conn.execute(
             text("UPDATE design_leg SET created_at = :born WHERE id = :id"),
             {"born": created_at, "id": leg_id},
+        )
+    held = (
+        tuple(documents)
+        if documents is not None
+        else ((document_id,) if document_id is not None else ())
+    )
+    if held:
+        await design_legs.add_leg_documents(
+            conn,
+            workspace_id=workspace_id,
+            leg_id=leg_id,
+            documents=[
+                design_legs.LegDocumentSpec(document_id=held_id, position=position)
+                for position, held_id in enumerate(held)
+            ],
         )
     return leg_id
 
@@ -265,6 +287,7 @@ def test_each_project_lists_only_the_documents_its_own_threads_worked_on(
                 "artifact_type",
                 "width_px",
                 "height_px",
+                "account",
             }
             assert datetime.fromisoformat(item["created_at"]).tzinfo is not None
             assert datetime.fromisoformat(item["updated_at"]).tzinfo is not None
@@ -298,6 +321,9 @@ def test_a_foreign_workspaces_documents_are_invisible(require_chat_db: None) -> 
             )
             # ``design_leg.document_id`` carries no foreign key, so one of our own legs can
             # name their document id. The document's workspace pin is what keeps it invisible.
+            # The leg's child row is the second wall: ``design_leg_document``'s composite FK
+            # refuses a document from another workspace outright, so the reaching leg holds
+            # the id in its column and nothing in its set.
             await _seed_thread(
                 conn,
                 workspace_id=ours.workspace_id,
@@ -310,6 +336,7 @@ def test_a_foreign_workspaces_documents_are_invisible(require_chat_db: None) -> 
                 project_id=ours.project_id,
                 thread_id="thr_gallery_reaching",
                 document_id="doc_gallery_foreign",
+                documents=(),
             )
 
             assert (
@@ -500,6 +527,7 @@ def test_a_scene_document_lists_beside_a_web_one_with_its_own_kind(
                 "artifact_type",
                 "width_px",
                 "height_px",
+                "account",
             }
 
     run_async(scenario())
@@ -668,5 +696,119 @@ def test_an_archived_document_leaves_the_project_feed(require_chat_db: None) -> 
             )
             feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
             assert [row["id"] for row in feed] == ["doc_live"]
+
+    run_async(scenario())
+
+
+def test_a_leg_with_two_documents_lists_both_with_its_thread_as_origin(
+    require_chat_db: None,
+) -> None:
+    """Spec §3.2/§3.8: the feed derives from the leg's document SET.
+
+    One leg, two artboards: the pinned ``design_leg.document_id`` column names only
+    position 0, so a derivation reading the column would show one card and lose the
+    other. Both belong to the leg's project, and both report the leg's thread as origin.
+    """
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-batch", name="Gallery batch")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            touched = datetime(2026, 9, 19, 9, 0, tzinfo=UTC)
+            for document_id, title, age_hours in (
+                ("doc_batch_first", "First artboard", 0),
+                ("doc_batch_second", "Second artboard", 1),
+            ):
+                await _seed_design_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    doc_kind="scene",
+                    title=title,
+                    updated_at=touched - timedelta(hours=age_hours),
+                )
+            await _seed_thread(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                thread_id="thr_gallery_batch",
+            )
+            await _seed_leg(
+                conn,
+                workspace_id=workspace_id,
+                project_id=project.project_id,
+                thread_id="thr_gallery_batch",
+                document_id="doc_batch_first",
+                documents=("doc_batch_first", "doc_batch_second"),
+            )
+
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            assert [item["id"] for item in feed] == ["doc_batch_first", "doc_batch_second"]
+            assert {item["origin_thread_id"] for item in feed} == {"thr_gallery_batch"}
+            assert [item["title"] for item in feed] == ["First artboard", "Second artboard"]
+
+    run_async(scenario())
+
+
+def test_a_document_born_with_an_account_carries_it_on_the_card_wire(
+    require_chat_db: None,
+) -> None:
+    """Spec §3.8: the gallery feed carries the document's account, in the artifacts
+    page's own shape. A document with no account says ``None`` — never an invented one."""
+
+    del require_chat_db
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_project_row(conn, "ws-gallery-account", name="Gallery account")
+            workspace_id = project.workspace_id
+            await seed_principal(conn, workspace_id=workspace_id, user_id=USER_ID)
+            await conn.execute(
+                text(
+                    "INSERT INTO design_account (account_id, workspace_id, name, domain)"
+                    " VALUES ('acc_gallery_acme', :ws, 'Acme Health', 'acme.example')"
+                ),
+                {"ws": workspace_id},
+            )
+            touched = datetime(2026, 9, 19, 9, 0, tzinfo=UTC)
+            for document_id, age_hours in (("doc_acct_stamped", 0), ("doc_acct_plain", 1)):
+                await _seed_design_document(
+                    conn,
+                    workspace_id=workspace_id,
+                    document_id=document_id,
+                    updated_at=touched - timedelta(hours=age_hours),
+                )
+                await _seed_thread(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_{document_id}",
+                )
+                await _seed_leg(
+                    conn,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    thread_id=f"thr_{document_id}",
+                    document_id=document_id,
+                )
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET account_id = 'acc_gallery_acme'"
+                    " WHERE id = 'doc_acct_stamped'"
+                )
+            )
+
+            feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
+            by_id = {item["id"]: item for item in feed}
+            assert by_id["doc_acct_stamped"]["account"] == {
+                "id": "acc_gallery_acme",
+                "name": "Acme Health",
+                "domain": "acme.example",
+                "account_entity_id": None,
+            }
+            assert by_id["doc_acct_plain"]["account"] is None
 
     run_async(scenario())
