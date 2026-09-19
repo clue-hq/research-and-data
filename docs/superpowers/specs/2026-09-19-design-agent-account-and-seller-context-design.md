@@ -23,7 +23,7 @@ Verified on the Premier Gastroenterology run of 2026-09-18 (session `dsess_7bd05
 - The bundle's `claim_refs` carry ids and governance stamps, never values. The design agent has no tool that can open them. Its own account-adaptation skill says "bare claim IDs without accessible values/evidence cannot support copy", so today those refs are a dead end.
 - The seller reaches the agent as the brand kit only: `brand_card.json` (colours, type, logos, tone words, kit images), `brand_colors.json`, `source_assets.json`. The kit knows what Insight Health looks like, not what it sells or to whom.
 - A target-account card (name, domain, logo) is frozen into the envelope only for web pages bound to an account. A scene ad has no account context beyond the brief.
-- Head-of-ABM has three governed reads the design role does not: `read_project_accounts@1`, `read_account_research@1`, `read_claims@1` (`platform/api/clue_api/arv2/read_tools.py`), and its Stage-0 skill teaches their use (overview first; `overview_not_written` is not a failure; page to `next_offset` before counting; narrow by `field_prefix`; a spilled receipt is read from the file it names).
+- Head-of-ABM has three governed reads the design role does not: `read_project_accounts@1`, `read_account_research@2` (the paged contract; `@1` is frozen for replay and granted to nobody), `read_claims@1` (`platform/api/clue_api/arv2/read_tools.py`), and its Stage-0 skill teaches their use (overview first; `overview_not_written` is not a failure; page to `next_offset` before counting; narrow by `field_prefix`; a spilled receipt is read from the file it names).
 
 ## 3. Target model
 
@@ -33,7 +33,7 @@ Head-of-ABM's brief is the intent and the framing. No new fields on `open_design
 
 ### 3.2 Three governed reads for the design role
 
-`read_project_accounts@1`, `read_account_research@1` and `read_claims@1` are granted to `AgentRole.DESIGN` in the registry (`agent_registry_wiring.py`) and the design profile catalog. Same tools, same contracts, same receipts and journal, same idempotency. Their authority is what it is for Head-of-ABM: workspace- and project-scoped through the turn's identity. No per-account scoping is added.
+`read_project_accounts@1`, `read_account_research@2` and `read_claims@1` are granted to `AgentRole.DESIGN` in the registry (`agent_registry_wiring.py`) and the design profile catalog. Same tools, same contracts, same receipts and journal, same idempotency. Their authority is what it is for Head-of-ABM: workspace- and project-scoped through the turn's identity. No per-account scoping is added.
 
 **Contact claims.** `read_claims@1` already answers for a contact entity under the use-class gate. That gate is the whole of the personal-data rule for this note; nothing is added or relaxed.
 

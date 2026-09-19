@@ -4,7 +4,7 @@
 
 **Goal:** The design deepagent can read the target account's research through the platform's governed reads whenever it wants, and finds the seller's brand knowledge (company, products, ICP, personas) as files in its session workspace; the brief stays the primary channel and nothing is forced.
 
-**Architecture:** One injected capability, `DesignPlatformReads`, composed at the platform's composition root exactly like the scoped-preference resolver: closures that run on the platform loop (through `asyncio.run_coroutine_threadsafe` with a bounded wait) and are called from the design worker thread. Three closures invoke the governed tools `read_project_accounts@1`, `read_account_research@1`, `read_claims@1` through the worker's shared `ToolInvoker` (the finisher precedent), so every call is journaled and priced like Head-of-ABM's; a fourth reads the opening turn's pinned brand-knowledge documents (`get_knowledge_pin` by the leg's `opened_by_turn_id`, `read_pinned_documents`) plus the project's confirmed product set. The design runtime wraps the three reads as LangChain tools on the solo and trio graphs and writes the seller documents into `workspace/seller/` once per session, stamped by the pin's digest. The three reads are granted to the design role through a new immutable profile version `design@v2`. No bundle change, no envelope change, no migration, no env key.
+**Architecture:** One injected capability, `DesignPlatformReads`, composed at the platform's composition root exactly like the scoped-preference resolver: closures that run on the platform loop (through `asyncio.run_coroutine_threadsafe` with a bounded wait) and are called from the design worker thread. Three closures invoke the governed tools `read_project_accounts@1`, `read_account_research@2` (the paged contract; `@1` is granted to nobody), `read_claims@1` through the worker's shared `ToolInvoker` (the finisher precedent), so every call is journaled and priced like Head-of-ABM's; a fourth reads the opening turn's pinned brand-knowledge documents (`get_knowledge_pin` by the leg's `opened_by_turn_id`, `read_pinned_documents`) plus the project's confirmed product set. The design runtime wraps the three reads as LangChain tools on the solo and trio graphs and writes the seller documents into `workspace/seller/` once per session, stamped by the pin's digest. The three reads are granted to the design role through a new immutable profile version `design@v2`. No bundle change, no envelope change, no migration, no env key.
 
 **Tech Stack:** Python 3.12, `clue_toolbelt` (`ToolInvoker`, `ToolContext`, `operation_id_from_key`), `clue_api.brand_knowledge_context`, `clue_spine.current_project_product_set`, LangChain `@tool`, deepagents 0.6.12, pytest.
 
@@ -386,7 +386,8 @@ class DesignPlatformReads:
             result = await self._invoker.invoke(
                 name,
                 body,
-                ToolContext(
+                version="2" if name == "read_account_research" else None,
+                context=ToolContext(
                     workspace_id=self._envelope.workspace_id,
                     actor="agent",
                     conn_factory=self._conn_factory,
