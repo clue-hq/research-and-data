@@ -460,9 +460,9 @@ Spec `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attach
 plan `docs/superpowers/plans/2026-09-19-agent-code-execution-and-document-attachments.md`
 (16 tasks), executed subagent-driven on branch `rebase-and-expand-attachment-types` in the
 `damascus` worktree, base `7a548e110`. Controller = Fable; implementers Opus only; every review
-done by the controller first-hand (no reviewer subagents). Ledger with the full per-task detail:
-`.superpowers/sdd/2026-09-19-agent-code-execution-and-document-attachments/progress.md`, per-task
-reports beside it. DB suites ran on the throwaway `clue_damascus_test` only; nothing pushed.
+done by the controller first-hand (no reviewer subagents). The SDD ledger and per-task reports were
+git-ignored scratch under `.superpowers/sdd/` and are deleted at plan close, so this note plus the
+plan are the durable record. DB suites ran on the throwaway `clue_damascus_test` only; nothing pushed.
 
 ### What the feature is, in one paragraph
 Every attached file of every family is synced by the fleet worker into
