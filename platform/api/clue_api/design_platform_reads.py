@@ -56,7 +56,7 @@ from clue_design.envelopes import DesignTurnEnvelope
 from clue_obs import get_logger
 from clue_spine import current_project_product_set
 from clue_storage import StorageBackend
-from clue_toolbelt import ToolContext, ToolInvoker
+from clue_toolbelt import PreconditionFailed, ToolContext, ToolInvoker
 
 log = get_logger("clue_api.design_platform_reads")
 
@@ -68,9 +68,10 @@ _PINNED_VERSIONS = {"read_account_research": "2"}
 
 class DesignPlatformReadError(RuntimeError):
     """One code, the way the memory runtime's errors are: ``platform_loop`` /
-    ``loop_unavailable`` / ``timeout`` / ``read_failed``. Never carries tool inputs or outputs in
-    its message — a read's refusal is a code the design side can act on, not a payload it can
-    quote."""
+    ``loop_unavailable`` / ``timeout`` / ``read_failed``, plus ``refused:<codes>`` — a governed
+    read's own machine-readable refusal (``refused:overview_not_written``), comma-joined when a
+    tool names more than one. Never carries tool inputs or outputs in its message: a read's
+    refusal is a code the design side can act on, not a payload it can quote."""
 
 
 @dataclass(frozen=True)
@@ -149,16 +150,27 @@ class DesignPlatformReads:
             )
             return dict(result.references)
 
-        return self._guarded(call, tool=name)
+        try:
+            return self._guarded(call, tool=name)
+        except PreconditionFailed as refused:
+            # Ruling T2-1: a governed read's REFUSAL is an answer, not a failure. "this account's
+            # overview has not been written yet" is a true sentence the design agent can act on
+            # (read the claims instead); collapsing it into ``read_failed`` would make an honest
+            # empty look like a broken platform. The reason codes are machine-readable and carry
+            # no tool inputs, so they may cross the seam where the message may not.
+            codes = ",".join(refused.reason_codes)
+            log.info("design_platform_reads.read_refused", tool=name, reason_codes=codes)
+            raise DesignPlatformReadError(f"refused:{codes}") from None
 
     def _guarded(self, operation: Callable[[], Coroutine[Any, Any, _T]], *, tool: str) -> _T:
         try:
             return self._bridge.wait(operation)
-        except DesignPlatformReadError:
+        except (DesignPlatformReadError, PreconditionFailed):
+            # The bridge's own four codes, and a refusal its caller classifies, both pass through.
             raise
         except Exception:
-            # A tool's refusal, a pydantic error or a DB adapter may put inputs into the
-            # exception string; the design side gets the code and the platform keeps the trace.
+            # A pydantic error or a DB adapter may put inputs into the exception string; the
+            # design side gets the code and the platform keeps the trace.
             log.warning("design_platform_reads.read_failed", tool=tool, exc_info=True)
             raise DesignPlatformReadError("read_failed") from None
 

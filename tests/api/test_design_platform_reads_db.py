@@ -119,7 +119,9 @@ async def _seed_overview_block(
     )
 
 
-async def _seeded(conn: AsyncConnection, tmp_path: Path, *, label: str) -> dict[str, Any]:
+async def _seeded(
+    conn: AsyncConnection, tmp_path: Path, *, label: str, overview: bool = True
+) -> dict[str, Any]:
     """Workspace + project + one account + the seller's brand knowledge, pinned to a real turn."""
 
     workspace_id = f"ws_dpr_{label}_{uuid4().hex[:8]}"
@@ -144,7 +146,8 @@ async def _seeded(conn: AsyncConnection, tmp_path: Path, *, label: str) -> dict[
         account_entity_id=account_id,
         added_via="manual",
     )
-    await _seed_overview_block(conn, workspace_id=workspace_id, account_id=account_id)
+    if overview:
+        await _seed_overview_block(conn, workspace_id=workspace_id, account_id=account_id)
 
     documents: dict[str, UUID] = {}
     for path, kind, body in (
@@ -369,6 +372,67 @@ def test_paging_a_read_is_never_answered_by_the_previous_pages_receipt(
                 )
             ).scalar_one()
             assert rows == 2
+
+    run_async(scenario())
+
+
+def test_a_governed_reads_refusal_reaches_the_design_side_with_its_reason_code(
+    tmp_path: Path, migrated_db: bool
+) -> None:
+    """Ruling T2-1: an unwritten overview is an ANSWER the agent can act on, not a failure.
+
+    ``read_account_research`` refuses this case by name (``overview_not_written``) through the
+    toolbelt's typed precondition failure, and that name is what tells the design agent to read
+    the claims instead. Collapsed into ``read_failed`` it would read as a broken platform.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import (
+        DesignPlatformReadError,
+        build_design_platform_reads_factory,
+    )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="refused", overview=False)
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = await asyncio.to_thread(
+                factory,
+                _leg_envelope(
+                    seeds["workspace_id"], seeds["project"].project_id, seeds["opening_turn"]
+                ),
+            )
+            assert reads is not None
+            with pytest.raises(DesignPlatformReadError, match="^refused:overview_not_written$"):
+                await asyncio.to_thread(
+                    reads.read_account_research,
+                    account_entity_id=str(seeds["account_id"]),
+                    section="overview",
+                )
+            # An account this workspace cannot see is refused by its own name too, and so is the
+            # claims section of an account nothing has researched yet — three different sentences
+            # the design agent can act on differently, all of which would have read "read_failed".
+            with pytest.raises(DesignPlatformReadError, match="^refused:account_not_found$"):
+                await asyncio.to_thread(
+                    reads.read_account_research,
+                    account_entity_id=str(uuid4()),
+                    section="overview",
+                )
+            with pytest.raises(DesignPlatformReadError, match="^refused:account_not_researched$"):
+                await asyncio.to_thread(
+                    reads.read_account_research,
+                    account_entity_id=str(seeds["account_id"]),
+                    section="claims",
+                )
+            # ``read_claims`` over the same account is the read that answers honestly EMPTY rather
+            # than refusing: a claims query that matches nothing is a true, useful sentence.
+            empty = await asyncio.to_thread(reads.read_claims, entity_id=str(seeds["account_id"]))
+            assert empty["claims"] == [] and empty["prefixes"] == {}
 
     run_async(scenario())
 
