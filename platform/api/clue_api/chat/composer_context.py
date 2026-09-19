@@ -192,7 +192,7 @@ async def validated_context_refs(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
-    design_leg_document_id: str | None = None,
+    design_leg_document_ids: tuple[str, ...] = (),
     storage: StorageBackend | None = None,
     project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
@@ -202,6 +202,10 @@ async def validated_context_refs(
     (a Gallery file is only addressable inside its project); ``design_document`` refs are
     additionally contained to the project's own design documents when it is given. The Home
     bootstrap has no project yet and passes ``None``.
+
+    ``design_leg_document_ids`` is the open design leg's whole document SET (spec §3.7): a leg
+    holds many documents, so a node target only has to name one of them, and reference images
+    ride a leg whose documents are all scene-kind. Empty means no leg is open.
     """
 
     if any(ref.workspace_id != workspace_id for ref in refs):
@@ -227,16 +231,16 @@ async def validated_context_refs(
     target_document_ref: DomainObjectRef | None = None
     if design_nodes:
         document_refs = tuple(ref for ref in refs if ref.object_type == "design_document")
-        if len(document_refs) != 1 or design_leg_document_id is None:
+        if len(document_refs) != 1 or not design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "design node targets require the open design leg's one document reference",
+                "design node targets require one document reference on the open design leg",
             )
         target_document_ref = document_refs[0]
-        if target_document_ref.object_id != design_leg_document_id:
+        if target_document_ref.object_id not in design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "the targeted design document is not the open design leg's document",
+                "the targeted design document is not one of the open design leg's documents",
             )
         if target_document_ref.version is None or any(
             ref.version != target_document_ref.version for ref in design_nodes
@@ -288,7 +292,7 @@ async def validated_context_refs(
             raise ContextReferenceError(exc.code, exc.message) from exc
 
     if design_assets:
-        if design_leg_document_id is None:
+        if not design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design reference images require an open design leg",
@@ -308,19 +312,28 @@ async def validated_context_refs(
         from clue_design.errors import DesignNotFoundError
         from clue_design.storage import read_design_blob
 
+        # Untargeted reference images ride EVERY addressed run of the leg (spec §3.7), so the
+        # scene-kind rule is asked of the whole document set, not of one pinned document.
         if target_document is None:
-            try:
-                target_document = await get_design_document(
-                    conn,
-                    workspace_id=workspace_id,
-                    document_id=design_leg_document_id,
-                )
-            except DesignNotFoundError as exc:
-                raise ContextReferenceError(
-                    "CONTEXT_REF_NOT_FOUND",
-                    "the open design leg document is not available in this workspace",
-                ) from exc
-        if target_document.get("doc_kind") != "scene":
+            leg_documents: list[dict[str, Any]] = []
+            for leg_document_id in design_leg_document_ids:
+                try:
+                    leg_documents.append(
+                        await get_design_document(
+                            conn,
+                            workspace_id=workspace_id,
+                            document_id=leg_document_id,
+                        )
+                    )
+                except DesignNotFoundError as exc:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "an open design leg document is not available in this workspace",
+                    ) from exc
+            kinds = {document.get("doc_kind") for document in leg_documents}
+        else:
+            kinds = {target_document.get("doc_kind")}
+        if kinds != {"scene"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "reference images are available only for scene-design turns",

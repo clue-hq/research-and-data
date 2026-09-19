@@ -609,7 +609,7 @@ async def _validated_submission_context(
     *,
     workspace_id: str,
     refs: tuple[Any, ...],
-    design_leg_document_id: str | None = None,
+    design_leg_document_ids: tuple[str, ...] = (),
     storage: StorageBackend | None = None,
     project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
@@ -628,7 +628,7 @@ async def _validated_submission_context(
             conn,
             workspace_id=workspace_id,
             refs=requested,
-            design_leg_document_id=design_leg_document_id,
+            design_leg_document_ids=design_leg_document_ids,
             storage=storage,
             project_id=project_id,
         )
@@ -2468,13 +2468,27 @@ def build_chat_router(
                 # idempotent replay above is proved from its immutable receipt,
                 # so a design document advancing after acceptance cannot make
                 # the accepted turn unreplayable.
+                #
+                # Spec §3.7: one leg holds many documents, so the composer's design tags are
+                # validated against the leg's whole SET. A leg born before the join table was
+                # written falls back to its own pinned document.
+                design_leg_document_ids: tuple[str, ...] = ()
+                if open_leg is not None:
+                    design_leg_document_ids = tuple(
+                        str(row["document_id"])
+                        for row in await design_leg_dal.list_leg_documents(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            leg_id=str(open_leg["id"]),
+                        )
+                    )
+                    if not design_leg_document_ids and open_leg.get("document_id"):
+                        design_leg_document_ids = (str(open_leg["document_id"]),)
                 context_refs = await _validated_submission_context(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
-                    design_leg_document_id=(
-                        None if open_leg is None else open_leg.get("document_id")
-                    ),
+                    design_leg_document_ids=design_leg_document_ids,
                     storage=storage,
                     project_id=project_id,
                 )

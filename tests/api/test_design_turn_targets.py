@@ -162,7 +162,7 @@ def test_validated_context_refs_accepts_annotated_nodes_on_a_web_document(
                 object(),  # type: ignore[arg-type]
                 workspace_id="ws_1",
                 refs=refs,
-                design_leg_document_id="doc_web",
+                design_leg_document_ids=("doc_web",),
             )
         )
         == refs
@@ -196,7 +196,7 @@ def test_validated_context_refs_refuses_an_unknown_node_on_a_web_document(
                 object(),  # type: ignore[arg-type]
                 workspace_id="ws_1",
                 refs=refs,
-                design_leg_document_id="doc_web",
+                design_leg_document_ids=("doc_web",),
             )
         )
 
