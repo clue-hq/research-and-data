@@ -2,6 +2,7 @@ import { getProtectedSessionResult } from "@/features/session/data/session-dal";
 import { ProtectedSessionRecoveryScreen } from "@/features/session/components/protected-session-recovery";
 import { resolveChatTransport } from "@/features/projects/data/chat-api";
 import { ProjectsTransportProvider } from "@/features/projects/data/projects-transport";
+import { ProjectCatalogInvalidationProvider } from "@/features/projects/model/project-catalog-invalidation";
 import { ProjectApplicationShell } from "@/components/shell/application-shell";
 import { WorkspaceProfileProvider } from "@/components/shell/workspace-profile-context";
 import { WorkspaceSwitcherProvider } from "@/components/shell/workspace-switcher-context";
@@ -64,26 +65,37 @@ export default async function ProtectedLayout({
       currentWorkspaceId={session?.principal.workspace_id ?? null}
       transport={transport}
     >
-      {/* The dev-era SessionControls overlay (workspace UUID switcher + Sign out,
-          top-right) is permanently removed — founder order 2026-08-18, superseding
-          the R8 leave-as-is ruling. Workspace switching lives at /select-workspace;
-          sign-out at /sign-out. */}
-      <WorkspaceSwitcherProvider
-        activeWorkspaceId={session?.principal.workspace_id ?? null}
-        demo={transport.mode === "fixture"}
-        onSelect={switchWorkspace}
-        workspaces={workspaces}
-      >
-        <ConfirmationProvider>
-          {profile ? (
-            <WorkspaceProfileProvider profile={profile}>
+      {/* ONE shell-scoped refresh signal for the whole protected tree (spec
+          §2.5: every project mutation invalidates so the sidebar and any open
+          workspace refetch). It was mounted inside ApplicationShell, which
+          gives a provider per shell MOUNT: a screen that renders its own
+          ApplicationShell (artifacts, accounts, brand-context, and the
+          projects directory/home) got a second, competing provider, so an
+          invalidate on one side of that boundary never reached the other.
+          Every ApplicationShell mount site is under this layout, so hoisting
+          it here loses nobody and leaves exactly one signal. */}
+      <ProjectCatalogInvalidationProvider>
+        {/* The dev-era SessionControls overlay (workspace UUID switcher + Sign out,
+            top-right) is permanently removed — founder order 2026-08-18, superseding
+            the R8 leave-as-is ruling. Workspace switching lives at /select-workspace;
+            sign-out at /sign-out. */}
+        <WorkspaceSwitcherProvider
+          activeWorkspaceId={session?.principal.workspace_id ?? null}
+          demo={transport.mode === "fixture"}
+          onSelect={switchWorkspace}
+          workspaces={workspaces}
+        >
+          <ConfirmationProvider>
+            {profile ? (
+              <WorkspaceProfileProvider profile={profile}>
+                <ProjectApplicationShell>{children}</ProjectApplicationShell>
+              </WorkspaceProfileProvider>
+            ) : (
               <ProjectApplicationShell>{children}</ProjectApplicationShell>
-            </WorkspaceProfileProvider>
-          ) : (
-            <ProjectApplicationShell>{children}</ProjectApplicationShell>
-          )}
-        </ConfirmationProvider>
-      </WorkspaceSwitcherProvider>
+            )}
+          </ConfirmationProvider>
+        </WorkspaceSwitcherProvider>
+      </ProjectCatalogInvalidationProvider>
     </ProjectsTransportProvider>
   );
 }

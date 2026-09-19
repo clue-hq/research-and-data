@@ -9,7 +9,6 @@ import {
 import { usePathname } from "next/navigation";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { AppSidebar } from "./app-sidebar";
-import { ProjectCatalogInvalidationProvider } from "@/features/projects/model/project-catalog-invalidation";
 import {
   useDesktopSidebar,
   type DesktopSidebarController,
@@ -87,8 +86,7 @@ export function ApplicationShell({
   }
 
   return (
-    <ProjectCatalogInvalidationProvider>
-      <ApplicationSidebarContext.Provider value={sidebar}>
+    <ApplicationSidebarContext.Provider value={sidebar}>
         <div
           className="relative flex h-dvh min-h-0 w-full overflow-hidden bg-white"
           data-sidebar-state={sidebar.state}
@@ -164,7 +162,6 @@ export function ApplicationShell({
             {children}
           </div>
         </div>
-      </ApplicationSidebarContext.Provider>
-    </ProjectCatalogInvalidationProvider>
+    </ApplicationSidebarContext.Provider>
   );
 }
