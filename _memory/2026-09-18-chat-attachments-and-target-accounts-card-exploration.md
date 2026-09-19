@@ -406,3 +406,23 @@ Record each outcome and any defect here.
   untitled-thread birth (`title=None`) and the attachment validation/materialization, and that
   `settings.py` / `.env.example` hold both feature blocks. Branch is still 29 commits over the
   new base; force-push of `add-attachment` needed to update PR #64.
+
+## 2026-09-19 — after PR #64 merged: rebase, then the next feature
+- Workspace switched by Conductor to `damascus-v1` → renamed `rebase-and-expand-attachment-types`;
+  fast-forwarded onto `origin/research-streaming` (PR #66 design/account-binding, PR #67 design
+  agent account-context transfer). The only obstacle: PR #67 committed 87 files under
+  `.context/attachments` that existed here untracked (12 macOS screenshots carry a narrow no-break
+  space in the name — plain `git diff --name-only` escapes it, use `-z`); moved aside, all 77 local
+  copies byte-identical to the tracked ones, backup deleted. Lane DB and `.env` parity unchanged.
+- Founder ask: agent should comprehend PDF/DOCX/XLSX/CSV attachments, using the reference skills
+  under `attachments/` (XLSX/DOCX/PDF, sandbox-based). Founder REJECTED converters-only and chose
+  option 1: a governed `run_python@1` tool in a Docker sandbox over the thread workspace, plus the
+  converters as the fast path. Spec written:
+  `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`
+  (assumed defaults recorded in it: no network, 60 s / 1 CPU / 1 GB / 10 runs per turn / 1 MB
+  output; `CLUE_SANDBOX_ENABLED` ships off). Key verified facts: workspace is a real anchored dir
+  per thread; mounts are read-only dirs beside the root and exempt from quota; seeds/library are
+  UTF-8-only; `ToolContext` has no workspace handle (registry keyed by execution id, bound where
+  the spill sink is bound in `head_of_abm_wiring.py`); `read_file` refuses >1 MiB files (twin cap
+  set to 1 MiB); Docker Desktop present on the founder's host, no LibreOffice.
+- Next: founder reviews the spec → implementation plan → SDD.
