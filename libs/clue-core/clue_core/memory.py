@@ -190,6 +190,10 @@ class MemorySubmission(BaseModel):
     claim_refs: tuple[UUID, ...] = ()
     subject_entity_id: UUID | None = None
     creating_quote: str | None = None
+    #: The ``agent_thread`` the note came out of, when a conversation produced it — provenance
+    #: for the surfaces that show a memory next to the thread that said it. ``None`` for the
+    #: writers that have no thread (kickoff, imports, engine-side lifecycle).
+    source_thread_id: str | None = None
 
 
 class MemoryAccepted(BaseModel):

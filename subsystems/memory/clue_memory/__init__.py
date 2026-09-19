@@ -24,6 +24,7 @@ from clue_memory.lifecycle import (
     losing_comparison,
     rank_key,
     record_kickoff,
+    retire,
 )
 from clue_memory.model import ERASED, Memory, new_memory_id
 from clue_memory.reconcile import (
@@ -55,6 +56,7 @@ __all__ = [
     "enforce_store_cap",
     "backfill_slot",
     "record_kickoff",
+    "retire",
     "is_memory_enabled",
     "set_memory_enabled",
     "switch_audit",
