@@ -910,12 +910,21 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     P3.2-gate-ratified model policy on its face. P3.5 adds the fiftieth pin:
     `finish_design_leg@1`, the leg-level exit (§2.2) — the composite's one doorway
     back to head-of-abm.
+
+    2026-09-19 adds three pins: the account reads, granted so a 1:1 creative can open
+    the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v1"
-    assert len(resolved.profile.tools) == 50
+    assert resolved.profile.version == "v2"
+    assert len(resolved.profile.tools) == 53
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
+    # 2026-09-19: the design agent reads the target account the way head-of-abm does.
+    # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
+    # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
+    # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
+    for address in ("read_project_accounts@1", "read_account_research@2", "read_claims@1"):
+        assert any(pin.address == address for pin in resolved.profile.tools), address
 
     by_address = {item.address: item for item in resolved.capabilities}
     available = {

@@ -150,10 +150,26 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # and `design_set_document_archived` (134 -> 136), both UNGRANTED and human-only: renaming or
     # archiving a document is an act of the person at the library grid or the editor header.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 136
-    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
+    # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
+    # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
+    # contracts. `read_discovery_run` is deliberately not among them: the design leg never
+    # proposes a discovery. The version fence is unchanged, so the grant is on `@2`.
+    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_project_accounts@1") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_account_research@2") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
     # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.
@@ -161,8 +177,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # immutable revision; @28 re-pins the key to `@2` rather than admitting both.
     assert c6_roles_for_tool("read_account_research@1") == ()
     assert c6_roles_for_tool("read_discovery_run@1") == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_claims@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_claims@1") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
     assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_artifact@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
