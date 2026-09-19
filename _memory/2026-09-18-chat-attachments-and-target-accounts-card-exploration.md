@@ -426,3 +426,27 @@ Record each outcome and any defect here.
   the spill sink is bound in `head_of_abm_wiring.py`); `read_file` refuses >1 MiB files (twin cap
   set to 1 MiB); Docker Desktop present on the founder's host, no LibreOffice.
 - Next: founder reviews the spec → implementation plan → SDD.
+
+## 2026-09-19 (afternoon) — ruling: no markdown step anywhere; the text route is retired
+
+Founder question: "why are we complicating our add attachment process by adding a separate
+convert to markdown step at all? why can't we keep it simple like Lightfield does?" Re-read the
+reference skills under `attachments/`: Lightfield mounts the raw file at a path, the sandbox has
+the libraries preinstalled, the skill teaches reading with code; there is no conversion step.
+Assessment given and accepted: the converter (five modules, a migration, a refusal code, twin
+materialisation, a markdown cap, a chip note) served a fast path the agent does not need, plus a
+Docker-missing fallback that is a deployment concern. Second question "why do we have to keep it
+markdown first?" — the PR #64 text route (text uploads as versioned project documents) is also a
+second mechanism; founder agreed to retire it.
+
+**Rulings recorded in the spec (second ruling block):** no conversion, no twin, no index file;
+every attached file of every family is synced by the worker into `<ws>/projects/<project>/
+attachments/<filename>` and mounted read-only as `attachments/`; text opens with `read_file`,
+binaries with `run_python`, images also ride as image parts; newest upload of a name wins;
+binaries are unreadable without the sandbox (accepted). Retired: `materialize_text_attachments`,
+`_wrote_attachment_documents`, the describer's store lookup, the text-documents DB test, the
+"re-upload → v2" walk step. Settings drop to 8 (no OCR / sheet-rows / markdown-cap switches). No
+migration in this plan (head stays `d659c2d2b537`).
+
+Spec and plan rewritten in place (plan: 20 → 16 tasks). Execution not started; the founder still
+has to choose subagent-driven vs inline.
