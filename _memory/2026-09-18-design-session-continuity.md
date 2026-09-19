@@ -81,3 +81,15 @@ head-of-abm resumes with (`exit_summary(reason, reasoning)`) and the journal; th
 re-entry replays the JOURNALED summary so the governed operation's parameters match. Golden set:
 22 fixtures (+5 `new_artifact`, +2 tagged-reference stays); `make eval-design-exit` demo updated.
 Not a sub-agent of head-of-abm: one stateless model call in the fleet worker before each leg turn.
+
+## 2026-09-19 — design note: seller + target-account context for the design agent
+`docs/superpowers/specs/2026-09-19-design-agent-account-and-seller-context-design.md` (for review;
+no plan, no code). Founder rulings: the brief stays the primary channel; the target account is
+reached by TOOLS (grant `read_project_accounts@1`, `read_account_research@1`, `read_claims@1` to
+the design role, injected into the design runtime through the same platform-loop bridge the
+scoped-preference resolver uses); scope is the project, never a tag or an account-id field; the
+seller's company/products (and maybe the pinned ICP) land as files under `workspace/seller/` in
+the session workspace, listed like the brand card, never called optional; contact claims tool-only
+under the existing use-class gate; multiple accounts per leg deferred; no mode switch across
+1:1 / 1:few / generic. Skill text (account-adaptation "Reading the account", scene-brief-copy,
+tools) needs founder review before landing.
