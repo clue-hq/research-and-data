@@ -464,6 +464,12 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         return self._identity.workspace_root_id
 
     @property
+    def policy(self) -> WorkspacePolicy:
+        """The profile's workspace contract this backend enforces, read-only."""
+
+        return self._policy
+
+    @property
     def written_documents(self) -> tuple[VersionedWriteOutcome, ...]:
         """Every document version this turn's writes created, in the order they were taken.
 
