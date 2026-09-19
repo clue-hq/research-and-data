@@ -135,7 +135,11 @@ def _dispatch_against(
     run: dict[str, Any],
     config: dict[str, Any],
 ) -> _RecordingJournal:
-    """Run ``_dispatch`` where ``get_run`` already answers terminal, and return the journal."""
+    """Run the dispatch where ``get_run`` already answers terminal, and return the journal.
+
+    A one-document batch (spec §3.3): the addressed set is the leg's single synthesised
+    document, so this is the same re-join branch it always was.
+    """
     from clue_api import design_leg_wiring as wiring
 
     turn_id = request.turn_id
@@ -179,7 +183,7 @@ def _dispatch_against(
         conn_factory=_conn_factory(),
     )
     asyncio.run(
-        runner._dispatch(
+        runner._dispatch_batch(
             submission=SimpleNamespace(
                 turn_id=turn_id,
                 thread_id=request.thread_id,
@@ -190,8 +194,10 @@ def _dispatch_against(
             execution_id=request.constitution.execution_id,
             user_message_ref=request.user_message_artifact_ref,
             prior_history=(),
-            pinned_document=None,
-            account_card=None,
+            documents=({"document_id": None, "position": 0, "note": "", "title": None},),
+            document_rows={},
+            account_cards={},
+            leg_document_count=1,
             focus_refs=(),
             workspace_id=workspace_id,
             scope_pin=None,
