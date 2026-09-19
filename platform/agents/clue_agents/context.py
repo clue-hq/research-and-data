@@ -583,7 +583,11 @@ class CapturedTurnDescription(Protocol):
 
 
 class AttachmentDescription(Protocol):
-    """What one attachment is called, and where its words are readable when they are."""
+    """What one attachment is called, where its file sits, and which family it belongs to.
+
+    ``family`` is ``"text"``, ``"image"`` or ``"document"`` — it decides only which tool the
+    sentence tells the agent to open the file with, never whether the file is there.
+    """
 
     @property
     def filename(self) -> str: ...
@@ -591,12 +595,15 @@ class AttachmentDescription(Protocol):
     @property
     def workspace_path(self) -> str | None: ...
 
+    @property
+    def family(self) -> str: ...
+
 
 class AttachmentDescriber(Protocol):
-    """Name each attachment by its filename and, for text, where it is readable in the workspace.
+    """Name each attachment by its filename, its workspace path, and its family.
 
     Structural for the same reason :class:`CapturedTurnDescription` is: the durable rows an
-    attachment is named from live at the api composition root, and L7 only ever reads the two
+    attachment is named from live at the api composition root, and L7 only ever reads the three
     values above. Keyed by ``artifact_key`` — the one identity a turn's attachment refs carry.
     """
 
@@ -629,10 +636,11 @@ class TurnLayerSource:
         result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
         # may later use an authorized tool to inspect an allowed attachment. A describer turns
-        # those pointers into the words a human would use — the file's name, and for text the
-        # workspace path its version is readable at — so the model can open what it needs instead
-        # of guessing from a hash. With no describer (or an attachment the describer does not
-        # know) the pointer line is unchanged: naming nothing is better than naming it wrong.
+        # those pointers into the words a human would use — the file's name, the one path the
+        # worker syncs it to, and the tool that opens that family — so the model can open what it
+        # needs instead of guessing from a hash. With no describer (or an attachment the describer
+        # does not know) the pointer line is unchanged: naming nothing is better than naming it
+        # wrong.
         described: Mapping[str, AttachmentDescription] = (
             await self._attachments.describe(request) if self._attachments is not None else {}
         )
@@ -649,15 +657,27 @@ class TurnLayerSource:
                     f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
                     f"media_type={ref.media_type} byte_count={ref.byte_count}"
                 )
-            elif info.workspace_path is not None:
-                description = (
-                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) is readable at '
-                    f"{info.workspace_path}. Open it with read_file when the message needs it."
-                )
-            else:
+            elif info.workspace_path is None:
+                # Fallback for a describer that names no path (the production one always does):
+                # claim only what is true without a synced file — the image is in the message.
                 description = (
                     f'Attachment "{info.filename}" ({ref.media_type}, {size}) is attached to this '
                     "message as an image."
+                )
+            else:
+                # One sentence per file: what it is, where its one copy sits, and how to open it.
+                # An image is named too — the model sees it here, but code reads it from the path.
+                if info.family == "text":
+                    opener = "open it with read_file."
+                elif info.family == "image":
+                    opener = "it is also shown to you as an image in this message."
+                else:
+                    # Every other family is bytes read_file would refuse; run_python reads any of
+                    # them, so it is also the honest answer for a family L7 does not recognise.
+                    opener = "open it with run_python."
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) was attached to '
+                    f"this message. It is at {info.workspace_path}; {opener}"
                 )
             result.append(
                 ContextCandidate(
