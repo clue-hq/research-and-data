@@ -639,6 +639,44 @@ def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:
     assert enabled.kind is FleetTaskKind.DESIGN_JOB
 
 
+def test_the_design_handler_puts_the_platform_reads_factory_on_the_host_it_builds() -> None:
+    """Design note 2026-09-19: the platform's reads reach the design turn the same way the
+    scoped-preference resolver does — a factory on the host, never a value in the frozen job.
+
+    Both factories are independent switches, so the host must be built when EITHER is present:
+    a deployment with design memory off still composes the reads, and one with no reads still
+    composes the resolver.
+    """
+    from clue_api.design_fleet import build_design_job_handler
+
+    reads = object()
+    prefs = object()
+
+    only_reads = build_design_job_handler(enabled=True, platform_reads_factory=reads)
+    assert only_reads is not None
+    host = only_reads._host_provider()
+    assert host.platform_reads_factory is reads
+    assert host.preference_resolver_factory is None
+
+    both = build_design_job_handler(
+        enabled=True, platform_reads_factory=reads, preference_resolver_factory=prefs
+    )
+    assert both is not None
+    host = both._host_provider()
+    assert (host.platform_reads_factory, host.preference_resolver_factory) == (reads, prefs)
+
+
+def test_the_design_leg_lane_forwards_the_platform_reads_factory() -> None:
+    """The inline leg lane and the queued drain handler must see the SAME reads — a leg turn
+    driven inline and one taken over by a design_job worker are the same unit of work."""
+    from clue_api.design_fleet import build_design_leg_lane_driver
+
+    reads = object()
+    lane = build_design_leg_lane_driver(enabled=True, platform_reads_factory=reads)
+    assert lane is not None
+    assert lane._handler._host_provider().platform_reads_factory is reads
+
+
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------
 
 

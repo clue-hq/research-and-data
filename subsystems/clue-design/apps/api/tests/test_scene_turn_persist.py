@@ -2074,3 +2074,174 @@ def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
     assert entry["sha256"] == hashlib.sha256(b"the brief").hexdigest()
     # ...and the bytes are really in custody, which is what makes the restore possible.
     assert make_blob_store(client.app).read(entry["sha256"]) == b"the brief"
+
+
+# --- (e) the platform's reads reach the runtime -------------------------------
+
+
+def test_a_leg_turn_hands_the_platform_reads_to_the_runtime_and_a_direct_turn_does_not(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design note 2026-09-19: a LEG turn's runtime config carries the platform's reads.
+
+    The reads are a capability the PLATFORM composes (the account's research through the
+    governed tools, the seller's pinned knowledge) and hands the design host as a factory; the
+    design side never opens the platform database, so the only proof that matters is that the
+    resolved object arrives on ``AgentRuntimeConfig`` — by value, for a leg turn, and for
+    nothing else. A direct editor turn has no ``leg`` block, so the factory is never called and
+    the runtime sees ``None``: same config as before this note.
+
+    Drives the REAL ``run_agent_turn_preview`` (no ``agent_turn_runner`` override) with only the
+    runtime's model call stubbed, exactly as the session-folder test above does — the config is
+    assembled inside that function, so an executor-level capture would prove nothing.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+    )
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(lambda _cls, _root=None: base_config),
+    )
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: list = []
+
+    def fake_turn(_prompt, config, **_kwargs):
+        seen.append(config.platform_reads)
+        turn_dir = tmp_path / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    sentinel = object()
+    calls: list = []
+
+    def factory(envelope):
+        calls.append(envelope.run_id)
+        return sentinel if "leg" in envelope.config else None
+
+    host = dataclass_replace(_turn_host(client, None), platform_reads_factory=factory)
+
+    leg = _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0))
+    status, response, _, _ = execute_agent_turn_job(leg, store=store, host=host, event_sink=None)
+    assert status == "succeeded", response
+
+    direct = _scene_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {
+                "prompt": "Repair the headline",
+                "scene": minimal_scene(),
+                "document_id": document["id"],
+            }
+        },
+    )
+    status, response, _, _ = execute_agent_turn_job(direct, store=store, host=host, event_sink=None)
+    assert status == "succeeded", response
+
+    assert seen == [sentinel, None]
+    # ...and the factory was asked ONCE, for the leg turn only: a direct turn does not even
+    # reach the platform to be told "no".
+    assert calls == [leg.run_id]
+
+
+def test_a_leg_turn_whose_platform_reads_cannot_be_composed_still_designs(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reads are a capability, not a precondition (design note 2026-09-19).
+
+    A scoped-preference failure refuses the turn, because a queued preference pin is the
+    human's explicit selection and serving it unauthorized would be worse than not running.
+    These reads are the opposite: nothing about them was chosen turn-by-turn, so a turn that
+    cannot compose them designs from the brief exactly as it did before the note.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+    )
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(lambda _cls, _root=None: base_config),
+    )
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: list = []
+
+    def fake_turn(_prompt, config, **_kwargs):
+        seen.append(config.platform_reads)
+        turn_dir = tmp_path / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    def exploding_factory(_envelope):
+        raise RuntimeError("the platform loop is gone")
+
+    host = dataclass_replace(_turn_host(client, None), platform_reads_factory=exploding_factory)
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert seen == [None]

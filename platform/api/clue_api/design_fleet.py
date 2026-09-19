@@ -73,6 +73,7 @@ def build_design_job_handler(
     purpose: str = "design_job_drain",
     preference_resolver_factory: PreferenceResolverFactory | None = None,
     turn_callbacks_factory: Any = None,
+    platform_reads_factory: Any = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -89,6 +90,12 @@ def build_design_job_handler(
     side and returns that turn's ``lumen_agent.usage_collector.TurnCallbacks``. The drain handler
     here takes none by default; :func:`build_design_leg_lane_driver` passes one that opens the
     platform's Langfuse handler, so a leg's design trio reports into the leg's own trace.
+
+    ``platform_reads_factory`` (design note 2026-09-19) is the leg turn's reads — the target
+    account's research through the governed tools and the seller's pinned knowledge — handed
+    over the same way the preference resolver is: a live callable composed HERE with the
+    worker's invoker and storage, which the design side calls and never assembles. Passed on
+    only when present, so a deployment without it composes exactly the handler it did before.
     """
     if not enabled:
         return None
@@ -107,6 +114,10 @@ def build_design_job_handler(
         "spend_drain": _drain_design_spend,
         "turn_callbacks_factory": turn_callbacks_factory,
     }
+    if platform_reads_factory is not None:
+        # The design side puts it on the host it builds, whichever host that is — so this rides
+        # beside the preference resolver's host_provider rather than inside it.
+        extras["platform_reads_factory"] = platform_reads_factory
     if preference_resolver_factory is None:
         handler: Any = _build(**extras)
     else:
@@ -446,7 +457,10 @@ class InlineDesignLaneDriver:
 
 
 def build_design_leg_lane_driver(
-    *, enabled: bool, preference_resolver_factory: PreferenceResolverFactory | None = None
+    *,
+    enabled: bool,
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
+    platform_reads_factory: Any = None,
 ) -> InlineDesignLaneDriver | None:
     """The design-leg lane for :func:`build_agent_turn_work_handler`, or ``None`` when off.
 
@@ -476,6 +490,9 @@ def build_design_leg_lane_driver(
         purpose="design_leg_inline_lane",
         preference_resolver_factory=preference_resolver_factory,
         turn_callbacks_factory=turn_callbacks,
+        # Design note 2026-09-19: the SAME reads the queued drain handler gets — a leg turn
+        # driven inline and one taken over by a design_job worker are one unit of work.
+        platform_reads_factory=platform_reads_factory,
     )
     if handler is None:
         return None
