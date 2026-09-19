@@ -2,6 +2,7 @@ import { DESIGN_PUBLIC_BFF_PREFIX } from "../data/design-bff";
 import type { DrawNode } from "../engine/scene/canvaskit/drawDescriptors";
 import type {
   AssetRecord,
+  Node,
   NodeId,
   Page,
   PageId,
@@ -454,6 +455,15 @@ function digestPassthroughUrl(
  * refresh → measure an infinite loop. `generation` is the kit token maps'
  * generation (kit values land after the first paint and are measurement
  * inputs), so measurements re-run when the brand kit arrives.
+ *
+ * Plan 4 item F adds each text node's SOLVED size to its part: the line pass
+ * (`skiaLineMeasurements`) is keyed on the box the engine solved, so that box
+ * is a measurement input now — a resized box whose signature did not move
+ * would keep serving stale lines (the key misses → heuristic lines). This does
+ * NOT reopen the loop: the injection is deterministic, so once the boxes stop
+ * moving the signature stops moving and the effect reaches a fixed point.
+ * Fixed-point (`toFixed(3)`) formatting matches the measurements' own rounding,
+ * so float noise below a thousandth cannot keep the effect alive.
  */
 export function textMeasurementSignature(
   scene: Scene,
@@ -467,6 +477,7 @@ export function textMeasurementSignature(
     const t = node.kind;
     parts.push(
       [
+        node.id,
         t.content,
         t.font_family,
         t.font_size,
@@ -484,6 +495,9 @@ export function textMeasurementSignature(
         t.font_size_token ?? "_",
         t.line_height_token ?? "_",
         t.letter_spacing_token ?? "_",
+        node.computed
+          ? `${node.computed.layout_bounds.width.toFixed(3)}x${node.computed.layout_bounds.height.toFixed(3)}`
+          : "_",
       ].join("|"),
     );
   }
@@ -530,11 +544,20 @@ export interface ScenePreview {
  * same reason it is upstream — the draw loop then needs no gesture awareness at
  * all, and the previewed node is drawn by exactly the code that draws every
  * other node.
+ *
+ * Rung B (rich-text plan, 2026-08-24) rides the SAME mechanism for the one
+ * other render-time override the canvas needs: `editingNodeId` drops that
+ * node's text payload, so a node under an open caret session paints its fills,
+ * strokes and box as always and its glyphs not at all — the DOM overlay is the
+ * only copy of the string on screen, and the draw loop needs no session
+ * awareness either. A stale id (the node left the scene mid-session) matches
+ * nothing and suppresses nothing.
  */
 export function sceneArtboardModel(
   scene: Scene,
   pageId: PageId | null,
   preview: ScenePreview | null = null,
+  editingNodeId: NodeId | null = null,
 ): SceneArtboardModel | null {
   const page = pageId ? scene.pages[pageId] : null;
   if (!page) {
@@ -543,14 +566,16 @@ export function sceneArtboardModel(
   const descriptor = pageDescriptor(page);
   const inFlow = page.children
     .filter((nodeId) => !isNodePinned(scene, nodeId))
-    .map((nodeId) => buildDrawNode(scene, page, nodeId, null, preview))
+    .map((nodeId) =>
+      buildDrawNode(scene, page, nodeId, null, preview, editingNodeId),
+    )
     .filter((node): node is DrawNode => node !== null);
   return {
     page: descriptor,
     // Pinned nodes are skipped inline and hoisted here, painted last (above
     // in-flow content) from their page-space computed box — the engine's own
     // `pinned_paint_pass` order.
-    nodes: [...inFlow, ...pinnedDrawNodes(scene, page, preview)],
+    nodes: [...inFlow, ...pinnedDrawNodes(scene, page, preview, editingNodeId)],
     rect: { x: 0, y: 0, width: descriptor.width, height: descriptor.height },
   };
 }
@@ -561,12 +586,19 @@ function buildDrawNode(
   nodeId: NodeId,
   parentComputedOrigin: { x: number; y: number } | null,
   preview: ScenePreview | null,
+  editingNodeId: NodeId | null,
 ): DrawNode | null {
   const node = scene.nodes[nodeId];
   if (!node) {
     return null;
   }
   const descriptor = nodeDescriptor(scene, node, page, parentComputedOrigin);
+  if (editingNodeId === nodeId) {
+    // `drawDescriptors` skips the whole text leg on a missing payload, so
+    // dropping it is the complete suppression — no empty-string special case
+    // reaches the painter, and every other descriptor field stays honest.
+    descriptor.text = undefined;
+  }
   if (preview && preview.nodeId === nodeId) {
     // The preview box is page-ABSOLUTE descriptor px; a descriptor's x/y are
     // PARENT-relative (`nodeDescriptor` subtracts the parent's computed
@@ -589,7 +621,9 @@ function buildDrawNode(
     descriptor,
     children: node.children
       .filter((childId) => !isNodePinned(scene, childId))
-      .map((childId) => buildDrawNode(scene, page, childId, childOrigin, preview))
+      .map((childId) =>
+        buildDrawNode(scene, page, childId, childOrigin, preview, editingNodeId),
+      )
       .filter((child): child is DrawNode => child !== null),
   };
 }
@@ -598,6 +632,7 @@ function pinnedDrawNodes(
   scene: Scene,
   page: Page,
   preview: ScenePreview | null,
+  editingNodeId: NodeId | null,
 ): DrawNode[] {
   const out: DrawNode[] = [];
   const walk = (nodeId: NodeId) => {
@@ -606,7 +641,7 @@ function pinnedDrawNodes(
       return;
     }
     if (isNodePinned(scene, nodeId)) {
-      const built = buildDrawNode(scene, page, nodeId, null, preview);
+      const built = buildDrawNode(scene, page, nodeId, null, preview, editingNodeId);
       if (built) {
         out.push(built);
       }
@@ -632,6 +667,9 @@ function pinnedDrawNodes(
  */
 export const SELECTION_OUTLINE_COLOR = "#4F46E5";
 export const SELECTION_OUTLINE_WIDTH = 1.5;
+/** Plan 3 R4: the hover outline — the selection colour, 1px, translucent, no handles. */
+export const HOVER_OUTLINE_WIDTH = 1;
+export const HOVER_OUTLINE_OPACITY = 0.55;
 
 /**
  * The four corner handles of the same G-A ruling — **approved, and LIVE since
@@ -660,6 +698,65 @@ export interface SceneSelectionOutline {
    * rotates a node about (`drawDescriptors`: translate to the origin, then
    * `rotate(rotation, 0, 0)`). */
   rotation: number;
+  /** Plan 4 item F: for a text node whose layout box differs from its painted
+   * lines, the layout box — drawn dashed, and where the resize handles sit
+   * (a resize changes the BOX). Null for every other selection, for a hug box,
+   * and during a gesture preview (the preview IS the box). Screen px, like
+   * the outline itself; rotation pivots on its origin when present. */
+  frame: { x: number; y: number; width: number; height: number } | null;
+}
+
+/** Plan 4 item F: the layout box may differ from the painted box by taffy's
+ * whole-pixel rounding (a hug box sits up to half a pixel under the measured
+ * height — `layout.rs` ROUNDING_TOLERANCE); only a larger difference is a
+ * fixed size worth a frame. Scene units. */
+const TEXT_FRAME_TOLERANCE = 0.5;
+
+/**
+ * The union of a text node's PAINTED line boxes (page space, unrotated — the
+ * frame `layout_bounds` is in), or null when the node is not text or carries
+ * no positive-area line (a stored scene, an engine that predates the lines, an
+ * empty string).
+ *
+ * This is what a text selection outlines: the glyphs, not the box the author
+ * typed. A fixed box the copy does not fill outlined empty space, and a glyph
+ * painted past a box the copy outgrew was outlined nowhere near where it sits.
+ */
+export function sceneTextPaintedBox(node: Node): Box | null {
+  if (node.kind.kind !== "text") {
+    return null;
+  }
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const line of node.computed?.text_lines ?? []) {
+    if (!(line.width > 0) || !(line.height > 0)) {
+      continue;
+    }
+    left = Math.min(left, line.x);
+    top = Math.min(top, line.y);
+    right = Math.max(right, line.x + line.width);
+    bottom = Math.max(bottom, line.y + line.height);
+  }
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return null;
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/** Plan 4 item F: does the layout box stand apart from the painted glyphs by
+ * more than the rounding contract — i.e. is there a box worth drawing dashed
+ * alongside the text? Both boxes are page-space scene units. */
+export function sceneTextFrameDiffers(layout: Box, painted: Box): boolean {
+  return (
+    Math.abs(layout.x - painted.x) > TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.y - painted.y) > TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.x + layout.width - (painted.x + painted.width)) >
+      TEXT_FRAME_TOLERANCE ||
+    Math.abs(layout.y + layout.height - (painted.y + painted.height)) >
+      TEXT_FRAME_TOLERANCE
+  );
 }
 
 /**
@@ -721,6 +818,9 @@ export function selectionOutlineForBox({
     width: screen.width,
     height: screen.height,
     rotation: Number.isFinite(rotation) ? rotation : 0,
+    // Plan 4 item F: one box in, one box out. The dashed layout frame is a
+    // TEXT selection's second box, so it is `sceneSelectionOutline`'s to add.
+    frame: null,
   };
 }
 
@@ -741,6 +841,12 @@ export function selectionOutlineForBox({
  * click can select anything at all — AD2.5) the geometry is there; without it
  * there is no outline rather than a box guessed from `transform`, which for an
  * auto-laid-out child would be drawn somewhere the node is not.
+ *
+ * Plan 4 item F (ruling R5): for a TEXT node the engine has placed lines for,
+ * the stroked box is the union of those painted lines and the layout box rides
+ * along as `frame` when the two differ. The chrome model's box is untouched —
+ * gesture geometry stays the layout box, because that is what a drag or a
+ * resize changes.
  */
 export function sceneSelectionOutline({
   artboard,
@@ -784,13 +890,46 @@ export function sceneSelectionOutline({
   if (!selectionBox) {
     return null;
   }
-  return selectionOutlineForBox({
+  // Plan 4 item F (ruling R5): a text node is outlined by the glyphs it paints.
+  // `selectionBox.box` stays the layout box everywhere else — it is the gesture
+  // box, and a resize changes the BOX — so the painted union is only ever the
+  // stroke, with the layout box returned alongside it as the dashed frame.
+  const node = scene.nodes[selectedNodeId];
+  const painted = node ? sceneTextPaintedBox(node) : null;
+  if (!painted) {
+    return selectionOutlineForBox({
+      artboard,
+      box: selectionBox.box,
+      nodeId: selectionBox.nodeId,
+      rotation: selectionBox.rotation,
+      viewport,
+    });
+  }
+  const outline = selectionOutlineForBox({
     artboard,
-    box: selectionBox.box,
+    box: painted,
     nodeId: selectionBox.nodeId,
     rotation: selectionBox.rotation,
     viewport,
   });
+  if (!outline) {
+    return null;
+  }
+  const frame = sceneTextFrameDiffers(selectionBox.box, painted)
+    ? selectionOutlineForBox({
+        artboard,
+        box: selectionBox.box,
+        nodeId: selectionBox.nodeId,
+        rotation: selectionBox.rotation,
+        viewport,
+      })
+    : null;
+  return {
+    ...outline,
+    frame: frame
+      ? { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
+      : null,
+  };
 }
 
 /** A descriptor-px box back in the scene units `selectionOutlineForBox` takes
@@ -813,10 +952,17 @@ function sceneBoxFromDescriptor(box: Box, unitScale: number): Box {
  *
  * G-A-approved geometry, **rendered since AD4.C** (see the handle constants
  * above).
+ *
+ * Plan 4 item F: any box, not only the outline itself — a text selection whose
+ * stroke is its painted lines hands its dashed `frame` here instead, since the
+ * box is what a resize changes.
  */
-export function selectionHandleRects(
-  outline: SceneSelectionOutline,
-): Array<{ x: number; y: number; size: number }> {
+export function selectionHandleRects(outline: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): Array<{ x: number; y: number; size: number }> {
   const half = SELECTION_HANDLE_SIZE / 2;
   const right = outline.x + outline.width;
   const bottom = outline.y + outline.height;

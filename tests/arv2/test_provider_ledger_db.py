@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -18,6 +18,7 @@ from clue_api.arv2.provider_ledger import (
     drain_provider_calls,
 )
 from clue_api.arv2.sinks import LedgerRow, RawRecord, RawRequest, RawResponse, sha256_hex
+from clue_api.provider_incidents import open_incidents
 from clue_core import decode_jsonb
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -216,3 +217,234 @@ def test_a_foreign_call_id_is_derived_and_a_redrain_inserts_nothing_twice() -> N
         return counts
 
     assert run_async(scenario()) == [1, 1]
+
+
+def test_a_workspace_only_stamp_lands_null_project_run_and_job() -> None:
+    """Slice 1b: a display page or a chat-turn tool has no project, run or job to stamp — the
+    row is workspace spend, and the three columns say so with NULL rather than a placeholder."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        ledger = BufferedLedger()
+        ledger.record(_result_row(row_id="r-ws-only", call_id=str(uuid4()), raw_ref=None))
+        async with rollback_conn(seed_pack=False) as conn:
+            await drain_provider_calls(
+                conn,
+                raw=BufferedRawSink(),
+                ledger=ledger,
+                artifacts=FakeArtifacts(),
+                stamp=LedgerStamp(workspace_id="ws_only"),
+            )
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT workspace_id, project_id, project_run_id, entity_research_job_id "
+                        "FROM provider_call_ledger WHERE ledger_id = :id"
+                    ),
+                    {"id": uuid5(NAMESPACE_URL, "arv2-ledger:r-ws-only")},
+                )
+            ).one()
+        return tuple(row)
+
+    assert run_async(scenario()) == ("ws_only", None, None, None)
+
+
+def _incident_row(
+    provider: str,
+    *,
+    status: int,
+    extras: dict[str, object],
+    label: str = "round-1",
+    operation: str = "agent_completion",
+    recorded_at: datetime = NOW,
+) -> LedgerRow:
+    return LedgerRow(
+        row_id=str(uuid4()),
+        call_id=str(uuid4()),
+        phase="result",
+        provider=provider,
+        operation=operation,
+        label=label,
+        recorded_at=recorded_at,
+        http_status=status,
+        latency_ms=10,
+        attempts=1,
+        cost_usd=Decimal(0),
+        outcome="ok" if status < 400 else "client_error",
+        extras=extras,
+    )
+
+
+def test_the_drain_opens_an_incident_from_a_stamped_refusal_and_closes_it_on_a_later_success() -> (
+    None
+):
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            stamp = LedgerStamp(
+                workspace_id="ws_drain",
+                project_id="prj_1",
+                project_run_id=str(uuid4()),
+                job_id=uuid4(),
+            )
+            ledger = BufferedLedger()
+            ledger.record(
+                _incident_row(
+                    "openrouter",
+                    status=403,
+                    extras={
+                        "provider_failure": {
+                            "kind": "refusal",
+                            "reason": "key_limit",
+                            "message": "Key limit exceeded",
+                        },
+                        "cost_source": "unpriced",
+                    },
+                )
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            (incident,) = await open_incidents(conn, providers=["openrouter"])
+            assert incident.reason == "key_limit" and incident.surfaces == {"research_job": 1}
+            ledger.record(
+                _incident_row("openrouter", status=200, extras={"cost_source": "metered"})
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            assert await open_incidents(conn, providers=["openrouter"]) == ()
+
+    run_async(scenario())
+
+
+def test_the_drain_counts_failures_toward_the_threshold_across_drains() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            stamp = LedgerStamp(workspace_id="ws_drain", project_run_id=str(uuid4()))
+            failure_extras: dict[str, object] = {
+                "provider_failure": {
+                    "kind": "failure",
+                    "reason": "server_error",
+                    "message": "503",
+                },
+                "cost_source": "estimate",
+            }
+            for _ in range(2):
+                ledger = BufferedLedger()
+                ledger.record(
+                    _incident_row(
+                        "exa",
+                        status=503,
+                        operation="answer",
+                        label="discovery:x",
+                        extras=failure_extras,
+                    )
+                )
+                await drain_provider_calls(
+                    conn,
+                    raw=BufferedRawSink(),
+                    ledger=ledger,
+                    artifacts=FakeArtifacts(),
+                    stamp=stamp,
+                )
+            assert await open_incidents(conn, providers=["exa"]) == ()
+            ledger = BufferedLedger()
+            ledger.record(
+                _incident_row(
+                    "exa",
+                    status=503,
+                    operation="answer",
+                    label="discovery:y",
+                    extras=failure_extras,
+                )
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            (incident,) = await open_incidents(conn, providers=["exa"])
+            assert incident.kind == "failure" and incident.surfaces == {"discovery": 1}
+
+    run_async(scenario())
+
+
+REFUSAL_EXTRAS: dict[str, object] = {
+    "provider_failure": {
+        "kind": "refusal",
+        "reason": "credits_exhausted",
+        "message": "payment_required",
+    },
+    "cost_source": "unpriced",
+}
+
+
+def test_an_ok_row_earlier_in_the_batch_than_the_refusal_does_not_close_the_incident() -> None:
+    """A drain is a whole hop: two hundred good rows and then the 402 that stopped it. The
+    provider's *last* word in the batch decides, so that batch ends open, not opened-and-closed."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            stamp = LedgerStamp(workspace_id="ws_drain", project_run_id=str(uuid4()))
+            ledger = BufferedLedger()
+            ledger.record(
+                _incident_row(
+                    "exa_websets",
+                    status=200,
+                    operation="websets:get",
+                    extras={"cost_source": "metered"},
+                )
+            )
+            ledger.record(
+                _incident_row(
+                    "exa_websets",
+                    status=402,
+                    operation="websets:create",
+                    extras=REFUSAL_EXTRAS,
+                    recorded_at=NOW + timedelta(seconds=1),
+                )
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            (incident,) = await open_incidents(conn, providers=["exa_websets"])
+            assert incident.reason == "credits_exhausted"
+
+            ledger = BufferedLedger()
+            ledger.record(
+                _incident_row(
+                    "exa_websets",
+                    status=200,
+                    operation="websets:get",
+                    extras={"cost_source": "metered"},
+                    recorded_at=NOW + timedelta(seconds=2),
+                )
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            assert await open_incidents(conn, providers=["exa_websets"]) == ()
+
+    run_async(scenario())
+
+
+def test_an_onboarding_row_counts_as_onboarding_even_though_it_stamps_a_job_id() -> None:
+    """Slice 1b: an onboarding run stamps its own id as the job, so the label has to be read first
+    or the onboarding surface would never appear in an incident's breakdown."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            stamp = LedgerStamp(workspace_id="ws_drain", job_id=uuid4())
+            ledger = BufferedLedger()
+            ledger.record(
+                _incident_row(
+                    "openrouter",
+                    status=402,
+                    label="onboarding-recon",
+                    extras=REFUSAL_EXTRAS,
+                )
+            )
+            await drain_provider_calls(
+                conn, raw=BufferedRawSink(), ledger=ledger, artifacts=FakeArtifacts(), stamp=stamp
+            )
+            (incident,) = await open_incidents(conn, providers=["openrouter"])
+            assert incident.surfaces == {"onboarding": 1}
+
+    run_async(scenario())

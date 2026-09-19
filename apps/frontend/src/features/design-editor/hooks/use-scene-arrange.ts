@@ -16,6 +16,7 @@ import {
   type DistributeAxis,
 } from "../engine/scene/alignDistribute";
 import type { Operation, Scene } from "../engine/scene/contracts";
+import type { SceneWriteGate } from "./use-scene-manual-edits";
 import {
   groupEdit,
   mintGroupId,
@@ -82,11 +83,17 @@ export interface SceneArrangeDeps {
   applyEdit: (edit: StructuredEdit) => void;
   /** The manual-edits controller's one operation write path. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
-  /** Is the write path armed and the engine live? Asked before the operation
-   * batches, whose two silent refusals would otherwise say nothing at all. */
-  canApply: () => boolean;
+  /** May a write land — armed, engine live, and (task 4) not locked behind a
+   * running design turn? Asked before the operation batches, whose two silent
+   * refusals would otherwise say nothing at all. The whole gate rather than a
+   * boolean, so the ONE refusal that has words can use them (fix round 1, I3):
+   * the §1.5 keymap (⌘G / ⇧⌘G / ⌘] …) reaches these actions with no disabled
+   * control in front of it to explain the silence, exactly as ⌘Z does. */
+  writeGate: () => SceneWriteGate;
   /** Clears both inline slots — a new arrange supersedes what the last said. */
   clearMessages: () => void;
+  /** Task 4 (I3): sets the inspector's existing inline NOTE line. */
+  onNote: (message: string) => void;
   /** What the buttons are offering, so a keypress can never fire an action the
    * panel refuses. */
   enablement: ArrangeEnablement;
@@ -111,10 +118,16 @@ function commitArrange(
   deps: SceneArrangeDeps,
   build: (scene: Scene, selectedIds: readonly string[]) => Operation[],
 ): void {
-  // `canApply` is asked up front because two of `applyOps`'s three refusals say
+  // The gate is asked up front because two of `applyOps`'s three refusals say
   // NOTHING (not armed; the engine is D9 read-only) — the same reason the
-  // Replace-image flow asks it.
-  if (!deps.scene || !deps.canApply()) {
+  // Replace-image flow asks it. The third, the agent-run lock, DOES say
+  // something, and a ⌘G that silently did nothing is what it is for.
+  if (!deps.scene) {
+    return;
+  }
+  const gate = deps.writeGate();
+  if (!gate.allowed) {
+    if (gate.note !== null) deps.onNote(gate.note);
     return;
   }
   const operations = build(deps.scene, deps.selectedIds);
@@ -187,11 +200,12 @@ export function useSceneArrange(
   const {
     applyEdit,
     applyOps,
-    canApply,
     clearMessages,
     documentId,
+    onNote,
     scene,
     selectedIds,
+    writeGate,
   } = options;
 
   const enablement = useMemo(
@@ -206,21 +220,23 @@ export function useSceneArrange(
   const depsRef = useRef<SceneArrangeDeps>({
     applyEdit,
     applyOps,
-    canApply,
     clearMessages,
     enablement,
+    onNote,
     scene,
     selectedIds,
+    writeGate,
   });
   useEffect(() => {
     depsRef.current = {
       applyEdit,
       applyOps,
-      canApply,
       clearMessages,
       enablement,
+      onNote,
       scene,
       selectedIds,
+      writeGate,
     };
   });
 

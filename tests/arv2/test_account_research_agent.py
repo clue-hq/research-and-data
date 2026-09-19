@@ -32,6 +32,7 @@ from clue_api.arv2.gemini_media_client import MediaBudget
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Settings
 from clue_core import EntityId
+from clue_core.provider_failures import ProviderFailure
 
 SCOPE = JobScope(
     workspace_id="ws-1",
@@ -409,6 +410,8 @@ def test_a_model_call_that_raises_lands_a_transport_error_row_and_still_reports_
     assert row.error_code == "RuntimeError"
     assert row.cost_usd is None
     assert row.http_status is None
+    assert "provider_failure" not in row.extras, "a fault nobody can classify names no provider"
+    assert outcome.provider_failure is None
 
 
 def test_a_re_driven_jobs_rounds_do_not_collide_with_its_first_attempts_rows() -> None:
@@ -432,3 +435,40 @@ def test_a_re_driven_jobs_rounds_do_not_collide_with_its_first_attempts_rows() -
     assert first == [f"model:{SCOPE.job_id}:1:1"]
     assert second == [f"model:{SCOPE.job_id}:2:1"]
     assert not set(first) & set(second)
+
+
+class _Denied(Exception):
+    """A refusal shaped the way the OpenAI-compatible SDKs raise one: a status and a repr body."""
+
+    status_code = 403
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Error code: 403 - {'error': {'message': 'Key limit exceeded (weekly limit)',"
+            " 'code': 403}}"
+        )
+
+
+def test_a_round_that_is_refused_stamps_the_provider_failure_on_its_ledger_row() -> None:
+    """A refusal is the provider's decision, so the round row carries its verdict, not just a
+    class name — that stamp is what the drain reads to open one durable incident."""
+
+    runtime = _runtime()
+
+    def respond(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        raise _Denied()
+
+    outcome = _run(_drive(_ScriptedModel(respond), [_counting_tool(runtime)], runtime))
+
+    assert outcome.reason == "model_error"
+    (row,) = runtime.model_ledger.drain()
+    assert row.error_code == "_Denied"
+    assert row.extras["provider_failure"] == {
+        "kind": "refusal",
+        "reason": "key_limit",
+        "message": "Key limit exceeded (weekly limit)",
+    }
+    assert outcome.provider_failure == ProviderFailure(
+        "openrouter", "refusal", "key_limit", "Key limit exceeded (weekly limit)"
+    )

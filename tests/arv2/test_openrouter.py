@@ -64,3 +64,31 @@ def test_the_cost_reader_falls_back_to_cost_and_then_to_nothing() -> None:
         Decimal("0.5")
     )
     assert openrouter_cost_reader(HttpResponse(200, {}, b"not json")).cost_usd is None
+
+
+def test_the_cost_reader_carries_the_model_and_token_counts_as_extras() -> None:
+    """The per-model cost breakdown reads ``extras_json->>'model'`` and the three token keys the
+    research agent's rounds write; every chat/completions row through this reader says the same."""
+    body = (
+        b'{"id":"gen-2","model":"openai/gpt-5-mini","usage":{"prompt_tokens":5783,'
+        b'"completion_tokens":164,"total_tokens":5947,"cost":0,'
+        b'"prompt_tokens_details":{"cached_tokens":1200},'
+        b'"cost_details":{"upstream_inference_cost":0.00177}}}'
+    )
+    reading = openrouter_cost_reader(HttpResponse(200, {}, body))
+    assert reading.cost_usd == Decimal("0.00177")
+    assert dict(reading.extras) == {
+        "model": "openai/gpt-5-mini",
+        "prompt_tokens": 5783,
+        "completion_tokens": 164,
+        "cached_prompt_tokens": 1200,
+    }
+
+
+def test_the_cost_reader_says_nothing_about_tokens_it_was_not_told() -> None:
+    assert (
+        dict(openrouter_cost_reader(HttpResponse(200, {}, b'{"usage":{"cost":0.5}}')).extras) == {}
+    )
+    assert dict(openrouter_cost_reader(HttpResponse(200, {}, b'{"model":"m"}')).extras) == {
+        "model": "m"
+    }

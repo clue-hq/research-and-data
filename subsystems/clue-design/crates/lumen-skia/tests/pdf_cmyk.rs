@@ -109,6 +109,7 @@ fn scene_with(background: &str, text_color: Option<&str>) -> Scene {
                 width: 160.0,
                 height: 60.0,
             },
+            text_lines: Vec::new(),
         });
         node.fills = vec![solid_fill("paint_text", color)];
         scene.nodes.insert(node.id.clone(), node);

@@ -13,7 +13,7 @@ import hashlib
 import threading
 import time
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -32,6 +32,8 @@ from clue_api.arv2.onboarding_driver import (
     onboarding_work_id,
 )
 from clue_api.arv2.onboarding_lineage import ProductLink
+from clue_api.arv2.provider_ledger import DrainReport, LedgerStamp
+from clue_api.arv2.sinks import LedgerRow
 from clue_config import Settings
 from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
@@ -276,6 +278,52 @@ class FakeArtifacts:
         )
 
 
+class FakeDrain:
+    """Records every drain the driver asks for: the stamp and the rows it was handed."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[LedgerStamp, list[LedgerRow]]] = []
+
+    async def __call__(
+        self, conn: Any, *, raw: Any, ledger: Any, artifacts: Any, stamp: LedgerStamp
+    ) -> DrainReport:
+        del conn, artifacts
+        rows = ledger.drain()
+        raw.drain()
+        self.calls.append((stamp, rows))
+        return DrainReport(
+            rows=len(rows), artifacts=0, cost_usd=Decimal(0), credits=Decimal(0), media_seconds=0
+        )
+
+
+def _recording_factory(exa: FakeExa) -> Any:
+    """The production factory's shape: one client per step over the step's own sinks. It writes
+    one result row into the step's ledger so a drain has something to land."""
+
+    def factory(*, run_id: Any, step_label: str, raw: Any, ledger: Any) -> FakeExa:
+        del raw
+        ledger.record(
+            LedgerRow(
+                row_id=f"{run_id}:{step_label}",
+                call_id=str(uuid4()),
+                phase="result",
+                provider="exa",
+                operation="agent_run",
+                label=step_label,
+                recorded_at=datetime(2026, 9, 7, tzinfo=UTC),
+                http_status=200,
+                latency_ms=5,
+                attempts=1,
+                cost_usd=Decimal("0.02"),
+                outcome="ok",
+                extras={"cost_source": "metered"},
+            )
+        )
+        return exa
+
+    return factory
+
+
 class NullConn:
     async def __aenter__(self) -> NullConn:
         return self
@@ -323,13 +371,14 @@ def _handler(
     known_products: Any = None,
     reconciler_factory: Any = None,
     settings_overrides: dict[str, Any] | None = None,
+    drain: Any = None,
 ) -> OnboardingRunWorkHandler:
     settings = Settings(_env_file=None, **(settings_overrides or {}))
     return OnboardingRunWorkHandler(
         settings=settings,
         conn_factory=NullConn,
         artifacts=FakeArtifacts(),
-        exa=lambda *, run_id, step_label: exa,
+        exa=_recording_factory(exa),
         client_binder=None,
         synthesis=synthesis,
         clock=lambda: date(2026, 9, 7),
@@ -337,6 +386,7 @@ def _handler(
         synchronize_catalog=links or _no_products,
         known_products=known_products or _no_known_products,
         reconciler_factory=reconciler_factory,
+        drain=drain or FakeDrain(),
     )
 
 
@@ -1003,9 +1053,8 @@ def test_the_lineup_carries_each_entrys_official_url_into_the_catalog_products()
 
 
 def test_the_catalog_sync_gets_a_reconciler_built_for_this_run() -> None:
-    """One reconciler per run, because its ``ProviderCaller`` writes under the run's own folder
-    (``arv2_raw_root/onboarding/<run_id>/catalog-reconcile/``) — so the factory takes the run id
-    rather than the handler holding one caller for every run it ever drives."""
+    """One reconciler per run, built over the catalog step's own buffered sinks so its call lands
+    on the ledger with the run's stamp (slice 1b) — the factory takes the sinks, not a folder."""
     exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
     seen: dict[str, Any] = {}
     built: list[Any] = []
@@ -1015,8 +1064,8 @@ def test_the_catalog_sync_gets_a_reconciler_built_for_this_run() -> None:
             del kw
             return ()
 
-    def factory(run_id: Any) -> Reconciler:
-        built.append(run_id)
+    def factory(raw: Any, ledger: Any) -> Reconciler:
+        built.append((raw, ledger))
         return Reconciler()
 
     async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
@@ -1030,7 +1079,7 @@ def test_the_catalog_sync_gets_a_reconciler_built_for_this_run() -> None:
 
     asyncio.run(handler.handle(_context(run_id)))
 
-    assert built == [run_id]
+    assert len(built) == 1
     assert isinstance(seen["reconciler"], Reconciler)
 
 
@@ -1049,3 +1098,47 @@ def test_without_a_composed_reconciler_the_sync_runs_its_deterministic_rungs_alo
     asyncio.run(_handler(exa, FakeStore(), links=fake_sync).handle(_context(uuid4())))
 
     assert seen["reconciler"] is None
+
+
+def test_every_provider_step_drains_its_rows_with_the_run_as_the_job() -> None:
+    """Slice 1b, D1: the recon subjects, the lineup and the catalog step each drain once, and
+    every drain is stamped with the workspace and the run id as the job — never a project.
+
+    With these fixtures the catalog synchronizer returns no links, so no product-research step is
+    opened: the four drains are overview, reviews, lineup and the catalog step, whose own drain
+    carries no row because no reconciler was composed — and it still runs, because a step's rows
+    are money whether or not the step spent any.
+    """
+    exa = _all_answers()
+    drain = FakeDrain()
+    run_id = uuid4()
+
+    asyncio.run(_handler(exa, FakeStore(), drain=drain).handle(_context(run_id)))
+
+    assert len(drain.calls) == 4
+    labels = sorted(row.label for _stamp, rows in drain.calls for row in rows)
+    assert labels == sorted(["lineup", "overview", "reviews"])
+    assert {stamp for stamp, _rows in drain.calls} == {
+        LedgerStamp(workspace_id="ws-drv", job_id=run_id)
+    }
+
+
+def test_a_step_whose_provider_call_raises_still_drains() -> None:
+    """The failed call's estimate and error rows are money and evidence; the drain runs in the
+    step's finally, whatever the call's outcome."""
+    exa = _all_answers()
+    original = exa.agent_run
+
+    def boom(**kw: Any) -> Any:
+        if kw.get("label", "").startswith("reviews"):
+            raise RuntimeError("provider down")
+        return original(**kw)
+
+    exa.agent_run = boom  # type: ignore[method-assign]
+    drain = FakeDrain()
+    store = FakeStore()
+
+    asyncio.run(_handler(exa, store, drain=drain).handle(_context(uuid4())))
+
+    assert store.landed("reviews")["status"] == "failed"
+    assert any(row.label == "reviews" for _stamp, rows in drain.calls for row in rows)

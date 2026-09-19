@@ -399,16 +399,26 @@ MemoryWriteFactoryBuilder = Callable[
 
 
 def stage0_trial_context_policy() -> ContextAssemblyPolicy:
-    """Conservative seven-layer budget with room for a long kickoff interview."""
+    """Conservative seven-layer budget with room for a long kickoff interview.
+
+    L1 tracks the production conversation's 40,000 for the same reason: this trial resolves the
+    same ``HEAD_OF_ABM`` profile, so it carries the same system prompt — prompt body plus generated
+    capability map — and the fifteen-chapter operating manual put that prompt within 300 bytes of
+    the old 24,000, which was then a ceiling that failed the turn. Since v3 (founder ruling
+    2026-09-14) no layer budget withholds context or fails an assembly; these numbers are what the
+    trial expects each layer to cost, and an overrun is logged rather than enforced. The trial and
+    production still carry the *same* numbers so a trial keeps telling the truth about the profile
+    production runs.
+    """
 
     return ContextAssemblyPolicy(
-        version="stage0-trial-context-v1",
+        version="stage0-trial-context-v3",
         token_counter_version="utf8-bytes-v1",
         budgets=tuple(
             LayerBudget(layer=layer, max_tokens=budget)
             for layer, budget in zip(
                 tuple(ContextLayer),
-                (24_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
+                (40_000, 12_000, 48_000, 16_000, 8_000, 96_000, 32_000),
                 strict=True,
             )
         ),
@@ -747,88 +757,94 @@ class Stage0Trial:
         lease = self._components.workspaces.acquire(
             workspace_id=self.state.workspace_id,
             project_id=self.state.project_id,
+            thread_id=self.state.thread_id,
             execution_id=execution_id,
             policy=resolved.profile.workspace,
         )
-        focus_ref = DomainObjectRef(
-            workspace_id=self.state.workspace_id,
-            object_type="client_account",
-            object_id=str(self.state.client_entity_id),
-            version=self.state.client_kb_version,
-        )
-        request = AgentTurnRequest(
-            turn_id=turn_id,
-            thread_id=self.state.thread_id,
-            constitution=AgentConstitution(
+        try:
+            focus_ref = DomainObjectRef(
                 workspace_id=self.state.workspace_id,
-                project_id=self.state.project_id,
-                execution_id=execution_id,
-                actor_id="stage0-trial-user",
-                role=AgentRole.HEAD_OF_ABM,
-                brand_id=self.state.brand_id,
-                product_id=self.state.product_id,
-                client_entity_id=str(self.state.client_entity_id),
-                workspace_root_id=lease.identity.workspace_root_id,
-                project_card_ref=card_ref,
-                budget_envelope_ref=budget_ref,
-                profile_ref=resolved.profile_ref,
-                resource_manifest_ref=manifest_ref,
-                resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
-                focus_refs=(focus_ref,),
-            ),
-            user_message_artifact_ref=user_ref,
-            focus_refs=(focus_ref,),
-            requested_at=requested_at,
-        )
-        # Reserve the sequence before model spend. A crash leaves an explicit unfinalized turn and
-        # cannot let a later, different message reuse its immutable turn/execution identity.
-        # (It now happens just *before* the shared execution path rather than inside it — strictly
-        # earlier than before, so the guarantee is unchanged.)
-        self.state = self.state.model_copy(update={"next_turn": sequence + 1})
-        self.paths.save_state(self.state)
-        result = await self._engine.execute(
-            request=request,
-            lease=lease,
-            budget_limit_millicents=budget_limit,
-            completion_guard=Stage0RoutingReceiptGuard(
-                workspace_id=self.state.workspace_id,
-                onboarding_input_id=captured.onboarding_input_id,
-                user_message=message,
-                conn_factory=self._conn_factory,
-            ),
-        )
-        outcome = result.outcome
-        assistant_message = result.assistant_message
-        if (
-            outcome.finalization_ref is not None
-            and outcome.status is AgentExecutionStatus.COMPLETED
-        ):
-            # ``actor='human'`` matches the gate's declared authority in ``recipe0-stage0`` — the
-            # human who submitted the turn is the one whose interaction just ended. This read
-            # ``'agent'`` until FI Lane D D4: a latent mismatch against a HUMAN-authority gate that
-            # the production runner (``agent_turn_fleet_wiring``) never inherited, kept alive only
-            # because ``decide_gate`` is the trial's last step and its ``ExecutionConflict`` was
-            # never reached in a passing run. Reconciled here so one gate has one authority.
-            await self._executor.decide_gate(
-                execution_id=execution_id,
-                node_key="stage0_interactions",
-                actor="human",
-                decision="complete",
+                object_type="client_account",
+                object_id=str(self.state.client_entity_id),
+                version=self.state.client_kb_version,
             )
-            completed = await self._drive(execution_id)
-            if completed is not ExecutionStatus.COMPLETED:
-                raise RuntimeError("completed Stage-0 turn did not complete Recipe 0")
-        await self._refresh_client_kb_from_conversation()
-        # Readiness is deterministic evidence, not a thing the agent may claim: recompute it from
-        # durable state after any turn that actually routed material information, so the readiness
-        # ledger reflects the conversation instead of staying empty for the whole trial.
-        await self._recompute_readiness(
-            turn_id=turn_id,
-            onboarding_input_id=captured.onboarding_input_id,
-        )
-        self.paths.save_state(self.state)
-        await self.export_report()
-        return outcome, assistant_message
+            request = AgentTurnRequest(
+                turn_id=turn_id,
+                thread_id=self.state.thread_id,
+                constitution=AgentConstitution(
+                    workspace_id=self.state.workspace_id,
+                    project_id=self.state.project_id,
+                    execution_id=execution_id,
+                    actor_id="stage0-trial-user",
+                    role=AgentRole.HEAD_OF_ABM,
+                    brand_id=self.state.brand_id,
+                    product_id=self.state.product_id,
+                    client_entity_id=str(self.state.client_entity_id),
+                    workspace_root_id=lease.identity.workspace_root_id,
+                    project_card_ref=card_ref,
+                    budget_envelope_ref=budget_ref,
+                    profile_ref=resolved.profile_ref,
+                    resource_manifest_ref=manifest_ref,
+                    resource_manifest_sha256=resolved.resource_manifest.aggregate_sha256,
+                    focus_refs=(focus_ref,),
+                ),
+                user_message_artifact_ref=user_ref,
+                focus_refs=(focus_ref,),
+                requested_at=requested_at,
+            )
+            # Reserve the sequence before model spend. A crash leaves an explicit unfinalized
+            # turn and cannot let a later, different message reuse its immutable turn/execution
+            # identity. (It now happens just *before* the shared execution path rather than
+            # inside it — strictly earlier than before, so the guarantee is unchanged.)
+            self.state = self.state.model_copy(update={"next_turn": sequence + 1})
+            self.paths.save_state(self.state)
+            result = await self._engine.execute(
+                request=request,
+                lease=lease,
+                budget_limit_millicents=budget_limit,
+                completion_guard=Stage0RoutingReceiptGuard(
+                    workspace_id=self.state.workspace_id,
+                    onboarding_input_id=captured.onboarding_input_id,
+                    user_message=message,
+                    conn_factory=self._conn_factory,
+                ),
+            )
+            outcome = result.outcome
+            assistant_message = result.assistant_message
+            if (
+                outcome.finalization_ref is not None
+                and outcome.status is AgentExecutionStatus.COMPLETED
+            ):
+                # ``actor='human'`` matches the gate's declared authority in ``recipe0-stage0``
+                # — the human who submitted the turn is the one whose interaction just ended.
+                # This read ``'agent'`` until FI Lane D D4: a latent mismatch against a
+                # HUMAN-authority gate that the production runner (``agent_turn_fleet_wiring``)
+                # never inherited, kept alive only because ``decide_gate`` is the trial's last
+                # step and its ``ExecutionConflict`` was never reached in a passing run.
+                # Reconciled here so one gate has one authority.
+                await self._executor.decide_gate(
+                    execution_id=execution_id,
+                    node_key="stage0_interactions",
+                    actor="human",
+                    decision="complete",
+                )
+                completed = await self._drive(execution_id)
+                if completed is not ExecutionStatus.COMPLETED:
+                    raise RuntimeError("completed Stage-0 turn did not complete Recipe 0")
+            await self._refresh_client_kb_from_conversation()
+            # Readiness is deterministic evidence, not a thing the agent may claim: recompute
+            # it from durable state after any turn that actually routed material information,
+            # so the readiness ledger reflects the conversation instead of staying empty for
+            # the whole trial.
+            await self._recompute_readiness(
+                turn_id=turn_id,
+                onboarding_input_id=captured.onboarding_input_id,
+            )
+            self.paths.save_state(self.state)
+            await self.export_report()
+            return outcome, assistant_message
+        finally:
+            lease.release()
 
     async def _recompute_readiness(
         self,

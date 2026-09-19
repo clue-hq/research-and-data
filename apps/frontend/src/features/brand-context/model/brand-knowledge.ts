@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { BrandKnowledgeFolder } from "./brand-context";
+import type { BrandKnowledgeDocument, BrandKnowledgeFolder } from "./brand-context";
 import { dateLabel } from "./brand-context-mapping";
 
 /** The four platform-served folders, in the dummy's order. Design is the brand kit's. */
@@ -78,15 +78,18 @@ export function onboardingRunIsLive(status: OnboardingStatus | null): boolean {
  */
 export function toKnowledgeFolders(tree: KnowledgeTree, bodies: Map<string, string>): BrandKnowledgeFolder[] {
   return tree.folders.map((folder) => ({
-    documents: folder.documents.map((document) => ({
-      body: bodies.get(document.id) ?? "",
-      folderId: folder.key,
-      id: document.id,
-      name: document.title,
-      path: document.path,
-      updatedLabel: `Updated ${dateLabel(document.updatedAt)}`,
-    })),
+    documents: folder.documents.map((document) => toKnowledgeDocument(document, folder.key, bodies.get(document.id))),
     id: folder.key,
     label: folder.label,
   }));
+}
+
+export function toKnowledgeDocument(
+  document: z.infer<typeof KnowledgeDocumentSchema>, folderId: string, body?: string,
+): BrandKnowledgeDocument {
+  return {
+    body: body ?? "", bodyLoaded: body !== undefined, folderId, id: document.id,
+    name: document.title, path: document.path, version: document.version,
+    updatedLabel: `Updated ${dateLabel(document.updatedAt)}`,
+  };
 }

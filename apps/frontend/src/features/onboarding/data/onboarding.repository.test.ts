@@ -29,7 +29,11 @@ test("fixture onboarding repository returns the approved auth and setup payload"
   assert.equal(flow.auth.signIn.title, "Login to your account");
   assert.equal(flow.auth.signUp.submitLabel, "Sign up");
   assert.equal(flow.auth.verifyEmail.submitLabel, "Verify");
-  assert.equal(flow.setup.items.length, 4);
+  // The four checklist groups plus the brand-kit row (the row the lane does not own).
+  assert.deepEqual(
+    flow.setup.items.map((item) => item.id),
+    ["company", "products", "proof", "audience", "brand-kit"],
+  );
   assert.equal(flow.setup.items[1]?.status, "running");
 });
 

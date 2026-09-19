@@ -384,6 +384,9 @@ from clue_core.memory import (
     MemoryRejected,
     MemoryRejectReason,
     MemoryScopeType,
+    MemorySelectionPin,
+    MemorySelectionStale,
+    MemorySelectionUnavailable,
     MemoryStatus,
     MemorySubmission,
     MemoryType,
@@ -404,7 +407,7 @@ from clue_core.modality import (
     NormalizedText,
     RawArtifact,
 )
-from clue_core.normalize import normalize_host
+from clue_core.normalize import canonical_workspace_name, normalize_host
 from clue_core.observability import (
     CoverageReport,
     UnsearchedChannel,
@@ -424,6 +427,13 @@ from clue_core.primitives import (
     new_entity_id,
     new_project_run_id,
     new_run_id,
+)
+from clue_core.provider_failures import (
+    ProviderFailure,
+    classify_exception,
+    classify_http,
+    failure_code,
+    parse_failure_code,
 )
 from clue_core.research_directive import (
     EFFECTIVE_RESEARCH_DIRECTIVE_MAX_BYTES,
@@ -815,6 +825,12 @@ __all__ = [
     "new_product_context_version_id",
     "new_readiness_decision_id",
     "new_readiness_override_id",
+    # provider failures
+    "ProviderFailure",
+    "classify_exception",
+    "classify_http",
+    "failure_code",
+    "parse_failure_code",
     # enums
     "EntityType",
     "ExtractionMethod",
@@ -1026,6 +1042,7 @@ __all__ = [
     "parse_value_json",
     "decode_jsonb",
     "decode_jsonb_scalar",
+    "canonical_workspace_name",
     "normalize_host",
     "by_tier_ascending",
     "first_confident_claim",
@@ -1131,6 +1148,9 @@ __all__ = [
     "MemoryBundleEntry",
     "MemoryBundle",
     "ContextAssembly",
+    "MemorySelectionPin",
+    "MemorySelectionStale",
+    "MemorySelectionUnavailable",
     "ReconcileCandidate",
     "ReconcileJudgment",
     "ReconcileJudge",

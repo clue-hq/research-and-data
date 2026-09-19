@@ -48,7 +48,7 @@ from lumen_agent.cancellation import (
 )
 from lumen_agent.harness import create_design_deepagent, run_deepagent_turn
 
-from agent_fixtures import runtime_config
+from agent_fixtures import prepare_acceptance_evidence, runtime_config
 from test_deepagent_harness import _install_deepagents_stub
 
 
@@ -306,6 +306,10 @@ def test_the_cancellation_callback_raises_rather_than_being_swallowed() -> None:
         handler.on_chat_model_start({}, [])
     with pytest.raises(TurnCancelled):
         handler.on_llm_start({}, [])
+    with pytest.raises(TurnCancelled):
+        handler.on_llm_new_token("token")
+    with pytest.raises(TurnCancelled):
+        handler.on_llm_end(None)
 
 
 def test_an_uncancelled_run_is_never_refused() -> None:
@@ -477,7 +481,9 @@ def test_a_cancel_arriving_after_finalize_does_not_rewrite_the_result(
             self._model = model
 
         def invoke(self, *args, **kwargs):
-            self._tools.finalize_run("accepted", "accepted", "The design is done.")
+            prepare_acceptance_evidence(self._tools)
+            result = self._tools.finalize_run("accepted", "accepted", "The design is done.")
+            assert json.loads(result)["status"] == "accepted"
             holder["finalized"] = True
             for handler in list(self._model.callbacks):
                 handler.on_chat_model_start({}, [])

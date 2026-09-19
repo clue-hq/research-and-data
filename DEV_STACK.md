@@ -35,6 +35,10 @@ ports against **its own** database without copying the script:
 | `DEV_STACK_WORKER_CONCURRENCY` | drain slots per process (`CLUE_FLEET_WORKER_CONCURRENCY`) | 1 |
 | `DEV_STACK_AGENT_WORKSPACE_ROOT` | `CLUE_AGENT_WORKSPACE_ROOT` | `/private/tmp/clue-agent-workspaces` |
 | `DEV_STACK_LOG_PREFIX` | log file prefix | `/tmp/browser` |
+| `DEV_STACK_FRONTEND_PORT` | Next.js app port (added 2026-09-17) | 3020 |
+| `DEV_STACK_DESIGN_PORT` | design API port | 8010 |
+| `DEV_STACK_PLATFORM_PORT` | platform API port | 8020 |
+| `DEV_STACK_PLATFORM2_PORT` | platform API twin's port | 8030 |
 
 A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
 **`scripts/dev_stack_san_salvador.sh`** (the ARV2 lane on branch `track-r4`): DB from that
@@ -45,6 +49,17 @@ prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must nam
 `http://localhost:3020` like istanbul's, and its `.env` must carry
 `LUMEN_API_ORIGIN=http://127.0.0.1:8010` and 3020 in `LUMEN_API_CORS_ORIGINS`.
 
+**Different ports (added 2026-09-17).** The four port knobs let a lane run *beside* another lane's
+stack instead of stopping it. The first wrapper to use them is **`scripts/dev_stack_hangzhou.sh`**
+(the composer file-tagging lane on `research-streaming-v3`): frontend **3050**, platform API
+**8090**, design API **8091**, twin **8092**, DB `clue_hangzhou`, logs at `/tmp/hangzhou_*.log`.
+The knobs only move the processes; the three guards in the port map below still read `.env` and
+`apps/frontend/.env.local`, so a lane on other ports must name them there too
+(`CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, the frontend origin in `LUMEN_API_CORS_ORIGINS`
+and `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`; `CLUE_API_BASE_URL`, `LUMEN_API_BASE_URL`,
+`CLUE_APP_ORIGIN`). The hangzhou wrapper checks all of those before starting and refuses on a
+mismatch. Every other wrapper keeps the defaults, so it is unchanged.
+
 ## The port map (memorize the first one)
 
 | Port | Process | Why it must be exactly this |
@@ -53,7 +68,7 @@ prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must nam
 | 8010 | design API (`lumen_api.main:app`) | `CLUE_DESIGN_API_BASE_URL` points here; serves the editor, asset store, design tools. |
 | 8020 | platform API (`clue_api.projections_main:app`) | `CLUE_API_BASE_URL` in `apps/frontend/.env.local` points here — auth/session + the whole `/api/v1` surface. **Without it: "Your workspace is temporarily unavailable."** |
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
-| — | fleet worker (`clue_api.fleet_main`) | Drives design runs. **No worker = messages accepted but nothing ever generates.** |
+| — | fleet workers (`clue_api.fleet_main`) | Drive design runs and agent turns. **No worker = messages accepted but nothing ever generates.** `up` starts `DEV_STACK_WORKERS` processes (a stack people test on runs **4**), and each process drains `CLUE_FLEET_WORKER_CONCURRENCY` tasks at once (`DEV_STACK_WORKER_CONCURRENCY`; set **4** for a stack people test on) — so a second chat never queues behind a first chat's design turn. |
 
 ## `.env` keys that break everything when missing (all already set — do not remove)
 
@@ -64,7 +79,40 @@ prerequisites) applies unchanged; the lane's `apps/frontend/.env.local` must nam
 | `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` includes `http://localhost:3020` | Else sign-in loops forever on "session expired" (the backend rejects every token minted by the tab). |
 | `CLUE_SCRAPE_BACKEND=scrapling` + `CLUE_STAGE0_PAGE_FETCHER=scrapling` | Standing rule; Firecrawl showing in logs means the env is wrong. |
 | `LUMEN_API_BASE_URL=http://127.0.0.1:8010` — in **`apps/frontend/.env.local`**, not `.env` | The frontend's design proxy (`/api/clue/design/*`) needs it. Missing → every design render 500s: **grey gallery thumbnails, editor canvas never renders** — while chat and generation work fine, which makes it look like the design finished "invisibly". Found live 2026-08-29 (was an ad-hoc shell export that evaporated at a stack rebuild). |
+| `DEV_STACK_WORKER_CONCURRENCY=4` + `DEV_STACK_WORKERS=4` (lane wrapper) | Concurrency: one process drives four chats at once, and four processes survive one dying mid-run. With the old defaults (1 and 1) the second chat's message sits queued until the first chat's design turn finishes. |
+| `CLUE_SELF_SERVE_PROVISIONING_ENABLED=1` | Onboarding: mounts `POST /auth/v1/provision` and the setup route. Off → a NEW account ends in "Provisioning failed with status 404" (2026-09-08). Never export it by hand only — it must be in `.env`. |
+| `CLUE_DESIGN_API_BASE_URL` = the design API origin | The setup screen's brand-kit fetch is enqueued through it. Empty → a new workspace never gets a brand kit and nothing says why. |
+| `LUMEN_BRAND_AD_ASSETS=1` + `ADYNTEL_API_KEY`/`ADYNTEL_EMAIL` + `PDL_API_KEY` + `IMAGE_MODEL_API_KEY` | The ad library (harvested ads, ad-DNA card, pre-generated grounds). The flag mounts the routes; the keys pay for the lane. It is NOT part of onboarding — see the cofounder runbook §5b for the one call that starts it per workspace. |
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
+
+## Public pages host (published sites on their own hostname) — OFF by default
+
+A published site is normally served from the design API's own origin at the interim path
+`http://127.0.0.1:8010/w/{workspace}/p/{slug}`. Set **`LUMEN_PUBLIC_PAGES_HOST_SUFFIX`** (and
+optionally `LUMEN_PUBLIC_PAGES_SCHEME`, default `https`) and the same site is addressed AND
+served at `{handle}.<suffix>/{slug}{route}`, where `{handle}` is the workspace handle
+(`GET /workspace/handle`, frozen at first publish).
+
+| Key | Value | Notes |
+|---|---|---|
+| `LUMEN_PUBLIC_PAGES_HOST_SUFFIX` | blank (default) | Interim path serving; no host route is mounted at all. |
+| | `pages.cluehq.ai` | Host mode: publish URLs, canonical/og:url and the serving routes all move to the wildcard host. |
+| `LUMEN_PUBLIC_PAGES_SCHEME` | `https` (default) / `http` | Only lower it for a local wildcard host with no certificate. |
+
+**Changing the suffix needs an API restart.** The `Host` route is compiled into the route table
+when the app is built, so a running process keeps whatever suffix it started with.
+
+Operator prerequisites before turning it on anywhere real — the founder owns all three:
+
+- **A public ingress for the design API.** It is reached through a tunnel on 8060 today
+  (`_memory/2026-08-27-railway-frontend-deployment.md`); a published site's visitors must reach
+  the API directly.
+- **Wildcard DNS** `*.pages.cluehq.ai` → that ingress.
+- **Wildcard TLS** for the same name (Cloudflare proxy, or the ingress's ACME wildcard).
+
+Locally you can exercise it without DNS: point a hostname at 127.0.0.1 in `/etc/hosts`
+(`127.0.0.1 acme.pages.local`), start the API with `LUMEN_PUBLIC_PAGES_HOST_SUFFIX=pages.local`
+and `LUMEN_PUBLIC_PAGES_SCHEME=http`, set that workspace's handle to `acme`, and publish.
 
 ## One-time machine prerequisites
 
@@ -131,7 +179,9 @@ the message must get a response. If all four work, the stack is genuinely up.
 ## Stopping a stuck/unwanted design run
 
 ```bash
-pkill -f clue_api.fleet_main                       # kills the turn transactionally — nothing half-saved
+pkill -f "$PWD/.venv/bin/python -m clue_api.fleet_main"   # kills the turn transactionally — nothing half-saved
+                                                   # anchored on THIS checkout's interpreter, so a sibling
+                                                   # worktree's workers survive (a bare module match kills both)
 psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE status='running'"
 ./scripts/dev_stack.sh up                          # worker comes back idle (script is idempotent-ish; or relaunch just the worker)
 ```
@@ -152,3 +202,14 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | `up` reports every process UP, but a route/endpoint that exists on this branch 404s from the API (e.g. `/documents/{id}/thumbnail` missing from `/openapi.json`) | **A stale process from an earlier session still owns the port.** `up` does not `down` first, so the new uvicorn dies with `[Errno 48] address already in use` while the OLD one keeps serving — and `status` only checks that *something* listens, so it reports UP. Check: `grep -c "address already in use" /tmp/browser_design_api.log` and `ps -o lstart -p $(pgrep -f "uvicorn lumen_api.main:app")`. Fix: always `down` before `up`, and if a port survives it, `lsof -iTCP:<port> -sTCP:LISTEN -t \| xargs kill -9`. Found live 2026-08-31. |
 | Gallery cards are grey/empty for **web** documents only (ads are fine) | No Playwright Chromium, or no vendored Tailwind runtime, on the design-API process — see the prerequisites above. The API log names which: `thumbnail.capture_failed` vs `thumbnail.tailwind_runtime_missing`. Nothing is poisoned — fix the prerequisite and the next gallery read regenerates. |
 | ONE route 404s while its siblings work (e.g. `/projects/…/chats/…` → Next 404, but `/projects/…` 307s to sign-in; page.tsx exists on disk; DB rows exist) | Corrupted Next dev build cache — repeated `down` cycles pkill the dev server mid-write and its route graph can drop a route. Fix: `down` → `rm -rf apps/frontend/.next` → `up`. Found live 2026-08-30. |
+
+## Two rules learned the hard way (2026-09-12)
+
+* **Never pipe the wrapper's output** (`… restart-workers | tail`). The `( … & )` subshells that
+  spawn the API twins and the workers stay alive as their parents and keep the pipe's write end
+  open, so `tail` never sees end-of-file and the caller hangs for as long as the stack runs.
+  Redirect to a file instead: `./scripts/dev_stack_san_salvador.sh restart-workers > /tmp/x.log 2>&1`.
+* **Every kill pattern is anchored on this workspace's interpreter path.** Sibling worktrees
+  (semarang, istanbul, …) run the same module names on the same box; a bare
+  `pkill -f clue_api.fleet_main` from any launcher kills every worktree's workers. This lane's
+  workers were stopped that way at 14:18 on 2026-09-12 by a launcher outside this workspace.

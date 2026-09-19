@@ -64,7 +64,10 @@ def _no_live_http(monkeypatch: pytest.MonkeyPatch) -> None:
             "exercised here, only its two pure halves"
         )
 
-    for name in ("get", "post", "request", "stream"):
+    # ``Client`` is on the list since lane 3 slice 5: the lane's paid calls go through
+    # ``clue_spend.HttpxTransport``, which builds an ``httpx.Client`` rather than calling the
+    # module-level ``post``. Without it the guard would pass while the lane really dialled out.
+    for name in ("get", "post", "request", "stream", "Client", "AsyncClient"):
         monkeypatch.setattr(httpx, name, refuse, raising=False)
 
 

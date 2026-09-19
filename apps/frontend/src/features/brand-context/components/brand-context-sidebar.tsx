@@ -76,12 +76,15 @@ export function BrandContextSidebar({
                           className={`${styles.documentItem} ${controller.section === "knowledge" && controller.selectedDocument?.id === document.id ? styles.contextNavItemActive : ""}`}
                           key={document.id}
                           onClick={() => controller.selectDocument(document.id)}
+                          title={document.name}
                           type="button"
                         >
                           <span aria-hidden="true" className={styles.documentTreeRule} />
                           <span className={styles.documentItemContent}>
-                            <BrandContextIcon name="document" size={16} />
-                            <span>{document.name}</span>
+                            <BrandContextIcon className={styles.documentIcon} name="document" size={16} />
+                            <span className={styles.documentTitle}>
+                              <span className={styles.documentTitleText}>{document.name}</span>
+                            </span>
                           </span>
                         </button>
                       ))}

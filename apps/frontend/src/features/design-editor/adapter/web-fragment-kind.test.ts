@@ -45,7 +45,10 @@ test("a fragment node appears in the layer tree instead of breaking it", () => {
   const rows = buildWebLayerRows(PAGE, "frg_hero");
   const row = rows.find((candidate) => candidate.nodeId === "frg_hero");
   assert.ok(row, "the fragment is listed");
-  assert.equal(row?.label, "frg_hero");
+  // Ruling R-A5 (founder, 2026-09-04): the label is a human name, never the raw
+  // id (this used to read "frg_hero"). With no `fragment_meta` for this pin the
+  // clone still names itself honestly rather than leaking its id.
+  assert.equal(row?.label, "Cloned section");
   // No icon is mapped for the kind, so it takes the generic one rather than
   // rendering `undefined`.
   assert.equal(row?.icon, "div");

@@ -150,6 +150,15 @@ stand.
   natural follow-up and belongs with §5.6's "finalize the best accepted
   checkpoint".
 
+  **[SUPERSEDED 2026-09-18 — design session continuity.]** That follow-up
+  landed: the scene executor re-reads the document at execution and designs
+  from — and CAS's on — the version it actually reads, so a redrive continues
+  from its own checkpoint instead of refusing. `agent_turn.interrupted_after_
+  checkpoint` and its `_own_checkpoint_version` replay guard are gone; a moved
+  document is reported to the agent as a drift note (data, not instructions) and
+  the write-time CAS remains the one honest refusal. The checkpoint mark itself
+  is unchanged — it is still the frontend's mid-run progress signal.
+
   *Deliberately not gated on preflight-clean.* Cleanliness is recorded on the
   checkpoint (`preflight_clean`) but does not gate it: LUMV0820 blocks export
   on exactly the runs P0.2/P0.3 own, and gating here would make P0.4 silent

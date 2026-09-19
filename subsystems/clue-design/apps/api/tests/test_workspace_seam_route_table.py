@@ -49,6 +49,10 @@ ALLOWLIST: dict[Tuple[str, str], str] = {
     ("GET", "/w/{workspace_id}/p-assets/{asset_name}"): "public publish serving (path tenant)",
     ("GET", "/w/{workspace_id}/p/{slug}/manifest.json"): "public publish serving (path tenant)",
     ("GET", "/w/{workspace_id}/p/{slug}"): "public publish serving (path tenant)",
+    ("GET", "/w/{workspace_id}/p/{slug}/{route:path}"): (
+        "public publish serving (path tenant); F5 per-route page of a published "
+        "multi-page site; same public_repository path-tenant as its sibling"
+    ),
     # D7 run-event stream: EventSource-style consumers cannot send headers;
     # authenticated by a single-use stream token whose MINT is header-gated.
     ("GET", "/agent/runs/{run_id}/events"): "single-use stream token carries tenancy",

@@ -14,8 +14,10 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 
 import {
   validateBridgeMessage,
+  webBridgeAnnotationsMessage,
   webBridgeClearMessage,
   webBridgeComponentPreviewMessage,
+  webBridgeEditTextMessage,
   webBridgeInspectNodeMessage,
   webBridgeRichTextCommandMessage,
   webBridgeRichTextSettleMessage,
@@ -25,11 +27,16 @@ import {
   type RichTextFormat,
   type RichTextFormatState,
   type RichTextSelectionState,
+  type WebAnnotateEvent,
+  type WebElementAddress,
   type WebNodeInfo,
   type WebCustomComponentRuntimeState,
   type WebSelection
 } from "../engine/webBridge";
-import type { RichTextDocument } from "../engine/webDocuments";
+import type {
+  RichTextDocument,
+  WebFragmentTextOverride
+} from "../engine/webDocuments";
 
 /**
  * Owns the website preview's selection state: a single persistent `message`
@@ -87,6 +94,13 @@ export interface WebBridgeSelection {
   setRichTextToolbarActive: (nodeId: string, active: boolean) => void;
   /** Commit or cancel the active iframe-local session from parent focus. */
   settleRichText: (nodeId: string, action: "commit" | "cancel") => void;
+  /** Slice 2 (R-A1): draw the shell's numbered annotation badges in the frame.
+   * An empty list IS the clear. No-op until the frame + nonce are live. */
+  postAnnotations: (items: { address: WebElementAddress; n: number }[]) => void;
+  /** Slice 3 (R-A6): start the in-frame text editor on one addressed element
+   * (the comment box's "Edit text" quick action). No-op until the frame +
+   * nonce are live. */
+  postEditText: (address: WebElementAddress) => void;
 }
 
 export function useWebBridgeSelection(params: {
@@ -102,6 +116,27 @@ export function useWebBridgeSelection(params: {
    * keeps the inspector on the same stable node id). Kept in a ref so a
    * changing callback never re-arms the listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** F5 task 20: invoked when the user clicks a site-internal link in the
+   * canvas — the bridge prevented the iframe navigation and reported the page
+   * that link points at, so the SHELL performs the switch. Kept in a ref so a
+   * changing callback never re-arms the listener. */
+  onNavigate?: (pageId: string) => void;
+  /** Slice 2 (R-A1): invoked on the bridge's element-level click report — the
+   * shell opens its comment box on that element. Kept in a ref so a changing
+   * callback never re-arms the listener. */
+  onAnnotate?: (event: WebAnnotateEvent) => void;
+  /** Slice 3 (R-A6): invoked when the in-frame clone text editor commits — the
+   * shell persists ONE `set_fragment_text_override` op. Kept in a ref so a
+   * changing callback never re-arms the listener. */
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride
+  ) => void;
+  /** The same session abandoned. The frame has already restored its own DOM, so
+   * there is nothing to write — this exists for a shell that holds local
+   * editing state. Kept in a ref so a changing callback never re-arms the
+   * listener. */
+  onCloneTextCancel?: (address: WebElementAddress) => void;
   /** Invoked when the bridge posts a generic `move-node` intent. `index` is
    * measured against the destination parent's children after source removal,
    * so the same callback covers reorder and reparent. */
@@ -119,6 +154,10 @@ export function useWebBridgeSelection(params: {
     nonceRef,
     onRichTextCommit,
     onSelect,
+    onNavigate,
+    onAnnotate,
+    onCloneTextCommit,
+    onCloneTextCancel,
     onMoveNode,
     onResizeNode
   } = params;
@@ -139,11 +178,19 @@ export function useWebBridgeSelection(params: {
   const editingRef = useRef(false);
   const onRichTextCommitRef = useRef(onRichTextCommit);
   const onSelectRef = useRef(onSelect);
+  const onNavigateRef = useRef(onNavigate);
+  const onAnnotateRef = useRef(onAnnotate);
+  const onCloneTextCommitRef = useRef(onCloneTextCommit);
+  const onCloneTextCancelRef = useRef(onCloneTextCancel);
   const onMoveNodeRef = useRef(onMoveNode);
   const onResizeNodeRef = useRef(onResizeNode);
   useEffect(() => {
     onRichTextCommitRef.current = onRichTextCommit;
     onSelectRef.current = onSelect;
+    onNavigateRef.current = onNavigate;
+    onAnnotateRef.current = onAnnotate;
+    onCloneTextCommitRef.current = onCloneTextCommit;
+    onCloneTextCancelRef.current = onCloneTextCancel;
     onMoveNodeRef.current = onMoveNode;
     onResizeNodeRef.current = onResizeNode;
   });
@@ -202,6 +249,29 @@ export function useWebBridgeSelection(params: {
       }
       if (message.type === "rich-text-commit") {
         onRichTextCommitRef.current?.(message.nodeId, message.content);
+        return;
+      }
+      if (message.type === "navigate") {
+        onNavigateRef.current?.(message.pageId);
+        return;
+      }
+      if (message.type === "annotate") {
+        // The frame posts `annotate` on the very click that settles an open
+        // rich-text session, so `editingRef` is already false by the time it
+        // arrives — the guard is for the caret-move case, where a click inside
+        // the node being edited must not pop a comment box over the caret.
+        if (editingRef.current) {
+          return;
+        }
+        onAnnotateRef.current?.(message.event);
+        return;
+      }
+      if (message.type === "clone-text-commit") {
+        onCloneTextCommitRef.current?.(message.address, message.override);
+        return;
+      }
+      if (message.type === "clone-text-cancel") {
+        onCloneTextCancelRef.current?.(message.address);
         return;
       }
       if (message.type === "move-node") {
@@ -325,6 +395,28 @@ export function useWebBridgeSelection(params: {
     [iframeRef, nonceRef]
   );
 
+  const postAnnotations = useCallback(
+    (items: { address: WebElementAddress; n: number }[]) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeAnnotationsMessage(nonce, items), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
+  const postEditText = useCallback(
+    (address: WebElementAddress) => {
+      const win = iframeRef.current?.contentWindow;
+      const nonce = nonceRef.current;
+      if (win && nonce) {
+        win.postMessage(webBridgeEditTextMessage(nonce, address), "*");
+      }
+    },
+    [iframeRef, nonceRef]
+  );
+
   const settleRichText = useCallback(
     (nodeId: string, action: "commit" | "cancel") => {
       const win = iframeRef.current?.contentWindow;
@@ -356,6 +448,8 @@ export function useWebBridgeSelection(params: {
     formatRichText,
     commandRichText,
     setRichTextToolbarActive,
-    settleRichText
+    settleRichText,
+    postAnnotations,
+    postEditText
   };
 }

@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -69,11 +69,12 @@ from clue_api.arv2.icp_confirmation import (
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.composer_context import (
+    PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -130,6 +131,9 @@ from clue_api.chat.schemas import (
     ProjectBootstrapWire,
     ProjectShellResponse,
     ProjectShellWire,
+    RenameProjectRequest,
+    RenameProjectResponse,
+    RenameProjectWire,
     ResearchTaskListResponse,
     SidebarConversationWire,
     SidebarPageMeta,
@@ -153,8 +157,8 @@ from clue_api.chat.schemas import (
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.conversation_capture import persist_user_turn, project_client_entity_id
 from clue_api.design_leg_wiring import (
+    design_document_card_fields,
     design_legs_for_threads,
-    document_page_pixels,
     project_design_documents,
 )
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
@@ -204,6 +208,9 @@ from clue_spine import (
 )
 from clue_storage import StorageBackend, StorageError, content_address
 from clue_toolbelt import IdempotencyConflict, PreconditionFailed, ToolInvoker
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.chat")
 
@@ -258,22 +265,21 @@ def _design_artifact_list_item(
     rather than something false; its name is its identity.
     """
 
-    pixels = document_page_pixels(document.get("pages_json"))
-    artifact_type = document.get("artifact_type")
+    fields = design_document_card_fields(document)
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
         document_id=str(document["id"]),
-        kind="web" if document["doc_kind"] == "web" else "ad",
+        kind=fields["kind"],
         title=str(document["title"]),
         status=str(document["status"]),
         current_version_id=str(document["current_version"]),
         created_at=document["created_at"].isoformat(),
         updated_at=document["updated_at"].isoformat(),
         origin_thread_id=str(document["origin_thread_id"]),
-        artifact_type=str(artifact_type) if artifact_type else None,
-        width_px=pixels[0] if pixels else None,
-        height_px=pixels[1] if pixels else None,
+        artifact_type=fields["artifact_type"],
+        width_px=fields["width_px"],
+        height_px=fields["height_px"],
     )
 
 
@@ -598,6 +604,8 @@ def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntity
         secondary_label=entity.secondary_label,
         image_url=entity.image_url,
         version=entity.version,
+        account_id=entity.account_id,
+        account_name=entity.account_name,
     )
 
 
@@ -608,6 +616,7 @@ async def _validated_submission_context(
     refs: tuple[Any, ...],
     design_leg_document_id: str | None = None,
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -615,6 +624,7 @@ async def _validated_submission_context(
             object_type=ref.object_type,
             object_id=ref.object_id,
             version=ref.version,
+            note=ref.note,
         )
         for ref in refs
     )
@@ -625,6 +635,7 @@ async def _validated_submission_context(
             refs=requested,
             design_leg_document_id=design_leg_document_id,
             storage=storage,
+            project_id=project_id,
         )
     except ContextReferenceError as exc:
         if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
@@ -667,6 +678,7 @@ def build_chat_router(
     tool_invoker: ToolInvoker,
     storage: StorageBackend | None = None,
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped chat router. Empty unless ``settings.chat_enabled``.
 
@@ -773,7 +785,7 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
+        the promoted Head-of-ABM Grok 4.6 profile; attachments remain unavailable because no
         durable upload-receipt endpoint exists yet.
         """
 
@@ -782,6 +794,7 @@ def build_chat_router(
             brands = await list_brands_for_workspace(conn, who.workspace_id)
             context_entities = await list_composer_context_entities(
                 conn,
+                settings=settings,
                 workspace_id=who.workspace_id,
             )
         return HomeResponse(
@@ -1203,6 +1216,7 @@ def build_chat_router(
                 if project is None
                 else await list_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                 )
             )
@@ -1226,6 +1240,22 @@ def build_chat_router(
                 composer_capabilities=_composer_capabilities(),
             )
         )
+
+    @router.patch("/projects/{project_id}")
+    async def rename_project_route(
+        project_id: str,
+        body: RenameProjectRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> RenameProjectResponse:
+        _require(who, PERMISSION_PROJECT_WRITE)
+        references = await _invoke(
+            "rename_project",
+            {"project_id": project_id, "title": body.title},
+            who=who,
+            idempotency_key=idempotency_key,
+        )
+        return RenameProjectResponse(data=RenameProjectWire.model_validate(references))
 
     @router.post("/projects/{project_id}/composer-context/prepare")
     async def prepare_project_composer_context_route(
@@ -1280,14 +1310,17 @@ def build_chat_router(
                     object_type=ref.object_type,
                     object_id=ref.object_id,
                     version=ref.version,
+                    note=ref.note,
                 )
                 for ref in body.context_refs
             )
             try:
                 prepared = await prepare_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                     refs=requested,
+                    project_id=project_id,
                 )
             except ContextReferenceError as exc:
                 raise _refuse(
@@ -1475,14 +1508,15 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         all_refs = tuple(ref for item in page.items for ref in item.refs)
-        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
-        if include is None and not has_design_assets:
+        has_presented = any(ref.object_type in PRESENTED_REF_TYPES for ref in all_refs)
+        if include is None and not has_presented:
             return message_list_response(page, thread_id=thread_id)
         async with conn_factory() as conn:
-            presentations = await design_asset_ref_presentations(
+            presentations = await context_ref_presentations(
                 conn,
                 workspace_id=who.workspace_id,
                 refs=all_refs,
+                storage=storage,
             )
             bodies = None
             if include is not None:
@@ -1952,6 +1986,9 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     brand_id=brand_id,
                     icp_key=icp_key,
+                    # Same scope the gate was opened in, so a project-local variant revalidates
+                    # against itself rather than against the brand's document at that path.
+                    project_id=project_id,
                 )
                 if (
                     current is None
@@ -2210,6 +2247,11 @@ def build_chat_router(
                 else gate_response_message(_gate_response(body))
             )
             digest = content_address(message.encode())
+            # Set when this request pins this project's ICP below. The pin changes which version
+            # the library serves at ``audience/icp-<key>.md``, so the tree is refreshed once the
+            # transaction that wrote the pin has committed. A replayed answer pins nothing and
+            # returns from inside the transaction, so it refreshes nothing either.
+            pinned_project_icp = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2254,6 +2296,7 @@ def build_chat_router(
                         object_type=ref.object_type,
                         object_id=ref.object_id,
                         version=ref.version,
+                        note=ref.note,
                     )
                     for ref in body.context_refs
                 )
@@ -2325,6 +2368,7 @@ def build_chat_router(
                         None if open_leg is None else open_leg.get("document_id")
                     ),
                     storage=storage,
+                    project_id=project_id,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
                 # approving a directive-confirmation gate atomically confirms AND launches via
@@ -2375,9 +2419,7 @@ def build_chat_router(
                     project_id=project_id,
                     turn_id=turn_id,
                     message=message,
-                    allow_empty_reference_turn=any(
-                        ref.object_type == "design_asset" for ref in context_refs
-                    ),
+                    allow_empty_reference_turn=bool(context_refs),
                     client_entity_id=await project_client_entity_id(
                         conn,
                         workspace_id=who.workspace_id,
@@ -2580,6 +2622,7 @@ def build_chat_router(
                             workspace_id=who.workspace_id,
                             brand_id=brand_id,
                             icp_key=str(snapshot["icp_key"]),
+                            project_id=project_id,
                         )
                         product_set = await current_project_product_set(
                             conn,
@@ -2619,6 +2662,7 @@ def build_chat_router(
                                 product_selection_version=selection_version,
                                 pinned_by_user_id=who.user_id,
                             )
+                            pinned_project_icp = True
                         except IcpConfirmationStale as exc:
                             raise _refuse(
                                 status_code=409,
@@ -2666,6 +2710,11 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                     thread_id=thread_id,
                 )
+            # After the commit, never inside it: the library's compile takes this project's row
+            # lock. Best-effort by contract — an approval that confirmed and pinned must not
+            # report failure because its rendering could not be written.
+            if pinned_project_icp and project_library is not None:
+                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(
                     turn_id=str(submission.turn_id),
@@ -2689,6 +2738,7 @@ def install_chat_surface(
     auth_service: PrincipalService | None = None,
     storage: StorageBackend | None = None,
     transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> None:
     """Mount the chat router when ``settings.chat_enabled``; otherwise do nothing at all.
 
@@ -2732,5 +2782,6 @@ def install_chat_surface(
             tool_invoker=tool_invoker,
             storage=storage,
             transactional_tool_invoker_factory=transactional_tool_invoker_factory,
+            project_library=project_library,
         )
     )

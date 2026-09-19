@@ -1,3 +1,4 @@
+import { parseRenderContext, type RenderContext } from "./renderContext";
 // PLATFORM DELTA (AD3.3) — this module is otherwise verbatim upstream code. The
 // one divergence is that `LoadedDocument`/`fetchDocument` now also parse the
 // three history fields `GET /documents/{id}` already returns —
@@ -40,6 +41,7 @@ export interface CreatedDocument {
 }
 
 export interface LoadedDocument {
+  renderContext: RenderContext | null;
   documentId: string;
   title: string;
   scene: Scene;
@@ -161,6 +163,7 @@ export async function fetchDocument(
     id?: unknown;
     title?: unknown;
     scene?: unknown;
+    render_context?: unknown;
     agent_instructions?: unknown;
     layout_managed_editing?: unknown;
     current_version?: unknown;
@@ -174,6 +177,9 @@ export async function fetchDocument(
     documentId: typeof payload.id === "string" ? payload.id : documentId,
     title: typeof payload.title === "string" ? payload.title : "Untitled design",
     scene: payload.scene as Scene,
+    renderContext: parseRenderContext(payload.render_context,
+      typeof payload.id === "string" ? payload.id : documentId,
+      "current_version" in payload && typeof payload.current_version === "number" ? payload.current_version : null),
     agentInstructions:
       typeof payload.agent_instructions === "string" ? payload.agent_instructions : null,
     layoutManagedEditing: payload.layout_managed_editing === true,
@@ -337,4 +343,51 @@ export async function saveLayoutManagedEditing(
   }
   const payload = (await response.json()) as { layout_managed_editing?: unknown };
   return payload.layout_managed_editing === true;
+}
+
+/** Artifacts page (2026-09-15): persist a new title (row + document JSON; the version advances). */
+export async function renameDocument(
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
+  documentId: string,
+  title: string
+): Promise<string> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/title`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`renaming the document failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { title?: unknown };
+  if (typeof payload.title !== "string") {
+    throw new Error("renaming the document returned no title");
+  }
+  return payload.title;
+}
+
+/** Artifacts page (2026-09-15): archive or restore. Returns the archive timestamp, null when live. */
+export async function saveDocumentArchived(
+  // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
+  { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
+  documentId: string,
+  archived: boolean
+): Promise<string | null> {
+  const response = await fetchImpl(
+    new URL(`/documents/${encodeURIComponent(documentId)}/archived`, apiBaseUrl),
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ archived })
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`archiving the document failed (HTTP ${response.status})`);
+  }
+  const payload = (await response.json()) as { archived_at?: unknown };
+  return typeof payload.archived_at === "string" ? payload.archived_at : null;
 }

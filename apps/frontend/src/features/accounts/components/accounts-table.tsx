@@ -277,11 +277,11 @@ function AccountTableRow({
                 <Image
                   alt=""
                   aria-hidden="true"
-                  className="size-3 shrink-0 object-contain"
-                  height={12}
+                  className="size-6 shrink-0 object-contain"
+                  height={24}
                   src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
                   unoptimized={account.logoPath != null}
-                  width={12}
+                  width={24}
                 />
                 <span className={`${readability.uiMedium} truncate`}>
                   {account.name}

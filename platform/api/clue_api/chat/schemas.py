@@ -114,6 +114,19 @@ class CreateThreadRequest(_Request):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class RenameProjectRequest(_Request):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class RenameProjectWire(_Wire):
+    id: str
+    title: str
+
+
+class RenameProjectResponse(_Wire):
+    data: RenameProjectWire
+
+
 class UpdateThreadRequest(_Request):
     """``PATCH /api/v1/projects/:projectId/threads/:threadId`` — rename and/or pin.
 
@@ -183,14 +196,24 @@ class GateResponseRequest(_Request):
 class ContextRefRequest(_Request):
     """An ordered, workspace-scoped domain-object reference.
 
-    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
-    the ordered, per-message selection inside that exact document scene. ``design_asset``
-    identifies one ready image in the design asset library for reference conditioning.
+    ``design_document`` (P3.1) pins the open leg's document, or — with no nodes beside it — is a
+    plain mention of a microsite or ad from the Gallery. ``design_node`` is the ordered,
+    per-message selection inside that exact document scene. ``design_asset`` identifies one ready
+    image in the design asset library for reference conditioning. ``project_document`` is a
+    Gallery file (a row of ``brand_knowledge_document`` with a project), always version-pinned.
+
+    ``note`` is the marketer's own words about *this* ref — the annotation written onto one
+    element in the web editor ("1. Make this shorter"). It rides the ref rather than the message
+    so the instruction stays bound to the thing it is about; optional, because most refs are a
+    plain selection.
     """
 
-    object_type: Literal["account", "contact", "design_document", "design_node", "design_asset"]
+    object_type: Literal[
+        "account", "contact", "design_document", "design_node", "design_asset", "project_document"
+    ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
+    note: str | None = Field(default=None, max_length=2_000)
 
 
 MAX_CONTEXT_REFS_PER_TURN = 100
@@ -258,12 +281,9 @@ class SubmitTurnRequest(_Request):
 
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
-        design_asset_refs = tuple(
-            ref for ref in self.context_refs if ref.object_type == "design_asset"
-        )
-        if self.message is not None and not self.message.strip() and not design_asset_refs:
+        if self.message is not None and not self.message.strip() and not self.context_refs:
             raise ValueError(
-                "message must contain something other than whitespace unless reference images "
+                "message must contain something other than whitespace unless context references "
                 "are supplied"
             )
         if self.gate_response is not None and (
@@ -502,6 +522,9 @@ class ComposerContextEntityWire(_Wire):
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+    # A contact's account (id + name), so the picker can nest it and search can name it.
+    account_id: str | None = None
+    account_name: str | None = None
 
 
 class PreparedComposerContextWire(_Wire):

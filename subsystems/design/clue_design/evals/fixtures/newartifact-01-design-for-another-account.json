@@ -1,0 +1,32 @@
+{
+  "name": "newartifact-01-design-for-another-account",
+  "kind": "new_artifact",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [
+    "account \"Apollo Clinics\""
+  ],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [
+    {
+      "role": "user",
+      "text": "Make the headline shorter."
+    },
+    {
+      "role": "assistant",
+      "text": "Done: the headline is now six words."
+    }
+  ],
+  "message": "Great. Now draft one for @Apollo Clinics.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "The user wants a design for a different account; that is a new artifact the strategy agent must open."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "A tagged account that is not this artifact's account, asked to be designed for, is work on a different artifact."
+}

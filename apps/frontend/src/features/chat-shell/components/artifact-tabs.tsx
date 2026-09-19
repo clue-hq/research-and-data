@@ -1,5 +1,6 @@
 "use client";
 
+import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellOpenArtifact, ChatShellSurface } from "../model/chat-shell";
@@ -108,10 +109,12 @@ export function ArtifactTabs({
   onCloseArtifact,
   onOpenGallery,
   onOpenTargetAccounts,
+  documentTabs,
   onRenameArtifact,
   onToggleMaximized,
   onTogglePanel,
   surface,
+  targetAccountsBusy,
 }: {
   activeArtifactId: string | null;
   artifactMaximized: boolean;
@@ -121,11 +124,19 @@ export function ArtifactTabs({
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery?: () => void;
   onOpenTargetAccounts?: () => void;
+  documentTabs?: ReturnType<typeof useProjectDocumentTabs>;
   onRenameArtifact: (artifactId: string, title: string) => void;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   surface: ChatShellSurface;
+  /** True while the project's discovery run is live: the Target accounts label spins. */
+  targetAccountsBusy?: boolean;
 }) {
+  const tabListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabListRef.current?.querySelector('[role="tab"][aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [surface, documentTabs?.selectedPath]);
+
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
 
@@ -153,6 +164,7 @@ export function ArtifactTabs({
         aria-label="Artifact tabs"
         className={styles.artifactTabList}
         onKeyDown={handleTabListKeyDown}
+        ref={tabListRef}
         role="tablist"
       >
         {galleryTabVisible ? (
@@ -179,11 +191,24 @@ export function ArtifactTabs({
               >
                 <ProjectIcon name="target-accounts" size={12} />
                 <span>Target accounts</span>
+                {targetAccountsBusy ? (
+                  <ProjectIcon className={styles.galleryTabSpinner} name="loader" size={12} />
+                ) : null}
               </button>
             ) : null}
+
           </div>
         ) : null}
         <div className={styles.artifactTabScroller}>
+          {documentTabs?.paths.map((path) => {
+            const document = documentTabs.list.documents.find((item) => item.path === path);
+            if (!document) return null;
+            const active = surface === "plan" && documentTabs.selectedPath === path;
+            return <div key={path} role="presentation" className={`${styles.artifactTabUnit} ${active ? styles.artifactTabUnitActive : ""}`}>
+              <button role="tab" type="button" aria-selected={active} tabIndex={active ? 0 : -1} className={styles.artifactTabMain} title={document.title} onClick={() => documentTabs.openPath(path)}><ProjectIcon name="file-text" size={12} /><span>{document.title}</span></button>
+              <button type="button" className={styles.artifactTabClose} aria-label={`Close ${document.title}`} onClick={() => documentTabs.close(path)}><ChatShellIcon name="x" size={12} /></button>
+            </div>;
+          })}
           {artifacts.map((artifact) => (
             <ArtifactTab
               active={surface === "artifact" && activeArtifactId === artifact.id}

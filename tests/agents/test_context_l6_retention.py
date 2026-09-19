@@ -1,14 +1,14 @@
-"""L6 conversation-history retention (FI Lane D D0 — charter §1.1's correctness hazard).
+"""L6 conversation history — the whole thread arrives, and its size is recorded.
 
-The seven-layer assembler spent every layer's budget in canonical ``stable_key`` order and skipped
-whatever no longer fit. For six layers that is a fine convention — they hold independent compiled
-cards. For L6 it was a defect: ``stable_key`` there *is* the message sequence, so a thread longer
-than its budget handed the model a transcript that stopped before the turn the user had just taken.
+Two rulings meet in this file. FI Lane D D0 (charter §1.1) found the first defect: the assembler
+spent every layer's budget in canonical ``stable_key`` order and skipped whatever no longer fit,
+which for L6 — where ``stable_key`` *is* the message sequence — handed the model a transcript that
+stopped before the turn the user had just taken. Retention was inverted to newest-first.
 
-Retention for L6 is now newest-first. Emission stays chronological, so the retained window still
-reads forwards and nothing else about the layer — stable keys, receipt ordinals, exclusion reason
-codes, the body-free receipt — changes. Its own module so the assembler's general contract tests
-(``test_context.py``) stay untouched.
+The founder's ruling of 2026-09-14 removed the drop entirely: no layer budget may fail a turn or
+cost it context. So L6 now keeps **every** message, emits them chronologically as it always did,
+reports the thread's true cost on the manifest, and — when that cost is over the policy number —
+logs one warning. These tests hold that: the long thread is complete, in order, fully receipted.
 
 Its fixtures deliberately reuse ``test_context``'s, the way ``test_context`` itself reuses
 ``test_contracts.profile``: one definition of "a valid seven-layer assembly" for both files.
@@ -20,6 +20,7 @@ import asyncio
 from collections.abc import Callable
 from uuid import UUID
 
+import structlog.testing
 from langchain_core.messages import BaseMessage
 
 from clue_agents.context import (
@@ -93,30 +94,40 @@ def _l6_assembly(
     return assembled.manifest.layers[5], assembled.messages
 
 
-def test_a_long_thread_keeps_its_newest_messages_and_still_reads_in_order() -> None:
-    """Two hundred messages of eleven bytes each against a hundred-byte budget: exactly the last
-    nine survive, and they arrive oldest-to-newest so the conversation still reads forwards."""
+def test_a_long_thread_keeps_every_message_in_order_and_records_its_size() -> None:
+    """Forty messages of eleven bytes each against a budget that fits five: all forty survive,
+    oldest-to-newest, each one receipted, and the overrun is reported rather than enforced."""
 
     receipts = _Receipts()
-    layer, messages = _l6_assembly(count=200, budget=100, receipts=receipts)
+    with structlog.testing.capture_logs() as events:
+        layer, messages = _l6_assembly(count=40, budget=55, receipts=receipts)
 
     kept = [item.artifact_key for item in layer.source_refs]
-    assert kept == [f"agent-artifacts/history-{n:03d}.txt" for n in range(192, 201)]
-    assert layer.token_count == 99
-    assert len(layer.excluded_refs) == 191
-    assert set(layer.exclusion_reason_codes) == {"layer_budget_exceeded"}
+    assert kept == [f"agent-artifacts/history-{n:03d}.txt" for n in range(1, 41)]
+    assert layer.token_count == 40 * 11
+    assert layer.excluded_refs == ()
+    assert layer.exclusion_reason_codes == ()
+
+    l6_refs = [ref for ref in receipts.values[0].refs if ref.layer is ContextLayer.L6_CONVERSATION]
+    assert len(l6_refs) == 40
+    assert {ref.disposition for ref in l6_refs} == {"included"}
 
     l6_bodies = [
         str(message.content) for message in messages if str(message.content).startswith("message ")
     ]
-    assert l6_bodies == [f"message {n:03d}" for n in range(192, 201)]
-    # The receipt still names what it dropped, in canonical order, and still carries no bodies.
+    assert l6_bodies == [f"message {n:03d}" for n in range(1, 41)]
+    # The receipt still names every message it carried, and still carries no bodies.
     assert "message 001" not in receipts.values[0].model_dump_json()
+
+    over = [item for item in events if item["event"] == "agent_turn.context_layer_over_budget"]
+    assert [(item["layer"], item["token_count"], item["token_budget"]) for item in over] == [
+        ("l6_conversation", 440, 55)
+    ]
 
 
 def test_a_thread_within_budget_is_untouched_by_the_retention_direction() -> None:
-    """Retention direction decides only *what* is dropped. When nothing is dropped, the layer is
-    exactly what it was before the inversion."""
+    """A short thread reads exactly as it always did — canonical order, nothing excluded — and no
+    overrun is reported, which is what distinguishes it from the long thread above."""
 
     layer, _ = _l6_assembly(count=5, budget=1_000, receipts=_Receipts())
 

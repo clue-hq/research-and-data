@@ -12,6 +12,9 @@ from clue_core import (
     ContextAssembly,
     LLMGateway,
     MemoryBundle,
+    MemorySelectionPin,
+    MemorySelectionStale,
+    MemorySelectionUnavailable,
     MemoryWriteSeam,
 )
 from clue_db import ConnFactory
@@ -33,6 +36,20 @@ class TransactionalMemoryAssembly(ContextAssembly):
                 settings=self._settings,
                 caps=self._caps,
             ).assemble(request)
+
+    async def select(
+        self, request: AssemblyRequest
+    ) -> MemorySelectionPin | MemorySelectionUnavailable:
+        async with self._conn_factory() as conn:
+            return await Assembly(conn, settings=self._settings, caps=self._caps).select(request)
+
+    async def resolve(
+        self, request: AssemblyRequest, pin: MemorySelectionPin
+    ) -> MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable:
+        async with self._conn_factory() as conn:
+            return await Assembly(conn, settings=self._settings, caps=self._caps).resolve(
+                request, pin
+            )
 
 
 def memory_assembly_factory(

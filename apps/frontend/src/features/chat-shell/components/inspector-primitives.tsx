@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
 import { Select } from "@base-ui/react/select";
 import { MinusIcon, PlusIcon } from "lucide-react";
@@ -18,7 +19,8 @@ import {
   type InspectorFillType,
 } from "../hooks/use-inspector-controller";
 import { resolveInspectorThemeColors } from "../model/inspector-theme-colors";
-import { fieldCommit, fieldDisplay } from "./inspector-field-draft";
+import { fieldCommit, fieldDisplay, textareaCommitKey } from "./inspector-field-draft";
+import { REPLACE_IMAGE_MENU_ROWS, replaceImageMenuAction } from "./replace-image-menu.logic";
 import styles from "./chat-shell.module.css";
 
 const INSPECTOR_ICON_ROOT = "/icons/chat-shell/inspector";
@@ -608,6 +610,75 @@ export function InspectorInput({
   );
 }
 
+/**
+ * The MULTILINE sibling of `InspectorInput` — a text node's own content is the
+ * first inspector value that can legitimately hold a newline.
+ *
+ * Same AD4.R state model, unchanged: self-drafting through `fieldDisplay` /
+ * `fieldCommit`, so the box holds a draft only while it is being typed in,
+ * `value` is the LIVE document value, and a no-op re-type commits nothing.
+ *
+ * ONE contract differs from `InspectorInput`: Enter inserts a newline and the
+ * commit chord is ⌘/Ctrl+Enter (`textareaCommitKey`). A field whose value may
+ * contain newlines cannot spend Enter on committing. Blur commits either way.
+ */
+export function InspectorTextArea({
+  ariaLabel,
+  className,
+  disabled = false,
+  onCommitValue,
+  placeholder,
+  rows = 3,
+  value,
+}: {
+  ariaLabel: string;
+  className?: string;
+  /** AD4.R-10 (G-H), exactly as `InspectorInput` states it: BOTH the draft and
+   * the commit are guarded. A natively disabled textarea fires no blur of its
+   * own, but a PROGRAMMATIC blur — a focused field whose panel disables
+   * underneath it — is the shape that would slip a write through. */
+  disabled?: boolean;
+  onCommitValue: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+  value: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = fieldDisplay(draft, value);
+  const commitSelf = () => {
+    // ABOVE the draft clear: a refused commit must touch nothing at all, so the
+    // text typed for a write that never happened survives the turn.
+    if (disabled) return;
+    const commit = fieldCommit(draft, value);
+    setDraft(null);
+    if (commit !== null) onCommitValue(commit);
+  };
+  return (
+    <span className={`${styles.inspectorControl} ${styles.inspectorInputControl} ${styles.inspectorTextAreaControl} ${className ?? ""} ${disabled ? styles.inspectorControlDisabled : ""}`}>
+      <textarea
+        aria-label={ariaLabel}
+        disabled={disabled}
+        onBlur={commitSelf}
+        onChange={(event) => {
+          // A disabled field may not mutate its own draft either: the draft is
+          // what a later blur would commit.
+          if (disabled) return;
+          setDraft(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (!textareaCommitKey(event)) return;
+          // Otherwise the chord also types the newline it is committing past.
+          event.preventDefault();
+          commitSelf();
+        }}
+        placeholder={placeholder}
+        rows={rows}
+        value={shown}
+      />
+    </span>
+  );
+}
+
 type RadiusCorner = "all" | "bottomLeft" | "bottomRight" | "topLeft" | "topRight";
 type RadiusValues = Record<RadiusCorner, string>;
 
@@ -1001,9 +1072,8 @@ function hsvToHex({ h, s, v }: HsvColor) {
 }
 
 export function ColorControl({
-  color = "#00F59B",
+  color = "#FFFFFF",
   disabled = false,
-  fixtureFallback = true,
   none = false,
   noneAriaLabel = "Color is none",
   onColorChange,
@@ -1026,12 +1096,6 @@ export function ColorControl({
    * guarded ANYWAY, because a popover that was already open when the flag
    * flipped survives the flip (see `commitColor`). */
   disabled?: boolean;
-  /** RULING A23: `false` says `options` is the whole truth — with no palette
-   * the Theme tab renders NOTHING rather than the dummy's six fixture colours,
-   * which on a live write path are a fabrication the user can commit. The ad
-   * lane passes it; the web lane keeps the default, so nothing it shows
-   * changes (`model/inspector-theme-colors.ts` states why it is a parameter). */
-  fixtureFallback?: boolean;
   none?: boolean;
   noneAriaLabel?: string;
   onColorChange?: (color: string) => void;
@@ -1041,12 +1105,12 @@ export function ColorControl({
   onTokenChange?: (label: string) => void;
   opacity?: string;
   /** W4.0: the document's real theme tokens for the Theme tab. Omitted (or
-   * empty) keeps the dummy's fixture palette — this control's design is
-   * unchanged either way, only the data is real. */
+   * empty) means an EMPTY Theme tab — there is no fixture palette to fall
+   * back to (founder ruling 2026-09-04). */
   options?: readonly ThemeColorOption[];
   showOpacity?: boolean;
 }) {
-  const themeColors = resolveInspectorThemeColors(options, fixtureFallback);
+  const themeColors = resolveInspectorThemeColors(options);
   const [draftColor, setDraftColor] = useState(color.toUpperCase());
   const [pickerMode, setPickerMode] = useState<"custom" | "theme">("theme");
   const [customColor, setCustomColor] = useState<HsvColor>(() => hexToHsv(color));
@@ -1352,7 +1416,6 @@ function backgroundFillCss(fill: InspectorBackgroundFill, solidColor: string) {
 export function BackgroundFillControl({
   disabled = false,
   fill,
-  fixtureFallback = true,
   onFillChange,
   onSolidColorChange,
   onTokenChange,
@@ -1366,9 +1429,6 @@ export function BackgroundFillControl({
    * the document, and the document is not what went dark. */
   disabled?: boolean;
   fill: InspectorBackgroundFill;
-  /** RULING A23, forwarded to both nested pickers with `options` — this
-   * section's swatches must not offer a fixture palette either. */
-  fixtureFallback?: boolean;
   onFillChange: (fill: InspectorBackgroundFill) => void;
   onSolidColorChange: (color: string) => void;
   /** AD4.0 step 3 (§1.6): a brand pick on the SOLID swatch, reported as the
@@ -1474,7 +1534,6 @@ export function BackgroundFillControl({
         <ColorControl
           color={solidColor}
           disabled={disabled}
-          fixtureFallback={fixtureFallback}
           onColorChange={onSolidColorChange}
           onTokenChange={onTokenChange}
           options={options}
@@ -1514,7 +1573,6 @@ export function BackgroundFillControl({
                 <ColorControl
                   color={stop.color}
                   disabled={disabled}
-                  fixtureFallback={fixtureFallback}
                   onColorChange={(color) => updateStop(index, { color })}
                   options={options}
                   showOpacity={false}
@@ -1563,6 +1621,7 @@ export function BackgroundFillControl({
 export function InspectorImageUpload({
   disabled = false,
   onFileSelect,
+  onOpenLibrary,
   src,
 }: {
   /** AD4.R-10 (G-H): Replace image is an OPERATION — a locked node, or an agent
@@ -1577,6 +1636,11 @@ export function InspectorImageUpload({
    * the website lane's own, which swallows its failures into the inspector's
    * error slot) behaves exactly as it always has. */
   onFileSelect?: (file: File) => void | Promise<void>;
+  /** Replace-image lane (option A, founder ruling R-C): when present the pill
+   * opens a two-row menu — upload from the computer, or pick from the
+   * workspace asset library. ABSENT keeps the dummy fixture path's direct file
+   * dialog, byte for byte: same button, same aria-label, same classes. */
+  onOpenLibrary?: () => void;
   src: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1633,32 +1697,81 @@ export function InspectorImageUpload({
     });
   };
 
+  const openFileDialog = () => inputRef.current?.click();
+
+  // The pill's face is the SAME in both branches — the node's picture and its
+  // label — so the menu path cannot drift from the dummy path's appearance.
+  // The caret is the only difference, and it renders only when there is a menu
+  // behind it to open.
+  const pill = (
+    <>
+      <Image
+        alt=""
+        fill
+        sizes="248px"
+        src={previewSrc}
+        // W4.2 (§1 row 12): a local FileReader preview is a data: URL the
+        // optimizer cannot fetch, and a `/api/clue/` src is an AUTHENTICATED
+        // BFF route — the optimizer fetches server-side without the session
+        // cookies, so an optimized pass would 401. Both go through unchanged.
+        unoptimized={
+          previewSrc.startsWith("data:") || previewSrc.startsWith("/api/clue/")
+        }
+      />
+      <span>
+        Replace image
+        {onOpenLibrary ? <span aria-hidden className={styles.imageReplaceCaret}>▾</span> : null}
+      </span>
+    </>
+  );
+
   return (
     <>
-      <button
-        aria-label="Replace image"
-        className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-        type="button"
-      >
-        <Image
-          alt=""
-          fill
-          sizes="248px"
-          src={previewSrc}
-          // W4.2 (§1 row 12): a local FileReader preview is a data: URL the
-          // optimizer cannot fetch, and a `/api/clue/` src is an AUTHENTICATED
-          // BFF route — the optimizer fetches server-side without the session
-          // cookies, so an optimized pass would 401. Both go through unchanged.
-          unoptimized={
-            previewSrc.startsWith("data:") || previewSrc.startsWith("/api/clue/")
-          }
-        />
-        <span>Replace image</span>
-      </button>
+      {onOpenLibrary ? (
+        <Menu.Root>
+          <Menu.Trigger
+            aria-label="Replace image"
+            className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
+            disabled={disabled}
+          >
+            {pill}
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner align="center" className={styles.inspectorSelectPositioner} side="bottom" sideOffset={6}>
+              <Menu.Popup className={styles.replaceImageMenu}>
+                {REPLACE_IMAGE_MENU_ROWS.map((row) => (
+                  <Menu.Item
+                    className={styles.replaceImageMenuItem}
+                    key={row.id}
+                    onClick={() => {
+                      const action = replaceImageMenuAction(row.id);
+                      if (action.kind === "open-file-dialog") openFileDialog();
+                      else onOpenLibrary();
+                    }}
+                  >
+                    <ReplaceImageMenuIcon row={row.id} />
+                    {row.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      ) : (
+        <button
+          aria-label="Replace image"
+          className={`${styles.imageReplaceField} ${disabled ? styles.inspectorControlDisabled : ""}`}
+          disabled={disabled}
+          onClick={openFileDialog}
+          type="button"
+        >
+          {pill}
+        </button>
+      )}
       <input
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        // No GIF: the design API sniffs the bytes and refuses it, so offering it
+        // in the dialog only buys the user a rejected upload.
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
         className={styles.visuallyHiddenInput}
         disabled={disabled}
         onChange={(event) => {
@@ -1670,6 +1783,15 @@ export function InspectorImageUpload({
         type="file"
       />
     </>
+  );
+}
+
+function ReplaceImageMenuIcon({ row }: { row: "upload" | "library" }) {
+  // 1.1px strokes (founder ruling R-C), currentColor.
+  return row === "upload" ? (
+    <svg aria-hidden className={styles.replaceImageMenuIcon} fill="none" stroke="currentColor" strokeWidth="1.1" viewBox="0 0 16 16"><path d="M8 11V3M4.5 6.5 8 3l3.5 3.5M3 12.5h10" /></svg>
+  ) : (
+    <svg aria-hidden className={styles.replaceImageMenuIcon} fill="none" stroke="currentColor" strokeWidth="1.1" viewBox="0 0 16 16"><rect height="5" rx="1" width="5" x="2" y="2" /><rect height="5" rx="1" width="5" x="9" y="2" /><rect height="5" rx="1" width="5" x="2" y="9" /><rect height="5" rx="1" width="5" x="9" y="9" /></svg>
   );
 }
 
@@ -1719,7 +1841,9 @@ export function InspectorLayerRow({
       <span className={styles.layerRowContent}>
         <span className={styles.layerRowLabel}>
           <InspectorIcon name={icon} size={16} />
-          <span>{label}</span>
+          <span className={styles.layerRowLabelText} title={label}>
+            {label}
+          </span>
         </span>
         {trailing ? <InspectorIcon name="layer-ellipsis" size={16} /> : null}
       </span>

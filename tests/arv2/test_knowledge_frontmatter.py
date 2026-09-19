@@ -31,3 +31,16 @@ def test_a_document_without_fences_or_with_a_non_mapping_is_refused() -> None:
     with pytest.raises(ValueError):
         parse_front_matter("---\n- a\n- b\n---\n\nbody\n")
     assert document_identity({"kind": "audience-persona"}) == ("audience-persona", None)
+
+
+@pytest.mark.parametrize("body", ["", "\n\n# Heading\n\n", "# Café\r\n\r\nBody\r\n"])
+def test_editable_markdown_preserves_body_whitespace(body: str) -> None:
+    doc = KnowledgeDocument(
+        kind="company-overview",
+        folder="company",
+        path="company/overview.md",
+        front_matter={"kind": "company-overview"},
+        body=body,
+        cost=None,
+    )
+    assert parse_front_matter(render_markdown(doc), preserve_body=True)[1] == body

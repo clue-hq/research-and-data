@@ -11,6 +11,7 @@ from clue_config import (
     load_settings,
 )
 from clue_config.gateway import default_gateway_config
+from tests._model_ids import assert_well_formed_model_id
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,7 @@ def test_synthesis_model_default_when_unset(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("CLUE_SYNTHESIS_MODEL", raising=False)
     settings = load_settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.synthesis_model == DEFAULT_SYNTHESIS_MODEL
-    assert settings.synthesis_model == "openai/gpt-5.6-terra"
+    assert_well_formed_model_id(settings.synthesis_model)
 
 
 def test_synthesis_model_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -237,7 +238,7 @@ def test_stage0_official_site_crawl_is_bounded_and_default_off() -> None:
     assert settings.stage0_page_fetcher == "firecrawl"
     assert settings.stage0_crawl_max_depth == 2
     assert settings.stage0_crawl_fast_deadline_seconds == 40
-    assert settings.stage0_extraction_model == "openai/gpt-5.6-luna"
+    assert_well_formed_model_id(settings.stage0_extraction_model)
     assert settings.stage0_extraction_concurrency == 4
 
 

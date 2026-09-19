@@ -154,3 +154,23 @@ npm run build
 ```
 
 Interactive flows also receive a localhost browser smoke test.
+
+
+## Shared Markdown documents (Lane 2, 2026-09-14)
+
+`components/markdown/` owns the client-only MDXEditor 4.2.5, its library toolbar,
+react-markdown/GFM preview and versioned draft transitions. Feature hooks retain
+permission, fetching and save ownership. No custom parsing or formatting engine.
+
+Project Gallery combines typed design cards with real project-document summaries
+from the authenticated repository/BFF. Documents do not impersonate design artifacts.
+`useProjectDocumentTabs` shares the list, resolves transcript references to stable
+paths, and opens named tabs only after a click or fresh write. There is no fixed
+Plan/Documents tab. Internal `surface=plan` remains a URL compatibility alias;
+`document=<path>` selects the current file. Each visited file keeps its editor mounted
+for draft/undo retention until the chat is left. Source parse errors cannot be saved.
+The backend still owns kinds, titles, paths, revisions and access decisions.
+
+Toolbar controls and shortcuts are native. H4–H6 stay available because the native
+selector shares parsing configuration. Modifier shortcuts for strike/code/lists are
+not added where the release does not provide them; their toolbar controls remain.

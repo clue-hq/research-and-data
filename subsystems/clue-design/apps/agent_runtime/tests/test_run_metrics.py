@@ -28,7 +28,7 @@ from lumen_agent.run_metrics import (
 )
 from lumen_agent.trace_callbacks import TraceCallbackHandler, attach_trace_callback
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 from test_deepagent_harness import _install_deepagents_stub, _tools_only
 
 
@@ -152,6 +152,27 @@ def test_count_round_dirs(tmp_path):
     (rounds / "round_notanumber").mkdir()
     (rounds / "index.md").write_text("x")
     assert count_round_dirs(rounds) == 2
+
+
+def test_count_round_dirs_above_a_base(tmp_path: Path) -> None:
+    """Session continuity: a turn reports the rounds IT ran, not the session's
+    whole history, so the count starts above the round base it inherited."""
+    for n in (1, 2, 3):
+        (tmp_path / f"round_{n}").mkdir()
+    assert count_round_dirs(tmp_path) == 3
+    assert count_round_dirs(tmp_path, above=2) == 1
+
+
+def test_metrics_json_lands_in_the_turn_folder(tmp_path):
+    """``metrics.json`` is a per-TURN artifact: it sits next to that turn's
+    ``final.json``, which under a session lives in ``turn_dir``."""
+    tools = _FakeTools(tmp_path / "session")
+    tools.turn_dir = tmp_path / "session" / "turns" / "run_fake"
+    tools.turn_dir.mkdir(parents=True)
+    summary = emit_run_metrics(tools, outcome="accepted", status="accepted")
+    assert summary is not None
+    assert (tools.turn_dir / METRICS_FILENAME).is_file()
+    assert not (tools.trace_dir / METRICS_FILENAME).exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -435,7 +456,9 @@ def test_successful_run_emits_metrics_after_its_finalize(tmp_path, monkeypatch):
         capture["kwargs"] = kwargs
 
         def _finalize(*a, **k):
-            holder["tools"].finalize_run("accepted", "review_passed", "looks good")
+            prepare_acceptance_evidence(holder["tools"])
+            result = holder["tools"].finalize_run("accepted", "review_passed", "looks good")
+            assert json.loads(result)["status"] == "accepted"
             return {"messages": []}
 
         return types.SimpleNamespace(invoke=_finalize, kwargs=kwargs)

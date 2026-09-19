@@ -142,6 +142,9 @@ class DesignTurnHost:
     #: settings, which is exactly what a detached worker has; the embedded worker passes
     #: ``app.state.engine_cache_root`` so worker and request paths mirror into the same tree.
     engine_cache_root: Any = None
+    #: Authorized envelope -> model-boundary resolver, composed by the platform.
+    #: Neither the callable nor resolved preference bodies enter the frozen job.
+    preference_resolver_factory: Any = None
 
 
 class DesignTurnJobError(RuntimeError):
@@ -168,11 +171,22 @@ class DesignJobWorkHandler:
         *,
         host_provider: Any = None,
         checkpointer_factory: Any = None,
+        spend_drain: Any = None,
+        turn_callbacks_factory: Any = None,
     ) -> None:
         # Callables, not values: the embedded worker's host reads ``app.state`` at execution
         # time, so a test that swaps ``app.state.agent_turn_runner`` between turns is honoured.
         self._host_provider = host_provider if host_provider is not None else DesignTurnHost
         self._checkpointer_factory = checkpointer_factory
+        # Lane 3 slice 5: the whole drain, injected. ``None`` is the bare library drain (rows and
+        # nothing else); the platform composes one that also records a provider incident, so that
+        # bookkeeping is written once on its side rather than once per design executor.
+        self._spend_drain = spend_drain
+        # Lane 3 slice 5: a factory, not a value — the platform's Langfuse handler and its
+        # run-id registry are PER TURN, so a shared instance would cross-attribute one turn's
+        # model calls onto another's observation. Called once per turn envelope; ingestion
+        # takes none (it is a pipeline, not a graph).
+        self._turn_callbacks_factory = turn_callbacks_factory
 
     @property
     def task_capabilities(self) -> "tuple[TaskCapability, ...]":
@@ -348,10 +362,21 @@ class DesignJobWorkHandler:
 
         if isinstance(envelope, DesignIngestionEnvelope):
             return str(execute_ingestion_job(
-                envelope, host=host, expected_generation=generation
+                envelope,
+                host=host,
+                expected_generation=generation,
+                spend_drain=self._spend_drain,
             ))
         store = HybridRepository(workspace_id=envelope.workspace_id, ensure_workspace=False)
-        return _execute_turn(envelope, store, generation, host, self._checkpointer_factory)
+        return _execute_turn(
+            envelope,
+            store,
+            generation,
+            host,
+            self._checkpointer_factory,
+            spend_drain=self._spend_drain,
+            turn_callbacks_factory=self._turn_callbacks_factory,
+        )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
         try:
@@ -521,6 +546,9 @@ def _execute_turn(
     generation: int,
     host: DesignTurnHost,
     checkpointer_factory: Any,
+    *,
+    spend_drain: Any = None,
+    turn_callbacks_factory: Any = None,
 ) -> str:
     """Run ONE design turn to a terminal result. Synchronous by nature; called via to_thread.
 
@@ -559,11 +587,21 @@ def _execute_turn(
         else contextlib.nullcontext(None)
     )
     with checkpointer_cm as checkpointer:
+        # Design session continuity (2026-09-18): the thread is the DOCUMENT's session, so a
+        # thread that already carries state means the agent has been here before — this turn
+        # continues a conversation instead of opening one. The executors gate the brief and the
+        # history blocks on it, because re-sending what the thread already holds says everything
+        # twice. Probed HERE, under the saver the turn will actually run on, and BEFORE the turn
+        # touches it (the first invoke writes state of its own).
+        session_continued = _thread_has_state(checkpointer, envelope.checkpoint_thread_id)
         executor = (
             execute_agent_turn_job
             if envelope.kind == DesignRunKind.AGENT_TURN.value
             else execute_web_turn_job
         )
+        # Lane 3 slice 5: ONE call per turn. The factory mints this turn's Langfuse handler and
+        # the registry it fills; the executor adds the receipt collector to them.
+        callbacks = turn_callbacks_factory() if turn_callbacks_factory is not None else None
         status, response, event_type, event_data = executor(
             envelope,
             store=store,
@@ -573,6 +611,9 @@ def _execute_turn(
             # D7: the turn's governed tool invocations reach the same stream, fenced by the same
             # lease generation (see ``lumen_api.toolbelt.wiring._DesignRunEventTransport``).
             lease_generation=generation,
+            spend_drain=spend_drain,
+            callbacks=callbacks,
+            session_continued=session_continued,
         )
 
     try:
@@ -594,6 +635,22 @@ def _execute_turn(
         )
         return "fenced"
     return status
+
+
+def _thread_has_state(checkpointer: Any, thread_id: str) -> bool:
+    """Does the session thread already carry earlier turns? Best-effort; ``False`` on doubt.
+
+    ``False`` is the safe answer in both directions: the turn still runs, and the executors
+    simply send the brief and the history they would have sent before session continuity — one
+    duplicated block, never a lost one. So a saver that cannot answer must not fail the turn.
+    """
+    if checkpointer is None:
+        return False
+    try:
+        return checkpointer.get_tuple({"configurable": {"thread_id": thread_id}}) is not None
+    except Exception:  # noqa: BLE001 - a saver that cannot answer must not fail the turn
+        logger.warning("design_job.session_state_unreadable", thread_id=thread_id, exc_info=True)
+        return False
 
 
 # --- the LangGraph Postgres checkpointer (R-D5-B4) --------------------------------------------
@@ -622,9 +679,11 @@ def postgres_design_checkpointer(thread_id: str) -> Any:
     """Open the design turn's LangGraph saver on the platform database.
 
     Opened INSIDE the turn thread (the caller is ``_execute_turn``, itself under ``to_thread``),
-    which is what makes a synchronous saver correct here. The thread id is the design run id, per
-    the D5 ruling — see ``lumen_agent/checkpoint.py`` for what resuming that thread does and does
-    not mean today.
+    which is what makes a synchronous saver correct here. The thread is the DOCUMENT's design
+    session for a leg turn (one document = one session, 2026-09-18) and the design run id for a
+    turn that has no document — the caller decides, so a continued session's messages are here
+    under the id its earlier turns wrote. See ``lumen_agent/checkpoint.py`` for what resuming
+    that thread does and does not mean today.
     """
     from clue_db import database_url
     from langgraph.checkpoint.postgres import PostgresSaver
@@ -642,16 +701,25 @@ def build_design_job_handler(
     *,
     host_provider: Any = None,
     checkpointer_factory: Any = postgres_design_checkpointer,
+    spend_drain: Any = None,
+    turn_callbacks_factory: Any = None,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
     ``checkpointer_factory=None`` runs turns without durable graph state (what the design API's
     stubbed-runner tests want: the stub never builds a graph, so a saver would only add a
     connection per turn). Ingestion never has one — it is a pipeline, not a graph.
+
+    ``turn_callbacks_factory`` (lane 3 slice 5) is called once per TURN envelope and returns that
+    turn's ``lumen_agent.usage_collector.TurnCallbacks``. The platform composes one that opens a
+    Langfuse observation for the design leg; the design API's own embedded worker passes none,
+    so its runs still collect receipts into ``result_json`` without the platform's cost update.
     """
     return DesignJobWorkHandler(
         host_provider=host_provider,
         checkpointer_factory=checkpointer_factory,
+        spend_drain=spend_drain,
+        turn_callbacks_factory=turn_callbacks_factory,
     )
 
 

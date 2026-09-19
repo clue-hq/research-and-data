@@ -468,7 +468,8 @@ def test_the_onboarding_handler_is_off_unless_the_lane_flag_is_set(tmp_path: Pat
     secrets = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
     storage = FsStorage(tmp_path)
 
-    assert _build_onboarding_handler(_settings(), secrets, storage=storage) is None
+    off = _settings(onboarding_v2_enabled=False)  # on by default since 2026-09-12
+    assert _build_onboarding_handler(off, secrets, storage=storage) is None
 
     composed = _build_onboarding_handler(
         _settings(onboarding_v2_enabled=True), secrets, storage=storage
@@ -501,7 +502,8 @@ def test_the_catalog_reconciler_is_composed_per_run_only_with_a_model_credential
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """O3's identity ladder: the model stage is composed as a **factory of one reconciler per
-    run**, because its provider caller writes under that run's own folder.
+    run**, built over the catalog step's own sinks so its one call lands on the ledger with the
+    run's stamp (slice 1b).
 
     Same posture as the Exa key one level up, one step softer: a missing OpenRouter key (or the
     flag off) still composes the handler — the sync then runs its deterministic rungs alone, which
@@ -529,8 +531,9 @@ def test_the_catalog_reconciler_is_composed_per_run_only_with_a_model_credential
     )
     composed = _build_onboarding_handler(settings, keyed, storage=FsStorage(tmp_path))
     assert composed is not None and composed._reconciler_factory is not None
-    run_id = uuid4()
-    reconciler = composed._reconciler_factory(run_id)
+    from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
+
+    reconciler = composed._reconciler_factory(MemoryRawSink(), MemoryLedger())
     assert isinstance(reconciler, OpenRouterCatalogReconciler)
     assert reconciler._model == settings.onboarding_reconcile_model
     assert reconciler._base_url == GatewayConfig().base_url

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.onboarding_store import DocumentRow
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
+from clue_research.claimstore import list_research_fields
 
 __all__ = [
     "PERSON_EXTRA_FIELDS",
@@ -36,6 +37,7 @@ __all__ = [
     "AnnotationRow",
     "JobRow",
     "JobSpend",
+    "JobStage",
     "JobStatus",
     "JobSubject",
     "RunRow",
@@ -58,6 +60,7 @@ __all__ = [
     "read_run",
     "record_annotations",
     "refresh_run_status",
+    "set_job_stage",
     "suspend_job",
 ]
 
@@ -66,6 +69,11 @@ JobStatus = Literal["not_started", "in_progress", "needs_review", "completed", "
 
 #: What a job researches: the account (R2) or one of its committee members (R3).
 JobSubject = Literal["account", "person"]
+
+#: Where a job is (spec 2026-09-12 §1, the research progress card). An account job walks
+#: ``deep_research`` → ``synthesis`` → ``committee`` → ``member_research``; a person job stamps
+#: only the first two. The database CHECK carries the same four values.
+JobStage = Literal["deep_research", "synthesis", "committee", "member_research"]
 
 #: The two statuses a job can *finish* on. ``suspended`` is a pause, not a terminal.
 TerminalJob = Literal["completed", "needs_review"]
@@ -174,6 +182,9 @@ class JobRow:
     cost_usd: Decimal
     credits: Decimal
     media_seconds: int
+    #: Where the job is (spec 2026-09-12 §1); ``None`` before its first claim or on rows that
+    #: predate the column. Stamped by the driver, read by the research progress card.
+    stage: JobStage | None = None
 
 
 @dataclass(frozen=True)
@@ -367,6 +378,16 @@ async def suspend_job(conn: AsyncConnection, *, job_id: UUID) -> None:
     )
 
 
+async def set_job_stage(conn: AsyncConnection, *, job_id: UUID, stage: JobStage) -> None:
+    """Stamp where the job is (spec 2026-09-12 §1). Never touches status or the receipt."""
+    await conn.execute(
+        text(
+            "UPDATE arv2_research_job SET stage = :stage, updated_at = now() WHERE job_id = :job_id"
+        ),
+        {"stage": stage, "job_id": job_id},
+    )
+
+
 async def refresh_run_status(conn: AsyncConnection, *, run_id: UUID) -> str:
     """Recompute the run's status from its jobs and return it; sets ``finished_at`` iff terminal.
 
@@ -530,33 +551,15 @@ async def job_link_audit(conn: AsyncConnection, *, job_id: UUID) -> dict[str, in
     return {f"{row['verdict']}/{row['reason']}": int(row["n"]) for row in rows}
 
 
-async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The account-side field menu one job may write against: every registered ``account.*`` and
-    ``core.*`` field, exactly as the registry holds it.
-
-    The catalog is read from the registry rather than enumerated in code, because "open by
-    registration, not enumeration" is the whole point of the field registry: a pack that adds a
-    field is a row, and this menu grows with it without a code change.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'account.%' OR field_key LIKE 'core.%') "
-                    "ORDER BY field_key"
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_account_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The account menu from the effective registry, including this workspace's instructions."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="accounts")
     return FieldCatalog(
         account=tuple(
             FieldSpec(
-                key=str(row["field_key"]),
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
+                key=row.field_def.field_key,
+                description=row.description or "",
+                value_schema=row.value_schema,
             )
             for row in rows
         )
@@ -575,39 +578,12 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
 PERSON_EXTRA_FIELDS: tuple[str, ...] = ("core.work_email",)
 
 
-async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The person-side field menu one person job may write against.
-
-    Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
-    the facet section — plus :data:`PERSON_EXTRA_FIELDS`. Read from the registry for the same
-    reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
-    grows with it without a code change.
-
-    Each row also carries the field's declared ``use_class_hint``. The registry holds it in
-    ``field_definition.validation`` (``{"use_class_hint": …}``), and it is what a contact claim
-    written against that field is born with — so the difference between a professional fact and a
-    personal one is read off the field that declares it, never inferred from the key's spelling.
-    A field whose ``validation`` says nothing has no hint, and the claim path's default decides.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema, "
-                    " validation->>'use_class_hint' AS use_class_hint "
-                    "FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
-                    "ORDER BY field_key"
-                ),
-                {"extra": list(PERSON_EXTRA_FIELDS)},
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_person_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The person menu, preserving facets, work email and registered use-class hints."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="contacts")
     sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
     for row in rows:
-        key = str(row["field_key"])
+        key = row.field_def.field_key
         section = (
             "facet"
             if key.startswith("contact.facet.")
@@ -615,14 +591,14 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
             if key.startswith("contact.")
             else "account"
         )
+        validation = row.field_def.validation
+        hint = validation.get("use_class_hint") if isinstance(validation, dict) else None
         sections[section].append(
             FieldSpec(
                 key=key,
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
-                use_class_hint=(
-                    str(row["use_class_hint"]) if row["use_class_hint"] is not None else None
-                ),
+                description=row.description or "",
+                value_schema=row.value_schema,
+                use_class_hint=str(hint) if hint is not None else None,
             )
         )
     return FieldCatalog(
@@ -723,14 +699,19 @@ async def find_contact_by_linkedin(
 
 
 async def read_persona_documents(
-    conn: AsyncConnection, *, workspace_id: str, brand_id: str
+    conn: AsyncConnection, *, workspace_id: str, brand_id: str, project_id: str
 ) -> tuple[DocumentRow, ...]:
-    """The brand's served ``audience-persona`` documents, newest first.
+    """The served ``audience-persona`` documents this project may read, newest first.
 
     It returns *candidates* rather than the one document a run wants, because a persona document
     names its ICP in its front matter, not in a column — the caller reads the bodies and keeps the
     one whose ``icp_key`` matches the run's pin. Filtering here would mean guessing the ICP from
     the path, which is exactly the kind of guess this lane refuses to make.
+
+    Scope is not a guess, though, and it is enforced: the brand's personas plus this project's own,
+    project-local ones first. Another project's personas are never candidates — a persona written
+    for one project's rewritten ICP would otherwise be matched by key into a run that never asked
+    for it.
     """
     rows = (
         (
@@ -741,11 +722,13 @@ async def read_persona_documents(
                     "WHERE workspace_id = :workspace_id AND brand_id = :brand_id "
                     " AND kind = 'audience-persona' AND status = ANY(:served) "
                     " AND artifact_key IS NOT NULL "
-                    "ORDER BY version DESC, created_at DESC"
+                    " AND (project_id IS NULL OR project_id = :project_id) "
+                    "ORDER BY (project_id IS NULL), version DESC, created_at DESC"
                 ),
                 {
                     "workspace_id": workspace_id,
                     "brand_id": brand_id,
+                    "project_id": project_id,
                     "served": list(SERVED_DOCUMENT_STATUSES),
                 },
             )
@@ -766,12 +749,6 @@ async def read_persona_documents(
         )
         for row in rows
     )
-
-
-def _schema(raw: Any) -> Mapping[str, Any] | None:
-    """A ``value_schema`` column as a mapping, or ``None`` when the field declares none."""
-    decoded = decode_jsonb(raw)
-    return decoded if isinstance(decoded, Mapping) else None
 
 
 def _dump_json(payload: Mapping[str, Any]) -> str:
@@ -827,4 +804,5 @@ def _job(row: RowMapping) -> JobRow:
         cost_usd=row["cost_usd"],
         credits=row["credits"],
         media_seconds=row["media_seconds"],
+        stage=row["stage"],
     )

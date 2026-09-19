@@ -27,6 +27,7 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_core.provider_failures import classify_exception, failure_code
 from clue_obs import get_logger
 
 __all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
@@ -55,6 +56,18 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 # repair. A model that proposes a dishonest terminal shape a *third* time has not misread the
 # schema; it is refusing the contract, and the turn must die rather than loop.
 _MAX_FINALIZE_REPAIRS = 2
+
+
+def superstep_ceiling(max_rounds: int) -> int:
+    """LangGraph's ``recursion_limit`` for a round budget: two supersteps a round, plus headroom.
+
+    One model round is a model superstep plus a tool superstep; the four extra cover the graph's
+    own entry/exit nodes. This is the ceiling that actually bounds a chat turn, because every
+    governed tool call the model makes is its own one-step plan.
+    """
+
+    return max_rounds * 2 + 4
+
 
 # The status contract itself is stated once, on the finalize tool's own description, which the
 # model is holding when it reads this. Restating it here would be a second copy free to drift.
@@ -251,6 +264,11 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
 
 
 def _error_code(exc: BaseException) -> str:
+    # A provider that refused or failed is named for what it did, not for the SDK class that
+    # carried the news: the transcript, the turn row and the incident record read the same code.
+    failure = classify_exception("openrouter", exc)
+    if failure is not None:
+        return failure_code(failure)
     value = re.sub(r"(?<!^)(?=[A-Z])", "_", type(exc).__name__).lower()
     return value or "agent_turn_failed"
 
@@ -277,7 +295,7 @@ class DeepAgentTurnRuntime:
         self._models = models
         self._execution = execution
         self._max_runtime_s = max_runtime_s
-        self._recursion_limit = max_rounds * 2 + 4
+        self._recursion_limit = superstep_ceiling(max_rounds)
 
     async def run(
         self,

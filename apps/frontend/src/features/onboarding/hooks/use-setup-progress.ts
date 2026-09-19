@@ -35,11 +35,11 @@ export interface SetupProgress {
 }
 
 /**
- * Owns the slice-2 setting-up lifecycle: starts the (replay-safe) workspace setup, polls
- * durable lane truth at 1.5s, and releases the user into the app when the fast lane
- * completes. Start failures and poll findings are SEPARATE channels — a poll tick can never
- * wipe a start failure it knows nothing about (review FE-B1) — and every terminal state is
- * surfaced with real recovery controls (review FE-B2). Polling stops on true backend terminals
+ * Owns the setting-up lifecycle: starts the (replay-safe) onboarding run for the profile's
+ * company website, polls durable lane truth at 1.5s, and releases the user into the app when
+ * the fast steps complete. Start failures and poll findings are SEPARATE channels — a poll tick
+ * can never wipe a start failure it knows nothing about (review FE-B1) — and every terminal
+ * state is surfaced with real recovery controls (review FE-B2). Polling stops on true backend terminals
  * and after release; a local stall fallback keeps observing durable truth so later readiness can
  * still release automatically. `location.replace` avoids the back-button trap (review FE-N6).
  *
@@ -53,6 +53,7 @@ export interface SetupProgress {
  * transport is the default, and a scripted local stream satisfies the same contract.
  */
 export function useSetupProgress(
+  { companyWebsite }: { companyWebsite: string },
   source: SetupProgressSource = httpSetupProgressSource,
 ): SetupProgress {
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -74,6 +75,9 @@ export function useSetupProgress(
   // caller handing a fresh source object to a re-render must not restart the run (that would
   // re-enter start and reset the pending/error counters mid-flight).
   const sourceRef = useRef(source);
+  // Same reason: the company the run is started for is fixed for the screen's life. Capturing it
+  // keeps the effect's empty deps honest — a re-render with a new string must not restart a run.
+  const websiteRef = useRef(companyWebsite);
 
   useEffect(() => {
     let interval: number | null = null;
@@ -91,7 +95,7 @@ export function useSetupProgress(
       if (startedOnce.current) return;
       startedOnce.current = true;
       try {
-        await sourceRef.current.start();
+        await sourceRef.current.start({ companyWebsite: websiteRef.current });
       } catch (caught) {
         startFailure.current =
           caught instanceof SetupApiError && caught.status === 409

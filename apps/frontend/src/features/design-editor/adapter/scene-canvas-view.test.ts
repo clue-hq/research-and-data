@@ -9,6 +9,8 @@ import {
   ARTBOARD_FIT_MARGIN,
   ARTBOARD_SHADOW_BLUR_PX,
   ARTBOARD_SHADOW_OFFSET_PX,
+  HOVER_OUTLINE_OPACITY,
+  HOVER_OUTLINE_WIDTH,
   SELECTION_HANDLE_CORNER_RADIUS,
   SELECTION_HANDLE_FILL,
   SELECTION_HANDLE_SIZE,
@@ -25,12 +27,14 @@ import {
   sceneAssetPassthroughUrl,
   sceneDragPanViewport,
   sceneSelectionOutline,
+  sceneTextPaintedBox,
   sceneViewportModel,
   sceneWheelViewport,
   selectionHandleRects,
   selectionOutlineForBox,
   snapZoomPercent,
   textMeasurementSignature,
+  type SceneArtboardModel,
 } from "./scene-canvas-view";
 import { sceneHitPoint } from "./scene-selection";
 import type { Scene } from "../engine/scene/contracts";
@@ -459,6 +463,52 @@ test("editing text content re-measures", () => {
   );
 });
 
+test("swapping type tokens between equal-sized text nodes re-measures", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const first = scene.nodes.text_headline;
+  const second = scene.nodes.text_proof_stat;
+  assert.equal(first.kind.kind, "text");
+  if (first.kind.kind !== "text") throw new Error("expected text fixture");
+  first.kind = { ...first.kind, style_token: "type.headline" };
+  second.kind = { ...first.kind, style_token: "type.stat" };
+  for (const node of [first, second]) {
+    node.size = {
+      width: { kind: "fixed", value: 300 },
+      height: { kind: "fixed", value: 80 },
+    };
+    node.computed = {
+      layout_bounds: { x: 0, y: 0, width: 300, height: 80 },
+      render_bounds: { x: 0, y: 0, width: 300, height: 80 },
+    };
+  }
+  const before = textMeasurementSignature(scene, 0);
+
+  // The same styles now belong to different measurement-cache node IDs.
+  [first.kind, second.kind] = [second.kind, first.kind];
+
+  assert.notEqual(textMeasurementSignature(scene, 0), before);
+});
+
+test("Plan 4: a text node's solved size is part of the measurement signature", () => {
+  // The line pass is keyed on the box the engine solved; a resized box must
+  // re-measure or its lines go stale (the key misses → heuristic lines).
+  const scene = clone(HARVESTED_AD_PAGE);
+  scene.nodes.text_proof_stat.computed = {
+    layout_bounds: { x: 0, y: 0, width: 300, height: 120 },
+    render_bounds: { x: 0, y: 0, width: 300, height: 120 },
+  };
+  const before = textMeasurementSignature(scene, 0);
+  scene.nodes.text_proof_stat.computed.layout_bounds.width = 280;
+  assert.notEqual(textMeasurementSignature(scene, 0), before);
+  // A non-text node's size never re-measures.
+  const rect = clone(HARVESTED_AD_PAGE);
+  rect.nodes.rect_accent_bar.computed = {
+    layout_bounds: { x: 0, y: 0, width: 9, height: 9 },
+    render_bounds: { x: 0, y: 0, width: 9, height: 9 },
+  };
+  assert.equal(textMeasurementSignature(rect, 0), textMeasurementSignature(HARVESTED_AD_PAGE, 0));
+});
+
 test("a new kit generation re-measures (kit type roles are measurement inputs)", () => {
   assert.notEqual(
     textMeasurementSignature(HARVESTED_AD_PAGE, 1),
@@ -516,6 +566,45 @@ test("an unknown page renders nothing rather than throwing", () => {
   assert.equal(sceneArtboardModel(HARVESTED_AD_PAGE, null), null);
 });
 
+/**
+ * Rung B (rich-text plan, 2026-08-24): a text node with an open caret session
+ * is drawn with no text payload, so the DOM overlay is the only copy of the
+ * string on screen. Same render-time descriptor override AD4.C's gesture
+ * preview uses — the draw loop needs no session awareness at all.
+ */
+function textNodeIn(model: SceneArtboardModel, nodeId: string) {
+  const copyRow = model.nodes[0].children[0];
+  const found = [
+    ...copyRow.children,
+    ...copyRow.children.flatMap((child) => child.children),
+  ].find((node) => node.descriptor.id === nodeId);
+  assert.ok(found);
+  return found;
+}
+
+test("an open text session suppresses that node's painted text", () => {
+  const model = sceneArtboardModel(
+    HARVESTED_AD_PAGE,
+    AD_PAGE_ID,
+    null,
+    "text_headline",
+  );
+  assert.ok(model);
+  // The node still draws — its fills, strokes and box are untouched — only the
+  // glyphs go, because the overlay is painting them.
+  assert.equal(textNodeIn(model, "text_headline").descriptor.text, undefined);
+  assert.equal(textNodeIn(model, "text_proof_stat").descriptor.text?.content, "3.4x faster triage");
+});
+
+test("no session (or a stale node id) suppresses nothing", () => {
+  const model = sceneArtboardModel(HARVESTED_AD_PAGE, AD_PAGE_ID, null, "text_gone");
+  assert.ok(model);
+  assert.equal(
+    textNodeIn(model, "text_headline").descriptor.text?.content,
+    "Every inbound fax, routed to the right EHR queue.",
+  );
+});
+
 /* -------------------------------------------------------------------------
  * Gate G-A — the selection outline's geometry (founder ruling: Variant B)
  * ---------------------------------------------------------------------- */
@@ -570,7 +659,15 @@ test("the outline is the selected node's box in stage px at fit-on-open", () => 
       selectedNodeId: "image_hero",
       viewport: model.applied,
     }),
-    { nodeId: "image_hero", x: 68, y: 258, width: 528, height: 338, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 68,
+      y: 258,
+      width: 528,
+      height: 338,
+      rotation: 0,
+      frame: null,
+    },
   );
 });
 
@@ -717,6 +814,7 @@ test("a non-identity page unit scales the box (the unitScale trap)", () => {
     width: 288,
     height: 384,
     rotation: 0,
+    frame: null,
   });
 });
 
@@ -739,6 +837,7 @@ test("a rotated node carries its rotation through to the overlay", () => {
     width: 1056,
     height: 676,
     rotation: 30,
+    frame: null,
   });
 });
 
@@ -833,4 +932,163 @@ test("G-A: the approved Variant B stroke is the one the overlay uses", () => {
   assert.equal(SELECTION_HANDLE_FILL, "#FFFFFF");
   assert.equal(SELECTION_HANDLE_STROKE, "#4F46E5");
   assert.equal(SELECTION_HANDLE_STROKE_WIDTH, 1.5);
+});
+
+test("Plan 3 R4: the hover outline is the selection colour, thinner and translucent", () => {
+  assert.equal(HOVER_OUTLINE_WIDTH, 1);
+  assert.equal(HOVER_OUTLINE_OPACITY, 0.55);
+  assert.ok(HOVER_OUTLINE_WIDTH < SELECTION_OUTLINE_WIDTH);
+});
+
+// ══ Editor Quality Plan 4 (item F, ruling R5): the outline is the painted text ══
+
+test("Plan 4: a text node's outline is the union of its painted lines; the layout box is the dashed frame", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  node.computed = {
+    layout_bounds: { x: 100, y: 100, width: 300, height: 120 },
+    render_bounds: { x: 100, y: 100, width: 300, height: 120 },
+    text_lines: [
+      { x: 100, y: 100, width: 180, height: 40 },
+      { x: 100, y: 140, width: 120, height: 40 },
+    ],
+  };
+  assert.deepEqual(sceneTextPaintedBox(node), {
+    x: 100,
+    y: 100,
+    width: 180,
+    height: 80,
+  });
+  const artboard = heroArtboard(scene);
+  const viewport = sceneViewportModel({
+    rect: artboard.rect,
+    stage: { width: 664, height: 664 },
+    zoom: null,
+  }).applied;
+  const outline = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: node.id,
+    viewport,
+  });
+  const painted = selectionOutlineForBox({
+    artboard,
+    box: { x: 100, y: 100, width: 180, height: 80 },
+    nodeId: node.id,
+    rotation: 0,
+    viewport,
+  })!;
+  const frame = selectionOutlineForBox({
+    artboard,
+    box: { x: 100, y: 100, width: 300, height: 120 },
+    nodeId: node.id,
+    rotation: 0,
+    viewport,
+  })!;
+  assert.deepEqual(outline, {
+    ...painted,
+    frame: {
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+    },
+  });
+});
+
+test("Plan 4: a hug box (lines fill it within the rounding contract) draws no frame", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  node.computed = {
+    layout_bounds: { x: 100, y: 100, width: 180, height: 80 },
+    render_bounds: { x: 100, y: 100, width: 180, height: 80 },
+    text_lines: [
+      { x: 100, y: 100, width: 180, height: 40 },
+      { x: 100, y: 140, width: 120, height: 40.4 },
+    ],
+  };
+  const artboard = heroArtboard(scene);
+  const viewport = sceneViewportModel({
+    rect: artboard.rect,
+    stage: { width: 664, height: 664 },
+    zoom: null,
+  }).applied;
+  const outline = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: node.id,
+    viewport,
+  });
+  assert.ok(outline);
+  assert.equal(outline.frame, null);
+});
+
+test("Plan 4: a text node without painted lines, and a gesture preview, outline the box with no frame", () => {
+  const scene = clone(HARVESTED_AD_PAGE);
+  const node = scene.nodes.text_proof_stat;
+  node.computed = {
+    layout_bounds: { x: 100, y: 100, width: 300, height: 120 },
+    render_bounds: { x: 100, y: 100, width: 300, height: 120 },
+  };
+  const artboard = heroArtboard(scene);
+  const viewport = sceneViewportModel({
+    rect: artboard.rect,
+    stage: { width: 664, height: 664 },
+    zoom: null,
+  }).applied;
+  const plain = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: node.id,
+    viewport,
+  });
+  assert.deepEqual(
+    plain,
+    selectionOutlineForBox({
+      artboard,
+      box: { x: 100, y: 100, width: 300, height: 120 },
+      nodeId: node.id,
+      rotation: 0,
+      viewport,
+    }),
+  );
+  assert.equal(plain?.frame, null);
+  node.computed.text_lines = [{ x: 100, y: 100, width: 50, height: 40 }];
+  const scale = artboard.page.unitScale;
+  const previewed = sceneSelectionOutline({
+    artboard,
+    pageId: AD_PAGE_ID,
+    scene,
+    selectedNodeId: node.id,
+    viewport,
+    preview: {
+      nodeId: node.id,
+      box: {
+        x: 100 * scale,
+        y: 100 * scale,
+        width: 300 * scale,
+        height: 120 * scale,
+      },
+      rotation: 0,
+    },
+  });
+  assert.equal(previewed?.frame, null);
+  assert.equal(previewed?.width, plain?.width);
+});
+
+test("Plan 4: handles sit on whatever box they are asked for", () => {
+  const rects = selectionHandleRects({ x: 10, y: 20, width: 100, height: 50 });
+  assert.equal(rects.length, 4);
+  assert.deepEqual(
+    rects.map((r) => [r.x + r.size / 2, r.y + r.size / 2]),
+    [
+      [10, 20],
+      [110, 20],
+      [10, 70],
+      [110, 70],
+    ],
+  );
 });

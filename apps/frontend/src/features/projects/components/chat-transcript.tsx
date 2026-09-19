@@ -16,6 +16,7 @@ import {
 } from "../model/design-leg";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
+import { ChatReasoning } from "./chat-reasoning";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -112,11 +113,13 @@ export function ChatTranscript({
                         ? "Selected contact"
                         : ref.objectType === "account"
                           ? "Selected account"
-                          : ref.objectType === "design_node"
-                            ? "Selected design element"
-                            : ref.objectType === "design_document"
-                              ? "Design"
-                              : "Reference image";
+                          : ref.objectType === "project_document"
+                            ? "Selected file"
+                            : ref.objectType === "design_node"
+                              ? "Selected design element"
+                              : ref.objectType === "design_document"
+                                ? "Selected design"
+                                : "Reference image";
                     const label = entity?.label ?? ref.label ?? fallbackLabel;
                     return (
                       <span
@@ -138,7 +141,10 @@ export function ChatTranscript({
                             width={18}
                           />
                         ) : null}
-                        {ref.objectType === "account" || ref.objectType === "contact"
+                        {ref.objectType === "account" ||
+                        ref.objectType === "contact" ||
+                        ref.objectType === "project_document" ||
+                        ref.objectType === "design_document"
                           ? `@${label}`
                           : label}
                       </span>
@@ -154,6 +160,9 @@ export function ChatTranscript({
                   <small>{`Requested changes: ${gateAnswer.detail}`}</small>
                 ) : null}
               </div>
+            ) : null}
+            {message.role === "assistant" ? (
+              <ChatReasoning parts={message.parts} turnState={message.state} />
             ) : null}
             {displayBody !== null ? (
               <div className={styles.messageText}>
@@ -174,7 +183,6 @@ export function ChatTranscript({
                 actions={actions}
                 key={part.partId}
                 part={part}
-                turnState={message.state}
               />
             ))}
             {message.role === "assistant" &&
@@ -188,18 +196,6 @@ export function ChatTranscript({
               </p>
             ) : null}
             {message.role === "assistant" &&
-            message.state === "cancelled" &&
-            message.body === null &&
-            !message.parts.some(
-              (part) =>
-                part.kind === "reasoning" ||
-                (part.kind === "text" && part.failed),
-            ) ? (
-              <p className={styles.reasoningStatus} role="status">
-                Stopped
-              </p>
-            ) : null}
-            {message.role === "assistant" &&
             message.state === "failed" &&
             message.body === null &&
             // A typed failure now renders its own sentence below, so the
@@ -208,7 +204,6 @@ export function ChatTranscript({
             message.failureCode === null &&
             !message.parts.some(
               (part) =>
-                part.kind === "reasoning" ||
                 (part.kind === "text" && part.failed),
             ) ? (
               <p className={styles.reasoningStatus} role="status">

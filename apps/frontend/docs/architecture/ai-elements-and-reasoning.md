@@ -27,12 +27,11 @@ The approved AI Elements state primitives are limited to:
 
 1. `Reasoning`;
 2. `Shimmer`;
-3. `ChainOfThought`;
-4. `Tool`;
-5. `Task`;
-6. `Plan`;
-7. `Confirmation`;
-8. `Sources`.
+3. `Tool`;
+4. `Task`;
+5. `Plan`;
+6. `Confirmation`;
+7. `Sources`.
 
 `Conversation`, `Message`, `PromptInput`, `Agent`, `Artifact`, `CodeBlock`, and
 other catalog components are not part of the current implementation.
@@ -106,7 +105,7 @@ does not merely mean the agent is thinking.
 | Stream transport | `src/features/projects/data/chat-stream.repository.ts` |
 | Message timeline | `src/features/projects/components/chat-transcript.tsx` |
 | Part renderer | `src/features/projects/components/chat-message-part.tsx` |
-| Reasoning + activity adapters | `src/features/projects/components/chat-agent-activity.tsx` |
+| Consolidated reasoning disclosure | `src/features/projects/components/chat-reasoning.tsx` |
 | Tool adapter | `src/features/projects/components/chat-tool-call.tsx` |
 | Task adapter | `src/features/projects/components/chat-research-task.tsx` |
 | Confirmation (gate) adapter | `src/features/projects/components/chat-gate-card.tsx` |
@@ -131,7 +130,7 @@ part id and never merges two half-cards. The union is:
 ```ts
 type ChatPart =
   | ChatTextPart        // accumulated from text.start / text.delta / text.end
-  | ChatReasoningPart   // a safe per-round status, never raw model reasoning
+  | ChatReasoningPart   // model-round state, plus optional backend-supplied trace
   | ChatActivityPart    // ordered, durably-recorded observed steps
   | ChatToolPart        // toolName, toolCallId, structured input/output/error
   | ChatTaskPart        // one detached run as one visible task
@@ -176,14 +175,168 @@ text.start | text.delta | text.end | stream.hello | stream.reset
 is monotone within one turn. Part lifecycle events carry a full snapshot;
 `text.delta` is append-only and index-ordered.
 
-The UI exposes user-visible activity summaries. It does not require or display
-private raw model chain-of-thought, and the backend sends none: the `reasoning`
-part carries no text at all.
+**Presentation ruling, 2026-09-12:** one inline `Reasoning` disclosure per
+assistant response replaces the per-round completion labels and `ChainOfThought`
+activity list. Round text is joined in stream order, without interpreting Markdown.
+Backticks, fences and other syntax remain ordinary text in the Clue body font.
+The disclosure is present only when the backend supplied non-empty trace text;
+otherwise an active model round shows one shimmering Thinking label and a
+completed round adds no status receipt. Tool results, tasks, gates, failures and
+sources retain their own components.
+
+Trace availability and retention are unchanged: the backend's development-only
+`CLUE_CHAT_REASONING_TRACE_MODE=raw` may supply ephemeral provider text. It is not
+saved in the durable conversation, and reload or stream reset can remove it.
+This presentation change does not enable raw traces in production or persist them.
 
 ## Disclosure and scroll behavior
 
-Each reasoning block owns independent disclosure state. Expanding a completed
-step must not expand earlier reasoning blocks.
+### Implementation plan and current status — 2026-09-12
+
+The founder approved the preview and requested a plan before main-feature
+development. Commit `81942b704` already integrated the presentation after that
+preview approval was interpreted as implementation approval. The plan below
+records that actual state; it does not authorize further changes automatically.
+
+| Step | Implementation / acceptance | Current status |
+| --- | --- | --- |
+| 1. Consolidate reasoning | Collect backend-supplied round text into one disclosure per assistant response. Remove repeated completion labels and the generic activity checklist; retain actionable tool results, tasks, gates and sources. | Landed in `81942b704`. |
+| 2. Apply the approved inline design | Use existing AI Elements Reasoning and Shimmer with Clue typography, a chevron and a subtle left rule. Render traces as literal text with line breaks, without Markdown parsing. | Landed. |
+| 3. Handle the lifecycle | Open when trace text arrives during a running turn, respect manual collapse across subsequent deltas/rounds, close after termination and allow reopening while text remains available. Show no empty disclosure; retain stopped/failed receipts. | Landed; synthetic lifecycle checks passed. |
+| 4. Contain long content | Wrap long identifiers, URLs, inline monospace values and fenced code inside the message width. Keep Markdown formatting in final answers and limit trace height with vertical scrolling. | Landed; actual-component browser checks passed at 320px panel width. |
+| 5. Verify a real conversation | Exercise an actual provider-backed turn in Semarang: multiple rounds, collapse/reopen while streaming, final answer, scrolling, and reload/reconnect. Also check keyboard operation and reduced-motion behavior. Record separately what the provider sends and what survives reload. | Incomplete. A founder-triggered Grok turn had four reasoning rounds but zero reasoning-text events. The gateway adapter defect below must be fixed before claiming real delivery. |
+
+The remaining product decision is trace availability and retention. The current
+backend permits provider trace text only in development and does not persist it.
+Making traces customer-visible in production or available after refresh requires
+a separate agreed backend contract; the frontend must not fabricate missing text
+or silently persist it in browser storage. Stop controls and the minimal queued-
+message Resume surface are implemented in
+[Projects §6A](../api-contracts/projects.md#chat-polish-delivery-plan).
+Research-card polishing and other textbox layout changes remain separate.
+
+<a id="provider-reasoning-delivery-repair"></a>
+
+### Provider reasoning delivery repair — implemented, 2026-09-12
+
+**Status: implemented and verified through a real Grok conversation in Semarang.**
+This is CP1 in the combined chat-polish delivery plan. The approved inline/plain-text
+view is retained; provider data now reaches it through the existing event path.
+
+**Original verified defect:** the Semarang worker already has trace mode `raw` and
+uses Grok through OpenRouter. The gateway's non-OpenAI chat-completions branch
+constructs `ChatOpenAI` from pinned `langchain-openai==1.4.1`. That adapter drops
+third-party reasoning fields before `TurnStreamCallbackHandler` can read them.
+An offline reproduction using its actual chunk converter discarded synthetic
+`reasoning`, `reasoning_content`, and `reasoning_details` fields. The live turn
+had reasoning status events but no reasoning-text deltas or snapshots. Its raw
+provider response was not captured; this is not evidence that the provider
+actually returned text for that particular turn.
+
+**Adapter decision:** compatibility testing rejected `langchain-openrouter==0.2.7`
+for this pinned wrapper: its SDK `Chat.send` rejects the existing `usage` argument,
+its retry setting becomes a wall-time budget instead of the configured retry count,
+and usage-only frames lose provider cost metadata. The plan's narrow alternative
+is implemented in `libs/clue-gateway/clue_gateway/openrouter_chat.py` over the
+existing pinned `ChatOpenAI` conversion hooks. Transport, tool binding, cancellation,
+timeouts and retry ownership remain upstream. No dependency/lockfile change or
+monkeypatch is required. OpenAI's Responses branch remains unchanged.
+
+The converter retains scalar reasoning aliases and structured continuation details.
+The stream extractor selects one canonical text source and allowlists displayable
+text/summary blocks; encrypted data never becomes visible trace text. Wire tests
+exercise sync/async calls, tool continuations, usage/cost and aliases; a fake HTTP
+stream also traverses the actual adapter and emitter into Postgres events. A real
+Grok turn emitted 13 reasoning deltas and populated the approved disclosure.
+
+**Retention audit:** no raw payload logging or new reasoning-history store was
+added. The existing development-only trace gate and bounded event/lens policy
+still control display. Existing model receipt artifacts and LangGraph continuation
+checkpoints can retain provider metadata under their current retention/access
+policies, including opaque details required for a subsequent tool round. They are
+not chat transcript messages. Only accepted user-facing answer text enters the
+new interrupted-history path; cold refresh is not a promise of retained raw traces.
+
+| Step | Work and ownership | Required evidence |
+| --- | --- | --- |
+| CP1.1 — Reproduce the loss | `tests/gateway/test_agent_model.py`, existing dev-lens tests; use fake HTTP streaming responses through the real configured adapter, not only hand-built normalized chunks | A failing regression demonstrates the current loss on the exact route; ordinary final-answer/tool streaming still works |
+| CP1.2 — Replace the lossy adapter | `libs/clue-gateway/clue_gateway/agent_model.py`, `openrouter_chat.py`; no dependency change | The provider-specific implementation works with `GovernedAgentChatModel`, injected HTTP clients, sync/async streaming, tool binding and interruption; no separate model egress |
+| CP1.3 — Normalize once and project | `platform/api/clue_api/chat/turn_stream.py`; a gateway helper only if needed by the stable model seam | Provider-exposed text reaches existing reasoning part IDs in order, with correct round/attempt ownership and no duplicate characters |
+| CP1.4 — Real conversation acceptance | Existing `ChatReasoning` and transcript, live Semarang worker/API/browser | A supported-provider turn shows incremental real text in the approved disclosure; manually collapse/reopen across rounds, finish and Stop, with bounded widths |
+
+Implementation constraints:
+
+- Keep OpenAI's existing Responses path and the configured design routing scope
+  unchanged. Preserve model selection, effort/budget configuration, timeouts,
+  retries, usage attribution, cost accounting and provider routing. The shared
+  chat-completions branch has other consumers: run relevant ARV2/gateway contract
+  regressions rather than assume this affects only the visual chat. If the
+  provider-specific package cannot satisfy an existing wrapper requirement,
+  record the concrete incompatibility before choosing a narrow gateway-owned
+  adapter alternative; do not silently fork the model pipeline.
+- Inspect the actual normalized chunk shape from the selected pinned version.
+  Support standard `content_blocks` reasoning text as well as the retained
+  Responses-summary shape where applicable. The current extractor looks only
+  at selected `content` members and `additional_kwargs.reasoning_content`; merely
+  changing the constructor is insufficient if the normalized shape changes.
+- Choose one canonical source per chunk. If normalized blocks are derived from
+  additional kwargs, do not append both copies. Preserve legitimate repeated
+  words/fragments; do not deduplicate by comparing text values. Handle indexed
+  fragments, partial blocks, streaming versus final snapshots, and reconnect
+  replay using their actual event/part identity.
+- Display only text or summaries the provider explicitly exposes. OpenRouter
+  also carries structured and encrypted reasoning details; preserve required
+  provider metadata through tool continuations within the adapter, but never
+  render encrypted data, signatures or raw JSON as trace text. This follows the
+  provider's distinction between displayable reasoning and continuation data.
+  [OpenRouter reasoning format and preservation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+- Keep the existing `part_kind=reasoning` event path and closing snapshots.
+  Regular provider content and tool arguments cannot become trace text; the
+  assistant answer still comes only from the existing finalize-argument path.
+  Tests must include a single chunk containing both tool-call and reasoning
+  fields, ordinary text without reasoning, and encrypted-only/no-trace output.
+- Keep plain-text reasoning rendering, one minimizable disclosure, manual
+  collapse respected while streaming, Shimmer only during active reasoning,
+  and safe wrapping of backticks/Markdown-looking strings. Retain final-answer
+  Markdown rendering with its overflow guards.
+- Preserve the existing development-only trace gate. Fixing delivery in
+  Semarang does not silently enable customer-facing production traces or make
+  them permanent history. Provider-only metadata also must not bypass existing
+  artifact/log/checkpoint retention rules. Audit what the new adapter retains;
+  do not add raw payload logging as a debugging shortcut.
+- On Stop, close active reasoning state and flush already-received displayable
+  fragments through the same stream policy; do not fabricate text. Ephemeral
+  traces may disappear after a cold reset. The separate CP2 guarantee covers
+  the partial user-facing answer, not the provider's reasoning internals.
+
+Validation order: gateway wire-shape regression → emitter/dev-lens integration
+(`tests/api/test_lane_d_dev_lens_db.py`) → controller/actual-component checks →
+real provider-backed turn in Semarang. Include Grok's configured route and a
+regression for the preserved Responses path. Test request cancellation, tool
+continuations, retry/fallback ownership, Unicode and long backtick values, and
+prove usage/cost events are not doubled by observing the same chunk twice.
+
+For live acceptance, correlate model/request identity with reasoning event counts
+and a visible updating disclosure. Do not infer trace delivery from nonzero
+reasoning-token usage alone. Capture metadata/counts instead of proprietary trace
+text in the evidence log. If the chosen provider returns no displayable text,
+record that result honestly and verify delivery with a supported route; do not
+claim Grok success or silently change the user's selected model. No-trace output
+keeps the honest existing fallback and cannot be represented by illustrative POC
+text. After the adapter passes, run the combined Stop/queue/persistence scenario
+from Projects §6A and keep provider availability separate from retention.
+
+### Agreed behavior
+
+Each assistant response owns one disclosure. It opens when trace text first
+arrives during a running turn. Manual collapse remains respected as more text
+and model rounds arrive. It closes after the turn finishes, and can be reopened
+while the text remains available. Historical disclosures start collapsed.
+
+Trace text uses `white-space: pre-wrap` and `overflow-wrap: anywhere`, with a
+256px vertical scroll limit. Final-answer Markdown remains formatted, but inline
+code, fenced blocks and long strings wrap inside the available message width.
+No code block or trace should create horizontal scrolling in the chat panel.
 
 The transcript follows the reader:
 
@@ -232,15 +385,10 @@ option are local editor interaction state—not page or backend business state.
 removable reference containing stable artifact and node IDs. That editor work
 remains separate from this AI Elements state integration.
 
-Active reasoning and task labels use the shared `Shimmer` primitive. Its
-background position loops continuously; task and tool loader SVGs rotate while
-running. Completed states use the compact Clue status check rather than a large
-bare tick.
-
-Every streaming reasoning status, including the initial `Thinking` state and
-`landing agent is running...`, places the same rotating loader immediately
-before the shimmer label. A disclosure chevron is rendered only when the status
-has detail or an activity trace to expand.
+Active reasoning uses `Shimmer` with no rotating loader or completion checkmark.
+The chevron appears only when there is trace text to expand. Reduced motion
+disables shimmer emphasis and disclosure animation. Task/tool presentation is
+independent of reasoning and keeps its existing lifecycle indicators.
 
 ## Lightfield evidence limit
 
@@ -256,6 +404,12 @@ implementation uses Clue data contracts, Figma assets, and locally owned AI
 Elements primitives.
 
 ## Validation record
+
+Validated on 2026-09-12: consolidated disclosure lifecycle and transcript tests,
+real-component browser checks at a 320px panel width with long backticks, URLs,
+Markdown and fenced JSON (no horizontal overflow), plus the design-system build,
+lint and production build. Test samples are isolated at the local preview; no
+provider calls or backend trace-retention changes were made.
 
 Validated on 2026-08-01:
 

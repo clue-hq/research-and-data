@@ -13,7 +13,8 @@ points at (same rule as scripts/load_arv2_answer_key.py). This command SPENDS MO
 section it decides is missing is one OpenRouter call. It writes nothing when every section is
 already stored — pass --force to rewrite a page, or --regenerate-stale to rewrite only the
 sections a newer claim has moved underneath. --dry-run runs the whole thing in one transaction,
-prints the report, and rolls it back (the calls still happen and are still paid for).
+prints the report, and rolls the page back; the calls still happen, are still paid for, and their
+rows on provider_call_ledger are kept (they commit on their own).
 
 Only JSON goes to stdout; progress goes to stderr.
 """
@@ -31,12 +32,14 @@ from typing import Any, cast
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.display.gather import SubjectKind
 from clue_api.arv2.display.page import PageResult, default_runner_factory, ensure_page
 from clue_api.arv2.display.recipes import Page
 from clue_api.arv2.errors import Arv2Error
+from clue_api.storage_wiring import build_storage_backend
 from clue_config import Secrets, Settings
-from clue_db import db_lifespan
+from clue_db import db_lifespan, transaction
 
 #: The workspace the answer-key loader seeds. Overridable, never guessed from the database.
 DEFAULT_WORKSPACE = "ws_arv2_answer_key"
@@ -106,11 +109,6 @@ def _args() -> argparse.Namespace:
         help="Run everything in one transaction, print the report, and roll it back. The model "
         "calls still happen and are still paid for.",
     )
-    parser.add_argument(
-        "--raw-root",
-        default=None,
-        help="Where raw bodies and the JSONL ledger are written (default: CLUE_ARV2_RAW_ROOT).",
-    )
     return parser.parse_args()
 
 
@@ -169,8 +167,6 @@ def _report(result: PageResult) -> dict[str, Any]:
 
 async def _run(args: argparse.Namespace) -> dict[str, Any]:
     settings = Settings()
-    if args.raw_root:
-        settings = settings.model_copy(update={"arv2_raw_root": args.raw_root})
     # Built before the database is touched: a missing key must fail before anything is written.
     runner_factory = default_runner_factory(settings, Secrets())
     pages = _pages(args)
@@ -178,6 +174,11 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     report: dict[str, Any] = {}
     total = Decimal(0)
     async with db_lifespan(args.database_url) as engine:
+        # Slice 1b: the pages' provider spend lands on provider_call_ledger in its own
+        # transactions (D2) — a --dry-run page rolls back, its spend rows do not.
+        artifacts = DurableAgentArtifactStore(
+            storage=build_storage_backend(settings), conn_factory=transaction
+        )
         conn = await engine.connect()
         trans = await conn.begin()
         try:
@@ -197,6 +198,8 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
                     page=page,
                     settings=settings,
                     runner_factory=runner_factory,
+                    artifacts=artifacts,
+                    spend_conn_factory=transaction,
                     force=args.force,
                     regenerate_stale=args.regenerate_stale,
                 )

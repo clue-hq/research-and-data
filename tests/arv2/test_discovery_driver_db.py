@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -50,7 +51,13 @@ from clue_fleet.work_worker import WorkContext
 from clue_research.claimstore import load_core_pack
 from clue_storage.fs import FsStorage
 from tests.arv2.icp_fixture import USER_ID, IcpFixture, seed_icp_fixture, settings_for
-from tests.arv2.test_discovery_driver import GEOGRAPHY_RULE, STAGE_RULE, _clock, _no_sleep
+from tests.arv2.test_discovery_driver import (
+    _RULES,
+    GEOGRAPHY_RULE,
+    STAGE_RULE,
+    _clock,
+    _no_sleep,
+)
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -285,7 +292,14 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
 
             transports = _OneCallPerHop(_script())
             handler = Arv2DiscoveryWorkHandler(
-                settings=Settings(_env_file=None, arv2_discovery_enabled=True),
+                # The script below is positional (its docstring says why). One hop in flight keeps
+                # the order it pins; the concurrent path is proven by the routed scenario further
+                # down.
+                settings=Settings(
+                    _env_file=None,
+                    arv2_discovery_enabled=True,
+                    arv2_discovery_verify_concurrency=1,
+                ),
                 conn_factory=_conn_factory(conn),
                 storage=storage,
                 # The production sink, injected from outside the lane exactly as ``fleet_main``
@@ -475,6 +489,230 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
                 row for row in ledger if row["provider"] == "exa" and row["phase"] == "result"
             ]
             assert len(answers) == 6
+
+    run_async(scenario())
+
+
+class _RoutedTransport:
+    """A :class:`ScriptedTransport` per hop that picks its one response by what the request asks.
+
+    Under a cap above one the order of provider calls is not a contract any more, so a positional
+    script cannot describe the run: two candidates' website asks are in flight together, and eight
+    gate asks are answered in whatever order four-at-a-time finishes in. Each route is
+    ``(company, needle, response)``; ``send`` consumes the first unconsumed route whose company
+    tag *and* needle both appear in the request body (or, for a bodiless GET, in the URL). The
+    webset routes carry the empty company tag — which is in every haystack — so the poll sequence
+    is consumed in the order it is listed while every Answer is matched by its content.
+
+    ``send`` runs on a worker thread (``_hop`` calls the provider through ``asyncio.to_thread``),
+    so the scan-and-consume is done under a lock: two threads reading the same route would
+    otherwise hand the same response to both.
+    """
+
+    def __init__(self, routes: list[tuple[str, str, HttpResponse]]) -> None:
+        self._routes = list(routes)
+        self._lock = threading.Lock()
+
+    def __call__(self) -> ScriptedTransport:
+        routes = self._routes
+        lock = self._lock
+
+        class _Transport(ScriptedTransport):
+            def __init__(self) -> None:
+                super().__init__([])
+
+            def send(self, request: Any) -> HttpResponse:
+                self.requests.append(request)
+                haystack = (request.body or b"").decode() + str(request.url)
+                with lock:
+                    for index, (company, needle, response) in enumerate(routes):
+                        if company in haystack and needle in haystack:
+                            del routes[index]
+                            return response
+                raise AssertionError(f"no routed response for {haystack[:200]!r}")
+
+        return _Transport()
+
+    @property
+    def remaining(self) -> int:
+        return len(self._routes)
+
+
+def _company_routes(name: str, domain: str) -> list[tuple[str, str, HttpResponse]]:
+    """One website answer and one answer per hard gate, tagged with the company they belong to.
+
+    The website ask is the only question carrying the words "registrable domain" (they are in
+    :data:`WEBSITE_SCHEMA`, never in the gate schema), and each gate ask quotes its own rule — so
+    the ICP's four gates need four routes, one per rule, and no two questions can be confused.
+    """
+    quote = f"{name} closed a Series A in March 2025 and is hiring in Boston."
+    news = f"https://{domain}/news"
+    website = _json(
+        _answer_body(
+            {"website_domain": domain, "evidence_url": news}, citation_url=news, citation_text=quote
+        )
+    )
+    routes: list[tuple[str, str, HttpResponse]] = [(name, "registrable domain", website)]
+    routes.extend((name, rule, _json(_gate_answer(quote, news))) for rule in _RULES.values())
+    return routes
+
+
+def _locked_conn_factory(conn: AsyncConnection) -> Any:
+    """The test's one connection, handed out one caller at a time.
+
+    ``_conn_factory`` hands *every* caller the same :class:`AsyncConnection`, and asyncpg refuses
+    two operations on one connection at once — so under a cap of four the driver's concurrent
+    candidates would fail or flake on the connection rather than on anything they assert. The lock
+    serialises them. It is for the DRIVER's ``conn_factory`` only: the artifact store keeps the
+    plain factory because it is only ever used inside the ledger drain, which already holds the
+    lock, and a locked factory there would deadlock on itself.
+
+    What this scenario proves is therefore: under a cap of four with content-routed answers both
+    candidates land, with their verdicts, and the run completes. Per-connection isolation is the
+    *production* factory's property (``clue_db.transaction`` opens ``engine.begin()`` per ``async
+    with``) and is NOT proven here.
+
+    The driver never nests ``_connection()`` and never hops while holding one, so this lock cannot
+    deadlock. If this scenario ever hangs, that assumption has broken — report it rather than
+    papering over it with a re-entrant lock.
+    """
+    lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def factory() -> AsyncIterator[AsyncConnection]:
+        async with lock:
+            yield conn
+
+    return factory
+
+
+def test_two_candidates_verify_concurrently_each_landing_its_own_verdicts(tmp_path: Any) -> None:
+    """Two companies, a cap of four, and not one positional assumption left in the script."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture)
+
+            routes: list[tuple[str, str, HttpResponse]] = [
+                # The poll sequence, in the order the driver makes it — and the one part of this
+                # script that is still ordered, because it is one call at a time: the created
+                # webset, a first poll that is still running, the empty list that tick reads, the
+                # idle poll, and the final list both companies arrive on.
+                (
+                    "",
+                    "/websets/v0/websets",
+                    _json(_webset_body(status="running", found=0, analyzed=0)),
+                ),
+                (
+                    "",
+                    "/websets/v0/websets",
+                    _json(_webset_body(status="running", found=0, analyzed=0)),
+                ),
+                ("", "/items", _json({"data": [], "hasMore": False})),
+                (
+                    "",
+                    "/websets/v0/websets",
+                    _json(_webset_body(status="idle", found=2, analyzed=311)),
+                ),
+                (
+                    "",
+                    "/items",
+                    _json(
+                        {
+                            "data": [
+                                _item_body(
+                                    "itm-a", name="Alpha", url="https://alpha.com", employees=50
+                                ),
+                                _item_body(
+                                    "itm-b", name="Beta", url="https://beta.com", employees=60
+                                ),
+                            ],
+                            "hasMore": False,
+                        }
+                    ),
+                ),
+                *_company_routes("Alpha", "alpha.com"),
+                *_company_routes("Beta", "beta.com"),
+            ]
+            transport = _RoutedTransport(routes)
+            handler = Arv2DiscoveryWorkHandler(
+                settings=Settings(
+                    _env_file=None,
+                    arv2_discovery_enabled=True,
+                    arv2_discovery_verify_concurrency=4,
+                ),
+                conn_factory=_locked_conn_factory(conn),
+                storage=storage,
+                artifacts=DurableAgentArtifactStore(
+                    storage=storage,  # type: ignore[arg-type]
+                    conn_factory=_conn_factory(conn),
+                ),
+                clients=_LiveClientsForTest(),
+                writer=LenientClaimWriter(lenient=True),
+                transport_factory=transport,
+                clock=_clock(),
+                sleep=_no_sleep,
+            )
+            context = WorkContext(
+                task_id=UUID(int=8),
+                work_id=arv2_discovery_work_id(run_id),
+                worker_id="w1",
+                lease_generation=LeaseGeneration(1),
+                payload={"run_id": str(run_id), "workspace_id": fixture.workspace_id},
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+
+            result = await handler.handle(context)
+
+            assert result.outcome == "completed"
+            assert transport.remaining == 0  # every routed response was asked for
+
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert run.status == "completed"
+
+            candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
+            assert sorted(candidates) == ["alpha.com", "beta.com"]
+            for candidate in candidates.values():
+                assert candidate.disposition == "pass"
+                assert candidate.account_entity_id is not None
+                assert {verdict["gate_key"] for verdict in candidate.verdicts} == {
+                    "geography",
+                    "stage",
+                    "hiring",
+                    "intent",
+                }
+                assert all(verdict["guard"] == "ok" for verdict in candidate.verdicts)
+
+            # Both accounts are real rows of this workspace, each a member of the launching
+            # project — the concurrent path writes exactly what the serial one does.
+            accounts = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT a.primary_domain, a.status, p.project_id, p.added_via "
+                            "FROM account_entity a JOIN project_account p "
+                            "  ON p.account_entity_id = a.id "
+                            "WHERE a.id = ANY(:ids)"
+                        ),
+                        {"ids": [row.account_entity_id for row in candidates.values()]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert sorted(
+                (row["primary_domain"], row["status"], row["project_id"], row["added_via"])
+                for row in accounts
+            ) == [
+                ("alpha.com", "candidate", fixture.project_id, "discovered"),
+                ("beta.com", "candidate", fixture.project_id, "discovered"),
+            ]
 
     run_async(scenario())
 

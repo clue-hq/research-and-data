@@ -48,12 +48,12 @@ gate.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue, SecretStr
@@ -247,6 +247,12 @@ class _RunState:
     candidate_failures: list[dict[str, str]] = field(default_factory=list)
     criteria_relaxed: tuple[str, ...] | None = None
     cost_usd: Decimal = Decimal(0)
+    #: The one cap on verification hops in flight (Task 3): candidates verify in a pool and a
+    #: candidate's gates are asked together, all under this semaphore. Built in ``_compose``.
+    hops: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
+    #: Item ids this attempt has handed to the pool — claimed when a task is taken, never when it
+    #: finishes, so a re-listed item on the next tick is not verified twice.
+    claimed: set[str] = field(default_factory=set)
 
     def count_guard(self, guard: str) -> None:
         self.guards[guard] = self.guards.get(guard, 0) + 1
@@ -400,6 +406,7 @@ class Arv2DiscoveryWorkHandler:
             recall_estimate=run.recall_estimate,
             found_strict=run.found_strict or 0,
             found_relaxed=run.found_relaxed or 0,
+            hops=asyncio.Semaphore(self._settings.arv2_discovery_verify_concurrency),
         )
         # What an earlier attempt of this run already verified is neither re-asked nor re-billed.
         # A candidate still ``pending`` is the exception: an attempt that died between writing the
@@ -452,11 +459,7 @@ class Arv2DiscoveryWorkHandler:
                 # durable from the first write — a resumed attempt never has to guess it.
                 strict_search_id=state.strict_search_id,
             )
-        view = await self._poll(state, view.webset_id)
-        items = await self._read_items(state, view.webset_id)
-        state.found_strict = len(items)
-        for item in items:
-            await self._verify_contained(state, item, pass_="strict")
+        await self._watch_and_verify(state, view.webset_id, pass_="strict")
 
     async def _resume_webset(self, state: _RunState, *, verify: bool) -> None:
         """Pick a recorded webset back up instead of buying a second one.
@@ -485,25 +488,13 @@ class Arv2DiscoveryWorkHandler:
                 already=state.shown,
             )
             return
-        view = await self._poll(state, webset_id)
-        items = await self._read_items(state, view.webset_id)
-        strict = tuple(item for item in items if self._is_strict_item(state, item))
-        # The counters are what the list HELD, not what this attempt happened to verify — a resumed
-        # run that finds nothing left to do still reports the companies its webset found.
-        state.found_strict = len(strict)
-        if len(items) > len(strict):
-            state.found_relaxed = len(items) - len(strict)
         log.info(
             "arv2.discovery_resume",
             run_id=str(state.run.run_id),
             webset_id=webset_id,
-            items=len(items),
             already=len(state.seen),
         )
-        for item in items:
-            await self._verify_contained(
-                state, item, pass_="strict" if item in strict else "relaxed"
-            )
+        await self._watch_and_verify(state, webset_id, pass_="resume")
 
     @staticmethod
     def _is_strict_item(state: _RunState, item: WebsetItem) -> bool:
@@ -512,22 +503,6 @@ class Arv2DiscoveryWorkHandler:
         if item.search_id is None or state.strict_search_id is None:
             return True
         return item.search_id == state.strict_search_id
-
-    async def _poll(self, state: _RunState, webset_id: str) -> WebsetView:
-        """Poll the webset to ``idle``, or give up at the wall clock with a named refusal."""
-        while True:
-            if self._clock() > state.deadline:
-                raise _WallExceeded(
-                    f"webset {webset_id} did not reach idle within "
-                    f"{self._settings.arv2_discovery_wall_s}s"
-                )
-            view = await self._hop(
-                state, lambda caller: self._clients.websets(caller).get(webset_id)
-            )
-            self._read_searches(state, view)
-            if view.status == "idle":
-                return view
-            await self._sleep(self._settings.arv2_discovery_poll_interval_s)
 
     async def _read_items(self, state: _RunState, webset_id: str) -> tuple[WebsetItem, ...]:
         """The billed read of the long list. ``all_green`` is Exa's *bill*, never a verdict.
@@ -551,6 +526,112 @@ class Arv2DiscoveryWorkHandler:
             newly_priced=len(result.priced_item_ids),
         )
         return result.items
+
+    async def _watch_and_verify(
+        self, state: _RunState, webset_id: str, *, pass_: Literal["strict", "relaxed", "resume"]
+    ) -> None:
+        """Poll the webset to ``idle`` and verify every new item on every tick (spec §2).
+
+        Each tick lists the webset (a row is priced once per run, so re-listing costs nothing),
+        hands every unclaimed item to a task, records the counters, and sleeps. On ``idle`` one
+        last list catches stragglers, and the pool is drained before returning. ``pass_`` decides
+        the candidate's recorded pass: a resume labels each item by the search that found it.
+
+        A company is claimed **at dispatch**, by item id and by registrable domain: two rows of one
+        company — the same row re-listed on the next tick, or the strict row the widened webset
+        returns again — must never be two verifications, which would be two bills and two accounts.
+
+        Containment is per task (``_verify_contained``); ``ProviderHalted`` and the wall clock
+        are not contained — the first of either cancels the pool and re-raises, so ``_run`` lands
+        the run ``needs_review`` exactly as it does today.
+        """
+        tasks: set[asyncio.Task[None]] = set()
+
+        def _label(item: WebsetItem) -> Pass:
+            if pass_ == "resume":
+                return "strict" if self._is_strict_item(state, item) else "relaxed"
+            return pass_
+
+        async def _tick(final: bool) -> None:
+            items = await self._read_items(state, webset_id)
+            # What the list HOLDS, not what this attempt happened to verify — and monotonic, so a
+            # tick that lists fewer rows than the one before it cannot walk a counter backwards.
+            strict = [item for item in items if self._is_strict_item(state, item)]
+            state.found_strict = max(state.found_strict, len(strict))
+            state.found_relaxed = max(state.found_relaxed, len(items) - len(strict))
+            for item in items:
+                domain = registrable_domain(item.url) or ""
+                if item.item_id in state.claimed:
+                    continue
+                if domain and domain in state.seen:
+                    continue
+                state.claimed.add(item.item_id)
+                if domain:
+                    state.seen.add(domain)
+                tasks.add(
+                    asyncio.create_task(self._verify_contained(state, item, pass_=_label(item)))
+                )
+            async with self._connection() as conn:
+                await self._store.record_discovery_progress(
+                    conn,
+                    run_id=state.run.run_id,
+                    found_strict=state.found_strict,
+                    found_relaxed=state.found_relaxed,
+                    analyzed=state.analyzed,
+                )
+            if final:
+                await self._drain_pool(tasks)
+            else:
+                await self._reap(tasks)
+
+        try:
+            while True:
+                if self._clock() > state.deadline:
+                    raise _WallExceeded(
+                        f"webset {webset_id} did not reach idle within "
+                        f"{self._settings.arv2_discovery_wall_s}s"
+                    )
+                view = await self._hop(
+                    state, lambda caller: self._clients.websets(caller).get(webset_id)
+                )
+                self._read_searches(state, view)
+                if view.status == "idle":
+                    await _tick(final=True)
+                    return
+                await _tick(final=False)
+                await self._sleep(self._settings.arv2_discovery_poll_interval_s)
+        except BaseException:
+            await _abort(tasks)
+            raise
+
+    @staticmethod
+    async def _reap(tasks: set[asyncio.Task[None]]) -> None:
+        """Surface a finished task's uncontained exception now, not at the end of the run.
+
+        Every finished task's failure is READ before the first one is raised: two candidates
+        halting on the same tick is two exceptions, and an exception nobody retrieved makes asyncio
+        log "Task exception was never retrieved" when the task is collected — noise in a run whose
+        real story is already named on its receipt.
+        """
+        done = {task for task in tasks if task.done()}
+        tasks.difference_update(done)
+        failures = [task.exception() for task in done if not task.cancelled()]
+        first = next((error for error in failures if error is not None), None)
+        if first is not None:
+            raise first
+
+    @staticmethod
+    async def _drain_pool(tasks: set[asyncio.Task[None]]) -> None:
+        """Wait for every task; the first uncontained exception cancels the rest and propagates."""
+        if not tasks:
+            return
+        done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        for task in done:
+            if not task.cancelled() and task.exception() is not None:
+                await _abort(tasks)
+                raise task.exception()  # type: ignore[misc]
+        await asyncio.gather(*tasks)
+        tasks.clear()
 
     def _read_searches(self, state: _RunState, view: WebsetView) -> None:
         """Keep the strict search's id, rates and counters from the view that last reported them."""
@@ -594,10 +675,6 @@ class Arv2DiscoveryWorkHandler:
         """One company: its website, the dedupes, every gate, the account and its claims."""
         run = state.run
         websets_domain = registrable_domain(item.url)
-        if websets_domain is not None and websets_domain in state.seen:
-            # A company an earlier pass of this run already verified. Not a duplicate account and
-            # not a refusal — just nothing left to buy.
-            return
         verified, evidence_url = await self._verify_website(state, item, websets_domain)
         if verified is None:
             state.unresolvable += 1
@@ -607,6 +684,11 @@ class Arv2DiscoveryWorkHandler:
                 name=item.name,
                 url=item.url,
             )
+            return
+        if verified != websets_domain and verified in state.seen:
+            # Another in-flight task already owns this company — nothing left to buy. The long
+            # list's domain was claimed at dispatch, so this can only be a row whose *verified*
+            # domain turned out to belong to a company the run has already taken.
             return
         state.seen.add(verified)
         if websets_domain is not None:
@@ -737,26 +819,43 @@ class Arv2DiscoveryWorkHandler:
     async def _verify_gates(
         self, state: _RunState, company_name: str, verified: str
     ) -> tuple[GateVerdict, ...]:
-        """Every hard gate the document states, asked one Answer call at a time and then guarded."""
-        verdicts: list[GateVerdict] = []
-        for gate in state.brief.gates:
-            result = await self._answer(
-                state,
-                query=gate_question(company_name, f"https://{verified}", gate),
-                output_schema=OUTPUT_SCHEMA,
-                label=f"discovery-{gate.key}-{verified}",
-            )
-            verdicts.append(
-                apply_guards(
-                    gate=gate,
-                    answer=result.answer,
-                    citations=result.citations,
-                    company_domain=verified,
-                    company_name=company_name,
-                    today=state.today,
+        """Every hard gate the document states — asked together, then guarded in document order.
+
+        The verdicts are assembled only once every answer is back, so parallel questions change
+        nothing about what is decided; the semaphore on ``_answer`` decides how many are in flight.
+
+        When one gate fails, the siblings are cancelled and awaited before the failure leaves this
+        method (ruling R8). Letting them run on would put their cost on the ledger after the run
+        had already landed — a receipt that under-reports what was spent — and would leave a second
+        failure unobserved. ``_hop`` makes that cancellation safe: a cancelled ask still pays.
+        """
+        tasks = [
+            asyncio.create_task(
+                self._answer(
+                    state,
+                    query=gate_question(company_name, f"https://{verified}", gate),
+                    output_schema=OUTPUT_SCHEMA,
+                    label=f"discovery-{gate.key}-{verified}",
                 )
             )
-        return tuple(verdicts)
+            for gate in state.brief.gates
+        ]
+        try:
+            answers = await asyncio.gather(*tasks)
+        except BaseException:
+            await _abort(tasks)
+            raise
+        return tuple(
+            apply_guards(
+                gate=gate,
+                answer=result.answer,
+                citations=result.citations,
+                company_domain=verified,
+                company_name=company_name,
+                today=state.today,
+            )
+            for gate, result in zip(state.brief.gates, answers, strict=True)
+        )
 
     async def _answer(
         self,
@@ -766,19 +865,24 @@ class Arv2DiscoveryWorkHandler:
         output_schema: Mapping[str, object],
         label: str,
     ) -> ExaAnswerResult:
-        """One ``/answer`` hop under this run's system prompt and configured model."""
+        """One ``/answer`` hop under this run's system prompt and configured model.
+
+        Every Answer hop this run makes — the website ask and each gate — passes through here, so
+        ``state.hops`` is the run's single cap on how many of them are in flight (Task 3).
+        """
         prompt = system_prompt(state.today)
         model = self._settings.arv2_discovery_answer_model
-        return await self._hop(
-            state,
-            lambda caller: self._clients.exa(caller).answer(
-                query,
-                system_prompt=prompt,
-                output_schema=output_schema,
-                model=model,
-                label=label,
-            ),
-        )
+        async with state.hops:
+            return await self._hop(
+                state,
+                lambda caller: self._clients.exa(caller).answer(
+                    query,
+                    system_prompt=prompt,
+                    output_schema=output_schema,
+                    model=model,
+                    label=label,
+                ),
+            )
 
     async def _owner_user(self, conn: AsyncConnection, requested_by: str) -> str | None:
         """The run's requester when it is a platform user, else ``None`` (see ``_RunState``)."""
@@ -962,12 +1066,7 @@ class Arv2DiscoveryWorkHandler:
                 webset_id=webset_id,
                 relaxed_search_id=state.relaxed_search_id,
             )
-        view = await self._poll(state, webset_id)
-        items = await self._read_items(state, view.webset_id)
-        fresh = [item for item in items if (registrable_domain(item.url) or "") not in state.seen]
-        state.found_relaxed += len(fresh)
-        for item in fresh:
-            await self._verify_contained(state, item, pass_="relaxed")
+        await self._watch_and_verify(state, webset_id, pass_="relaxed")
 
     async def _buy_relaxed_search(
         self, state: _RunState, webset_id: str, strict_search_id: str
@@ -1085,13 +1184,29 @@ class Arv2DiscoveryWorkHandler:
 
         The drain is shielded because a cancelled drain would lose the raw bodies and ledger rows
         of a call that already happened — the one thing money truth cannot tolerate.
+
+        Cancellation gets the same treatment, and needs more than a shield (ruling R8): a thread
+        cannot be interrupted, so a cancelled ``to_thread`` returns to the loop while the call it
+        carries is still on the wire and fills ``raw``/``ledger`` afterwards — the drain would
+        land an empty trail for a call that was bought. So the call is shielded, and on
+        cancellation it is awaited to completion BEFORE the drain runs and the cancellation is let
+        through. A sibling gate cancelled because another gate failed therefore still pays its own
+        bill onto the receipt.
         """
         raw, ledger = BufferedRawSink(), BufferedLedger()
         caller = ProviderCaller(
             transport=self._transport_factory(), raw_sink=raw, ledger=ledger, now=self._clock
         )
+        call = asyncio.ensure_future(asyncio.to_thread(fn, caller))
         try:
-            return await asyncio.to_thread(fn, caller)
+            return await asyncio.shield(call)
+        except asyncio.CancelledError:
+            # Wait for the thread that cannot be interrupted, so its raw body and ledger row are
+            # in the buffers the drain below lands, then let the cancellation through. (A second
+            # cancellation during this wait is the one residual: the drain then lands what is
+            # buffered so far.)
+            await asyncio.shield(asyncio.gather(call, return_exceptions=True))
+            raise
         finally:
             await asyncio.shield(self._drain(state, raw, ledger))
 
@@ -1116,8 +1231,9 @@ class Arv2DiscoveryWorkHandler:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
-        """One connection at a time. The run is strictly sequential — a hop's drain never overlaps
-        a connection the driver is holding, so no lock is needed to keep that true."""
+        """A pooled connection per caller. Since 2026-09-12 candidates verify concurrently, each in
+        its own transaction; the engine hands every task its own connection, so nothing here is
+        shared between them."""
         async with self._conn_factory() as conn:
             yield conn
 
@@ -1206,6 +1322,18 @@ def _snapshot_item_id(candidate: CandidateRow) -> str | None:
 
 def _replace_disposition(row: CandidateRow, value: Disposition) -> CandidateRow:
     return replace(row, disposition=value)
+
+
+async def _abort(tasks: Iterable[asyncio.Task[Any]]) -> None:
+    """Cancel every task that is still running and wait for all of them to finish.
+
+    The waiting is the point (ruling R8): a cancelled hop still drains its own call, so returning
+    before the siblings are done would let their money land after the run had landed, and would
+    leave a second failure's exception unretrieved. Shared with Task 4's candidate pool.
+    """
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _failure_code(error: BaseException) -> str:

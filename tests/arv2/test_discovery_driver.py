@@ -18,6 +18,8 @@ driver's own module names. What is asserted is therefore the driver's own contra
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -153,6 +155,10 @@ class _Store:
     async def record_relaxed_search(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("record_relaxed_search", kwargs))
+
+    async def record_discovery_progress(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("record_discovery_progress", kwargs))
 
     async def finish_discovery_run(self, conn: Any, **kwargs: Any) -> None:
         del conn
@@ -694,7 +700,14 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
         ]
     )
     handler, _, writer, drain, accounts = _handler(
-        store, exa=exa, websets=websets, monkeypatch=monkeypatch
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
+        # the document order. Under the shipped cap of 4 the candidates verify concurrently and
+        # the order below would be decided by which thread finished first.
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -1018,7 +1031,10 @@ def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "needs_review"
-    assert websets.named("items") == []  # nothing was read, so nothing was billed
+    # Behaviour change 2026-09-12: every tick lists the webset, so a run that never reaches idle
+    # DOES read it — but this webset holds no rows, so the wall clock still costs nothing. What
+    # the assertion keeps is the money, not the call: not one row was billed.
+    assert all(read.priced_item_ids == () for read in websets.returned_items)
     finished = store.named("finish_discovery_run")[0]
     assert finished["status"] == "needs_review"
     assert finished["receipt"]["failure"] == "webset_wall_exceeded"
@@ -1352,6 +1368,10 @@ def test_a_failing_candidate_is_contained_and_named_while_its_neighbours_still_l
         websets=websets,
         monkeypatch=monkeypatch,
         account_writes_fail_on=frozenset({"zafran.io"}),
+        # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
+        # the document order. Under the shipped cap of 4 the three candidates verify concurrently
+        # and the order below would be decided by which thread finished first.
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -1789,3 +1809,433 @@ def test_a_run_requested_by_the_fleets_service_principal_stamps_no_owner(
     assert asyncio.run(handler.handle(_context(run.run_id))).outcome == "completed"
     [created] = accounts.created
     assert created["owner_user_id"] is None and created["created_by_user_id"] is None
+
+
+class _CountingExa(_FakeExa):
+    """``answer`` that measures how many calls overlap — the pool's observable.
+
+    ``_hop`` runs the provider call on a worker thread, so the hold below is a real overlap
+    window: with one cap of N, at most N of these can be inside ``answer`` at once.
+    """
+
+    def __init__(self, respond: Callable[[str], ExaAnswerResult], *, hold_s: float = 0.05) -> None:
+        super().__init__(respond)
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self.max_in_flight = 0
+        self._hold_s = hold_s
+
+    def answer(self, query: str, **kwargs: Any) -> ExaAnswerResult:
+        with self._lock:
+            self._in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            time.sleep(self._hold_s)
+            return super().answer(query, **kwargs)
+        finally:
+            with self._lock:
+                self._in_flight -= 1
+
+
+def _one_company_run_under_cap(
+    monkeypatch: pytest.MonkeyPatch, *, concurrency: int
+) -> tuple[_CountingExa, _Store]:
+    """A strict pass over one all-pass company, driven to completion under a named hop cap."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _CountingExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(_item("Acme", "https://acme.com"))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=concurrency),
+    )
+    asyncio.run(handler.handle(_context(run.run_id)))
+    return exa, store
+
+
+def test_a_candidates_gates_are_asked_together_under_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exa, store = _one_company_run_under_cap(monkeypatch, concurrency=4)
+    # Four gates, one website ask; the gates overlapped (the website ask ran alone, first).
+    assert len(exa.gate_queries()) == 4
+    assert exa.max_in_flight >= 2
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "completed"
+
+
+def test_a_cap_of_one_keeps_the_serial_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    exa, _store = _one_company_run_under_cap(monkeypatch, concurrency=1)
+    assert exa.max_in_flight == 1
+    # Website first, then the gates in the ICP document's own order (``ICP_FRONT["hard_gates"]``,
+    # which ``compile_brief`` keeps as written) — the R4 DB proof's positional script.
+    assert "registrable domain" in exa.queries[0]
+    assert [_RULES[key] for key in ("geography", "stage", "hiring", "intent")] == [
+        next(rule for rule in _RULES.values() if rule in query) for query in exa.gate_queries()
+    ]
+
+
+class _WatchingDrain(_DrainRecorder):
+    """A drain that also says WHEN it ran: whether the wire call had already returned, and where
+    it falls in the store's own event order."""
+
+    def __init__(
+        self,
+        finished: threading.Event | None = None,
+        events: list[tuple[str, dict[str, Any]]] | None = None,
+    ) -> None:
+        super().__init__()
+        self._finished = finished
+        self._events = events
+        #: ``True`` for each drain that ran after the provider call's thread had returned.
+        self.after_the_call: list[bool] = []
+
+    async def __call__(self, conn: Any, **kwargs: Any) -> DrainReport:
+        if self._finished is not None:
+            self.after_the_call.append(self._finished.is_set())
+        if self._events is not None:
+            self._events.append(("drain", {}))
+        return await super().__call__(conn, **kwargs)
+
+
+def test_a_cancelled_hop_still_lands_the_money_trail_of_the_call_it_bought(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruling R8: a thread cannot be interrupted, so a cancelled hop waits for the call it already
+    put on the wire before draining. Without the wait the drain lands an empty trail and the run's
+    receipt under-reports money that was genuinely spent."""
+    run = _run_row()
+    store = _Store(run)
+    handler, _, _, _, _ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=_FakeWebsets(), monkeypatch=monkeypatch
+    )
+    returned = threading.Event()
+    drain = _WatchingDrain(finished=returned)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    def on_the_wire(caller: Any) -> str:
+        del caller
+        time.sleep(0.05)
+        returned.set()
+        return "bought"
+
+    async def cancel_it_mid_call() -> None:
+        # ``_hop`` is what is under test, so it is driven directly; ``_compose`` builds the
+        # real state it needs (run, brief, semaphore) through the same fakes.
+        state = await handler._compose(run)
+        hop = asyncio.create_task(handler._hop(state, on_the_wire))
+        await asyncio.sleep(0.01)
+        hop.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await hop
+
+    asyncio.run(cancel_it_mid_call())
+
+    # Drained exactly once, and only after the call it was buying had actually come back.
+    assert drain.after_the_call == [True]
+    assert len(drain.stamps) == 1
+
+
+class _HaltingExa(_CountingExa):
+    """Exa refuses the stage gate at once while every other ask is slow — so the halt arrives with
+    its sibling gates still on the wire, which is the case ruling R8 exists for."""
+
+    def answer(self, query: str, **kwargs: Any) -> ExaAnswerResult:
+        if STAGE_RULE in query:
+            self.queries.append(query)
+            raise ProviderHalted("exa", "rate_limited", http_status=429)
+        return super().answer(query, **kwargs)
+
+
+def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruling R8: the failing gate's siblings are cancelled AND awaited before the halt leaves the
+    verifier, so every Answer call that reached the wire is on the ledger before the receipt is
+    written. Letting them run on would land the run first and add their cost to it afterwards."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _HaltingExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                )
+            }
+        ),
+        hold_s=0.15,
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(_item("Acme", "https://acme.com"))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=4),
+    )
+    drain = _WatchingDrain(events=store.events)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["status"] == "needs_review"
+    assert finished["receipt"]["failure"] == "provider_halted"
+    assert "rate_limited" in finished["receipt"]["message"]
+    # The website ask plus all four gates reached the wire, and every provider call this run made
+    # — those five, plus the webset's create/poll/read — drained.
+    assert len(exa.queries) == 5
+    assert len(drain.stamps) == len(websets.calls) + len(exa.queries)
+    # And every drain is recorded before the run is landed — no money arrives after the receipt.
+    order = [name for name, _ in store.events]
+    assert order.index("finish_discovery_run") > max(
+        index for index, name in enumerate(order) if name == "drain"
+    )
+
+
+# --- verify as items arrive: the watch loop and the pool (spec 2026-09-12 §2) ------------------
+
+
+def _two_tick_websets(first: WebsetItem, second: WebsetItem) -> _FakeWebsets:
+    """Tick 1: running, one item listed. Tick 2: idle, both items listed (the first re-listed)."""
+    return _FakeWebsets(
+        get_views=[_view(status="running"), _view(status="idle")],
+        items_results=[_items(first), _items(first, second)],
+    )
+
+
+def _all_pass(company: str, domain: str) -> dict[str, ExaAnswerResult]:
+    return _company_answers(
+        company, domain, {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    )
+
+
+def test_items_verify_as_they_arrive_and_a_relisted_item_is_never_verified_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run does not wait for ``idle`` to start buying: every tick lists and dispatches.
+
+    The webset is listed on the running tick AND on the idle one, and the item both lists carry is
+    claimed at dispatch — so it is verified exactly once, and the run row's counters climb while
+    the search is still going rather than all at once at the end.
+    """
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    exa = _FakeExa(
+        _responder({"Acme": _all_pass("Acme", "acme.com"), "Bolt": _all_pass("Bolt", "bolt.com")})
+    )
+    acme, bolt = _item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com")
+    websets = _two_tick_websets(acme, bolt)
+    handler, _conn, _writer, _drain, accounts = _handler(
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    # Items were read on BOTH ticks (the running one and the idle one), not only after idle.
+    assert [call for call, _ in websets.calls] == ["create", "get", "items", "get", "items"]
+    # Acme was verified once although it was listed twice; Bolt once.
+    assert [w["primary_domain"] for w in accounts.created] == ["acme.com", "bolt.com"]
+    assert len(store.named("record_verdicts")) == 2
+    # And it was claimed at DISPATCH, so the re-listed row cost nothing: two companies, each one
+    # website ask plus one answer per gate, and not an eleventh answer for the repeat.
+    assert len(exa.queries) == 10
+    # Progress was recorded on every tick, before the run landed.
+    progress = store.named("record_discovery_progress")
+    assert [p["found_strict"] for p in progress] == [1, 2]
+    landed = store.named("finish_discovery_run")[0]
+    assert (landed["found_strict"], landed["status"]) == (2, "completed")
+
+
+def test_two_long_list_rows_that_verify_to_one_company_are_one_account_and_one_gate_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R4(c): the cross-item guard, the one claiming rule the long list cannot enforce.
+
+    Two websets rows with *different* registrable domains (``acme-corp.com``, ``acme-inc.com``)
+    both turn out to be ``acme.com`` once their own websites are asked. Dispatch cannot know that,
+    so both are claimed and both buy their website ask; the post-``_verify_website`` check is what
+    stops the second from buying a full gate set and then colliding on the account strong key.
+
+    Either row may win the race under the default cap, so the assertions are about the *company*,
+    not about which row got there: one account, one set of verdicts, and six Answer calls — two
+    website asks and exactly one gate set.
+    """
+    run = _run_row()
+    store = _Store(run)
+    # Both companies are scripted all-pass to the SAME domain: whichever task wins the claim, the
+    # gates it then buys are answerable, and the loser's website ask is the last thing it buys.
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme Corp": _all_pass("Acme Corp", "acme.com"),
+                "Acme Inc": _all_pass("Acme Inc", "acme.com"),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[
+            _items(
+                _item("Acme Corp", "https://acme-corp.com"),
+                _item("Acme Inc", "https://acme-inc.com"),
+            )
+        ],
+    )
+    handler, *_rest, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    # One company, so one account and one set of verdicts — never two rows racing the strong key.
+    assert [created["primary_domain"] for created in accounts.created] == ["acme.com"]
+    assert len(store.named("record_verdicts")) == 1
+    # The second row bought its website ask and nothing more: 1 website + 4 gates + 1 website.
+    assert len(exa.queries) == 6
+    assert len(exa.gate_queries()) == 4
+    # And the run lands normally: a row that turns out to be a company already taken is not a
+    # failure, it is a row with nothing left to buy.
+    assert result.outcome == "completed"
+    assert store.named("finish_discovery_run")[0]["status"] == "completed"
+
+
+def test_the_pool_never_exceeds_the_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Five companies verify at once, and the one semaphore still bounds every Answer call."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+    names = ["Acme", "Bolt", "Cove", "Dune", "Echo"]
+    exa = _CountingExa(
+        _responder({n: _all_pass(n, f"{n.lower()}.com") for n in names}), hold_s=0.02
+    )
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[_items(*(_item(n, f"https://{n.lower()}.com") for n in names))],
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=2),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert exa.max_in_flight == 2
+    assert len(store.named("record_verdicts")) == 5
+
+
+def test_a_provider_halt_in_one_task_suspends_the_whole_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Containment is per candidate, but a halted provider is the run's: it leaves the pool."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+
+    def respond(query: str) -> ExaAnswerResult:
+        if "Bolt" in query:
+            raise ProviderHalted("exa", "rate_limited", http_status=429)
+        return _responder({"Acme": _all_pass("Acme", "acme.com")})(query)
+
+    exa = _FakeExa(respond)
+    websets = _FakeWebsets(
+        get_views=[_view()],
+        items_results=[
+            _items(_item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com"))
+        ],
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["receipt"]["failure"] == "provider_halted"
+    assert result.outcome == "needs_review"
+
+
+class _SlowListing(_FakeWebsets):
+    """Lists the webset slowly, so the tasks the PREVIOUS tick dispatched have finished by the
+    time this tick reaps them — which is how ``_reap``, not ``_drain_pool``, sees their failures."""
+
+    def items(
+        self, webset_id: str, *, priced_item_ids: frozenset[str] = frozenset()
+    ) -> WebsetItemsResult:
+        time.sleep(0.2)
+        return super().items(webset_id, priced_item_ids=priced_item_ids)
+
+
+def test_reap_retrieves_every_finished_tasks_failure_before_it_raises_the_first() -> None:
+    """Two candidates halting in the same tick is two exceptions, and ``_reap`` raises one of them.
+
+    It must still READ the other off its task: an exception nobody retrieved makes asyncio log
+    "Task exception was never retrieved" when the task is collected — noise in a run whose real
+    story (the provider refused to sell) is already on the receipt.
+    """
+
+    async def halt() -> None:
+        raise ProviderHalted("exa", "rate_limited", http_status=429)
+
+    async def drive() -> None:
+        tasks = {asyncio.create_task(halt()) for _ in range(2)}
+        await asyncio.wait(tasks)
+        reaped = set(tasks)
+        with pytest.raises(ProviderHalted):
+            await Arv2DiscoveryWorkHandler._reap(tasks)
+        # Both failures were read off their tasks, so neither is left to be logged at collection.
+        assert [task._log_traceback for task in reaped] == [False, False]
+        # And a reaped task leaves the pool, so nothing waits for it again.
+        assert tasks == set()
+
+    asyncio.run(drive())
+
+
+def test_two_candidates_halting_on_the_same_tick_land_the_run_needs_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The whole-run shape of the case above: both website asks halt while the webset is still
+    running, so the failures are surfaced by ``_reap`` on the next tick rather than by the final
+    ``_drain_pool``, and the run still lands ``needs_review`` naming the provider."""
+    run = _run_row(criteria_gate_keys=("geography", "stage"))
+    store = _Store(run)
+
+    def halt(query: str) -> ExaAnswerResult:
+        del query
+        raise ProviderHalted("exa", "rate_limited", http_status=429)
+
+    acme, bolt = _item("Acme", "https://acme.com"), _item("Bolt", "https://bolt.com")
+    websets = _SlowListing(
+        get_views=[_view(status="running"), _view(status="running"), _view(status="idle")],
+        items_results=[_items(acme, bolt), _items(acme, bolt)],
+    )
+    handler, *_ = _handler(store, exa=_FakeExa(halt), websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    landed = store.named("finish_discovery_run")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["receipt"]["failure"] == "provider_halted"
+    # Both website asks reached the wire before either failure left the pool.
+    assert len(store.named("record_verdicts")) == 0

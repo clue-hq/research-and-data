@@ -70,8 +70,10 @@ from clue_api.arv2.account_research_refusals import (
 )
 from clue_api.arv2.account_research_store import (
     AnnotationRow,
+    JobStage,
     find_contact_by_name,
     record_annotations,
+    set_job_stage,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import (
@@ -381,6 +383,10 @@ class ToolRuntime:
         #: so the display can say a thing was removed and why without ever showing the thing.
         self.compliance_log: list[dict[str, str]] = []
 
+        #: Every entity this job asked the writer to write a claim about (lane 3 slice 4): the
+        #: ending tags the job's trace with them, so "which traces carried contact X" is a query.
+        self.entities_touched: set[str] = set()
+
         self._refusals: dict[str, str] = {}
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._inflight: set[asyncio.Task[Any]] = set()
@@ -504,6 +510,10 @@ class ToolRuntime:
         drafts = self.compliance_pass(drafts)
         if not drafts:
             return []
+        # Recorded before the write, exactly as ``write_each`` does: a provider-built batch names
+        # people too (``lookup_people``), and erasure has to find them whether the store took them
+        # or the transaction rolled back.
+        self.entities_touched.update(str(draft.entity_id) for draft in drafts)
         async with self._conn_factory() as conn:
             return [await self._writer.write(conn, draft) for draft in drafts]
 
@@ -530,6 +540,9 @@ class ToolRuntime:
         """
         results: list[tuple[ClaimDraft, WriteReceipt | WriteFailure]] = []
         for draft in self.compliance_pass(drafts):
+            # Recorded before the write, not after: a draft the store refuses is still an entity
+            # this job worked on, and the trace should say so.
+            self.entities_touched.add(str(draft.entity_id))
             try:
                 async with self._conn_factory() as conn:
                     results.append((draft, await self._writer.write(conn, draft)))
@@ -580,6 +593,26 @@ class ToolRuntime:
         annotation is a check result beside the claim, never an edit to append-only history."""
         async with self._conn_factory() as conn:
             return await record_annotations(conn, job_id=self.scope.job_id, rows=rows)
+
+    async def stamp_stage(self, stage: JobStage) -> None:
+        """Say where the job is (spec 2026-09-12 §1), and never let that cost the job.
+
+        The stamp is a progress pixel: the card reads it and nothing else does. Every tool body
+        runs under a wrapper that turns ANY exception into ``tool_error``, so an unguarded
+        ``UPDATE`` here — a pool timeout, a lock wait, a statement timeout — would be reported to
+        the model as a failed finalization and could leave the job short or in ``needs_review``.
+        A display column is never worth that, so the failure is logged and swallowed.
+        """
+        try:
+            async with self._conn_factory() as conn:
+                await set_job_stage(conn, job_id=self.scope.job_id, stage=stage)
+        except Exception as error:  # noqa: BLE001 — a progress pixel never costs a finalization
+            log.warning(
+                "arv2.stage_stamp_failed",
+                job_id=str(self.scope.job_id),
+                stage=stage,
+                error=str(error),
+            )
 
     def now(self) -> datetime:
         """The job's clock, injected so a finalization timestamp is testable."""
@@ -2045,6 +2078,10 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
 
+    # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
+    # so before a single finalization claim lands.
+    await runtime.stamp_stage("synthesis")
+
     keyed = _key_verdicts_to_icp_gates(
         runtime.scope.icp_gate_keys, [verdict.model_dump() for verdict in args.fit_verdicts]
     )
@@ -2093,6 +2130,10 @@ async def _finalize_person_research(
     """
     if runtime.finalization is not None:
         raise RefusalError("finalization_already_proposed", "this job is already finalized")
+
+    # Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, so the row says
+    # so before a single finalization claim lands.
+    await runtime.stamp_stage("synthesis")
 
     reports_to = args.reports_to.model_dump() if args.reports_to is not None else None
     if reports_to is not None and not reports_to.get("contact_id"):

@@ -62,6 +62,16 @@ impl LumenEngine {
         self.inner.scene_json()
     }
 
+    #[wasm_bindgen(js_name = setRenderContext)]
+    pub fn set_render_context(&mut self, context_json: &str) -> String {
+        self.inner.set_render_context(context_json)
+    }
+
+    #[wasm_bindgen(js_name = presentationJson)]
+    pub fn presentation_json(&self) -> String {
+        self.inner.presentation_json()
+    }
+
     /// Apply a JSON array of canonical operations; returns a result with
     /// report, diagnostics, inverse operations, and a scene delta.
     #[wasm_bindgen(js_name = applyOperations)]

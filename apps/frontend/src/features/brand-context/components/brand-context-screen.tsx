@@ -20,16 +20,20 @@ export function BrandContextScreen({
   kit,
   onboarding,
   workspace,
+  scopeKey,
+  canWriteKnowledge,
 }: {
   initial: BrandContextInitialState;
   kit: BrandKitMeta | null;
   onboarding: OnboardingStatus | null;
   workspace: BrandContextWorkspace;
+  scopeKey: string;
+  canWriteKnowledge: boolean;
 }) {
   // Progressive fill: while onboarding is still publishing, re-read the server page as each
   // step lands so Knowledge fills in rather than waiting for the whole run.
   useKnowledgeRefresh({ initial: onboarding });
-  const controller = useBrandContextController({ initial, workspace });
+  const controller = useBrandContextController({ initial, workspace, scopeKey, canWriteKnowledge });
   const brandKitActions = useBrandKitActions(kit);
 
   return (

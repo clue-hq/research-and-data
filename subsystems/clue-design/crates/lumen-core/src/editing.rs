@@ -1,4 +1,5 @@
 use crate::assets::AssetStatus;
+use crate::brand::{resolve_text_for_edit, BrandKit, TokenResolutionOptions};
 use crate::diagnostics::{Diagnostic, DiagnosticSubject, Phase};
 use crate::export_contract::{ExportFormat, PdfIntent, RasterScale};
 use crate::ids::{AssetId, EffectId, NodeId, PageId, PaintId, SlotId, SlotKey};
@@ -9,13 +10,22 @@ use crate::operations::{
 use crate::scene::{
     AutoLayoutProps, Color, CornerRadii, Dimension, Effect, ExplicitTextTokens, Fill, LayoutMode,
     Node, NodeKind, PageSize, Paint, ParentRef, PositionMode, Rect, Scene, SizeSpec, Stroke,
-    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform, VerticalAlign,
+    TextAlign, TextDirection, TextNode, TextSpan, TextTransform, TextWrap, Transform,
+    VerticalAlign,
 };
 use crate::slots::{ImagePolicy, Slot};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+
+/// Optional pinned brand context for preserving effective text during edits.
+/// Low-level callers without it retain their existing raw-field semantics.
+#[derive(Clone, Copy)]
+pub struct TextEditContext<'a> {
+    pub brand_kit: &'a BrandKit,
+    pub options: &'a TokenResolutionOptions,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
@@ -564,6 +574,17 @@ pub struct TextEditPatch {
     pub spans: FieldPatch<Vec<TextSpan>>,
 }
 
+impl TextEditPatch {
+    fn explicit_tokens(&self) -> ExplicitTextTokens {
+        ExplicitTextTokens {
+            style: !self.style_token.is_unchanged(),
+            font_size: !self.font_size_token.is_unchanged(),
+            line_height: !self.line_height_token.is_unchanged(),
+            letter_spacing: !self.letter_spacing_token.is_unchanged(),
+        }
+    }
+}
+
 /// One targeted edit against a fill/stroke/effect stack entry, addressed by
 /// the entry's stable id (Effects Contract V0 / Phase D extension). Entry
 /// edits compose: they apply in order on top of any whole-stack patch, and
@@ -882,9 +903,18 @@ pub fn build_modify_operations(
     target: EditTargetRef,
     patch: EditPatch,
 ) -> Result<EditBatch, EditError> {
+    build_modify_operations_with_text_context(scene, target, patch, None)
+}
+
+pub fn build_modify_operations_with_text_context(
+    scene: &Scene,
+    target: EditTargetRef,
+    patch: EditPatch,
+    context: Option<TextEditContext<'_>>,
+) -> Result<EditBatch, EditError> {
     match (target, patch) {
         (EditTargetRef::Node(node_id), EditPatch::Node(patch)) => {
-            build_node_modify(scene, node_id, patch)
+            build_node_modify_with_text_context(scene, node_id, patch, context)
         }
         (EditTargetRef::Page(page_id), EditPatch::Page(patch)) => {
             build_page_modify(scene, page_id, patch)
@@ -956,6 +986,15 @@ pub fn build_node_modify(
     scene: &Scene,
     node_id: NodeId,
     patch: NodeEditPatch,
+) -> Result<EditBatch, EditError> {
+    build_node_modify_with_text_context(scene, node_id, patch, None)
+}
+
+fn build_node_modify_with_text_context(
+    scene: &Scene,
+    node_id: NodeId,
+    patch: NodeEditPatch,
+    context: Option<TextEditContext<'_>>,
 ) -> Result<EditBatch, EditError> {
     let node = scene.nodes.get(&node_id).ok_or_else(|| {
         EditError::new(
@@ -1039,7 +1078,12 @@ pub fn build_node_modify(
         ..NodePatch::default()
     };
 
-    if let Some(text_patch) = patch.text {
+    let fills_changing =
+        matches!(&node_patch.fills, FieldPatch::Set(fills) if *fills != node.fills);
+    // A fills-only operation also carries text: its later replay may target an
+    // authored role-bound node even when this working draft was preflighted.
+    if patch.text.is_some() || (fills_changing && matches!(node.kind, NodeKind::Text(_))) {
+        let text_patch = patch.text.unwrap_or_default();
         let NodeKind::Text(current_text) = &node.kind else {
             return Err(EditError::new(
                 EditErrorKind::UnsupportedProperty,
@@ -1047,7 +1091,27 @@ pub fn build_node_modify(
             )
             .with_target(EditTargetRef::Node(node_id)));
         };
-        let next_text = apply_text_edit_patch(current_text.clone(), text_patch);
+        let mut explicit = text_patch.explicit_tokens();
+        let (source, prepared) = prepare_text_edit_source(
+            scene,
+            &node_id,
+            current_text,
+            &text_patch,
+            fills_changing,
+            context,
+        )?;
+        let mut next_text = apply_text_edit_patch(source, text_patch);
+        if fills_changing && !explicit.style {
+            next_text.style_token = None;
+        }
+        if prepared {
+            // Preserved source tokens are intentional even when materializing
+            // their raw fallback changed it relative to the authored scene.
+            explicit.font_size |= next_text.font_size_token.is_some();
+            explicit.line_height |= next_text.line_height_token.is_some();
+            explicit.letter_spacing |= next_text.letter_spacing_token.is_some();
+        }
+        node_patch.explicit_text_tokens = (!explicit.is_empty()).then_some(explicit);
         node_patch.kind = FieldPatch::Set(NodeKind::Text(next_text));
     }
 
@@ -1074,6 +1138,82 @@ pub fn build_node_modify(
     EditBatch::new(operations, vec![EditTargetRef::Node(node_id)])
         .with_intent("modify_node")
         .with_inverses(scene)
+}
+
+fn prepare_text_edit_source(
+    scene: &Scene,
+    node_id: &NodeId,
+    before: &TextNode,
+    patch: &TextEditPatch,
+    fills_changing: bool,
+    context: Option<TextEditContext<'_>>,
+) -> Result<(TextNode, bool), EditError> {
+    let Some(context) = context else {
+        return Ok((before.clone(), false));
+    };
+    let raw_type_edit = !patch.font_family.is_unchanged()
+        || !patch.font_size.is_unchanged()
+        || !patch.font_weight.is_unchanged()
+        || !patch.line_height.is_unchanged()
+        || !patch.letter_spacing.is_unchanged();
+    if matches!(patch.style_token, OptionalFieldPatch::Set(_))
+        || (!fills_changing
+            && !raw_type_edit
+            && !matches!(patch.style_token, OptionalFieldPatch::Clear))
+    {
+        return Ok((before.clone(), false));
+    }
+    let resolve = |text: &TextNode| {
+        resolve_text_for_edit(scene, node_id, text, context.brand_kit, context.options).map_err(
+            |diagnostics| {
+                EditError::new(
+                    EditErrorKind::UnsupportedProperty,
+                    format!(
+                        "cannot preserve effective typography: {}",
+                        diagnostics
+                            .iter()
+                            .map(|diagnostic| diagnostic.message.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    ),
+                )
+                .with_target(EditTargetRef::Node(node_id.clone()))
+            },
+        )
+    };
+    let effective = resolve(before)?;
+    let mut source = before.clone();
+    source.font_family = effective.font_family;
+    source.font_size = effective.font_size;
+    source.font_weight = effective.font_weight;
+    source.line_height = effective.line_height;
+    source.letter_spacing = effective.letter_spacing;
+    let after = apply_text_edit_patch(source.clone(), patch.clone());
+    if !fills_changing
+        && after.style_token == before.style_token
+        && after.font_size_token == before.font_size_token
+        && after.line_height_token == before.line_height_token
+        && after.letter_spacing_token == before.letter_spacing_token
+        && !matches!(patch.style_token, OptionalFieldPatch::Clear)
+    {
+        return Ok((before.clone(), false));
+    }
+    let mut detached = before.clone();
+    detached.style_token = None;
+    // Resolve the detached channels to ensure a token previously shadowed by
+    // the role cannot wake up and replace the value the user saw.
+    let detached = resolve(&detached)?;
+    source.style_token = None;
+    if detached.font_size != source.font_size {
+        source.font_size_token = None;
+    }
+    if detached.line_height != source.line_height {
+        source.line_height_token = None;
+    }
+    if detached.letter_spacing != source.letter_spacing {
+        source.letter_spacing_token = None;
+    }
+    Ok((source, true))
 }
 
 pub fn build_page_modify(
@@ -2679,12 +2819,7 @@ fn apply_text_edit_patch(mut text: TextNode, patch: TextEditPatch) -> TextNode {
     let before = text.clone();
     // A token field the patch addressed (set OR cleared) is an explicit
     // authoring decision; only untouched tokens are eligible for staleness.
-    let explicit = ExplicitTextTokens {
-        style: !patch.style_token.is_unchanged(),
-        font_size: !patch.font_size_token.is_unchanged(),
-        line_height: !patch.line_height_token.is_unchanged(),
-        letter_spacing: !patch.letter_spacing_token.is_unchanged(),
-    };
+    let explicit = patch.explicit_tokens();
     apply_field_patch(&mut text.content, patch.content);
     apply_field_patch(&mut text.font_family, patch.font_family);
     apply_field_patch(&mut text.font_size, patch.font_size);
@@ -2949,9 +3084,17 @@ pub fn build_structured_edit_batch(
     scene: &Scene,
     edit: &StructuredEditInstruction,
 ) -> Result<EditBatch, EditError> {
+    build_structured_edit_batch_with_text_context(scene, edit, None)
+}
+
+pub fn build_structured_edit_batch_with_text_context(
+    scene: &Scene,
+    edit: &StructuredEditInstruction,
+    context: Option<TextEditContext<'_>>,
+) -> Result<EditBatch, EditError> {
     match edit {
         StructuredEditInstruction::Modify { target, patch } => {
-            build_modify_operations(scene, target.clone(), patch.clone())
+            build_modify_operations_with_text_context(scene, target.clone(), patch.clone(), context)
         }
         StructuredEditInstruction::Delete { target } => match target {
             EditTargetRef::Node(node_id) => build_safe_delete(scene, node_id.clone()),

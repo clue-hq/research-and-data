@@ -11,14 +11,25 @@
 //! honored (about the node's top-left origin, as the renderer rotates it);
 //! skew/flip are V0 follow-ups, as is alpha-accurate raster and true vector
 //! path-fill hit-testing (V0 uses the rotated box for vectors).
+//!
+//! Text is the one kind that does NOT hit-test its box (Editor Quality Plan 4,
+//! item F): a text node with painted line boxes in `computed.text_lines` hits
+//! by those lines, so an oversized box steals no clicks and a glyph painted
+//! past the box is still clickable.
 
 use crate::ids::{NodeId, PageId};
-use crate::render_geometry::{paints_out_of_tree, pinned_paint_pass, render_box_for_node};
-use crate::scene::{Node, NodeKind, Scene};
+use crate::render_geometry::{
+    paints_out_of_tree, pinned_paint_pass, render_box_for_node, RenderBox,
+};
+use crate::scene::{ComputedGeometry, Node, NodeKind, Rect, Scene};
 
 /// Extra pick slop (scene units) added to a line's stroke half-width so thin
 /// lines remain clickable. V0 constant; the editor may widen it by zoom.
 const LINE_PICK_SLOP: f64 = 2.0;
+
+/// Plan 4 item F: pick slop (scene units) around a painted text line, so a
+/// click on a descender or a hair past a line's edge still lands on the text.
+const TEXT_LINE_PICK_SLOP: f64 = 2.0;
 
 /// The topmost node under `(x, y)` on `page_id`, or `None`. This is the
 /// single-click target (deepest-first selection); the editor walks up from it
@@ -98,6 +109,14 @@ fn point_in_node(node: &Node, x: f64, y: f64) -> bool {
     match &node.kind {
         NodeKind::Ellipse => point_in_ellipse(lx, ly, b.width, b.height),
         NodeKind::Line(line) => point_near_segment(lx, ly, line.x2, line.y2, line_tolerance(node)),
+        // Plan 4 item F: text hit-tests against its PAINTED line boxes, never
+        // its layout box — an oversized fixed box must not steal clicks from
+        // what lies behind its empty area, and a glyph painted past the box
+        // (a fixed height the copy outgrew) must still be clickable. The boxes
+        // are page-space in `layout_bounds`' frame, so they share the node's
+        // origin shift and rotation (`to_local` above). A node without
+        // positive-area lines keeps the box test below.
+        NodeKind::Text(_) if has_painted_lines(node) => point_in_text_lines(node, &b, lx, ly),
         // Rect/frame/group/auto-layout/text/image/vector/instance: the rotated
         // box. (Vector path-fill is a V0 follow-up — the box is the hit shape.)
         _ => {
@@ -109,6 +128,32 @@ fn point_in_node(node: &Node, x: f64, y: f64) -> bool {
                 && ly <= b.height
         }
     }
+}
+
+fn has_painted_lines(node: &Node) -> bool {
+    node.computed
+        .as_ref()
+        .is_some_and(|computed| painted_lines(computed).next().is_some())
+}
+
+fn painted_lines(computed: &ComputedGeometry) -> impl Iterator<Item = &Rect> {
+    computed
+        .text_lines
+        .iter()
+        .filter(|line| line.width > 0.0 && line.height > 0.0)
+}
+
+fn point_in_text_lines(node: &Node, b: &RenderBox, lx: f64, ly: f64) -> bool {
+    let Some(computed) = &node.computed else {
+        return false;
+    };
+    painted_lines(computed).any(|line| {
+        let x0 = line.x - b.x - TEXT_LINE_PICK_SLOP;
+        let y0 = line.y - b.y - TEXT_LINE_PICK_SLOP;
+        let x1 = line.x - b.x + line.width + TEXT_LINE_PICK_SLOP;
+        let y1 = line.y - b.y + line.height + TEXT_LINE_PICK_SLOP;
+        lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1
+    })
 }
 
 /// Rotate `(px, py)` by `-rotation_deg` (degrees), i.e. into the node's local,

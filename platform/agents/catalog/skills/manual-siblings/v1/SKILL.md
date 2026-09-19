@@ -1,0 +1,128 @@
+---
+schema_version: "1"
+kind: skill
+name: manual-siblings
+version: v1
+summary: "Manual: the work you start but never perform. Account and person research, discovery, persona synthesis, design legs, and where to read each outcome."
+roles:
+  - head_of_abm
+readiness_requirements: []
+tools: []
+framework: deepagents
+framework_version: ">=0.6,<0.7"
+---
+<!-- sources: research/2026-09-13-head-of-abm-manual/E-runtime-and-sibling-agents.md §3.0 (the shape of every sibling), §3.1 (account research), §3.2 (person research), §3.3 (discovery), §3.4 (onboarding synthesis), §3.5 (the design leg), §3.6 (legacy tools still granted); docs/superpowers/specs/2026-09-13-head-of-abm-operating-manual-design.md §1 (the ingestion tool has no engine at any composition root) -->
+# Siblings: what you start, and what you never do yourself
+
+**You never run research.** Every sibling below is a fleet job: your tool call writes durable
+rows, offers a task to the work queue, and returns. A successful result means queued or
+replayed, never finished. Say it is running; never say it is done.
+
+| Sibling | You start it with | Ends on | Where you read the outcome |
+| --- | --- | --- | --- |
+| account research | `launch_arv2_account_research` | `completed` or `needs_review`; `suspended` is a pause | the run read, the accounts read, `project/status.md`, the account research read |
+| person research | `launch_arv2_person_research`, or it is spawned by an account job's committee | the same | the same run read, with the caveat below |
+| discovery | `launch_arv2_discovery` | the same | the discovery run read, and `status.md` |
+| persona synthesis | `request_persona_synthesis` | `completed` or `failed` | **only** the Personas section of `status.md` |
+| a design leg | `open_design_leg` | closed by Design, not by you | the leg's closing summary re-entering the thread |
+
+## Account research
+
+One job is one account, with its own lease and its own failure. Before a single model call, the
+job re-checks the ICP artifact digest and the agent profile digest from the launch; moved bytes
+mean a relaunch, not a resume.
+
+The account agent holds twelve tools of its own and works to a constitution: a target lock
+against same name contamination, an evidence law where every assertion carries a verbatim quote
+and its url and "not found" is a correct answer, free sources before paid ones, and finalize
+once. The ICP is a charter for what to look for, and it never vetoes research.
+
+Limits: 100 model rounds, 50 tool calls in one round, 30 minutes of wall clock, four jobs per
+worker. There is no total call cap and no zero yield cap, by ruling. Every cap simply ends the
+job's graph rather than raising. A real account job has been observed at 12 rounds and 113
+claims for about a dollar; expect minutes, not seconds.
+
+It produces claims, a finalization receipt (reason, summary, fit verdicts, gaps), the ICP fit
+verdict claims, link audit annotations, the committee's contacts and their person jobs, and one
+activity event. The run's status is recomputed from its jobs.
+
+The account's overview page is a separate thing: it is written lazily, when a human first opens
+that screen. Your own read does not write it.
+
+## Person research
+
+Most person jobs are automatic: the account job's committee step creates one per confirmed
+member, inside its settling transaction. You can also launch people explicitly, but only the
+ones the human's current message names, and only for contacts that already exist. The launch
+never creates a person.
+
+The person agent has eleven tools, is locked to the subject by that person's verified
+employment history, and never synthesises an email. A deterministic compliance pass runs over
+everything it wrote before any of it is readable: minors are redacted, sensitive categories are
+redacted with the category named, rows with no quote or url are marked unevidenced, and a claim
+carrying a phone number, personal email or home address is dropped whole. It produces no fit
+verdicts and no committee candidates; those are the account job's.
+
+Same three caps as the account agent. Observed wall time per person: six to thirteen minutes.
+
+**The caveat.** A committee person job lives in the same run as its account job, and the run
+read's rows carry no subject type, so person jobs appear as extra rows sharing the account's
+id. The count of person jobs is visible only in `status.md`. See `.deepagent/skills/manual-accounts-research/v1/SKILL.md`.
+
+## Discovery
+
+Composed only where the lane is enabled and a provider key is configured; otherwise the tool
+refuses and nothing runs. One run per request digest, so asking the same thing twice is one run
+and one bill. Wall clock 1,800 seconds. How a run works, what the verdicts and dispositions
+mean, and how to read the tallies, is `.deepagent/skills/manual-discovery/v1/SKILL.md`.
+
+## Persona synthesis
+
+`request_persona_synthesis` opens a personas only onboarding run for the exact ICP version this
+project pinned. It writes no persona itself, confirms nothing, and cannot ask for a profile the
+project did not pin: the ICP is resolved from the pin and your `icp_key` is only checked
+against it. Ask on the turn after the confirmation, and say it is running.
+
+**There is no read tool for it.** The Personas section of `status.md` is the only place a
+persona run's status appears, and the document itself shows up as a file in the audience folder
+once it lands. Without that line, a run that failed or stalled is visible to nobody, so check
+it before telling a human their personas are coming.
+
+## The design leg
+
+Opening a leg starts nothing and spends nothing. It creates the leg row whose existence **is**
+the routing rule: while the leg is open, every message the human sends on this thread goes to
+Design.
+
+Three things follow, and all three matter:
+
+- **You do not run while a leg is open.** You cannot check in, and you will not see the thread
+  again until the leg closes. Tell the human the design session is open, and end your turn.
+- **You cannot close a leg.** Only Design can. A closing summary is what you resume with, and
+  you never see the design transcript, only that summary.
+- **A leg you open may never hand the thread back.** The exit judge is built with a timeout the
+  gateway refuses, so it always fails and the fail safe treats every exit intent as continue.
+  Saying "lock it in" does not close the leg today. Do not promise the human that it will.
+
+A gate cannot be answered while a leg is open, so do not leave an approval pending and then
+open one.
+
+Design owns dimensions, formats, units and page sizes. Pass the human's own ask as the brief,
+because Design sees the brief, not this conversation.
+
+## Tools you hold that lead nowhere
+
+- `get_research_view` is disabled by flag on this deployment and refuses. Claim ids reach you
+  through the account research read instead.
+- `draft_account_research_directive` and `open_directive_confirmation_gate` still work, but
+  every consumer of a confirmed directive belongs to the retired lane and is granted to nobody.
+  A directive confirmed here is a row a human signed that nothing will execute. The live launch
+  takes free text direction instead.
+- `propose_field` and `propose_source` are live, but the research lane registers an unknown
+  field itself when it writes a claim, so a proposal made here is a conversation artefact
+  rather than how fields are actually born.
+- `submit_ingestion` is a material capture path into the claim store, unrelated to account
+  research, and its ingestion engine is not composed at any production entry point, so treat it
+  as unavailable here.
+
+Each of these, with its exact inputs and refusals, is in `.deepagent/skills/manual-tools/v1/SKILL.md`.

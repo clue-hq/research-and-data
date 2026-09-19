@@ -1,3 +1,4 @@
+import { composerEntityImagePath } from "../model/project-workspace";
 import { z } from "zod";
 import {
   PreparedComposerContextSchema,
@@ -17,6 +18,8 @@ const PreparedComposerContextWireSchema = z.object({
       secondary_label: z.string().min(1),
       image_url: z.string().nullable(),
       version: z.number().int().positive(),
+      account_id: z.string().min(1).nullable().default(null),
+      account_name: z.string().min(1).nullable().default(null),
     })).min(1).max(100),
   }),
 }).transform(({ data }) =>
@@ -24,10 +27,10 @@ const PreparedComposerContextWireSchema = z.object({
     projectId: data.project_id,
     threadId: data.thread_id,
     entities: data.context_entities.map((entity) => ({
+      ...(entity.account_id ? { accountId: entity.account_id } : {}),
+      ...(entity.account_name ? { accountName: entity.account_name } : {}),
       id: entity.object_id,
-      imagePath: entity.image_url?.startsWith("/")
-        ? entity.image_url
-        : "/logos/clue.svg",
+      imagePath: composerEntityImagePath(entity.image_url),
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,

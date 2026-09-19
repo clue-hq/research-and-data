@@ -3,11 +3,13 @@
 The platform's leg runner freezes the §2.3 delegation bundle and the §2.4 leg history onto
 ``DesignTurnEnvelope.config`` (``delegation_bundle`` / ``history``); this module renders
 them into the ONE channel the design runtime already consumes — the turn prompt — the same
-way the runtime's own "TURN TARGET" and "standing instructions" context travels. The design
-harness keeps no cross-turn state (fresh agent + scene re-POST per turn), so the rendered
-history IS the reassembled session, and the block order is deliberate for prefill caching:
-the immutable brief first, the append-only history second, the new message last — every
-turn re-sends a byte-identical prefix that only ever grows.
+way the runtime's own "TURN TARGET" and "standing instructions" context travels. Since session
+continuity (2026-09-18) the design agent keeps a real cross-turn session — one per document,
+one LangGraph thread — so these blocks are what OPENS a session rather than what reassembles
+it: the executors send the brief on the first turn of each leg and the history only on a thread
+that does not already hold it. The block order stays deliberate for prefill caching — the
+immutable brief first, the append-only history second, then the drift note, the new message
+last — so a fresh thread still re-sends a byte-identical prefix that only ever grows.
 
 Shared-substrate placement on purpose: ``lumen_api`` (the design app) renders with it and
 the platform's tests pin it, without either importing the other's internals. The blocks are
@@ -37,11 +39,17 @@ def render_leg_turn_prompt(
     bundle: JsonObject | None,
     history: list[JsonObject] | None,
     prompt: str,
+    drift_note: str | None = None,
 ) -> str:
     """Compose the design turn's prompt from the envelope's frozen context blocks.
 
-    With neither block present the prompt is returned untouched — every non-leg path
+    With no block present the prompt is returned untouched — every non-leg path
     (editor preview route, CLI, fixtures) stays byte-identical.
+
+    ``drift_note`` (session continuity, 2026-09-18) is rendered by
+    :func:`clue_design.sessions.render_document_drift_note` and sits *after* the append-only
+    history and *before* the new message: it is the last thing that changed before this turn,
+    and putting it there leaves the growing prefix above it byte-identical for prefill caching.
     """
 
     sections: list[str] = []
@@ -74,6 +82,8 @@ def render_leg_turn_prompt(
             lines.append(f"[{role}] {text}")
         lines.append("HISTORY>>>")
         sections.append("\n".join(lines))
+    if drift_note:
+        sections.append(drift_note)
     if not sections:
         return prompt
     sections.append(prompt)

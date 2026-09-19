@@ -51,6 +51,8 @@ _OWNED = "_clue_obs_handler"
 # never detaches another package's run trace — no event is lost, it just stops
 # being written twice.
 _ROOT_CONSOLE_OWNED = "_obs_root_console_handler"
+# Process-local filters registered by cooperating console owners survive setup.
+_ROOT_CONSOLE_FILTERS = "_obs_root_console_filters"
 
 _ENV_MODE = "CLUE_LOG_MODE"
 _ENV_FORMAT = "CLUE_LOG_FORMAT"
@@ -144,6 +146,8 @@ def setup(
     )
     setattr(console, _OWNED, True)  # noqa: B010 — dynamic ownership marker
     setattr(console, _ROOT_CONSOLE_OWNED, True)  # noqa: B010 — shared console slot
+    for event_filter in getattr(root, _ROOT_CONSOLE_FILTERS, ()):
+        console.addFilter(event_filter)
     root.addHandler(console)
 
     if run_log_path is not None:

@@ -80,6 +80,32 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # standing address.
     "launch_arv2_discovery@1",
     "read_arv2_account_research_run@1",
+    # ``author_icp_document@1`` (added in @24), ``request_persona_synthesis@1`` (@24) and
+    # ``write_project_document@1`` (@25) were retired at recipe0-stage0@27: the documents they
+    # wrote are written as files under the versioned ``project/`` mount now, and `head-of-abm@v55`
+    # grants none of them. The addresses stay REGISTERED for replay of executions pinned to ≤v26,
+    # which read their own immutable revision — they are simply no longer standing, so this audit
+    # no longer requires them to keep declaring a ``project`` pin.
+    # The ARV2 reads (added in recipe0-stage0@26): the project's accounts, one account's
+    # research, and the discovery run — effect-free reads over rows that already exist.
+    # Granted at `head-of-abm@v48` and declaring the same ``project`` pin as their siblings —
+    # the spine row the execution is bound to — which is what this audit requires of every
+    # standing address.
+    "read_project_accounts@1",
+    # Paged and spilled reads (recipe0-stage0@28): ``read_account_research`` and
+    # ``read_discovery_run`` are RE-PINNED to their paged ``@2`` — ``offset``/``limit`` in,
+    # ``next_offset`` back — which is what `head-of-abm@v56` grants. A requirement set resolves one
+    # version per ``(kind, key)``, so ``@1`` and ``@2`` in one slot is a ``conflicting_requirement``
+    # that refuses promotion; the ``@1``s therefore LEAVE, exactly as ``open_icp_confirmation_gate``
+    # @1 left at @22. They stay registered, and v27 stays the exact replay input for turns pinned
+    # to it. Two reads join in the same revision, granted for the first time at v56: the general
+    # claims query and the gallery read. All four are effect-free over rows that already exist and
+    # declare the same ``project`` pin as their siblings, which is what this audit requires of
+    # every standing address.
+    "read_account_research@2",
+    "read_claims@1",
+    "read_artifact@1",
+    "read_discovery_run@2",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

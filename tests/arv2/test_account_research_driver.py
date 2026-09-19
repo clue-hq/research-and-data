@@ -168,6 +168,10 @@ class FakeStore:
         del conn
         self.events.append(("suspend_job", {"job_id": job_id}))
 
+    async def set_job_stage(self, conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        self.events.append(("set_job_stage", {"job_id": job_id, "stage": stage}))
+
     async def finish_job(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("finish_job", kwargs))
@@ -178,10 +182,12 @@ class FakeStore:
         return "completed"
 
     async def read_persona_documents(
-        self, conn: Any, *, workspace_id: str, brand_id: str
+        self, conn: Any, *, workspace_id: str, brand_id: str, project_id: str
     ) -> tuple[Any, ...]:
         del conn
-        self.events.append(("read_persona_documents", {"brand_id": brand_id}))
+        self.events.append(
+            ("read_persona_documents", {"brand_id": brand_id, "project_id": project_id})
+        )
         return (
             SimpleNamespace(
                 document_id=uuid4(),
@@ -195,12 +201,12 @@ class FakeStore:
             ),
         )
 
-    async def read_account_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_account_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_account_catalog", {}))
         return FieldCatalog(account=(FieldSpec("core.industry", "Industry."),))
 
-    async def read_person_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_person_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_person_catalog", {}))
         return FieldCatalog(
@@ -487,6 +493,11 @@ def test_handle_marks_job_completed_with_a_receipt_and_never_raises(
     assert receipt["model_id"] == "x-ai/grok-4.6"
 
     assert store.named("refresh_run_status")
+    # The stage stamps: the claim opens ``deep_research``, the settle stamps ``committee`` before
+    # the fan-out — and stops there, because this finalization named no candidates, so no person
+    # job was ever born for ``member_research`` to describe.
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    assert stamps == ["deep_research", "committee"]
     # The model is built through the gateway boundary, with the ARV2 role so its effort env applies.
     assert models.builds[0]["role"] == "arv2_account"
     assert models.builds[0]["model_id"] == "x-ai/grok-4.6"
@@ -739,6 +750,45 @@ def test_the_model_error_outcome_lands_needs_review_with_its_reason(
     assert landed["failure_code"] == "model_error"
     assert "RuntimeError" in landed["failure_message"]
     assert landed["finalization"]["reason"] == "model_error"
+
+
+class _Denied(Exception):
+    """A refusal shaped the way the OpenAI-compatible SDKs raise one: a status and a repr body."""
+
+    status_code = 403
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Error code: 403 - {'error': {'message': 'Key limit exceeded (weekly limit)',"
+            " 'code': 403}}"
+        )
+
+
+def test_a_job_the_provider_refused_records_the_reason_rather_than_the_bare_model_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A key that hit its cap is not "the model errored" — the job row says which provider stopped
+    serving and why, so the reviewer reads a cause instead of a shrug."""
+
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+
+    def refuse(messages: list[BaseMessage]) -> AIMessage:
+        del messages
+        raise _Denied()
+
+    handler, _, _, _ = _handler(store, model=_ScriptedModel(refuse))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "needs_review"
+    landed = store.named("finish_job")[0]
+    assert landed["status"] == "needs_review"
+    assert landed["failure_code"] == "provider_refused:openrouter:key_limit"
 
 
 def test_the_icp_hard_gates_key_the_receipt_and_an_unassessed_gate_is_filled_unclear(
@@ -1115,12 +1165,21 @@ def test_an_account_job_fans_its_committee_out_inside_the_settle_and_offers_afte
 
     assert result.outcome == "completed"
     order = [name for name, _ in store.events]
-    assert order[order.index("finish_job") :][:4] == [
+    # The two stage stamps ride this same transaction, so the order now reads: the terminal row,
+    # then ``committee`` before the step, then ``member_research`` once the step returned person
+    # jobs, and only then the run's status and the offer.
+    assert order[order.index("finish_job") :][:6] == [
         "finish_job",
+        "set_job_stage",
         "committee_step",
+        "set_job_stage",
         "refresh_run_status",
         "enqueue",
     ]
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    # Claim → (finalize stamps synthesis inside the tool; see the tools test) → committee →
+    # member_research once the person jobs exist. The order is the driver's real order.
+    assert stamps == ["deep_research", "committee", "member_research"]
     # The step is handed the finalization's own candidates, the job, the run and the job's scope.
     assert calls[0]["candidates"][0]["name"] == "Dana Reyes"
     assert calls[0]["job"] is job and calls[0]["run"] is run
@@ -1390,6 +1449,11 @@ def test_a_person_job_lands_the_person_receipt_and_never_runs_the_committee_step
 
     assert result.outcome == "completed"
     assert not store.named("enqueue")
+    # A person job has no committee, so the driver stamps only the claim's ``deep_research``; its
+    # ``synthesis`` stamp belongs to the finalize tool, which this test's model double stands in
+    # for (and is asserted in the tools suite).
+    stamps = [payload["stage"] for event, payload in store.events if event == "set_job_stage"]
+    assert stamps == ["deep_research"]
     receipt = store.named("finish_job")[0]["finalization"]
     assert receipt["reason"] == "finalized"
     assert receipt["summary"].startswith("Dana Reyes runs product marketing")

@@ -72,17 +72,23 @@ JsonObject = Dict[str, Any]
 _logger = get_logger("lumen_api.agent_account_logos")
 
 __all__ = [
+    "FETCHED_LOGO_PROVENANCES",
     "LADDER_PROVENANCE",
+    "VENDOR_PROVENANCE",
     "AccountLogoRefused",
     "DurableAgentAccountLogoBinder",
+    "is_fetched_logo",
     "is_ladder_fetched",
 ]
 
-#: ``provenance.created_by`` on every asset the ladder prepares
-#: (``lumen_agent.tools.logo_fetch._prepare``). It is the ONE marker that says "this is a real
-#: published mark somebody's website served", and it is what the bind gates on: a generated
-#: image is not a company's logo, and neither is a placeholder.
+#: ``provenance.created_by`` values that mean "a real published mark somebody's
+#: brand actually serves" — the ladder's site harvest, or the Brandfetch Brand
+#: API's keyed retrieval (vendor-first, 2026-09-02). This is what the bind
+#: gates on: a generated image is not a company's logo, and neither is a
+#: placeholder. Both are stamped by ``lumen_agent.tools.logo_fetch._assemble``.
 LADDER_PROVENANCE = "logo_ladder"
+VENDOR_PROVENANCE = "brandfetch"
+FETCHED_LOGO_PROVENANCES = frozenset({LADDER_PROVENANCE, VENDOR_PROVENANCE, "logo_dev"})
 
 
 class AccountLogoRefused(Exception):
@@ -99,14 +105,19 @@ class AccountLogoRefused(Exception):
         self.message = message
 
 
-def is_ladder_fetched(record: Any) -> bool:
-    """True when ``record`` is a mark the logo ladder fetched from the company's own site."""
+def is_fetched_logo(record: Any) -> bool:
+    """True when ``record`` is a mark fetched from the company's own site or
+    retrieved from the logo vendor keyed by the company's domain."""
     if not isinstance(record, dict):
         return False
     provenance = record.get("provenance")
     if not isinstance(provenance, dict):
         return False
-    return str(provenance.get("created_by") or "") == LADDER_PROVENANCE
+    return str(provenance.get("created_by") or "") in FETCHED_LOGO_PROVENANCES
+
+
+#: Deprecated alias (pre-vendor name); same object so identity checks hold.
+is_ladder_fetched = is_fetched_logo
 
 
 class DurableAgentAccountLogoBinder:

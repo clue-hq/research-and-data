@@ -69,6 +69,7 @@ from clue_core import EntityId, ExtractionMethod, Persona, ProjectPhase, Project
 from clue_db import ConnFactory, transaction
 from clue_fleet import DbWorkQueue, FleetTaskKind, WorkQueue
 from clue_obs import get_logger
+from clue_obs.langfuse import tag_entities
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.claimstore.run_lineage import record_run_lineage
 from clue_research.durable.project_run import ensure_project_run, get_project_run
@@ -776,7 +777,7 @@ async def launch_arv2_person_research(
         project_run_id=project_run_id,
     )
 
-    catalog = await read_person_catalog(conn)
+    catalog = await read_person_catalog(conn, workspace_id=request.workspace_id)
     writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
     job_ids: list[UUID] = []
     seated: list[UUID] = []
@@ -900,6 +901,8 @@ async def seat_person_on_committee(
         "rationale": f"launched on demand by {requested_by_user_id}",
         "confirmed_by": None,
     }
+    # The seat is this person's: the launch's trace names them.
+    tag_entities([contact_id])
     for draft in committee_member_claims(
         candidate,
         scope=scope,
@@ -1174,7 +1177,8 @@ class LaunchArv2AccountResearchTool(Tool):
         "project's confirmed product-selection version. Call only when the current user action "
         "explicitly approves this exact account set and ICP. A successful result means the jobs "
         "were enqueued or replayed; it never means research has completed, and it authorizes no "
-        "contact research."
+        "contact research. "
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#launch_arv2_account_research"
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput
@@ -1266,7 +1270,8 @@ class LaunchArv2PersonResearchTool(Tool):
         "contacts and never creates a person; a successful result means the jobs were enqueued or "
         "replayed, never that research has completed. ``persona`` is the committee seat each "
         "named person is given if they do not already hold one — it is what puts them on the "
-        "account's contact list — and defaults to ``user``."
+        "account's contact list — and defaults to ``user``. "
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#launch_arv2_person_research"
     )
     input_model = LaunchArv2PersonResearchInput
     output_model = LaunchArv2PersonResearchOutput
@@ -1340,7 +1345,8 @@ class ReadArv2AccountResearchRunTool(Tool):
     model_description = (
         "Read one ARV2 account-research run: what it was pinned to, its status, and the state of "
         "each account's job (including the failure code of anything that needs review). Effect-"
-        "free; it never starts, resumes or changes research."
+        "free; it never starts, resumes or changes research. "
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_arv2_account_research_run"
     )
     input_model = ReadArv2AccountResearchRunInput
     output_model = ReadArv2AccountResearchRunOutput

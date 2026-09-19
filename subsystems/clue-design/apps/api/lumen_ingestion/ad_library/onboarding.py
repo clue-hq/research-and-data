@@ -302,6 +302,14 @@ def _onboard(
 
     # >>> Everything above is now durable. Nothing below may lose it. <<<
 
+    if request.get("harvest_only") is True:
+        for step in ("distill", "pregenerate"):
+            evidence["steps"][step] = {
+                "status": "skipped",
+                "reason": "harvest-only was requested; original ads were saved without model calls",
+            }
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
     # --- step 2: distil the ad-DNA card ------------------------------------------------------
     reporter("Learning your ad style…", 0.55)
     # W-B1 re-drive guard (Wave-C fix #2), the step-resume half: a re-driven execution of

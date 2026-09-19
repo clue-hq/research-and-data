@@ -66,7 +66,7 @@ export async function addSelectedAccountsToProject(
     });
     return {
       status: "added",
-      notice: addToProjectNotice(result.counts),
+      notice: `${project.name}: ${addToProjectNotice(result.counts)}`,
       rows: reflectAddToProject(rows, project, result),
     };
   } catch (error) {

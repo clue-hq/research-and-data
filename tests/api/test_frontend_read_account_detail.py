@@ -83,6 +83,8 @@ from clue_research.claimstore import (
     insert_claim,
     record_run_lineage,
     register_field,
+    register_workspace_research_field,
+    retire_workspace_field,
 )
 from clue_research.claimstore.packs import load_core_pack
 from clue_research.durable import (
@@ -1771,5 +1773,103 @@ def test_the_evidence_route_authorises_against_stored_display_blocks_only() -> N
             # The page really is unwritten now — nothing regenerated it behind the request.
             sections = _overview(detail.json()["data"])
             assert sections["what-they-do"]["empty"] is True
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("entity", ["accounts", "contacts"])
+def test_custom_research_values_and_evidence_survive_retirement(entity: str) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
+            field = await register_workspace_research_field(
+                conn,
+                workspace_id=_WS,
+                entity=entity,
+                label="Public talk",
+                description="Find an attributed talk.",
+                created_by="human:test",
+            )
+            subject = fixture.zafran if entity == "accounts" else fixture.dana
+            key = field.field_def.field_key
+            receipt = await LenientClaimWriter(lenient=True).write(
+                conn,
+                ClaimDraft(
+                    entity_id=subject,
+                    entity_type=EntityType.ACCOUNT if entity == "accounts" else EntityType.CONTACT,
+                    field_key=key,
+                    value_json="Security talk",
+                    workspace_id=_WS,
+                    run_id=new_run_id(),
+                    research_mode=ResearchMode.ACCOUNT_PROFILING,
+                    extraction_method=ExtractionMethod.API,
+                    source_url="https://example.test/talk",
+                    evidence_span="Speaker discussed security.",
+                    artifact_key=_TITLE_ARTIFACT_KEY,
+                    use_class=UseClass.PROFESSIONAL_PUBLIC,
+                ),
+            )
+            detail_path = f"{_BASE}/{fixture.zafran}"
+            other_path = f"{_BASE}/{fixture.base.acme}"
+            if entity == "contacts":
+                detail_path += f"/contacts/{fixture.dana}"
+                other_path = f"{_BASE}/{fixture.zafran}/contacts/{fixture.ravi}"
+            evidence_path = f"{detail_path}/evidence/{receipt.claim_id}"
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                before = await client.get(detail_path, headers={"X-Workspace-Id": _WS})
+                assert before.status_code == 200, before.text
+                data = before.json()["data"]
+                custom = next(r for r in data["customFields"] if r["id"] == key)
+                assert custom["label"] == "Public talk" and custom["value"] == "Security talk"
+                assert custom["claimId"] == str(receipt.claim_id)
+                evidence = next(
+                    r for r in data["researchEvidence"] if r["claimId"] == custom["claimId"]
+                )
+                assert evidence["researchFieldKey"] == key
+                assert (
+                    await client.get(evidence_path, headers={"X-Workspace-Id": _WS})
+                ).content == _TITLE_ARTIFACT_BODY
+                assert (
+                    await client.get(evidence_path, headers={"X-Workspace-Id": _OTHER_WS})
+                ).status_code == 404
+                assert (
+                    await client.get(
+                        f"{other_path}/evidence/{receipt.claim_id}", headers={"X-Workspace-Id": _WS}
+                    )
+                ).status_code == 404
+                await retire_workspace_field(
+                    conn,
+                    workspace_id=_WS,
+                    field_key=key,
+                    retired_by="human:test",
+                    reason="settings",
+                )
+                after = (await client.get(detail_path, headers={"X-Workspace-Id": _WS})).json()[
+                    "data"
+                ]
+                assert all(r["id"] != key for r in after["customFields"])
+                assert any(r.get("researchFieldKey") == key for r in after["researchEvidence"])
+                assert (
+                    await client.get(evidence_path, headers={"X-Workspace-Id": _WS})
+                ).status_code == 200
+
+                await conn.execute(
+                    text("""
+                    INSERT INTO workspace_dynamic_client_kb_erasure
+                      (workspace_id, erased_by, reason_code, definition_count, proposal_count,
+                       materialization_count, readiness_policy_count, claim_count, artifact_count)
+                    VALUES (:ws, 'human:test', 'workspace_dynamic_client_kb_erasure',
+                            1, 0, 0, 0, 1, 0)
+                """),
+                    {"ws": _WS},
+                )
+                erased = (await client.get(detail_path, headers={"X-Workspace-Id": _WS})).json()[
+                    "data"
+                ]
+                assert all(r.get("researchFieldKey") != key for r in erased["researchEvidence"])
+                assert (
+                    await client.get(evidence_path, headers={"X-Workspace-Id": _WS})
+                ).status_code == 404
 
     run_async(scenario())

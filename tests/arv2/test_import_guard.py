@@ -23,6 +23,9 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_config",
     "clue_obs",
     "clue_storage",
+    # lane 3 slice 5: the provider-caller seam itself — ARV2's calls/sinks/transport/errors and the
+    # drain are re-export shims over it now, so every lane module reaches it by this name.
+    "clue_spend",
     "clue_db",
     "clue_gateway",
     "clue_locks",
@@ -42,6 +45,8 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_api.composition",
     # D1: the wiring hook that appends the ARV2 pack (outside the lane by design)
     "clue_api.arv2_wiring",
+    # PI-2: platform incident recorder the lane reports into; no lane logic
+    "clue_api.provider_incidents",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.

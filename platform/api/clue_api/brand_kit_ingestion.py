@@ -156,6 +156,28 @@ class BrandKitWebsiteIngestion:
         return str(job_id) if job_id else None
 
 
+async def read_newest_ingestion_job(
+    conn_factory: ConnFactory, *, workspace_id: str
+) -> tuple[str, str] | None:
+    """The workspace's newest brand-kit ingestion job as ``(job_id, status)``, or None.
+
+    One workspace-keyed read through the sanctioned ``clue_design`` DAL port — the same port
+    this module's trigger uses for its idempotency check. ``list_recent`` is workspace-scoped
+    and ordered newest-first, and ``limit=1`` is all a checklist row needs.
+
+    It lives here rather than in a router because BOTH setting-up surfaces need it: the legacy
+    ``GET /stage0/setup/current`` and the new ``GET /onboarding/current``. Nothing is derived —
+    the ``design_ingestion_status`` enum is served as stored and each surface maps it onto its
+    own row vocabulary.
+    """
+    async with conn_factory() as conn:
+        jobs = await list_recent(conn, workspace_id=workspace_id, limit=1)
+    if not jobs:
+        return None
+    job = jobs[0]
+    return str(job["job_id"]), str(job["status"])
+
+
 def build_brand_kit_ingestion_trigger(
     *, settings: Settings, conn_factory: ConnFactory
 ) -> BrandKitWebsiteIngestion | None:
@@ -177,4 +199,5 @@ __all__ = [
     "BrandKitIngestionTrigger",
     "BrandKitWebsiteIngestion",
     "build_brand_kit_ingestion_trigger",
+    "read_newest_ingestion_job",
 ]

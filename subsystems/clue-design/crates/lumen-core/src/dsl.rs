@@ -1,24 +1,24 @@
 #![allow(clippy::result_large_err)]
 
+use crate::editing::TextEditContext;
 use crate::editing::{ExportProfileEditPatch, StackEntryEdit};
 use crate::scene::{parse_hex_rgba, BrandKitRef, ColorStop, Medium};
 use crate::{
     build_archive_asset, build_clone_subtree, build_delete_export_profile,
-    build_detach_to_freehand, build_hard_delete_asset,
-    build_modify_operations, build_move_after, build_move_before, build_move_to_parent,
-    build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
-    build_ungroup, normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch,
-    AssetId, AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy,
-    CloneSubtreeRequest, Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch,
-    EditError, EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch,
-    Fill, FocalPoint, ImageFitMode, ImageNode, ImagePolicy, LayoutAnchor, LineNode, Node,
-    NodeEditPatch, NodeId, NodeKind, Operation,
-    OperationError, OperationReport, OptionalFieldPatch, Orientation, Page, PageEditPatch, PageId,
-    PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent, Phase, PositionMode,
-    RasterScale, Rect, RelativePlacement, ReplaceNodeRequest, ReplaceSlotPolicy, Scene, SizeSpec,
-    Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign, StrokeCap, StrokeJoin, TextAlign,
-    TextDirection, TextEditPatch, TextNode, TextSpan, TextTransform, TextWrap, Unit, VectorNode,
-    VerticalAlign,
+    build_detach_to_freehand, build_hard_delete_asset, build_modify_operations_with_text_context,
+    build_move_after, build_move_before, build_move_to_parent, build_replace_node,
+    build_safe_delete, build_safe_delete_page, build_safe_delete_slot, build_ungroup,
+    normalize_page_size, page_size_for_preset, resolve_edit_target, AssetEditPatch, AssetId,
+    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, CloneSlotPolicy, CloneSubtreeRequest,
+    Color, ComputedClonePolicy, Diagnostic, DiagnosticSeverity, DocumentPatch, EditError,
+    EditPatch, EditTargetRef, Effect, EffectId, EffectKind, ExportFormat, FieldPatch, Fill,
+    FocalPoint, ImageFitMode, ImageNode, ImagePolicy, LayoutAnchor, LineNode, Node, NodeEditPatch,
+    NodeId, NodeKind, Operation, OperationError, OperationReport, OptionalFieldPatch, Orientation,
+    Page, PageEditPatch, PageId, PagePreset, PageSizeInput, Paint, PaintId, ParentRef, PdfIntent,
+    Phase, PositionMode, RasterScale, Rect, RelativePlacement, ReplaceNodeRequest,
+    ReplaceSlotPolicy, Scene, SizeSpec, Slot, SlotEditPatch, SlotId, SlotKey, Stroke, StrokeAlign,
+    StrokeCap, StrokeJoin, TextAlign, TextDirection, TextEditPatch, TextNode, TextSpan,
+    TextTransform, TextWrap, Unit, VectorNode, VerticalAlign,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -80,12 +80,32 @@ pub fn compile_dsl_into_scene_with_session_and_protected(
     session_snapshot: Option<DslCompileSessionSnapshot>,
     protected_node_ids: BTreeSet<NodeId>,
 ) -> DslSceneCompileOutput {
+    compile_dsl_into_scene_with_text_context(
+        source,
+        scene,
+        session_snapshot,
+        protected_node_ids,
+        None,
+    )
+}
+
+pub fn compile_dsl_into_scene_with_text_context(
+    source: &str,
+    scene: &mut Scene,
+    session_snapshot: Option<DslCompileSessionSnapshot>,
+    protected_node_ids: BTreeSet<NodeId>,
+    text_edit_context: Option<TextEditContext<'_>>,
+) -> DslSceneCompileOutput {
     let mut session = session_snapshot
         .map(|snapshot| DslCompileSession::from_snapshot(scene.clone(), snapshot))
         .unwrap_or_else(|| DslCompileSession::new(scene.clone()));
     let previous_snapshot = session.snapshot();
-    let compile_output =
-        session.compile_block_with_options(source, None, protected_node_ids);
+    let compile_output = session.compile_block_with_text_context(
+        source,
+        None,
+        protected_node_ids,
+        text_edit_context,
+    );
 
     if compile_output.has_errors() {
         return DslSceneCompileOutput {
@@ -204,6 +224,16 @@ impl DslCompileSession {
         history: Option<&dyn DslHistoryAdapter>,
         protected_node_ids: BTreeSet<NodeId>,
     ) -> DslCompileOutput {
+        self.compile_block_with_text_context(source, history, protected_node_ids, None)
+    }
+
+    fn compile_block_with_text_context(
+        &mut self,
+        source: &str,
+        history: Option<&dyn DslHistoryAdapter>,
+        protected_node_ids: BTreeSet<NodeId>,
+        text_edit_context: Option<TextEditContext<'_>>,
+    ) -> DslCompileOutput {
         let starting_context = self.parser_context.clone();
         let (parse, parsed_context) =
             DslParser::new_with_context(source, starting_context.clone()).parse_with_context();
@@ -215,6 +245,7 @@ impl DslCompileSession {
             &mut self.emitted_slots,
             history,
             protected_node_ids,
+            text_edit_context,
         );
         let output = compiler.compile(parse.halted_at.clone());
 
@@ -1544,6 +1575,7 @@ struct ReconcileBlockState {
 }
 
 struct DslCompiler<'a> {
+    text_edit_context: Option<TextEditContext<'a>>,
     document: DslDocument,
     operations: Vec<Operation>,
     diagnostics: Vec<DslDiagnostic>,
@@ -1572,8 +1604,10 @@ impl<'a> DslCompiler<'a> {
         emitted_slots: &'a mut BTreeMap<SlotKey, SlotId>,
         history: Option<&'a dyn DslHistoryAdapter>,
         protected_node_ids: BTreeSet<NodeId>,
+        text_edit_context: Option<TextEditContext<'a>>,
     ) -> Self {
         Self {
+            text_edit_context,
             document,
             operations: Vec::new(),
             diagnostics,
@@ -2227,8 +2261,13 @@ impl<'a> DslCompiler<'a> {
                 }
             }
         }
-        let batch = build_modify_operations(self.scene, target, patch)
-            .map_err(|error| edit_error_diag(line, &error))?;
+        let batch = build_modify_operations_with_text_context(
+            self.scene,
+            target,
+            patch,
+            self.text_edit_context,
+        )
+        .map_err(|error| edit_error_diag(line, &error))?;
         self.emit_edit_batch(line, batch.operations)?;
         if let Some((node_id, asset_id)) = dangling_swap {
             // Set the node's kind to Image with a fresh dangling reference and
@@ -4727,7 +4766,20 @@ fn node_from_element(element: &DslElement, line_number: usize) -> Result<Node, D
         },
     };
 
-    Ok(Node::new(element.id.clone(), kind))
+    let mut node = Node::new(element.id.clone(), kind);
+    if matches!(node.kind, NodeKind::Text(_)) {
+        // Editor Quality Plan 4 (item F, ruling R7): a text element that names
+        // no size hugs its copy on both axes. `Node::new`'s 0×0 fixed box
+        // collapsed (LUMV0901), and the fixed heights authors reached for
+        // instead stopped following the copy — the selection box then
+        // outlined empty space. An explicit `s(...)` is applied after this
+        // and wins; no authored size is ever rewritten.
+        node.size = SizeSpec {
+            width: crate::Dimension::Hug,
+            height: crate::Dimension::Hug,
+        };
+    }
+    Ok(node)
 }
 
 /// Materialize a reconcile block's staged `(indent, element)` list into a

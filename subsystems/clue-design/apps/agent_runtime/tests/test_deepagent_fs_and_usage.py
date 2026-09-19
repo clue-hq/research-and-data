@@ -7,10 +7,10 @@ it wraps. Importing the backend at module top pins its parent to the real class 
 collection time (before any other test's deepagents stub runs). It also unit-tests
 the pure `normalize_agent_key`/`to_virtual` helpers and the workspace materializer.
 
-RIDER 2 drives `UsageCaptureHandler.on_llm_end` with a stubbed `LLMResult` and a
-minimal fake tools object to prove one trace event is recorded per usage-bearing
-call, that role attribution rides through, and that a callback exception never
-propagates.
+The usage section drives `trace_callbacks.extract_usage` with the `LLMResult`
+shapes LangChain emits, and proves the harness hands deepagents models carrying
+no design-local usage handler while the turn's invoke config carries the lane-3
+`ModelCallCollector`.
 """
 
 from __future__ import annotations
@@ -24,11 +24,7 @@ import pytest
 from lumen_agent.fs_backend import AgentWorkspaceBackend
 from lumen_agent.materialize import materialize_agent_workspace
 from lumen_agent.paths import host_to_virtual, normalize_agent_key, to_virtual
-from lumen_agent.usage_capture import (
-    UsageCaptureHandler,
-    _extract_usage,
-    attach_usage_capture,
-)
+from lumen_agent.trace_callbacks import extract_usage
 
 
 # ============================================================================
@@ -215,6 +211,7 @@ def test_write_deny_globs_target_the_readonly_virtual_trees():
     assert len(perms) == 1
     perm = perms[0]
     assert set(perm.paths) == {
+        "/.materialize.lock",
         "/.deepagent/**",
         "/knowledge_docs/**",
         "/custom_components",
@@ -222,6 +219,31 @@ def test_write_deny_globs_target_the_readonly_virtual_trees():
     }
     assert perm.operations == ["write"]
     assert perm.mode == "deny"
+
+
+@pytest.mark.parametrize("alias", ["virtual", "relative", "host", "legacy", "dot"])
+@pytest.mark.parametrize("operation", ["write", "edit"])
+def test_backend_denies_materialization_lock_writes_through_aliases(ws_backend, alias, operation):
+    root, backend = ws_backend
+    lock = root / ".materialize.lock"
+    key = {
+        "virtual": "/.materialize.lock",
+        "relative": ".materialize.lock",
+        "host": str(lock),
+        "legacy": "/.lumen-runs/.materialize.lock",
+        "dot": "/./.materialize.lock",
+    }[alias]
+    if operation == "write":
+        denied = backend.write(key, "agent-written")
+        assert denied.error is not None
+        assert not lock.exists()
+    else:
+        lock.touch()
+        inode = lock.stat().st_ino
+        denied_edit = backend.edit(key, "", "agent-written")
+        assert denied_edit.error is not None
+        assert lock.read_bytes() == b""
+        assert lock.stat().st_ino == inode
 
 
 def test_custom_component_projection_has_public_paths_and_typed_writes_only(
@@ -336,25 +358,32 @@ def test_materialize_loud_failure_on_missing_source(tmp_path):
 
 
 # ============================================================================
-# RIDER 2 — per-model-call token usage capture
+# Usage extraction (lives in `trace_callbacks` since the collector landed)
 # ============================================================================
+#
+# Lane 3 slice 5 retired `lumen_agent.usage_capture` outright: per-call usage,
+# cost and role attribution are the governed gateway's, and the design side now
+# only COPIES those stamps onto a receipt (`lumen_agent.usage_collector`, tested
+# in test_usage_collector.py). What survived the retirement is the LLMResult
+# shape-tolerance below, which moved verbatim into `trace_callbacks`.
 
 
-class _FakeTools:
-    """Minimal stand-in for LumenDesignTools.record — accumulates events."""
+class _FakeUsageResult:
+    """A minimal LLMResult-shaped object with a message whose usage_metadata
+    OMITS total_tokens — proves the extractor computes the total itself. (A real
+    `AIMessage` cannot omit it: pydantic requires the field.)"""
 
-    def __init__(self) -> None:
-        self.events: list[dict] = []
+    class _Gen:
+        def __init__(self, message):
+            self.message = message
 
-    def record(self, actor, event, input_summary=None, output_summary=None, diagnostics=None, payload=None):
-        self.events.append(
-            {
-                "actor": actor,
-                "event": event,
-                "output_summary": output_summary,
-                "payload": payload or {},
-            }
-        )
+    class _Msg:
+        def __init__(self, usage):
+            self.usage_metadata = usage
+
+    def __init__(self, usage):
+        self.generations = [[self._Gen(self._Msg(usage))]]
+        self.llm_output = None
 
 
 def _llm_result_with_usage(input_tokens=120, output_tokens=48, total_tokens=168):
@@ -372,83 +401,6 @@ def _llm_result_with_usage(input_tokens=120, output_tokens=48, total_tokens=168)
     return LLMResult(generations=[[ChatGeneration(message=message)]])
 
 
-class _FakeUsageResult:
-    """A minimal LLMResult-shaped object with a message whose usage_metadata
-    OMITS total_tokens — proves the handler computes the total itself. (A real
-    `AIMessage` cannot omit it: pydantic requires the field.)"""
-
-    class _Gen:
-        def __init__(self, message):
-            self.message = message
-
-    class _Msg:
-        def __init__(self, usage):
-            self.usage_metadata = usage
-
-    def __init__(self, usage):
-        self.generations = [[self._Gen(self._Msg(usage))]]
-        self.llm_output = None
-
-
-def test_on_llm_end_records_one_usage_event_with_role():
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="author")
-    handler.on_llm_end(_llm_result_with_usage())
-
-    assert len(tools.events) == 1
-    event = tools.events[0]
-    assert event["event"] == "model_call_usage"
-    assert event["payload"] == {
-        "input_tokens": 120,
-        "output_tokens": 48,
-        "total_tokens": 168,
-        "role": "author",
-    }
-
-
-def test_total_tokens_computed_when_absent():
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role=None)
-    handler.on_llm_end(_FakeUsageResult({"input_tokens": 10, "output_tokens": 5}))
-
-    event = tools.events[0]
-    assert event["payload"]["total_tokens"] == 15
-    # No role recorded when attribution is not attempted.
-    assert "role" not in event["payload"]
-
-
-def test_no_usage_metadata_records_nothing():
-    from langchain_core.messages import AIMessage
-    from langchain_core.outputs import ChatGeneration, LLMResult
-
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools)
-    result = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="hi"))]])
-    handler.on_llm_end(result)
-    assert tools.events == []
-
-
-def test_callback_exception_does_not_propagate_and_warns_once():
-    class _BoomTools:
-        def __init__(self):
-            self.calls = []
-
-        def record(self, actor, event, **kwargs):
-            self.calls.append(event)
-            if event == "model_call_usage":
-                raise RuntimeError("record blew up")
-            # the warning record itself succeeds
-
-    tools = _BoomTools()
-    handler = UsageCaptureHandler(tools, role="reviewer")
-    # Must NOT raise.
-    handler.on_llm_end(_llm_result_with_usage())
-    handler.on_llm_end(_llm_result_with_usage())
-
-    # A warning was recorded exactly once (warned flag), after the failed usage.
-    assert tools.calls.count("model_call_usage_warning") == 1
-
-
 def test_extract_usage_from_llm_output_fallback():
     from langchain_core.outputs import LLMResult
 
@@ -456,19 +408,15 @@ def test_extract_usage_from_llm_output_fallback():
         generations=[[]],
         llm_output={"token_usage": {"prompt_tokens": 7, "completion_tokens": 3}},
     )
-    usage = _extract_usage(result)
+    usage = extract_usage(result)
     assert usage == {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
-
-
-# ------------------------------------------------------------------ #
-# L0 (latency trace enrichment) — cached/reasoning + duration + model id
-# ------------------------------------------------------------------ #
 
 
 def test_extract_usage_reads_cached_and_reasoning_from_usage_metadata():
     """usage_metadata's provider-normalized detail sub-dicts surface as
     `cached_input_tokens` (input_token_details.cache_read) and
-    `reasoning_output_tokens` (output_token_details.reasoning)."""
+    `reasoning_output_tokens` (output_token_details.reasoning). Lane 3 slice 5
+    publishes the cached count under the ledger's name too."""
     usage = {
         "input_tokens": 100,
         "output_tokens": 40,
@@ -476,8 +424,9 @@ def test_extract_usage_reads_cached_and_reasoning_from_usage_metadata():
         "input_token_details": {"cache_read": 80},
         "output_token_details": {"reasoning": 12},
     }
-    result = _extract_usage(_FakeUsageResult(usage))
+    result = extract_usage(_FakeUsageResult(usage))
     assert result["cached_input_tokens"] == 80
+    assert result["cache_read_input_tokens"] == 80
     assert result["reasoning_output_tokens"] == 12
     assert result["input_tokens"] == 100
 
@@ -500,131 +449,37 @@ def test_extract_usage_reads_cached_and_reasoning_from_llm_output_raw():
             }
         },
     )
-    usage = _extract_usage(result)
+    usage = extract_usage(result)
     assert usage["cached_input_tokens"] == 150
+    assert usage["cache_read_input_tokens"] == 150
     assert usage["reasoning_output_tokens"] == 25
 
 
 def test_extract_usage_omits_cached_and_reasoning_when_absent():
     """No detail sub-dicts ⇒ the keys are OMITTED, never null/zero — preserving the
     payload's 'omit rather than null' convention."""
-    usage = _extract_usage(_llm_result_with_usage())
+    usage = extract_usage(_llm_result_with_usage())
     assert "cached_input_tokens" not in usage
+    assert "cache_read_input_tokens" not in usage
     assert "reasoning_output_tokens" not in usage
 
 
-def test_on_llm_end_records_duration_from_start_end_pairing():
-    """duration_ms is the wall-clock between the matching on_*_start and on_llm_end
-    for the same run_id (a float ms)."""
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="author")
-    handler.on_chat_model_start({}, [[]], run_id="r1")
-    handler.on_llm_end(_llm_result_with_usage(), run_id="r1")
+def test_no_usage_metadata_extracts_nothing():
+    """A run must never fabricate zeros: no usage anywhere ⇒ None."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
 
-    payload = tools.events[0]["payload"]
-    assert "duration_ms" in payload
-    assert isinstance(payload["duration_ms"], float)
-    assert payload["duration_ms"] >= 0.0
+    result = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="hi"))]])
+    assert extract_usage(result) is None
 
 
-def test_on_llm_end_omits_duration_when_no_start_seen():
-    """Without a paired start (unknown run_id), duration_ms is omitted, not zero."""
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="author")
-    handler.on_llm_end(_llm_result_with_usage(), run_id="never-started")
-    assert "duration_ms" not in tools.events[0]["payload"]
-
-
-def test_on_llm_end_records_model_id_from_response_llm_output():
-    """model_id is the slug the completion reports it was served by."""
-    from langchain_core.outputs import LLMResult
-
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="reviewer")
-    result = LLMResult(
-        generations=[[]],
-        llm_output={
-            "model_name": "x-ai/grok-4.5",
-            "token_usage": {"prompt_tokens": 5, "completion_tokens": 2},
-        },
-    )
-    handler.on_llm_end(result, run_id="r2")
-    assert tools.events[0]["payload"]["model_id"] == "x-ai/grok-4.5"
-
-
-def test_on_llm_end_falls_back_to_start_model_id_when_response_omits_it():
-    """When the completion carries no slug, the id captured at on_*_start (from the
-    serialized kwargs / metadata) backstops model_id."""
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="orchestrator")
-    handler.on_chat_model_start(
-        {"kwargs": {"model": "anthropic/claude-opus-4.8"}}, [[]], run_id="r3"
-    )
-    # _FakeUsageResult has llm_output=None → no slug in the response.
-    handler.on_llm_end(
-        _FakeUsageResult({"input_tokens": 3, "output_tokens": 1, "total_tokens": 4}),
-        run_id="r3",
-    )
-    assert tools.events[0]["payload"]["model_id"] == "anthropic/claude-opus-4.8"
-
-
-def test_on_llm_end_omits_model_id_when_undiscoverable():
-    """No slug anywhere ⇒ model_id is omitted rather than a placeholder string."""
-    tools = _FakeTools()
-    handler = UsageCaptureHandler(tools, role="author")
-    handler.on_llm_end(_llm_result_with_usage(), run_id="r4")
-    assert "model_id" not in tools.events[0]["payload"]
-
-
-def test_attach_usage_capture_returns_same_model_with_handler_on_callbacks():
-    """attach_usage_capture appends the handler to the model's OWN `.callbacks`
-    field and returns the SAME object (no RunnableBinding wrapper — that broke
-    deepagents' resolve_model, probe-r9). Verified against a REAL BaseChatModel."""
-    from langchain_core.language_models.fake_chat_models import FakeListChatModel
-
-    tools = _FakeTools()
-    model = FakeListChatModel(responses=["hi"])
-    returned = attach_usage_capture(model, tools, role="orchestrator")
-    # Same object, same type — still a BaseChatModel (what resolve_model demands).
-    assert returned is model
-    callbacks = model.callbacks or []
-    assert any(isinstance(cb, UsageCaptureHandler) for cb in callbacks)
-
-
-def test_attach_usage_capture_appends_never_replaces_existing_callbacks():
-    """A pre-existing callback on the model's `.callbacks` list survives — we
-    append, never replace."""
-    from langchain_core.callbacks import BaseCallbackHandler
-    from langchain_core.language_models.fake_chat_models import FakeListChatModel
-
-    class _Other(BaseCallbackHandler):
-        pass
-
-    other = _Other()
-    tools = _FakeTools()
-    model = FakeListChatModel(responses=["hi"], callbacks=[other])
-    attach_usage_capture(model, tools, role="author")
-    assert other in model.callbacks
-    assert any(isinstance(cb, UsageCaptureHandler) for cb in model.callbacks)
-
-
-def test_attach_usage_capture_passes_through_object_without_callbacks_field():
-    """A plain object (test sentinel) with no `callbacks` field is returned as-is
-    so assembly is never disturbed and no warning is raised."""
-    tools = _FakeTools()
-    sentinel = object()
-    assert attach_usage_capture(sentinel, tools, role="author") is sentinel
-    assert tools.events == []
-
-
-def test_attach_usage_capture_fires_on_real_invoke():
-    """The instance-level handler fires on a REAL model invoke (langchain_core
-    passes `self.callbacks` into CallbackManager.configure as local_callbacks),
-    so usage capture is wired end-to-end without any wrapper — the crux of the
-    fix. The fake model emits no usage_metadata, so we assert the handler's
-    on_llm_end ran by observing it processed the call (no event, since no usage),
-    which we confirm separately; here we prove the callback machinery reaches it
-    by using a handler that flags on_llm_end."""
+def test_instance_level_callbacks_fire_on_a_real_invoke():
+    """langchain_core passes a model's own `.callbacks` into
+    CallbackManager.configure as local_callbacks, so a handler appended to the
+    instance fires without any wrapper — the mechanism `attach_trace_callback`
+    and the ingestion brief agent both rely on (probe-r9: `.with_config` would
+    return a RunnableBinding that deepagents' resolve_model kills construction
+    on)."""
     from langchain_core.callbacks import BaseCallbackHandler
     from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
@@ -640,38 +495,26 @@ def test_attach_usage_capture_fires_on_real_invoke():
     assert fired == ["end"]
 
 
-def test_wired_handler_records_role_on_the_instance():
-    """The handler appended to a real model's `.callbacks` carries the role and
-    records it when it fires (driven here via a manual on_llm_end since the fake
-    model emits no usage_metadata)."""
-    from langchain_core.language_models.fake_chat_models import FakeListChatModel
-
-    tools = _FakeTools()
-    model = FakeListChatModel(responses=["hi"])
-    attach_usage_capture(model, tools, role="reviewer")
-    handler = next(
-        cb for cb in model.callbacks if isinstance(cb, UsageCaptureHandler)
-    )
-    handler.on_llm_end(_llm_result_with_usage(total_tokens=200))
-    assert tools.events[0]["payload"]["role"] == "reviewer"
-    assert tools.events[0]["payload"]["total_tokens"] == 200
-
-
 # ============================================================================
-# RIDER 2 — harness wiring (models handed to deepagents carry the capture handler)
+# Harness wiring (what the models carry, and what the invoke config carries)
 # ============================================================================
 
 
 def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
     tmp_path, monkeypatch
 ):
-    """P3.2 (PD-part3 delta 6): the design-local UsageCaptureHandler is RETIRED —
+    """P3.2 (PD-part3 delta 6): the design-local usage-capture handler is RETIRED —
     the governed gateway's role-labelled ``model_call_usage`` record is the ONE
     usage authority, and attaching both would double count. The harness must hand
-    deepagents models that carry NO UsageCaptureHandler, thread the per-role
+    deepagents models that carry no usage handler at all, thread the per-role
     gateway label through init_model instead, keep trace capture design-local,
     and still build three SEPARATE instances (gateway attribution is
-    per-instance too)."""
+    per-instance too).
+
+    Lane 3 slice 5 adds the other half: the turn's ``ModelCallCollector`` rides the
+    INVOKE CONFIG, not a model instance, so one handler sees every model, tool and
+    sub-agent event in the graph. It only COPIES the gateway's stamps, so it is not
+    a second usage authority."""
     import sys
     import types
 
@@ -681,7 +524,12 @@ def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
 
     def fake_create_deep_agent(**kwargs):
         captured["kwargs"] = kwargs
-        return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []})
+
+        def _invoke(*a, **k):
+            captured["invoke_kwargs"] = k
+            return {"messages": []}
+
+        return types.SimpleNamespace(invoke=_invoke)
 
     class _FakeFilesystemPermission:
         def __init__(self, operations, paths, mode="allow"):
@@ -721,16 +569,19 @@ def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
         raising=False,
     )
 
-    from lumen_agent.harness import create_design_deepagent
+    from lumen_agent.harness import run_deepagent_turn
 
-    create_design_deepagent("Make a poster", runtime_config(tmp_path))
+    # The whole turn, not just construction: the collector attaches at the invoke
+    # config, which only exists once the graph is actually invoked.
+    run_deepagent_turn("Make a poster", runtime_config(tmp_path))
     kwargs = captured["kwargs"]
 
     from lumen_agent.trace_callbacks import TraceCallbackHandler
+    from lumen_agent.usage_collector import ModelCallCollector
 
     def _usage_handlers(model):
         callbacks = getattr(model, "callbacks", None) or []
-        return [cb for cb in callbacks if isinstance(cb, UsageCaptureHandler)]
+        return [cb for cb in callbacks if isinstance(cb, ModelCallCollector)]
 
     def _has_trace(model):
         callbacks = getattr(model, "callbacks", None) or []
@@ -754,6 +605,10 @@ def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
     # author instance even though ids match, so their handlers never cross-fire.
     assert kwargs["model"] is not subs["lumen-dsl-author"]["model"]
     assert subs["lumen-dsl-author"]["model"] is not subs["lumen-visual-reviewer"]["model"]
+    # Lane 3 slice 5: the receipt collector is on the INVOKE CONFIG (see the docstring),
+    # exactly once, and the turn publishes what it collected on the tools object.
+    config_callbacks = captured["invoke_kwargs"]["config"]["callbacks"]
+    assert len([cb for cb in config_callbacks if isinstance(cb, ModelCallCollector)]) == 1
 
 
 # ============================================================================
@@ -762,7 +617,8 @@ def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
 #
 # This is the test that WOULD HAVE CAUGHT the incident and must never regress.
 #
-# The bug: attach_usage_capture wrapped each role model via `.with_config(...)`,
+# The bug: the (now retired) usage-capture attach wrapped each role model via
+# `.with_config(...)`,
 # producing a RunnableBinding. deepagents' `resolve_model` passes through only
 # `isinstance(model, BaseChatModel)`; a RunnableBinding is not one, so it fell to
 # the string-spec path where `get_provider_profile(spec)` does `spec.count(":")`
@@ -772,7 +628,7 @@ def test_harness_retires_local_usage_capture_and_role_labels_at_the_gateway(
 #
 # This test runs the REAL deepagents (create_deep_agent + resolve_model), stubbing
 # ONLY init_model (to a real ChatOpenAI that opens no socket at construction) and
-# the multimodal probe (which would hit the network). If attach_usage_capture ever
+# the multimodal probe (which would hit the network). If an attach helper ever
 # returns a non-BaseChatModel again, resolve_model raises here and this fails.
 
 

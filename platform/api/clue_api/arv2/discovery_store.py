@@ -38,6 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_core import decode_jsonb
 
 __all__ = [
+    "PENDING_DISPOSITION",
+    "SHOWN_DISPOSITIONS",
+    "VERIFIED_PREDICATE",
     "CandidateRow",
     "Disposition",
     "DiscoveryRunRow",
@@ -50,6 +53,7 @@ __all__ = [
     "list_candidates",
     "mark_candidates_approved",
     "read_discovery_run",
+    "record_discovery_progress",
     "record_relaxed_search",
     "record_verdicts",
     "record_webset",
@@ -71,9 +75,34 @@ Disposition = Literal[
     "pending", "pass", "partial", "unclear", "duplicate_of_existing", "not_chosen_before"
 ]
 
-#: The dispositions a candidate is still worth remembering as "seen but not chosen". A duplicate
-#: is already an account, and a pending one was never verified, so neither is re-surfacing news.
-_LIVE_DISPOSITIONS = "('pass', 'partial', 'unclear')"
+#: The dispositions that mean the human was shown this company — §4's *shown*, and equally the
+#: candidates a later run still remembers as "seen but not chosen". A duplicate is already an
+#: account, and a pending one was never verified, so neither is re-surfacing news.
+#:
+#: Public because it is the lane's vocabulary, not this module's: anything that counts or reports
+#: candidates (``status.md``'s discovery section, the driver's own tally) reads it from here
+#: instead of re-typing the three words into its own SQL.
+SHOWN_DISPOSITIONS: tuple[str, ...] = ("pass", "partial", "unclear")
+
+#: A candidate nothing has verified yet.
+PENDING_DISPOSITION = "pending"
+
+#: What "verified" MEANS, in one place: the verifier actually judged this company.
+#:
+#: It used to be the complement of ``pending``, and that was wrong in a way nobody could see from
+#: the number. ``_pre_spend_disposition`` stamps ``duplicate_of_existing`` and ``not_chosen_before``
+#: **before any gate is asked** — those candidates cost the one website answer that identified them
+#: and were never checked against the ICP — so "not pending" counted them as verified and the agent
+#: told the founder the platform had checked companies it had skipped. A verdict row is the only
+#: thing that proves a judgement happened, so the verdict array is the test.
+#:
+#: A SQL fragment rather than a helper because its three readers (the chat read, ``status.md`` and
+#: the Target-accounts tab's poll) each embed it in a different statement; they alias the candidate
+#: table ``c`` so one definition serves all three and the three numbers cannot drift apart.
+VERIFIED_PREDICATE = "jsonb_array_length(c.verdicts_json) > 0"
+
+#: The same set as a literal SQL tuple, derived so the two can never drift apart.
+_LIVE_DISPOSITIONS = "(" + ", ".join(f"'{value}'" for value in SHOWN_DISPOSITIONS) + ")"
 
 _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
@@ -358,6 +387,39 @@ async def record_relaxed_search(
             "WHERE run_id = :run_id"
         ),
         {"relaxed_search_id": relaxed_search_id, "run_id": run_id},
+    )
+
+
+async def record_discovery_progress(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    found_strict: int,
+    found_relaxed: int,
+    analyzed: int,
+) -> None:
+    """The §4 counters as they stand mid-run, written on every poll tick (spec 2026-09-12 §2).
+
+    Only the numbers move, and only forward. ``GREATEST`` makes the durable counters monotonic in
+    SQL, so a zombie attempt's late tick cannot walk them backwards for a tick — a guarantee that
+    holds whoever writes and whatever the status happens to be. (The columns are nullable, hence
+    the ``COALESCE``: a run that has never ticked starts from 0, not from NULL.) Status, the
+    receipt and ``finished_at`` belong to :func:`finish_discovery_run`, so a reader that sees
+    counters climbing on an ``in_progress`` row is watching a run, not a run that landed twice.
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run "
+            "SET found_strict = GREATEST(COALESCE(found_strict, 0), :found_strict), "
+            " found_relaxed = GREATEST(COALESCE(found_relaxed, 0), :found_relaxed), "
+            " analyzed = GREATEST(COALESCE(analyzed, 0), :analyzed) WHERE run_id = :run_id"
+        ),
+        {
+            "found_strict": int(found_strict),
+            "found_relaxed": int(found_relaxed),
+            "analyzed": int(analyzed),
+            "run_id": run_id,
+        },
     )
 
 

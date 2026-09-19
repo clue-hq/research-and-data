@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { SquareIcon } from "lucide-react";
+import { composerAction, hasComposerDraft } from "../model/composer-action";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -36,8 +38,12 @@ export function ProjectComposer({
   onModelSelect = NOOP,
   onPromptChange,
   onSubmit,
+  onStop,
+  running = false,
+  stopping = false,
   prompt,
   sendDisabled = false,
+  submittableWithoutPrompt = false,
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
@@ -60,8 +66,16 @@ export function ProjectComposer({
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
   onSubmit: (value: string, entityIds: string[]) => boolean | Promise<boolean>;
+  onStop?: () => void;
+  running?: boolean;
+  stopping?: boolean;
   prompt: string;
   sendDisabled?: boolean;
+  /** Web annotations (slice 2, R-A2): the caller is carrying context that IS
+   * the message — numbered annotation chips above the composer — so an empty
+   * box is a legitimate send, and the turn's text is the caller's to decide.
+   * Defaults false: every other composer keeps its "type something" rule. */
+  submittableWithoutPrompt?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
@@ -71,6 +85,10 @@ export function ProjectComposer({
 }) {
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const [submitting, setSubmitting] = useState(false);
+  const action = composerAction({ running: running && Boolean(onStop), stopping,
+    // An annotation-only turn (web lane) is a draft even with an empty prompt.
+    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments) || submittableWithoutPrompt,
+    disabled, sendDisabled, submitting });
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
       selectedEntityIds
@@ -84,11 +102,14 @@ export function ProjectComposer({
   );
   const submitCurrentDraft = useCallback(
     async (promptOverride?: string) => {
-      if (disabled || sendDisabled || submitting) return;
+      if (disabled || sendDisabled || submitting || stopping) return;
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!currentPrompt.trim() && !currentEntityIds.length && !attachments.length) {
+      if (
+        !hasComposerDraft(currentPrompt, currentEntityIds, attachments) &&
+        !submittableWithoutPrompt
+      ) {
         return;
       }
 
@@ -101,7 +122,16 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [attachments.length, disabled, onSubmit, prompt, sendDisabled, submitting],
+    [
+      attachments,
+      disabled,
+      onSubmit,
+      prompt,
+      sendDisabled,
+      stopping,
+      submittableWithoutPrompt,
+      submitting,
+    ],
   );
 
   return (
@@ -136,6 +166,7 @@ export function ProjectComposer({
           </p>
         ) : null}
         <ProjectComposerEditor
+          categoriesEnabled={variant !== "home"}
           disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
@@ -171,12 +202,12 @@ export function ProjectComposer({
           ) : null}
           {onEntitySelect ? (
             <button
-              aria-label="Add account or contact context"
+              aria-label="Add context"
               aria-haspopup="listbox"
               className={styles.contextButton}
               disabled={disabled}
               onClick={() => editorRef.current?.openMentionPicker()}
-              title="Add account or contact context"
+              title="Add context"
               type="button"
             >
               @
@@ -205,17 +236,14 @@ export function ProjectComposer({
             </div>
           ) : null}
           <button
-            aria-label="Send"
+            aria-label={action.kind === "stop" ? "Stop response" : "Send message"}
+            aria-busy={stopping || submitting || undefined}
             className={styles.sendButton}
-            disabled={
-              disabled ||
-              sendDisabled ||
-              submitting ||
-              (!prompt.trim() && !selectedEntities.length && !attachments.length)
-            }
-            type="submit"
+            disabled={action.disabled}
+            onClick={action.kind === "stop" ? onStop : undefined}
+            type={action.kind === "stop" ? "button" : "submit"}
           >
-            <ProjectIcon name="arrow-up" size={16} />
+            {action.kind === "stop" ? <SquareIcon aria-hidden="true" size={12} fill="currentColor" strokeWidth={0} /> : <ProjectIcon name="arrow-up" size={16} />}
           </button>
         </div>
       </div>

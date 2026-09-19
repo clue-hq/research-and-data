@@ -26,6 +26,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import structlog.testing
 
 from clue_api.arv2 import account_research_tools as tools
 from clue_api.arv2.account_research_claims import JobScope
@@ -699,11 +700,27 @@ class FakeArtifacts:
         raise AssertionError("no raw body is buffered by an in-memory client double")
 
 
+class MemoryConn:
+    """A connection that records the statements a tool writes itself, and answers nothing.
+
+    Only the stage stamp reaches it today: every other tool body here goes through the writer or a
+    client double, so a returned ``None`` is a truthful answer to the one statement that lands.
+    """
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, Any]] = []
+
+    async def execute(self, statement: Any, parameters: Any = None) -> None:
+        self.statements.append((str(statement), parameters))
+        return None
+
+
 class MemoryConnFactory:
-    """A connection factory whose connection is never spoken to (nothing here touches SQL)."""
+    """A connection factory whose one connection records what was executed on it."""
 
     def __init__(self) -> None:
         self.opened = 0
+        self.conn = MemoryConn()
 
     def __call__(self) -> Any:
         return self._open()
@@ -711,17 +728,35 @@ class MemoryConnFactory:
     @asynccontextmanager
     async def _open(self) -> AsyncIterator[Any]:
         self.opened += 1
-        yield object()
+        yield self.conn
+
+
+class RaisingConn:
+    """A connection that fails every statement, the way an exhausted pool or a lock wait does."""
+
+    async def execute(self, statement: Any, parameters: Any = None) -> None:
+        del statement, parameters
+        raise RuntimeError("connection pool exhausted")
+
+
+class RaisingConnFactory:
+    def __call__(self) -> Any:
+        return self._open()
+
+    @asynccontextmanager
+    async def _open(self) -> AsyncIterator[Any]:
+        yield RaisingConn()
 
 
 def _runtime(
     scope: JobScope = SCOPE,
     *,
     settings: Settings | None = None,
-) -> tuple[ToolRuntime, FakeClients, FakeWriter, MemoryConnFactory]:
+    conn_factory: Any | None = None,
+) -> tuple[ToolRuntime, FakeClients, FakeWriter, Any]:
     clients = FakeClients()
     writer = FakeWriter()
-    conn_factory = MemoryConnFactory()
+    conn_factory = conn_factory or MemoryConnFactory()
     runtime = ToolRuntime(
         scope=scope,
         settings=settings or Settings(),
@@ -1976,6 +2011,81 @@ def test_finalize_writes_the_verdicts_and_the_confirmed_candidates_only() -> Non
     ]
 
 
+def test_finalize_stamps_the_synthesis_stage_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spec 2026-09-12 §1: the agent's last act is the synthesis of its findings, and the job row
+    says so *before* the finalization's claims land."""
+    stamped: list[tuple[UUID, str, int]] = []
+    runtime, _, writer, _ = _runtime()
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        # The draft count at stamp time is what proves "before writing".
+        stamped.append((job_id, stage, len(writer.drafts)))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+
+    accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert stamped == [(runtime.scope.job_id, "synthesis", 0)]
+    assert writer.drafts, "and the claims did land after it"
+
+
+def test_the_stage_stamp_is_the_only_sql_a_finalize_issues_itself() -> None:
+    """The recording double accepts any statement, so this is the guard that used to be implicit
+    in a conn that accepted none: one finalize writes exactly one statement of its own, and it is
+    the stage UPDATE. Everything else a tool body writes goes through the claim writer."""
+    runtime, _, _, factory = _runtime()
+
+    accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert len(factory.conn.statements) == 1
+    statement, parameters = factory.conn.statements[0]
+    assert "UPDATE arv2_research_job SET stage" in statement
+    assert parameters == {"stage": "synthesis", "job_id": runtime.scope.job_id}
+
+
+def test_a_failing_stage_stamp_never_costs_the_finalization() -> None:
+    """A progress pixel is not worth a job: the stamp's failure is logged and swallowed, and the
+    finalization lands exactly as it would have (I2)."""
+    runtime, _, _, _ = _runtime(conn_factory=RaisingConnFactory())
+
+    with structlog.testing.capture_logs() as events:
+        accepted = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert accepted["accepted"] is True, "the finalization is unharmed"
+    assert runtime.finalization is not None
+    warned = [event for event in events if event["event"] == "arv2.stage_stamp_failed"]
+    assert len(warned) == 1
+    assert warned[0]["log_level"] == "warning"
+    assert warned[0]["stage"] == "synthesis"
+    assert warned[0]["job_id"] == str(runtime.scope.job_id)
+    assert "connection pool exhausted" in warned[0]["error"]
+
+
+def test_finalize_does_not_stamp_the_stage_when_it_refuses_a_second_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refusal comes first: a job already finalized is not walked back to ``synthesis``."""
+    stamped: list[tuple[UUID, str]] = []
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        stamped.append((job_id, stage))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+    runtime, _, _, _ = _runtime()
+    _call(runtime, "finalize_research", **_finalize_args())
+
+    refused = _call(runtime, "finalize_research", **_finalize_args())
+
+    assert refused["code"] == "finalization_already_proposed"
+    assert stamped == [(runtime.scope.job_id, "synthesis")], "the first call's stamp, and only it"
+
+
 def test_finalize_admits_the_candidate_rationale_and_influence_and_writes_them() -> None:
     """``CommitteeCandidate`` forbids extra keys, so the two optional ones have to be declared for
     the agent to be able to send them at all — and the mapper carries them onto the claim the
@@ -3059,6 +3169,27 @@ def _person_finalize_args(**overrides: Any) -> dict[str, Any]:
         "gaps": ["no podcast appearance found"],
         **overrides,
     }
+
+
+def test_person_finalize_stamps_the_synthesis_stage_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The person tool stamps the same stage as the account one — a person job's last act is its
+    synthesis too, and the progress card reads one column for both subjects."""
+    stamped: list[tuple[UUID, str]] = []
+
+    async def fake_set_job_stage(conn: Any, *, job_id: UUID, stage: str) -> None:
+        del conn
+        stamped.append((job_id, stage))
+
+    monkeypatch.setattr(tools, "set_job_stage", fake_set_job_stage)
+    runtime, _, _, _ = _runtime(PERSON_SCOPE)
+    _stub_claims(monkeypatch, [])
+
+    accepted = _call(runtime, "finalize_research", **_person_finalize_args())
+
+    assert accepted["accepted"] is True
+    assert stamped == [(runtime.scope.job_id, "synthesis")]
 
 
 def test_person_finalize_writes_the_openers_hooks_and_lookalikes_and_drops_the_quoteless_opener(

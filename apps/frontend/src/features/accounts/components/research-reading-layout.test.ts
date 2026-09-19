@@ -47,3 +47,11 @@ test("source access retains the cited account URLs and only relevant contact URL
   assert.ok(contactSources.some((source) => source.sourceDomain === "youtube.com"));
   assert.ok(contactSources.some((source) => source.sourceDomain === "globes.co.il"), "Internal-note sources remain available");
 });
+
+test("custom-field sources remain accessible without a page citation, including private records", () => {
+  const sample = zafranWorkspaceFixture.researchEvidence[0];
+  const publicRecord = { ...sample, claimId: "custom-public", researchFieldKey: "account.public_talk" };
+  const privateRecord = { ...sample, claimId: "custom-private", sourceUrl: null, sourceDomain: null, researchFieldKey: "account.internal" };
+  const unrelated = { ...sample, claimId: "unrelated", sourceUrl: "https://example.test/uncited" };
+  assert.deepEqual(researchSources([], [publicRecord, privateRecord, unrelated]).map((record) => record.claimId), ["custom-public", "custom-private"]);
+});

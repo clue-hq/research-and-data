@@ -38,9 +38,12 @@ exit; a turn ending keeps the leg ``open_awaiting_user``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -53,6 +56,7 @@ from clue_agents import (
     AgentExecutionStatus,
     AgentFinalizeEnvelope,
     AgentHistoryStore,
+    AgentModelCallReceipt,
     AgentProfileRegistry,
     AgentRole,
     AgentTurnOutcome,
@@ -63,16 +67,31 @@ from clue_agents import (
     HistoryMessageRef,
     ProjectContextArtifact,
 )
+from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
+from clue_agents.turns import AgentModelCallStatus
+from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnScopePinRow
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
 from clue_api.agent_turn_wiring import (
+    DbAgentContextReceiptStore,
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
+    is_agent_turn_privacy_tombstoned,
 )
+from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
-from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
+from clue_api.design_memory import (
+    DesignMemoryScopeError,
+    freeze_design_memory,
+    selection_dependency_receipt,
+)
+from clue_api.design_turn_targets import (
+    DesignTurnTargetError,
+    resolve_scene_targets,
+    resolve_web_targets,
+)
 from clue_api.turn_action import derive_turn_action_ref
-from clue_core import ExecutionId, operation_id_from_key
+from clue_core import ContextAssembly, EntityId, ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
 from clue_design import ad_assets as design_ad_assets
@@ -87,7 +106,9 @@ from clue_design.exit_judgment import (
     ExitJudgment,
     decide_exit,
 )
+from clue_design.sessions import design_session_id
 from clue_obs import get_logger
+from clue_obs.langfuse import observation, propagate_trace, tag_entities
 from clue_spine import get_project
 from clue_toolbelt import ToolInvoker
 
@@ -141,6 +162,7 @@ DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
 #: body: editing something OTHER than what the user pointed at would be worse than
 #: asking them to say it again against the scene as it now stands.
 DESIGN_LEG_TARGET_UNRESOLVED = "design_leg_target_unresolved"
+DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED = "design_leg_memory_scope_unresolved"
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -195,6 +217,8 @@ class DesignLegExitJudge(Protocol):
         brief: str,
         history: tuple[tuple[str, str], ...],
         message: str,
+        artifact: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None: ...
 
 
@@ -228,6 +252,99 @@ DESIGN_LEG_EXIT_SUMMARIES: dict[str, str] = {
     ),
     "abandoned": "The design session was abandoned at the user's request.",
 }
+
+
+def exit_summary(reason: str, reasoning: str | None = None) -> str:
+    """The leg summary head-of-abm resumes with: the engine's sentence for ``reason`` plus,
+    when the v2 judge supplied one, its own reasoning. Bounded to the finish tool's limit."""
+
+    base = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+    words = (reasoning or "").strip()
+    if not words:
+        return base
+    return f"{base} Exit judge: {words}"[:4_000]
+
+
+async def _exit_judge_artifact_line(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    pinned_document: dict[str, Any] | None,
+) -> str | None:
+    """One line naming the artifact this session is bound to — title, kind, account."""
+
+    if pinned_document is None:
+        return None
+    kind = "web page" if pinned_document.get("doc_kind") == "web" else "scene ad"
+    title = str(pinned_document.get("title") or "Untitled design")
+    line = f'design "{title}" ({kind})'
+    account_id = pinned_document.get("account_id")
+    if account_id:
+        account = await design_accounts.get_web_account(
+            conn, workspace_id=workspace_id, account_id=str(account_id)
+        )
+        if account is not None:
+            line += f', for account "{account["name"]}"'
+    return line
+
+
+async def _exit_judge_tag_lines(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    focus_refs: Sequence[DomainObjectRef],
+    pinned_document: dict[str, Any] | None,
+) -> tuple[str, ...]:
+    """What the message tagged, one label per line, ids never shown.
+
+    Design documents, files and reference images resolve through the transcript's own
+    presentation reader; accounts and contacts through the identity reads the composer
+    uses. Selected elements on the canvas collapse to a count — they are on the current
+    artifact by construction.
+    """
+
+    from clue_api.chat.composer_context import context_ref_presentations
+    from clue_research.identity import get_account, get_contact
+
+    refs = tuple(focus_refs)
+    if not refs:
+        return ()
+    current_id = str(pinned_document.get("id")) if pinned_document else None
+    presentations = await context_ref_presentations(conn, workspace_id=workspace_id, refs=refs)
+    lines: list[str] = []
+    selected = sum(1 for ref in refs if ref.object_type == "design_node")
+    if selected:
+        lines.append(
+            f"{selected} selected element{'s' if selected != 1 else ''} on the current artifact"
+        )
+    for ref in refs:
+        key = (ref.object_type, str(ref.object_id))
+        if ref.object_type == "design_document":
+            shown = presentations.get(key, {})
+            label = shown.get("label") or "Design"
+            kind = "web page" if shown.get("kind") == "web" else "scene ad"
+            suffix = " (this artifact)" if str(ref.object_id) == current_id else ""
+            lines.append(f'design "{label}" ({kind}){suffix}')
+        elif ref.object_type == "project_document":
+            shown = presentations.get(key, {})
+            lines.append(f'file "{shown.get("label") or "Document"}"')
+        elif ref.object_type == "design_asset":
+            shown = presentations.get(key, {})
+            lines.append(f'reference image "{shown.get("label") or "Reference image"}"')
+        elif ref.object_type in {"account", "contact"}:
+            try:
+                entity_id = EntityId(UUID(str(ref.object_id)))
+            except ValueError:
+                continue
+            if ref.object_type == "account":
+                account = await get_account(conn, entity_id)
+                if account is not None:
+                    lines.append(f'account "{account.canonical_name}"')
+            else:
+                contact = await get_contact(conn, entity_id)
+                if contact is not None:
+                    lines.append(f'contact "{contact.full_name or "a contact"}"')
+    return tuple(lines)
 
 
 def build_design_leg_finisher(
@@ -303,7 +420,9 @@ async def load_design_leg_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -326,6 +445,7 @@ async def load_design_leg_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -357,7 +477,9 @@ async def load_head_of_abm_history(
         result = await conn.execute(
             text(
                 "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes "
+                "m.body_sha256, a.media_type, a.size_bytes, "
+                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
+                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
                 "FROM agent_thread_message m "
                 "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
                 "JOIN artifact a ON a.storage_key = m.body_artifact_key "
@@ -378,6 +500,7 @@ async def load_head_of_abm_history(
                 turn_id=row["turn_id"],
                 sequence=int(row["sequence"]),
                 role=row["role"],
+                interrupted=bool(row["interrupted"]),
                 body_ref=ArtifactRef(
                     workspace_id=workspace_id,
                     artifact_key=row["body_artifact_key"],
@@ -475,6 +598,9 @@ async def project_design_documents(
                     " ) origin"
                     " JOIN design_document d"
                     "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    # Artifacts-page spec §3.5: archived documents leave the gallery, the
+                    # project library and the agent's listing in one place — here.
+                    " WHERE d.archived_at IS NULL"
                     " ORDER BY d.updated_at DESC, d.id"
                 ),
                 {"ws": workspace_id, "project": project_id},
@@ -535,6 +661,96 @@ def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
     return None
 
 
+def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
+    """What a listed design document says about itself, for every artifact list.
+
+    One helper for the per-project feed (chat router) and the workspace-wide library
+    (frontend_read.artifacts) so the two cannot disagree on kind, channel or size. Absent
+    stays ``None`` — a card states nothing rather than inventing (G-H).
+    """
+
+    pixels = document_page_pixels(document.get("pages_json"))
+    artifact_type = document.get("artifact_type")
+    return {
+        "kind": "web" if document["doc_kind"] == "web" else "ad",
+        "artifact_type": str(artifact_type) if artifact_type else None,
+        "width_px": pixels[0] if pixels else None,
+        "height_px": pixels[1] if pixels else None,
+    }
+
+
+async def workspace_design_documents(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    user_id: str | None,
+    limit: int,
+    cursor_updated_at: datetime | None = None,
+    cursor_id: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Every design document any thread in the workspace worked on — the artifacts library.
+
+    The workspace-wide form of :func:`project_design_documents`: the same leg derivation
+    (latest leg wins as origin, one row per document), joined to the origin project for its
+    title, left-joined to ``design_account`` for the page's account when it has one, and
+    left-joined to the CALLER's own marks. Archived rows are included (the library partitions
+    them); keyset-paged newest-updated first. Fail-closed on workspace at the leg, the
+    document, the project and the account.
+    """
+
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT d.id, d.title, d.status, d.doc_kind, d.current_version,"
+                    " d.created_at, d.updated_at, d.archived_at,"
+                    " origin.thread_id AS origin_thread_id, origin.project_id,"
+                    " p.name AS project_title,"
+                    " d.current_scene_json #>> '{meta,artifact_type}' AS artifact_type,"
+                    " d.current_scene_json #>> '{pages}' AS pages_json,"
+                    " a.account_id, a.name AS account_name, a.domain AS account_domain,"
+                    " a.account_entity_id,"
+                    " COALESCE(m.saved, false) AS saved, m.last_viewed_at"
+                    " FROM ("
+                    "   SELECT DISTINCT ON (leg.document_id)"
+                    "          leg.document_id, leg.thread_id, t.project_id"
+                    "   FROM design_leg leg"
+                    "   JOIN agent_thread t"
+                    "     ON t.id = leg.thread_id AND t.workspace_id = leg.workspace_id"
+                    "   WHERE leg.workspace_id = :ws"
+                    "     AND leg.document_id IS NOT NULL"
+                    "   ORDER BY leg.document_id, leg.created_at DESC, leg.id DESC"
+                    " ) origin"
+                    " JOIN design_document d"
+                    "   ON d.id = origin.document_id AND d.workspace_id = :ws"
+                    " JOIN project p"
+                    "   ON p.project_id = origin.project_id AND p.workspace_id = :ws"
+                    " LEFT JOIN design_account a"
+                    "   ON a.account_id = d.account_id AND a.workspace_id = :ws"
+                    " LEFT JOIN design_document_user_mark m"
+                    "   ON m.document_id = d.id AND m.workspace_id = :ws AND m.user_id = :user"
+                    " WHERE ("
+                    "   CAST(:cursor_updated_at AS timestamptz) IS NULL"
+                    "   OR (d.updated_at, d.id) < (:cursor_updated_at, CAST(:cursor_id AS text))"
+                    " )"
+                    " ORDER BY d.updated_at DESC, d.id DESC"
+                    " LIMIT :limit"
+                ),
+                {
+                    "ws": workspace_id,
+                    "user": user_id,
+                    "cursor_updated_at": cursor_updated_at,
+                    "cursor_id": cursor_id,
+                    "limit": limit,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(dict(row) for row in rows)
+
+
 def _canonical_json(value: object) -> bytes:
     return json.dumps(
         value,
@@ -551,17 +767,43 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     Derived from the run's terminal result — never invented. Part IV owns the rich rendering
     (the canvas preview, the proposal card); the durable message is the honest minimum.
 
-    The two turn kinds carry their reason under different keys, so the text is derived per
-    kind: a scene turn's ``stop_reason`` (the reviewer's verdict), a web turn's ``summary``
-    (the orchestrator's own note — the web result shape has no ``stop_reason``). A web turn
-    edits a durable artifact rather than proposing a scene, so its sentence names the
-    document it changed and the version it landed.
+    Scene acceptance comes from ``acceptance_scope``, not the operational status or
+    ``stop_reason``: an accepted design and an unaccepted draft can both exceed the
+    time target. Web turns keep their own summary and document/version semantics.
     """
 
     result = run.get("result") or {}
     if str(result.get("doc_kind") or "") == "web":
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
+    if status == "proposed":
+        scope = result.get("acceptance_scope")
+        if scope == "design":
+            outcome = "Design saved and accepted by the design review."
+        elif scope == "edit":
+            outcome = "Requested edit saved; the whole design has not been accepted by this turn."
+        else:
+            outcome = "Design saved as a draft; it has not been accepted."
+        reason = result.get("stop_reason")
+        reason_text = (
+            {
+                "target_exceeded": "Generation exceeded its time target.",
+                "budget_exhausted_wall_clock": "Generation stopped at its time limit.",
+                "budget_exhausted_llm_calls": "Generation stopped at its model-call limit.",
+                "cancelled_by_request": "Generation was stopped at your request.",
+            }.get(reason, "")
+            if isinstance(reason, str)
+            else ""
+        )
+        note = result.get("summary")
+        parts = [outcome]
+        if reason_text:
+            parts.append(reason_text)
+        if isinstance(note, str) and note.strip():
+            parts.append(note.strip())
+        elif isinstance(reason, str) and reason.strip() and not reason_text:
+            parts.append(reason.strip())
+        return " ".join(parts)
     reason = result.get("stop_reason")
     if isinstance(reason, str) and reason.strip():
         return f"Design turn {status}: {reason.strip()}"
@@ -602,6 +844,57 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
     }
 
 
+def receipts_from_design_run(
+    run_result: Mapping[str, Any], *, request: AgentTurnRequest
+) -> tuple[AgentModelCallReceipt, ...]:
+    """The design run's collected model calls as receipts on the leg's own turn.
+
+    The collector on the design side stamped each call from the governed gateway's metadata; this
+    only re-keys them onto the platform's turn and writes ``role=design`` (the profile role, the
+    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs.
+
+    ``cost_cents`` arrives as a STRING (the collector's ``as_json``, so the Decimal survives the
+    jsonb round trip) and becomes USD here; ``None`` stays ``None`` — an unpriced call is never a
+    measured zero.
+    """
+
+    receipts: list[AgentModelCallReceipt] = []
+    for item in run_result.get("model_calls") or ():
+        cents = item.get("cost_cents")
+        cost_usd = (
+            None
+            if cents is None
+            else (Decimal(str(cents)) / Decimal(100)).quantize(Decimal("0.000001"))
+        )
+        receipts.append(
+            AgentModelCallReceipt(
+                model_call_id=UUID(str(item["run_id"])),
+                turn_id=request.turn_id,
+                execution_id=request.constitution.execution_id,
+                workspace_id=request.constitution.workspace_id,
+                sequence=int(item["sequence"]),
+                requested_model=str(item["requested_model"]),
+                answering_model=item.get("answering_model"),
+                status=AgentModelCallStatus(item["status"]),
+                input_tokens=int(item.get("input_tokens") or 0),
+                cache_read_input_tokens=int(item.get("cache_read_input_tokens") or 0),
+                cache_creation_input_tokens=0,
+                output_tokens=int(item.get("output_tokens") or 0),
+                cost_millicredits=0,
+                cost_usd=cost_usd,
+                cost_source=item.get("cost_source"),
+                langfuse_trace_id=item.get("langfuse_trace_id"),
+                langfuse_observation_id=item.get("langfuse_observation_id"),
+                latency_ms=float(item.get("latency_ms") or 0.0),
+                error_code=item.get("error_code"),
+                role=AgentRole.DESIGN,
+                started_at=datetime.fromisoformat(item["started_at"]),
+                completed_at=datetime.fromisoformat(item["completed_at"]),
+            )
+        )
+    return tuple(receipts)
+
+
 class DesignLegTurnRunner:
     """Run one user message as one design turn on its open leg."""
 
@@ -615,7 +908,10 @@ class DesignLegTurnRunner:
         lane: DesignLegLaneDriver,
         exit_judge: DesignLegExitJudge | None = None,
         finisher: DesignLegFinisher | None = None,
+        memory: ContextAssembly | None = None,
         conn_factory: ConnFactory = transaction,
+        document_wait_poll_s: float = 2.0,
+        document_wait_timeout_s: float = 1800.0,
     ) -> None:
         self._profiles = profiles
         self._artifacts = artifacts
@@ -628,7 +924,13 @@ class DesignLegTurnRunner:
         # direct ``finish_design_leg`` invocation.
         self._exit_judge = exit_judge
         self._finisher = finisher
+        self._memory = memory
         self._conn_factory = conn_factory
+        # The same-document wait (founder ruling 2026-09-18) — see :meth:`_wait_for_document`.
+        # Parameters only so a test can run the loop in milliseconds; production keeps a poll
+        # cheap enough to leave on and a window longer than any single design turn.
+        self._document_wait_poll_s = document_wait_poll_s
+        self._document_wait_timeout_s = document_wait_timeout_s
 
     async def run_leg_turn(
         self,
@@ -639,6 +941,7 @@ class DesignLegTurnRunner:
         focus_refs: tuple[DomainObjectRef, ...],
         card_payload: dict[str, JsonValue],
         stream: TurnStreamEmitter | None,
+        scope_pin: AgentTurnScopePinRow | None = None,
     ) -> DesignLegTurnResult:
         workspace_id = submission.workspace_id
         leg_id = str(leg["id"])
@@ -647,10 +950,27 @@ class DesignLegTurnRunner:
         execution_id = design_leg_execution_id(turn_id)
         resolved = self._profiles.resolve(AgentRole.DESIGN)
 
+        if scope_pin is not None:
+            scope_pin.assert_supported_policy()
+            if (
+                scope_pin.turn_id != turn_id
+                or scope_pin.workspace_id != workspace_id
+                or scope_pin.project_id != submission.project_id
+            ):
+                raise AgentTurnScopePinConflict("the design turn and its trusted scope pin differ")
+
         async with self._conn_factory() as conn:
-            project = await get_project(conn, submission.project_id)
-            if project is None or project.workspace_id != workspace_id:
-                raise ValueError("the design-leg submission names no project in its workspace")
+            if await is_agent_turn_privacy_tombstoned(
+                conn, workspace_id=workspace_id, turn_id=turn_id
+            ):
+                raise DesignMemoryScopeError("design turn is privacy_tombstoned")
+            if scope_pin is None:
+                project = await get_project(conn, submission.project_id)
+                if project is None or project.workspace_id != workspace_id:
+                    raise ValueError("the design-leg submission names no project in its workspace")
+                brand_id, product_id = project.brand_id, project.product_id
+            else:
+                brand_id, product_id = scope_pin.brand_id, scope_pin.product_id
             # §2.4: the leg history the envelope carries is everything BEFORE this turn.
             prior_history = await load_design_leg_history(
                 self._conn_factory,
@@ -747,8 +1067,8 @@ class DesignLegTurnRunner:
                 # from the durable submission row.
                 actor_id=submission.submitted_by_user_id,
                 role=AgentRole.DESIGN,
-                brand_id=project.brand_id,
-                product_id=project.product_id,
+                brand_id=brand_id,
+                product_id=product_id,
                 # No platform workspace lease: the design runtime's virtual workspace is keyed
                 # to its run. The root records the leg address honestly instead.
                 workspace_root_id=f"design-leg:{leg_id}",
@@ -818,12 +1138,21 @@ class DesignLegTurnRunner:
                 # died before finalizing. The close (journal, summary message, re-delivery,
                 # ``leg.closed`` frame) committed atomically in the tool's transaction; what
                 # remains is the finalization, which converges below.
+                # The replayed close must carry the ORIGINAL summary (the finish tool's
+                # journaled operation compares its parameters), and since v2 that summary
+                # carries the judge's own words — so it is read back from the journal rather
+                # than re-rendered from the reason alone.
+                async with self._conn_factory() as conn:
+                    journaled = await self._journaled_exit_summary(
+                        conn, workspace_id=workspace_id, turn_id=turn_id
+                    )
                 return await self._exit_leg(
                     submission=submission,
                     leg_id=leg_id,
                     execution_id=execution_id,
                     reason=str(leg["close_reason"]),
                     stream=stream,
+                    summary_override=journaled,
                 )
 
             # --- the §2.2 exit bridge (P3.7): judge BEFORE designing ---------------------------
@@ -834,15 +1163,18 @@ class DesignLegTurnRunner:
                 leg=leg,
                 prior_history=prior_history,
                 user_message_ref=user_message_ref,
+                pinned_document=pinned_document,
+                focus_refs=focus_refs,
             )
             if exit_decision is not None and exit_decision.action == "finish":
-                assert exit_decision.reason is not None  # decide_exit forbids reasonless finish
+                assert exit_decision.reason is not None  # decide_exit always maps a close
                 return await self._exit_leg(
                     submission=submission,
                     leg_id=leg_id,
                     execution_id=execution_id,
                     reason=exit_decision.reason,
                     stream=stream,
+                    reasoning=exit_decision.reasoning,
                 )
 
             # --- G1: the finalized-document gate (founder ruling, 2026-08-19) ------------------
@@ -911,6 +1243,15 @@ class DesignLegTurnRunner:
                     account_card=account_card,
                     focus_refs=focus_refs,
                     workspace_id=workspace_id,
+                    scope_pin=scope_pin,
+                    turn_request=request,
+                )
+            except DesignMemoryScopeError:
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED,
+                    stream=stream,
                 )
             except DesignTurnTargetError as exc:
                 # Raised while BUILDING the envelope (before any run row or leg-state
@@ -1019,6 +1360,11 @@ class DesignLegTurnRunner:
                 assistant_message=assistant_message,
                 replayed=False,
             )
+        except asyncio.CancelledError:
+            # The watched-turn owner distinguishes user Stop from process/lease
+            # cancellation. Emitting a crash terminal here would close SSE before
+            # that owner can publish the actual cancellation.
+            raise
         except BaseException:
             await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
             raise
@@ -1099,8 +1445,17 @@ class DesignLegTurnRunner:
         leg: dict[str, Any],
         prior_history: Sequence[HistoryMessageRef],
         user_message_ref: ArtifactRef,
+        pinned_document: dict[str, Any] | None = None,
+        focus_refs: Sequence[DomainObjectRef] = (),
     ) -> ExitDecision | None:
         """Run the exit judgment for this turn, or ``None`` when the bridge is not composed.
+
+        v2 (2026-09-18) shows the judge two things the message text alone cannot carry: the
+        artifact this session is bound to, and what the message tagged, resolved to labels.
+        A tagged account that is not this artifact's, or a tagged design that is not this
+        artifact, is the strongest signal that the work has moved — and the judge is told to
+        read the sentence around it, not to react to the tag itself. Label resolution is
+        best-effort: a failure leaves the judge with the text it always had.
 
         Fail-safe end to end: a judge that raises, returns garbage, or asks for a reasonless
         finish yields CONTINUE (P3.6's ``decide_exit``), and a judge without a finisher to
@@ -1116,13 +1471,37 @@ class DesignLegTurnRunner:
         bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
         history: list[tuple[str, str]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history.append(
+                    (
+                        "system",
+                        INTERRUPTED_ASSISTANT_NOTICE,
+                    )
+                )
             history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
         message = (await self._artifacts.read(user_message_ref)).decode()
+        artifact: str | None = None
+        tags: tuple[str, ...] = ()
+        try:
+            async with self._conn_factory() as conn:
+                artifact = await _exit_judge_artifact_line(
+                    conn, workspace_id=workspace_id, pinned_document=pinned_document
+                )
+                tags = await _exit_judge_tag_lines(
+                    conn,
+                    workspace_id=workspace_id,
+                    focus_refs=focus_refs,
+                    pinned_document=pinned_document,
+                )
+        except Exception:
+            log.warning("design_leg.exit_judge_context_unresolved", exc_info=True)
         try:
             judgment: ExitJudgment | None = await self._exit_judge(
                 brief=str(bundle.get("brief") or ""),
                 history=tuple(history),
                 message=message,
+                artifact=artifact,
+                tags=tags,
             )
         except Exception:
             log.warning("design_leg.exit_judge_raised", exc_info=True)
@@ -1130,7 +1509,47 @@ class DesignLegTurnRunner:
         decision = decide_exit(judgment)
         if decision.fail_safe:
             log.info("design_leg.exit_judgment_fail_safe", leg_id=str(leg["id"]))
+        else:
+            log.info(
+                "design_leg.exit_judgment",
+                leg_id=str(leg["id"]),
+                action=decision.action,
+                reason=decision.reason,
+                reasoning=decision.reasoning,
+                tags=len(tags),
+            )
         return decision
+
+    async def _journaled_exit_summary(
+        self, conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
+    ) -> str | None:
+        """The summary text the finish tool journaled for the close this turn made, or None."""
+
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT j.summary_refs->>'summary_artifact_key' AS key, "
+                    "j.summary_refs->>'summary_sha256' AS sha256, a.media_type, a.size_bytes "
+                    "FROM design_leg_exit_journal j "
+                    "JOIN artifact a ON a.storage_key = j.summary_refs->>'summary_artifact_key' "
+                    "WHERE j.workspace_id = :ws AND j.summary_refs->>'closing_turn_id' = :turn "
+                    "LIMIT 1"
+                ),
+                {"ws": workspace_id, "turn": str(turn_id)},
+            )
+        ).first()
+        if row is None or not row.key:
+            return None
+        body = await self._artifacts.read(
+            ArtifactRef(
+                workspace_id=workspace_id,
+                artifact_key=row.key,
+                sha256=row.sha256,
+                media_type=row.media_type,
+                byte_count=int(row.size_bytes),
+            )
+        )
+        return body.decode()
 
     async def _exit_leg(
         self,
@@ -1140,17 +1559,23 @@ class DesignLegTurnRunner:
         execution_id: ExecutionId,
         reason: str,
         stream: TurnStreamEmitter | None,
+        reasoning: str | None = None,
+        summary_override: str | None = None,
     ) -> DesignLegTurnResult:
         """Close the leg through the governed tool and finalize this turn ``COMPLETED``.
 
         The bridge-time finalize shape: the leg is closed, so the envelope claims COMPLETED
         with NO open gate refs, and the runner appends no assistant message of its own — the
         finish tool's leg-summary message is the turn's one durable assistant record.
+
+        ``reasoning`` (v2 judge) is the model's own sentence for why the session ended; it
+        rides the summary so head-of-abm resumes knowing not just THAT the leg closed but
+        why, in the judge's words, and so the journal keeps it.
         """
 
         workspace_id = submission.workspace_id
         turn_id = submission.turn_id
-        summary = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+        summary = summary_override or exit_summary(reason, reasoning)
         if self._finisher is not None:
             # A crash-retried exit replays the same governed invocation (derived operation
             # id + the tool's own closing-turn journal replay) and returns the ORIGINAL
@@ -1162,7 +1587,8 @@ class DesignLegTurnRunner:
                 summary=summary,
             )
             closed_reason = str(references.get("reason") or reason)
-            summary = DESIGN_LEG_EXIT_SUMMARIES.get(closed_reason, summary)
+            if closed_reason != reason and summary_override is None:
+                summary = exit_summary(closed_reason, reasoning)
         # else: closed-leg re-entry on a worker without the bridge — the close itself
         # committed atomically with the tool's transaction, so only the finalize remains.
 
@@ -1229,7 +1655,46 @@ class DesignLegTurnRunner:
             replayed=False,
         )
 
+    async def request_stop_for_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """Cancel only this turn's derived design run through the shared design substrate."""
+        async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            run_id = design_leg_run_id(turn_id)
+            run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
+            if run is not None:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=workspace_id, run_id=run_id
+                )
+
+    async def await_stopped_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        async with self._conn_factory() as conn:
+            run = await design_runs.get_run(
+                conn, workspace_id=workspace_id, run_id=design_leg_run_id(turn_id)
+            )
+        if run is not None and run["status"] not in _TERMINAL_RUN_STATUSES:
+            # Join the live holder or recover a crashed holder. The durable cancel probe
+            # prevents the recovered harness from starting another provider call.
+            await self._lane.drive(envelope=DesignTurnEnvelope.model_validate(run["payload"]))
+
     # -- dispatch ------------------------------------------------------------------------------
+
+    async def _record_design_receipts(
+        self, run: dict[str, Any], *, request: AgentTurnRequest
+    ) -> None:
+        """Land a terminal design run's collected model calls on the leg's own turn.
+
+        Called before EVERY terminal return of :meth:`_dispatch`, not only after a drive
+        (ruling T5-1): the run's money is real whichever worker drove it, so a run this
+        dispatch merely re-joins must still put its calls on ``agent_model_call``. Safe to
+        repeat — ``record_model_call`` is idempotent on the model-call id and refuses only a
+        *different* receipt under the same id.
+
+        ``get_run`` serves the design API's shipped DTO, whose ``result`` key IS the row's
+        ``result_json`` — the column the design executor stamped ``model_calls`` onto.
+        """
+
+        for call in receipts_from_design_run(run.get("result") or {}, request=request):
+            await self._turns.record_model_call(receipt=call)
 
     async def _dispatch(
         self,
@@ -1244,30 +1709,64 @@ class DesignLegTurnRunner:
         account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
+        scope_pin: AgentTurnScopePinRow | None,
+        turn_request: AgentTurnRequest,
     ) -> dict[str, Any]:
         """Create (or re-join) the derived design run and drive it terminal."""
 
         run_id = design_leg_run_id(submission.turn_id)
         async with self._conn_factory() as conn:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
-        if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
-            return run  # a crashed attempt already finished the design work; re-join it
-
-        envelope = await self._envelope(
-            submission=submission,
-            leg=leg,
-            leg_id=leg_id,
-            execution_id=execution_id,
-            run_id=run_id,
-            user_message_ref=user_message_ref,
-            prior_history=prior_history,
-            pinned_document=pinned_document,
-            account_card=account_card,
-            focus_refs=focus_refs,
-            workspace_id=workspace_id,
-        )
+        if run is not None:
+            async with self._conn_factory() as conn:
+                job = await design_runs.get_run_by_work_id(
+                    conn, work_id=design_runs.work_id_for_run(run_id)
+                )
+            if job is None or job["workspace_id"] != workspace_id:
+                raise ValueError("the existing design run has no authoritative workspace envelope")
+            if run["status"] in _TERMINAL_RUN_STATUSES and "design_memory" not in job[
+                "payload"
+            ].get("config", {}):
+                # Preserve terminal legacy re-join without inventing new context — but record
+                # the run's receipts: its money is real whichever worker drove it.
+                await self._record_design_receipts(run, request=turn_request)
+                return run
+            envelope = DesignTurnEnvelope.model_validate(job["payload"])
+            if (
+                envelope.workspace_id != workspace_id
+                or envelope.run_id != run_id
+                or envelope.work_id != design_runs.work_id_for_run(run_id)
+                # Both thread namings are this run's own authority: every envelope frozen
+                # before session continuity (2026-09-18) names the run, and a document-pinned
+                # one now names the document's session. A re-join must accept the value its
+                # own stored payload was born with rather than re-deciding it.
+                or envelope.checkpoint_thread_id
+                not in {run_id, design_session_id(workspace_id, str(envelope.document_id or ""))}
+            ):
+                raise ValueError("the stored design envelope has different run authority")
+        else:
+            envelope = await self._envelope(
+                submission=submission,
+                leg=leg,
+                leg_id=leg_id,
+                execution_id=execution_id,
+                run_id=run_id,
+                user_message_ref=user_message_ref,
+                prior_history=prior_history,
+                pinned_document=pinned_document,
+                account_card=account_card,
+                focus_refs=focus_refs,
+                workspace_id=workspace_id,
+                scope_pin=scope_pin,
+                turn_request=turn_request,
+            )
         if run is None:
             async with self._conn_factory() as conn:
+                await lock_turn_control(conn, workspace_id=workspace_id, turn_id=submission.turn_id)
+                if await stop_requested(
+                    conn, workspace_id=workspace_id, turn_id=submission.turn_id
+                ):
+                    raise TurnStopRequested("Stop accepted before design dispatch")
                 if leg["state"] == "open_awaiting_user":
                     await design_legs.mark_leg_running(
                         conn, workspace_id=workspace_id, leg_id=leg_id
@@ -1286,15 +1785,105 @@ class DesignLegTurnRunner:
                     # strand repair becomes a working second-chance completion path.
                     payload=envelope.model_dump(mode="json"),
                     work_id=envelope.work_id,
+                    # The row records the thread this run was dispatched on — the document's
+                    # session for a pinned leg — rather than re-deriving the D5 default.
+                    checkpoint_thread_id=envelope.checkpoint_thread_id,
                     leg_id=leg_id,
                     execution_id=UUID(str(execution_id)),
                 )
-        await self._lane.drive(envelope=envelope)
+        if "design_memory" in envelope.config:
+            receipt = selection_dependency_receipt(
+                envelope.config["design_memory"], request=turn_request
+            )
+            if receipt is not None:
+                await DbAgentContextReceiptStore(conn_factory=self._conn_factory).record(
+                    request=turn_request,
+                    receipt=receipt,
+                )
+        if run is not None and run["status"] in _TERMINAL_RUN_STATUSES:
+            # A separately claimed queued run may have completed before a crashed producer
+            # wrote its selection dependencies. Repair that receipt, but never rerun the design.
+            # Its model calls are recorded here too: the run's money is real whichever worker
+            # drove it, and this is the only dispatch that owns the platform turn they belong to.
+            await self._record_design_receipts(run, request=turn_request)
+            return run
+        document_id = str((pinned_document or {}).get("id") or "")
+        doc_kind = str((pinned_document or {}).get("doc_kind") or "")
+        # Queue behind whoever is already designing this document — OUTSIDE the trace below,
+        # so the leg's observation measures the turn's own work rather than its queueing.
+        if envelope.document_id is not None:
+            await self._wait_for_document(
+                workspace_id=workspace_id,
+                document_id=str(envelope.document_id),
+                run_id=run_id,
+            )
+        # Lane 3 slice 5: the design leg gets its OWN trace, named and scoped like the
+        # head-of-abm turn's. Everything the design runtime does inside the drive — the trio's
+        # model calls, through the Langfuse handler the lane injects — nests under this
+        # observation, so a design turn's money is findable from the leg rather than scattered
+        # across unparented generations.
+        with (
+            propagate_trace(
+                trace_name="design-leg.turn",
+                session_id=submission.thread_id,
+                user_id=workspace_id,
+                metadata={
+                    "project_id": submission.project_id,
+                    "turn_id": str(turn_request.turn_id),
+                    "execution_id": str(execution_id),
+                    "leg_id": str(leg_id),
+                    "document_id": document_id,
+                    "doc_kind": doc_kind,
+                },
+                tags=("design", doc_kind) if doc_kind else ("design",),
+            ),
+            observation("design-leg.turn", as_type="agent", input={"doc_kind": doc_kind}),
+        ):
+            tag_entities([document_id])
+            await self._lane.drive(envelope=envelope)
         async with self._conn_factory() as conn:
             run = await design_runs.get_run(conn, workspace_id=workspace_id, run_id=run_id)
         if run is None or run["status"] not in _TERMINAL_RUN_STATUSES:
             raise RuntimeError("the design lane returned without a terminal design run")
+        await self._record_design_receipts(run, request=turn_request)
         return run
+
+    async def _wait_for_document(self, *, workspace_id: str, document_id: str, run_id: str) -> None:
+        """Founder ruling 2026-09-18: a second thread on a driven document QUEUES behind it.
+
+        Sessions make this a correctness rule, not a spend rule — a document's turns all
+        continue ONE LangGraph thread, and two of them running at once would interleave their
+        checkpoints into a single incoherent history (on top of the write-lock the design API
+        already enforces against a human editing a document an agent is driving).
+
+        The wait lifts by itself: only a ``running`` run holds the document, and every way a
+        run can end — success, failure, cancellation, the reaper failing an expired lease —
+        makes it terminal. The timeout is the honest end of a wait that will never lift: the
+        turn fails loudly rather than queueing forever behind a hold nobody will release.
+        """
+
+        deadline = asyncio.get_running_loop().time() + self._document_wait_timeout_s
+        announced = False
+        while True:
+            async with self._conn_factory() as conn:
+                active = await design_runs.active_run_for_document(
+                    conn, workspace_id=workspace_id, document_id=document_id
+                )
+            # Our own row is ``queued`` until a worker claims it, so this is a belt-and-braces
+            # guard rather than the common case — but a run must never wait on itself.
+            if active is None or active == run_id:
+                return
+            if not announced:
+                log.info(
+                    "design_leg.waiting_for_document",
+                    run_id=run_id,
+                    document_id=document_id,
+                    active_run_id=active,
+                )
+                announced = True
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeError("another design turn held this document past the wait window")
+            await asyncio.sleep(self._document_wait_poll_s)
 
     async def _envelope(
         self,
@@ -1310,11 +1899,20 @@ class DesignLegTurnRunner:
         account_card: dict[str, JsonValue] | None,
         focus_refs: tuple[DomainObjectRef, ...],
         workspace_id: str,
+        scope_pin: AgentTurnScopePinRow | None = None,
+        turn_request: AgentTurnRequest | None = None,
     ) -> DesignTurnEnvelope:
         bundle = await self._bundle_body(leg=leg, workspace_id=workspace_id)
         message_text = (await self._artifacts.read(user_message_ref)).decode()
         history_texts: list[dict[str, JsonValue]] = []
         for item in prior_history:
+            if item.interrupted and item.role == "assistant":
+                history_texts.append(
+                    {
+                        "role": "system",
+                        "text": INTERRUPTED_ASSISTANT_NOTICE,
+                    }
+                )
             history_texts.append(
                 {
                     "role": item.role,
@@ -1322,16 +1920,18 @@ class DesignLegTurnRunner:
                 }
             )
         document = pinned_document or {}
+        document_id = leg.get("document_id")
+        # Session continuity (design note 2026-09-18): one design document = one persistent
+        # design-agent session, so the LangGraph thread a pinned turn continues is the
+        # DOCUMENT's session — the same thread the previous turn on this document wrote —
+        # rather than this run. A document-less leg has nothing to be continuous about and
+        # keeps the D5 ruling byte-for-byte: the checkpoint thread IS the run.
+        thread_id = design_session_id(workspace_id, str(document_id)) if document_id else run_id
         target_node_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_node"
         )
         reference_asset_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
-        )
-        resolved_targets = (
-            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
-            if target_node_ids
-            else None
         )
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
@@ -1340,6 +1940,16 @@ class DesignLegTurnRunner:
         kind: Literal["agent_turn", "web_turn"] = (
             "web_turn" if document.get("doc_kind") == "web" else "agent_turn"
         )
+        # Targets are resolved with the runtime that will consume them, never before the
+        # branch: a web document's ``scene`` column holds a WEB document (pages carry their
+        # own ``nodes``), so running the scene page-resolver over it would refuse every web
+        # annotation as unreachable.
+        resolved_targets = (
+            resolve_scene_targets(document.get("scene") or {}, target_node_ids)
+            if target_node_ids and kind == "agent_turn"
+            else None
+        )
+        web_targets = resolve_web_targets(focus_refs) if kind == "web_turn" else None
         request: dict[str, JsonValue]
         if kind == "web_turn":
             request = {
@@ -1349,10 +1959,24 @@ class DesignLegTurnRunner:
                 # stored document stays the authority on staleness: a turn that lost the race
                 # comes back conflicted rather than clobbering a newer human edit.
                 "base_version": int(document.get("current_version") or 0),
-                # v1 (plan F4): no scoped targets, no model override, no account — the design
-                # request model defaults each of them, and a fabricated value here would be a
-                # platform guess. ``previous_turn_outcome`` has no WebTurnRequest field at all;
-                # the clarification echo is a scene-path contract.
+                # Only when the human actually pointed at something. A targetless web turn
+                # keeps the plan-F4 v1 request byte-for-byte (prompt + base_version): the
+                # design request model defaults both keys, and sending them unconditionally
+                # would break that freeze. No model override and no account here either —
+                # a fabricated value would be a platform guess.
+                **(
+                    {
+                        "target_node_ids": list(web_targets.target_node_ids),
+                        "target_notes": [
+                            {"target": note.target, "path": note.path, "note": note.note}
+                            for note in web_targets.target_notes
+                        ],
+                    }
+                    if web_targets is not None
+                    else {}
+                ),
+                # ``previous_turn_outcome`` has no WebTurnRequest field at all; the
+                # clarification echo is a scene-path contract.
             }
         else:
             request = {
@@ -1388,6 +2012,10 @@ class DesignLegTurnRunner:
                 "thread_id": submission.thread_id,
                 "agent_turn_id": str(submission.turn_id),
                 "execution_id": str(execution_id),
+                # Session continuity: the design side sends the DELEGATION BRIEF block on the
+                # first turn of each leg and never re-sends the HISTORY block on a continued
+                # thread; this flag is how it knows which turn this is without a second read.
+                "first_turn_of_leg": not history_texts,
                 "brand_kit_id": leg.get("brand_kit_id"),
                 "brand_kit_version": leg.get("brand_kit_version"),
                 "document_version_guard": leg.get("document_version_guard"),
@@ -1431,13 +2059,27 @@ class DesignLegTurnRunner:
             # at all takes the claim-time fallback. Scene turns only: the web executor never
             # consumes the lane.
             config["ad_lane"] = await self._frozen_ad_lane(workspace_id)
+            if scope_pin is not None and self._memory is not None:
+                assert turn_request is not None
+                async with self._conn_factory() as conn:
+                    config["design_memory"] = await freeze_design_memory(
+                        conn,
+                        memory=self._memory,
+                        scope_pin=scope_pin,
+                        turn_request=turn_request,
+                        leg=leg,
+                    )
         return DesignTurnEnvelope(
             kind=kind,
             work_id=design_runs.work_id_for_run(run_id),
             workspace_id=workspace_id,
             run_id=run_id,
-            checkpoint_thread_id=run_id,
-            document_id=leg.get("document_id"),
+            checkpoint_thread_id=thread_id,
+            document_id=document_id,
+            # T3-1: the turn's project, frozen into the envelope like everything else this
+            # worker decides, so the design side's spend scope can stamp it onto every
+            # ``provider_call_ledger`` row without knowing the platform exists.
+            project_id=submission.project_id,
             config=config,
         )
 

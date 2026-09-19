@@ -174,6 +174,7 @@ export const nickFisherFixture: AccountContactDetail = {
   reports: [vari],
   overviewParagraphs: zafranSpecContent.contactDisplay.sections[0]!.items[0]!.body.map((sentence) => sentence.text),
   evidence: [],
+  customFields: [],
   researchEvidence: [...zafranSpecContent.evidence, {
     ...zafranResearchEvidence.find((record) => record.claimId === "ashby-bdr-role")!,
     claimId: "nick-location",
@@ -228,7 +229,8 @@ function compactDetail(
     reports: [],
     overviewParagraphs: personItems.flatMap((item) => item.body.map((sentence) => sentence.text)),
     evidence: [],
-    researchEvidence: zafranSpecContent.evidence,
+    customFields: [],
+  researchEvidence: zafranSpecContent.evidence,
     contactDisplay: display,
     lastModifiedAt: latestVerifiedAt(display, zafranSpecContent.evidence),
   };

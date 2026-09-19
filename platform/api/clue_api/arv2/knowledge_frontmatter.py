@@ -10,7 +10,7 @@ import yaml
 __all__ = ["document_identity", "parse_front_matter"]
 
 
-def parse_front_matter(text: str) -> tuple[dict[str, Any], str]:
+def parse_front_matter(text: str, *, preserve_body: bool = False) -> tuple[dict[str, Any], str]:
     if not text.startswith("---\n"):
         raise ValueError("no front matter")
     head, sep, rest = text[4:].partition("\n---\n")
@@ -19,7 +19,8 @@ def parse_front_matter(text: str) -> tuple[dict[str, Any], str]:
     loaded = yaml.safe_load(head)
     if not isinstance(loaded, dict):
         raise ValueError("front matter is not a mapping")
-    return loaded, rest.lstrip("\n")
+    # The serializer inserts one separator newline; preserve user-authored whitespace after it.
+    return loaded, rest.removeprefix("\n") if preserve_body else rest.lstrip("\n")
 
 
 def document_identity(front: Mapping[str, Any]) -> tuple[str, str | None]:

@@ -74,6 +74,7 @@ class SpecialistWorkspaceProvider(Protocol):
         *,
         workspace_id: str,
         project_id: str,
+        thread_id: str,
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease: ...
@@ -289,148 +290,156 @@ class FreshWakeSpecialistRunner:
         lease = self._workspaces.acquire(
             workspace_id=workspace_id,
             project_id=parent.project_id,
+            thread_id=f"delegation-{request.delegation_id}",
             execution_id=child_execution_id,
             resolved_profile=resolved_profile,
         )
-        child_constitution = AgentConstitution(
-            workspace_id=workspace_id,
-            project_id=parent.project_id,
-            execution_id=child_execution_id,
-            actor_id=parent.actor_id,
-            role=request.subagent_role,
-            brand_id=parent.brand_id,
-            product_id=parent.product_id,
-            client_entity_id=parent.client_entity_id,
-            workspace_root_id=lease.identity.workspace_root_id,
-            # The child inherits the parent's project card verbatim — one project, one compiled
-            # description of it. Only spend authority is re-scoped for the child.
-            project_card_ref=parent.project_card_ref,
-            budget_envelope_ref=request.child_budget_envelope_ref,
-            profile_ref=resolved_profile.profile_ref,
-            resource_manifest_ref=request.resource_manifest_ref,
-            resource_manifest_sha256=request.resource_manifest_sha256,
-            focus_refs=request.domain_refs,
-        )
-        child_request = AgentTurnRequest(
-            turn_id=uuid5(_CHILD_TURN_NAMESPACE, str(request.delegation_id)),
-            thread_id=f"delegation-{request.delegation_id}",
-            constitution=child_constitution,
-            user_message_artifact_ref=request.task_artifact_ref,
-            focus_refs=request.domain_refs,
-            requested_at=self._parent_request.requested_at,
-        )
-        await self._turns.create(request=child_request, profile=resolved_profile.profile)
-        context = await self._contexts.assemble(
-            request=child_request,
-            profile=resolved_profile.profile,
-            history=(),
-        )
-        if not _context_is_fresh(context):
-            raise ValueError("fresh-wake specialist context contains hidden conversation history")
+        try:
+            child_constitution = AgentConstitution(
+                workspace_id=workspace_id,
+                project_id=parent.project_id,
+                execution_id=child_execution_id,
+                actor_id=parent.actor_id,
+                role=request.subagent_role,
+                brand_id=parent.brand_id,
+                product_id=parent.product_id,
+                client_entity_id=parent.client_entity_id,
+                workspace_root_id=lease.identity.workspace_root_id,
+                # The child inherits the parent's project card verbatim — one project, one compiled
+                # description of it. Only spend authority is re-scoped for the child.
+                project_card_ref=parent.project_card_ref,
+                budget_envelope_ref=request.child_budget_envelope_ref,
+                profile_ref=resolved_profile.profile_ref,
+                resource_manifest_ref=request.resource_manifest_ref,
+                resource_manifest_sha256=request.resource_manifest_sha256,
+                focus_refs=request.domain_refs,
+            )
+            child_request = AgentTurnRequest(
+                turn_id=uuid5(_CHILD_TURN_NAMESPACE, str(request.delegation_id)),
+                thread_id=f"delegation-{request.delegation_id}",
+                constitution=child_constitution,
+                user_message_artifact_ref=request.task_artifact_ref,
+                focus_refs=request.domain_refs,
+                requested_at=self._parent_request.requested_at,
+            )
+            await self._turns.create(request=child_request, profile=resolved_profile.profile)
+            context = await self._contexts.assemble(
+                request=child_request,
+                profile=resolved_profile.profile,
+                history=(),
+            )
+            if not _context_is_fresh(context):
+                raise ValueError(
+                    "fresh-wake specialist context contains hidden conversation history"
+                )
 
-        grant_seeds: list[WorkspaceSeedFile] = []
-        for grant in task.file_grants:
-            body = await self._artifacts.read(grant.artifact_ref)
-            grant_seeds.append(
-                WorkspaceSeedFile(
-                    path=grant.materialized_path,
-                    content=body,
-                    sha256=grant.artifact_ref.sha256,
-                    media_type=grant.artifact_ref.media_type,
+            grant_seeds: list[WorkspaceSeedFile] = []
+            for grant in task.file_grants:
+                body = await self._artifacts.read(grant.artifact_ref)
+                grant_seeds.append(
+                    WorkspaceSeedFile(
+                        path=grant.materialized_path,
+                        content=body,
+                        sha256=grant.artifact_ref.sha256,
+                        media_type=grant.artifact_ref.media_type,
+                    )
+                )
+            seed_paths = {
+                *(item.path for item in context.materializations),
+                *(item.path for item in grant_seeds),
+            }
+            if len(seed_paths) != len(context.materializations) + len(grant_seeds):
+                raise ValueError("context assembler collided with a delegated canonical file path")
+            if not lease.resources_frozen:
+                self._materializer.materialize(
+                    lease=lease,
+                    snapshot=resolved_profile.resource_snapshot,
+                    seed_files=(
+                        *(
+                            WorkspaceSeedFile(
+                                path=item.path,
+                                content=item.data,
+                                sha256=item.sha256,
+                                media_type=item.media_type,
+                            )
+                            for item in context.materializations
+                        ),
+                        *grant_seeds,
+                    ),
+                )
+
+            budget_limit = _budget_limit(
+                await self._artifacts.read(request.child_budget_envelope_ref)
+            )
+            execution = self._execution_factory(
+                request=child_request,
+                resolved_profile=resolved_profile,
+                budget_limit_millicents=budget_limit,
+            )
+            execution.bind_finalization_authority(
+                AgentFinalizationAuthority(
+                    lease=lease,
+                    artifacts=self._artifacts,
+                    turns=self._turns,
+                    crash_hook=self._crash_hook,
+                    conn_factory=self._conn_factory,
                 )
             )
-        seed_paths = {
-            *(item.path for item in context.materializations),
-            *(item.path for item in grant_seeds),
-        }
-        if len(seed_paths) != len(context.materializations) + len(grant_seeds):
-            raise ValueError("context assembler collided with a delegated canonical file path")
-        if not lease.resources_frozen:
-            self._materializer.materialize(
-                lease=lease,
-                snapshot=resolved_profile.resource_snapshot,
-                seed_files=(
-                    *(
-                        WorkspaceSeedFile(
-                            path=item.path,
-                            content=item.data,
-                            sha256=item.sha256,
-                            media_type=item.media_type,
-                        )
-                        for item in context.materializations
-                    ),
-                    *grant_seeds,
-                ),
-            )
-
-        budget_limit = _budget_limit(await self._artifacts.read(request.child_budget_envelope_ref))
-        execution = self._execution_factory(
-            request=child_request,
-            resolved_profile=resolved_profile,
-            budget_limit_millicents=budget_limit,
-        )
-        execution.bind_finalization_authority(
-            AgentFinalizationAuthority(
+            governed_tools = GovernedAgentToolFactory(
+                request=child_request,
+                resolved_profile=resolved_profile,
+                registry=self._tools,
+                execution=cast(C5AgentExecutionAdapter, execution),
                 lease=lease,
                 artifacts=self._artifacts,
+                required_output_path=task.required_output_path,
+            ).build()
+            outcome = await DurableDeepAgentTurnRunner(
+                runtime=DeepAgentTurnRuntime(
+                    models=self._models,
+                    execution=execution,
+                    max_runtime_s=resolved_profile.profile.turn_timeout_s,
+                    max_rounds=resolved_profile.profile.max_model_rounds,
+                ),
                 turns=self._turns,
-                crash_hook=self._crash_hook,
-                conn_factory=self._conn_factory,
+                artifacts=self._artifacts,
+            ).run(
+                request=child_request,
+                resolved_profile=resolved_profile,
+                context=context,
+                lease=lease,
+                tools=governed_tools,
             )
-        )
-        governed_tools = GovernedAgentToolFactory(
-            request=child_request,
-            resolved_profile=resolved_profile,
-            registry=self._tools,
-            execution=cast(C5AgentExecutionAdapter, execution),
-            lease=lease,
-            artifacts=self._artifacts,
-            required_output_path=task.required_output_path,
-        ).build()
-        outcome = await DurableDeepAgentTurnRunner(
-            runtime=DeepAgentTurnRuntime(
-                models=self._models,
-                execution=execution,
-                max_runtime_s=resolved_profile.profile.turn_timeout_s,
-                max_rounds=resolved_profile.profile.max_model_rounds,
-            ),
-            turns=self._turns,
-            artifacts=self._artifacts,
-        ).run(
-            request=child_request,
-            resolved_profile=resolved_profile,
-            context=context,
-            lease=lease,
-            tools=governed_tools,
-        )
-        if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
-            raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
-        envelope = AgentFinalizeEnvelope.model_validate_json(
-            await self._artifacts.read(outcome.finalization_ref)
-        )
-        if envelope.execution_id != child_execution_id:
-            raise ValueError("child finalization belongs to another execution")
-        spend = await self._spend.spend_millicents(
-            execution_id=child_execution_id,
-            workspace_id=workspace_id,
-        )
-        if spend < 0 or spend > budget_limit:
-            raise ValueError("child reported spend outside its durable budget envelope")
-        result_status: Literal["completed", "awaiting_input", "blocked"]
-        if outcome.status is AgentExecutionStatus.COMPLETED:
-            result_status = "completed"
-        elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
-            result_status = "awaiting_input"
-        else:
-            result_status = "blocked"
-        return DelegationResult(
-            delegation_id=request.delegation_id,
-            parent_execution_id=request.parent_execution_id,
-            child_execution_id=child_execution_id,
-            status=result_status,
-            output_refs=envelope.output_refs,
-            domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
-            finalization_ref=outcome.finalization_ref,
-            spend_millicents=spend,
-            completed_at=envelope.finalized_at,
-        )
+            if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
+                raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
+            envelope = AgentFinalizeEnvelope.model_validate_json(
+                await self._artifacts.read(outcome.finalization_ref)
+            )
+            if envelope.execution_id != child_execution_id:
+                raise ValueError("child finalization belongs to another execution")
+            spend = await self._spend.spend_millicents(
+                execution_id=child_execution_id,
+                workspace_id=workspace_id,
+            )
+            if spend < 0 or spend > budget_limit:
+                raise ValueError("child reported spend outside its durable budget envelope")
+            result_status: Literal["completed", "awaiting_input", "blocked"]
+            if outcome.status is AgentExecutionStatus.COMPLETED:
+                result_status = "completed"
+            elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
+                result_status = "awaiting_input"
+            else:
+                result_status = "blocked"
+            return DelegationResult(
+                delegation_id=request.delegation_id,
+                parent_execution_id=request.parent_execution_id,
+                child_execution_id=child_execution_id,
+                status=result_status,
+                output_refs=envelope.output_refs,
+                domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
+                finalization_ref=outcome.finalization_ref,
+                spend_millicents=spend,
+                completed_at=envelope.finalized_at,
+            )
+        finally:
+            lease.release()

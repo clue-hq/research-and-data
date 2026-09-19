@@ -30,6 +30,34 @@ export const TurnStateSchema = z.enum([
 
 export type TurnState = z.infer<typeof TurnStateSchema>;
 
+export const QueueControlSchema = z.object({
+  paused: z.boolean(),
+  hold_control_id: z.string().nullable(),
+  paused_at: z.string().nullable(),
+}).transform((wire) => ({ paused: wire.paused, holdControlId: wire.hold_control_id, pausedAt: wire.paused_at }));
+
+export type QueueControl = z.infer<typeof QueueControlSchema>;
+export const EMPTY_QUEUE_CONTROL: QueueControl = { paused: false, holdControlId: null, pausedAt: null };
+
+const StopRequestSchema = z.object({
+  control_id: z.string().min(1), requested_at: z.string(), pending: z.boolean(),
+}).transform((wire) => ({ controlId: wire.control_id, requestedAt: wire.requested_at, pending: wire.pending }));
+
+export const StopTurnResponseSchema = z.object({ data: z.object({
+  turn_id: z.string().min(1), control_id: z.string().min(1),
+  requested_at: z.string(), already_requested: z.boolean(),
+}) }).transform(({ data }) => ({ turnId: data.turn_id, controlId: data.control_id,
+  requestedAt: data.requested_at, alreadyRequested: data.already_requested }));
+
+export const ResumeQueueResponseSchema = z.object({ data: z.object({
+  hold_control_id: z.string().min(1), replayed: z.boolean(),
+  dispatched_turn_id: z.string().nullable(), queue_control: QueueControlSchema,
+}) }).transform(({ data }) => ({ holdControlId: data.hold_control_id, replayed: data.replayed,
+  dispatchedTurnId: data.dispatched_turn_id, queueControl: data.queue_control }));
+
+export type StopTurnReceipt = z.infer<typeof StopTurnResponseSchema>;
+export type ResumeQueueReceipt = z.infer<typeof ResumeQueueResponseSchema>;
+
 export const LIVE_TURN_STATES: ReadonlySet<TurnState> = new Set([
   "queued",
   "running",
@@ -73,6 +101,7 @@ const TurnViewWireSchema = z.object({
   last_event_id: z.number().int().nullable().default(null),
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
+  stop_request: StopRequestSchema.nullable().default(null),
 });
 
 export interface ChatTurn {
@@ -86,13 +115,14 @@ export interface ChatTurn {
   generationAttempts: number;
   /** Accepted user bytes not yet materialized into canonical thread history. */
   submissionMessage: ChatMessage | null;
+  stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
 export const ChatTurnListResponseSchema = z
   .object({
     data: z.array(TurnViewWireSchema).default([]),
     meta: z
-      .object({ thread_status: z.string().default("idle") })
+      .object({ thread_status: z.string().default("idle"), queue_control: QueueControlSchema.optional() })
       .default({ thread_status: "idle" }),
   })
   .transform((wire) => ({
@@ -105,6 +135,7 @@ export const ChatTurnListResponseSchema = z
         requestedAt: item.requested_at,
         lastEventId: item.last_event_id,
         generationAttempts: item.generation_attempts,
+        stopRequest: item.stop_request,
         submissionMessage:
           item.submission_message === null
             ? null
@@ -112,6 +143,7 @@ export const ChatTurnListResponseSchema = z
       }),
     ),
     threadRunning: wire.meta.thread_status === "running",
+    queueControl: wire.meta.queue_control ?? EMPTY_QUEUE_CONTROL,
   }));
 
 export type ChatTurnPage = z.infer<typeof ChatTurnListResponseSchema>;
@@ -193,6 +225,7 @@ export interface MessageSubmissionAttempt {
 export type TurnContextObjectType =
   | "account"
   | "contact"
+  | "project_document"
   | "design_document"
   | "design_node"
   | "design_asset";
@@ -201,6 +234,11 @@ export interface TurnContextReference {
   objectId: string;
   objectType: TurnContextObjectType;
   version: number | null;
+  /** Slice 2 (R-A2): the marketer's own words about THIS object — the note a
+   * web annotation carries, numbered so the turn's prose ("annotation 2") and
+   * the badge in the canvas name the same element. Optional and omitted from
+   * the wire when absent, so every existing ref shape is byte-identical. */
+  note?: string;
 }
 
 /** Block only a duplicate of the exact message request currently in flight. */
@@ -319,6 +357,7 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
         object_type: reference.objectType,
         object_id: reference.objectId,
         version: reference.version,
+        ...(reference.note !== undefined ? { note: reference.note } : {}),
       })),
       attachment_refs: [],
       agent_profile_id: submission.agentProfileId ?? null,

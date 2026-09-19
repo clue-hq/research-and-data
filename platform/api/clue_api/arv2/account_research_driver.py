@@ -90,6 +90,7 @@ from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
+from clue_core.provider_failures import failure_code
 from clue_db import ConnFactory, transaction
 from clue_fleet import FleetTaskKind, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
@@ -175,7 +176,9 @@ def employment_history_lines(value: Any) -> tuple[str, ...]:
     for entry in value:
         if not isinstance(entry, Mapping):
             continue
-        dates = entry.get("date") if isinstance(entry.get("date"), Mapping) else entry
+        dates = entry.get("date")
+        if not isinstance(dates, Mapping):
+            dates = entry
         role = str(entry.get("role") or "").strip()
         org = str(entry.get("org") or "").strip()
         start = str(dates.get("start") or "").strip()
@@ -613,6 +616,10 @@ class Arv2AccountResearchWorkHandler:
                     f"run {job.run_id}"
                 )
             composition = await self._compose(conn, job)
+            # Spec 2026-09-12 §1: the job is claimed and composed, so what happens next is the
+            # research itself. The stamp rides the claiming connection — a job that shows
+            # ``deep_research`` is a job whose row was already won.
+            await self._store.set_job_stage(conn, job_id=job.job_id, stage="deep_research")
 
         media_budget = MediaBudget(self._settings.arv2_media_seconds_ceiling)
         runtime = ToolRuntime(
@@ -672,7 +679,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_account_catalog(conn)
+        catalog = await self._store.read_account_catalog(conn, workspace_id=run.workspace_id)
         established = await self._already_established(conn, job, run)
 
         bundle = load_account_resources(self._catalog_root)
@@ -749,7 +756,7 @@ class Arv2AccountResearchWorkHandler:
 
         icp, icp_gate_keys = await self._pinned_icp(conn, run)
         persona = await self._persona(conn, run)
-        catalog = await self._store.read_person_catalog(conn)
+        catalog = await self._store.read_person_catalog(conn, workspace_id=run.workspace_id)
 
         bundle = load_person_resources(self._person_catalog_root)
         if bundle.profile.sha256 != job.profile_sha256:
@@ -832,7 +839,10 @@ class Arv2AccountResearchWorkHandler:
     async def _persona(self, conn: AsyncConnection, run: RunRow) -> str:
         """The newest persona document written for this run's ICP, or an honest empty block."""
         documents = await self._store.read_persona_documents(
-            conn, workspace_id=run.workspace_id, brand_id=run.brand_id
+            conn,
+            workspace_id=run.workspace_id,
+            brand_id=run.brand_id,
+            project_id=run.project_id,
         )
         for document in documents:
             key = document.artifact_key
@@ -918,7 +928,7 @@ class Arv2AccountResearchWorkHandler:
                 job_id=composition.job.job_id,
                 status=status,
                 finalization=finalization,
-                failure_code="model_error" if status == "needs_review" else None,
+                failure_code=_job_failure_code(outcome) if status == "needs_review" else None,
                 failure_message=outcome.error if status == "needs_review" else None,
                 model_rounds=outcome.model_rounds,
                 tool_calls=outcome.tool_calls,
@@ -927,7 +937,14 @@ class Arv2AccountResearchWorkHandler:
                 media_seconds=spend.media_seconds,
             )
             if composition.job.subject_type == "account":
+                await self._store.set_job_stage(
+                    conn, job_id=composition.job.job_id, stage="committee"
+                )
                 committee = await self._fan_out_committee(conn, composition, runtime)
+                if committee.jobs:
+                    await self._store.set_job_stage(
+                        conn, job_id=composition.job.job_id, stage="member_research"
+                    )
             await self._store.refresh_run_status(conn, run_id=composition.run.run_id)
             await self._record_activity(conn, composition, outcome=outcome, claims=len(claims))
         await self._offer_committee(composition, committee)
@@ -1060,6 +1077,18 @@ def _failure_code(error: BaseException) -> str:
     if isinstance(error, ContactMissing):
         return CONTACT_MISSING
     return type(error).__name__
+
+
+def _job_failure_code(outcome: AgentOutcome) -> str:
+    """Why a job that ended in ``model_error`` failed, named as finely as it can be.
+
+    A provider that refused to serve or faulted is recorded as
+    ``provider_refused:<provider>:<reason>``, which the incident surfaces parse back; a fault
+    nobody can classify keeps the bare ``model_error`` it has always recorded.
+    """
+    if outcome.provider_failure is not None:
+        return failure_code(outcome.provider_failure)
+    return "model_error"
 
 
 def _receipt(

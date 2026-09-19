@@ -170,6 +170,35 @@ class Settings(BaseSettings):
     metrics_otlp_endpoint: str | None = None
     metrics_export_interval_ms: int = Field(default=10_000, ge=100)
 
+    # --- telemetry roots (lane 3 slice 2; all off by default) ------------------------------
+    # OTLP/HTTP traces endpoint (slice 3 points it at Langfuse). Empty → spans are created
+    # in-process and exported nowhere, today's behaviour. Env: ``CLUE_OTEL_TRACES_ENDPOINT``.
+    otel_traces_endpoint: str | None = None
+    # Instrument the FastAPI app (server spans) and httpx (client spans) at the roots. On by
+    # default because without an endpoint the spans cost nothing and go nowhere.
+    # Env: ``CLUE_OTEL_INSTRUMENT_FASTAPI`` / ``CLUE_OTEL_INSTRUMENT_HTTPX``.
+    otel_instrument_fastapi: bool = True
+    otel_instrument_httpx: bool = True
+    # Sentry (R6): installed only when enabled AND ``CLUE_SENTRY_DSN`` (a secret) is set; the
+    # roots refuse ``enabled`` with no DSN. ``sentry_environment`` names the deployment posture
+    # on every event; ``release`` is the code version (a git sha), empty → unset.
+    # Env: ``CLUE_SENTRY_ENABLED`` / ``CLUE_SENTRY_ENVIRONMENT`` / ``CLUE_RELEASE``.
+    sentry_enabled: bool = False
+    sentry_environment: str = "lane-san-salvador"
+    release: str | None = None
+
+    # --- Langfuse (lane 3 slice 3, R4: cloud, EU) -------------------------------------------
+    # On by default (founder, 2026-09-15): installed whenever both keys (secrets) are set; with
+    # the keys blank the roots log ``langfuse.not_installed`` and run without it, so a process
+    # without a project (CI, a fresh worktree) still boots. Set it false to silence a configured
+    # project. The client attaches to the process's tracer provider, so the agent tree, the HTTP
+    # spans and the worker's task span are one trace. ``langfuse_environment`` names the
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
+    langfuse_enabled: bool = True
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_environment: str = "lane-san-salvador"
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
@@ -387,6 +416,11 @@ class Settings(BaseSettings):
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
+    #: How many Exa Answer calls one discovery run may have in flight while verifying (spec
+    #: 2026-09-12 §2). One semaphore serves both levels: candidates verify in a pool, and one
+    #: candidate's gate questions are asked together. ``1`` reproduces the serial order the R4
+    #: DB proof scripts by position. Env: ``CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY``.
+    arv2_discovery_verify_concurrency: int = Field(default=4, ge=1)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
@@ -394,10 +428,10 @@ class Settings(BaseSettings):
     brandfetch_client_id: str = ""
 
     # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
-    # Routes ``POST /onboarding`` to the new fleet driver (O3). Ships dark until O7 acceptance;
-    # ``self_serve_provisioning_enabled`` (the old recon) stays false regardless.
-    # Env: ``CLUE_ONBOARDING_V2_ENABLED``.
-    onboarding_v2_enabled: bool = False
+    # Routes ``POST /onboarding`` to the new fleet driver (O3). ON by default since 2026-09-12
+    # (spec 2026-09-12-onboarding-v2-default): the Welcome flow's setting-up screen runs this
+    # lane. Env: ``CLUE_ONBOARDING_V2_ENABLED``.
+    onboarding_v2_enabled: bool = True
     # Exa Agent effort for the company-overview run (ARV2-COMPANY-OVERVIEW-CONTRACT.md §1).
     # Env: ``CLUE_ONBOARDING_OVERVIEW_EFFORT``.
     onboarding_overview_effort: str = "high"
@@ -482,6 +516,10 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Staged until output-history erasure closure and explicit preference writes are validated.
+    # Gates only production scene preference selection/resolution, not ordinary platform memory.
+    # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
+    design_preference_context_enabled: bool = False
     # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
     # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
     # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
@@ -696,11 +734,19 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # Public frontend origin used for settings invitation links. Env: CLUE_APP_ORIGIN.
+    app_origin: str = "http://localhost:3020"
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
     self_serve_provisioning_enabled: bool = False
+    # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
+    # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
+    # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
+    # default off, until section G of the ledger retires the code. Env:
+    # ``CLUE_LEGACY_STAGE0_RECON_ENABLED``.
+    legacy_stage0_recon_enabled: bool = False
 
     # --- Lane E E3 value-narrative synthesis ------------------------------------------------
     # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind

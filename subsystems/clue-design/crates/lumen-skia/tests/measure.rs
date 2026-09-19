@@ -99,6 +99,8 @@ fn a6b_spanless_measurement_emits_no_runs() {
 
 fn input(content: &str) -> TextMeasureInput {
     TextMeasureInput {
+        node_id: None,
+        font_size_override: None,
         content: content.to_owned(),
         font_family: "Inter".to_owned(),
         font_size: 20.0,

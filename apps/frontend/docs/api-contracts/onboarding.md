@@ -61,6 +61,12 @@ Request (snake_case, matching the backend model):
 `job_role` is a self-described title, never the authorization `role_key`. `company_website`
 is normalized server-side (scheme-less input gains `https://`; non-http(s) refused).
 
+`company_name` is **optional** (`string | null`; an empty string is refused — send `null`).
+The workspace and its first brand are named by this precedence: the typed company name when
+one is given, otherwise the canonical name of the company website's domain. The profile
+screen says so under the field ("Leave blank to use your website's name"), which is why the
+website itself stays required.
+
 One replay-safe backend transaction: links the Clerk identity to a Clue `platform_user`,
 creates the workspace (name = company_name), creates its **first brand** (name =
 company_name), makes the user the workspace **owner**, persists the profile
@@ -89,6 +95,8 @@ real `setting-up` flow. It never silently selects the first membership. Fast-lan
 later exits through `/session/establish` into the protected app.
 
 ## Workspace setup (slices 2–3 + crawl progress C8 — implemented 2026-08-12–14)
+
+_Superseded 2026-09-12 by "The setting-up screen runs the new onboarding lane" below; kept as the record of the legacy Stage-0 surface, which still exists behind CLUE_LEGACY_STAGE0_RECON_ENABLED._
 
 `POST /stage0/setup` (BFF: `/api/clue/stage0/setup`, 202; requires `research.launch` — recon
 is spend) captures the provisioned company website as a durable artifact, records the
@@ -501,3 +509,17 @@ job's live status (both sections above).
   memory-only provider; nothing is written to storage.
 - The fixture provisioning twin (`provisionWorkspaceFixture`) keeps the fixture and HTTP
   paths swap-equivalent for tests and design review.
+
+## The setting-up screen runs the new onboarding lane (2026-09-12)
+
+Spec `docs/superpowers/specs/2026-09-12-onboarding-v2-default-design.md`. After provisioning, the
+setting-up screen posts `POST /api/clue/onboarding` `{ company_domain, brand_id: null }` (the
+profile's website, folded to its host; a 409 `onboarding_in_progress` is the replay-safe answer)
+and polls `GET /api/clue/onboarding/current` every 1.5 s. The screen's `SetupStatus` is derived in
+`data/setup.ts`: `complete` when every fast step (`overview`, `lineup`, `reviews`, `synthesis`) is
+`completed` or `empty`, `failed` when one is `failed`, `starting` for a queued run, `none` before
+the first post. Rows (`data/setup-groups.ts`) map onto step kinds: company, products, proof,
+audience (which completes on the ICP turn and notes that personas continue in the background),
+plus the brand-kit row over the ingestion job. Release, stall and error handling are unchanged.
+Backend: `CLUE_ONBOARDING_V2_ENABLED` defaults on; the old Stage-0 recon composes only behind
+`CLUE_LEGACY_STAGE0_RECON_ENABLED` (default off) until section G of the ledger retires it.

@@ -545,3 +545,132 @@ accounts screens):
   configured deployment.
 
 The proposed mutation endpoints remain proposals.
+
+## Resolution (2026-09-12) — Brand Context presentation repairs
+
+The Knowledge tree uses fixed 32 px rows and non-shrinking 16 px document icons.
+Long titles clip to the column and scroll once on hover or keyboard focus, returning
+to the start; reduced-motion disables the animation and the full name remains
+available as the button's accessible name and tooltip.
+
+Knowledge bodies pass directly to `react-markdown` with `remark-gfm`. The custom
+block parser and inline renderer are removed. CSS supplies the existing typography
+for the library's semantic HTML, including tables, quotes, lists, links and code.
+The page remains read-only: CodeMirror is the agreed library for future editing;
+no document mutation endpoint or local editor is introduced by this repair.
+
+The frontend font wire schema now retains the existing kit's `faces[]` fields:
+`asset_id`, `source_url`, `weight`, and `style`. The typeface model adds optional
+`faces: [{url, weight, style}]` and `previewFamily`. Stored faces use
+`/api/clue/design/assets/{asset_id}/bytes`; when no stored asset exists, a recorded
+HTTP(S) `source_url` is loaded by the browser (subject to that host's CORS policy).
+Malformed faces and unusable URLs are omitted individually. The browser's `FontFace`
+API registers the actual bytes under a kit/version-specific family, so two kits
+cannot replace each other's sample. The sample waits for a successful font load;
+missing or invalid files show “Font preview unavailable” instead of fallback glyphs.
+An upright face closest to 400 is preferred, with its actual weight and style applied
+without synthetic bold or italics. Every captured file for that variant is retained
+so script subsets can load together. Unsourced library names must resolve to an
+already registered or locally installed font. Replaced or unmounted previews release
+their own registrations. Refreshed kit props update the typefaces without retaining
+the initial font list; local additions and removals remain separate UI state.
+No backend endpoint or stored brand-kit format changes.
+
+Asset-detail images use the available preview width and height with `object-fit:
+contain`; the 280 px cap and fixture-specific exception are removed. Description
+and metadata remain alongside the preview on desktop and below it on narrow screens.
+
+### Follow-up (2026-09-12) — Markdown Edit/Preview toggle
+
+The founder subsequently requested a Markdown editing toggle. Knowledge now has
+Preview and Edit controls. Edit lazy-loads CodeMirror with `@codemirror/lang-markdown`;
+Preview passes the current draft directly to react-markdown + remark-gfm.
+Discard changes restores the document read from the server. Drafts stay separate
+per document path and survive switches between documents or Brand Context sections.
+Switching Preview/Edit retains the current editor's undo history.
+
+The founder subsequently authorized persistent edits (2026-09-12). **Save changes**
+now calls `PUT /frontend/v1/brand-context/knowledge/documents/:documentId` through
+the existing `/api/clue` BFF with `{ body, expectedRevision }`. It returns the same
+detail shape as GET, with the new version and document ID. Selection stays anchored
+to the document path. The repository owns transport and response validation.
+
+Saving requires the workspace's authenticated `project.write` permission (or the
+existing explicit local-header development mode). The backend records new immutable
+artifact bytes, the editing user and source revision, and appends a document version.
+It keeps original bytes and provenance. Stale revisions receive 409 and keep the
+draft in the editor. An unchanged body creates no extra version. Failed reads and
+the generated Design brief cannot be saved through this endpoint.
+
+Editing a confirmed ICP creates a proposed version, clears the new version's old
+approval fields, and retains the previously confirmed row for pinned projects.
+Other replaced versions become superseded. No schema migration or new runtime
+flag is required. Save failures preserve the draft; only a successful response
+marks it Saved. Editing pauses during an in-flight save to keep its snapshot stable.
+A browser unload warning applies while unsaved drafts exist.
+
+CodeMirror uses its minimal setup and neutral design-token syntax styles: monospace
+text, no line numbers, no folding gutter, no active-line color. The temporary-edit
+banner is removed. The older O5 removal of Preview/Edit is superseded by this follow-up.
+
+### ENG-182 asset preview follow-up (2026-09-12)
+
+The asset dialog uses the available viewport up to 1440 × 960 px. The image fills
+its display region with proportional `contain` sizing, preserving all artwork.
+Desktop reserves 280–360 px for the description; mobile stacks the details below
+the preview. Long names wrap and long descriptions scroll within the details pane.
+This is presentation-only and does not change the asset write contract above.
+
+
+### Lane 2 shared Markdown editor (2026-09-14)
+
+The approved MDXEditor replaces the Knowledge-specific CodeMirror editor. Preview is
+shared `MarkdownArticle` (react-markdown + remark-gfm); editing is shared `MarkdownEditor`
+with a client-only import of MDXEditor and native plugins. The PUT contract above is unchanged.
+The frontend gates Edit on the authenticated workspace's `project.write` permission plus
+a loaded, versioned document; the server remains the write authority.
+
+Feature-owned sessions are keyed by workspace and document path, retaining raw saved body,
+draft, base revision and returned immutable document ID. Initial Markdown normalization
+and undo to the initial value do not create false drafts. Preview/Edit retains editor history.
+Document switches retain drafts; clean external content and Discard explicitly reset the
+editor. Dirty external refreshes keep the original save base, allowing the backend's 409
+check to protect against overwrites. Failed saves keep the draft; editing is inert while saving.
+
+Source uses the library's recovery UI. Import errors never substitute empty bytes. Source
+drafts must return to valid Rich text before Save; editing itself may normalize Markdown.
+Code blocks stay monospaced without a language picker or line numbers and retain their
+fence metadata. Typography, colors and radii use Clue tokens; DM Mono is loaded locally.
+Long inline code, URLs and source wrap; wide tables scroll inside the document.
+
+> **Merge note (2026-09-17, PR #62 ← `research-streaming`).** The backport below was
+> written while this branch lacked the ARV2 backend. After the merge the sections above
+> govern: the Knowledge folders are served from the platform document store, and the
+> Lane 2 shared Markdown editor replaces the read-only `react-markdown` panel. The
+> asset-registry union and typeface `faces` handling from the backport remain in use.
+
+## Local backport (2026-09-13) — Brand Context presentation
+
+Adapted Aryan's `3903ae73`, `769b4994` and `79330214` changes from
+`origin/brand-context-polish` onto Design Agent V1. The existing authenticated
+brand-kit and asset read contracts remain in use; no onboarding API is added.
+
+- Asset dialogs contain the full image within a larger responsive preview and
+  keep long names/descriptions readable in the details column.
+- Typeface mapping preserves the kit's `faces` (weight, style, asset ID and source
+  URL). Stored faces use `/api/clue/design/assets/{id}/bytes`; remote fallback
+  accepts HTTP(S) only. Font-family registration is namespaced by kit/version/role.
+  A sample appears after the actual font loads, with explicit loading/unavailable
+  states instead of a silent fallback. Refreshing the kit refreshes its typefaces.
+- Knowledge uses `react-markdown` and `remark-gfm` for headings, lists, tables,
+  links and code. Existing client-local drafts are still previewable. This does
+  **not** persist edits or change the structured Design brief.
+
+The newer onboarding Knowledge tree, polling and version-checked Markdown saves
+(`2c100e8a`) depend on the upstream ARV2 backend/document store, absent on this
+branch. They are not part of this backport. Importing the full upstream branch is
+a separate contract and migration integration, not a presentation update.
+
+Presentation changes do not rerun ingestion or increase source coverage. Current
+website capture visits the entry URL plus explicitly supplied `page_urls`; it
+does not discover linked pages. Ad-library harvesting remains a separate job.

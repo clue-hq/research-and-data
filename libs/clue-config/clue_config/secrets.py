@@ -82,6 +82,10 @@ class Secrets(BaseSettings):
     # (No explicit alias needed; that keeps the pydantic-mypy "dynamic alias" rule happy.)
     database_url: SecretStr | None = None
 
+    # Settings invitations and verified email backfill; JWT validation uses public JWKS.
+    # Env: CLUE_AUTH_CLERK_SECRET_KEY.
+    auth_clerk_secret_key: SecretStr | None = None
+
     # --- provider API keys (CLUE_<PROVIDER>_API_KEY) ---
     # One field per credentialed source manifest's auth_ref: ``extra="ignore"`` silently drops any
     # CLUE_* env var with no matching field, so a manifest auth_ref without a field here would never
@@ -107,6 +111,19 @@ class Secrets(BaseSettings):
     # the one ARV2 model call that bypasses OpenRouter (OpenRouter serves neither the transcribe
     # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
     gemini_api_key: SecretStr | None = None
+
+    # --- telemetry roots (lane 3 slice 2) ---
+    # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).
+    sentry_dsn: SecretStr | None = None
+    # Env: CLUE_OTEL_TRACES_HEADERS — "k=v,k2=v2" sent with every OTLP trace export (Langfuse's
+    # basic-auth header in slice 3); a secret because it carries the project keys.
+    otel_traces_headers: SecretStr | None = None
+
+    # --- Langfuse (lane 3 slice 3) ---
+    # Env: CLUE_LANGFUSE_PUBLIC_KEY / CLUE_LANGFUSE_SECRET_KEY — the project's key pair (the
+    # public key is also an identifier, but the pair authorises ingest, so both are secrets).
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
 
     # --- durable artifact storage (Phase B2 / REQ-07) ---
     # Credentials for the S3-compatible StorageBackend (AWS S3 / R2 / MinIO). Non-secret knobs

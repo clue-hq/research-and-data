@@ -33,7 +33,7 @@ import type { DesignArtifactListItem } from "../model/artifact";
  * vocabulary, and ONLY when it genuinely names one. An unrecognised or absent
  * type maps to nothing: the founder's ruling is that we are not necessarily
  * always making ads, so a card that cannot prove its channel claims none. */
-function collateralTypeFor(artifactType: string | undefined) {
+export function collateralTypeFor(artifactType: string | undefined) {
   if (!artifactType) return undefined;
   const value = artifactType.toLowerCase();
   if (value.includes("linkedin")) return "linkedin-ad" as const;
@@ -48,7 +48,7 @@ function collateralTypeFor(artifactType: string | undefined) {
 
 /** G-H: the document's real page size → the card's size cell and its
  * size-category filter. Absent when the document has no page; never a default. */
-function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
+export function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
   if (!widthPx || !heightPx) return undefined;
   const ratio = widthPx / heightPx;
   const category =
@@ -67,6 +67,12 @@ function designThumbnailPath(item: DesignArtifactListItem): string {
   return `/api/clue/design/documents/${encodeURIComponent(item.documentId)}/thumbnail?v=${encodeURIComponent(item.currentVersionId)}`;
 }
 
+/** The tag a composer sends pins a numeric design version; anything else is no version. */
+function versionOf(currentVersionId: string): number | undefined {
+  const value = Number(currentVersionId);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
@@ -74,10 +80,13 @@ export function toProjectArtifact(
   const ad = item.kind === "ad";
   const collateralType = ad ? collateralTypeFor(item.artifactType) : "microsite";
   const size = ad ? sizeFor(item.widthPx, item.heightPx) : undefined;
+  const version = versionOf(item.currentVersionId);
   return ProjectArtifactSchema.parse({
     ...(collateralType ? { collateralType } : {}),
     ...(size ? { size } : {}),
     createdAt: utcInstant(item.createdAt),
+    documentId: item.documentId,
+    ...(version ? { version } : {}),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
     imagePath: designThumbnailPath(item),

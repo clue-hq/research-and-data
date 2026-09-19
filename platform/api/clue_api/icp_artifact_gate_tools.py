@@ -76,11 +76,13 @@ __all__ = [
     "build_icp_artifact_gate_tools",
 ]
 
-#: The document statuses a human can be asked about. ``ready`` is servable *input* — a persona
-#: file, a catalog — not a proposal, so there is nothing to say yes to; ``confirmed`` is
-#: presentable because a brand's ICPs are shared and another project's confirmation is not this
-#: project's answer.
-_ANSWERABLE_STATUSES = ("proposed", "confirmed")
+#: The document statuses a human can be asked about — every servable one, since 2026-09-14. A
+#: document the agent writes under ``project/`` is born ``ready``, including the ICP it drafted,
+#: because the writer no longer decides that some paths are proposals and others are input: *this
+#: gate* is what makes a document this project's ICP (founder ruling 2026-09-14). ``confirmed`` is
+#: presentable too, because a brand's ICPs are shared and another project's confirmation is not
+#: this project's answer.
+_ANSWERABLE_STATUSES = ("ready", "proposed", "confirmed")
 
 
 class OpenIcpArtifactGateInput(ToolInput):
@@ -131,7 +133,8 @@ class OpenIcpArtifactGateTool(Tool):
         "Present one of this brand's ICP knowledge documents to the current human for "
         "confirmation. Supply the icp_key of the document you have read; the platform derives and "
         "persists the exact document, digest, permitted decisions, project and addressee. This "
-        "call confirms nothing. Then end the turn awaiting input with the returned gate_ref."
+        "call confirms nothing. Then end the turn awaiting input with the returned gate_ref. "
+        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#open_icp_confirmation_gate"
     )
     input_model: ClassVar[type[ToolInput]] = OpenIcpArtifactGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenIcpArtifactGateOutput
@@ -238,6 +241,10 @@ class OpenIcpArtifactGateTool(Tool):
                     workspace_id=ctx.workspace_id,
                     brand_id=project.brand_id,
                     icp_key=inputs.icp_key,
+                    # The presenting turn supplies the project scope exactly as it supplies the
+                    # brand: a project that authored its own variant of this key is asked about
+                    # that variant, not about the brand's document.
+                    project_id=turn.project_id,
                 )
             )
             if subject is None:
@@ -248,7 +255,8 @@ class OpenIcpArtifactGateTool(Tool):
             if subject.status not in _ANSWERABLE_STATUSES:
                 raise _GateRefused(
                     "icp_document_not_servable",
-                    f"the ICP document for {inputs.icp_key!r} is {subject.status}, not a proposal",
+                    f"the ICP document for {inputs.icp_key!r} is {subject.status}; "
+                    "only a servable version can be presented",
                 )
             if (
                 subject.status == "confirmed"

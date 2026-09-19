@@ -49,19 +49,21 @@ async function errorFrom(response: Response): Promise<ClueAuthenticationError> {
 
 export async function fetchClueAuthentication(
   path: string,
-  {
-    token,
-    workspaceId,
-  }: Readonly<{ token: string; workspaceId?: string }>,
+  { token, workspaceId }: Readonly<{ token: string; workspaceId?: string }>,
+  mutation?: Readonly<{ method: "POST"; body: unknown }>,
 ): Promise<unknown> {
   const headers = new Headers({
     Accept: "application/json",
     Authorization: `Bearer ${token}`,
   });
   if (workspaceId) headers.set("X-Clue-Workspace-Id", workspaceId);
+  if (mutation) headers.set("Content-Type", "application/json");
   const response = await fetch(backendUrl(path), {
     cache: "no-store",
     headers,
+    ...(mutation
+      ? { method: mutation.method, body: JSON.stringify(mutation.body) }
+      : {}),
   });
   if (!response.ok) throw await errorFrom(response);
   return response.json();

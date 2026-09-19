@@ -128,6 +128,22 @@ async def get_workspace(conn: AsyncConnection, workspace_id: str) -> Workspace |
     return Workspace(**dict(row)) if row is not None else None
 
 
+async def rename_workspace(conn: AsyncConnection, workspace_id: str, name: str) -> Workspace | None:
+    """Rename only the workspace; brands retain their independent names."""
+    cleaned = name.strip()
+    if not cleaned or len(cleaned) > 200:
+        raise ValueError("workspace name must contain 1 to 200 characters")
+    result = await conn.execute(
+        text(
+            "UPDATE workspace SET name = :name WHERE workspace_id = :workspace_id "
+            "RETURNING workspace_id, name, status, created_at"
+        ),
+        {"workspace_id": workspace_id, "name": cleaned},
+    )
+    row = result.mappings().first()
+    return Workspace(**dict(row)) if row is not None else None
+
+
 # --- brand ------------------------------------------------------------------
 async def create_brand(
     conn: AsyncConnection, *, workspace_id: str, name: str, brand_id: str | None = None
@@ -346,6 +362,22 @@ async def get_project_for_workspace(
             "WHERE workspace_id = :workspace_id AND project_id = :project_id"
         ),
         {"workspace_id": workspace_id, "project_id": project_id},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
+async def set_project_name(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, name: str
+) -> Project | None:
+    """Rename only the project owned by this workspace; preserve its identity and contents."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET name = :name "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id, "name": name},
     )
     row = result.mappings().first()
     return Project(**dict(row)) if row is not None else None

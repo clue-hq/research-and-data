@@ -106,6 +106,7 @@ from clue_agents.execution import (
     operation_id_for_plan_node,
     review_agent_plan,
 )
+from clue_agents.library_tree import LibraryFile, LibraryTree
 from clue_agents.model import ScriptedAgentChatModel
 from clue_agents.ports import (
     AgentArtifactReader,
@@ -158,11 +159,22 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_agents.versioned_root import (
+    VersionedRootWriter,
+    VersionedWriteOutcome,
+    VersionedWriteRefused,
+)
 from clue_agents.workspace import (
+    LIBRARY_DIR,
+    PROJECTS_DIR,
+    THREADS_DIR,
     AgentWorkspaceFactory,
     AgentWorkspaceLease,
     AnchoredAgentWorkspaceBackend,
+    MountMode,
+    MountRequest,
     WorkspaceIdentity,
+    WorkspaceMount,
     WorkspaceUsageSnapshot,
 )
 from clue_agents.workspace_policy import (
@@ -274,6 +286,13 @@ __all__ = [
     "LayerBudget",
     "MemoryLayerSource",
     "ModelPolicy",
+    "LIBRARY_DIR",
+    "LibraryFile",
+    "LibraryTree",
+    "PROJECTS_DIR",
+    "THREADS_DIR",
+    "MountMode",
+    "MountRequest",
     "ProjectContextArtifact",
     "PreparedWorkspaceRoot",
     "ProfileCatalog",
@@ -304,11 +323,15 @@ __all__ = [
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",
+    "VersionedRootWriter",
+    "VersionedWriteOutcome",
+    "VersionedWriteRefused",
     "WorkspaceConfigurationError",
     "WorkspaceConflict",
     "WorkspaceEntry",
     "WorkspaceError",
     "WorkspaceIdentity",
+    "WorkspaceMount",
     "WorkspaceUsageSnapshot",
     "WorkspacePolicy",
     "WorkspaceQuotaExceeded",

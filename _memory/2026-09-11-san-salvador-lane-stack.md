@@ -307,3 +307,147 @@ sections now cite the research.
 Fleet workers cycled too (founder, same night): new runbook verb `restart-workers` respawns the
 wrapper's 4 × 3 with the stagger, after a `work_lease` in-flight check; all four booted clean with
 `CLUE_VERIFICATION_ENABLED=false`. The whole stack now runs on the new posture.
+
+## Close-out — PR #54 merged (2026-09-11, night)
+
+`track-r4` (48 commits: R4 discovery, the Target accounts tab + Add to chat, logos, auth refusal
+logging, the lane-aware dev stack, ledger A1–A21) merged into `integration/design-improvement` as
+PR #54 (`7949a63e6`). This worktree now sits on `track-r4-v1`, cut from that merge; the lane stack
+(`./scripts/dev_stack_san_salvador.sh`) keeps running from this checkout unchanged. Open items are
+the ledger's: A1, A2, A3–A5, A11, A12, A17, A18, A20, A21 and the owed founder walks (Target
+accounts tab, logos, the regenerated Prevea / Mid State pages under verification-off).
+
+## 2026-09-12 — planning session on `research-streaming`; A2 fixed
+
+Six items discussed with the founder; three approved designs written as specs under
+`docs/superpowers/specs/2026-09-12-*`: discovery streaming (verified rows land on the Target
+accounts tab as Exa finds them; polling both ends; gates parallel + candidate pool with
+`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`), the research progress card (pinned above the
+composer, one per project, four stage quarters, real stage order deep→synthesis→committee→member),
+and onboarding-v2-as-default (setting-up screen on `POST/GET /onboarding`, release after the four
+fast steps, legacy recon behind its own flag). Brand-context polish moved to branch
+`brand-context-polish` (local, off the base) with rulings: uniform 32 px rows + single-pass hover
+marquee, react-markdown + remark-gfm for rendering, CodeMirror for editing (ENG-181/182/183).
+Media question answered: podcasts DID run (5 feeds, 2 transcriptions) — hidden by the verification
+posture and only surfaced on contact pages; YouTube path never transcribes by design.
+
+**A2 fixed:** `load_research_packs` takes `pg_advisory_xact_lock(2794525886)` and refuses to run
+outside a transaction; `tests/api/test_research_pack_seed_race_db.py` red-proofs the race (a probe
+loader that sleeps after its insert); the runbook's 6 s worker stagger is removed.
+
+## Discovery streaming landed (plan 2026-09-12-discovery-streaming)
+
+Driver: per-tick `items()` + task pool under one semaphore (`arv2_discovery_verify_concurrency`,
+default 4; 1 = the old serial order, which the positional DB script pins), gates of one candidate
+gathered, `record_discovery_progress` per tick. Read: `/frontend/v1/projects/{id}/discovery/current`
+— its wire models live in `frontend_read/discovery_status.py`, not `contract_v1.py`, because this
+document is snake_case on the wire. Frontend: `useDiscoveryStatus` (5 s while live) in chat-surface
+→ spinner on the tab label + `refreshToken` refetch in `ProjectTargetAccounts`;
+`discoveryLaunchToOpen` opens the surface on a completed launch part. The DB proof's concurrent
+scenario runs on a lock-serialised test connection and proves both candidates land with their
+verdicts under a cap of 4; per-connection transaction isolation is the production factory's
+property (`clue_db.transaction`), not something that test proves. Owed: the founder's signed-in
+walk (launch discovery from chat → tab opens → rows climb → spinner stops).
+
+### Discovery streaming — close-out (2026-09-12, branch `research-streaming`, 2741b0ca9..HEAD)
+Executed plan `2026-09-12-discovery-streaming.md` under SDD (Opus implementers, controller reviews,
+one Opus whole-branch review + one fix wave). Verified locally: offline driver suite 39 green
+(pristine under warnings-as-errors), lane-DB suites green, frontend 2216 tests / lint 0 errors /
+tsc at the 50-error baseline / `npm run build` green. NOT pushed. Parked for the founder:
+1. **Connection pool sizing** — `clue_db` engine uses SQLAlchemy defaults (5 + 10 overflow, 30 s
+   timeout) per worker process; at cap 4 one run can hold ~4–6 connections and the lane runs
+   4 workers × 3 slots. A checkout timeout inside `_hop`'s shielded drain would lose a bought
+   call's ledger row (loud `needs_review`, not silent). Decide: size the pool via new env flags,
+   or keep cap × slots under 15.
+2. Follow-up options, not defects: a candidate-slot cap so rows stream steadily instead of in
+   bursts (one shared semaphore is breadth-first); list the webset only when the view's found
+   count moved (per-tick listing ≈ one ledger row + raw body per 15 s); a client ceiling for a
+   run stuck at `not_started`.
+3. Owed: the founder's signed-in walk after these fixes — launch discovery from chat → tab opens
+   → rows climb → spinner stops — including a page reload mid-run.
+
+## Research progress card landed (plan 2026-09-12-research-progress-card)
+
+`arv2_research_job.stage` (migration `c90aaea30a88`, off `2cd622be2da0`), `set_job_stage`, four
+driver stamps (claim / finalize tool / committee / member launch), pure fold
+`arv2/research_progress.py`, read `/frontend/v1/projects/{id}/research/progress` — its wire models
+live in `frontend_read/research_progress.py`, not `contract_v1.py`, because this document is
+snake_case on the wire — card pinned in the composer dock. The card is primed on a completed
+`launch_arv2_account_research` or `launch_arv2_person_research` tool part (the old lane's
+`launch_account_research` is superseded and is not matched). Owed: the founder's walk (launch
+research → card appears within 5 s → bar and line move → Completed for 60 s → gone).
+
+### Research progress card — close-out (2026-09-12, branch `research-streaming`, 1d033d924..HEAD)
+Executed plan `2026-09-12-research-progress-card.md` under SDD (Opus implementers, controller
+reviews, one Opus whole-branch review + one fix wave). Verified locally: offline arv2 suites 178
+green, lane-DB suites green (migration `c90aaea30a88` applied to the lane DB), frontend 2224
+tests / lint 0 errors / tsc at the 50-error baseline / build green. NOT pushed. For the founder:
+1. **Provisional ruling R11** — a run kept alive only by `needs_review`/`suspended` jobs drops off
+   the card 24 h after its last job finished (`ATTENTION_LINGER_S`); nothing in the system moves a
+   job out of `needs_review` and the card has no dismiss control, so the spec's exit was
+   unreachable. One constant to move if a different window is wanted.
+2. **Spec-faithful but static bar (I5)** — `committee`/`member_research` commit with `finish_job`,
+   so a running account job shows 0 % through the whole deep-research phase, then jumps; the
+   "Finding the buying committee" line is unreachable for account agents. An earlier stamp is a
+   spec change; decide on the walk.
+3. **C1 fix unseen in a browser** — the composer dock now sizes to content when the card shows
+   (`composerDockWithResearchCard`), proven by the flex chain and a contract test only. The walk
+   must confirm: card visible, composer usable, 8 px gap and full-frame width acceptable.
+4. Owed walk: launch research → card within 5 s → bar and line move → Completed for 60 s → gone;
+   a person-only launch (card scores by people); a worker restart mid-run (paused jobs score only
+   their walked quarters, pill "Needs attention"). Workers need a restart to pick up the stamps.
+
+## Onboarding v2 is the default (plan 2026-09-12-onboarding-v2-default)
+
+`CLUE_ONBOARDING_V2_ENABLED=true` by default; `CLUE_LEGACY_STAGE0_RECON_ENABLED=false` gates the
+old recon (binder, `/stage0/setup`, STAGE0_RECON handler). The setting-up screen posts
+`/api/clue/onboarding` and polls `/api/clue/onboarding/current`; release on the four fast steps.
+(The brand-context status route named in ledger row F1 was the earlier idea; the plan used the
+onboarding route.) The profile draft is memory-only, so a hard reload on the setting-up screen
+re-attaches to a live run via the seam's probe but cannot start one — founder call whether to
+persist the website. Ledger A3/A4/A5 closed. Owed: a fresh-workspace walk (sign up → profile →
+setting-up fills from the new lane → released → Brand context shows the documents, personas
+landing after).
+
+### Onboarding v2 default — close-out (2026-09-12, branch `research-streaming`, a4e5675b5..HEAD)
+Executed plan `2026-09-12-onboarding-v2-default.md` under SDD (Opus implementers, controller
+reviews, one Opus whole-branch review + one fix wave). Verified locally: offline composition/flag
+suites green, lane-DB stage0/brand-kit/onboarding-route suites green, frontend 2207 tests /
+lint 0 errors / tsc at the 50-error baseline / build green. NOT pushed. Restart the platform API
+and workers to pick up the flag split (the lane `.env` now carries
+`CLUE_LEGACY_STAGE0_RECON_ENABLED=false`, so the old recon no longer composes).
+Fix-wave outcomes worth knowing on the walk: `completed_with_gaps` now reads as complete (it was
+"unavailable"); a fast kind moved to the background phase never gates the release; a failed fast
+step shows the failure only once all four fast steps have settled (R6); `GET /onboarding/current`
+gained an additive `brandKitIngestion` so the "Creating brand kit" row moves again (R5); the
+audience row's "personas continue" note now shows from the release tick.
+Owed walk: fresh workspace → sign up → profile → setting-up fills from the new lane → released on
+the four fast steps → Brand context shows the documents, personas landing after; plus a hard
+reload on the setting-up screen (memory-only draft → the seam re-attaches to the live run).
+Parked: the fixture (design-review) preview now shows the five live rows; the official-site crawl
+fleet still composes unconditionally (inert without the recon handler); persisting the profile
+website across reloads is a founder call.
+
+## 2026-09-12 — project context + ICP authoring: spec and four plans written (not yet executed)
+
+Founder walk findings: a second thread of a project knows nothing of the first (the `project_state`
+route of `record_interview_answer` is write-only since O6 ruling D5; L6 is thread-scoped; no ARV2
+list/read tools on head-of-abm@v45), and skill v22 §3/§5/§10 forbids ICP authoring. Founder rulings
+R1–R9 recorded in `docs/superpowers/specs/2026-09-12-project-context-and-icp-authoring-design.md`.
+Presentation truth for markdown documents = the dummy's Plan tab (screenshot 2026-09-12); this repo's
+`project-plan.tsx` / `ProjectPlanSchema` are orphaned dummy lifts (zero importers) and get replaced.
+
+Plans, in build order (each SDD-executable on its own):
+1. `docs/superpowers/plans/2026-09-12-project-context-files.md` — `agent_turn_project_files` pin,
+   `inputs/project/status.md` + `decisions.md` (deterministic), `ProjectFilesIndexCard@1`.
+2. `docs/superpowers/plans/2026-09-12-icp-authoring.md` — `brand_knowledge_document.project_id` +
+   `derived_from_document_id`, `onboarding_run.kind`, `author_icp_document@1`,
+   `request_persona_synthesis@1`, skill v23 / profile v46 / recipe v24.
+3. `docs/superpowers/plans/2026-09-12-project-plan-document.md` — `write_project_document@1`,
+   `/frontend/v1/projects/{id}/documents` list/detail/PUT, the Plan rail surface, shared markdown
+   pieces on design tokens, auto-open + plan-card click, documents in the gallery, skill v24 / v47 / v25.
+4. `docs/superpowers/plans/2026-09-12-head-of-abm-read-tools.md` — `read_project_accounts@1`,
+   `read_account_research@1`, `read_discovery_run@1`, skill v25 / v48 / v26.
+
+Also observed today: 32 Exa `402 Payment Required` responses in the workers' logs during the research
+run (jobs still finalized; content fetches were refused). Exa credit likely exhausted — founder told.

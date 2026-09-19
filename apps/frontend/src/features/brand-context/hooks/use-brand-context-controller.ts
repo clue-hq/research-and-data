@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useKnowledgeEditor } from "./use-knowledge-editor";
 import type {
   BrandAssetCategory,
   BrandAssetSortDirection,
@@ -10,8 +11,8 @@ import type {
   BrandContextSection,
   BrandContextWorkspace,
   BrandTextStyle,
+  BrandTypeface,
 } from "../model/brand-context";
-import { parseKnowledgeMarkdown } from "../model/brand-context";
 
 type BrandDialog = "new-style" | "new-typeface" | null;
 type AssetEditingField = "description" | "name" | null;
@@ -21,6 +22,7 @@ const assetFilterOptions: ReadonlyArray<{ label: string; value: "all" | BrandAss
   { label: "Logos", value: "logo" },
   { label: "Backgrounds", value: "background" },
   { label: "Mockups", value: "mockup" },
+  { label: "Uploads", value: "upload" },
   { label: "AI-generated images", value: "ai-generated" },
 ];
 
@@ -34,9 +36,13 @@ const assetSortOptions: ReadonlyArray<{ label: string; value: BrandAssetSortKey 
 export function useBrandContextController({
   initial,
   workspace,
+  scopeKey,
+  canWriteKnowledge,
 }: {
   initial: BrandContextInitialState;
   workspace: BrandContextWorkspace;
+  scopeKey: string;
+  canWriteKnowledge: boolean;
 }) {
   const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +54,7 @@ export function useBrandContextController({
   const [section, setSection] = useState(initial.section);
   const [colorMode, setColorModeState] = useState(initial.colorMode);
   const [assetView, setAssetViewState] = useState(initial.assetView);
-  const [selectedDocumentId, setSelectedDocumentId] = useState(defaultDocument?.id ?? "");
+  const [selectedDocumentPath, setSelectedDocumentPath] = useState(defaultDocument?.path ?? "");
   const [openFolderIds, setOpenFolderIds] = useState<Set<string>>(
     () => new Set(defaultDocument ? [defaultDocument.folderId] : []),
   );
@@ -69,16 +75,19 @@ export function useBrandContextController({
       : null,
   );
   const [assetEditingField, setAssetEditingField] = useState<AssetEditingField>(null);
-  const [assetDrafts, setAssetDrafts] = useState(() =>
-    Object.fromEntries(
-      workspace.assets.map((asset) => [
-        asset.id,
-        { description: asset.description, name: asset.name },
-      ]),
-    ),
-  );
+  // Keep only local edits: ingestion refreshes the server props without
+  // remounting this hook, so newly imported assets need their current metadata.
+  const [assetDrafts, setAssetDrafts] = useState<Record<string, {
+    description?: string;
+    name?: string;
+  }>>({});
   const [dialog, setDialog] = useState<BrandDialog>(null);
-  const [typefaces, setTypefaces] = useState(workspace.typefaces);
+  const [addedTypefaces, setAddedTypefaces] = useState<BrandTypeface[]>([]);
+  const [removedTypefaceIds, setRemovedTypefaceIds] = useState<Set<string>>(() => new Set());
+  const typefaces = useMemo(() => [
+    ...workspace.typefaces.filter((typeface) => !removedTypefaceIds.has(typeface.id)),
+    ...addedTypefaces.filter((typeface) => !workspace.typefaces.some((font) => font.family.toLowerCase() === typeface.family.toLowerCase())),
+  ], [addedTypefaces, removedTypefaceIds, workspace.typefaces]);
   const [typefaceMenuId, setTypefaceMenuId] = useState<string | null>(null);
   const [fontSearch, setFontSearch] = useState("");
   const [customFontName, setCustomFontName] = useState("");
@@ -129,14 +138,9 @@ export function useBrandContextController({
     [workspace.knowledgeFolders],
   );
   const selectedDocument =
-    allDocuments.find((document) => document.id === selectedDocumentId)
+    allDocuments.find((document) => document.path === selectedDocumentPath)
     ?? allDocuments[0];
-  // The body is the document the store served, full stop — there is no local
-  // draft to prefer over it now that the page cannot be edited.
-  const markdownBlocks = useMemo(
-    () => parseKnowledgeMarkdown(selectedDocument?.body ?? ""),
-    [selectedDocument?.body],
-  );
+  const knowledgeEditor = useKnowledgeEditor(selectedDocument, { scopeKey, canWrite: canWriteKnowledge });
   const selectedAsset = selectedAssetId
     ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
@@ -204,7 +208,7 @@ export function useBrandContextController({
   function selectDocument(documentId: string) {
     const document = allDocuments.find((item) => item.id === documentId);
     if (!document) return;
-    setSelectedDocumentId(documentId);
+    setSelectedDocumentPath(document.path);
     setSection("knowledge");
     setOpenFolderIds((current) => new Set(current).add(document.folderId));
     syncRoute({ filePath: document.path, section: "knowledge" });
@@ -267,7 +271,7 @@ export function useBrandContextController({
     const family = fontSearch.trim() || customFontName.replace(/\.[^.]+$/, "");
     if (!family) return;
     if (!typefaces.some((typeface) => typeface.family.toLocaleLowerCase() === family.toLocaleLowerCase())) {
-      setTypefaces((current) => [
+      setAddedTypefaces((current) => [
         ...current,
         { family, id: `custom-${family.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-")}`, source: "custom" },
       ]);
@@ -294,7 +298,9 @@ export function useBrandContextController({
   }
 
   function removeTypeface(typefaceId: string) {
-    setTypefaces((current) => current.filter((typeface) => typeface.id !== typefaceId || typeface.source !== "custom"));
+    if (typefaces.find((typeface) => typeface.id === typefaceId)?.source !== "custom") return;
+    setAddedTypefaces((current) => current.filter((typeface) => typeface.id !== typefaceId));
+    setRemovedTypefaceIds((current) => new Set(current).add(typefaceId));
     setTypefaceMenuId(null);
   }
 
@@ -307,7 +313,11 @@ export function useBrandContextController({
 
   return {
     addCustomFont,
-    assetDraft: selectedAsset ? assetDrafts[selectedAsset.id] : null,
+    assetDraft: selectedAsset ? {
+      description: selectedAsset.description,
+      name: selectedAsset.name,
+      ...assetDrafts[selectedAsset.id],
+    } : null,
     assetEditingField,
     assetFilterOpen,
     assetFilterOptions,
@@ -345,7 +355,7 @@ export function useBrandContextController({
     filteredAssets,
     filteredTypefaces,
     fontSearch,
-    markdownBlocks,
+    knowledgeEditor,
     newStyle,
     editAssetDetails,
     openAsset,

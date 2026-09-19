@@ -6,18 +6,19 @@ use lumen_assets::{
 use lumen_core::validation::validate_scene;
 use lumen_core::SharedTextMeasurer;
 use lumen_core::{
-    batch_scope_violations, build_structured_edit_batch, compare_brand_kit_compatibility,
-    compile_dsl_into_scene_with_session_and_protected, compile_styles_brand_kit, derive_instance,
-    generate_brand_kit, layout_scene, platform_default_brand_kit, preflight_scene,
-    summarize_brand_kit_for_authoring, validate_binding_set, validate_brand_kit,
-    validate_brand_kit_product_ready, validate_scene_brand_governance, AssetDigest, AssetId,
-    AssetKind, AssetLicense, AssetLocation, AssetMediaMetadata, AssetProvenance, AssetRecord,
-    AssetSource, AssetStatus, AssetThumbnail, BindingSet, BrandGovernanceStrictness, BrandKit,
-    BrandKitId, BrandMode, BrandSeed, DerivationAssets, DeriveOptions, Diagnostic,
-    DiagnosticSeverity, DocumentId, DslCompileSessionSnapshot, EditScope, EditScopeMode,
-    ExportAdapter, ExportFormat, ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId,
-    Operation, PageId, PdfIntent, PreflightOptions, RasterScale, Scene, ScopeViolation,
-    StructuredEditInstruction, TemplateRevisionId,
+    batch_scope_violations, build_structured_edit_batch_with_text_context,
+    compare_brand_kit_compatibility, compile_dsl_into_scene_with_text_context,
+    compile_styles_brand_kit, derive_instance, generate_brand_kit, layout_scene,
+    platform_default_brand_kit, preflight_scene, summarize_brand_kit_for_authoring,
+    validate_binding_set, validate_brand_kit, validate_brand_kit_product_ready,
+    validate_scene_brand_governance, AssetDigest, AssetId, AssetKind, AssetLicense, AssetLocation,
+    AssetMediaMetadata, AssetProvenance, AssetRecord, AssetSource, AssetStatus, AssetThumbnail,
+    BindingSet, BrandGovernanceStrictness, BrandKit, BrandKitId, BrandMode, BrandSeed,
+    DerivationAssets, DeriveOptions, Diagnostic, DiagnosticSeverity, DocumentId,
+    DslCompileSessionSnapshot, EditScope, EditScopeMode, ExportAdapter, ExportFormat,
+    ExportProfile, ExportPurpose, ExportRequest, Medium, NodeId, Operation, PageId, PdfIntent,
+    PreflightOptions, RasterScale, Scene, ScopeViolation, StructuredEditInstruction,
+    TemplateRevisionId, TextEditContext, TokenResolutionOptions,
 };
 use lumen_export::LumenExportAdapter;
 use lumen_skia::{
@@ -219,6 +220,10 @@ enum CoreRequest {
         edit: StructuredEditInstruction,
         #[serde(default)]
         scope: Option<EditScope>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+        #[serde(default)]
+        mode: Option<Value>,
     },
     CompileDslIntoScene {
         scene: Value,
@@ -229,6 +234,10 @@ enum CoreRequest {
         /// KEEP when omitted (LUMD0262). Defaulted empty (pure declarative).
         #[serde(default)]
         protected_node_ids: Vec<String>,
+        #[serde(default)]
+        brand_kit: Option<Value>,
+        #[serde(default)]
+        mode: Option<Value>,
     },
     PreflightScene {
         scene: Value,
@@ -997,34 +1006,47 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
                 }),
             }
         }
-        CoreRequest::ApplyStructuredEdit { scene, edit, scope } => {
+        CoreRequest::ApplyStructuredEdit {
+            scene,
+            edit,
+            scope,
+            brand_kit,
+            mode,
+        } => {
             let mut scene = parse_scene(scene)?;
-            let batch = build_structured_edit_batch(&scene, &edit).map_err(|error| CoreResponse {
-                ok: false,
-                scene: None,
-                diagnostics: vec![error.diagnostic()],
-                error: Some(core_error(error.kind.code(), error.message)),
-                applied_operations: None,
-                preflight: None,
-                brand_kit: None,
-                brand_summary: None,
-                brand_generation: None,
-                brand_compatibility: None,
-                geometry: None,
-                operations: None,
-                edit: Some(to_value(&edit).unwrap_or_else(|_| json!({"kind": edit.kind()}))),
-                dsl: None,
-                export: None,
-                asset: None,
-                instance: None,
-                web_doc: None,
-                html: None,
-                inverse_operations: None,
-                web_fragment: None,
-                web_theme: None,
-                coverage: None,
-                build_info: None,
+            let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
+            let options = edit_token_options(mode)?;
+            let context = brand_kit.as_ref().map(|brand_kit| TextEditContext {
+                brand_kit,
+                options: &options,
             });
+            let batch = build_structured_edit_batch_with_text_context(&scene, &edit, context)
+                .map_err(|error| CoreResponse {
+                    ok: false,
+                    scene: None,
+                    diagnostics: vec![error.diagnostic()],
+                    error: Some(core_error(error.kind.code(), error.message)),
+                    applied_operations: None,
+                    preflight: None,
+                    brand_kit: None,
+                    brand_summary: None,
+                    brand_generation: None,
+                    brand_compatibility: None,
+                    geometry: None,
+                    operations: None,
+                    edit: Some(to_value(&edit).unwrap_or_else(|_| json!({"kind": edit.kind()}))),
+                    dsl: None,
+                    export: None,
+                    asset: None,
+                    instance: None,
+                    web_doc: None,
+                    html: None,
+                    inverse_operations: None,
+                    web_fragment: None,
+                    web_theme: None,
+                    coverage: None,
+                    build_info: None,
+                });
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(response) => return Ok(response),
@@ -1119,18 +1141,24 @@ fn handle_request(request: CoreRequest) -> Result<CoreResponse, CoreError> {
             source,
             dsl_session,
             protected_node_ids,
+            brand_kit,
+            mode,
         } => {
             let mut scene = parse_scene(scene)?;
+            let brand_kit = brand_kit.map(parse_brand_kit).transpose()?;
+            let options = edit_token_options(mode)?;
+            let context = brand_kit.as_ref().map(|brand_kit| TextEditContext {
+                brand_kit,
+                options: &options,
+            });
             let session = dsl_session
                 .map(serde_json::from_value::<DslCompileSessionSnapshot>)
                 .transpose()
                 .map_err(|error| core_error("helper.dsl_session", error.to_string()))?;
-            let protected: std::collections::BTreeSet<NodeId> = protected_node_ids
-                .into_iter()
-                .map(NodeId::from)
-                .collect();
-            let result = compile_dsl_into_scene_with_session_and_protected(
-                &source, &mut scene, session, protected,
+            let protected: std::collections::BTreeSet<NodeId> =
+                protected_node_ids.into_iter().map(NodeId::from).collect();
+            let result = compile_dsl_into_scene_with_text_context(
+                &source, &mut scene, session, protected, context,
             );
             let applied_operations = result
                 .operation_report
@@ -2921,6 +2949,14 @@ fn parse_scene(value: Value) -> Result<Scene, CoreError> {
 
 fn parse_brand_kit(value: Value) -> Result<BrandKit, CoreError> {
     serde_json::from_value(value).map_err(|error| core_error("helper.brand_kit", error.to_string()))
+}
+
+fn edit_token_options(mode: Option<Value>) -> Result<TokenResolutionOptions, CoreError> {
+    let mut options = TokenResolutionOptions::default();
+    if let Some(mode) = mode {
+        options.mode = parse_brand_mode(mode)?;
+    }
+    Ok(options)
 }
 
 fn parse_brand_mode(value: Value) -> Result<BrandMode, CoreError> {

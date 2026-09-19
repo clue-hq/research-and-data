@@ -35,6 +35,7 @@ from clue_gateway.metadata import (
     ROLE_KEY,
     CostSource,
 )
+from clue_gateway.openrouter_chat import OpenRouterChatModel
 from clue_gateway.tracing import record_model_call
 from clue_obs import get_logger
 from clue_obs.otel import ATTR_AGENT_ROLE, ATTR_MODEL, SPAN_LLM_GATEWAY_CALL, traced_step
@@ -177,21 +178,50 @@ def transient_upstream_failure(error: BaseException) -> bool:
         # An in-body Responses error is the authoritative verdict, and must be read BEFORE any
         # status: ``langchain_openai`` re-raises it with the raw HTTP response attached, and that
         # response is the 200 the failing body arrived in.
+        #
+        # Two vocabularies arrive in that ``code`` field. The Responses enum is a string
+        # (``server_error``). OpenRouter's proxy layer instead relays the UPSTREAM HTTP status
+        # as the code — seen live twice on 2026-09-04 as ``{"message": "Auth context expired",
+        # "code": 502}`` on a 136 s and a 236 s grok generation, each of which discarded a whole
+        # web turn. A numeric code is therefore read as the status it is.
+        numeric = _numeric_code(code)
+        if numeric is not None:
+            return _transient_status(numeric)
         return code in _TRANSIENT_RESPONSE_ERROR_CODES
     status = getattr(error, "status_code", None)
     if status is None:
         status = getattr(getattr(error, "response", None), "status_code", None)
-    return isinstance(status, int) and (status >= 500 or status in _TRANSIENT_STATUS_CODES)
+    return isinstance(status, int) and _transient_status(status)
+
+
+def _transient_status(status: int) -> bool:
+    """429 = rate limited, 408/409 = request timeout / conflict, >=500 = upstream fault."""
+
+    return status >= 500 or status in _TRANSIENT_STATUS_CODES
 
 
 def _response_error_code(argument: object) -> str | None:
-    """The Responses ``error.code`` an exception argument carries, if it is one."""
+    """The in-body ``error.code`` an exception argument carries, if it is one.
+
+    A string enum member is returned as is; an integer (OpenRouter relaying the upstream HTTP
+    status) is returned as its decimal text so the caller reads both through one path.
+    """
 
     if isinstance(argument, Mapping):
         code = argument.get("code")
     else:
         code = getattr(argument, "code", None)
+    if isinstance(code, bool):
+        return None
+    if isinstance(code, int):
+        return str(code)
     return code if isinstance(code, str) else None
+
+
+def _numeric_code(code: str) -> int | None:
+    """The HTTP status a ``code`` field spells, or ``None`` when it is an enum word."""
+
+    return int(code) if code.isdigit() else None
 
 
 def _transient_retry_backoff_s(error: Exception, attempt: int) -> float | None:
@@ -693,6 +723,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 zip(self.models, self.model_ids, strict=True)
             ):
                 yielded = False
+                pending: ChatGenerationChunk | None = None
                 try:
                     for chunk in model._stream(
                         messages,
@@ -700,9 +731,15 @@ class GovernedAgentChatModel(BaseChatModel):
                         run_manager=run_manager,
                         **kwargs,
                     ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
                         yielded = True
-                        _stamp_answering_model(chunk.message, fallback=model_id)
-                        yield chunk
+                        yield pending
                     return
                 except Exception as exc:
                     # A partially consumed stream cannot be replayed: the consumer already holds
@@ -734,6 +771,7 @@ class GovernedAgentChatModel(BaseChatModel):
                 zip(self.models, self.model_ids, strict=True)
             ):
                 yielded = False
+                pending: ChatGenerationChunk | None = None
                 try:
                     async for chunk in model._astream(
                         messages,
@@ -741,9 +779,15 @@ class GovernedAgentChatModel(BaseChatModel):
                         run_manager=run_manager,
                         **kwargs,
                     ):
+                        if pending is not None:
+                            _strip_model_keys(pending.message)
+                            yielded = True
+                            yield pending
+                        pending = chunk
+                    if pending is not None:
+                        _stamp_answering_model(pending.message, fallback=model_id)
                         yielded = True
-                        _stamp_answering_model(chunk.message, fallback=model_id)
-                        yield chunk
+                        yield pending
                     return
                 except Exception as exc:
                     # A partially consumed stream cannot be replayed: the consumer already holds
@@ -1037,7 +1081,7 @@ class OpenRouterAgentModelProvider:
                 }
                 if chat_reasoning:
                     extra_body["reasoning"] = chat_reasoning
-            return ChatOpenAI(  # type: ignore[call-arg]
+            return OpenRouterChatModel(  # type: ignore[call-arg]
                 model=model_id,
                 api_key=self._api_key,
                 base_url=self._config.base_url,
@@ -1046,6 +1090,7 @@ class OpenRouterAgentModelProvider:
                 max_tokens=max_output_tokens,
                 temperature=temperature,
                 stream_usage=True,
+                use_responses_api=False,
                 http_client=self._http_client,
                 http_async_client=self._http_async_client,
                 extra_body=extra_body or None,
@@ -1192,6 +1237,17 @@ def _normalize_tool_choice(
     if tool_choice in tool_names:
         return {"type": "function", "function": {"name": tool_choice}}
     raise ValueError(f"tool_choice names no bound function: {tool_choice!r}")
+
+
+_MODEL_KEYS: tuple[str, ...] = ("model_name", "model", _ANSWERING_MODEL_KEY)
+
+
+def _strip_model_keys(message: BaseMessage) -> None:
+    """LangChain's chunk merge concatenates equal string metadata, so only ONE chunk of a stream
+    may carry the model keys (the last, which is the provider's truthful one)."""
+    metadata = message.response_metadata
+    if any(key in metadata for key in _MODEL_KEYS):
+        message.response_metadata = {k: v for k, v in metadata.items() if k not in _MODEL_KEYS}
 
 
 def _stamp_answering_model(message: BaseMessage, *, fallback: str) -> None:

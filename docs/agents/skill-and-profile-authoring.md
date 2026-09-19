@@ -13,7 +13,21 @@ platform/agents/catalog/
 Runtime workspace copies under `.deepagent/` are immutable materializations, not source files.
 Never edit a runtime workspace to change agent behavior.
 
-## Current resource map
+## Research-field scope amendment — 2026-09-16
+
+The workspace-local agent-proposal change has a
+[detailed plan](../superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md) and
+[prepared operating instructions](research-field-scope.md). Its release must update the actual
+Head-of-ABM manual, both ARV2 research bundles and platform-only snapshot generation. A repository
+prose edit alone does not reach the running agent.
+
+Current code selects Head of ABM **v57**, manual **v4**, and ARV2 account/person bundles **v1**.
+The table below describes the original C6 baseline, not the current selector inventory. Inspect
+`C6_ACTIVE_PROFILE_VERSIONS`, the selected profile and `arv2/account_research_catalog.py` before
+choosing new versions. The scope amendment is not active; publish replacement guidance alongside
+compatible backend/data changes.
+
+## Original C6 resource map (historical baseline)
 
 | Role | System prompt | Progressively disclosed skills | Active profile |
 |---|---|---|---|

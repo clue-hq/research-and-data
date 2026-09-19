@@ -12,8 +12,12 @@ from httpx import ASGITransport
 from sqlalchemy import text
 
 from clue_api import build_tool_invoker, create_projections_app
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.chat import RequestPrincipal
-from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+)
 from clue_api.chat.router import _first_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
@@ -190,17 +194,25 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                             "object_id": str(account_id),
                             "label": "Northstar Labs",
                             "secondary_label": "northstar.example",
-                            "image_url": None,
+                            # The same logo the accounts list shows: Brandfetch's Logo API
+                            # for the domain when a client id is configured, else none.
+                            "image_url": brandfetch_logo_url(
+                                "northstar.example",
+                                client_id=_settings().brandfetch_client_id,
+                            ),
                             "version": None,
+                            "account_id": None,
+                            "account_name": None,
                         }
                     ],
                     "agent_profiles": [
                         {
                             "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                            "label": "GPT-5.6 Terra",
-                            "short_label": "GPT-5.6 Terra",
-                            "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
-                            "model_id": "openai/gpt-5.6-terra",
+                            "label": "Grok 4.6",
+                            "short_label": "Grok 4.6",
+                            "description": "Clue's governed Grok 4.6 conversation profile",
+                            # The wire echoes the constant; which model it names is not asserted.
+                            "model_id": PROJECT_CONVERSATION_MODEL_ID,
                         }
                     ],
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,

@@ -10,14 +10,17 @@ function Segment({
   active,
   children,
   onClick,
+  disabled = false,
 }: {
   active: boolean;
   children: React.ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       aria-pressed={active}
+      disabled={disabled}
       className={`${styles.segment} ${active ? styles.segmentActive : ""}`}
       onClick={onClick}
       type="button"
@@ -82,12 +85,25 @@ export function BrandContextHeader({
 
         <header className={styles.documentTitleBar}>
           <h1>{controller.selectedDocument.name}</h1>
-          {/* No Preview/Edit control here: every knowledge document — the
-              onboarding documents and the kit's Design brief alike — is the
-              platform's own writing, and this page only reads it (founder
-              ruling, 2026-09-08). */}
           <div className={styles.headerActions}>
             <BrandKitActionsRow controller={brandKitActions} />
+            <div aria-label="Document view" className={styles.segmentedControl} role="group">
+              <Segment active={controller.knowledgeEditor.mode === "preview"} onClick={() => controller.knowledgeEditor.setMode("preview")}>
+                <BrandContextIcon name="eye" size={12} /> Preview
+              </Segment>
+              <Segment active={controller.knowledgeEditor.mode === "edit"} disabled={!controller.knowledgeEditor.canEdit} onClick={() => controller.knowledgeEditor.setMode("edit")}>
+                <BrandContextIcon name="edit" size={12} /> Edit
+              </Segment>
+            </div>
+            {controller.knowledgeEditor.dirty ? (
+              <>
+                <button className={styles.secondaryButton} disabled={controller.knowledgeEditor.busy} onClick={controller.knowledgeEditor.discard} type="button">Discard changes</button>
+                <button className={styles.primaryButton} disabled={!controller.knowledgeEditor.canSave} onClick={controller.knowledgeEditor.save} type="button">
+                  {controller.knowledgeEditor.saving ? "Saving…" : "Save changes"}
+                </button>
+              </>
+            ) : null}
+            {controller.knowledgeEditor.saved ? <span className={styles.documentSaveStatus} role="status">Saved</span> : null}
           </div>
         </header>
       </div>

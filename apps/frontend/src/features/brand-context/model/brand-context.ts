@@ -13,6 +13,7 @@ export const BrandAssetCategorySchema = z.enum([
   "logo",
   "background",
   "mockup",
+  "upload",
   "ai-generated",
 ]);
 export const BrandAssetSortKeySchema = z.enum(["name", "type", "size", "created"]);
@@ -35,6 +36,13 @@ export const BrandTypefaceSchema = z.object({
   family: z.string(),
   id: z.string(),
   source: z.enum(["library", "custom"]),
+  /** Namespaced per kit version so another brand's font cannot replace it. */
+  previewFamily: z.string().optional(),
+  faces: z.array(z.object({
+    url: z.string(),
+    weight: z.number().int().min(1).max(1000),
+    style: z.enum(["normal", "italic"]),
+  })).optional(),
 });
 
 export const BrandTextStyleSchema = z.object({
@@ -66,6 +74,8 @@ export const BrandAssetSchema = z.object({
   dimensions: z.string(),
   id: z.string(),
   name: z.string(),
+  /** Where the row came from: the brand kit itself, or the workspace asset registry. */
+  origin: z.enum(["kit", "registry"]),
   sizeBytes: z.number().nonnegative(),
   sizeLabel: z.string(),
   type: z.string(),
@@ -79,6 +89,9 @@ export const BrandKnowledgeDocumentSchema = z.object({
   name: z.string(),
   path: z.string(),
   updatedLabel: z.string(),
+  /** Only persisted Knowledge documents have a version; generated Design briefs do not. */
+  version: z.number().int().positive().optional(),
+  bodyLoaded: z.boolean().optional(),
 });
 
 export const BrandKnowledgeFolderSchema = z.object({
@@ -116,65 +129,4 @@ export interface BrandContextInitialState {
   colorMode: BrandColorMode;
   filePath?: string;
   section: BrandContextSection;
-}
-
-export interface MarkdownBlock {
-  depth?: number;
-  items?: string[];
-  text?: string;
-  type: "heading" | "paragraph" | "list";
-}
-
-export function parseKnowledgeMarkdown(source: string): MarkdownBlock[] {
-  const lines = source.split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
-
-  function flushParagraph() {
-    if (!paragraph.length) return;
-    blocks.push({ text: paragraph.join(" "), type: "paragraph" });
-    paragraph = [];
-  }
-
-  function flushList() {
-    if (!listItems.length) return;
-    blocks.push({ items: listItems, type: "list" });
-    listItems = [];
-  }
-
-  for (const line of lines) {
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
-    const listItem = /^[-*]\s+(.+)$/.exec(line);
-
-    if (heading) {
-      flushParagraph();
-      flushList();
-      blocks.push({
-        depth: heading[1].length,
-        text: heading[2],
-        type: "heading",
-      });
-      continue;
-    }
-
-    if (listItem) {
-      flushParagraph();
-      listItems.push(listItem[1]);
-      continue;
-    }
-
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    flushList();
-    paragraph.push(line.trim());
-  }
-
-  flushParagraph();
-  flushList();
-  return blocks;
 }

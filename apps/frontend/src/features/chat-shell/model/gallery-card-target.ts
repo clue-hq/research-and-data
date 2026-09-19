@@ -1,3 +1,4 @@
+import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import type { ChatShellOpenArtifact } from "./chat-shell";
 
@@ -25,16 +26,19 @@ import type { ChatShellOpenArtifact } from "./chat-shell";
 export interface GalleryCardArtifact {
   id: string;
   title: string;
-  type: ProjectArtifact["type"];
+  type?: ProjectArtifact["type"];
+  document?: ProjectDocument;
 }
 
 export type GalleryCardTarget =
   | { artifact: ChatShellOpenArtifact; surface: "artifact" }
-  | { surface: "target-accounts" };
+  | { surface: "target-accounts" }
+  | { surface: "plan"; documentPath: string };
 
 export function galleryCardTarget(
   card: GalleryCardArtifact,
 ): GalleryCardTarget {
+  if (card.document) return { surface: "plan", documentPath: card.document.path };
   if (card.type === "table") return { surface: "target-accounts" };
   return {
     artifact: {

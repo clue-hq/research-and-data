@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
-from typing import Annotated, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -58,7 +58,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
+from clue_obs.otel import bind_and_annotate
 from clue_storage import StorageBackend
+
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.frontend_read")
 
@@ -129,6 +133,13 @@ def frontend_read_workspace_resolver(
 
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    # ``bind_and_annotate`` (not a plain bind), mirroring
+    # ``projections_app.header_workspace_resolver``:
+    # the instrumentor's server span opened before any route dependency ran, so the span that is
+    # already open needs the workspace written onto it, not just bound for what comes after. In
+    # production the composition root overrides this resolver with the authenticated ``workspace``
+    # dependency, which stamps the same way — so both modes annotate identically.
+    bind_and_annotate(workspace_id=x_workspace_id)
     return x_workspace_id
 
 
@@ -204,6 +215,7 @@ def build_frontend_read_router(
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
@@ -228,19 +240,38 @@ def build_frontend_read_router(
         return router
     # Imported here, not at module scope: the endpoint modules import ``WorkspaceDep`` from this
     # one, so a top-level import would be circular.
+    from clue_api.agent_turn_wiring import DurableAgentArtifactStore
     from clue_api.frontend_read.account_detail import register_account_detail_routes
     from clue_api.frontend_read.account_logo import register_account_logo_route
     from clue_api.frontend_read.account_workspace import register_account_workspace_routes
     from clue_api.frontend_read.accounts_list import register_accounts_list_routes
+    from clue_api.frontend_read.artifacts import register_artifact_routes
     from clue_api.frontend_read.brand_knowledge import register_brand_knowledge_routes
     from clue_api.frontend_read.bulk_actions import register_bulk_action_routes
     from clue_api.frontend_read.contacts import register_contact_routes
+    from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
+    from clue_api.frontend_read.project_documents import register_project_document_routes
+    from clue_api.frontend_read.research_progress import register_research_progress_route
+    from clue_api.frontend_read.settings import register_settings_routes
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
     )
-    display = DisplayPages(settings=settings, secrets=secrets, conn_factory=conn_factory)
+    # Slice 1b: a written section's raw body becomes an artifact the ledger row cites, so the
+    # display seam is handed a sink built on the storage this root already holds. No storage,
+    # no sink — and the seam then serves stored pages instead of writing ones it cannot record.
+    display = DisplayPages(
+        settings=settings,
+        secrets=secrets,
+        conn_factory=conn_factory,
+        artifacts=(
+            None
+            if evidence_storage is None
+            else DurableAgentArtifactStore(storage=evidence_storage, conn_factory=conn_factory)
+        ),
+    )
+    register_settings_routes(router, conn_factory=conn_factory, settings=settings, secrets=secrets)
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
@@ -263,6 +294,21 @@ def build_frontend_read_router(
     register_account_workspace_routes(router, conn_factory=conn_factory, display=display)
     # The account's mark-type logo, streamed by the platform (founder ruling 2026-09-11).
     register_account_logo_route(router, conn_factory=conn_factory)
+    # The project's latest discovery run — the Target accounts tab's live poll (2026-09-12).
+    register_discovery_status_route(router, conn_factory=conn_factory)
+    # The pinned research progress card's document (spec 2026-09-12).
+    register_research_progress_route(router, conn_factory=conn_factory)
+    # The project's own documents — the plan the agent writes and the human edits (2026-09-12).
+    register_project_document_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+        # The human's PUT refreshes the project library it just moved (2026-09-14).
+        library=project_library,
+    )
+    # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
+    register_artifact_routes(router, conn_factory=conn_factory)
     register_contact_routes(
         router,
         conn_factory=conn_factory,
@@ -271,7 +317,12 @@ def build_frontend_read_router(
         allow_local_mutations=allow_local_mutations,
         display=display,
     )
-    register_brand_knowledge_routes(router, conn_factory=conn_factory, storage=evidence_storage)
+    register_brand_knowledge_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+    )
     return router
 
 
@@ -306,6 +357,7 @@ def install_frontend_read_surface(
     evidence_storage: StorageBackend | None = None,
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -324,6 +376,7 @@ def install_frontend_read_surface(
                 evidence_storage=evidence_storage,
                 contact_email_lookup=contact_email_lookup,
                 secrets=secrets,
+                project_library=project_library,
             )
         )
 

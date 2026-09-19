@@ -105,9 +105,7 @@
 .documentItem {
   display: flex;
   width: 100%;
-  /* A minimum, never a fixed height: a long document title wraps onto a second
-     line, and a fixed 32px made those lines overlap the next item in the tree. */
-  min-height: 32px;
+  height: 32px;
   align-items: center;
   border: 0;
   border-radius: 4px;
@@ -126,7 +124,6 @@
 }
 
 .documentItem {
-  align-items: flex-start;
   padding: 0 0 0 16px;
   font: 400 13px/18px "Satoshi", Arial, sans-serif;
 }
@@ -142,14 +139,43 @@
 .documentItemContent {
   display: flex;
   min-width: 0;
-  min-height: 32px;
+  height: 32px;
   flex: 1;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  /* 7 + 18 (one line) + 7 = the 32px row a single-line title still occupies. */
-  padding: 7px 8px 7px 16px;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  padding: 0 8px 0 16px;
+}
+
+.documentIcon {
+  flex: none;
+}
+
+.documentTitle {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.documentTitleText {
+  display: block;
+  width: max-content;
+  white-space: nowrap;
+}
+
+.documentItem:is(:hover, :focus-visible) .documentTitleText {
+  animation: document-title-scroll 5s ease-in-out 1;
+}
+
+@keyframes document-title-scroll {
+  0%, 15%, 100% { transform: translateX(0); }
+  75%, 85% { transform: translateX(min(0px, calc(100cqw - 100%))); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .documentItem:is(:hover, :focus-visible) .documentTitleText {
+    animation: none;
+  }
 }
 
 .contextNavItem:hover,
@@ -384,6 +410,8 @@
 .documentTitleBar {
   min-height: 84px;
   padding: 24px 24px 24px 32px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .documentTitleBar h1 {
@@ -435,6 +463,9 @@
   color: var(--clue-ds-color-content-neutral);
   box-shadow: none;
 }
+
+.segment:disabled { cursor: not-allowed; opacity: 0.5; }
+.documentSaveStatus { color: var(--clue-ds-color-content-subtle); font-size: 12px; }
 
 .colorModeControl .segment {
   width: auto;
@@ -814,6 +845,7 @@
 }
 
 .assetCardPreview {
+  position: relative;
   display: flex;
   width: 100%;
   height: auto;
@@ -832,6 +864,19 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* A kit item inside the kit ∪ registry list: which pictures the brand itself vouches for. */
+.assetCardBadge {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  background: #fff;
+  color: #44483F;
+  font: 500 10px/14px "Satoshi", Arial, sans-serif;
 }
 
 .assetCardPreview .assetImage[src$="clue-sidebar.svg"] {
@@ -1083,7 +1128,7 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  height: 116px;
+  min-height: 116px;
   flex-direction: column;
   gap: 8px;
   border: 0.5px solid var(--clue-ds-color-border-subtle);
@@ -1092,14 +1137,19 @@
 }
 
 .typefaceRow p {
-  overflow: hidden;
+  font-synthesis: none;
   margin: 0;
   color: var(--clue-ds-color-content-neutral);
   font-size: 18px;
   font-weight: 400;
   line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.typefacePreviewStatus {
+  color: var(--clue-ds-color-content-subtle);
+  font: 400 13px/20px "Satoshi", Arial, sans-serif;
 }
 
 .typefaceName {
@@ -1287,50 +1337,18 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
-.markdownPreview {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 48px 48px 96px;
+.knowledgeEditorFrame {
+  margin: 24px 32px 48px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--clue-ds-color-border-subtle);
+  border-radius: var(--clue-ds-product-component-button-md-radius);
 }
-
-.markdownPreview h2,
-.markdownPreview h3,
-.markdownPreview h4 {
-  color: var(--clue-ds-color-content-neutral);
-}
-
-.markdownPreview h2 {
-  margin: 0 0 24px;
-  font: 700 24px/36px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview h3 {
-  margin: 32px 0 12px;
-  font: 500 16px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview h4 {
-  margin: 24px 0 8px;
-  font: 500 14px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview p,
-.markdownPreview li {
-  color: var(--clue-ds-color-content-neutral);
-  font: 400 14px/20px "Satoshi", Arial, sans-serif;
-}
-
-.markdownPreview p {
-  margin: 0 0 20px;
-}
-
-.markdownPreview ul {
-  margin: 0 0 22px;
-  padding-left: 22px;
-}
-
-.markdownPreview li + li {
-  margin-top: 5px;
+.documentSaveError {
+  margin: 16px 32px 0;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
 }
 
 .emptyState {
@@ -1355,9 +1373,9 @@
 .assetDialog {
   position: relative;
   display: grid;
-  width: min(1053px, calc(100vw - 64px));
-  height: min(720px, calc(100vh - 64px));
-  grid-template-columns: minmax(0, 1.62fr) minmax(300px, 0.72fr);
+  width: min(1440px, calc(100vw - 64px));
+  height: min(960px, calc(100dvh - 64px));
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 28vw, 360px);
   overflow: hidden;
   border: 1px solid var(--clue-ds-color-border-subtle);
   border-radius: 10px;
@@ -1398,19 +1416,16 @@
 
 .assetDialogPreview img {
   display: block;
-  width: min(280px, 70%);
-  max-height: 70%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 
-.assetDialogPreview img[src$="abm-campaign.png"] {
-  width: 100%;
-  max-height: 100%;
-  object-fit: cover;
-}
-
 .assetDialogDetails {
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  overflow-wrap: anywhere;
   border-left: 1px solid var(--clue-ds-color-border-subtle);
   padding: 26px 28px;
 }
@@ -1789,9 +1804,11 @@
   }
 
   .assetDialog {
-    height: min(760px, calc(100vh - 32px));
+    width: calc(100vw - 32px);
+    height: min(960px, calc(100dvh - 32px));
+    flex-shrink: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(220px, 0.8fr) minmax(300px, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .assetDialogDetails {
@@ -1825,9 +1842,6 @@
     min-width: 614px;
   }
 
-  .markdownPreview {
-    padding: 32px 24px 72px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

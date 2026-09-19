@@ -216,6 +216,13 @@
   gap: 6px;
 }
 
+.profileFieldHint {
+  color: var(--clue-ds-color-content-subtle, #5d6470);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
 .profileField > input,
 .nameGrid input {
   min-width: 0;

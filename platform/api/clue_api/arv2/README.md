@@ -302,6 +302,14 @@ leniency is a flag, not a fork. The URL rule itself moved from construction to p
 `clue_core.Claim` now admits a URL-less research claim and `can_be_promoted` refuses it, so such a
 row exists honestly and is never served as verified truth.
 
+**Workspace field follow-up (2026-09-16; planned, not implemented):** the unknown-key branch still
+registers a global definition, although its claim is private. Human Settings fields already use
+the workspace registry. The [implementation plan](../../../../docs/superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md)
+covers trusted agent registration, lifecycle/namespace rules, historical global reconciliation and
+platform-only manual snapshots. The [agent guidance](../../../../docs/agents/research-field-scope.md)
+specifies immutable manual/bundle updates and activation. Retired/erased local fields are already
+hard refusals today; they are not unknown proposals. Leniency does not bypass tenancy/lifecycle.
+
 **The answer key.** `answer_key.py` is pure mapping — it turns the two proof-of-concept JSON files
 (the Zafran one-account run, 174 rows; the ten-person depth run, 119 rows) into `ClaimDraft`s and a
 manifest, with no database in sight: the persona map (`executive_sponsor` → `economic_buyer`,
@@ -1607,3 +1615,458 @@ discovery run against real providers.
   roughly **$0.04 per company**, on top of the four gate calls. Recorded as final-review finding I3;
   until it is decided, a company that clears every hard gate but sells to consumers can still land
   as a High-fit candidate for a human to read.
+
+## ICP authoring and project-scoped documents (2026-09-12)
+
+Before this, the only way a profile came into being was `synthesize_icps` during the brand's
+onboarding walk: the walk wrote the brand's ICPs, a human confirmed one, and a project pinned it.
+A marketer who read the proposals and said *"none of these is who we sell to"* had nowhere to go.
+Now the Head of ABM can **write one down** in the conversation, and can ask for the **personas** of
+a profile the human has confirmed. The documents an authoring turn produces can be **project-local**
+— the same brand, a different project, a different profile — which is why the knowledge tables
+grew a scope.
+
+### The schema (migration `b953bf11e2a9`)
+
+`brand_knowledge_document` gains:
+
+- **`project_id text NULL`** — `NULL` is the brand's own knowledge; a value scopes the row to one
+  project. The FK is composite (`(project_id, workspace_id) → project`), so a document cannot scope
+  itself into another tenant's project.
+- **`derived_from_document_id uuid NULL`** — the brand-level document this one was written from
+  (self-FK). Lineage, not currency: it says what the author read, never what is served. **The FK is
+  single-column, so it carries no tenancy component**: it is resolved inside one workspace at write
+  time (`icp_authoring._derived_from` reads through `current_icp_document` with the request's
+  `workspace_id`), and that is the only thing making a link same-tenant. Every reader that *follows*
+  lineage must therefore re-check the target's own `workspace_id` against the reader's rather than
+  trusting the pointer — the column does not guarantee it.
+- The old `brand_knowledge_document_path_version` UNIQUE is replaced by the **scope-aware unique
+  index** `brand_knowledge_document_scope_path_version (workspace_id, brand_id,
+  COALESCE(project_id, ''), path, version)` — one path may exist once per scope per version, so a
+  project's variant of `audience/icp.md` coexists with the brand's. The `''` sentinel is
+  load-bearing; a real project id is never empty (the composite FK makes it unreachable).
+- A partial index for the project reads, `'project'` admitted to the folder CHECK and
+  `'project-plan'` to the kind CHECK.
+
+`onboarding_run` gains **`kind text NOT NULL DEFAULT 'full'`** (`'full' | 'personas'`),
+**`project_id`**, and **`persona_icp_document_id`**, welded by
+`onboarding_run_persona_shape`: `(kind = 'personas') = (persona_icp_document_id IS NOT NULL)`. A
+partial index enforces the one-open-personas-run-per-ICP-document read.
+
+### The reader rule
+
+One sentence decides every read: **a brand reader sees brand rows; a project reader sees both and
+lets the project win.**
+
+- **Brand readers filter `project_id IS NULL`.** `brand_knowledge_context.current_knowledge_documents`,
+  the five onboarding-walk reads in `onboarding_store` (the walk writes the *brand's* knowledge and a
+  project variant must not push its version chain along), and every `frontend_read/brand_knowledge`
+  read including the PUT's `FOR UPDATE`/`MAX(version)` pair. That module's `IntegrityError` mapping
+  now names `brand_knowledge_document_scope_path_version`.
+- **Project readers union.** `current_project_knowledge_refs(conn, *, workspace_id, project_id)` is
+  the mirror of the brand reader; `_current_input_documents` in `onboarding_synthesis_wiring` unions
+  the ICP's project over the brand so a persona turn can read the very document it was asked about.
+- **The ICP lookup orders project-local first.** `icp_confirmation.current_icp_document(...,
+  project_id=)` selects `AND (project_id IS NULL OR project_id = :project_id)` and orders
+  `path, (project_id IS NULL), version DESC` — a project-local row wins its path, and an unscoped
+  read (`project_id=None`) sees brand rows only. **[Widened 2026-09-14, founder ruling on
+  free-flowing documents]** the row set is no longer filtered to `kind = 'icp-definition'`: an ICP
+  is a document the human agreed to pin as one, written wherever the agent judged sensible, so the
+  key its front matter claims is the identity and the candidates are merely *ordered* by how
+  ICP-shaped they are (the canonical path first, then the ICP kind, then path order). The gate also
+  presents a `ready` document now, because every document the agent writes is born `ready` and the
+  gate itself is the pin. `confirm_icp_document` mints the next version *in
+  the subject's own scope* (`IS NOT DISTINCT FROM`) and carries `project_id` +
+  `derived_from_document_id` forward; `ProjectIcpPin` carries the scope too.
+  `account_research_store.read_persona_documents` is scoped the same way (a project's own persona
+  beats the brand's), threaded from `run.project_id`.
+- **Materialization.** `workspace_paths` groups by `(project_id, path)`; a project ref resolves
+  through `project_workspace_path`, so it lands under `inputs/project/…` rather than
+  `inputs/brand/knowledge/…`, and `knowledge_seed_files` **skips** it — plan 1's project-files pin
+  owns everything under `inputs/project/`. `project_status.current_project_documents` compiles those
+  rows onto the lease beside `status.md`/`decisions.md`, and `status.md` lists them under *Project
+  documents* off the same read, so the card cannot name a file the turn does not seed.
+- **Pin vs current, one rule in both scopes.** A path can carry two live versions at once: the one
+  the project **pinned** and a newer one published since. The pinned version keeps the plain name
+  and the other is offered beside it as `…/icp-<key>.v<n>.md`
+  (`brand_knowledge_context.version_qualified_path`). The brand's side does this in
+  `workspace_paths`; the project's side does it in `project_status._project_document_refs`, which
+  reads `current_project_icp_pin` and compiles **both** versions when the pinned project-scoped
+  document is no longer the current one. `author_icp_document`'s receipt resolves `workspace_path`
+  by the same rule, so the file the receipt names is the file the next turn opens.
+- **The brand index card lists brand rows only.** A project-scoped document rides the pinned set
+  (that is how its bytes reach the turn, and how `confirmed_icp` names it) but is listed by the
+  project's own card. `status.md`'s *Confirmed ICP* line likewise renders under the prefix of the
+  pin's own scope (`ProjectIcpPin.project_id`), never unconditionally under the brand's.
+- **The gate's catalog lookup is brand-only.** `product_set_selection_gate_tools._current_catalog`
+  filters `project_id IS NULL`: the ICP lookup beside it must find the project's variant, but what
+  the brand sells is the brand's fact.
+
+### The two tools
+
+> **Retired from the profile 2026-09-14 (plan 3).** `head-of-abm@v55` grants neither
+> `author_icp_document@1` nor `request_persona_synthesis@1`, and `recipe0-stage0-v27.json` admits
+> neither address. The Head of ABM now *writes* both documents with the ordinary `write_file` at
+> `project/audience/icp-<key>.md` and `project/audience/persona-<key>.md`, through the
+> `icp-authoring` / `persona-authoring` skills: `project/` is mounted as a **versioned root**
+> (`platform/agents/clue_agents/versioned_root.py` — the `VersionedRootWriter` seam and its
+> `VersionedWriteOutcome` / `VersionedWriteRefused`), and every write there runs
+> `platform/api/clue_api/project_root_writer.py`, which picks the writer by folder and calls the
+> very stores described below — `arv2/icp_authoring.py` for an ICP (still born `proposed`, the
+> human's gate still decides) and `arv2/project_documents.py::write_project_persona` for a persona
+> (`ready`, for the project's **pinned** ICP key only). The personas-only `onboarding_run.kind` is
+> therefore retired as a *production entry point*: no current profile opens one. Both tools stay
+> registered and both code paths stay intact, for replay of receipts pinned to recipe ≤ 26; outside
+> replay they are uncomposed. Everything below describes them as they were at v46 / v23 / v24 and
+> remains true for those revisions.
+
+**`author_icp_document@1`** (`clue_api/icp_authoring_tools.py` over
+`arv2/icp_authoring.py`) — WRITE, `DOMAIN_IDEMPOTENT`, free. The model supplies `icp_key`, the whole
+`document`, `scope` (`brand` | `project`) and an optional `derived_from_icp_key`; the project, brand,
+human and turn come from the trusted `source_turn_ref` (pinned through
+`_presenting_turn_project_pin`). The row is born **`proposed`** — authoring proposes, the human's
+confirmation gate still decides. The document id is
+`uuid5("arv2-icp-authoring:{turn}:{scope}:{key}")`, so a replay inside one turn returns the stored
+row rather than re-rendering (the `authored_at` stamp is the one non-deterministic byte). Platform
+front matter (`status`, `brand_id`, `project_id`, `derived_from`, the confirmation stamp,
+`product_selection_version`, `user_edit`) is stripped from whatever the model typed and re-stamped
+from the resolved rows. Supersede is scope-local and never retires a `confirmed` row.
+Refusals: `icp_key_invalid`, `icp_front_matter_invalid` (kind / `icp_key` / non-empty `product_ids`
+/ non-empty `hard_gates`, with the reason in the message), `icp_key_taken_by_brand`,
+`icp_key_taken_by_project` (only a *servable* row owns a key — a superseded one's name is free
+again), `derived_from_not_found`, `icp_document_version_race`; plus the turn-binding
+`authoring_turn_ref_malformed` / `authoring_turn_not_found` / `authoring_addressee_missing` and
+`icp_authoring_not_composed`.
+
+**`request_persona_synthesis@1`** (`clue_api/persona_request_tools.py`) — SPEND,
+`DOMAIN_IDEMPOTENT`, composed behind `onboarding_v2_enabled` (what it opens *is* an onboarding run;
+with the lane off no worker would drive it and the row would hold that document's one open slot
+forever). It takes the `icp_key`, checks it against the project's **pinned** ICP, and offers a
+**personas-only onboarding run** through `DbOnboardingEnqueuer` — one place knows the task shape.
+`persona_run_id = uuid5("arv2-persona-run:{ws}:{document_id}:{turn}")`.
+A second call inside one turn is answered from the run at that turn's own derived id rather than
+re-offered: still open or `completed`/`completed_with_gaps` → the same receipt with `replayed=true`;
+`failed` → `persona_run_settled` ("ask again on a new turn"), because a terminal work row can never
+be re-offered and the old fall-through reported that as `enqueue_failed`.
+Refusals: `persona_synthesis_not_composed`, `icp_not_pinned_for_project` (covers both "no pin" and
+"not this key" — one fact from the agent's side), `persona_run_already_open`, `persona_run_settled`,
+`brand_not_onboarded` (no completed `full` walk to copy the company domain from), `enqueue_failed`
+(which leaves the run `failed`, so the document is free again), plus the turn-binding trio.
+
+`status.md` grows a **Personas** section off this project's `personas` `onboarding_run` rows (the
+newest three: status, `requested_at`, `finished_at`), so a run that failed, stalled or finished with
+gaps is visible to the agent that asked and to the human waiting for the document — `read_current_run`
+deliberately filters `kind = 'full'`, so nothing else surfaced it.
+
+### The personas-only run
+
+`onboarding_driver._run` branches to `_personas_only` before anything else: `mark_run_running` →
+one `_persona_step` (the same step the full walk runs, unchanged) → `finish_run`. No client binding,
+no recon, no catalog sync, no ICP turn — the brand was onboarded long ago. The `IcpRef` carries
+`project_id`, so the persona is registered in the **ICP's own scope**, and `_register_documents`
+takes its `project_id` from the ICP it was asked about.
+
+Two filters keep the personas run out of the full walk's surfaces: `read_current_run` adds
+`AND kind = 'full'` (the setting-up screen and `read_onboarding_status` render steps a personas run
+does not have), and the `POST /onboarding` 409 `onboarding_in_progress` query does the same — a
+personas run must not hold the workspace's one start slot.
+
+### The grant (skill v23, profile v46, recipe v24)
+
+`stage0-interview@v23` pins both tools and teaches them in prose: §1 names the `inputs/project/`
+files, §3's outcomes, §5's *Revised* bullet, new **§5b "Author a profile"** (write the document,
+choose `brand` vs `project` scope, name `derived_from_icp_key`, then open the confirmation gate —
+authoring never confirms) and **§5c "Personas for a confirmed profile"**, and §10.
+`head-of-abm@v46` pins skill v23 and the two tools; `recipe0-stage0-v24.json` admits both addresses
+at all four sites; `CONVERSATION_RECIPE_VERSION = 24`;
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v46"`. Both tools are on
+`STAGE0_CONVERSATION_TRIAL_SURFACE.withheld_tools` — this is a project-conversation capability.
+v22 / v45 / `recipe0-stage0-v23.json` are byte-untouched.
+
+> **Superseded as the current versions (2026-09-12).** The project chat now runs
+> **`head-of-abm@v47` / `stage0-interview@v24` / `recipe0-stage0-v25.json`
+> (`CONVERSATION_RECIPE_VERSION = 25`)** — see § "Project plan document" below. v46 / v23 / v24
+> remain exactly as described here, for replay.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Run at this stage, all seven answered:
+
+1. **Profile grants** — v46 pins no readiness / Stage-0 / Client-KB / Product-KB tool; the two
+   added pins are the new-lane authoring pair. ✔
+2. **Gate source** — untouched; neither new tool calls `compile_client_knowledge_card_v2`,
+   `current_kb_version` or `load_pinned_client_knowledge` (grepped). ✔
+3. **Scope pin content** — both tools resolve `_presenting_turn_project_pin` from the trusted
+   `source_turn_ref`; no Client-KB pin, no new `AgentTurnScopePinConflict` path. ✔
+4. **Context composition** — a project document is a read-only materialized `.md` on the lease plus
+   an index row; no card compiler runs. ✔
+5. **Launch path** — `launch_arv2_account_research` gained no precondition; the authoring pair is
+   additive. ✔
+6. **Static guard** — `tests/arv2/test_import_guard.py` green, `lint-imports` 26 kept / 0 broken. ✔
+7. **`.env.example` posture** — unchanged; no new flag (`author_icp_document` needs none,
+   `request_persona_synthesis` rides `onboarding_v2_enabled`). ✔
+
+## Project plan document (2026-09-12)
+
+A project's **plan** is the execution plan in the human's terms — the outcome, the confirmed profile
+and products by name, the account motion, the channels and sequence, what day ninety looks like. It
+lives at `project/plan.md` as a `project-plan` knowledge document with `project_id` set (the scope
+column the ICP-authoring migration added), so everything above about scope, lineage and
+materialization applies to it unchanged: it compiles onto the lease as `inputs/project/plan.md` and
+lists in `status.md` under *Project documents*.
+
+> **Superseded 2026-09-13 — the current trio is `head-of-abm@v49` /
+> `stage0-interview@v26` / `recipe0-stage0-v26.json` (`CONVERSATION_RECIPE_VERSION = 26`)** — see
+> § "The three reads" below. v47 / v24 / v25 remain exactly as described here, for replay.
+
+**Versions at this stage:** `head-of-abm@v47` (pins `stage0-interview@v24`) and
+`recipe0-stage0-v25.json`, with `CONVERSATION_RECIPE_VERSION = 25` and
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v47"`.
+
+### The tool
+
+> **Retired from the profile 2026-09-14 (plan 3).** `head-of-abm@v55` does not grant
+> `write_project_document@1` and `recipe0-stage0-v27.json` does not admit its address. The plan is
+> now written with the ordinary `write_file` at `project/plan.md` through the `plan-authoring`
+> skill: the `project/` mount is a **versioned root**
+> (`platform/agents/clue_agents/versioned_root.py`) and the write runs
+> `platform/api/clue_api/project_root_writer.py`, which strips any front matter the model typed and
+> calls **this same store** (`arv2/project_documents.py::write_project_plan`) — same immutable
+> version per save, same revision check, same lock order, and the human PUT still meets the agent
+> at that check. The tool stays registered for replay of receipts pinned to recipe ≤ 26 and is
+> otherwise uncomposed; the description below is exactly its v47 / v24 / v25 behaviour. The refusals
+> the *model* now sees are the mount's wording, not these codes — see the kinds-by-folder table in
+> `docs/specs/ARV2-ONBOARDING-PLAN.md` § "Addendum 2026-09-14".
+
+`write_project_document@1` (`platform/api/clue_api/project_document_tools.py`, at the `clue_api`
+root because turn binding lives outside `arv2/`; the store is `arv2/project_documents.py`). WRITE,
+`DOMAIN_IDEMPOTENT` ("presenting turn + document + expected version"), free, **no flag**. Input:
+`document: "plan"`, `body`, `expected_version: int | None`, plus the engine-injected trusted
+`source_turn_ref`; `pin_requirements = ("project",)`, resolved through
+`stage0_recipe._presenting_turn_project_pin` — the presenting turn supplies the project and the
+human it credits, so the model cannot address another project's plan.
+
+The write is one immutable version per save. **[Superseded 2026-09-14]** this tool is retired from
+the profile and its writer is now a thin call of the generic
+`project_documents.write_project_document`, which takes any path under `project/`, reads the kind
+and title off the document's own front matter, and stamps only `version`, `status`, `project_id`,
+`brand_id`, `authored_by` and `authored_at` over it. The tool keeps `plan_document_id` so a
+replayed call still lands on the row it already wrote. The document id is
+`uuid5("arv2-project-plan:{turn_id}:{expected_version or 0}")`, so a replay inside one turn returns
+the stored row **before** anything is rendered, addressed or stored. `expected_version` must equal
+the version the writer read (omitted when the file does not exist); anything else is refused rather
+than overwritten. The new row supersedes the servable one and retires the other `ready`/`proposed`
+rows **in this project's scope only**.
+
+**Refusals** — tool-level: `project_documents_not_composed`, `project_document_turn_ref_malformed`,
+`project_document_turn_not_found`, `project_document_addressee_missing`. Store-level (raised as
+`PreconditionFailed`): `project_document_body_empty`, `project_document_revision_conflict` (the
+message names `inputs/project/plan.md`; the skill's §6b tells the agent to re-read, keep the human's
+edits and write again), `project_document_version_race`, `project_document_not_found`.
+
+### The routes
+
+`frontend_read/project_documents.py` registers three routes on the workspace-scoped `/frontend/v1`
+router (tenancy by `X-Workspace-Id`), the HTTP face of the same store:
+`GET /projects/{project_id}/documents` (list), `GET …/documents/{document_id}` (markdown + front
+matter), `PUT …/documents/{document_id}` with `{body, expected_revision}` — the human's edit, which
+mints the next version with `user_edit` provenance exactly as the brand-knowledge PUT does. Scope is
+the store's, so another project's or another tenant's document is *absent*, never refused
+differently. Refusal map: `not_found` → 404 `PROJECT_DOCUMENT_NOT_FOUND`, `revision_conflict` and
+`version_race` → 409 `DOCUMENT_REVISION_CONFLICT`, `body_empty` → 422 `DOCUMENT_BODY_EMPTY`; an
+unknown code defaults to the 409 rather than escaping as a 500. Ruling I: this PUT demotes a
+`confirmed` project-local ICP to `proposed` like its brand sibling, while a `project-plan` row stays
+`ready` — plans have no approval stamp. Wire shapes are contracted in
+`apps/frontend/docs/api-contracts/projects.md` § "Project documents".
+
+### The plan part
+
+`conversation_turns._PLAN_OBJECT_TYPES` includes `project_document`: a finalize carrying
+`{object_type: "project_document", object_id, version}` in `domain_refs` projects exactly one `PLAN`
+part titled **"Plan"** with `revision_label = f"v{version}"`. Skill §6b tells the agent to include
+that ref. **Amended 2026-09-14 (plan 3, ruling P3-6):** the turn's finalize no longer depends on the
+agent remembering the ref — the runtime merges the documents the turn actually wrote into
+`domain_refs` itself, carrying the kind in the object type (`project_document` = the plan,
+unchanged, plus `project_icp_document` and `project_persona_document`, all three in
+`_PLAN_OBJECT_TYPES` and titled "Plan" / "ICP" / "Personas"). **Founder ruling R12 (2026-09-12)** defers the Plan tab, the editor, the card's
+click-through, the auto-open and the gallery document cards to
+`docs/superpowers/plans/2026-09-12-plan-tab-frontend.md` — so today the card renders and opens
+nothing, and the three routes have no frontend consumer.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Re-run at this stage, all seven answered: v47 pins no readiness / Stage-0 / Client-KB / Product-KB
+tool (the one added pin is this write); the product-set gate source is untouched and the new modules
+call no card compiler; the pin is `_presenting_turn_project_pin` off the trusted `source_turn_ref`,
+with no Client-KB pin and no new `AgentTurnScopePinConflict` path; a plan is a read-only materialized
+`.md` plus an index row, so no card compiles for it; `launch_arv2_account_research` gained no
+precondition; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0 broken;
+`.env.example` posture unchanged with **no new flag**.
+
+## The three reads (2026-09-13)
+
+Everything above lets the Head of ABM *act* on a project. These three let it **look**: at the
+project's accounts, at one account's research, and at the discovery run. Before them, every number
+and every fact the agent stated about an account came out of its own conversation — right inside one
+thread, wrong in the next one, and wrong again the moment a fleet job finished behind its back.
+
+**Current versions:** `head-of-abm@v49` (pins `stage0-interview@v26`) and
+`recipe0-stage0-v26.json`, with `CONVERSATION_RECIPE_VERSION = 26` and
+`PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v49"`. (v48 / v25 minted the three tools;
+v49 / v26 re-pin the same three after the final-review fix wave — see § "The fix wave" below. The
+recipe is unchanged: it pins addresses, and no address moved.)
+
+### Read tools
+
+All three live in `platform/api/clue_api/arv2/read_tools.py` behind one `Arv2ReadService` seam
+(`DbArv2ReadService`, one transaction per call). They share three properties, and the properties are
+the design:
+
+* **Effect-free.** `READ` + `ReplaySafety(EFFECT_FREE, external_boundary=NONE)`. They spend nothing,
+  approve nothing and launch nothing, which is why they are registered with **no flag** — they read
+  rows that already exist — and why the C8 trial surface withholds none of them.
+* **Absence is a typed refusal, never an empty success.** An account nobody has researched says so
+  by name. The agent cannot read silence as "nothing to report" and then narrate around it.
+* **Scope is ambient.** The workspace comes from `ctx.workspace_id`; the model never supplies it. A
+  project, account or run outside this workspace is *absent* — the same answer an id that never
+  existed gets.
+
+| tool | what it answers | bounds |
+| --- | --- | --- |
+| `read_project_accounts@1` | the project's accounts, each with `added_via` / `added_at`, its latest **account** job's `research_status` (`not_started` when there is none) and a `refreshing` flag (a live job that post-dates a completed one — a first run is not a refresh), plus `total` | `limit` 1…200, default 100 (`MAX_ACCOUNTS`) |
+| `read_account_research@1` | `section="overview"`: the account's written overview blocks in the **page's own running order** (`read_recipes(conn, "overview", workspace_id=…)`, workspace overrides honoured; an unrecognised section sorts after by `section_key`, which is also the whole order when no recipes are seeded). `section="claims"`: its claims through `claims_for_entities(…, scope=WorkspaceScope.for_workspace(ws))`, optionally narrowed by `field_prefix` | `field_prefix` ≤ 80 chars; first 120 claims (`MAX_CLAIMS`) with `truncated`; each evidence span clipped to 240 chars (`EVIDENCE_CHARS`) |
+| `read_discovery_run@1` | the project's latest run, or a named `run_id`: status, window, `asked`, `found` (strict + relaxed; a missing counter reads `0`), the three tallies (`verified` / `shown` / `approved`, **every sub-select workspace-scoped** because `arv2_discovery_candidate.run_id` is a single-column FK), and the candidates shown-first then best-fit then name, an unscored one sorting *after* every scored one rather than as a zero | `candidate_limit` 0…50, default 25 (`MAX_CANDIDATES`); `0` is a legitimate ask — the tallies without the company list; `candidate_total` is always the whole run |
+
+**Refusal codes** (raised as `Arv2ReadRefused`, surfaced as `PreconditionFailed`):
+`arv2_reads_not_composed` (the service is `None` at this root — the three are composed at
+`fleet_main._serve` and `projections_main.build_application`), `project_not_found`,
+`account_not_found`, `overview_not_written` (its message points the agent at `section='claims'`),
+`account_not_researched` (naming the prefix when one was given), `no_discovery_run`,
+`discovery_run_not_found`. A malformed uuid refuses as *not found* on purpose: absent and malformed
+mean the same thing to the caller, and the model does not need to learn the id format from an error.
+
+**Ruling M — `read_account_research` follows no lineage.** A merge loser is `account_not_found`, not
+a silent redirect to its survivor: the agent asked about an id this workspace no longer serves, and
+answering about a different row would be a quiet substitution. The rule this leaves behind is the
+part worth keeping — *any* lineage a read tool ever learns to follow must **re-check `workspace_id`
+on the row it lands on**. `merged_into` is a lineage pointer, not a tenancy guarantee.
+
+**Grant.** `stage0-interview@v25`'s new **§7c "Read before you speak about accounts"** is the prose
+that makes them habitual (its front-matter `summary` was rewritten, not appended to — v24 sat at 505
+of its 512-char cap; ruling N). `head-of-abm@v48` pins the skill and the three tools;
+`recipe0-stage0-v26.json` admits the three addresses at all four sites. The three names sit in
+`stage0_recipe._execution_project_pin` — **not** the presenting-turn branch — because two carry a
+model-authored `project_id` in the body and `read_account_research` names no project at all, so the
+execution row is the trusted coordinate. In the chat they read as "Review the project's accounts",
+"Review an account's research" and "Review the discovery run"
+(`apps/frontend/src/features/projects/model/chat-tool-presentation.ts`).
+
+**Ruling O**, taken while the listing was built: `total` counts the rows the listing *can show*, so
+the count SQL repeats the page's own `JOIN account_entity … merged_into IS NULL`. "Showing 100 of
+240" has to be two measurements of one population, or the remainder is unreachable.
+
+### Standing-rule checklist (`_memory/2026-09-07-no-old-lane-gate-may-block-new-lane.md`)
+
+Re-run at this stage, all seven answered: v48 pins no readiness / Stage-0 / Client-KB / Product-KB
+tool (the three added pins are these reads); the product-set gate source is untouched and the new
+module calls no card compiler; the pin is `_execution_project_pin`, with no Client-KB pin and no new
+`AgentTurnScopePinConflict` path; a read compiles nothing onto the lease; `launch_arv2_account_research`
+and `launch_arv2_discovery` gained no precondition — the reads are additive and the skill's ordering
+rule is prose, not a gate; `tests/arv2/test_import_guard.py` green and `lint-imports` 26 kept / 0
+broken; `.env.example` posture unchanged with **no new flag**.
+
+
+### The fix wave (2026-09-13) — what the three reads say now
+
+The final review found four things the reads *said* that the rows did not support. Each is fixed at
+the source rather than in the skill, because the model reads the tool's own description first.
+
+* **The claims read mirrors the account page's display gate** (ruling Q). `_account_claims` now
+  applies `display/gather.py`'s three predicates, predicate for predicate: a `SENSITIVE` use-class
+  claim never leaves the store, an unjudged tier-4 synthesis is held back under a verifying posture,
+  and an `outreach_safe=false` claim is held back outright (this read has no restricted section to
+  put one in). Each exclusion is **counted** — `excluded: {sensitive, unverified, outreach_unsafe}`
+  — so "nothing to show" and "something here you may not have" stay two different answers, and each
+  served claim carries its own `verification_status` and `outreach_safe`. The description no longer
+  says "verified claims"; it says *the claims the account pages show*. `DbArv2ReadService` therefore
+  takes `settings`: the tier-4 arm is armed by `verification_enabled`, the same flag the page reads.
+* **`verified` means judged** (ruling R). `discovery_store.VERIFIED_PREDICATE`
+  (`jsonb_array_length(c.verdicts_json) > 0`) is now the single definition, shared by this read,
+  `project_status._LATEST_DISCOVERY` and `frontend_read/discovery_status._LATEST_RUN`. The old
+  reading — "not `pending`" — counted the pre-spend dispositions (`duplicate_of_existing`,
+  `not_chosen_before`), which `discovery_driver._pre_spend_disposition` stamps *before any gate is
+  asked*, so the agent reported companies as checked that were never checked.
+* **A named account is reachable.** `read_project_accounts` takes `query` (case-insensitive
+  substring on name or domain, with LIKE's metacharacters escaped) and `offset`; `total` counts the
+  filtered set, and the row order is now the accounts screen's own default (`created_at DESC,
+  id DESC`) so "the first ten" means the same ten in chat and on the table. The `refreshing`
+  tie-break is the screen's tuple compare too.
+* **The candidate rows are workspace-scoped like the tallies beside them.**
+  `arv2_discovery_candidate.run_id` is a single-column FK; the counts already said `:ws` and the
+  list did not, so a mis-stamped row was excluded from `shown` and still listed and counted into
+  `candidate_total`.
+
+Smaller repairs in the same wave: a clipped evidence span ends with `…` and carries
+`evidence_truncated`; an overview section's body is serialized JSON capped at 6000 characters with
+`body_truncated` (the stored body has no bound of its own); a prefix that matches nothing on a
+researched account refuses the new `no_claims_under_prefix` instead of `account_not_researched`; the
+`stage0_conversation_trial` surface **withholds** the three reads, because that surface composes no
+read service and an installed-but-refusing tool is the restriction-by-refusal PC-C8 §2.4 rejects;
+and the three outputs carry typed rows (`ProjectAccountView`, `AccountOverviewSection`,
+`AccountClaimView`, `DiscoveryCandidateView`) so the schema digest can see the payload shape.
+
+That last one is why there is a `v49`/`v26` at all: typing the rows moved all three output digests
+(and `read_project_accounts`' input digest), and v48/v25 are immutable.
+
+## The four reads (2026-09-14) — every page walks, and nothing overflows its receipt
+
+The three reads answered a small question well and a large one not at all. A 72-claim account read
+encoded to more than the governed receipt's 16 KiB bound, and the bound is a **refusal** that lands
+*after* the tool has run and spent: the agent was told it could not read the account, which was both
+false and expensive. Two changes settle it — the reads page, and a result too big for a receipt goes
+to a file instead of into a refusal.
+
+**Paging.** `read_discovery_run@2` replaces `candidate_limit` with `offset`/`limit`, and
+`read_account_research@2` takes a `limit` its claims section honours; both answer `next_offset`, and
+a null `next_offset` is the only thing that means "that was the last page". A page can come back
+*shorter* than `limit` and still name a `next_offset`, because the byte budget
+(`READ_REFERENCES_BUDGET_BYTES`, 12 KiB) is the other ceiling and usually the binding one. Paging
+changes the input schema, so the two are new **addresses**, not edits: `@1` stays frozen and keeps
+resolving for receipts pinned to it. `read_project_accounts@1` needed no `@2` — `offset`, `limit` and
+`total` already were its contract.
+
+**`read_claims@1`** is the query the account read could not be. It takes an entity id that may be an
+account **or** a contact (the store keys claims on one entity id, and so does this read) and narrows
+by `field_prefix`, `tier`, `verification_status` and `since` (an ISO date compared against
+`collected_at`), paged like the others. It reuses `_account_claims`' display gate rather than
+restating it, so a served claim is exactly a claim the account pages would show, `excluded` still
+separates `sensitive` / `unverified` / `outreach_unsafe`, and `prefixes` reports the whole subject's
+servable families with their counts even when the filter matched nothing — "your query is empty" and
+"this subject is empty" stay two different answers. Refusals: `entity_not_found`, `since_invalid`
+(not a date), `offset_past_end`.
+
+**`read_artifact@1`** lives one directory up, in `platform/api/clue_api/artifact_read_tools.py`,
+because a design document is not an ARV2 row — but it is the same kind of read and it is granted
+beside these. Containment is the rail's own leg join (`design_leg_wiring.project_design_documents`),
+never the tenant alone: a document that join does not return is `artifact_not_found`, the identical
+code a document that never existed gets, so the read never tells one project that another project's
+artifact exists. `section="summary"` is the card; `section="content"` adds the page JSON as canonical
+text cut at `READ_REFERENCES_BUDGET_BYTES` with `body_truncated=True`.
+
+**Spilling.** Past `SPILL_THRESHOLD_BYTES` (12 KiB) the execution adapter writes the receipt's
+references as canonical bytes to `reads/<operation_id>.json` in the thread's workspace and puts a
+stub in the receipt — `spilled_to`, `count`, a `summary` sliver and the producing tool — which the
+model opens with `read_file`. `reads/` is in the model's readable prefixes and in nobody's writable
+ones, so the write is trusted, quota-counted, and idempotent by construction (an operation rewrites
+its own file). Both places a receipt is built apply the rule — the live one and the rebuilt one in
+`_hydrate_tool_reference_values`, which is the receipt the model is actually handed — and the full
+result is untouched either way: it is the journaled `result_ref` artifact, and only the inline copy
+shrinks. Surfaces with no thread lease (research, onboarding synthesis) have no sink, and there the
+old refusal still stands.
+
+The grant is `head-of-abm@v56` (pinning `stage0-interview@v33`, whose §7c now teaches following
+`next_offset` and opening a spill file) and `recipe0-stage0-v28.json` with
+`CONVERSATION_RECIPE_VERSION = 28`. A recipe slot resolves **one** version per `(kind, key)`, so v28
+*re-pins* `read_discovery_run` and `read_account_research` at `@2` and adds `read_claims@1` and
+`read_artifact@1`; v27 stays byte-identical on disk as the replay input for turns pinned to it.
+`stage0_recipe._execution_project_pin` names the two new tools, as it does the three before them.

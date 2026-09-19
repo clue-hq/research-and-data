@@ -954,13 +954,6 @@ def test_custom_fields_are_the_client_pack_registry_rows_the_account_holds() -> 
             await _seed_workspace_field(
                 conn, workspace_id=ws, field_key="client.retired", description="Retired"
             )
-            await conn.execute(
-                text(
-                    "INSERT INTO workspace_field_retirement (workspace_id, field_key, "
-                    "retired_by, reason) VALUES (:w, 'client.retired', 'tester', 'test')"
-                ),
-                {"w": ws},
-            )
 
             for key in keys:
                 await _write_claim(
@@ -988,17 +981,27 @@ def test_custom_fields_are_the_client_pack_registry_rows_the_account_holds() -> 
                 value_json="acme value",
             )
 
+            await conn.execute(
+                text(
+                    "INSERT INTO workspace_field_retirement (workspace_id, field_key, "
+                    "retired_by, reason) VALUES (:w, 'client.retired', 'tester', 'test')"
+                ),
+                {"w": ws},
+            )
+
             fields = await custom_fields_for(conn, workspace_id=ws, account_ids=[account, other])
 
             served = fields[account]
             assert [f.id for f in served] == keys
             assert served[0] == AccountCustomField(
                 id="client.custom_0",
+                claim_id=served[0].claim_id,
                 label="Custom 0",
                 value="value of client.custom_0",
                 presentation="text",
                 primary=True,
             )
+            assert served[0].claim_id is not None
             assert served[1].presentation == "badge"
             assert [f.primary for f in served] == [True, True, True, True, False, False]
             # A description-less row labels itself with its key rather than an empty string.

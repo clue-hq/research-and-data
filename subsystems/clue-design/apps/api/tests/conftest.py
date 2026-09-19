@@ -30,8 +30,21 @@ import pytest
 from clue_storage import FsStorage
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from py_lumen_config import settings
 
 from lumen_api.design_store import DesignBlobStore
+
+
+# --- D9: no test in this suite may reach the Brandfetch vendor --------------------------------
+# The repo-root `.env` can carry a REAL Brandfetch key, and the command that runs this suite
+# sources it, so an un-patched `fetch_vendor_family` would spend live quota against a live API.
+# It reads `settings.brandfetch_api_key` at CALL time (lumen_ingestion/logo_vendor.py), so
+# blanking the field here makes it raise `VendorCredentialsMissing` for every test that has not
+# deliberately supplied a key. The vendor suite passes `api_key=` explicitly (or asserts on the
+# blank-key refusal), so it is untouched by this.
+@pytest.fixture(autouse=True)
+def _brandfetch_vendor_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "brandfetch_api_key", "")
 
 
 @pytest.fixture(autouse=True)

@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import ArtifactRef, DomainObjectRef
 from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
 from clue_fleet import FleetTaskKind, WorkId, enqueue_task
+from clue_obs.otel import bind_and_annotate
 
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
@@ -146,7 +147,7 @@ class AgentTurnSubmissionRow(BaseModel):
 
 
 class SubmissionContextRefRow(BaseModel):
-    """One ordered account/contact ref captured with a human submission."""
+    """One ordered ref captured with a human submission, and the note the human left on it."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -156,6 +157,7 @@ class SubmissionContextRefRow(BaseModel):
     object_type: str
     object_id: str
     object_version: int | None
+    note: str | None = None
 
 
 async def insert_submission(
@@ -187,6 +189,9 @@ async def insert_submission(
     if any(ref.workspace_id != workspace_id for ref in context_refs):
         raise ValueError("submission context refs cross the workspace boundary")
 
+    await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
+    # Acceptance order, not transaction-start time, defines FIFO. This also serializes
+    # a new submission against Stop's empty-hold cleanup and explicit Resume.
     inserted = (
         (
             await conn.execute(
@@ -194,10 +199,14 @@ async def insert_submission(
                     "INSERT INTO agent_turn_submission "
                     "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
-                    " message_sha256, idempotency_key, agent_profile_id, previous_turn_outcome) "
+                    " message_sha256, idempotency_key, agent_profile_id, previous_turn_outcome, "
+                    " requested_at) "
                     "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
                     " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
-                    " :agent_profile_id, :previous_turn_outcome) "
+                    " :agent_profile_id, :previous_turn_outcome, GREATEST(clock_timestamp(), "
+                    " (SELECT max(requested_at) + interval '1 microsecond' "
+                    " FROM agent_turn_submission WHERE workspace_id=:workspace_id "
+                    " AND thread_id=:thread_id))) "
                     f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
                 ),
                 {
@@ -225,9 +234,10 @@ async def insert_submission(
             await conn.execute(
                 text(
                     "INSERT INTO agent_turn_submission_context_ref "
-                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version) "
+                    "(turn_id, workspace_id, ordinal, object_type, object_id, object_version, "
+                    " note) "
                     "VALUES (:turn_id, :workspace_id, :ordinal, :object_type, :object_id, "
-                    " :object_version)"
+                    " :object_version, :note)"
                 ),
                 {
                     "turn_id": turn_id,
@@ -236,6 +246,7 @@ async def insert_submission(
                     "object_type": ref.object_type,
                     "object_id": ref.object_id,
                     "object_version": ref.version,
+                    "note": ref.note,
                 },
             )
         return row, True
@@ -298,7 +309,7 @@ async def submission_context_refs(
             await conn.execute(
                 text(
                     "SELECT turn_id, workspace_id, ordinal, object_type, object_id, "
-                    "object_version FROM agent_turn_submission_context_ref "
+                    "object_version, note FROM agent_turn_submission_context_ref "
                     "WHERE turn_id=:turn_id AND workspace_id=:workspace_id ORDER BY ordinal"
                 ),
                 {"turn_id": turn_id, "workspace_id": workspace_id},
@@ -314,6 +325,7 @@ async def submission_context_refs(
             object_type=item.object_type,
             object_id=item.object_id,
             version=item.object_version,
+            note=item.note,
         )
         for item in receipts
     )
@@ -333,7 +345,7 @@ async def submission_context_refs_for_turns(
         (
             await conn.execute(
                 text(
-                    "SELECT turn_id, ordinal, object_type, object_id, object_version "
+                    "SELECT turn_id, ordinal, object_type, object_id, object_version, note "
                     "FROM agent_turn_submission_context_ref "
                     "WHERE workspace_id=:workspace_id "
                     "AND turn_id=ANY(CAST(:turn_ids AS uuid[])) "
@@ -357,6 +369,7 @@ async def submission_context_refs_for_turns(
                 object_type=str(row["object_type"]),
                 object_id=str(row["object_id"]),
                 version=(None if row["object_version"] is None else int(row["object_version"])),
+                note=(None if row["note"] is None else str(row["note"])),
             )
         )
     return {turn_id: tuple(refs) for turn_id, refs in grouped.items()}
@@ -467,6 +480,13 @@ def _thread_lock_scope(workspace_id: str, thread_id: str) -> str:
     return "agent-turn-dispatch:" + hashlib.sha256(framed).hexdigest()
 
 
+async def lock_thread_queue(conn: AsyncConnection, *, workspace_id: str, thread_id: str) -> None:
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+        {"scope": _thread_lock_scope(workspace_id, thread_id)},
+    )
+
+
 async def dispatch_next_thread_turn(
     conn: AsyncConnection,
     *,
@@ -487,10 +507,16 @@ async def dispatch_next_thread_turn(
     """
 
     work_id = thread_work_id(workspace_id=workspace_id, thread_id=thread_id)
-    await conn.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-        {"scope": _thread_lock_scope(workspace_id, thread_id)},
+    await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
+    held = await conn.scalar(
+        text(
+            "SELECT queue_hold_control_id FROM agent_thread "
+            "WHERE workspace_id=:workspace AND id=:thread"
+        ),
+        {"workspace": workspace_id, "thread": thread_id},
     )
+    if held is not None:
+        return None
     in_flight = (await conn.execute(_THREAD_INFLIGHT_SQL, {"work_id": work_id})).first()
     if in_flight is not None:
         return None
@@ -512,6 +538,13 @@ async def dispatch_next_thread_turn(
     if row is None:
         return None
     turn_id = UUID(str(row["turn_id"]))
+    # Lane 3 slice 2: the turn this dispatch is about, bound for the rest of this request (its log
+    # lines and the enqueue span) and written onto the span that is already open.
+    bind_and_annotate(
+        project_id=str(row["project_id"]),
+        thread_id=thread_id,
+        turn_id=str(turn_id),
+    )
     payload: dict[str, JsonValue] = {
         # References only, never a token and never a message body (substrate §5b, Lane B §7).
         "turn_id": str(turn_id),

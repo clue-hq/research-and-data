@@ -37,3 +37,20 @@ export function fieldCommit(draft: string | null, value: string): string | null 
   if (draft === value) return null;
   return draft;
 }
+
+/**
+ * Whether a keypress in a MULTILINE inspector field is its commit chord.
+ *
+ * `InspectorInput` commits on a bare Enter; a textarea cannot, because the
+ * content it edits may legitimately contain newlines and Enter is the only way
+ * to type one. So the commit moves to ⌘/Ctrl+Enter and Enter stays a newline —
+ * the one deliberate divergence between the two primitives' key contracts.
+ * Blur commits either way, and is the path most users take.
+ */
+export function textareaCommitKey(event: {
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+}): boolean {
+  return event.key === "Enter" && (event.metaKey || event.ctrlKey);
+}

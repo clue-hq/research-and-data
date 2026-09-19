@@ -20,12 +20,10 @@ there is no key or no answer key to write about.
 
 from __future__ import annotations
 
-import json
 import re
 import uuid
 from collections.abc import Iterator, Mapping
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -38,6 +36,7 @@ from clue_api.arv2.display.page import default_runner_factory, ensure_page
 from clue_api.arv2.display.recipes import RESTRICTED_SECTION_KEYS, recipes_for
 from clue_config import Secrets, Settings
 from tests.arv2.conftest import require_secret
+from tests.arv2.test_provider_ledger_db import FakeArtifacts
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -47,6 +46,7 @@ from tests.claimstore.conftest import (  # noqa: F401
     rollback_conn,
 )
 from tests.db.conftest import run_async
+from tests.profiling.conftest import conn_session_factory
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
@@ -97,10 +97,30 @@ async def _contact_id(conn: AsyncConnection) -> str:
     return str(row)
 
 
-def _ledger_rows(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+_RESULT_ROWS_SQL = (
+    "SELECT provider, extras_json FROM provider_call_ledger "
+    "WHERE workspace_id = :workspace_id AND phase = 'result' ORDER BY recorded_at"
+)
+
+
+async def _result_row_count(conn: AsyncConnection) -> int:
+    """How many provider result rows this workspace has, on the test's own transaction.
+
+    Slice 1b: the page's spend lands on ``provider_call_ledger``, not on a JSONL file, and the
+    spend factory this test injects is its own rolled-back connection — so the rows are counted
+    here and roll back with everything else.
+    """
+    return int(
+        (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM provider_call_ledger "
+                    "WHERE workspace_id = :workspace_id AND phase = 'result'"
+                ),
+                {"workspace_id": WORKSPACE},
+            )
+        ).scalar_one()
+    )
 
 
 def _sections(block: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
@@ -134,13 +154,12 @@ def test_nick_fishers_contact_page_is_written_end_to_end_by_the_real_model(
 ) -> None:
     require_secret(live_secrets, "openrouter_api_key")
     settings = Settings()
-    ledger_path = Path(settings.arv2_raw_root) / "ledger.jsonl"
-    before = len(_ledger_rows(ledger_path))
 
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             await _skip_without_the_answer_key(conn)
             contact_id = await _contact_id(conn)
+            before = await _result_row_count(conn)
 
             result = await ensure_page(
                 conn,
@@ -150,6 +169,8 @@ def test_nick_fishers_contact_page_is_written_end_to_end_by_the_real_model(
                 page="contact",
                 settings=settings,
                 runner_factory=default_runner_factory(settings, live_secrets),
+                artifacts=FakeArtifacts(),
+                spend_conn_factory=conn_session_factory(conn),
             )
 
             # -- 1. every section is accounted for: written, or honestly empty ------------------
@@ -217,11 +238,20 @@ def test_nick_fishers_contact_page_is_written_end_to_end_by_the_real_model(
 
             # -- 6. the money is real, metered, and on the ledger -------------------------------
             assert result.cost_usd > Decimal(0)
+            assert await _result_row_count(conn) > before, (
+                "the page was written but provider_call_ledger gained no result row"
+            )
+            results = (
+                (
+                    await conn.execute(
+                        text(f"{_RESULT_ROWS_SQL} OFFSET :before"),
+                        {"workspace_id": WORKSPACE, "before": before},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            assert all(row["extras_json"]["cost_source"] == "metered" for row in results)
+            assert all(row["provider"] == "openrouter" for row in results)
 
     run_async(_run())
-
-    rows = _ledger_rows(ledger_path)[before:]
-    results = [row for row in rows if row["phase"] == "result"]
-    assert results, "the page was written but the ledger gained no result row"
-    assert all(row["extras"]["cost_source"] == "metered" for row in results)
-    assert all(row["provider"] == "openrouter" for row in results)

@@ -19,12 +19,13 @@ export interface ChatSurfaceUrlState {
   editing: boolean;
   inspectorSelection: ChatShellInspectorSelection;
   panelOpen: boolean;
-  surface: "artifact" | "gallery" | "target-accounts" | undefined;
+  surface: "artifact" | "gallery" | "target-accounts" | "plan" | undefined;
 }
 
 function parseChatSurface(
   raw: string | undefined,
-): "artifact" | "gallery" | "target-accounts" | undefined {
+): "artifact" | "gallery" | "target-accounts" | "plan" | undefined {
+  if (raw === "plan") return "plan";
   if (raw === "gallery") return "gallery";
   // The target-accounts rail surface is addressable by its own name — the
   // shareable route is /projects/:id/chats/:chatId?surface=target-accounts.
@@ -62,7 +63,7 @@ export interface ChatSurfacePaneState {
   panelOpen: boolean;
   /** The raw incoming `surface` param — the kind-unknown tiebreak only. */
   rawSurface: string | undefined;
-  surface: "artifact" | "gallery" | "target-accounts";
+  surface: "artifact" | "gallery" | "target-accounts" | "plan";
 }
 
 export interface ChatSurfacePaneParams {
@@ -83,6 +84,7 @@ export function chatSurfacePaneParams(
   // Rail closed → the clean URL. The resting state carries NO pane params
   // (controller ruling); `?surface=chat` is its accepted inbound alias.
   if (!state.panelOpen) return NO_PANE_PARAMS;
+  if (state.surface === "plan") return { ...NO_PANE_PARAMS, surface: "plan" };
   if (state.surface === "gallery") {
     // edit/selection are artifact-surface vocabulary — the parse only honors
     // them there, so the gallery never carries them.

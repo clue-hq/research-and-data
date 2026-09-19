@@ -1382,7 +1382,7 @@ def agent_claims(
             # landed ``schema_valid=false`` on ``"name": null`` alone. Same rule, same helper:
             # absent is not null, and a required key stays so the marker can say it is missing.
             kept = _without_nones(value, keep=required)
-            dropped = [key for key in value if key not in kept]
+            dropped: list[JsonValue] = [key for key in value if key not in kept]
             if dropped:
                 markers["dropped_null_keys"] = dropped
             value = kept

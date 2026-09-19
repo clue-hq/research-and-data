@@ -22,6 +22,7 @@ from clue_agents.catalog import (
     FolderPromptCatalog,
     FolderSkillCatalog,
 )
+from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_agents.registry import (
     AgentCapabilityStatus,
     AgentProfileRegistry,
@@ -76,6 +77,22 @@ _WITHHELD = {
     "launch_arv2_discovery",
     "open_product_set_selection_gate",
     "open_icp_confirmation_gate",
+    # The ICP-authoring pair and the plan write used to head this group. They are gone from it
+    # because `head-of-abm@v55` no longer grants any of them (see `_ROLE_DROPPED`), which is the
+    # stronger statement — the same move the old-lane launches made at v44.
+    # The three ARV2 reads are withheld for the OTHER reason: they spend nothing and address
+    # nobody, but the trial's own `build_toolbelt` passes no `arv2_reads`, so installed they would
+    # be advertised and then refuse `arv2_reads_not_composed` at call time — restriction by
+    # refusal, which PC-C8 §2.4 rejects. Withheld, this surface's framing is true.
+    # `read_claims` joins them at `head-of-abm@v56` for the identical sentence — same uncomposed
+    # `arv2_reads` service — and `read_artifact` for the nearest thing to it: it needs no service,
+    # but a dev-harness turn carries no project, so installed it could only refuse
+    # `project_not_found`.
+    "read_project_accounts",
+    "read_account_research",
+    "read_claims",
+    "read_artifact",
+    "read_discovery_run",
 }
 
 # The tools the trial used to withhold that `head-of-abm@v44` no longer grants at all. They must
@@ -101,6 +118,14 @@ _ROLE_DROPPED = {
     "launch_contact_research",
     "read_account_research_run",
     "read_contact_research_run",
+    # The versioned project root (2026-09-14): the three document tools. The trial used to
+    # withhold all three; `head-of-abm@v55` drops them from the ROLE, because the documents they
+    # wrote are written as files under the `project/` mount now, so there is nothing left to
+    # withhold. What the trial does NOT get from that is a write surface: `project/` is not on
+    # this deployment's workspace for a dev harness turn, and the file tools refuse it there.
+    "author_icp_document",
+    "request_persona_synthesis",
+    "write_project_document",
 }
 
 # The production conversation's own subtraction, which D4 made genuinely different from the trial's:
@@ -299,16 +324,33 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     That is a genuine degradation of the trial, accepted because the trial is quarantine-bound
     (master plan Phase 6). It is asserted here rather than discovered later — which is the job the
     original guard was doing, and the reason this test is inverted instead of deleted.
+
+    head-of-abm@v54 pins the fifteen operating-manual chapters beside it. A chapter requires no
+    tool, so no withholding can drop one, and the trial keeps the whole reference library while
+    losing the procedure. The manual describes the UNNARROWED grant, so on this surface its tools
+    chapter names tools the trial withholds; the trial's own refusals remain the truth there.
+
+    head-of-abm@v55 adds the three document skills on the same terms: none of them requires a
+    tool, so all three survive the narrowing too. They describe writing under `project/`, which
+    this surface's workspace does not mount — the same over-description the manual already has,
+    and the same answer: the refusal the file tool gives here is the truth.
     """
 
     trial = registry.resolve(AgentRole.HEAD_OF_ABM, surface=STAGE0_CONVERSATION_TRIAL_SURFACE)
     base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
-    assert trial.skill_disclosures() == ()
+    trial_disclosures = [item.resource.address for item in trial.skill_disclosures()]
+    assert "skill:stage0-interview@v33" not in trial_disclosures
+    assert trial_disclosures == [
+        "skill:icp-authoring@v2",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
+    ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v22" in base_disclosures
+    assert "skill:stage0-interview@v33" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -325,9 +367,21 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # ARV2 Track R, R4: the discovery launch is granted to the role and taught by
         # stage0-interview v22 §7b; the trial withholds it with its siblings.
         "launch_arv2_discovery",
+        # The ICP-authoring pair and the plan write are gone from the skill's own required set at
+        # v32: `head-of-abm@v55` grants none of them, and §5b/§5c/§6b are pointers at the three
+        # document skills now, so there is nothing here for the trial to withhold.
+        # The three reads are granted at `head-of-abm@v48` and taught by stage0-interview v25
+        # §7b/§7c; the trial withholds them because it composes no read service, so installed they
+        # could only refuse. `read_claims` and `read_artifact` join the skill's required set at
+        # v33, granted at `head-of-abm@v56`, and the trial withholds them for the same sentence.
+        "read_project_accounts",
+        "read_account_research",
+        "read_claims",
+        "read_artifact",
+        "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v22")
+    body = base.open_skill("skill:stage0-interview@v33")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body
