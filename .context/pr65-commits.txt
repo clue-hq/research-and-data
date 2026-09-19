@@ -1,0 +1,898 @@
+feat(design-leg): exit judge v2 — the model reasons freely and answers three engine actions; the prompt shows the bound artifact and the message's tags
+docs(memory): design session continuity — DB gate green after the container returned
+test(design-api): the session manifest test mirrors the harness's candidate rebase
+docs(memory): design session continuity — execution record, rulings, owed DB gate and live proofs
+style(tests): ruff format the design sessions DB test
+feat(erasure): the runtime purger removes a design session's folder and conversation history with its runs; docs
+feat(design): sync the session folder and conversation history to storage at turn end; restore on a fresh worker
+feat(lumen-agent): record the provider's reasoning text in the run trace
+fix(design-api): only a leg turn joins the document's session; direct editor turns keep their per-run folder
+feat(design-api): leg turns read the document, note drift instead of conflicting, gate the brief and history blocks, and run inside the document's session
+feat(lumen-agent): a leg turn's substrate takes the platform's run id so a retried run resumes
+feat(lumen-agent): continue the session thread across turns; resume a retried run instead of restarting it
+feat(lumen-agent): the workspace backend scopes a session folder and admits its own conversation history
+feat(lumen-agent): session folder with per-turn subfolders; rounds number across the session
+fix(design-memory): a document-pinned leg turn's session thread is its own authority
+feat(design-leg): the envelope names the document session as its thread; a second leg on a driven document waits
+feat(design): design session id, last-written version read, document drift note
+docs(plan): design session continuity — ten-task implementation plan
+docs(design): design session continuity — one artifact, one design session (design note for review)
+Merge feature/workspace-display-names: workspace display names everywhere
+docs(memory): workspace display names — rulings, commits, verification, owed steps
+fix(frontend): roleLabel moves to the session model so the server layout can call it
+test(shell): pass the probe as createElement's child argument (lint)
+feat(frontend): workspace display names — chooser and sidebar switcher list real memberships by name; company name optional at onboarding
+feat(scripts): backfill legacy workspace names from their provisioning website (dry-run by default)
+feat(auth): workspace display names — canonical rule from the website, typed-name-first provisioning, names on the session
+docs: workspace display names — approved design and implementation plan
+feat(shell): workspace switcher in the sidebar profile menu (lifted from the design build, def7344)
+Merge lane3/slice5-design-spend: design subsystem cost, tracing and telemetry (lane 3 slice 5)
+docs(memory): lane 3 slice 5 — design subsystem cost, tracing and telemetry; owed live proofs
+refactor(spend,obs): name the base error SpendError and the production logger clue_obs.production
+fix(design-leg): record a design run's receipts on every terminal return, not only after a drive
+feat(design-leg): the design leg's trace, its receipts, the judge's role, and the cost read
+fix(fleet): the queue's trace carrier no longer rides into the handler's payload
+feat(design-agent): collect per-call receipts from the governed gateway; accept injected turn callbacks; brief-agent calls on the ledger
+fix(design): the ad style-group tie-break makes one attempt, never a retry
+feat(design): every raw HTTP spend path runs through a per-job ProviderCaller and drains onto provider_call_ledger
+feat(obs): production installers move to clue_obs; the design API root installs OTel, Sentry and Langfuse
+refactor(spend): move the provider-caller seam from arv2 into libs/clue-spend; arv2 re-exports; drain takes an incident hook
+docs(specs): lane 3 slice 5 design note approved; rulings 6.1–6.6 as recommended
+docs: lane 3 slice 5 — design subsystem cost, tracing and telemetry: design note and implementation plan
+test: no test asserts which model a default or pin names — only that the id is well-formed
+fix(catalog): design@v1 pins x-ai/grok-4.6, not the doubled openai/ prefix; tests expect grok and head-of-abm@v57
+Merge pull request #62 from clue-hq/codex/design-agent-v1
+memory: record the PR #62 merge of research-streaming into design-agent-v1 and the gate triage
+gateway: retry an in-body numeric error code the way the status it relays would be
+contract_v1: snapshot and document customFields on the contact detail payload
+Merge origin/research-streaming into codex/design-agent-v1
+Merge pull request #57 from clue-hq/settings-page
+Join composer tagging migration and align project contract checks
+Fix inherited formatting and typing failures after rebase
+Join Settings and research-streaming migrations and isolate incident tests
+Plan workspace-local agent field registration and documentation rollout
+Connect approved Research fields settings to the live registry
+Record Research fields preview and pending design review
+Collapse narrow Settings navigation into a sidebar drawer
+Fix invitation signup for required Clerk passwords
+Verify research field erasure and authority races and record remaining settings gates
+Connect settings field repositories and preserve custom research source access
+Implement workspace research field lifecycle and scoped evidence access
+docs(settings): plan integration completion and record accepted rulings
+Reconcile Settings with research-streaming observability changes
+Restore Data model navigation and expose the Pages dummy frontend
+Show the Billing placeholder without the coming soon overlay
+Fix long member names and emails overlapping table cells
+Record three Irvine workers and onboarding provider blocker
+Record isolated Settings live verification setup
+Integrate Settings profiles, workspace administration, and invitations
+docs(memory): record research-streaming merge into settings-page
+Merge pull request #61 from clue-hq/file-tagging
+docs(memory): file-tagging PR #61 opened onto research-streaming
+feat(composer): nest discovered contacts under their account in the @ picker
+fix(frontend): keep the active @ picker row in view while arrowing through a long list
+docs(memory): composer logos landed; Brandfetch refuses headless user agents
+feat(composer): account logos from the platform's logo rule, initials for contacts
+docs(specs): custom-domain publishing for web pages — approved v1 design
+docs(memory): grok-4.6-only ruling closes the home-bootstrap test drift
+test(api): home bootstrap expects the Grok 4.6 conversation profile, the live pin
+docs(memory): file-tagging final-review fix and whole-branch gate results
+fix(context): project_document focus card keeps the tagged title after the version is superseded
+feat(frontend): typed tag chips in composer and transcript; contract and memory notes for file tagging
+feat(frontend): two-level @ picker — Files, Microsites, Accounts with cross-category search
+feat(frontend): feed the composer catalog with Gallery files and microsites and resolve transcript chips from it
+feat(frontend): typed composer entities, the file/microsite/account catalog and cross-category search
+Preserve logo lookup failures and guide reuse of original identities
+feat(chat): echo a title and kind on project_document and design_document context refs
+feat(context): compile a project_document focus card naming the file's mounted path, title and version
+fix(chat): refuse a retired project-document tag as stale rather than missing
+feat(chat): validate project_document refs against the project's latest servable version and contain design refs to the project
+feat(chat): accept project_document context refs on the wire and in the submission CHECK
+chore(dev-stack): port knobs in dev_stack.sh and a hangzhou wrapper on 3050/8090/8091
+docs(memory): hangzhou lane runs on 3050/8090/8091 beside san-salvador's runbook ports
+docs(memory): composer file-tagging session note; plan Task 8 extends it
+docs(plans): composer @ tagging of files, microsites and accounts — implementation plan
+Select GPT Image 2.5 Flare and verify reference transport
+docs(specs): composer @ tagging of files, microsites and accounts — approved design
+fix(frontend): stop the composer editor shell clipping the @ entity picker
+Record provider-blocked account-ad evaluation checkpoint
+Record local ad runtime readiness and provider limit blocker
+Prepare balanced account-ad guidance and stricter feed review
+Merge pull request #58 from clue-hq/artifacts-page
+docs(memory): artifacts-page note records PR #58 onto research-streaming
+docs(memory): artifacts-page note records the rebase onto research-streaming ca623050e, the merge revision e8fdb29cd532 and the post-merge gates
+feat(db): merge revision joining the artifacts-page and provider-incident migration heads
+docs(memory): artifacts-page note records the rebase onto research-streaming 2b0c8b977 and the post-rebase commit range
+docs(artifacts): the acceptance walk names the web Export zip
+feat(artifacts): a web artifact exports the design API's static-site zip from the library preview
+docs(memory): artifacts-page integration landed — what shipped, first-hand gates, pre-existing reds, the owed browser walk, deferred minors
+chore(artifacts): comment hygiene after the plan's pre-flight rulings; drop the dead warning rule
+feat(chat-shell): the editor header rename persists through the design API
+feat(chat-shell): read-once ?open= param opens an artifact tab from the project feed
+fix(artifacts): make a refused ad export visible in the library preview
+feat(artifacts): the /artifacts library and preview dialog bound to the workspace-wide read and the marks
+feat(artifacts): rename/archive through the design BFF and the saved-document ad export
+feat(gallery): project on cards, project filter/group, three library sorts, toolbar library mode
+feat(artifacts): library wire model, cursor-walking read repository, and mark writes
+test(api): the head capability inventory counts the two artifacts-page design tools
+feat(platform): register design_rename_document and design_set_document_archived ungranted, human-only
+feat(design): governed rename and set-archived tools with PUT /documents/{id}/title and /archived
+feat(design): rename_document and set_document_archived on the design DAL
+feat(artifacts): per-user saved and last-viewed marks; erasure deletes them
+feat(artifacts): GET /frontend/v1/artifacts — the workspace-wide, cursor-paged library read
+fix(tests): the design-artifact feed wire-set asserts carry the G-H keys
+feat(artifacts): workspace-wide design document query, shared card fields, archived rows leave the feed
+feat(platform): design_document_user_mark table for per-user saved and last-viewed
+feat(design): archived_at on design_document (artifacts library archive state)
+docs(artifacts): lane stack wrapper and the artifacts API contract
+docs(artifacts): pre-flight rulings — the marks test reaches the read surface through the production resolver override; the workspace stamp wording
+docs(artifacts): spec — a bad cursor is 400 INVALID_CURSOR, the read surface's convention
+docs(artifacts): pre-flight rulings — 400 INVALID_CURSOR per the read surface, reuse the gallery adapter's channel/size rules and the scene export's download helper
+docs(artifacts): the plan carries the codebase's telemetry, logging and tracing standard — loggers, event names, spans, metrics, Langfuse, frontend warnings, gates
+docs(artifacts): plan re-verified after the rebase onto research-streaming — alembic head, app.py registration block, lane Langfuse env
+docs(artifacts): implementation plan for the artifacts-page integration (16 tasks)
+docs(artifacts): artifacts-page integration design spec and exploration record for founder review
+docs(incidents): contract notes for the incident field and provider failure codes; memory note with the live Exa 402 proof
+feat(incidents): the research card, the empty overview section and the failed chat turn say why a provider failed, in one sentence
+fix(incidents): the chat handler's incident recording can never raise into a model callback — a failed connection is logged, the receipt stands
+feat(incidents): a chat turn's refused model call records provider_refused:<provider>:<reason> and feeds the incident recorder; a success closes
+feat(incidents): a refused model round stamps its failure on the ledger row and the job records provider_refused:<provider>:<reason>
+fix(incidents): the drain closes an incident only when the provider's last word in the batch was a success; onboarding rows count as onboarding
+feat(incidents): the ARV2 caller stamps the classified failure on its ledger row; the drain opens, counts and closes incidents
+fix(incidents): the failure threshold reads the ledgers only — no per-process window; the test seeds the rows it counts
+feat(incidents): provider_incident table and recorder — open once per (provider, reason), count, close on success; one Sentry event each way
+test(core): the provider-failure reason set is pinned to its type alias
+feat(core): one classifier for provider refusals and failures — status and body, or SDK exception, to a ProviderFailure
+docs(plans): provider incidents — seven tasks from the classifier to the live Exa 402 proof; spec §3.4 amended (writers are the ledger drain and the turn handler)
+docs(specs): provider incidents — founder answers: Sentry already configured on the lane; 429 counts toward the failure threshold
+docs(specs): provider incidents — one classifier, two writers, one durable incident table; Sentry open/close per incident; inline-only surfaces (founder rulings 2026-09-16)
+Record four-brand identity tests and remaining creative quality gaps
+Fix paired account identity composition and transparent logo inspection
+fix(frontend): the chat pane no longer scrolls away under the composer on each new message
+Record verified branch publication and current ad revision state
+Use Brandfetch originals and strengthen account ad identity composition
+Preserve earlier reference generation and ad harvest experiment notes
+Add account identity composition skill and record four-brand qualification failures
+Add exact-brand Logo.dev retrieval and isolate product logo caches
+Use subtle Clue-themed editor notices with dismissal
+Validate typography comparison and record pending provider gate
+Record verified native downloads for all qualification creatives
+Record verified AWS typography curation for local design tests
+Record font-fix reload and four-workspace browser verification
+Fix native glyph fallback and expose declared brand fonts
+Record verified PNG delivery and AWS font source failures
+Record matched typography calibration and measured latency limits
+Record loaded review evidence and native PNG verification
+Expose measured text line edges in creative review evidence
+Record eleven-case creative qualification and verified runtime fixes
+Make candidate repair rounds owned by runtime construction
+Preserve requested account relevance in creative copy
+Record live canvas verification and pending creative qualification
+Accept canonical medium context for existing brand kits
+Record canonical canvas and ABM integration verification
+Rebuild browser engine for canonical render context
+Avoid reserved module binding in canvas regression test
+Preserve legacy measurements and reject invalid reveal frames
+Update helper governance regression for equivalent typography guidance
+Derive native canvas layout from canonical brand context
+Record reviewed ABM identity guidance and qualification boundary
+Align candidate logo guidance across prompts and tools
+Let account direction own ABM logo composition
+Record ABM identity treatments and remaining qualification gates
+Preserve deliberate typography during brand token inference
+Use canonical review contract in candidate reviewer prompts
+Complete candidate review guidance and trim redundant preflight operations
+Record account-ad pilot results and qualification checkpoint
+Align logo preparation with shared scene composition guidance
+Add account adaptation to the scene skill catalog
+Balance supporting copy against approved visual hierarchy
+Expose generated ancestry in scene source discovery
+Record local engine rollout and remaining qualification gaps
+Stage scoped design preferences behind a default-off rollout gate
+Preserve effective typography across checked text edits and replay
+Add scoped memory selection pins for repeatable design context
+fix(frontend): a project document's kind is an open string; the gallery card labels unknown kinds by their own words
+fix(obs): the FastAPI span-details lookup survives a partial match on an included router
+docs(settings): spec §9 — Research fields fully specified; workspace.manage_settings permission
+Merge pull request #56 from clue-hq/lane3/sice1b
+merge: origin/research-streaming into lane3/sice1b — one stream fix kept (the gateway's lookahead strips the provider's repeated model keys and stamps the last chunk), the upstream OpenRouter reader semantics kept (only the counts the body said)
+feat(config): CLUE_LANGFUSE_ENABLED defaults to true; blank keys are a logged skip at the roots, never a crash (founder ruling 2026-09-15)
+docs(lane3): the design note records slice 4 as done with the erasure query and the leave-as-is ruling; lane index row 4
+docs(memory): lane 3 slice 4 — entity tags on traces; the erasure query; the coverage audit and the leave-as-is ruling
+feat(arv2): read_account_research and read_claims tag the turn's trace with the entity they served (lane 3 slice 4)
+fix(arv2): the batch write path records its drafts' entities too, so provider-built claims reach the job's trace tags (lane 3 slice 4)
+feat(arv2): the research job's trace is tagged with its subject, every entity it wrote about, and each committee member as it is born (lane 3 slice 4)
+fix(obs): the entity accumulator is seeded at the trace root and mutated in place, so child tasks and threads share one set (lane 3 slice 4)
+feat(obs): tag_entities — the current trace accumulates the entities it carried, re-emitted as entity:<id> tags and an entities metadata list (lane 3 slice 4)
+docs(lane3): slice 4 plan (entity tags on traces)
+docs(lane3): slice 4 design — entity tags on traces (tag_entities accumulator; the job tags its subject and what it wrote; the read tools tag what they served)
+Preserve approved styling during scoped creative repairs
+Refine creative grouping guidance and record mixed four-brand revisions
+Enforce reported copy gaps and opt-in feed sizing checks
+Compact candidate palettes and record four-brand edit verification
+Preserve user palette edits and record live typography evidence
+Document verified workspace-owner login recovery
+Record frozen four-brand preflight and sign-in blocker
+Record local stack recovery and pending authenticated validation
+Preserve effective brand typography in the ad inspector
+Preserve text role bindings during automatic paint replay
+Record expanded family coverage and preview export discrepancy
+Record four-brand guidance comparison and remaining quality gaps
+docs(memory): lane 3 slice 3 — Langfuse on the roots, the agent tree, provider and tool observations, receipt and ledger ids; live proof owed
+feat(api): the design leg's exit judge is a Langfuse evaluator holding its generation; a refused turn admission is a guardrail (lane 3 slice 3b)
+fix(arv2): the job is one agent observation — its graph, provider hops and ending share a trace (lane 3 slice 3b)
+feat(arv2): the research job is its own named Langfuse trace — priced rounds with generation ids on the ledger rows, an ending event, cap guardrails (lane 3 slice 3b)
+Expose pagination for selected scene guidance reads
+feat(toolbelt): every governed invocation is a Langfuse tool/retriever observation carrying the platform's disposition and references (lane 3 slice 3b)
+fix(arv2): provider observations name the host without userinfo; the transport-exhaustion row carries the Langfuse ids too (lane 3 slice 3b)
+feat(arv2): every provider call is a typed Langfuse observation with settled money and the ledger row id; halts and ceilings are guardrails; rows carry the Langfuse ids (lane 3 slice 3b)
+feat(gateway): the tracing decorator reports non-graph completions and embeddings to Langfuse with usage and settled cost (lane 3 slice 3b)
+docs(lane3): the design note records slice 3a as done with the CLUE_LANGFUSE_* names; lane index rows 3a/3b
+Fix scene text measurement feedback and native SVG colors
+feat(ops): make langfuse-check probes the keys without a trace; the stack status line says whether Langfuse is on (lane 3 slice 3a)
+fix(gateway): one chunk per stream carries the model keys, so the merged answer names the answering model once (lane 3 slice 3a)
+feat(runtime): the Langfuse handler joins the turn's callback tuple under a named trace; receipts carry the generation's Langfuse ids (lane 3 slice 3a)
+docs(lane3): slice 3b plan — verified accessors and literals (BufferedLedger.drain, ParameterSnapshot, ExitJudgment)
+feat(api): ClueLangfuseHandler fills the run registry at model-call start and prices the generation with the gateway's settled cost (lane 3 slice 3a)
+feat(db): agent_model_call gains langfuse_trace_id and langfuse_observation_id on the receipt, inserted and compared on replay (lane 3 slice 3a)
+feat(roots): Langfuse installed on the process provider at the platform API and the fleet worker; enabled-without-keys refuses at composition (lane 3 slice 3a)
+fix(obs): the Langfuse mask applies the secret-key and blob rules itself, never the claim-value rule (lane 3 slice 3a)
+feat(obs): clue_obs.langfuse — the client attached to the process provider, the payload mask, observation/event/guardrail helpers, the run registry (lane 3 slice 3a)
+docs(lane3): slice 3b plan (the Langfuse richness: gateway, provider, tool, research-agent and exit-judge observations, guardrails)
+feat(config): Langfuse settings and secrets (CLUE_LANGFUSE_*), the SDK dependency behind clue_obs, and its import contract (lane 3 slice 3a)
+docs(lane3): slice 3a plan (the Langfuse foundation); spec names the exit judge as the evaluator and the test helper's home
+Record four-brand review feedback results and validation gaps
+docs(lane3): slice 3 design — Langfuse attached to the slice 2 provider, the LangChain handler with a run registry, gateway/provider/tool observations, receipt ids, the streamed answering_model fix
+Expose rejected visual review registration to file tools
+Record fresh four-workspace creative regression results
+Clarify source scope in experimental scene copy review
+docs(memory): lane 3 slice 2 — tracing and Sentry at the roots, run context bound, trace propagation
+docs(lane3): the design note records slice 2 as done and corrects the run-context claim; lane index row 2
+feat(roots): tracing and Sentry installed at the platform API and fleet worker; request id and workspace bound per request; turn ids bound at submission
+feat(fleet): the task payload carries the enqueuing span's traceparent; the worker runs every handler in that trace and its run context
+feat(obs): install_sentry with the ruled posture — PII off, locals off, no tracing, ids as tags, secrets redacted
+feat(obs): install_tracing — one provider per process, run context on every span, httpx and FastAPI instrumented; W3C carrier helpers
+Record four-brand judgment calibration and evidence limits
+feat(config): telemetry root settings and secrets, documented at parity; instrumentation and sentry deps
+docs(lane3): slice 2 plan — the roots
+docs(lane3): slice 2 design — OpenTelemetry and Sentry at the roots, run context bound, trace propagation through the fleet payload
+Record copy-binding validation across four brand workspaces
+docs(settings): settings-section integration design spec for founder review
+docs(memory): lane 3 slice 1b — every provider call on the Postgres ledger
+chore(lane3): slice 1b review minors — drop the no-op --raw-root flag, skip the spend connection when nothing was buffered, correct the evidence tool's replay note
+feat(projections): the cost read's not_covered list shrinks to the design hold and pre-column rows
+settings page spec
+feat(evidence-tool): the persona-evidence call lands on provider_call_ledger under the turn's connection
+feat(display): the prewrite's section spend lands on provider_call_ledger in its own transaction
+Use virtual paths for direct native copy inspection
+docs(memory): lane 3 note — doubled answering_model and missing ledger extras fixed; not a lane 1 defect; lane DB migrated
+fix(cost): the served model is stamped once per stream and read from the gateway's stamp; OpenRouter rows carry model and token extras
+Bind candidate creative reviews to actual native copy
+feat(onboarding): every provider step lands its rows on provider_call_ledger
+feat(arv2-openrouter): the cost reader stamps the model and the token counts
+feat(arv2-ledger): LedgerStamp's project, run and job are optional
+docs(lane3): slice 1b plan — every provider call on the Postgres ledger
+docs(lane3): slice 1b design — every provider call on the Postgres ledger; OpenRouter rows carry model and usage
+Record four-workspace creative regression and editor verification
+docs(lane3): slice 1b plan — onboarding, display and persona-evidence ledgers onto provider_call_ledger
+Record reviewed tool repairs and four-brand verification plan
+Keep GIF frame discovery available when asset thumbnail is missing
+Allow explicit GIF source frame inspection and extraction
+docs(memory): lane 1 end-to-end walk — eight items, findings F1–F7 (executor spin on a blocked child; Redis unprovisioned)
+Merge pull request #55 from clue-hq/lane3/slice1-cost-read
+docs(memory): lane 3 slice 1 note records the push and PR #55
+docs(memory): lane 3 slice 1 proven on the lane database (paid turn owed); slice 1b recorded
+docs(lane3): design note records the zero-cost receipt and JSONL ledger findings; lane index gains lane 3
+Use registered reviews for candidate scene finalization
+feat(projections): cost_cli and make cost-report — the operator's cost view
+feat(api): GET /cost/report serves the lane 3 cost read, workspace-scoped
+feat(projections): the cost read — provider, model, job and project spend from the two ledgers
+Clarify scene asset placement and evidence-led review guidance
+feat(agent-ledger): the conversation-turn receipt records the gateway-measured cost
+feat(gateway): one shared reader for the cost stamp on an answer's metadata
+feat(db): agent_model_call gains cost_usd and cost_source stamped from the gateway (lane 3 slice 1)
+docs(lane3): slice 1 plan (the cost read), the telemetry and cost design note, and the rulings ledger
+test(arv2): the claims read's manual anchor is v4 after the v57 mint
+docs(agent-workspace): plan 4 (paged and spilled reads, free-flowing documents) proven on the lane stack
+feat(head-of-abm): v57 — turn caps at the founder's numbers (1800 s, 100 rounds); manual v4
+docs(agent-workspace): plan 4 — paged and spilled reads, free-flowing documents, budgets as observability
+fix(head-of-abm): v33 §7c points at the tools and claims chapters; v56 re-pins it
+feat(head-of-abm): v56/v33/recipe 28 — read_claims and read_artifact granted, the two reads paged; §7c reads pages and spills to the end; manual v3
+feat(project-root): any document under project/ is a versioned document; the plan is a pinned role, not a path; cards titled from the document (founder ruling 2026-09-14)
+fix(agent-execution): the receipt the model reads honours the spill — hydration applies the same threshold and stub
+feat(agent-execution): a governed result over the receipt budget is spilled to reads/<operation>.json and the receipt points at it
+feat(design): read_artifact@1 — a gallery artifact's summary or content by id, registered ungranted
+feat(arv2): read_claims@1 — a paged, gated claims query by entity, family, tier, status and date, registered ungranted
+feat(arv2): the discovery and claims reads page with offset/limit/next_offset at read_discovery_run@2 / read_account_research@2
+fix(agent-context): the onboarding-synthesis and account-research context policies move to v3 with the ruling
+feat(agent-context): layer budgets are tracked, never enforced — no turn fails or loses context at assembly (founder ruling 2026-09-14)
+docs(plans): plan 4 Task 7 — ICP and personas are pins agreed in one question, no write-time validation (founder ruling 2026-09-14)
+docs(plans): plan 4 Task 7 — free-flowing project documents; the plan is a pinned role, not a path (founder ruling 2026-09-14)
+docs(plans): plan 4 gains Task 0 — context budgets become observability (founder ruling 2026-09-14); version ladder after plan 3
+docs(agent-workspace): plan 3 (versioned project root) proven on the lane stack
+chore(env): LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S=300 so a long document write cannot trip langchain-openai's 120 s stall timeout
+fix(agent-turn): the project root writer reads artifacts through the bridge's own connections
+docs(agent-workspace): plan 3 — the versioned project root; the personas-only onboarding entry point retired from the profile
+fix(head-of-abm): plan-authoring and persona-authoring wording; v55 re-pins them
+feat(head-of-abm): v55 writes project documents with write_file — icp/persona/plan authoring skills; the three document tools ungranted; recipe v27; manual v2
+feat(agent-turn): the versioned project root is mounted per turn; documents the turn wrote surface as plan cards from the rows
+feat(project-root): the project's versioned root writer — ICP, persona and plan writes by folder over the existing document writers
+feat(agent-workspace): a versioned mount — write_file/edit_file under project/ go through a VersionedRootWriter and re-read the refreshed library
+feat(agent-workspace): AsyncBridge — a process-local loop for sync backends that must await
+docs(agent-manual): plan 2b (operating manual) proven on the lane stack
+fix(agent-turn): the identity layer budget fits the disclosed manual (L1 40,000 bytes; policy v2) with an offline guard
+feat(head-of-abm): v54 discloses the operating manual (15 chapters); prompt v10 drops the withheld delegation paragraph; skill v31 points at chapters
+test(catalog): manual drift guards
+fix(catalog): manual-workspace names the project library index card
+feat(catalog): the operating manual's hand-written chapters (v1)
+docs(memory): record the operating-manual builder, its forced clue_agents/clue_api split, and its open follow-ups
+feat(catalog): the operating-manual builder — tools, fields, errors and limits chapters generated from the code
+docs(agent-workspace): plan 2 (workspace libraries) proven on the lane stack
+fix(head-of-abm): v53/v30 — the brand library's manifest is brand/index.json
+feat(project-library): writers and DSAR refresh the library
+feat(agent-turn): turns mount the brand and project libraries; the project pin records the library index; replay mounts the pinned set
+fix(head-of-abm): prompt v9 points at the onboarding flow, matching skill v29
+feat(head-of-abm): v52/v29 — the brand and project libraries by their mounted paths
+feat(project-library): the project's settled state compiled into one persistent, digest-refreshed, read-only library
+fix(brand-library): the library index lists every file it serves
+feat(brand-library): brand knowledge materialized once per pinned version and mounted read-only as brand/
+feat(agent-workspace): LibraryTree — atomic, read-only, replaceable library trees; brand/project library mounts
+docs(agent-workspace): plan 1 (thread-rooted workspace) proven on the lane stack
+docs(agent-registry): the v51 pin comment says work/ stays readable and writable
+feat(agent-cleanup): thread directories are purged on archive and after retention
+fix(agent-profile): head-of-abm@v51 keeps `work/` writable too, so a delegated specialist's workspace matches v50 exactly
+fix(agent-profile): head-of-abm@v51 keeps `work/` readable so a delegated specialist keeps its scratch pad
+feat(agent-turn): turns run in the thread's workspace; profile v51 grants scratch/ and reads/; skill v28 names the notebook
+feat(agent-workspace): inputs and resources are rewritten per turn in the thread directory; outputs are snapshotted then emptied
+fix(agent-workspace): the workspace thread segment is the turn row's thread id at every site
+feat(agent-workspace): the workspace is rooted at the thread; scratch/ and reads/ persist; one live lease per thread
+feat(agent-workspace): a mount table — extra anchored roots under reserved virtual segments, read-only or read-write, one quota
+docs(arv2): read-tools hotfix proven on the lane stack
+fix(agent-runtime): an honest precondition refusal from an effect-free read does not spend the repair budget (W10)
+feat(head-of-abm): v50 pins skill v27 — the repaired read contracts, paged claims, and §7c reads to the end
+fix(arv2): a claims read names the account's claim families, and a wrong prefix is refused with the right ones
+fix(arv2): the account read fits the governed receipt — claims paged by offset under a byte budget, a long overview clipped and flagged
+fix(arv2): read_discovery_run accepts the schema's 'pass' on input so its result passes the runner's own validation
+Correct inlined guide diagnosis and record four-brand coverage results
+Isolate design runs and report current draft verification honestly
+Distinguish saved design drafts from accepted designs in chat summaries
+Record four-brand scene topology comparison and remaining quality gaps
+Add an isolated single-agent scene mode with preserved quality gates
+Record approved cross-brand samples and remaining quality gates
+Keep concurrent design run logs isolated for each run lifetime
+Expose current preview and review evidence to the design agent
+Serialize concurrent edits to the same agent workspace file
+Preserve explicit typography tokens through preflight
+Record provider approval block for creative validation
+Record verified discovery and direction-review checkpoint
+Expose available scene sources and bind acceptance to creative direction
+Record full-family live coverage and remaining quality gates
+Verify final scene acceptance and expose feed readability previews
+Fix scene authoring tokens and concurrent state snapshots
+Expand reference-led scene skills to eighteen discoverable creative families
+Fix image observation MIME and disclose animated reference previews
+Allow source-only ad harvests without creative model calls
+Keep newly ingested brand assets previewable after refresh
+Preserve complete website captures and observed SVG logo styling
+Backport Brand Context previews and font loading improvements
+docs(lane2): close document flow acceptance and update plan status
+refactor(editor): share the native Markdown toolbar across documents
+prototype(chat): preview a compact document file link
+feat(gallery): open project documents in named file tabs
+fix(frontend): keep Plan history replay from changing the active tab
+docs: record Plan verification login checkpoint
+Isolate local brand instances with server-pinned workspace sessions
+feat(frontend): integrate the Plan tab with durable project documents
+feat(frontend): add Plan tab preview for Lane 2 review
+refactor(frontend): share MDXEditor and migrate Knowledge editing
+docs(design): record skill family validation and remaining quality gates
+fix(design): preserve review evidence and allow one quality repair
+fix(design): preserve source crops and durable preview checkpoints
+fix(design): honor new artwork requests and preserve image framing
+fix(design): preserve cancellation status and saved draft notices
+feat(design): add scene skill family with verified acceptance
+fix(design): measure complete creative delivery from explicit evidence
+feat(frontend): connect project documents with versioned saves
+fix(design): preserve image reference roles and provider receipts
+feat(frontend): add isolated MDXEditor review prototype
+style(frontend): align research progress card with Clue tokens
+docs(frontend): select MDXEditor for Lane 2 document editing
+Merge branch 'research-streaming' into visual-polish
+docs(plans): lane 1 plan 2b — the operating manual as fifteen catalog-skill chapters (four generated with drift tests, eleven founder-reviewed), pinned by profile v53 and disclosed by the capability map; spec §4 and decision 5 settled by ruling M-1
+Merge branch 'research-streaming' into visual-polish
+docs(agent-workspace): the workspace is one folder per chat thread — no per-turn directory; plan 1 rewritten thread-rooted, W1/W5/§4.1/§4.2 amended, plans 2–4 and the index aligned
+docs(plans): lane index — the operating manual is plan 2b between the libraries and the versioned root; dead tools ungranted with plan 3; status literals and the fit-verdict read with plan 4
+docs(head-of-abm): operating knowledge library — five cited inventories of the agent's tools, context, domain, authority and runtime, and the manual design that follows from them
+docs(plans): lanes 1 and 2 — the read-tools hotfix, the four workspace reorganisation plans, the re-activated Plan-tab plan, the toolbar plan, and the lane index
+docs(agent-workspace): W2 and the mount table agree with W6 (versioned root, no governed save)
+docs(agent-workspace): W6 chosen — the project is written through deepagents' own write_file/edit_file over a versioned root, no new governed tool
+docs(agent-workspace): reorganisation design (rulings W1–W11) and the 2026-09-13 live-walk findings
+docs(design): record skill family expansion policy
+docs(design): define scene skill family and cross-brand evaluation
+docs(design): audit harness gaps and reset creative evaluation
+feat(design): preserve reference treatment and document live validation
+fix(design): reload staged image failures after document save
+feat(design): verify selected reference pixels and image contrast
+docs: record research-streaming rebase verification
+Fix project account refresh and require explicit bulk destination
+Keep chat composers stable for long drafts and align placeholders
+fix(frontend): keep Home suggestions independent of the draft
+chore(chat): clarify tool receipt scope after live verification
+feat(chat): deliver reasoning and durable stop-resume controls
+docs(chat): plan reasoning delivery and durable stop controls
+docs(frontend): clarify reasoning rollout plan and remaining acceptance
+fix(frontend): simplify reasoning and wrap long chat content
+chore(alembic): merge project-scoped documents (b953bf11e2a9) + durable chat queue (d639a2de8bd1) into one head
+docs(arv2): read tools — final review and fix-wave record
+fix(arv2): the claims read mirrors the display gate, verified means judged, accounts searchable and paged, candidates workspace-scoped, typed read outputs (profile v49)
+docs(project-plan): final review and fix-wave record
+fix(arv2): plan writes keyed on their body, one lock order for both writers, scoped replay read, blob after row, superseded detail served, kind-gated human edits, version in the plan's front matter
+docs(plans): drop the stray frontend table left in the plan-document plan by the R12 split
+docs(arv2): read tools close-out — labels, README, memory
+feat(head-of-abm): v48 grants the three ARV2 read tools — skill v25 §7c says read before you speak; recipe v26 admits them
+feat(arv2): read_project_accounts@1, read_account_research@1, read_discovery_run@1 — effect-free reads over ARV2 rows, registered ungranted
+feat(arv2): read_discovery_run@1 — the project's latest (or a named) discovery run with its candidates, effect-free
+feat(arv2): read_account_research@1 — an account's written overview or its live claims, effect-free
+feat(arv2): read_project_accounts@1 — the project's accounts with their research status, effect-free (module scaffold for the read tools)
+docs(project-plan): close-out — contract, memory, README; live proof owed
+feat(head-of-abm): v47 grants write_project_document@1 — skill v24 §6b says when and how the plan is written; recipe v25 admits it
+feat(frontend-read): the project's documents — list, detail, and the versioned PUT the Plan tab edits through
+feat(head-of-abm): write_project_document@1 — the project plan written with a revision check, registered ungranted; project_document refs project as the plan card
+docs(arv2): ICP authoring — final review and fix-wave record
+fix(arv2): scoped ICP paths in status.md and receipts, pinned project ICP seeded beside its newer version, settled persona runs answered honestly, personas visible in status.md, brand card and catalog stay brand-only
+feat(arv2): project/plan.md — write with revision check, list/read/save for the project's documents
+docs(arv2): ICP authoring close-out — labels, README, memory
+feat(head-of-abm): v46 grants author_icp_document@1 and request_persona_synthesis@1 — skill v23 teaches drafting, scope and personas; recipe v24 admits them
+feat(project-context): project-scoped documents materialize under inputs/project/ and appear in status.md
+feat(arv2): request_persona_synthesis — a personas-only onboarding run for the project's pinned ICP, registered ungranted
+feat(arv2): author_icp_document — a proposed ICP version authored by the Head of ABM, brand-level or project-local, registered ungranted
+feat(arv2): brand readers see brand-level rows only; ICP confirmation and the pin carry project scope and lineage
+feat(arv2): project-scoped knowledge documents and the personas onboarding run kind
+docs(project-context): close-out — memory note, index row, onboarding-plan addendum; live proof owed
+fix(project-context): honest index summaries, one project-document path rule, ARV2 disposition constants, project-named status.md, scoped SQL, path validation, retry-stability proof
+feat(project-context): the production turn seeds inputs/project/status.md + decisions.md and composes project_files_index into L3
+feat(project-context): the per-turn project files pin, read-only seeds under inputs/project/, and ProjectFilesIndexCard@1
+feat(project-context): status.md and decisions.md compiled from ARV2 rows and project_state statements
+docs(plans): the project FK anchor is project (project_id, workspace_id)
+feat(arv2): agent_turn_project_files — the insert-once pin of a turn's compiled project files
+docs(plans): rulings R10–R12 — external markdown libraries only, toolbar as its own slice, backend-first; the Plan tab frontend split into a deferred plan
+docs(specs/plans): project context files, ICP authoring, the plan document, and Head-of-ABM read tools — design rulings and four SDD plans
+docs(dev-stack): never pipe the wrapper's output; kill patterns are workspace-anchored
+chore(env): example files name this workspace's ports (3020 frontend, 8010 design API, embedded fleet worker on), not the semarang launcher's
+feat(design): add reference image direction skill
+Fix project account refresh and require explicit bulk destination
+Keep chat composers stable for long drafts and align placeholders
+fix(frontend): keep Home suggestions independent of the draft
+chore(chat): clarify tool receipt scope after live verification
+feat(chat): deliver reasoning and durable stop-resume controls
+docs(chat): plan reasoning delivery and durable stop controls
+docs(frontend): clarify reasoning rollout plan and remaining acceptance
+fix(frontend): simplify reasoning and wrap long chat content
+docs(dev-stack): never pipe the wrapper's output; kill patterns are workspace-anchored
+chore(env): example files name this workspace's ports (3020 frontend, 8010 design API, embedded fleet worker on), not the semarang launcher's
+docs(memory): record research-streaming rebase verification
+fix(frontend): roll overflowing sidebar names once on hover
+fix(frontend): enlarge account detail logos within their tiles
+fix(frontend): enlarge company logos in account lists
+fix(projects): persist project names and synchronize chat renames
+fix(frontend): verify extracted font samples and refresh typefaces
+fix(frontend): expand asset previews and keep details readable
+feat(brand-context): persist Markdown edits with version checks
+feat(frontend): add temporary Markdown Edit and Preview toggle
+chore(dev): add isolated Semarang stack launcher
+fix(frontend): polish Brand Context previews and Knowledge rendering
+docs(plan): brand-context markdown ruling — react-markdown + remark-gfm for rendering, CodeMirror for editing
+docs(plan): brand-context polish scope — tree rows, markdown rendering, typography sample, asset fill (ENG-181/182/183 + founder rulings 2026-09-12)
+docs(spec): a section not yet written stays blank; the web read serves what exists and polls for the rest
+docs(spec): contact pages are written on the first open of their account, not at settle
+docs(spec): display pages written at settle (account overview + contact pages) and shared blocks for same-question sections
+fix(chat-shell): the Target accounts tab refetches on research-progress reads too, so researched accounts update without a reload
+fix(chat-shell): the discovery launch signal banks only landed tool parts, so a launch seen while running still opens the tab when it completes
+chore(dev-stack): anchor every pkill/pgrep on this workspace's interpreter so sibling worktrees' stacks survive a restart
+docs(memory): onboarding v2 default close-out — verification state, fix-wave outcomes, walk items
+fix(onboarding): the setting-up screen tells the truth about the run it is watching
+feat(onboarding): GET /onboarding/current serves the workspace's brand-kit ingestion job
+docs: the new onboarding lane is the Welcome flow's pipeline — contract note, ledger A3/A4/A5 closed, memory
+feat(onboarding): the setting-up screen starts and follows the new onboarding lane; fixture stream in the new shape
+feat(onboarding): checklist rows derive from the new lane's steps; the audience row says personas continue
+feat(onboarding): the setup seam calls the new onboarding lane and releases on the four fast steps
+refactor(composition): the old Stage-0 recon composes behind CLUE_LEGACY_STAGE0_RECON_ENABLED, not provisioning (ledger A4)
+feat(config): onboarding v2 on by default; the old Stage-0 recon composes only behind CLUE_LEGACY_STAGE0_RECON_ENABLED
+docs(memory): research progress card close-out — verification state, provisional attention window, walk items
+fix(frontend): the research card sizes its own dock, so the composer stays on screen
+fix(arv2): the progress card's arithmetic — a pause is not a finish, a person-only run is work, and attention ages out
+docs: research progress card — contract note and lane memory
+feat(frontend): the pinned research progress card — polled every 5 s, status line rotating every 4 s, the mockup and nothing more
+feat(frontend): research progress model, the rotating status line, repository and BFF route
+feat(frontend-read): GET /projects/{id}/research/progress — the pinned research card's document
+feat(arv2): research progress fold — four stage quarters per account, member research fractional, pill and agents
+feat(arv2): the driver stamps deep_research, synthesis, committee and member_research on the job row
+feat(arv2): JobRow.stage and set_job_stage — the driver's four progress stamps have a home
+feat(arv2): arv2_research_job.stage — where a job is, for the research progress card
+docs(memory): discovery streaming close-out — verification state, parked pool-sizing decision, follow-ups
+docs(spec): §3's null case is the `data` envelope the branch actually serves
+fix(arv2): monotonic progress counters, the R4(c) cross-item guard's test, and the status literal
+fix(frontend): the launch snapshot waits for the transcript, the poll survives a failed read, the spinner respects reduced motion
+docs: discovery streaming — the tab's live poll contract and the lane memory note
+feat(frontend): the Target accounts tab polls the live discovery run, spins, refetches its rows, and opens itself on launch
+feat(chat-shell): the discovery launch signal — a completed launch_arv2_discovery part opens the target-accounts surface once
+feat(frontend): discovery status model, repository and BFF route for the Target accounts tab's live poll
+feat(frontend-read): GET /projects/{id}/discovery/current — the latest discovery run and its counts
+test(arv2 r4): the discovery DB proof under a concurrent cap — routed transport, two candidates in their own transactions
+fix(arv2 r4): _reap reads every finished task's failure before raising, and the serial-contract tests pin their order under a cap of one
+feat(arv2 r4): discovery verifies items as Exa finds them — per-tick listing, a bounded pool, progress on the run row
+fix(arv2 r4): a failed gate cancels and awaits its siblings, and a cancelled hop still pays its bill
+feat(arv2 r4): a candidate's gate questions are asked together, under one cap on verification hops in flight
+feat(arv2 r4): record_discovery_progress — the run's counters move on every poll tick
+feat(arv2 r4): CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY — the cap on Answer calls a discovery run has in flight
+docs(plan): research progress card (eight tasks) and onboarding v2 as default (six tasks) from the approved specs
+docs(plan): discovery streaming — ten tasks from the approved spec
+fix(composition): serialise the research-pack seed across booting workers (ledger A2)
+docs(spec): the new onboarding lane becomes the onboarding screen's pipeline (approved design)
+docs(spec): research progress card — one pinned live card per project above the composer (approved design)
+docs(spec): discovery streaming — verified rows land on the Target accounts tab as Exa finds them (approved design)
+docs(memory): PR #54 merged; lane continues on track-r4-v1 with the ledger's open items
+Preserve concurrent generated artwork and document reference control
+Replay streamed assets when the canvas engine is replaced
+Resolve streamed canvas images from the displayed scene
+Align image prompting guidance with reference-led artwork tools
+Expose available ad artwork to the design director
+docs: record completed artwork bank for the next creative review
+docs: define reference-led creative delivery and acceptance plan
+fix(design): let scene view inspect newly generated assets
+Make ad composition reference led and require requested artwork variants
+fix(design): preserve explicit text tokens through operation replay
+Record live ad control results and prioritize parity repairs
+Release editor lock after non-writing design handoffs
+Serialize shared design workspace materialization
+Record verified Linear control project and issue links
+Plan editable ad control experiment and Linear ticket pack
+Record local design verification and creative architecture findings
+Serve verified curated font bytes across design workspaces
+Repair design reconciliation ordering and preserve DSL error details
+Isolate manually driven ad onboarding tests from the fleet worker
+Use a design-specific progress message for ad generation
+Bind the local frontend to IPv4 loopback for browser access
+Rebuild browser design engine with local Rust toolchain
+Remove obsolete color picker prop after editor integration
+Honor the configured local agent workspace in dev stack
+docs(runbook): do not copy a shared .env blindly — every path, DSN and port is the sender's machine; audit table of the machine-specific keys
+docs+dev-stack: runbook covers the full user path; dev_stack.sh starts CLUE_DEV_FLEET_WORKERS workers
+fix(frontend): restore jsdom + @types/jsdom dev dependencies dropped by the design/website merge
+docs(memory): design/website merged into scene-ad; gates, helper rebuild, cutover steps pending
+Merge origin/design/website into design/scene-ad
+chore(env): declare CLUE_SELF_SERVE_PROVISIONING_ENABLED in .env.example (default off) per the flag-parity rule
+docs(runbooks): second-Mac setup for onboarding, sign-in, and brand-kit fetch (machine prerequisites, env, provisioning flag, verification)
+chore(env): record every design-subsystem setting in both .env.example files at code defaults
+chore(env): record every platform Settings field in .env.example at its code default
+chore(env): record CLUE_SELF_SERVE_PROVISIONING_ENABLED in .env.example
+docs(memory): fleet worker concurrency slots shipped and deployed to colombo
+feat(fleet): concurrency slots so one worker drives several chats at once
+docs(memory): Docker cleanup of stale worktree DB containers and volumes older than 20 days
+docs(memory): Docker VM disk-full incident after the Railway check build; recovery steps and rules
+docs(memory): Railway frontend redeployed from design/scene-ad via v4 fast-forward; ngrok tunnels back up
+docs(memory): website generating motion integration (handoff ad4f30bb) — scope, wiring, hold rule, dev-DB migration gap
+fix(frontend): host the generating veil on the output stage so it shows from leg-open, before the document exists
+feat(frontend): website "agent is generating" veil and edge glow over the output pane (cofounder handoff ad4f30bb, website only)
+docs(memory): thumbnail preflight fix deployed; Apollo kit v4 approved and v2 documents re-attached
+fix(design-api): thumbnails preflight the document before rendering
+docs(plan): thumbnail route preflights the document before rendering
+docs(memory): selection model v2 close-out — live-proven on the Brex CTA; Plan 3 ladder marked superseded
+feat(design-editor): a press on the selected node keeps it — the drilled label is draggable inside its button
+docs(plan): selection v2 R6 amendment + Task 3b — a press on the selected node keeps it (found by the live proof)
+feat(design-editor): canvas selection v2 — Cmd/Ctrl deep select, drill on double-click, second-click walk-up removed
+feat(design-editor): double-click drills one level toward the pointer, then opens the caret
+feat(design-editor): the deep-select cycle excludes the root frame
+docs(plan): selection v2 R3 amendment — the deep-select cycle excludes the root frame (found by Task 1)
+feat(design-editor): selection model v2 decisions — outermost unit on click, drill one level, deep select with cycling
+docs(plan): selection model v2 — outermost unit on click, drill on double-click, Cmd/Ctrl deep select; Plan 3's second-click walk-up retired
+docs(memory): web editor annotations + clone text edits — controller close-out for Slices 3 and 4
+fix(frontend): the canvas owns the Edit text quick action — drop the unread onEditText slot from the annotations binding
+feat(frontend): Edit text quick action in the comment box; D-F3 amendment recorded everywhere the ruling is quoted
+fix(bridge): the clone editor opens on the NEAREST text-like element, and its toolbar stays inside the page
+feat: double-click text inside a clone opens a constrained inline editor (text, B/I/U, size) that writes a fragment text override (R-A1, R-A6)
+feat: fragment text overrides flow through the API (path checked), the agent's inspect tool, and the inspector
+feat(lumen-web): render fragment text overrides after slot values — marks, size step, dead-path diagnostic
+feat(lumen-web): fragment text overrides — the one interior human edit a clone allows (D-F3 amended, R-A6)
+memory: slice 2 close-out — annotations end to end, rulings carried into slice 3
+docs(memory): record Task 11 — the solo prompt's annotations block
+feat(design-agent): the solo prompt honours numbered annotations in order, resolving clone paths through inspect_cloned_section
+feat(design-api): annotated targets — numbered ANNOTATION lines with the inner element resolved against the clone's real HTML
+feat(platform): web legs accept and pass annotated targets (node ids + inner paths + notes)
+feat(platform): a context ref may carry a note — schema, contract, durable column, replay
+feat(frontend): annotations ride the turn as noted design_node refs; numbered chips above the composer; Send to chat (R-A2)
+fix(frontend): web annotations — click-away banks a written note, the comment box stays inside the canvas band
+feat(frontend): web annotations — click opens an anchored comment box, Add stores a numbered session-only annotation with a badge (R-A1..R-A3)
+memory: task 5 fix round 1 — clone-root-only paths, plus the bridge harness technique
+fix(design-api): only a clone root gets a structural path in an annotate address
+memory: record the full apps/api baseline (10 pre-existing failures, all verified at 6527f298f)
+memory: slice 2 task 5 — bridge hover chip, annotate addresses, badges
+feat(design-api): bridge hovers every element with a name chip and posts annotate addresses; numbered badges (R-A1, R-A4)
+memory: slice 1 close-out + design-subsystem gate residuals (all pre-existing, root-caused)
+fix(web-inspector): ellipsize long layer names instead of wrapping them
+feat(design-api): TURN TARGET lines name nodes with the shared display-name order
+feat(design-agent): pinned clones are born with a human name on the section and fragment nodes (R-A5)
+feat(design-api): GET /documents serves fragment_meta (label, section_role) for every pinned clone
+feat(frontend): one display-name function for web nodes; layers panel shows human names (R-A5)
+docs(plan): web editor annotations, human names, clone text edits — 16-task implementation plan
+docs(memory): scene-ad generating motion port — live-proven start, shield, reduced motion and release
+docs(spec): web editor annotations, human node names, and text edits inside clones — design (D-F3 amended, rulings R-A1..R-A6)
+feat(design-editor): scene-ad agent-working motion — lock, chip and edge glow from the co-founder's handoff
+docs(plan): port the co-founder's scene-ad generating motion (lock, chip, edge glow) in place of the top-left chip
+docs(memory): item G preview ruling recorded
+docs(preview): item G — Line height and Letter spacing two-up, duplicate Vertical alignment row dropped (founder ruling 2026-09-04)
+docs(memory): Plan 4 close-out — painted-line hit test and outline, hug default, Fit to text, R8 hug-at-wrap-width; roadmap item F ticked, item G preview pending the founder
+chore(editor): rebuild the wasm engine from the Plan 4 sources (text_lines, line hit-test, provided lines, hug-at-wrap-width)
+docs(preview): Plan 4 item G — typography rows preview and icon provenance for the founder gate (nothing shipped)
+fix(lumen-core): a text node's hug height is measured at its wrap width
+docs(plan): Plan 4 ruling R8 + Task 5b — hug height measures at the wrap width (found by the live proof)
+feat(design-editor): Fit to text flips a fixed text height to hug in one write
+memory(design-agent): multi-page turn — /issuing filled + one home link, 20.7 min, accepted
+feat(design-editor): a text selection outlines its painted lines; a fixed box keeps a dashed frame
+docs(plan): Plan 4 R4 amendment — the measurement injection converges locally (found reviewing Task 5)
+fix(design-editor): converge the measurement injection until the solved text boxes stop moving
+feat(design-editor): send CanvasKit line boxes keyed on each text node's solved box
+feat(design-agent): text height is hug — DSL default, author prompt, LinkedIn ad skill
+feat(lumen-wasm): editor-supplied measurements can carry the painted line boxes
+fix(lumen-core): text hit-tests by its painted line boxes, not its layout box
+docs(plan): Plan 4 — no cargo fmt --all, explicit staging, untracked visual-regression baselines (found by Task 1)
+feat(lumen-core): computed geometry keeps a text node's painted line boxes
+memory: stale lumen-api-helper diagnosis (add_page refused)
+chore(env): LUMEN_CORE_HELPER declared in every .env.example — the prebuilt helper path does not rebuild itself
+docs(plan): Editor Quality Plan 4 — text bounds by painted lines, hug default, Fit to text, item G preview gate
+memory: web editor Page section repair + mint removal session
+fix(frontend): web inspector Page section is two groups (this page / new page); sample-site mint green and the fixture palette are gone
+fix(chat-shell): Layers tree indents by real depth — the flat 16px nested padding read as a two-level cap
+chore(design-editor): drop the inspector breadcrumb (founder declined) — remove the unused ancestry helper; records amended
+docs(memory): Plan 3 close-out — selection ladder live-proven; breadcrumb gated on founder preview; roadmap Plan 3 ticked
+feat(design-editor): selection ladder on the canvas — button-first click, walk-up (click/Alt/Escape), hover outline
+feat(design-editor): double-click on a button edits its label
+feat(design-editor): selection ladder decisions — button-first hit, walk-up, hover target, Escape, breadcrumb ancestry
+docs(plan): Plan 3 — selection ladder (SDD plan)
+memory: plan-sizing follow-up recorded
+feat(design-agent): size the plan to the change — a bounded edit gets one paragraph per touched section, not a full plan
+memory(design-agent): edit turn on the run-4 page — variant rung used, 5.9 min
+docs(memory): Plan 2 close-out — page first, pre-spend guard, contiguous frames, canvas on the first batch; roadmap Plan 2 ticked
+memory(design-agent): benchmark run 4 — solo web turn accepted in 15.9 min; library-pollution finding
+fix(design-agent): op frames carry every ledgered operation since the last frame, so the canvas cursor stays contiguous
+docs(plan): Plan 2 Task 5 — stream every ledgered op (found by the live proof)
+fix(design-editor): canvas draws the first streamed page on a pageless load instead of waiting for a checkpoint reload
+feat(design-agent): page-first rule for the director, the author and the LinkedIn ad skill
+feat(design-agent): asset tools refuse on a pageless scene before spending (scene.page_required)
+docs(plan): Plan 2 — page first and first-batch canvas (SDD plan)
+fix(gateway): retry transient provider errors on the same model — a killed long generation no longer discards a web turn
+feat(design-agent): inspect_cloned_section reads a clone's real HTML+CSS; campaign variants never supersede the original
+docs(memory): Plan 1 — backfill fix round + colombo dry-run outcome
+fix(design-agent): serialize a response's tool calls — batched writes raced and erased an assembly
+fix(design): rederive_kit_type_units skips unusable stored evidence instead of aborting the sweep
+docs(memory): Plan 1 close-out — type units, instanced faces, honest Bold/Italic; roadmap Plan 1 ticked
+fix(design-agent): non-OpenAI agent models over chat-completions — the /responses bridge dropped a grok run mid-stream
+feat(design-editor): Bold/Italic disable with a reason when the kit has no such face
+feat(design): backfill script re-derives stored kits' type units and repins documents
+feat(ingestion): emit static instances of a variable font as kit faces (LUMI0234/0235)
+fix(design-agent): keep author tool descriptions neutral — the lane ranking lives in the prompt
+feat(ingestion): instance a variable font into static faces per named weight
+fix(ingestion): guard type roles against misparsed line-height/letter-spacing (LUMI0233)
+fix(ingestion): line-height and letter-spacing are ratios of the element size, not px/16
+docs(plan): Plan 1 — ingestion type units and font faces (SDD plan)
+feat(design-agent): the clone path dominates — vocabulary lane demoted to last resort everywhere the agent reads
+docs(roadmap+memory): editor quality roadmap from the 2026-09-04 Apollo dry run
+fix(design-agent): solo clone-first — markers ride slot values, raw lane is the workspace default, plan.md is run-scoped
+fix(design-agent): registered assets survive a full-page ingest — the replay-equality gate holds
+feat(design-agent): web SOLO mode — one deepagent as director, designer, and customer-eyes judge
+docs(memory+plan): standalone artifact route lock close-out — live-proven, hygiene incident recorded
+fix(chat-shell): standalone artifact route — a refused canvas gesture says the lock's sentence
+feat(chat-shell): the standalone artifact route locks on the document-scoped agent-busy read
+feat(design-api): GET /documents/{id}/agent-run — the document-scoped agent-busy read
+docs(plan): standalone artifact route lock — document-scoped agent-busy read + poll (two tasks)
+docs(memory+plan): agent-working chip close-out — live-proven, standalone-route lock gap recorded
+feat(chat-shell): agent-working chip — the visible form of the scene editor lock
+docs(plan): agent-working chip — visible form of the scene editor lock (one task)
+docs(memory): merge logo-v2 + multi-page into design/website; env parity + dev DB at head
+chore(db): alembic merge — join logo family cache + web publish pages heads
+Merge design/website-multi-page into design/website
+docs(memory): website PDF export layout fixes (768 screen layout, inlined assets, soft breaks)
+fix(design-api): website PDF inlines asset-store bytes and lets bands split across sheets
+fix(design-api): website PDF bands fill the A4 sheet — drop the 768px body pin that left a bare strip
+fix(design-api): website PDF renders the 768 tablet layout in screen media, paginated onto A4 with no margins
+docs(memory): ZIP export CSP root cause and fix
+fix(design-api): website ZIP export CSP allows the bundle's own assets, styles and fonts (self + file:)
+Merge branch 'design/website' into design/scene-ad
+docs(memory): browser-testing setup (dushanbe db + ports) and share-menu preview/zip/pdf wiring
+feat(frontend): share menu PDF downloads the website export
+feat(design-api): PDF export for website documents — every page rendered by Chromium, merged in order
+feat(frontend): share menu — Preview externally opens the live page; ZIP downloads the site export; PDF says it is unavailable for websites
+chore(agents): re-pin every design tool digest moved by the F5 publish result shape (rollback/unpublish share WebPublishRef)
+chore(agents): re-pin design_publish_web@1 output schema digest (F5: WebPublishRef gained page_count + routes)
+chore(devstack): ports, db and log names come from CLUE_DEV_* env; pidfile-scoped down so two worktrees can run side by side
+docs(memory): F5 close-out — full API suite triage and the three post-close test fixes
+test(design-api): O4 route table — the per-route public page joins its sibling on the O6b allowlist
+test(design-api): export asset-base pin follows the per-page relative hop (F5 multi-page export)
+test(design-api): asset-base-url fake turn stub accepts cancel_requested
+docs(memory): F5 multi-page build close-out — what landed, verification, open founder items
+docs(design): master plan status — F5 built on design/website-multi-page; CP3 walk and founder review open
+docs(frontend): web publish api contract — the design-api surface the share menu uses
+test(design-api): fake web-turn stubs accept cancel_requested — three pre-existing failures green
+docs(design-agent): abm.no_campaign_shells copy follows R-F5-8 (advice, not prohibition)
+feat(design-agent): R-F5-8 — an unlisted pinned fragment advises instead of refusing the ABM assembly
+feat(editor): dev shell page switcher + route field (parity with the platform shell)
+feat(design): clicking a site link in the editor switches the active page
+feat(frontend): page section in the web inspector — route editor, add/remove page (flagged neutral controls)
+feat(frontend): page switcher drives the web canvas page (flagged neutral control)
+feat(frontend): page operation builders + the route grammar mirror
+feat(frontend): share menu shows the served site url and every page's route
+feat(design-api): Host-matched public pages app — {handle}.<suffix>/{slug}{route}; handle resolver is the custom-domain seam
+fix(design-api): a publish mints its bytes at the workspace's own handle
+feat(design): workspace handle — DNS-label shaped, derived from the workspace name, locked at first publish (R-F5-5 default); publish POST returns page_urls
+feat(frontend): Publish in the artifact share menu is real — repository seam over the design API, server url, no fake timer
+feat(design-api): PublicSiteAddress — config-sourced public origin, interim path fallback, absolute publish URLs
+feat(design-api): publish renders every page and serves it by route; site links rewritten; export ZIP per page
+feat(design-db): per-route publish pages — immutable revision pages + materialized current pages, rollback-aware
+feat(design): R-F5-8 — escape-route gates advise instead of refusing; nav/footer clones pin with a note
+feat(design-agent): page vocabulary in the harness, prompts and skills — one author brief per page; links free, guided
+fix(design-api): the web turn resolves fragments and targets across every page
+feat(design-agent): active page + list/add/remove/switch page tools on the web substrate
+feat(frontend): web render fetch and canvas take a pageId
+feat(design-api): web render targets a page — ?page_id, first-page default, typed 404; operations 422 carries engine_code
+test(design-api): add_page rides the checked /web/operations path end to end
+feat(lumen-web): AddPage/RemovePage ops — invertible, route-checked; SetPageMeta refuses bad or duplicate routes
+feat(lumen-web): route grammar LUMW0036 — the publish-surface shape every page route must have
+Merge branch 'design/replace-image-asset-library' into design/scene-ad
+docs(memory): replace-image asset-library close-out; plan ticked
+fix(chat-shell): asset-library toolbar gives the search box its room
+fix(chat-shell): asset-library panel paints above canvas banners; filters reset on open
+feat(brand-context): Assets lists kit items and workspace uploads (Uploads category, Brand badge)
+fix(chat-shell): asset-library panel ignores its own portalled chip and menu surfaces
+feat(chat-shell): anchored asset-library panel — brand kit pinned, click applies, upload in footer
+feat(chat-shell): Replace image offers upload or the asset library (option A menu)
+feat(design-editor): asset-library binding — fetch on open, pick reuses the replace batch
+docs(memory): record the fresh-database gate result for the option A branch
+fix(design-editor): every replace-image refusal speaks; file dialog stops offering GIF
+docs(logo): task 18 done — alternatives beside the 2x2
+docs(design): F5 execution plan — multi-page sites + real publishing, 22 tasks across six lanes
+feat(design-editor): pure asset-library composer (kit pinned, registry, categories)
+fix(logo): every alternative carries a measured ink verdict; import order
+feat(design-editor): listImageAssets — registry read for the asset library
+docs(plan): replace image — upload / asset-library picker + Brand context uploads, 8-task TDD plan
+feat(logo): show every other real asset as an alternative beside the 2x2
+docs(spec): replace image — upload / workspace asset library picker, Brand context uploads (founder-approved design)
+docs(design): F5 ruling R-F5-8 — links structurally free, agent guidance only; F4 escape-route gates demote to advisory
+docs(design): F5 rulings R-F5-6/7 — ABM microsite target; multi-page capture on a separate branch
+style(design-api): sort the font-decode test's imports and wrap four long lines
+docs(logo): task 17 done — per-cell arbiter over both sources; §0.5 superseded
+feat(logo): both sources propose, one arbiter picks per cell
+docs(design): F5 scope re-ratified — multi-page + real publishing on our domain
+docs(memory+claude): option A close-out — WOFF2 decoded at ingestion, backfill applied on dev
+feat(design): backfill script decodes stored WOFF/WOFF2 font assets to sfnt
+feat(design-api): web export re-encodes stored sfnt faces to WOFF2, content-addressed
+docs(logo): task 16 done — ladder Chrome-impersonating transport behind a flag; D16 (no browser tier)
+test(design-api): pin the WOFF2 SVG-embed refusal and prove the decoded face embeds
+feat(logo): the ladder fetches with a Chrome TLS fingerprint behind LUMEN_LADDER_IMPERSONATE_CHROME (default on)
+test(design-api): pipeline font-decode proof drives the worker entry in-process
+test(design-api): harvested and uploaded WOFF2 faces are stored and served as TTF
+feat(design-api): decode WOFF/WOFF2 to sfnt at the ingest_asset chokepoint
+docs(logo): task 15 done — QA-render UA override behind a flag; D11 resolved
+feat(design-api): font container helpers — lossless WOFF/WOFF2 <-> sfnt, deterministic
+feat(design): QA renderers present a normal Chrome User-Agent behind LUMEN_QA_RENDER_UA_OVERRIDE (default on)
+docs(plan+memory): option A — decode WOFF/WOFF2 brand fonts to sfnt at ingestion
+docs(logo): D11 evidence — the UA override works in both QA renderers; vendor guideline text
+docs(memory+plan): scene live-streaming rung B close-out — live-reveal + late-join walk verdicts, per-turn scoping rulings, amendments
+fix(design-editor): in-sync anchor after a late join — a turn-less seed undid the cursor
+fix(design-editor): late join replays the in-flight turn's backlog through the seeded cursor
+fix(design-editor): stream cursor and late-join seed are scoped per run turn
+feat(design-editor): late join streams from the last committed version
+docs(logo): plan complete — task 14 + final review status, D15; build note commit table and session close
+fix(logo): keep vendor cells when the ladder backfill is blocked
+docs(logo): full-suite results and baseline triage in the close-out note
+fix(design-editor): anchor reload decision composes cursor sync with pump health
+chore(tests): silence the pymupdf swig deprecation in the design suites; import order
+feat(design-editor): live-reveal pump — the design draws itself in
+docs(logo): deferred items D12–D14; task 14 execution errata
+feat(design-editor): stream cursor algebra for op frames
+docs(logo): close out the vendor-first build
+chore(tests): silence the pre-existing starlette testclient deprecation in the api suite
+test(logo): suite-wide vendor guard; end-to-end mixed-provenance family
+feat(platform): design.op_batch frames stream per-mutation ops
+docs(logo): automated-render caveat for hotlinked logos
+docs(logo): plan status — task 13 done (UA-guard finding); deferred item D11 (headless renders, founder decision)
+feat(agent-runtime): op-bearing sink events carry their ledger position
+docs(logo): plan status — task 12 done
+feat(logo): hotlink lane — decorative third-party logos via Logo API CDN
+docs(logo): plan status — task 11 done with execution errata
+fix(logo): prompt wrap, placement hint, drop unused test var
+docs(memory): founder ruling — lock reason outside edit mode stays on the Edit pill tooltip
+feat(logo): prompts speak the 2x2 cell vocabulary
+docs(logo): D10 resolved — full suites re-run on the prepared worktree; agent_runtime green, api's 28 failures identical at the pre-batch commit
+docs(logo): deferred item D10 — worktree lacks the clone-fidelity toolchain; full-suite gate prerequisites for Task 14
+docs(memory+plan): scene live-streaming rung A close-out — walk verdicts, P0.4 WOFF2 root cause, amendments
+fix(agent-runtime): P0.4 checkpoints key on round acceptance — SVG font-embedding refusals no longer block them
+docs(logo): deferred item D9 — suite-wide vendor guard for Task 14
+docs(logo): plan status — tasks 6 (final) and 10 done; batch 4-10 live-verified
+fix(logo): vendor cells ingest with the engine's website source kind (no vendor variant)
+fix(frontend): agent-run lock — durable leg seed, per-turn leg release, gate note surfaced, proactive reason
+docs(logo): deferred items D7 (knowledge doc) + D8 (engine AssetSource has no vendor kind — live-run finding)
+feat(logo): both fetch_logo tools speak the 2x2 — cells, sources, cache_hit, force_refresh
+docs(logo): plan status — task 9 done
+feat(logo): compose the family cache into both lanes' turn config
+docs(memory): scene clipboard close-out
+docs(logo): plan status — task 7 done
+test(logo): family cache — custody miss, error posture, empty put
+feat(logo): durable family cache — (workspace, registrable_domain) keyed
+fix(design-editor): clipboard carries asset records across documents; pasted nodes keep readable names
+docs(logo): plan status — task 8 done
+feat(logo): bind gate accepts vendor provenance
+docs(logo): plan status — task 6 done
+memory: nashville workspace — live-walk stack recipe and the blob-store clone gap
+fix(logo): dispatch status carries the ladder's hesitation; hesitant families are never cached
+docs(logo): Task 8/10 carry-overs from the Task 6 review
+feat(logo): two-rung dispatch — cache, Brandfetch, per-cell ladder backfill
+docs(logo): Task 9 seams resolved (run_agent_turn_preview + run_web_agent_turn); Task 11 render test corrected
+docs(logo): plan status — task 5 done
+docs(logo): Task 7 — exact migration SQL, clue_design DAL layering, wrapper code, throwaway-DB smoke, fixture pattern
+feat(logo): ladder slots -> 2x2 cells
+docs(logo): Task 6 — slot alias for continuity, helper-test updates, vendor-disabled autouse fixture
+docs(logo): plan status — task 4 done (live-verified)
+fix(logo): vendor driver — import block, suffix-iterating allowlist, timeout/malformed tests
+docs(plan): scene clipboard — Task 11 checked off (paste pins green first run)
+test(design-editor): pin text-session paste span remap
+feat(logo): Brandfetch network driver — sync httpx, typed degrades
+docs(logo): Task 4 — explicit User-Agent (CDN refuses UA-less fetches); inversion live-verified
+docs(logo): plan status — task 3b done
+feat(logo): raster decodability gate for vendor cells; settings test pins base url
+docs(logo): Task 4 — typed 'auth' degrade for 401/403 per the Brand API reference
+docs(logo): deferred-items ledger — every deferral owned by a task (3b, 4, 10, 11, 14 amended)
+docs(logo): plan status — task 3 done
+docs(plan): scene clipboard — Task 10 checked off (baseline-first png offer, sync-throw fix recorded)
+fix(design-editor): clipboard png offer swallows a synchronous writer throw
+feat(logo): vendor asset -> 2x2 cell mapping
+docs(logo): plan status — tasks 1-2 done
+feat(design-editor): image-node copies carry image/png for external apps
+feat(logo): 2x2 family vocabulary + Brandfetch payload parsing (pure half)
+docs(plan): scene clipboard — Task 9 checked off (native plain-text paste, R26-R30 recorded)
+feat(frontend): scene editor is view-only while the design agent runs
+feat(logo): Brandfetch settings — api key, public client id, base url, timeout
+docs(logo): vendor-first logo family plan + session notes
+feat(design-editor): plain-text paste — replace selected text or mint a text node
+docs(plan): scene clipboard — Task 8 checked off (upsert_asset fix, dimension-source correction recorded)
+fix(design-editor): image ingestion registers assets via upsert_asset before insert
+feat(frontend): canvas reloads on design.checkpoint frames, throttled, feed untouched
+feat(design-editor): external image paste/drop ingestion
+feat(platform): design.checkpoint frames stream mid-run into the thread SSE
+fix(design-api): extend the agent-run write lock to /edits and /revert
+feat(design-api): document writes refuse while a design run is active (409 agent_run_active)
+docs(plan): scene clipboard — Tasks 6-7 checked off (R16 seam ruling, R9 fix round recorded)
+fix(design-editor): clipboard paste refuses files-only clipboards; copy yields to DOM text selections
+feat(design-editor): scene clipboard events — copy/cut/paste/duplicate
+chore(frontend): add @types/jsdom — silences TS7016 on the clipboard test suites
+test(design-editor): pin envelope-beats-files paste priority
+feat(design-editor): paste classifier with fall-through priority
+docs(plan): scene clipboard — Tasks 4-5 checked off (SDD rounds, op.child_missing fix recorded)
+fix(design-editor): clipboard materialization inserts childless nodes (op.child_missing)
+docs(plan): scene-ad live streaming — two-sided agent-run lock + checkpoint streaming (rung A), ported MVP live-reveal (rung B)
+feat(design-editor): clipboard materialization to insertNode batches
+feat(design-editor): paste placement planner (rulings 1-2, F9 rebase pinned)
+docs(plan): scene clipboard — Task 3 steps checked off
+feat(design-editor): clipboard subtree re-mint with reference rewrite
+docs(plan): scene clipboard — Task 2 steps checked off
+feat(design-editor): clipboard html envelope codec with strict validation
+memory: nashville workspace setup — port map 3023/8013/8023/8033, clue_nashville DB cloned from colombo
+docs(plan): scene clipboard — Task 1 steps checked off (runner note: tsx --test, not vitest)
+feat(design-editor): scene clipboard DTO + subtree serializer
+docs(plan): scene clipboard — defaults ratified by founder; downscale-only sizing made explicit
+docs(plan): scene clipboard — WebP admitted to inbound allowlist (founder ruling, second pass)
+docs(plan): scene-ad editor clipboard — copy/cut/paste/duplicate + external image ingestion, design + 12-task plan
+feat(chat-shell): device menu drives the web canvas viewport (375/768/fluid)
+memory: rich-text v8 merge closed the missing-feature gap; WYSIWYG upgrade options scoped and deferred
+merge: rich-text scene editing (part-iv-v8) into scene-ad line
+Merge remote-tracking branch 'origin/integration/design-improvement' into integration/frontend-design-part-iv-v4
+ngrok.yaml but without gittoken. copy is at notes
+docs(memory): T5 live walk complete — stack recipe, walk verdict, D1-D3 fixes verified
+fix(design-editor): text-edit overlay visibility, font stack, toolbar placement/stacking
+docs(memory): rich-text A→B→C close-out — shipped, reviewed, residuals
+fix(design-editor): split text-session dirty channels; reseed selection; token-ref weight guard
+fix(design-editor): rich-text review fixes — D4 raw-vector guard, session dirty/refusal honesty, C-9 prose
+feat(design-editor): range styling toolbar riding engine spans
+feat(design-editor): span algebra + reconciliation for scene rich text
+feat(design-editor): double-click inline text editing on the ad canvas
+feat(design-editor): text content editing in the ad text inspector
+docs(plan): rich text editing in the scene editor — design + A→B→C implementation plan
