@@ -252,6 +252,9 @@ def build_frontend_read_router(
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.project_documents import register_project_document_routes
+    from clue_api.frontend_read.project_instructions import (
+        register_project_instructions_routes,
+    )
     from clue_api.frontend_read.research_progress import register_research_progress_route
     from clue_api.frontend_read.settings import register_settings_routes
     from clue_api.frontend_read.uploads import register_upload_routes
@@ -306,6 +309,14 @@ def build_frontend_read_router(
         storage=evidence_storage,
         allow_local_mutations=allow_local_mutations,
         # The human's PUT refreshes the project library it just moved (2026-09-14).
+        library=project_library,
+    )
+    # The project home's Instructions panel, which is one of those documents (spec 2026-09-19).
+    register_project_instructions_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
         library=project_library,
     )
     # Chat attachments: the upload receipt and the bytes behind a transcript chip (spec
