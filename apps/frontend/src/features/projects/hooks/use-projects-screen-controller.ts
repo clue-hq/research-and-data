@@ -13,8 +13,16 @@ import {
 } from "../model/project-directory";
 import type { ProjectMemoryNote } from "../model/project-memory";
 import type { ChatThread } from "../model/chat-thread";
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type {
+  ProjectEntity,
+  ProjectWorkspace,
+} from "../model/project-workspace";
+import type { ChatThreadsRepository } from "../data/chat-threads.repository";
+import type { ChatTurnsRepository } from "../data/chat-turns.repository";
+import type { ChatAttachmentRef } from "../model/chat-attachments";
+import type { TurnContextReference } from "../model/chat-turn";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
+import { useChatAttachments } from "./use-chat-attachments";
 
 /**
  * The projects directory and the project home, over the real seams.
@@ -58,6 +66,45 @@ export function paginate<T>(items: readonly T[], page: number) {
   return items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 }
 
+/**
+ * A new chat is two writes in one order: the thread, then its first turn on it.
+ *
+ * Pure, and outside the hook, so the pair can be asserted without React. The
+ * empty-message refusal happens before the thread exists — the composer already
+ * disables its send on an empty draft, and this keeps the function honest for
+ * any other caller rather than leaving behind a thread with nothing in it.
+ */
+export async function startChat(
+  deps: { threads: ChatThreadsRepository; turns: ChatTurnsRepository },
+  input: {
+    projectId: string;
+    message: string;
+    contextRefs: TurnContextReference[];
+    attachmentRefs: ChatAttachmentRef[];
+    agentProfileId: string | null;
+  },
+): Promise<{ href: string }> {
+  const message = input.message.trim();
+  if (!message) throw new Error("Type a message to start a chat.");
+  const thread = await deps.threads.create({
+    projectId: input.projectId,
+    idempotencyKey: newIdempotencyKey("home-thread"),
+  });
+  await deps.turns.submit({
+    projectId: input.projectId,
+    threadId: thread.id,
+    submission: {
+      kind: "message",
+      message,
+      contextRefs: input.contextRefs,
+      attachmentRefs: input.attachmentRefs,
+      agentProfileId: input.agentProfileId,
+    },
+    idempotencyKey: newIdempotencyKey("turn"),
+  });
+  return { href: thread.href };
+}
+
 export function useProjectsScreenController(projectId?: string) {
   const repositories = useChatRepositories();
   const router = useRouter();
@@ -86,7 +133,14 @@ export function useProjectsScreenController(projectId?: string) {
   const [prompt, setPrompt] = useState("");
   const [modelId, setModelId] = useState("");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  // Real uploads, and only where one can land: the fixture transport has no
+  // upload endpoint, and a workspace may have the capability switched off.
+  const attachmentsEnabled =
+    repositories.transport.mode === "http" &&
+    (shell?.composerCapabilities.attachments ?? false);
+  const chatAttachments = useChatAttachments({ enabled: attachmentsEnabled });
 
   const message = (failure: unknown) =>
     failure instanceof Error ? failure.message : "Projects could not be saved.";
@@ -154,6 +208,16 @@ export function useProjectsScreenController(projectId?: string) {
   const visible = useMemo(
     () => visibleProjects(all ?? [], { filter, query, sort }),
     [all, filter, query, sort],
+  );
+  const models = shell?.models ?? [];
+  const selectedModel =
+    models.find((model) => model.id === modelId) ?? models[0];
+  const selectedEntities = useMemo(
+    () =>
+      selectedEntityIds
+        .map((id) => shell?.entities.find((entity) => entity.id === id))
+        .filter((entity): entity is ProjectEntity => Boolean(entity)),
+    [shell, selectedEntityIds],
   );
 
   async function run<T>(act: () => Promise<T>): Promise<T> {
@@ -246,10 +310,41 @@ export function useProjectsScreenController(projectId?: string) {
     }
   }
 
-  async function newChat(id: string, draft = "", contextIds: string[] = []) {
-    /* Task 12 */ void id;
-    void draft;
-    void contextIds;
+  function selectEntity(entityId: string) {
+    setSelectedEntityIds((current) =>
+      current.includes(entityId) ? current : [...current, entityId],
+    );
+  }
+
+  function removeEntity(entityId: string) {
+    setSelectedEntityIds((current) => current.filter((id) => id !== entityId));
+  }
+
+  async function newChat(id: string, draft = "") {
+    if (busy || navigationPending.current || !shell) return;
+    navigationPending.current = true;
+    try {
+      const contextRefs = selectedEntities.map((entity) => ({
+        objectType: entity.type,
+        objectId: entity.id,
+        version: null,
+      }));
+      const { href } = await run(() =>
+        startChat(repositories, {
+          projectId: id,
+          message: draft || prompt,
+          contextRefs,
+          attachmentRefs: [...(chatAttachments.snapshot() ?? [])],
+          agentProfileId: selectedModel?.id ?? shell.defaultAgentProfileId,
+        }),
+      );
+      setPrompt("");
+      chatAttachments.clear();
+      router.push(href);
+    } catch {
+      navigationPending.current = false;
+      /* Keep the prompt on a failed save. */
+    }
   }
 
   function mutate(type: "pin" | "archive", id: string) {
@@ -262,7 +357,6 @@ export function useProjectsScreenController(projectId?: string) {
     ).catch(() => undefined);
   }
 
-  const models = shell?.models ?? [];
   return {
     loaded,
     data: all,
@@ -318,8 +412,20 @@ export function useProjectsScreenController(projectId?: string) {
     newChat,
     prompt,
     setPrompt,
+    // Withheld where no upload can land, so the composer hides the `+` button
+    // rather than offering one whose files would go nowhere.
+    addAttachments: attachmentsEnabled ? chatAttachments.onFiles : undefined,
+    // The hook's own refusals (an unsupported file, a failed upload) render
+    // inside the composer; `error` stays the save surface.
+    attachmentError: chatAttachments.error,
+    attachments: [...chatAttachments.attachments],
+    removeAttachment: attachmentsEnabled ? chatAttachments.remove : undefined,
+    selectEntity,
+    removeEntity,
+    selectedEntities,
+    selectedEntityIds,
     models,
-    selectedModel: models.find((model) => model.id === modelId) ?? models[0],
+    selectedModel,
     modelPickerOpen,
     selectModel(id: string) {
       setModelId(id);
