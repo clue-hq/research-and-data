@@ -968,6 +968,10 @@ class ProjectConversationTurnRunner:
                     submitted_by_user_id=submission.submitted_by_user_id,
                     submitted_via_membership_id=submission.submitted_via_membership_id,
                     stream=stream,
+                    # The exact mount table this turn's lease was acquired with, so the code
+                    # sandbox binds the directories the model's own file tools see — including
+                    # a replayed turn's pinned project tree — rather than re-deriving them.
+                    mounts=mounts,
                 ),
                 submission=submission,
                 turn_id=request.turn_id,
