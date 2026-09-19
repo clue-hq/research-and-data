@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
@@ -10,6 +11,7 @@ import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachmen
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
 import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
 import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
+import { projectHomeHref } from "@/features/projects/model/project-directory";
 import {
   DESIGN_REFERENCE_ACCEPT,
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
@@ -59,6 +61,7 @@ import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
+import projectStyles from "@/features/projects/components/projects-directory.module.css";
 import { WebInspector } from "./web-inspector";
 
 // The chats route's view layer (Phase C, C-3): the co-founder's chat-shell
@@ -962,6 +965,7 @@ export function ChatSurface({
               aria-label="Conversation"
               className={`${styles.conversationStage} flex min-h-0 flex-col`}
             >
+              {workspace.title ? <div className={projectStyles.chatProjectLink}><Link href={projectHomeHref(projectId)}>← {workspace.title}</Link></div> : null}
               <ConversationContent
                 chat={chat}
                 contextEntities={controller.composerEntities}
