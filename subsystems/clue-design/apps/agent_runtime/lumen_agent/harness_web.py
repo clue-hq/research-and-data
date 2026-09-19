@@ -34,6 +34,10 @@ from .config import AgentRuntimeConfig
 from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
 from .models.schemas import VisualCritique
+from .platform_reads import (
+    make_platform_read_tools,
+    write_seller_knowledge,
+)
 from .prompts_web import (
     build_web_author_prompt,
     build_web_orchestrator_prompt,
@@ -218,6 +222,11 @@ def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
     )
+    # Design note 2026-09-19: the seller's pinned knowledge, on the same terms as the scene
+    # workspace — ordinary files next to the brand card, written once per pin, read-only to the
+    # agent (fs_backend's readonly_subdirs).
+    if tools.config.platform_reads is not None:
+        write_seller_knowledge(workspace, tools.config.platform_reads, record=tools.record)
     logger.debug("web_workspace_scaffolded", run_id=tools.run_id, workspace=str(workspace))
     return f"/{tools.workspace_scope_id}/workspace"
 
@@ -477,6 +486,19 @@ def create_web_deepagent(
         tools.switch_page,
         tools.finalize_web_run,
     ]
+    # Design note 2026-09-19: on a LEG turn the platform's reads become three tools here too —
+    # a landing page for a named company is written from what research found about it. Off a leg
+    # turn `platform_reads` is None and the tools do not exist. Inserted before finalize_web_run
+    # so the honest exit stays last.
+    if runtime_config.platform_reads is not None:
+        platform_read_tools = make_platform_read_tools(tools, runtime_config.platform_reads)
+        for read_tool in platform_read_tools:
+            orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
+        tools.record(
+            "orchestrator",
+            "platform_reads_attached",
+            payload={"tools": [read.name for read in platform_read_tools]},
+        )
 
     if runtime_config.web_solo:
         # SOLO MODE (founder ruling 2026-09-04): the one agent is director, designer, and

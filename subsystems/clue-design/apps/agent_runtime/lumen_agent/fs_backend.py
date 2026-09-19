@@ -69,6 +69,7 @@ from wcmatch import glob as wcglob
 from .critique_fidelity import CRITIQUE_FILENAME, normalize_critique_document
 from .materialize import _LOCK_NAME
 from .paths import normalize_agent_key
+from .platform_reads import SELLER_DIR
 
 logger = get_logger("lumen_agent.fs_backend")
 
@@ -96,6 +97,7 @@ class AgentWorkspaceBackend(FilesystemBackend):
         critique_observer: Callable[[Path, str], str | None] | None = None,
         active_run_id: str | None = None,
         history_thread_id: str | None = None,
+        readonly_subdirs: tuple[str, ...] = (SELLER_DIR,),
     ) -> None:
         super().__init__(root_dir=root_dir, virtual_mode=True, max_file_size_mb=max_file_size_mb)
         # W1.5: whether reference assets rode this turn. Only a reference turn
@@ -134,6 +136,11 @@ class AgentWorkspaceBackend(FilesystemBackend):
         ):
             raise ValueError("history_thread_id must be a single file-name segment")
         self._history_thread_id = history_thread_id
+        # Design note 2026-09-19: folders inside the agent's own workspace that it may READ and
+        # never write. `seller/` is the seller's pinned knowledge, written once per session by
+        # the runtime from the platform's reads — an agent that could edit it could rewrite what
+        # the brand says about itself and then design against its own words.
+        self._readonly_subdirs = tuple(readonly_subdirs)
         self._custom_components_root: Path | None = None
         self._custom_components_internal_prefix: str | None = None
         if custom_components_root is not None:
@@ -200,13 +207,41 @@ class AgentWorkspaceBackend(FilesystemBackend):
             f"/{self._active_run_id}/ or the shared read-only knowledge and skills."
         )
 
+    def _pinned_subdir(self, *candidates: Path) -> str | None:
+        """The pinned read-only subdirectory a write would land in, or None.
+
+        The agent's workspace is `<scope>/workspace/`, so a pinned tree is the segment PAIR
+        `workspace/<name>/`. Matching on the pair rather than on a scope-rooted prefix is what
+        makes this fence hold in BOTH modes: website mode keeps an unscoped backend (no
+        `active_run_id`), and the seller's knowledge is written and read there too.
+        """
+        for candidate in candidates:
+            parts = candidate.parts
+            for index in range(len(parts) - 1):
+                if parts[index] == "workspace" and parts[index + 1] in self._readonly_subdirs:
+                    return parts[index + 1]
+        return None
+
     def _assert_writable(self, key: str) -> None:
-        if self._active_run_id is None:
-            return
-        resolved = self._resolve_path(key)
         lexical = Path(self._workspace_root).resolve() / self._normalize_and_map_key(key).lstrip(
             "/"
         )
+        # The pinned trees are refused before the scope check, because they are refused in both
+        # scope modes: they sit INSIDE the agent's own read-write workspace and are carved back
+        # out of it, rather than being another shared projection outside it.
+        if (pinned := self._pinned_subdir(lexical)) is not None:
+            raise PermissionError(
+                f"{pinned}/ is read-only: it is the pinned knowledge this turn designs from. "
+                "Write files elsewhere in the workspace."
+            )
+        if self._active_run_id is None:
+            return
+        resolved = self._resolve_path(key)
+        if (pinned := self._pinned_subdir(resolved)) is not None:
+            raise PermissionError(
+                f"{pinned}/ is read-only: it is the pinned knowledge this turn designs from. "
+                f"Write files elsewhere under /{self._active_run_id}/."
+            )
         scope = self._scope_roots()
         history = self._history_roots()
         # The run/session folder AND this thread's own history are read-write;

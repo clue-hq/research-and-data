@@ -13,6 +13,7 @@ from .engine_mirror import record_pixel_dims
 from .frame import render_ad_dna_card_text, render_pregenerated_assets_text
 from .image_crop import recorded_generated_image_origin
 from .paths import to_virtual
+from .platform_reads import write_seller_knowledge
 from .tools.asset_preview import PREVIEWABLE_MIME_TYPES, blob_path_for_digest
 from .tools.substrate import LumenDesignTools
 from .tools.view import _reference_entries
@@ -305,6 +306,12 @@ def scaffold_workspace(tools: LumenDesignTools, prompt: str) -> Path:
     (workspace / "brand_card.json").write_text(
         json.dumps(tools.brand_card, indent=2), encoding="utf-8"
     )
+    # Design note 2026-09-19: the seller's own knowledge, pinned by the platform for this leg,
+    # lands next to the brand card as ordinary files the agent reads (and cannot write — see
+    # fs_backend's readonly_subdirs). Written once per pin: a second turn in the same session
+    # finds the same tree and writes nothing.
+    if tools.config.platform_reads is not None:
+        write_seller_knowledge(workspace, tools.config.platform_reads, record=tools.record)
     if tools.config.scene_skill_bundle == "candidate" and tools.brand_card:
         # A separate on-demand data file keeps the injected card compact without
         # hiding supplied palette choices. Preserve aliases and mode variants;
