@@ -1727,6 +1727,13 @@ def build_design_leg_exit_judge(
     return judge
 
 
+#: Said once, so the batch entry point cannot drift from the single-run one.
+_DESIGN_LANE_UNAVAILABLE_MESSAGE = (
+    "this thread's design leg needs the design lane, but the worker composed none; "
+    "set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
+)
+
+
 class _DesignLaneUnavailable:
     """The fail-loud lane for a deployment that drains chat turns but no design work.
 
@@ -1736,10 +1743,11 @@ class _DesignLaneUnavailable:
 
     async def drive(self, *, envelope: object) -> None:
         del envelope
-        raise RuntimeError(
-            "this thread's design leg needs the design lane, but the worker composed none; "
-            "set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
-        )
+        raise RuntimeError(_DESIGN_LANE_UNAVAILABLE_MESSAGE)
+
+    async def drive_batch(self, *, envelopes: object) -> None:
+        del envelopes
+        raise RuntimeError(_DESIGN_LANE_UNAVAILABLE_MESSAGE)
 
 
 def build_agent_turn_work_handler(

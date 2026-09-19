@@ -190,9 +190,15 @@ class DesignLegLaneDriver(Protocol):
 
     Implementations own claim/fencing/execution; the runner owns everything durable around it.
     ``drive`` returns when the run row is terminal (or raises); it must never fabricate a result.
+
+    ``drive_batch`` is the same contract over the N envelopes of one multi-document leg turn
+    (spec §3.3 step 3): it returns when EVERY run row is terminal, or raises. How many run at
+    once is the fleet's free slots' business, not a setting.
     """
 
     async def drive(self, *, envelope: DesignTurnEnvelope) -> None: ...
+
+    async def drive_batch(self, *, envelopes: Sequence[DesignTurnEnvelope]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
