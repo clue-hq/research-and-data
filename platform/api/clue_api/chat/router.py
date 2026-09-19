@@ -1514,51 +1514,40 @@ def build_chat_router(
     ) -> ProjectDirectoryItemResponse:
         """Rename, re-describe and/or pin one project.
 
-        Three independent governed mutations dispatched from one body, the way
-        ``update_thread_route`` does it: a label edit goes to ``rename_project@1`` (title alone) or
-        ``update_project_details@1`` (whenever a description rides along), and the pin toggle is
-        always its own ``set_project_pinned@1`` call — pinning an archived project is allowed, and
-        editing its labels is not, so the two cannot share a precondition set.
+        Two independent governed mutations dispatched from one body, the way
+        ``update_thread_route`` does it: any label edit — title, objective, or both — is one
+        ``update_project_details@1`` call, and the pin toggle is always its own
+        ``set_project_pinned@1`` call. They cannot share one call, because pinning an archived
+        project is allowed and relabelling one is not.
 
-        The label branches read the current row first. That read is what supplies the title an
-        objective-only edit must keep, and it is also what makes a system anchor or another
-        tenant's project a 404 *before* anything is written: ``rename_project@1`` predates the
-        directory and refuses neither, so this surface — where a system project is invisible by
-        construction — applies the directory's lens itself. The narrower home for that rule is
-        ``rename_project@1``'s own preconditions; moving it there is a follow-up, not a route.
+        The route dispatches; it decides nothing. Every refusal here is the tool's:
+        ``update_project_details@1`` is what refuses ``project_archived`` (409) and
+        ``project_system`` (a 404 on this surface), and no status is inspected in this function.
+        The one read it does make is the current directory row, because a title-only edit must
+        keep the objective the human wrote and a description-only edit must keep the title —
+        ``update_project_details@1`` takes both labels together, so whichever one the body omits
+        has to be supplied from the row. ``_directory_item_or_404`` applies the directory's lens,
+        so that read also 404s a system anchor, a draft, or another tenant's project.
+
+        ``rename_project@1`` stays registered for replay and for the sidebar's contract history;
+        this surface no longer calls it.
         """
 
         _require(who, PERMISSION_PROJECT_WRITE)
         if body.title is not None or body.description is not None:
             current = await _directory_item_or_404(who.workspace_id, project_id)
-            if current.status == "archived":
-                raise _refuse(
-                    status_code=409,
-                    code="PROJECT_ARCHIVED",
-                    message="restore this project before making changes",
-                )
-            if body.description is not None:
-                await _invoke(
-                    "update_project_details",
-                    {
-                        "project_id": project_id,
-                        "title": body.title if body.title is not None else current.title,
-                        "description": body.description,
-                    },
-                    who=who,
-                    idempotency_key=(
-                        None if idempotency_key is None else f"{idempotency_key}:details"
+            await _invoke(
+                "update_project_details",
+                {
+                    "project_id": project_id,
+                    "title": body.title if body.title is not None else current.title,
+                    "description": (
+                        body.description if body.description is not None else current.description
                     ),
-                )
-            else:
-                await _invoke(
-                    "rename_project",
-                    {"project_id": project_id, "title": body.title},
-                    who=who,
-                    idempotency_key=(
-                        None if idempotency_key is None else f"{idempotency_key}:title"
-                    ),
-                )
+                },
+                who=who,
+                idempotency_key=(None if idempotency_key is None else f"{idempotency_key}:details"),
+            )
         if body.pinned is not None:
             await _invoke(
                 "set_project_pinned",
