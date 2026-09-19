@@ -68,6 +68,18 @@ def test_instructions_create_edit_conflict_and_archived_refusal(tmp_path):
                 assert fetched.json()["data"]["revision"] == 1
                 assert fetched.json()["data"]["body"] == "Always lead with the ROI case."
 
+                # The panel draws it; the Plan/Gallery document feed must not draw a second card
+                # for it (spec §1.4). It is still a document of this project — by id, and in the
+                # agent's mounted library — it is only absent from this list.
+                listed = await client.get(
+                    f"{FRONTEND_READ_PREFIX}/projects/{project.project_id}/documents",
+                    headers={"X-Workspace-Id": WS},
+                )
+                assert listed.status_code == 200, listed.text
+                assert "project/instructions.md" not in [
+                    document["path"] for document in listed.json()["data"]["documents"]
+                ]
+
                 edited = await _put(client, project.project_id, "Lead with ROI. Never discount.", 1)
                 assert edited.status_code == 200, edited.text
                 assert edited.json()["data"]["revision"] == 2

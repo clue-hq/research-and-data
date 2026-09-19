@@ -57,12 +57,14 @@ __all__ = [
 INSTRUCTIONS_KIND = "project-instructions"
 INSTRUCTIONS_TITLE = "Instructions"
 
-#: The store's refusal vocabulary, mapped onto this surface. An existing document and a stale
-#: revision are one answer to the human — someone wrote first — so both are the conflict; anything
-#: else is a request this surface could not carry out, named by the store's own reason.
+#: The store's refusal vocabulary, mapped onto this surface. An existing document, a stale revision
+#: and a lost race to publish the next version are one answer to the human — someone wrote first —
+#: so all three are the conflict; anything else is a request this surface could not carry out,
+#: named by the store's own reason.
 _REFUSALS: dict[str, tuple[int, str]] = {
     "project_document_revision_conflict": (409, "DOCUMENT_REVISION_CONFLICT"),
     "project_document_exists": (409, "DOCUMENT_REVISION_CONFLICT"),
+    "project_document_version_race": (409, "DOCUMENT_REVISION_CONFLICT"),
     "project_document_body_empty": (422, "PROJECT_DOCUMENT_BODY_EMPTY"),
 }
 

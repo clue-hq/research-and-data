@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # The title rule, imported rather than restated so a document's title cannot read one way in this
 # list and another way in the agent's focus card or the ICP gate.
 from clue_api.arv2.project_documents import (
+    INSTRUCTIONS_PATH,
     ProjectDocumentRefused,
     ProjectDocumentRow,
     document_title,
@@ -195,10 +196,18 @@ async def _listed(
     can be known without it. A document whose bytes cannot be read is still listed — by the name on
     its path — because a missing blob is a reason to show less, never a reason to fail the whole
     tab.
+
+    ``project/instructions.md`` is the one row this *list* leaves out: it is a real document of this
+    project — the agent reads it in its mounted workspace, and it is still served by id below — but
+    the project home draws it in its own Instructions panel, and a second card for it in this feed
+    is a surface the design never drew (spec §1.4). The exclusion is here, at the composition, and
+    not in :func:`list_project_documents`, so the project library's tree still contains the file.
     """
 
     wires: list[ProjectDocumentV1] = []
     for row in await list_project_documents(conn, workspace_id=workspace_id, project_id=project_id):
+        if row.path == INSTRUCTIONS_PATH:
+            continue
         front: Mapping[str, Any] = {}
         body = ""
         if storage is not None:
