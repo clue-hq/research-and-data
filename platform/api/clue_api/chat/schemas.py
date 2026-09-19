@@ -47,6 +47,7 @@ __all__ = [
     "ArchiveThreadResponse",
     "ComposerContextEntityWire",
     "ContextRefRequest",
+    "CreateBlankProjectRequest",
     "CreateThreadRequest",
     "HomeProjectRequest",
     "HomeComposerCapabilitiesWire",
@@ -66,12 +67,18 @@ __all__ = [
     "ResearchTaskListResponse",
     "ResearchTaskWire",
     "research_task_wire",
+    "ProjectActivityWire",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
+    "ProjectDirectoryItemResponse",
+    "ProjectDirectoryItemWire",
+    "ProjectDirectoryResponse",
     "ProjectShellResponse",
     "ProjectShellWire",
+    "SetProjectArchivedRequest",
     "SidebarProjectsResponse",
     "SubmitTurnRequest",
+    "UpdateProjectRequest",
     "gate_response_message",
     "gate_wire",
     "ThreadListResponse",
@@ -114,8 +121,32 @@ class CreateThreadRequest(_Request):
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-class RenameProjectRequest(_Request):
+class UpdateProjectRequest(_Request):
+    """At least one field; ``title`` alone is the sidebar rename, ``pinned`` alone is the pin
+    toggle."""
+
+    title: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+        | None
+    ) = None
+    description: Annotated[str, StringConstraints(max_length=2000)] | None = None
+    pinned: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> UpdateProjectRequest:
+        if self.title is None and self.description is None and self.pinned is None:
+            raise ValueError("at least one of title, description, pinned is required")
+        return self
+
+
+class CreateBlankProjectRequest(_Request):
+    brand_id: str = Field(min_length=1, max_length=255)
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    description: Annotated[str, StringConstraints(max_length=2000)] = ""
+
+
+class SetProjectArchivedRequest(_Request):
+    archived: bool
 
 
 class RenameProjectWire(_Wire):
@@ -607,10 +638,14 @@ class ProjectBootstrapResponse(_Wire):
 class ProjectShellWire(_Wire):
     id: str
     title: str
+    description: str = ""
     brand_id: str
     product_id: str | None
     status: Literal["draft", "active", "paused", "archived"]
+    pinned: bool = False
     created_at: str
+    updated_at: str | None = None
+    archived_at: str | None = None
     context_entities: tuple[ComposerContextEntityWire, ...] = ()
     agent_profiles: tuple[AgentProfileOptionWire, ...] = ()
     default_agent_profile_id: str | None = None
@@ -698,6 +733,41 @@ class SidebarPageMeta(_Wire):
 
 class SidebarProjectsResponse(_Wire):
     data: tuple[SidebarProjectWire, ...]
+    meta: SidebarPageMeta
+
+
+# --- the projects directory (spec 2026-09-19 §2.3) -----------------------------------------------
+
+
+class ProjectActivityWire(_Wire):
+    """What the directory card says about a project's conversations — counted, never guessed."""
+
+    chats: int
+    running: int
+    needs_input: int
+
+
+class ProjectDirectoryItemWire(_Wire):
+    id: str
+    title: str
+    description: str
+    href: str
+    status: Literal["active", "archived"]
+    pinned: bool
+    brand_id: str
+    product_id: str | None
+    created_at: str
+    updated_at: str
+    archived_at: str | None
+    activity: ProjectActivityWire
+
+
+class ProjectDirectoryItemResponse(_Wire):
+    data: ProjectDirectoryItemWire
+
+
+class ProjectDirectoryResponse(_Wire):
+    data: tuple[ProjectDirectoryItemWire, ...]
     meta: SidebarPageMeta
 
 
