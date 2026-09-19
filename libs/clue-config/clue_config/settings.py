@@ -687,6 +687,20 @@ class Settings(BaseSettings):
     chat_attachment_image_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
     chat_attachment_text_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
     chat_attachment_history_images_max: int = Field(default=20, ge=0)
+    # Document attachments (spec 2026-09-19 §3.1): the per-file cap of the document family
+    # (PDF, DOCX, PPTX, XLSX, CSV, JSON). Env: ``CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES``.
+    chat_attachment_document_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
+    # The code sandbox (spec 2026-09-19 §3.4): off until an operator builds the image and turns it
+    # on; then one container per run with these bounds. Env: ``CLUE_SANDBOX_ENABLED`` /
+    # ``_IMAGE`` / ``_TIMEOUT_S`` / ``_CPUS`` / ``_MEMORY_MB`` / ``_MAX_RUNS_PER_TURN`` /
+    # ``_MAX_OUTPUT_BYTES``.
+    sandbox_enabled: bool = False
+    sandbox_image: str = "clue-agent-sandbox:latest"
+    sandbox_timeout_s: float = Field(default=60.0, gt=0)
+    sandbox_cpus: float = Field(default=1.0, gt=0)
+    sandbox_memory_mb: int = Field(default=1024, ge=64)
+    sandbox_max_runs_per_turn: int = Field(default=10, ge=1)
+    sandbox_max_output_bytes: int = Field(default=1_048_576, ge=1024)
     # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
     # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
     # pruning inside the replay horizon promises a replay the table can no longer serve (still
