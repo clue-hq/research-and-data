@@ -102,3 +102,50 @@ Execution: SDD, Opus implementers only, Fable reviews each task first-hand.
   tests/api/test_p34_design_leg_engine_db.py` → 88 passed.
 - Open: the v3 prompt text was written under the founder's approval of the SUBSTANCE (step-1 gate
   reported satisfied by the orchestrator); the exact wording is in the task-8 report for review.
+
+## Execution (same day, SDD on `project-home`, Opus implementers, controller reviews first-hand)
+Commits: 4b221beb0 (T1 `design_leg_document`, migration `b9c5e4829868`; `leg_id uuid`) · 03cca44d4 (T2
+`ensure_web_account_for_entity`, `runs_for_execution`) · b4121acd1 (T3 `open_design_leg@5`) ·
+fdc5fd583 (T4 head-of-abm v58 / prompt v11 / recipe0-stage0@29 / manual v5) · 4e93376cf (T5 THIS
+ARTIFACT lines in the brief fence, 0-based position on the wire) · eb48a3473 (T6 `drive_batch`) ·
+46641c7a7 (T7 runner fan-out/join/`batch_summary`/batch Stop; also cleared the pre-existing duplicate
+import in `design_leg_wiring.py`) · 3c585910a (T8 exit judgment v3, 6 `addressing-*` fixtures) ·
+f468cebbe (T9 composer tags over the set) · d2191b259 + 6339c4c3e (T10 set-derived gallery/library,
+feed `account`, close `document_versions`; five DAL-opened test seeds given their position-0 row) ·
+57f059685 (T11 frontend: `artifactsToAutoOpen`, account on the card wire). Ledger:
+`.superpowers/sdd/2026-09-19-multi-artifact-design-legs/progress.md` (git-ignored).
+
+Rulings taken during execution (full text in the ledger): T1 `leg_id` is uuid; T4 the prompt/judge
+texts were founder-reviewed via the approved plan/spec and re-surfaced in the final report; T6 stack
+down for the lease/task suites; T6→T7 the duplicate-import ruff red fixed in passing; T7 the
+`artifact` key is omitted for a one-document leg with no note; T7 per-document waits run before the
+one creation transaction; T12 the controller ran the gate itself.
+
+Verified first-hand: every task's diff read; each task's suites re-run; repo-wide ruff/format/mypy
+(875 files)/lint-imports (28 kept) green; `.env.example` untouched; frontend `npm test`
+(3197 pass) + design-system build + lint + build green. Offline gate (`tests/design` + `tests/api`,
+keys unset, stack down, lane DB): 47 reds → A/B on throwaway DBs (head vs base worktree at
+af0b68f9b): 45 reproduce on the base and are NOT this branch's (old-lane suites: sumble/fi2/c7
+readers/frontend_read live-zafran/lane_d joins/production_context; lane-DB leftovers, e.g.
+`agent_gate_answer` count in `test_chat_gate_answers_o6_db`; lane `.env` lacks the three
+`CLUE_CONVERSATION_NAMING_*` knobs; `test_projections_app` Settings validation; langfuse/r10/extractor
+env-shape tests). Two were ours (stale DAL-opened leg seeds) and are fixed in 6339c4c3e.
+
+Process incident: the Task 1 implementer ran `tests/db/test_db_migrations.py` (destructive
+down-to-base) against the LIVE lane DB; Alembic's transactional DDL rolled it back and the DB was
+verified intact. Every later brief carried "never run tests/db/test_db_migrations.py".
+
+Deferred minors (ledger): the v58 profile comment claims "@4 stays registered" (false — the tool's
+version is edited in place; pre-existing pattern for @2–@4); `manual-siblings@v5` is a verbatim copy;
+`lane_lease_held_elsewhere` logs once per poll; foreign lease renewals do not extend the batch
+window; a leg without a `design_leg_document` row drops silently from the gallery (a DB invariant
+would make it structural); `ensure_web_account_for_entity` has no unique index; a follow-up narrowed
+to one document runs inline with no `design_job`; focus lands on the FIRST-born tab; no test drives
+the router's set read on a real multi-document leg.
+
+**OWED — founder-triggered, spends money:** the six live proofs of spec §7 (twenty tagged accounts;
+five variants; the four follow-up routings incl. a clarifying question; Stop mid-batch; a worker
+killed mid-batch; a single-artifact ask byte-identical). Log lines to watch: `design_job.started`
+(several worker ids), `design_leg.lane_drive_finished`, `design_leg.exit_judgment` (with
+`addressed`), `design_leg.addressing_asked`, `design_leg.waiting_for_document`;
+`SELECT run_id, status, document_id FROM design_agent_run WHERE execution_id = '<execution>' ORDER BY created_at`.

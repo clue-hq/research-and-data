@@ -1,6 +1,9 @@
 # Multi-artifact design legs: one message, many documents, parallel design runs
 
-**Status:** design note for founder review (2026-09-19). No plan, no code.
+**Status:** IMPLEMENTED 2026-09-19 on branch `project-home` (plan
+`docs/superpowers/plans/2026-09-19-multi-artifact-design-legs.md`, tasks 1–11; ledger
+`.superpowers/sdd/2026-09-19-multi-artifact-design-legs/progress.md`). The six live proofs of §7
+are OWED, founder-triggered.
 **Depends on:** design session continuity (`2026-09-18-design-session-continuity-design.md`,
 shipped), the exit judge v2 (free reasoning, artifact line and tag lines; commit `4834e9083`),
 and the seller/target-account context for the design agent
