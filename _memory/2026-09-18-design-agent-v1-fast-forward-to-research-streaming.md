@@ -39,3 +39,19 @@
   && npm run build` exit 0.
 - Not run: DB-gated suites (`*_db.py`, incl. the backfill script test), design subsystem
   suites. Nothing pushed.
+
+## Rebase onto origin/research-streaming, 2026-09-19
+- Founder asked for a REBASE (not a merge) onto the freshly fetched `origin/research-streaming`
+  (`affac89ed`, which had taken PR #63 chat-rename, #64 chat attachments, #66 design account
+  binding, design session continuity, conversation naming, exit judge v2). Only the two memory
+  commits replayed; the earlier merge commit `01a492f41` dropped away as intended. No conflicts.
+- Upstream defect found and fixed here: `platform/api/clue_api/design_leg_wiring.py` carried a
+  duplicated `from clue_core import ...` line left by the account-binding merge `f2a9a41d8`
+  (ruff F811 ×3 + I001). Fixed with `ruff check --fix` on that file only; commit `e9f9b9668`.
+  The file was otherwise identical to the target, so this is the target's lint failure, not ours.
+- Verified locally: `uv sync`; `ruff check .` clean after the fix; `ruff format --check .`
+  clean; focused pytest (design turn targets, fleet wiring, contracts, gateway, chat schema/
+  submission notes) green; frontend `npm run lint` 0 errors (same 2 pre-existing warnings);
+  `npm run design-system:build && npm run build` exit 0.
+- Not run: DB-gated suites, design subsystem suites. Nothing pushed. Branch = target + 3 commits
+  (two memory notes, one lint fix).
