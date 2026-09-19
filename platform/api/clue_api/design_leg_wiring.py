@@ -91,9 +91,8 @@ from clue_api.design_turn_targets import (
     resolve_web_targets,
 )
 from clue_api.turn_action import derive_turn_action_ref
-from clue_core import ContextAssembly, EntityId, ExecutionId, operation_id_from_key
 from clue_api.turn_attachments import turn_image_refs
-from clue_core import ContextAssembly, ExecutionId, operation_id_from_key
+from clue_core import ContextAssembly, EntityId, ExecutionId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
 from clue_design import ad_assets as design_ad_assets
