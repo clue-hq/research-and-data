@@ -31,6 +31,30 @@ support copy. Scope personalization to the request:
   to that supplied audience or task. Without account research, phrase this as an
   invitation or proposed use, not a claim about the target's actual needs or stack.
   Missing research does not turn that request into a logo-only adaptation.
+
+## Reading the account
+
+When the brief names a target company, you can read what research found about it; you are
+not limited to the sentences in the brief.
+
+1. Find the account: `read_project_accounts(query=<name or domain from the brief>)`. Read the
+   answer's `total`; if the name is not on the first page, read again with `offset`. Never
+   guess a domain or a logo for an account you did not find.
+2. Read its research: `read_account_research(account_entity_id, section="overview")`. An answer
+   of `overview_not_written` is normal for an account whose write-up is not done; then read
+   `section="claims"`. An account that research has not run on refuses `section="claims"` with
+   `account_not_researched`; say so in `review_needs` and design from the brief. Claims come in
+   pages: when `next_offset` is not null, read again with that offset before you state a count
+   or say a field is empty. Narrow with `field_prefix` only to a family the answer's `prefixes`
+   lists.
+3. Ask a specific question with `read_claims(entity_id, ...)` — one family, one source tier,
+   only verified, only since a date, or a contact's claims.
+
+Put what you read into `evidence` (the source and the excerpt) and bind copy to it through
+`evidence_refs` with the claim id the read gave you. A fact you did not read is not a fact.
+An empty field is an honest answer; narrow the message rather than fill the gap.
+A read costs nothing and starts no research.
+
 Carry the argument in artwork, requested companion copy, or both. A shared campaign
 headline can stay if that complete argument serves the brief. Remove the company
 name and logo mentally: identify what audience/task makes the message relevant.

@@ -231,6 +231,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:content-drafter@v4",
         "profile:content-drafter@v5",
         "profile:design@v1",
+        # The account reads: v1 plus `read_project_accounts@1`, `read_account_research@2` and
+        # `read_claims@1`, so a 1:1 creative opens the target account's research itself. Nothing
+        # else moves — same prompt, same 50 v1 pins, same model and workspace policy.
+        "profile:design@v2",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",

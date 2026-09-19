@@ -7,15 +7,14 @@ resolves the original selection through the shared memory seam; no memory body i
 from __future__ import annotations
 
 import asyncio
-import math
 from collections.abc import Callable, Coroutine
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, TypeVar
 
 from sqlalchemy import text
 
 from clue_api.agent_turn_scope_pin import get_agent_turn_scope_pin
 from clue_api.agent_turn_wiring import is_agent_turn_privacy_tombstoned
+from clue_api.design_loop_bridge import PlatformLoopBridge
 from clue_api.design_memory import (
     DESIGN_MEMORY_RECEIPT_POLICY,
     DESIGN_MEMORY_RECIPE,
@@ -45,6 +44,12 @@ _T = TypeVar("_T")
 
 class DesignMemoryRuntimeError(RuntimeError):
     """A body-free failure to authorize or reach the platform memory read seam."""
+
+
+def _bridge_error(code: str) -> DesignMemoryRuntimeError:
+    """This surface's spelling of a shared bridge code, so the four names never moved."""
+
+    return DesignMemoryRuntimeError(f"design_memory_{code}")
 
 
 def build_configured_design_preference_resolver_factory(
@@ -183,30 +188,13 @@ def build_design_preference_resolver_factory(
     timeout_s: float = 10.0,
 ) -> PreferenceResolverFactory:
     """Capture the pool-owning loop; block only the design worker, with a bounded wait."""
-    platform_loop = loop if loop is not None else asyncio.get_running_loop()
-    if not math.isfinite(timeout_s) or timeout_s <= 0:
-        raise ValueError("design_memory_timeout_must_be_positive")
+    # The three bridge codes keep this surface's own spelling, so nothing a caller matches on
+    # moves: ``platform_loop`` → ``design_memory_platform_loop``, and so on.
+    bridge = PlatformLoopBridge(loop=loop, timeout_s=timeout_s, error=_bridge_error)
 
     def wait(operation: Callable[[], Coroutine[Any, Any, _T]]) -> _T:
         try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
-        if current_loop is platform_loop:
-            raise DesignMemoryRuntimeError("design_memory_platform_loop")
-        if platform_loop.is_closed() or not platform_loop.is_running():
-            raise DesignMemoryRuntimeError("design_memory_loop_unavailable")
-        pending = operation()
-        try:
-            future = asyncio.run_coroutine_threadsafe(pending, platform_loop)
-        except RuntimeError:
-            pending.close()
-            raise DesignMemoryRuntimeError("design_memory_loop_unavailable") from None
-        try:
-            return future.result(timeout=timeout_s)
-        except FutureTimeoutError:
-            future.cancel()
-            raise DesignMemoryRuntimeError("design_memory_timeout") from None
+            return bridge.wait(operation)
         except DesignMemoryRuntimeError:
             raise
         except Exception:

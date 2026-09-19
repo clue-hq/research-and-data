@@ -380,3 +380,59 @@ def test_only_a_run_folder_or_a_session_folder_can_scope_the_backend(tmp_path, s
 def test_a_history_thread_id_is_one_file_name_segment(tmp_path, thread):
     with pytest.raises(ValueError):
         AgentWorkspaceBackend(tmp_path, active_run_id="sessions/dsess_a", history_thread_id=thread)
+
+
+# --- the seller's pinned knowledge is READ-ONLY to the agent (2026-09-19) ---
+# `workspace/seller/` is written once per session by the runtime from the platform's pinned
+# reads. It is the seller's own knowledge, not the agent's scratch space: an agent that could
+# edit it could rewrite what the brand says about itself and then design against its own words.
+def test_a_session_scope_reads_seller_knowledge_but_cannot_write_it(tmp_path):
+    root = tmp_path
+    seller = root / "sessions/dsess_a/workspace/seller"
+    seller.mkdir(parents=True)
+    (seller / "x.md").write_text("PINNED_SELLER_TRUTH")
+    backend = AgentWorkspaceBackend(root, active_run_id="sessions/dsess_a")
+
+    read = backend.read("/sessions/dsess_a/workspace/seller/x.md")
+    assert read.error is None
+    assert "PINNED_SELLER_TRUTH" in read.file_data["content"]
+
+    edit = backend.edit("/sessions/dsess_a/workspace/seller/x.md", "PINNED", "REWRITTEN")
+    assert edit.error and "read-only" in str(edit.error).lower()
+    new_file = backend.write("/sessions/dsess_a/workspace/seller/new/note.md", "x")
+    assert new_file.error and "read-only" in str(new_file.error).lower()
+    assert not (seller / "new").exists()
+    assert backend.upload_files([("/sessions/dsess_a/workspace/seller/logo.png", b"x")])[0].error
+    assert (seller / "x.md").read_text() == "PINNED_SELLER_TRUTH"
+    # The rest of the session workspace stays read-write.
+    assert backend.write("/sessions/dsess_a/workspace/note.md", "ok").error is None
+
+
+def test_a_run_scope_fences_seller_knowledge_the_same_way(tmp_path):
+    root = tmp_path
+    seller = root / "run_active/workspace/seller"
+    seller.mkdir(parents=True)
+    (seller / "index.md").write_text("PINNED_SELLER_INDEX")
+    backend = AgentWorkspaceBackend(root, active_run_id="run_active")
+
+    assert backend.read("/run_active/workspace/seller/index.md").error is None
+    assert backend.edit("/run_active/workspace/seller/index.md", "PINNED", "x").error
+    assert backend.write("/run_active/workspace/seller/note.md", "x").error
+    assert (seller / "index.md").read_text() == "PINNED_SELLER_INDEX"
+    assert backend.write("/run_active/workspace/note.md", "ok").error is None
+
+
+def test_an_unscoped_backend_still_fences_seller_knowledge(tmp_path):
+    """Website mode keeps an unscoped workspace contract, and the seller tree lives there too."""
+    root = tmp_path
+    seller = root / "run_web/workspace/seller"
+    seller.mkdir(parents=True)
+    (seller / "index.md").write_text("PINNED_SELLER_INDEX")
+    backend = AgentWorkspaceBackend(root)
+
+    assert backend.read("/run_web/workspace/seller/index.md").error is None
+    write = backend.write("/run_web/workspace/seller/note.md", "x")
+    assert write.error and "read-only" in str(write.error).lower()
+    assert backend.edit("/run_web/workspace/seller/index.md", "PINNED", "x").error
+    assert (seller / "index.md").read_text() == "PINNED_SELLER_INDEX"
+    assert backend.write("/run_web/workspace/note.md", "ok").error is None

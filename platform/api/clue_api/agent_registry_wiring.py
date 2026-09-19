@@ -183,7 +183,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
     # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
-    AgentRole.DESIGN: "v1",
+    # v2 (2026-09-19): v1 plus the three account reads — `read_project_accounts@1`,
+    # `read_account_research@2` and `read_claims@1`, the same tools on the same contracts
+    # head-of-abm holds — so a 1:1 creative can open the target account's research itself
+    # instead of writing from whatever the brief happened to carry. Nothing else moves.
+    AgentRole.DESIGN: "v2",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -223,8 +227,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # approve nothing and launch nothing, so the only thing a call can do is make an answer true:
     # a fact about an account now comes from a claim the read returned rather than from an earlier
     # thread's memory.
-    "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
-    "read_account_research": (AgentRole.HEAD_OF_ABM,),
+    # 2026-09-19: the design role reads the target account with the same three tools
+    # (`design@v2` pins them; the registry refuses a grant the profile does not pin). Their
+    # authority is head-of-abm's: workspace- and project-scoped through the turn's identity,
+    # no per-account scoping added. `read_discovery_run` is NOT among them — the design leg
+    # never proposes a discovery.
+    "read_project_accounts": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
+    "read_account_research": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
     # Their newest sibling: the general claims query (one account or contact, by field family,
     # source tier, verification status or date, paged, behind the same display gate). Granted with
@@ -232,7 +241,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # teaches it, because `build_agent_profile_registry` refuses to compose when a role's
     # authority and its profile's tool list disagree, so a grant is that bump and never a dict
     # edit. stage0-interview v33 §7c says which question it is the read for.
-    "read_claims": (AgentRole.HEAD_OF_ABM,),
+    "read_claims": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
@@ -747,8 +756,11 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # requirement set resolves one version per (kind, key) — but a role holding a version no
     # current profile pins is authority nobody asked for, so they are ungranted here.
     # The same shape `open_icp_confirmation_gate` has, with the grant on the newer version.
+    # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
+    # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
+    # on `@2` only. The `@1`s stay held by nobody.
     if name in {"read_account_research", "read_discovery_run"}:
-        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

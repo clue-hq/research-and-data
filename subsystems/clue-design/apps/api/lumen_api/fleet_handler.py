@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, Optional
 from uuid import UUID
 
@@ -145,6 +145,9 @@ class DesignTurnHost:
     #: Authorized envelope -> model-boundary resolver, composed by the platform.
     #: Neither the callable nor resolved preference bodies enter the frozen job.
     preference_resolver_factory: Any = None
+    #: Authorized envelope -> the platform reads for a leg turn, composed by the platform
+    #: (design note 2026-09-19); the design API's own worker has none.
+    platform_reads_factory: Any = None
 
 
 class DesignTurnJobError(RuntimeError):
@@ -703,6 +706,7 @@ def build_design_job_handler(
     checkpointer_factory: Any = postgres_design_checkpointer,
     spend_drain: Any = None,
     turn_callbacks_factory: Any = None,
+    platform_reads_factory: Any = None,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
@@ -714,7 +718,21 @@ def build_design_job_handler(
     turn's ``lumen_agent.usage_collector.TurnCallbacks``. The platform composes one that opens a
     Langfuse observation for the design leg; the design API's own embedded worker passes none,
     so its runs still collect receipts into ``result_json`` without the platform's cost update.
+
+    ``platform_reads_factory`` (design note 2026-09-19) rides the HOST rather than the frozen
+    job, like the preference resolver: it is a live callable the platform composes with its own
+    tool invoker. It is applied here rather than inside each caller's ``host_provider`` so the
+    rule holds however the host was built — the platform's provider carries its preference
+    resolver, the default provider carries nothing, and both come back with these reads.
     """
+    if platform_reads_factory is not None:
+        build_host = host_provider if host_provider is not None else DesignTurnHost
+
+        def with_platform_reads() -> DesignTurnHost:
+            return replace(build_host(), platform_reads_factory=platform_reads_factory)
+
+        host_provider = with_platform_reads
+
     return DesignJobWorkHandler(
         host_provider=host_provider,
         checkpointer_factory=checkpointer_factory,

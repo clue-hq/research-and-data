@@ -103,6 +103,7 @@ from clue_api.design_fleet import (
 )
 from clue_api.design_leg_wiring import build_design_leg_finisher
 from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
+from clue_api.design_platform_reads import build_design_platform_reads_factory
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -1127,6 +1128,18 @@ async def _serve() -> None:
             if memory is not None
             else None
         )
+        # Design note 2026-09-19: what a design LEG turn may read from the platform mid-turn —
+        # the target account's research through the governed tools, and the seller's pinned
+        # knowledge. Composed HERE, with this worker's journaled invoker and storage, because the
+        # design runtime opens no platform database; gated on the same switch as the lane below,
+        # since a deployment that runs no design work has nothing to read for.
+        design_platform_reads_factory = (
+            build_design_platform_reads_factory(
+                invoker=tool_invoker, storage=storage, conn_factory=transaction
+            )
+            if settings.design_runtime_enabled
+            else None
+        )
         platform_components: AgentPlatformComponents | None = None
         if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
@@ -1167,6 +1180,7 @@ async def _serve() -> None:
                 design_lane=build_design_leg_lane_driver(
                     enabled=settings.design_runtime_enabled,
                     preference_resolver_factory=design_preference_resolver_factory,
+                    platform_reads_factory=design_platform_reads_factory,
                 ),
                 # P3.7: the §2.2 exit bridge — the design role's own catalog model judges
                 # each leg message pre-dispatch, and the governed finish tool executes a
@@ -1314,6 +1328,9 @@ async def _serve() -> None:
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,
                 preference_resolver_factory=design_preference_resolver_factory,
+                # The same reads the inline leg lane above composes: a queued design job and an
+                # inline leg turn are one unit of work and must see one platform.
+                platform_reads_factory=design_platform_reads_factory,
             ),
             queue=work_queue,
         )

@@ -119,7 +119,7 @@ def test_solo_uses_real_progressive_skills_permissions_and_durable_state(
 ):
     virtual_skill = f"/.deepagent/skills/{skill_name}/SKILL.md"
     responses = [
-        call("read_file", {"file_path": virtual_skill}, "read"),
+        call("read_file", {"file_path": virtual_skill, "limit": 500}, "read"),
         call(
             "write_file",
             {"file_path": f"/.deepagent/skills/{skill_name}/forbidden.txt", "content": "new file"},
@@ -369,3 +369,44 @@ def test_solo_file_review_registers_current_evidence_and_render_checkpoints_once
     ]
     assert len(final_calls) == 1
     assert final_calls[0]["args"] == finalize_args
+
+
+# --- the platform's account reads ride the solo graph (design note 2026-09-19) ---
+class _StubReads:
+    """The duck type the design runtime knows: three reads plus the seller's pinned set."""
+
+    def read_project_accounts(self, **kw):
+        return {"total": 0, "accounts": []}
+
+    def read_account_research(self, **kw):
+        return {"sections": []}
+
+    def read_claims(self, **kw):
+        return {"claims": [], "prefixes": []}
+
+    def seller_knowledge(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            documents_sha256=None, documents=(), confirmed_icp_path=None, product_set=None
+        )
+
+
+@pytest.mark.parametrize("attached", [True, False])
+def test_the_account_reads_are_registered_only_when_the_platform_injected_them(
+    tmp_path, monkeypatch, attached
+):
+    offline_models(monkeypatch)
+    config = solo_config(tmp_path, platform_reads=_StubReads() if attached else None)
+    graph, tools = harness.create_design_deepagent("Make an ad for Premier", config)
+
+    names = set(graph.nodes["tools"].bound.tools_by_name)
+    reads = {"read_project_accounts", "read_account_research", "read_claims"}
+    assert (reads <= names) is attached
+    events = [
+        json.loads(line) for line in (tools.turn_dir / "trace.jsonl").read_text().splitlines()
+    ]
+    attached_events = [e for e in events if e["event"] == "platform_reads_attached"]
+    assert bool(attached_events) is attached
+    if attached:
+        assert set(attached_events[-1]["payload"]["tools"]) == reads

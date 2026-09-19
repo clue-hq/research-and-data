@@ -1,0 +1,76 @@
+I've now studied all three things — the main repo's current state (from this session's deep dive), the PoC in chicago's `.context`, and the new dummy frontend at `conductor/repos/clue-frontend`. One important reading on that last one before the plan: this dummy frontend is a **newer, fuller build** than `apps/frontend/` in the monorepo (it has chat-shell, onboarding, brand-context, settings, gallery, projects, accounts — merged via `codex/full-frontend-preview`), it keeps the same clean architecture (Zod models → repository interfaces → fixture/HTTP adapters, `CLUE_API_BASE_URL` flips them), and — critically — **its account-detail contract is display-shaped, not claim-shaped**: `summaryParagraphs`, `businessParagraphs`, `fitCriteria[]` (matched/title/evidence — the ✓/✗ bullets), `insights[]` (source/title/dateLabel/url), `overallFit`/`recallFit` labels. That is, almost region-for-region, the screenshot your co-founder's sources-and-variables doc §1 decomposed — and it means the v3 "two-layer" proof (backend truth + cheap display model) is not an optional nicety; it's literally what this frontend's contract demands. The architecture and the design already agree, which is the best possible starting position.
+
+Now the answers, in the order you asked.
+
+---
+
+## 1. Fresh start, or quarantine-and-port? → Quarantine-and-port, in the monorepo. Definitively.
+
+Your co-founder's own rebuild plan already litigated this (§4) and the reasoning has only gotten stronger with your new rulings. A fresh repo would re-cost auth, tenancy, Postgres schema + Alembic, artifact/snapshot storage, the fleet (leases/heartbeats/fencing), SSE, the agent durability tables, and the design subsystem's migration path — 3–4 weeks of re-plumbing before the first research call, for zero product gain. Meanwhile everything that failed you is **removable by not composing it**, which the repo has already proven safe once: the M8D-R1 quarantine retired ~8.5 kLOC of old orchestration by stubbing its tools while the code sat untouched. That is the move, repeated at larger scale.
+
+The one nuance: **"port the PoC code" is not quite the right mental model either.** The PoC scripts are stdlib-only throwaway harnesses — what you port is their *laws* (web-first committee, one-extraction-call-per-subject, save-raw-before-parse, never-search-a-known-URL, name-scoped Ark lookups, priority annotations, the cost ledger discipline) into the ~14-file production shape the runbook already specifies (catalog bundle, `Arv2JobDriver`, tool wrappers, Exa/Ark clients, launcher, flag-gated composition). The PoC stays in `.context/` as the acceptance ground truth — the Probook and cluehq runs are your answer keys.
+
+**Decision needed first (founder-pair, this week): the base branch.** The ARV2 specs live on a branch cut near main; the substrate they target (`platform/comprehensive-account-contact-research`, 411 commits of fleet/R11/auth/frontend-read work) is elsewhere. Pick one integration branch — the specs' own recommendation (cut from comprehensive) still looks right — and both workstreams build on it. Do not let the two of you build on different bases; that's how you get a second M2/M3-style collision, but for everything.
+
+## 2. The cleanup inventory — what gets quarantined, what stays
+
+**Keep (untouched — this is the substrate that never misfired):**
+- Claim store schema + DB, append-only triggers, artifact/snapshot family, DSAR reachability
+- Fleet shell + `entity_research_*` durable tables + `AsyncPostgresSaver` checkpointing + turn journals
+- Packs/field registry (with descriptions — this becomes your custom-variables mechanism for free)
+- Tenancy/workspace fail-closed scoping, auth, storage
+- Human authority gates (product/ICP confirm/launch/contact selection — these are product, and they're *your* gates, not machine gates)
+- The frontend repository-seam pattern
+
+**Quarantine (do not compose; delete later in one dedicated PR after the new lane runs in anger):**
+- The **Sumble stack** entirely (~1,783 refs) — already on the treaty's delete list
+- The **M4 waterfall + tier_plan routing + source-intelligence planner** — you said quarantine, not delete; correct, it's a config/composition removal
+- The **~20 judgment gates** on the guard-inventory retire list (entailment veto, confidence floors, coverage-ratio stops, zero-yield job kills, quality ladders, all-criteria-YES buying gates…)
+- The **verification engine phases** (corroborator, faithfulness judge as engine gate, freshness enforcement in merge) — the machinery stays on disk, nothing calls it
+- The **R4/R5 authority/settlement layer** (the fold machinery that produced every Grok livelock) — the runbook already excludes it
+- **Stage-0 fast/background recon** (`stage0_setup.py` and the recon lane) — superseded by your research-pipeline onboarding; this also incidentally deletes the known event-loop-blocking backlog item
+- **Memory subsystem composition** (Doc M seams) — the subsystem stays built; it just doesn't get wired into context assembly for v1. Your "project context" replaces it with durable, deterministic reads (account counts/list, artifacts, ICP ref, project state) — which is honestly closer to what the context-composition spec's L3 envelope + Stage-0 state already were. You're not inventing a new thing; you're keeping the durable half and parking the advisory half.
+- The **interview's secondary judges** (the entailment judge on typed values, and its outage twin) — under your ruling, the Head-of-ABM judges via prompt/skills, so these never compose.
+- The old-lane entity-research drivers (M8A/B/C already quarantined; the old R5 account-agent definition follows)
+
+**One honest pushback before you lock "no gates" absolutely** — and it's your own co-founder's data, not my preference. Two things in the PoC are not verification and should survive, reframed:
+
+1. **The `write_claims` shape check** (field registered in the catalog + value matches schema + source URL present). This is what produced 106/106 and 203/203 clean claim DBs with zero invented keys. It is not a judge and it can't veto research — it's a *tool refusal with actionable feedback*, exactly the one surviving-gate criterion Aryan's extraction note demanded. Killing it buys you nothing and costs you the entire "custom variables = field registry" mechanism, because that loop only closes if the write path knows the catalog. Keep it, call it data integrity, never call it verification.
+2. **The SENSITIVE-never-outreach floor.** Record everything; the outreach layer just can't use special-category facets. Costs zero at research time; it's the one guardrail whose absence can hurt a client in public. The v3 run already caught a live edge here (the religion/field-of-study case).
+
+Everything else — corroboration, faithfulness judging, coverage floors, confidence thresholds — dies with the lane, and quality control becomes what the charter says: the agent's own `fabrication-audit` skill (open the links, flag mismatches, write an audit annotation), which is *prompt-and-skill-based judgment by the agent itself* — i.e., exactly your philosophy. Note the PoC measured why you want at least that: 6–8.8% paraphrased quotes and one semantically-wrong-but-schema-valid claim per run. An agentic audit pass covers both without a single mechanical gate.
+
+## 3. The coordination plan — two workstreams, four frozen seams
+
+**Workstream A (you):** platform deepagent + onboarding rework — Head-of-ABM profile/prompt/skills, the parallel research agents writing company/product research as `.md` files into the deepagent's workspace filesystem (the `CLUE_AGENT_WORKSPACE_ROOT` + artifact machinery already supports exactly this), the ICP flow (research → 2–5 ICP proposal `.md` artifacts → prompt-driven interview → final ICP `.md` stored under project + brand context), durable project context, and the Exa MCP search tool on the main agent.
+
+**Workstream B (co-founder):** ARV2 productionization + accounts FE/BE integration, per the runbook with the post-runbook amendments baked in (AI Ark takes the committee/enrichment slot from Day 1 — Apollo is fallback-only now, so the runbook's "Day-2 Apollo" becomes "Day-2 AI Ark"; ATS APIs registered as first-class sources; the fetch ladder; the G1 `account.hiring.gtm_open_roles` field registered before the first run).
+
+You two can run fully parallel **if and only if these four seams are written down and frozen first** (a half-day of joint work, then no coordination needed until integration):
+
+1. **The launch contract.** What Head-of-ABM hands to account research: `(workspace_id, project_id, account_ids[], icp_artifact_ref, directive_text)`. Research never reads conversation; it reads the ICP artifact + the compiled field catalog. This is the runbook's launcher signature — ratify it now and neither of you blocks the other. Also define the reverse edge: research's job states/finalizations are what project context reads for "how far along is this project" — that's a projection off existing tables, no new machinery.
+2. **The ICP artifact format.** The one object both workstreams touch. Suggested: the final ICP `.md` (human-readable, agent-authored) plus a small structured block (the hard gates — stage/geo/hiring/intent — and the qualifier fields) that compiles into the per-workspace field catalog. Your interview flow produces it; their research charter consumes it. Freeze the shape, not the content.
+3. **The claim store** — already frozen. Research writes claims; everything downstream reads claims. No change.
+4. **The frontend wire contracts** — see below.
+
+## 4. The frontend integration — how to make it slop-proof
+
+The hard rule you stated maps exactly to the discipline already ratified in-house (dummy frontend is presentation truth; data with no designed slot stays invisible; re-lift, don't patch, drifted screens). Concretely:
+
+- **Re-lift, don't patch.** The accounts screens in the monorepo's `apps/frontend/` are the drifted, slop-contaminated copies. Don't clean them — replace the accounts feature wholesale with the version from `conductor/repos/clue-frontend` (same repo seam, so this is a folder-level lift), then wire repositories. Any screen that was AI-improvised dies in that replacement automatically.
+- **The backend moves to meet the frontend's contract, not vice versa.** Key finding: the platform's as-built `/frontend/v1` read layer (neutralFacts/projectSections/fieldKey-generic rendering) does **not** match the new dummy contract (`/api/v1`, display-shaped). So your co-founder's backend work is a new read surface shaped to the dummy's Zod schemas: `summaryParagraphs`/`businessParagraphs` served from stored prose claims (the Luna display pass runs at research-finalization time and its output is *written as claims*, not generated per-request), `fitCriteria[]` from fit-assessment claims (the ✗ rows are the honest-empties, rendered as negatives — a feature the PoC already produces), `insights[]` from P1/P2 claims ordered by priority + date. The v3 report's §5 is effectively the serializer spec.
+- **Process guard per screen:** one contract-gap review (what the dummy expects vs what research produces vs which side moves), founder sign-off, decision recorded back into `docs/api-contracts/accounts.md`. No silent contract decisions — this is the existing house rule and it's what prevents slop recurrence. Where the dummy needs something research doesn't yet produce (e.g. the three named fit sub-scores), that's a gap-review item, not an invitation to invent. Where research produces data with no slot (openers, career history, the ten unserved champion facts), **it goes unserved** — exactly as you said, let it go in vain; the claims are durable and the slot conversation happens later.
+- **The display model never emits URLs** (8% corruption measured) — `evidenceId`s on the wire, resolved by the client. Bake this into the serializer from day one.
+
+## 5. Suggested sequencing (workstream B, each phase ends with a live on-screen exit gate)
+
+- **R0 — foundations (joint, ~1 day):** base branch ratified; seams 1–2 frozen; `arv2_account_research_enabled` flag; quarantine-by-composition verified (old lane drivers not composed; recon not composed; memory not composed); AI Ark paid tier purchased; research model pinned.
+- **R1 — providers:** Exa client (search/contents/deep-reasoning, single-string schema law), AI Ark client (browser UA, backoff, name-scoped, email-status semantics), ATS resolvers (Ashby/Greenhouse/Lever), raw-response snapshot persistence. Fixtures recorded before any claim writes.
+- **R2 — the account agent:** catalog bundle (profile/prompt/dossier-skill/audit-skill/manual), `Arv2JobDriver` with the failure-species law, `write_claims`, G1 field registered. **Exit gate: one real account (use Probook — the answer key exists) researched end-to-end, ≥15 claims with quotes + sources visible in the account detail screen.**
+- **R3 — committee + contacts:** web-first protocol as skill, Ark enrichment, per-person deep research, one-extraction-call-per-subject structuring. **Exit gate: a committee with verified emails rendered in the dummy frontend's contacts screens.**
+- **R4 — discovery + fleet fan-out:** the ICP-driven discovery (signal-first job-req search as the primary angle, per the smoke rubric), the cheap qualifier probe, approval flow, fleet fan-out over an approved cohort.
+- **R5 — serving:** the new `/api/v1` read surface against the dummy contracts, Luna prose claims, the accounts-feature re-lift, contract-gap reviews per screen.
+
+Meanwhile workstream A proceeds independently on onboarding/ICP/project-context, and the two meet only at seam 1 — the launch contract — which by then both sides have built against.
+
+The one thing I'd do *today* to unblock everything: the base-branch decision and the seam-1/seam-2 freeze, written as a short ratification doc the way the ARV2 specs were. Everything else in both workstreams flows from those two pages. I'm happy to draft that doc, or to go deeper on any single piece of this plan — the quarantine mechanics, the ICP artifact format, or the serializer mapping from claims to the dummy contract.

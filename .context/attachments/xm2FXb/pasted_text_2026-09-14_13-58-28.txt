@@ -1,0 +1,405 @@
+For your **first paid pilot**, I’d lock the observability scope to this: enough to support a real customer confidently, but not enough to turn observability into its own engineering project.
+
+The architecture in your pasted document is a good **eventual architecture**—`structlog + Langfuse + OpenTelemetry + OpenMeter`, with LiteLLM optional.  But I would phase it.
+
+### What I would ship before the paid pilot
+
+| Capability                              | Pilot decision              | What I'd actually implement                                                 |
+| --------------------------------------- | --------------------------- | --------------------------------------------------------------------------- |
+| **structlog**                           | ✅ Now                       | Keep normal application/business/error logs                                 |
+| **Langfuse**                            | ✅ Now                       | Trace agents, sub-agents, LLMs and important tools                          |
+| **Run context**                         | ✅ Now                       | `run_id`, `workspace_id`, `user_id`, `campaign_id`, etc.                    |
+| **Sentry**                              | ✅ Now                       | Unhandled exceptions, stack traces, release/environment context             |
+| **LLM usage/cost**                      | ✅ Now                       | Tokens, model, latency and cost through Langfuse/OpenRouter data            |
+| **External API usage**                  | ✅ Now                       | Track Exa, enrichment, scraping, image APIs, etc.                           |
+| **Basic cost attribution**              | ✅ Now                       | Cost per run, workflow, workspace/customer and provider                     |
+| **OTel FastAPI tracing**                | ✅ Now                       | Incoming request → application context                                      |
+| **OTel outbound HTTP tracing**          | ✅ Now                       | Important HTTP/API requests and latency                                     |
+| **100% trace collection**               | ✅ Now                       | Pilot traffic is small enough; don't sample important workflows             |
+| **Data redaction**                      | ✅ Now                       | Never send secrets/tokens/sensitive customer data blindly                   |
+| **Deep DB/Redis tracing**               | 🟡 Later                    | Add if those layers become actual debugging problems                        |
+| **Custom OTel spans everywhere**        | ❌ Later                     | Don't instrument every internal function                                    |
+| **OpenMeter**                           | ❌ Later                     | Add when credits/quotas/billing need durable metering                       |
+| **Prometheus/Grafana/Tempo/Loki stack** | ❌ Later                     | Not justified yet                                                           |
+| **LiteLLM for observability**           | ❌ Don't add for this reason | You're already using OpenRouter; don't add another layer just for telemetry |
+
+The core of your pilot architecture should therefore look approximately like:
+
+```text
+                         Customer
+                            │
+                            ▼
+                       FastAPI request
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │   RunContext    │
+                   │                 │
+                   │ run_id          │
+                   │ workspace_id    │
+                   │ user_id         │
+                   │ campaign_id     │
+                   └────────┬────────┘
+                            │
+             ┌──────────────┼───────────────┐
+             │              │               │
+             ▼              ▼               ▼
+         structlog        Sentry         Langfuse
+          WHAT            BROKE          AI TRACE
+        happened?           ?                │
+                                             │
+                              ┌──────────────┼─────────────┐
+                              ▼              ▼             ▼
+                           Agent            LLM           Tool
+                              │                              │
+                              │                          Exa/API
+                              │
+                              └──── nested agents/tools
+```
+
+Then put a **small amount of OpenTelemetry underneath the request/network layer**:
+
+```text
+OTel
+ │
+ ├── FastAPI request
+ │
+ ├── outbound HTTP calls
+ │
+ └── context / trace propagation
+```
+
+The full document recommends auto-instrumentation of FastAPI, HTTPX, requests, SQLAlchemy, Redis and other components.  I wouldn't activate all of that merely because it exists. Start with FastAPI and the HTTP client(s) that reach external services. Add DB/Redis only when they start creating problems worth investigating.
+
+### The most important thing to get right now: `RunContext`
+
+I would make this part of your architecture before the pilot:
+
+```python
+@dataclass
+class RunContext:
+    run_id: str
+    workspace_id: str
+    user_id: str | None = None
+    campaign_id: str | None = None
+```
+
+Your original document arrives at essentially the same idea. 
+
+Every observability system should understand those identifiers:
+
+```text
+                run_ABC123
+                    │
+       ┌────────────┼─────────────┐
+       ▼            ▼             ▼
+    Langfuse      Sentry       structlog
+       │            │             │
+ workspace_45   run_ABC123    run_ABC123
+ run_ABC123     workspace_45  workspace_45
+```
+
+Then when the pilot customer tells you:
+
+> "My OpenAI account research yesterday failed."
+
+you should be able to find:
+
+```text
+workspace
+   ↓
+campaign
+   ↓
+run
+   ↓
+agent
+   ↓
+sub-agent
+   ↓
+LLM / Exa / tool
+   ↓
+exception
+```
+
+without manually reconstructing the execution from unrelated logs.
+
+### What should a trace contain?
+
+Don't trace every function. Trace **semantic boundaries**.
+
+A good paid-pilot trace:
+
+```text
+account_research                             42.8s
+
+├── planning_agent                           4.2s
+│   └── openrouter.llm                       3.8s
+│
+├── account_discovery                       19.4s
+│   ├── openrouter.llm                       4.1s
+│   ├── exa.webset                          11.3s
+│   └── enrichment                          2.8s
+│
+├── research_agent                          13.7s
+│   ├── openrouter.llm                       5.1s
+│   └── exa.search                           4.9s
+│
+└── synthesis_agent                          5.1s
+    └── openrouter.llm                       4.7s
+```
+
+Bad tracing for your stage:
+
+```text
+account_research
+├── parse_dict
+├── validate_field
+├── generate_uuid
+├── serialize_model
+├── helper_1
+├── helper_2
+├── redis_get
+├── redis_set
+├── sqlalchemy_flush
+├── json_encode
+...
+```
+
+A good rule is:
+
+> **Trace it if it is expensive, external, slow, failure-prone, or important to understanding agent behavior.**
+
+That means agents, sub-agents, LLM calls, tool calls, Exa, enrichment APIs, browser/scraper calls, image generation, major background jobs, and major workflow stages.
+
+### Cost tracking: do it, but keep it simple
+
+This is one place I **would not postpone**, because you're taking money from a customer.
+
+For each expensive provider call, try to record something like:
+
+```python
+provider="exa"
+operation="webset_search"
+quantity=1
+run_id="run_123"
+workspace_id="ws_456"
+cost_usd=0.12
+```
+
+For OpenRouter:
+
+```python
+provider="openrouter"
+model="..."
+input_tokens=18_230
+output_tokens=3_411
+cost_usd=0.087
+```
+
+Initially I only care that you can answer:
+
+```text
+How much did this run cost?
+How much did this customer cost us?
+Which provider is costing us?
+Which workflow is expensive?
+```
+
+The document eventually proposes much deeper attribution—per agent, tool, campaign, feature, asset, discovered account, etc. 
+
+That's later.
+
+For your first pilots:
+
+```text
+workspace/customer
+       ↓
+workflow
+       ↓
+run
+       ↓
+provider
+```
+
+is plenty.
+
+### Don't introduce OpenMeter yet
+
+Your document's OpenMeter architecture is strong; it handles aggregation, deduplication, usage reporting, limits and entitlements. 
+
+But I'd introduce it when you move from:
+
+```text
+"We want to understand our costs."
+```
+
+to:
+
+```text
+"Customer bought 2,000 Clue credits."
+
+"Each action consumes N credits."
+
+"We must not double-charge."
+
+"We need hard usage limits."
+
+"Usage must reconcile with billing."
+```
+
+That's when you're building a **metering system**, rather than merely monitoring costs.
+
+Until then, a simple `usage_events` table is enough:
+
+```text
+usage_events
+
+id
+timestamp
+run_id
+workspace_id
+provider
+operation
+quantity
+cost_usd
+metadata
+```
+
+Design your API so OpenMeter can replace the storage later:
+
+```python
+record_usage(...)
+```
+
+rather than spreading SQL inserts throughout the codebase.
+
+### Security/redaction is part of the pilot requirement
+
+This one is easy to overlook.
+
+Agent traces are capable of capturing a lot:
+
+```text
+prompts
+responses
+tool arguments
+tool responses
+HTTP headers
+documents
+search results
+customer information
+```
+
+Before a paying customer enters the platform, make sure your tracing layer strips things like:
+
+```text
+Authorization
+Bearer tokens
+API keys
+cookies
+passwords
+database credentials
+secret environment variables
+```
+
+And make a conscious decision about whether complete prompts/tool results/customer documents are allowed to leave your infrastructure and enter your observability vendor.
+
+This is more important for your first paid pilot than tracing another twenty internal functions.
+
+---
+
+## The milestone I'd give the engineering team
+
+I would define **Paid Pilot Observability v1** as:
+
+```text
+                 PAID PILOT OBSERVABILITY V1
+
+1. Every important user workflow gets a run_id.
+
+2. run_id + workspace_id propagate throughout the execution.
+
+3. Langfuse captures:
+      agent
+        → sub-agent
+        → LLM
+        → tool
+        → important external APIs
+
+4. LLM calls capture:
+      model
+      latency
+      tokens
+      cost
+      success/failure
+
+5. Expensive APIs capture:
+      provider
+      operation
+      latency
+      usage
+      approximate/actual cost
+
+6. structlog contains run_id/workspace_id.
+
+7. Sentry errors contain run_id/workspace_id.
+
+8. Basic OTel:
+      FastAPI
+      outbound HTTP
+      trace propagation
+
+9. 100% of important pilot runs retained.
+
+10. Secrets/customer-sensitive telemetry is sanitized.
+```
+
+Once those ten things work, **I would stop working on observability and ship the pilot**.
+
+Then let real pilot problems tell you what to add.
+
+If you repeatedly see:
+
+```text
+"Why is the DB slow?"
+```
+
+→ instrument SQLAlchemy.
+
+If you see:
+
+```text
+"Where did this async job disappear?"
+```
+
+→ improve worker/queue tracing.
+
+If you start selling:
+
+```text
+10,000 Clue credits/month
+```
+
+→ introduce OpenMeter.
+
+If traffic becomes huge:
+
+```text
+millions of traces
+```
+
+→ sampling and more serious OTel infrastructure.
+
+If infra itself starts becoming complicated:
+
+```text
+many services
+queues
+workers
+databases
+distributed execution
+```
+
+→ deepen OpenTelemetry.
+
+That's the boundary I'd set: **production-grade visibility into the customer journey, agent behavior, failures, and cost now; enterprise-grade distributed observability and billing infrastructure later.**
