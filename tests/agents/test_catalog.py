@@ -47,6 +47,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The operating manual: v9 without the specialist-delegation paragraph this surface
         # withholds, and with Stage 0 pointing at the `manual-*` chapters. Lexical, not numeric.
         "prompt:head-of-abm@v10",
+        # The code sandbox: v10 with the "no code execution" clause replaced by the one route
+        # that now exists — `run_python`, inside the container its manual entry describes.
+        "prompt:head-of-abm@v11",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
         "prompt:head-of-abm@v4",
@@ -79,6 +82,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:artifact-review@v1",
         "skill:audience-persona@v1",
         "skill:audience-persona@v2",
+        # How to open a file the framework's own tools cannot read: the `run_python@1` sandbox,
+        # the container's folders, and one reading recipe per attachable document format.
+        "skill:code-execution@v1",
         "skill:content-exemplar@v1",
         # The three document skills. Each one carries the whole procedure for one document
         # the Head of ABM now writes as a file under `project/`, and grants no tool;
@@ -158,6 +164,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-workspace@v2",
         "skill:manual-workspace@v3",
         "skill:manual-workspace@v4",
+        # The attachments mount: v4 plus the `attachments/` row, the chapter that says what is in
+        # that folder and which tool opens each kind of file, and what a sandboxed script may
+        # write. The other fourteen chapters re-mint at v5 with `head-of-abm@v58`.
+        "skill:manual-workspace@v5",
         "skill:persona-authoring@v1",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v1",
@@ -212,6 +222,9 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # `prefixes`, and a `spilled_to` receipt read from its own file in chunks — and the four
         # read addresses `head-of-abm@v56` grants in its front matter.
         "skill:stage0-interview@v33",
+        # Attached files: v33 with the §1 bullet that names `attachments/` and sends the agent to
+        # the code-execution skill before it opens one, and the §7c read-map line for a file.
+        "skill:stage0-interview@v34",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
