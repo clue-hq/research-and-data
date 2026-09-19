@@ -178,6 +178,43 @@ def register_project_memory_routes(
             created_at=iso_utc(memory.created_at),
         )
 
+    async def _retire_one(
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        project_id: str,
+        memory_id: str,
+        actor: str,
+        cause: str,
+    ) -> None:
+        """Retire a note this project's panel actually shows, or 404.
+
+        :func:`clue_memory.retire` is fail-closed on workspace and on "still active", but it knows
+        nothing about the project in the path — so on its own it would let ``/projects/A/…``
+        remove a note belonging to project B of the same tenant. The scope and provenance are
+        therefore checked here against the same predicate the list uses: the verbs act on exactly
+        the set the panel draws, and everything else is absent.
+        """
+        record = await get_memory(conn, memory_id)
+        if (
+            record is None
+            or record.workspace_id != workspace_id
+            or record.scope_type is not MemoryScopeType.PROJECT
+            or record.scope_id != project_id
+            or record.provenance_class is not MemoryProvenanceClass.USER_STATED
+        ):
+            raise _refuse(404, "MEMORY_NOT_FOUND", "this note is no longer available")
+        # Fail-closed and idempotent-by-refusal: an already-removed note, a repeat click and a
+        # record that is not active any more are one answer.
+        if not await retire(
+            conn,
+            memory_id=memory_id,
+            workspace_id=workspace_id,
+            actor=actor,
+            cause=cause,
+        ):
+            raise _refuse(404, "MEMORY_NOT_FOUND", "this note is no longer available")
+
     def _user(request: Request) -> str:
         principal = principal_from_request(request)
         if principal is not None:
@@ -293,15 +330,14 @@ def register_project_memory_routes(
         # rolls back with it and the note the human was editing is still there.
         async with conn_factory() as conn:
             await _project(conn, workspace_id=workspace_id, project_id=project_id, for_write=True)
-            retired = await retire(
+            await _retire_one(
                 conn,
-                memory_id=memory_id,
                 workspace_id=workspace_id,
+                project_id=project_id,
+                memory_id=memory_id,
                 actor=user_id,
                 cause="edited on project home",
             )
-            if not retired:
-                raise _refuse(404, "MEMORY_NOT_FOUND", "this note is no longer available")
             return await _submit(
                 conn, workspace_id=workspace_id, project_id=project_id, write=write
             )
@@ -316,16 +352,13 @@ def register_project_memory_routes(
         user_id = _user(request)
         async with conn_factory() as conn:
             await _project(conn, workspace_id=workspace_id, project_id=project_id, for_write=True)
-            retired = await retire(
+            await _retire_one(
                 conn,
-                memory_id=memory_id,
                 workspace_id=workspace_id,
+                project_id=project_id,
+                memory_id=memory_id,
                 actor=user_id,
                 cause="removed on project home",
             )
-            # ``retire`` is fail-closed and idempotent-by-refusal, so a repeat click, another
-            # tenant's id and an already-removed note are one answer.
-            if not retired:
-                raise _refuse(404, "MEMORY_NOT_FOUND", "this note is no longer available")
             await touch_project(conn, workspace_id=workspace_id, project_id=project_id)
         return Response(status_code=204)

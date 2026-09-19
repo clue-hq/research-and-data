@@ -205,6 +205,26 @@ def test_notes_list_add_edit_remove_and_honest_rejection() -> None:
                 repeat = await client.delete(f"{base}/{successor['id']}", headers=headers)
                 assert repeat.status_code == 404, repeat.text
 
+                # A sibling project's note is not this project's to touch, even for the same
+                # tenant: the path names the project, so the record must be in it.
+                sibling = await seed_project(conn, WORKSPACE, name="Sibling")
+                await conn.execute(
+                    text("UPDATE project SET status = 'active' WHERE project_id = :id"),
+                    {"id": sibling.project_id},
+                )
+                sibling_base = (
+                    f"{FRONTEND_READ_PREFIX}/projects/{sibling.project_id}/memory"
+                )
+                sibling_note = await client.post(
+                    sibling_base, json={"text": "Sibling note."}, headers=headers
+                )
+                assert sibling_note.status_code == 201, sibling_note.text
+                sibling_id = sibling_note.json()["data"]["id"]
+                crossed = await client.delete(f"{base}/{sibling_id}", headers=headers)
+                assert crossed.status_code == 404, crossed.text
+                still_there = (await client.get(sibling_base, headers=headers)).json()["data"]
+                assert [item["id"] for item in still_there] == [sibling_id]
+
                 # Another workspace's project is absent, not refused.
                 foreign_ws = await client.get(base, headers={"X-Workspace-Id": "ws_someone_else"})
                 assert foreign_ws.status_code == 404, foreign_ws.text
