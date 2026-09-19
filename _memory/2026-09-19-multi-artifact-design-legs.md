@@ -48,3 +48,21 @@ agent, one thread per artifact.
 ## Next
 Founder reviews the spec → `superpowers:writing-plans` → SDD with Opus implementers. Skill/prompt
 text (judge v3, Head-of-ABM v10) is founder-reviewed before landing.
+
+## Plan written (same day)
+`docs/superpowers/plans/2026-09-19-multi-artifact-design-legs.md` — 12 tasks: (1) `design_leg_document`
+migration + `add_leg_documents`/`list_leg_documents`; (2) `ensure_web_account_for_entity` +
+`runs_for_execution`; (3) `open_design_leg@5` (`artifacts: [{title, note, account_id?}]`, N births,
+`derive_leg_document_id(leg_id, position)` with position 0 = @4's id, the account stamp, cap
+`24_000 + 1_500*(N-1)`); (4) Head-of-ABM v58 / prompt v11 / recipe0-stage0@29 / manual v5 — prompt
+text is a founder gate; (5) `render_leg_turn_prompt` renders the item's THIS ARTIFACT lines; (6)
+`InlineDesignLaneDriver.drive_batch` (progress-based join window); (7) the runner fans out N runs +
+N `design_job` tasks (multi-doc only), `design_leg_run_id(turn_id, position)`, `batch_summary`,
+`_finalize_awaiting_input`, Stop over `runs_for_execution`; (8) exit judgment v3 —
+`addressed_artifacts` + `clarifying_question`, `decide_exit(artifact_count=)`, multi-doc fail-safe
+= ask, golden `addressing-*` fixtures — prompt text is a founder gate; (9) composer tags over the
+document set; (10) gallery/library derive from `design_leg_document`, feed wire `account`, close
+records `document_versions`; (11) frontend `artifactsToAutoOpen` list + account on the card wire;
+(12) records, offline gate with no keys, the six live proofs handed to the founder.
+Single-document legs stay byte-identical (one-envelope batches call `drive`, no enqueue).
+Execution: SDD, Opus implementers only, Fable reviews each task first-hand.
