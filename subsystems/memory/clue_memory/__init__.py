@@ -15,7 +15,7 @@ the modules here are the enforcement:
 - ``evals``    — the reconciliation golden set (fixtures + runner, offline).
 """
 
-from clue_memory.assembly import Assembly
+from clue_memory.assembly import Assembly, get_memory, list_project_memories
 from clue_memory.compliance import erase_subject, lock_memory
 from clue_memory.lifecycle import (
     ENGINE_ACTOR,
@@ -41,6 +41,8 @@ from clue_memory.write import WriteSeam
 __all__ = [
     "Assembly",
     "WriteSeam",
+    "get_memory",
+    "list_project_memories",
     "Memory",
     "new_memory_id",
     "ERASED",

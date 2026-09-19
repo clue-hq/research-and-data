@@ -21,6 +21,7 @@ from clue_api.exa_targeted_enrichment import build_production_exa_targeted_start
 from clue_api.exa_websets_lifecycle import ExaWebhookIngestor, build_exa_webhook_router
 from clue_api.execution_wiring import build_tool_invoker
 from clue_api.frontend_read.contact_email_lookup import build_contact_email_lookup_service
+from clue_api.memory_wiring import memory_write_factory_builder
 from clue_api.narrative_wiring import register_narrative_wiring
 from clue_api.observability_wiring import build_observability_surface
 from clue_api.persona_request_tools import DbPersonaRequestService
@@ -116,17 +117,28 @@ def build_application(
     # of storing snapshots nobody ever claimed from. Without a credential
     # `build_optional_platform_gateway` warns and returns None, and the composition degrades to the
     # slice-2 empty extractor (scrape + snapshot, no values) rather than failing this process's
-    # import. The gateway is built only when the binder will exist, so a flag-off deployment warms
-    # no client and stays byte-identical to before.
+    # import. (It used to be built only when this flag was on; since the memory consumer below
+    # it is built once unconditionally, so a flag-off deployment with no credential now also
+    # logs the builder's `stage0.claim_extraction_disabled_no_gateway` warning.)
     #
     # Lane D2 note: this composes a gateway *instance* in the HTTP process for the Stage-0 scrape
     # resolver, but the D2 boundary is untouched — the toolbelt is still built with no `gateway=`
     # argument, and no chat/turn-serving module reaches this wiring (both guarded by
     # tests/api/test_lane_d2_http_gateway_isolation.py).
+    #
+    # 2026-09-19: a SECOND sanctioned consumer joins the Stage-0 extractor — the project home's
+    # memory panel, whose write seam needs the reconciliation judge (a human's note is reconciled
+    # against what is already remembered, exactly as an agent-distilled one is). Both take the
+    # SAME instance: one process, one gateway. It is still not a turn-path consumer — the memory
+    # routes hang off `/frontend/v1`, the toolbelt below is still built with no `gateway=`, and
+    # tests/api/test_lane_d2_http_gateway_isolation.py keeps both halves of that honest. Without a
+    # credential the builder warns and returns None, and the memory writes then refuse
+    # `MEMORY_UNAVAILABLE` rather than writing notes no judge ever saw.
+    gateway = build_optional_platform_gateway(resolved)
     stage0_scrape_binder: Stage0ScrapeBinder | None = None
     # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
     if resolved.legacy_stage0_recon_enabled:
-        stage0_extractor = build_stage0_claim_extractor(build_optional_platform_gateway(resolved))
+        stage0_extractor = build_stage0_claim_extractor(gateway)
         stage0_scrape_binder = build_stage0_scrape_binder(
             extractor=stage0_extractor,
             # Pass the resolved settings' backend explicitly — a None scraper would construct
@@ -402,6 +414,11 @@ def build_application(
             else None
         ),
         tracing=tracing,
+        # The project home's memory panel writes through the scoped-memory seam; no gateway, no
+        # seam (the panel's list still serves, its writes refuse loudly).
+        memory_write_factory=(
+            None if gateway is None else memory_write_factory_builder(resolved, gateway)
+        ),
     )
 
 
