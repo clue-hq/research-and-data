@@ -491,6 +491,21 @@ async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list
     ]
 
 
+async def runs_for_execution(
+    conn: AsyncConnection, *, workspace_id: str, execution_id: UUID
+) -> list[JsonObject]:
+    """Every run dispatched under one platform execution, oldest first (spec §3.3/§3.9: the
+    batch of one leg turn is the runs stamped with that turn's execution id)."""
+    rows = await conn.execute(
+        text(
+            "SELECT * FROM design_agent_run WHERE workspace_id = :w AND execution_id = :e "
+            "ORDER BY created_at ASC, run_id ASC"
+        ),
+        {"w": workspace_id, "e": execution_id},
+    )
+    return [_agent_run_from_row(row) for row in rows]
+
+
 async def active_run_for_document(
     conn: AsyncConnection, *, workspace_id: str, document_id: str
 ) -> str | None:
