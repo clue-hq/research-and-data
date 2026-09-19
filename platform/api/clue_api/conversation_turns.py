@@ -177,7 +177,13 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
 # key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
 # replay input for turns pinned to it.
-CONVERSATION_RECIPE_VERSION = 28
+# Revision 29 (multi-artifact legs) re-pins one address: ``open_design_leg`` moves to ``@5``, the
+# contract `head-of-abm@v58` grants — the top-level ``title`` is gone and the input carries an
+# ``artifacts`` list, so one open births one document per item. ``@4`` leaves the slot rather than
+# stand beside ``@5``, for the reason revision 22 recorded: one version per ``(kind, key)``
+# resolves, so both at once is a ``conflicting_requirement``. v28 stays the exact replay input for
+# turns pinned to it.
+CONVERSATION_RECIPE_VERSION = 29
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

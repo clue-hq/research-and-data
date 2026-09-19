@@ -755,7 +755,7 @@ class LaunchArv2DiscoveryTool(Tool):
         "the provider ask all come from the pinned document and the deployment's settings — never "
         "from this call — and a successful result means the run was created or replayed, never "
         "that companies have been found or approved. It approves nothing and researches nothing. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#launch_arv2_discovery"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#launch_arv2_discovery"
     )
     input_model = LaunchArv2DiscoveryInput
     output_model = LaunchArv2DiscoveryOutput

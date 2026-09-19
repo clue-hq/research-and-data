@@ -192,9 +192,10 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
 
     for name in sorted(_WITHHELD):
         # genweb slice 2 promoted the design delegation entry to @2 (web document birth at
-        # leg-open), genad promoted it again to @3 (ad document birth) and genad2 to @4
-        # (zero-page scene birth); the trial withholds it at whatever version the belt carries.
-        _promoted = {"open_design_leg": "4", "open_icp_confirmation_gate": "2"}
+        # leg-open), genad promoted it again to @3 (ad document birth), genad2 to @4 (zero-page
+        # scene birth) and multi-artifact legs to @5 (an `artifacts` list, one document per item);
+        # the trial withholds it at whatever version the belt carries.
+        _promoted = {"open_design_leg": "5", "open_icp_confirmation_gate": "2"}
         address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
@@ -345,7 +346,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v5" for name in MANUAL_CHAPTERS),
     ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.

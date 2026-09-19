@@ -65,6 +65,9 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: Unmoved again at `head-of-abm@v57`, which changes no resource at all: it raises the turn caps
 #: and re-mints the manual at `manual-*@v4`, and a chapter's version lives in its path, not in the
 #: summary this block measures. 4427 bytes against the 4608 already allowed.
+#: Unmoved a third time at `head-of-abm@v58`: it moves ONE tool address (`open_design_leg@5`) and
+#: the prompt, and re-mints the manual at `manual-*@v5`. A tool is not disclosed on this block and
+#: a chapter's version lives in its path, so the same 4427 bytes stand.
 SKILLS_BLOCK_MAX_BYTES = 4608
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.

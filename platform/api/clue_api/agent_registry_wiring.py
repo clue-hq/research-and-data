@@ -178,7 +178,17 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
     # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
     # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
-    AgentRole.HEAD_OF_ABM: "v57",
+    # v58 (one ask, many artifacts, 2026-09-19): v57's surface exactly, with ONE address moved and
+    # the prompt that teaches it. `open_design_leg` becomes @5 — the top-level `title` is deleted
+    # and the input carries an `artifacts` list of `{title, note, account_id?}`, so a single
+    # message asking for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births
+    # twenty documents, each stamped with the account its item names. Prompt v10 → v11 because the
+    # two design paragraphs are what decides how many items get listed: they become one paragraph
+    # covering every designed page, telling the agent to read the count out of the message and to
+    # give each item its own note. The conversation recipe moves 28 → 29 (the interaction slot
+    # re-pins the delegation entry; @4 leaves rather than stand beside @5), and the manual
+    # re-mints at `manual-*@v5` because its generated `tools` chapter renders the grant.
+    AgentRole.HEAD_OF_ABM: "v58",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

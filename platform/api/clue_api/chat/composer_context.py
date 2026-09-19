@@ -56,9 +56,9 @@ __all__ = [
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-# v57 raises the turn caps to the founder's numbers (1800 s / 100 rounds) and moves nothing
-# else: a cap that fails a real document turn is the restriction the founder ruled out.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v57"
+# v58 moves the design delegation entry to `open_design_leg@5` and the prompt to v11: one message
+# can ask for many artifacts, and the agent lists one item per artifact instead of naming one.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v58"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
