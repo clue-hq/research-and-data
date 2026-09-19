@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   paginate,
   startChat,
   visibleProjects,
 } from "./use-projects-screen-controller";
+
+function source(path: string) {
+  return readFileSync(new URL(path, import.meta.url), "utf8");
+}
 
 const p = (id: string, extra = {}) => ({
   id,
@@ -101,4 +106,25 @@ test("startChat refuses an empty message without creating a thread", async () =>
       agentProfileId: null,
     }),
   );
+});
+
+test("a chat is never started while an attachment is still uploading, and it is refused in the Home's words", () => {
+  // `newChat` is hook-internal — this repo runs `node:test` with no React
+  // renderer, so the wiring is asserted at its source the way the in-chat add
+  // is (`use-add-to-open-chat-controller.test.ts`). The rule underneath is
+  // already pinned by `chat-attachments.test.ts`: the snapshot is `null` until
+  // every attachment is ready.
+  const controller = source("./use-projects-screen-controller.ts");
+  const home = source("./use-project-home-controller.ts");
+  const refusal = 'setError("Wait for attachments to finish uploading.");';
+  // The same sentence in both controllers, so the two cannot drift apart.
+  assert.ok(home.includes(refusal));
+  assert.ok(controller.includes(refusal));
+  // The guard comes before the writes: the refusal, and its `return`, are
+  // above the only `startChat` call.
+  assert.ok(
+    controller.indexOf(refusal) < controller.indexOf("startChat(repositories"),
+  );
+  // And nothing silently substitutes an empty list for a withheld snapshot.
+  assert.doesNotMatch(controller, /snapshot\(\) \?\? \[\]/);
 });

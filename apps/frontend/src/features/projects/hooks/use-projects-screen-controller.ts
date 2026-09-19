@@ -322,6 +322,17 @@ export function useProjectsScreenController(projectId?: string) {
 
   async function newChat(id: string, draft = "") {
     if (busy || navigationPending.current || !shell) return;
+    // Snapshot before anything else, exactly as the Home does: the chat this
+    // starts carries the files that had finished uploading when the user
+    // pressed send, and a submission that would drop one still in flight is
+    // refused instead. `chatAttachmentSnapshot` answers `[]` for an empty list
+    // and `null` only while an attachment is not ready, so this one check is
+    // the Home's pair — and it narrows the spread below.
+    const attachmentSnapshot = chatAttachments.snapshot();
+    if (attachmentSnapshot === null) {
+      setError("Wait for attachments to finish uploading.");
+      return;
+    }
     navigationPending.current = true;
     try {
       const contextRefs = selectedEntities.map((entity) => ({
@@ -334,7 +345,7 @@ export function useProjectsScreenController(projectId?: string) {
           projectId: id,
           message: draft || prompt,
           contextRefs,
-          attachmentRefs: [...(chatAttachments.snapshot() ?? [])],
+          attachmentRefs: [...attachmentSnapshot],
           agentProfileId: selectedModel?.id ?? shell.defaultAgentProfileId,
         }),
       );
