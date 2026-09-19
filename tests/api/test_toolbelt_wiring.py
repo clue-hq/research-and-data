@@ -273,6 +273,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # The gallery read needs no service, so its first fail-closed boundary is the project: the
     # matrix's context carries no execution, and the project is ambient rather than a body field.
     "read_artifact": ("precondition", ("project_not_found",)),
+    # The sandbox is registered everywhere and composed only where turns are driven, so the
+    # matrix — which passes no ``sandbox_workspaces`` — refuses at its first boundary,
+    # whatever ``CLUE_SANDBOX_ENABLED`` says on the machine running this.
+    "run_python": ("precondition", ("sandbox_unavailable",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -664,6 +668,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "read_discovery_run": {"project_id": "prj_matrix"},
         "read_claims": {"entity_id": _UUID()},
         "read_artifact": {"artifact_id": "doc_matrix"},
+        "run_python": {"code": "print(1)"},
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -1412,7 +1417,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # The code sandbox (2026-09-19): `run_python@1`, ungranted (136 -> 137 / 156 -> 157).
+    assert len(registry.names()) == 137
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1449,7 +1455,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # The code sandbox (2026-09-19): `run_python@1`, ungranted (136 -> 137 / 156 -> 157).
+    assert len(registry) == 157
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1487,7 +1494,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # The code sandbox (2026-09-19): `run_python@1`, ungranted (136 -> 137 / 156 -> 157).
+    assert len(registry.names()) == 137
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1511,7 +1519,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # The code sandbox (2026-09-19): `run_python@1`, ungranted (136 -> 137 / 156 -> 157).
+    assert len(registry) == 157
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

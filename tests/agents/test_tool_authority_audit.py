@@ -149,7 +149,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Artifacts page (2026-09-15) adds the library's two curation writes, `design_rename_document`
     # and `design_set_document_archived` (134 -> 136), both UNGRANTED and human-only: renaming or
     # archiving a document is an act of the person at the library grid or the editor header.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 136
+    # The code sandbox (2026-09-19) adds `run_python` (136 -> 137), registered UNGRANTED: it
+    # is a WRITE over the turn's own workspace, and the grant is the reviewed head-of-abm
+    # bump that pins its contract and mints the manual chapter, not an entry added here.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 137
+    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == ()
+    assert c6_roles_for_tool("run_python@1") == ()
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never

@@ -247,6 +247,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
     # artifact stops being a memory of the turn that made it.
     "read_artifact": (AgentRole.HEAD_OF_ABM,),
+    # The code sandbox (spec 2026-09-19 §3.4): one short script in a locked-down container
+    # over this turn's own workspace. Registered UNGRANTED here, on the same terms every
+    # new write surface arrives on — `build_agent_profile_registry` refuses to compose when a
+    # role's authority and its profile's tool list disagree, so granting it is the reviewed
+    # head-of-abm bump that also pins its contract and mints the manual chapter that teaches
+    # it, not an edit to this dict.
+    "run_python": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
