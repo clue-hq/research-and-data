@@ -31,7 +31,7 @@ import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
-import { artifactToAutoOpen } from "../model/artifact-auto-open";
+import { artifactsToAutoOpen } from "../model/artifact-auto-open";
 import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
@@ -590,6 +590,7 @@ export function ChatSurface({
   const knownArtifactIds = useRef<Set<string> | null>(null);
   const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
+  const activateArtifact = shell.activateArtifact;
   useEffect(() => {
     const known = knownArtifactIds.current;
     if (known === null) {
@@ -603,7 +604,7 @@ export function ChatSurface({
       );
       return;
     }
-    const opening = artifactToAutoOpen({
+    const opening = artifactsToAutoOpen({
       activeThreadId: chat.activeThreadId,
       artifacts: feedArtifacts,
       knownArtifactIds: known,
@@ -614,9 +615,14 @@ export function ChatSurface({
     // most once per update: a closed tab stays closed until another write, and a feed
     // refresh (the URL write-back below re-renders the page too) is inert.
     for (const artifact of feedArtifacts) { known.add(artifact.id); knownArtifactUpdates.current.set(artifact.id, artifact.updatedAt); }
-    if (opening === null) return;
-    openArtifact(opening);
-  }, [chat.activeThreadId, feedArtifacts, openArtifact]);
+    if (opening.length === 0) return;
+    // One message can birth many documents on one leg, so EVERY new document
+    // gets its own tab. The strip fills oldest-born first and the first one
+    // born is the tab left in front — the user watches the leg from its start
+    // rather than landing on whichever document happened to finish last.
+    for (const artifact of opening) openArtifact(artifact);
+    activateArtifact(opening[0].id);
+  }, [activateArtifact, chat.activeThreadId, feedArtifacts, openArtifact]);
 
   // The composer's Files and Microsites come from the same feeds the Gallery draws. The
   // document list is fetched here unconditionally (the tabs hook fetches only while a
