@@ -90,6 +90,12 @@
   box-shadow: var(--clue-ds-shadow-card-subtle), 0 0 0 2px white;
 }
 
+/* Ruling 5: while a file drag is over the chat, the composer is the drop
+   target — a dashed outline and nothing else (no overlay, no copy). */
+.composer[data-drop-target="true"] {
+  border: 1px dashed var(--clue-ds-color-border-neutral);
+}
+
 .composerBody {
   display: flex;
   min-width: 0;
@@ -2854,32 +2860,46 @@
   gap: 4px;
 }
 
+/* One chip per reference: the glyph or thumbnail first and never wrapped away
+   from its name, the name on one line and ellipsised, and the same corner
+   radius as the send button beside the composer (the design system's button
+   radius), not a pill. */
 .messageContextRefs > span {
-  overflow: hidden;
-  max-width: 240px;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 320px;
+  align-items: center;
+  gap: 5px;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
-  border-radius: 999px;
+  border-radius: var(--clue-ds-product-component-button-md-radius, 4px);
   background: var(--clue-ds-color-bg-page);
   color: var(--clue-ds-color-content-neutral);
   font-size: 11px;
   line-height: 18px;
   padding: 0 7px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.messageContextRefs > span > svg {
+  flex: 0 0 auto;
+}
+
 .messageContextRefs > .messageReferenceImage {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   padding-left: 3px;
+}
+
+.messageReferenceLabel {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .messageReferenceThumbnail {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
-  border-radius: 999px;
+  border-radius: var(--clue-ds-product-component-button-sm-radius, 2px);
   object-fit: cover;
 }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GateDecisionSchema } from "./chat-parts";
+import type { ChatAttachmentRef } from "./chat-attachments";
 import type { ChatStreamEventType } from "./chat-events";
 import {
   ChatMessageWireSchema,
@@ -250,6 +251,7 @@ export class MessageSubmissionGuard {
     submission: {
       message: string;
       contextRefs: readonly TurnContextReference[];
+      attachmentRefs: readonly ChatAttachmentRef[];
       agentProfileId: string | null;
     },
     createIdempotencyKey: () => string,
@@ -344,6 +346,7 @@ export type TurnSubmission =
       kind: "message";
       message: string;
       contextRefs?: readonly TurnContextReference[];
+      attachmentRefs?: readonly ChatAttachmentRef[];
       agentProfileId?: string | null;
     }
   | { kind: "gate_response"; response: GateResponse };
@@ -359,7 +362,14 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
         version: reference.version,
         ...(reference.note !== undefined ? { note: reference.note } : {}),
       })),
-      attachment_refs: [],
+      attachment_refs: (submission.attachmentRefs ?? []).map((attachment) => ({
+        upload_id: attachment.uploadId,
+        artifact_key: attachment.artifactKey,
+        sha256: attachment.sha256,
+        media_type: attachment.mediaType,
+        byte_count: attachment.byteCount,
+        filename: attachment.filename,
+      })),
       agent_profile_id: submission.agentProfileId ?? null,
     };
   }

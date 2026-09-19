@@ -232,6 +232,7 @@ class PrepareComposerContextRequest(_Request):
 class AttachmentRefRequest(_Request):
     """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
 
+    upload_id: UUID
     artifact_key: str = Field(min_length=1, max_length=1000)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     media_type: str = Field(min_length=1, max_length=255)

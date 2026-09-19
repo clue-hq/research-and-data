@@ -35,6 +35,8 @@ const MessageRefWireSchema = z.object({
   kind: z.string().nullable().default(null),
   media_type: z.string().nullable().default(null),
   thumbnail_digest: z.string().nullable().default(null),
+  /** Present on attachment refs: the chat upload whose bytes the chip can fetch. */
+  upload_id: z.string().nullable().default(null),
 });
 
 export interface ChatMessageRef {
@@ -48,6 +50,7 @@ export interface ChatMessageRef {
   kind: string | null;
   mediaType: string | null;
   thumbnailDigest: string | null;
+  uploadId: string | null;
 }
 
 export const ChatMessageRoleSchema = z.enum([
@@ -117,6 +120,7 @@ export function toChatMessage(
       kind: ref.kind,
       mediaType: ref.media_type,
       thumbnailDigest: ref.thumbnail_digest,
+      uploadId: ref.upload_id,
     })),
   };
 }

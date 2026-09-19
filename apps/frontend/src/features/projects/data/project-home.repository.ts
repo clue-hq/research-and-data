@@ -44,6 +44,7 @@ export function createHttpProjectHomeRepository(
               version: reference.version,
             })),
             attachment_refs: request.attachmentRefs.map((reference) => ({
+              upload_id: reference.uploadId,
               artifact_key: reference.artifactKey,
               sha256: reference.sha256,
               media_type: reference.mediaType,

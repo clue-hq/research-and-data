@@ -205,6 +205,7 @@ export const ProjectBootstrapRequestSchema = z.object({
     filename: z.string().min(1).max(255),
     mediaType: z.string().min(1).max(255),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    uploadId: z.string().min(1).max(200),
   }).strict()).default([]),
   brandId: z.string().min(1).max(200),
   contextRefs: z.array(z.object({

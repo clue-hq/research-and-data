@@ -6,7 +6,9 @@ import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-stat
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
+import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachments";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
 import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
 import {
   DESIGN_REFERENCE_ACCEPT,
@@ -27,8 +29,10 @@ import type { Operation } from "@/features/design-editor/engine/scene/contracts"
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
+import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactToAutoOpen } from "../model/artifact-auto-open";
+import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
   chatDockDismissedBySubmission,
@@ -410,6 +414,39 @@ export function ChatSurface({
   const referenceAttachments = useDesignReferenceAttachments({
     enabled: designReferencesEnabled,
   });
+  // The ordinary chat attachments (`.md`/`.txt`/images the turn carries). They
+  // are independent of the design leg: ruling 4 only decides which of the two
+  // hooks a dropped IMAGE belongs to while an ad leg is open.
+  const chatAttachments = useChatAttachments({
+    enabled: workspace.composerCapabilities.attachments,
+  });
+  /**
+   * The composer's ONE attachment intake — the `+` picker and (task 14) the
+   * drop target both land here, so a file takes the same route whichever
+   * gesture delivered it.
+   */
+  const handleAttachmentFiles = (files: File[]) => {
+    const routed = routeAttachmentFiles(files, designReferencesEnabled);
+    if (routed.design.length > 0) referenceAttachments.onFiles(routed.design);
+    if (routed.chat.length > 0) chatAttachments.onFiles(routed.chat);
+  };
+  /** One chip list, two owners: whichever hook holds the id removes it. */
+  const handleAttachmentRemove = (attachmentId: string) => {
+    const design = referenceAttachments.attachments.some(
+      (attachment) => attachment.id === attachmentId,
+    );
+    if (design) referenceAttachments.remove(attachmentId);
+    else chatAttachments.remove(attachmentId);
+  };
+  // Dropping a file anywhere on the chat pane lands in the SAME intake the `+`
+  // picker uses, so a dropped image still follows ruling 4's design/chat route.
+  // The gate is the button's gate, verbatim: a surface that will accept a file
+  // from the picker accepts the same file from a drop.
+  const drop = useFileDrop({
+    enabled:
+      designReferencesEnabled || workspace.composerCapabilities.attachments,
+    onFiles: handleAttachmentFiles,
+  });
   // Same gate as the reference images above: a `design_node` ref only means
   // anything beside the open design leg's document, and the backend refuses a
   // submission carrying one otherwise — a canvas selection made outside an
@@ -694,6 +731,13 @@ export function ChatSurface({
     ) {
       return false;
     }
+    // The chat attachments, snapshotted for the same reason and refused for the
+    // same one: a turn carries the files that were ready when it was sent, and
+    // an upload still in flight is not one of them.
+    const attachmentSnapshot = chatAttachments.snapshot();
+    if (chatAttachments.attachments.length > 0 && attachmentSnapshot === null) {
+      return false;
+    }
     // Snapshot ids before the first await inside the scene session.
     // A queued turn keeps this set even if the user changes the
     // canvas selection while optimistic writes finish or the POST runs.
@@ -740,6 +784,7 @@ export function ChatSurface({
         ? ANNOTATIONS_ONLY_MESSAGE
         : prompt;
     const accepted = await chat.submitMessage(message, {
+      attachmentRefs: attachmentSnapshot ?? [],
       contextRefs,
       agentProfileId: workspace.composerCapabilities.agentProfileSelection
         ? (controller.selectedModel?.id ?? null)
@@ -757,6 +802,7 @@ export function ChatSurface({
     }
     if (accepted.status !== "accepted") return false;
     referenceAttachments.clear();
+    chatAttachments.clear();
     // R-A3: the annotations are now the turn's, so the chips and the badges in
     // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
     // the marketer their notes.
@@ -804,7 +850,7 @@ export function ChatSurface({
             : undefined
       }
     >
-      <section className={styles.chatPane}>
+      <section className={styles.chatPane} {...drop.handlers}>
         <ChatShellHeader
           chatId={chat.activeThreadId ?? undefined}
           onArchive={() => {
@@ -1000,30 +1046,44 @@ export function ChatSurface({
               running={chat.runningTurn !== null}
               stopping={chat.stopPending}
               onStop={() => void chat.stopActiveTurn()}
-              attachmentAccept={DESIGN_REFERENCE_ACCEPT}
+              attachmentAccept={
+                designReferencesEnabled
+                  ? `${DESIGN_REFERENCE_ACCEPT},${CHAT_ATTACHMENT_ACCEPT}`
+                  : CHAT_ATTACHMENT_ACCEPT
+              }
               attachmentError={
-                designReferencesEnabled ? referenceAttachments.error : null
+                (designReferencesEnabled ? referenceAttachments.error : null) ??
+                chatAttachments.error
               }
               attachmentInputDisabled={
+                designReferencesEnabled &&
                 referenceAttachments.attachments.length >=
-                MAX_DESIGN_REFERENCE_ATTACHMENTS
+                  MAX_DESIGN_REFERENCE_ATTACHMENTS
               }
-              attachmentLabel="Attach reference images"
-              attachments={
-                designReferencesEnabled
-                  ? [...referenceAttachments.attachments]
-                  : []
-              }
+              attachmentLabel="Attach files"
+              attachments={[
+                ...(designReferencesEnabled
+                  ? referenceAttachments.attachments
+                  : []),
+                ...chatAttachments.attachments,
+              ]}
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
+              dropActive={drop.active}
               entities={controller.composerEntities}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
               onAttachmentFiles={
-                designReferencesEnabled ? referenceAttachments.onFiles : undefined
+                designReferencesEnabled ||
+                workspace.composerCapabilities.attachments
+                  ? handleAttachmentFiles
+                  : undefined
               }
               onAttachmentRemove={
-                designReferencesEnabled ? referenceAttachments.remove : undefined
+                designReferencesEnabled ||
+                workspace.composerCapabilities.attachments
+                  ? handleAttachmentRemove
+                  : undefined
               }
               onEntityRemove={
                 workspace.composerCapabilities.contextRefs
@@ -1041,7 +1101,9 @@ export function ChatSurface({
               onSubmit={(prompt, entityIds) => submitTurn(prompt, entityIds)}
               prompt={controller.prompt}
               sendDisabled={
-                designReferencesEnabled && referenceAttachments.submissionBlocked
+                (designReferencesEnabled &&
+                  referenceAttachments.submissionBlocked) ||
+                chatAttachments.submissionBlocked
               }
               // Slice 2 (R-A2): chips on the bar are already a message — the
               // notes ride the refs — so Send works on an empty box and the

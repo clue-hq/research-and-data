@@ -677,6 +677,16 @@ class Settings(BaseSettings):
     # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
     # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
     chat_turn_stop_poll_interval_s: float = 0.25
+    # Chat attachments (spec 2026-09-18). Per-message ceilings the upload route and the
+    # submission route both enforce, and the number of prior-turn images re-sent to the model
+    # as image parts on every later turn of a thread (``0`` = no cap). Env:
+    # ``CLUE_CHAT_ATTACHMENT_MAX_FILES`` / ``_MAX_TOTAL_BYTES`` / ``_IMAGE_MAX_BYTES`` /
+    # ``_TEXT_MAX_BYTES`` / ``_HISTORY_IMAGES_MAX``.
+    chat_attachment_max_files: int = Field(default=10, ge=1)
+    chat_attachment_max_total_bytes: int = Field(default=150 * 1024 * 1024, ge=1)
+    chat_attachment_image_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    chat_attachment_text_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
+    chat_attachment_history_images_max: int = Field(default=20, ge=0)
     # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
     # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
     # pruning inside the replay horizon promises a replay the table can no longer serve (still
