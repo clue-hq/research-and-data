@@ -999,7 +999,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
     # What the tool actually does, route by route, is the chapter this points at.
     model_description = (
         "Invoke exact governed platform tool record_interview_answer@1. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#record_interview_answer"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#record_interview_answer"
     )
     input_model = RecordInterviewAnswerInput
     output_model = InterviewAnswerOutput

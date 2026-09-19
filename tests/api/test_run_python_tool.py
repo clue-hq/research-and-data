@@ -369,8 +369,13 @@ def test_the_builder_yields_one_tool_and_composes_without_a_registry() -> None:
     assert [tool.descriptor.address for tool in tools] == ["run_python@1"]
 
 
-def test_the_tool_is_registered_at_run_python_1_and_granted_to_nobody() -> None:
-    """Task 10 registers the write surface; the grant is a reviewed profile bump (Task 14)."""
+def test_the_tool_is_registered_at_run_python_1_and_granted_to_the_head_of_abm() -> None:
+    """Task 10 registered the write surface ungranted; `head-of-abm@v58` is the grant.
+
+    The grant is a reviewed profile bump, never an edit to the authority dict: the profile
+    version that holds it also pins the tool's two schema digests, opens `attachments` on the
+    readable prefixes, and mints the skill and the manual chapters that teach it.
+    """
 
     registry = build_toolbelt(storage=None, gateway=None)
     descriptor = registry.descriptor("run_python")
@@ -380,6 +385,7 @@ def test_the_tool_is_registered_at_run_python_1_and_granted_to_nobody() -> None:
     assert descriptor.recipe_safe
     assert descriptor.pin_requirements == ("project",)
     assert "attachments/" in descriptor.model_description
-    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == ()
-    assert c6_roles_for_tool("run_python@1") == ()
-    assert AgentRole.HEAD_OF_ABM not in C6_AGENT_TOOL_AUTHORITY["run_python"]
+    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("run_python@1") == (AgentRole.HEAD_OF_ABM,)
+    # Exactly one role holds it: the sandbox is the project conversation's, not a specialist's.
+    assert len(C6_AGENT_TOOL_AUTHORITY["run_python"]) == 1

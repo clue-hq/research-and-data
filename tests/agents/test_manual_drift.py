@@ -65,7 +65,14 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: Unmoved again at `head-of-abm@v57`, which changes no resource at all: it raises the turn caps
 #: and re-mints the manual at `manual-*@v4`, and a chapter's version lives in its path, not in the
 #: summary this block measures. 4427 bytes against the 4608 already allowed.
-SKILLS_BLOCK_MAX_BYTES = 4608
+#:
+#: Moved 4608 -> 5120 at `head-of-abm@v58` (2026-09-19), on the same terms as the last move: one
+#: RESOURCE joins the disclosed library — `code-execution@v1`, the skill that teaches the sandbox
+#: — and its address, summary and path cost 256 bytes no shortening wins back. The Stage-0 skill's
+#: own summary grew with it (v33 -> v34, the attachments sentence). The block measures 4711 bytes
+#: against the 5120 now allowed. Adding a resource is what is supposed to move this number; a
+#: summary that sprawls is what it is here to catch.
+SKILLS_BLOCK_MAX_BYTES = 5120
 
 #: The hand-written skill that teaches `run_python@1`. It is not a manual chapter — it carries a
 #: tool grant and versions on its own clock — but it is founder-reviewed prose that states rules

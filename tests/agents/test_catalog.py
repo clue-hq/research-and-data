@@ -100,73 +100,90 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # any other and the capability map discloses it with its path. Four of them (errors,
         # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
         # is their only writer; the other eleven are hand written and founder reviewed. Every
-        # chapter is here FOUR times: `head-of-abm@v55` and `@v56` each changed the grant the
-        # manual describes, and `@v57` changed the two limits its generated `limits` chapter
-        # renders. A catalog version is immutable, so the library re-minted at v2, v3 and v4
-        # while v54 keeps the v1 bytes, v55 the v2 bytes and v56 the v3 bytes.
+        # chapter is here FIVE times: `head-of-abm@v55` and `@v56` each changed the grant the
+        # manual describes, `@v57` changed the two limits its generated `limits` chapter renders,
+        # and `@v58` grants `run_python@1` and mounts `attachments/`. A catalog version is
+        # immutable, so the library re-minted at v2, v3, v4 and v5 while v54 keeps the v1 bytes,
+        # v55 the v2 bytes, v56 the v3 bytes and v57 the v4 bytes.
         "skill:manual-accounts-research@v1",
         "skill:manual-accounts-research@v2",
         "skill:manual-accounts-research@v3",
         "skill:manual-accounts-research@v4",
+        "skill:manual-accounts-research@v5",
         "skill:manual-claims@v1",
         "skill:manual-claims@v2",
         "skill:manual-claims@v3",
         "skill:manual-claims@v4",
+        "skill:manual-claims@v5",
         "skill:manual-discovery@v1",
         "skill:manual-discovery@v2",
         "skill:manual-discovery@v3",
         "skill:manual-discovery@v4",
+        "skill:manual-discovery@v5",
         "skill:manual-documents-decisions@v1",
         "skill:manual-documents-decisions@v2",
         "skill:manual-documents-decisions@v3",
         "skill:manual-documents-decisions@v4",
+        "skill:manual-documents-decisions@v5",
         "skill:manual-errors@v1",
         "skill:manual-errors@v2",
         "skill:manual-errors@v3",
         "skill:manual-errors@v4",
+        "skill:manual-errors@v5",
         "skill:manual-fields@v1",
         "skill:manual-fields@v2",
         "skill:manual-fields@v3",
         "skill:manual-fields@v4",
+        "skill:manual-fields@v5",
         "skill:manual-gates-authority@v1",
         "skill:manual-gates-authority@v2",
         "skill:manual-gates-authority@v3",
         "skill:manual-gates-authority@v4",
+        "skill:manual-gates-authority@v5",
         "skill:manual-glossary@v1",
         "skill:manual-glossary@v2",
         "skill:manual-glossary@v3",
         "skill:manual-glossary@v4",
+        "skill:manual-glossary@v5",
         "skill:manual-humans-screens@v1",
         "skill:manual-humans-screens@v2",
         "skill:manual-humans-screens@v3",
         "skill:manual-humans-screens@v4",
+        "skill:manual-humans-screens@v5",
         "skill:manual-index@v1",
         "skill:manual-index@v2",
         "skill:manual-index@v3",
         "skill:manual-index@v4",
+        "skill:manual-index@v5",
         "skill:manual-limits@v1",
         "skill:manual-limits@v2",
         "skill:manual-limits@v3",
         "skill:manual-limits@v4",
+        "skill:manual-limits@v5",
         "skill:manual-siblings@v1",
         "skill:manual-siblings@v2",
         "skill:manual-siblings@v3",
         "skill:manual-siblings@v4",
+        "skill:manual-siblings@v5",
         "skill:manual-tools@v1",
         "skill:manual-tools@v2",
         "skill:manual-tools@v3",
         "skill:manual-tools@v4",
+        "skill:manual-tools@v5",
         "skill:manual-turn@v1",
         "skill:manual-turn@v2",
         "skill:manual-turn@v3",
         "skill:manual-turn@v4",
+        "skill:manual-turn@v5",
         "skill:manual-workspace@v1",
         "skill:manual-workspace@v2",
         "skill:manual-workspace@v3",
         "skill:manual-workspace@v4",
         # The attachments mount: v4 plus the `attachments/` row, the chapter that says what is in
         # that folder and which tool opens each kind of file, and what a sandboxed script may
-        # write. The other fourteen chapters re-mint at v5 with `head-of-abm@v58`.
+        # write. The other fourteen chapters re-mint at v5 alongside it, because
+        # `head-of-abm@v58` grants `run_python@1` and one profile version pins one manual
+        # version for every chapter.
         "skill:manual-workspace@v5",
         "skill:persona-authoring@v1",
         "skill:persona-authoring@v2",
@@ -329,6 +346,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # 1800 and `max_model_rounds` 100, and the manual at `manual-*@v4` because its generated
         # `limits` chapter renders both.
         "profile:head-of-abm@v57",
+        # The code sandbox and the project's attachments: v57 with `run_python@1` granted,
+        # `attachments` on the readable prefixes, `code-execution@v1` pinned, stage0-interview
+        # v34, prompt head-of-abm v11 and the manual at `manual-*@v5`.
+        "profile:head-of-abm@v58",
         "profile:head-of-abm@v6",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",

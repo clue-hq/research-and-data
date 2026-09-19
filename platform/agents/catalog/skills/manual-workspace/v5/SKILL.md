@@ -3,7 +3,7 @@ schema_version: "1"
 kind: skill
 name: manual-workspace
 version: v5
-summary: "Manual: your folders and mounts, the project's attached files, every card the turn places for you, and how ls, read_file, glob, grep and edit_file really behave."
+summary: "Manual: your folders and mounts, the project's attachments, every card the turn places for you, and how ls, read_file, glob, grep and edit_file really behave."
 roles:
   - head_of_abm
 readiness_requirements: []

@@ -828,12 +828,14 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 # rather than retyped, so adding a chapter does not make this assertion stale.
                 # `head-of-abm@v55` adds the three document skills — the procedures for the ICP,
                 # the personas and the plan, each written as a file under `project/` — so the
-                # committed surface names those too.
+                # committed surface names those too. `@v58` adds `code-execution`, the procedure
+                # for the sandbox it grants in the same version.
                 assert {item["name"] for item in manifest["skills"]} == {
                     "stage0-interview",
                     "icp-authoring",
                     "persona-authoring",
                     "plan-authoring",
+                    "code-execution",
                 } | {f"manual-{chapter}" for chapter in MANUAL_CHAPTERS}
                 surface = {f"{pin['name']}@{pin['version']}" for pin in manifest["tools"]}
                 assert "launch_arv2_account_research@1" in surface

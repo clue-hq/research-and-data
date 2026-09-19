@@ -179,7 +179,11 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
 # key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
 # replay input for turns pinned to it.
-CONVERSATION_RECIPE_VERSION = 28
+# Revision 29 (the code sandbox) admits one address and removes none: ``run_python@1``, granted
+# for the first time at `head-of-abm@v58`, so a turn can open a PDF, a deck or a spreadsheet the
+# human attached instead of guessing from its filename. v28 stays the exact replay input for
+# turns pinned to it.
+CONVERSATION_RECIPE_VERSION = 29
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

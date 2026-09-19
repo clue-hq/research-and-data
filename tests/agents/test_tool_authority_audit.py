@@ -153,8 +153,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # is a WRITE over the turn's own workspace, and the grant is the reviewed head-of-abm
     # bump that pins its contract and mints the manual chapter, not an entry added here.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 137
-    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == ()
-    assert c6_roles_for_tool("run_python@1") == ()
+    # It is GRANTED as of `head-of-abm@v58` (2026-09-19), the reviewed bump that pins its two
+    # schema digests, opens `attachments` on the readable prefixes and mints the manual and the
+    # `code-execution` skill that teach it. No new NAME joins: the count is unmoved.
+    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("run_python@1") == (AgentRole.HEAD_OF_ABM,)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
